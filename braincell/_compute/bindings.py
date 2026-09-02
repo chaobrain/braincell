@@ -32,13 +32,12 @@ those nodes in step with the state buffers.
   ``current_owner_type`` / ``current_owner_types`` declarations, match them
   against the declared ion selectors, and decide which ion instance owns which
   component current.
-- :class:`_BoundIonChannelRuntime` and
-  :class:`_BoundIonChannelCurrentComponentRuntime` — the wrappers installed on
-  an owner ion. The first forwards every hook to a mixed-ion channel with its
-  bound ions packed in; the second additionally narrows ``current(...)`` to one
-  key of ``current_components(...)`` so a channel that writes several ion
-  currents can be attached to several ions without updating shared gating state
-  more than once.
+- :class:`_BoundIonChannelRuntime` — the wrapper installed on an owner ion.
+  It forwards every hook to a mixed-ion channel with its bound ions packed in,
+  and with a ``component_key`` it narrows ``current(...)`` to one key of
+  ``current_components(...)`` so a channel that writes several ion currents can
+  be attached to several ions without updating shared gating state more than
+  once.
 - :func:`_instantiate_runtime_node`, :func:`_unique_ion_channel_key`,
   :func:`_owner_channel_executable` — instantiation of a single layout's node
   and its attachment to the owning ion container.
@@ -74,7 +73,6 @@ from typing import TYPE_CHECKING
 import brainunit as u
 import numpy as np
 
-from braincell import ion as runtime_ion
 from braincell._base_channel import Channel
 from braincell.channel._base import Markov
 from braincell.ion._base import KineticIon
@@ -84,7 +82,7 @@ from braincell.mech import (
     get_registry,
 )
 from braincell.quad import get_integrator
-from .ions import _build_runtime_ions, _sync_runtime_ion
+from .ions import _build_runtime_ions, _sync_runtime_ion, ion_species_key
 from .layouts import MechanismLayout
 
 if TYPE_CHECKING:
@@ -233,63 +231,36 @@ def _build_runtime_nodes(
 
 
 class _BoundIonChannelRuntime(Channel):
-    __module__ = "braincell._compute"
-
-    def __init__(self, channel: object, *, bound_ions: tuple[object, ...], owner_ion: object):
-        super().__init__(size=channel.size, name=getattr(channel, "name", None))
-        self._channel = channel
-        self._bound_ions = tuple(bound_ions)
-        self.root_type = type(owner_ion)
-
-    def _infos(self):
-        return tuple(ion.pack_info() for ion in self._bound_ions)
-
-    def pre_integral(self, V, *unused):
-        return self._channel.pre_integral(V, *self._infos())
-
-    def compute_derivative(self, V, *unused):
-        return self._channel.compute_derivative(V, *self._infos())
-
-    def post_integral(self, V, *unused):
-        return self._channel.post_integral(V, *self._infos())
-
-    def init_state(self, V, *unused, batch_size=None):
-        return self._channel.init_state(V, *self._infos(), batch_size=batch_size)
-
-    def reset_state(self, V, *unused, batch_size=None):
-        return self._channel.reset_state(V, *self._infos(), batch_size=batch_size)
-
-    def ind_update(self, V, *unused):
-        return self._channel.ind_update(V, *self._infos())
-
-    def current(self, V, *unused):
-        return self._channel.current(V, *self._infos())
-
-
-class _BoundIonChannelCurrentComponentRuntime(Channel):
-    """Expose one component current of a bound mixed-ion channel.
+    """Attach a bound channel to one owner ion.
 
     Parameters
     ----------
     channel : object
-        Runtime channel instance that owns the actual gating state and
-        total membrane-current implementation.
+        Runtime channel instance that owns the actual gating state and the
+        membrane-current implementation.
     bound_ions : tuple of object
-        Ion instances required by ``channel.root_type`` in call order.
+        Ion instances required by ``channel.root_type``, in call order.
     owner_ion : object
-        Ion instance that owns this component-current wrapper.
-    component_key : str
-        Key read from ``channel.current_components(...)``.
+        Ion instance this wrapper hangs off.
+    component_key : str or None, optional
+        When given, :meth:`current` returns only this key of
+        ``channel.current_components(...)`` instead of the whole current.
     owns_state : bool, optional
-        Whether this wrapper forwards lifecycle and integration hooks to
-        the wrapped channel. Exactly one wrapper should own state for a
-        multi-owner channel.
+        Whether lifecycle and integration hooks reach the wrapped channel.
+        Exactly one wrapper must own state for a given channel, so that a
+        channel written to several ions does not advance its shared gating
+        state once per ion.
 
     Notes
     -----
-    Only one component wrapper should own state. Other wrappers are
-    current-only and let ``owner_ion.current(...)`` return the component
-    written to that ion without double-updating the shared gating state.
+    One class covers both roles a bound channel plays. They were two classes
+    until iteration 8 of the simplification sweep: six lifecycle methods were
+    identical modulo the forwarded name, and the copies had drifted into
+    complementary gaps -- the single-owner class forwarded ``ind_update`` and
+    not ``update``, the component class the reverse. ``ind_update`` is the one
+    that matters, because :mod:`braincell._base_ion` calls it on every child;
+    ``update`` overrode nothing on :class:`~braincell.IonChannel` and had no
+    caller outside its own body.
     """
 
     __module__ = "braincell._compute"
@@ -300,8 +271,8 @@ class _BoundIonChannelCurrentComponentRuntime(Channel):
         *,
         bound_ions: tuple[object, ...],
         owner_ion: object,
-        component_key: str,
-        owns_state: bool = False,
+        component_key: str | None = None,
+        owns_state: bool = True,
     ):
         super().__init__(size=channel.size, name=getattr(channel, "name", None))
         self._channel = channel
@@ -312,166 +283,53 @@ class _BoundIonChannelCurrentComponentRuntime(Channel):
         self.root_type = type(owner_ion)
 
     def _infos(self):
-        """Return packed ion information for the wrapped channel.
-
-        Returns
-        -------
-        tuple
-            Packed ion information objects in the order expected by the
-            wrapped channel.
-        """
+        """Return packed ion information in the order the channel expects."""
         return tuple(ion.pack_info() for ion in self._bound_ions)
 
-    def pre_integral(self, V, *unused):
-        """Forward pre-integration from the state-owning wrapper.
-
-        Parameters
-        ----------
-        V : array-like
-            Membrane potential passed to the wrapped channel.
-        *unused
-            Ignored compatibility arguments supplied by ion containers.
+    def _forward_if_owner(self, hook: str, V, **kwargs):
+        """Forward ``hook`` to the wrapped channel when this wrapper owns state.
 
         Returns
         -------
         object or None
-            Return value of the wrapped channel's ``pre_integral`` when
-            this wrapper owns state; otherwise ``None``.
+            The wrapped channel's return value, or ``None`` for a
+            current-only wrapper.
         """
-        if self._owns_state:
-            return self._channel.pre_integral(V, *self._infos())
-        return None
+        if not self._owns_state:
+            return None
+        return getattr(self._channel, hook)(V, *self._infos(), **kwargs)
+
+    def pre_integral(self, V, *unused):
+        return self._forward_if_owner("pre_integral", V)
 
     def compute_derivative(self, V, *unused):
-        """Forward derivative computation from the state-owning wrapper.
-
-        Parameters
-        ----------
-        V : array-like
-            Membrane potential passed to the wrapped channel.
-        *unused
-            Ignored compatibility arguments supplied by ion containers.
-
-        Returns
-        -------
-        object or None
-            Return value of the wrapped channel's
-            ``compute_derivative`` when this wrapper owns state;
-            otherwise ``None``.
-        """
-        if self._owns_state:
-            return self._channel.compute_derivative(V, *self._infos())
-        return None
+        return self._forward_if_owner("compute_derivative", V)
 
     def post_integral(self, V, *unused):
-        """Forward post-integration from the state-owning wrapper.
+        return self._forward_if_owner("post_integral", V)
 
-        Parameters
-        ----------
-        V : array-like
-            Membrane potential passed to the wrapped channel.
-        *unused
-            Ignored compatibility arguments supplied by ion containers.
-
-        Returns
-        -------
-        object or None
-            Return value of the wrapped channel's ``post_integral`` when
-            this wrapper owns state; otherwise ``None``.
-        """
-        if self._owns_state:
-            return self._channel.post_integral(V, *self._infos())
-        return None
+    def ind_update(self, V, *unused):
+        return self._forward_if_owner("ind_update", V)
 
     def init_state(self, V, *unused, batch_size=None):
-        """Initialize shared channel state from the state-owning wrapper.
-
-        Parameters
-        ----------
-        V : array-like
-            Membrane potential passed to the wrapped channel.
-        *unused
-            Ignored compatibility arguments supplied by ion containers.
-        batch_size : int or None, optional
-            Optional batch size forwarded to the wrapped channel.
-
-        Returns
-        -------
-        object or None
-            Return value of the wrapped channel's ``init_state`` when
-            this wrapper owns state; otherwise ``None``.
-        """
-        if self._owns_state:
-            return self._channel.init_state(V, *self._infos(), batch_size=batch_size)
-        return None
+        return self._forward_if_owner("init_state", V, batch_size=batch_size)
 
     def reset_state(self, V, *unused, batch_size=None):
-        """Reset shared channel state from the state-owning wrapper.
-
-        Parameters
-        ----------
-        V : array-like
-            Membrane potential passed to the wrapped channel.
-        *unused
-            Ignored compatibility arguments supplied by ion containers.
-        batch_size : int or None, optional
-            Optional batch size forwarded to the wrapped channel.
-
-        Returns
-        -------
-        object or None
-            Return value of the wrapped channel's ``reset_state`` when
-            this wrapper owns state; otherwise ``None``.
-        """
-        if self._owns_state:
-            return self._channel.reset_state(V, *self._infos(), batch_size=batch_size)
-        return None
-
-    def update(self, V, *unused):
-        """Update shared channel state from the state-owning wrapper.
-
-        Parameters
-        ----------
-        V : array-like
-            Membrane potential passed to the wrapped channel.
-        *unused
-            Ignored compatibility arguments supplied by ion containers.
-
-        Returns
-        -------
-        object or None
-            Return value of the wrapped channel's ``update`` when this
-            wrapper owns state; otherwise ``None``.
-        """
-        if self._owns_state:
-            return self._channel.update(V, *self._infos())
-        return None
+        return self._forward_if_owner("reset_state", V, batch_size=batch_size)
 
     def current(self, V, *unused):
-        """Return this owner ion's component current.
-
-        Parameters
-        ----------
-        V : array-like
-            Membrane potential passed to the wrapped channel.
-        *unused
-            Ignored compatibility arguments supplied by
-            :meth:`braincell.Ion.current`.
-
-        Returns
-        -------
-        array-like
-            Current density stored under ``component_key`` in
-            ``channel.current_components(...)``.
+        """Return the wrapped channel's current, narrowed to ``component_key``.
 
         Raises
         ------
         AttributeError
-            If the wrapped channel does not implement
+            If ``component_key`` is set and the wrapped channel implements no
             ``current_components(...)``.
         KeyError
-            If ``component_key`` is not returned by the wrapped channel.
+            If ``component_key`` is not among the keys the channel returns.
         """
+        if self._component_key is None:
+            return self._channel.current(V, *self._infos())
         return self._channel.current_components(V, *self._infos())[self._component_key]
 
 
@@ -540,28 +398,22 @@ def _instantiate_runtime_node(
         channel_key = _unique_ion_channel_key(owner_ion, mechanism.instance_name, layout_id=layout.id)
         if component_key is None and len(bound_ions) == 1 and bound_ions[0][0] == current_owner_key:
             owner_ion.add(**{channel_key: node})
-        elif component_key is None:
-            wrapper = _BoundIonChannelRuntime(
-                node,
-                bound_ions=tuple(ion for _, ion in bound_ions),
-                owner_ion=owner_ion,
-            )
-            if layout.layout == "dense" and layout.point_mask is not None:
-                setattr(wrapper, "_point_mask", layout.point_mask)
-            owner_ion.add(**{channel_key: wrapper})
+            continue
+        if component_key is None:
+            owns_state = True
         else:
             owns_state = not state_owner_assigned
-            wrapper = _BoundIonChannelCurrentComponentRuntime(
-                node,
-                bound_ions=tuple(ion for _, ion in bound_ions),
-                owner_ion=owner_ion,
-                component_key=component_key,
-                owns_state=owns_state,
-            )
             state_owner_assigned = state_owner_assigned or owns_state
-            if layout.layout == "dense" and layout.point_mask is not None:
-                setattr(wrapper, "_point_mask", layout.point_mask)
-            owner_ion.add(**{channel_key: wrapper})
+        wrapper = _BoundIonChannelRuntime(
+            node,
+            bound_ions=tuple(ion for _, ion in bound_ions),
+            owner_ion=owner_ion,
+            component_key=component_key,
+            owns_state=owns_state,
+        )
+        if layout.layout == "dense" and layout.point_mask is not None:
+            setattr(wrapper, "_point_mask", layout.point_mask)
+        owner_ion.add(**{channel_key: wrapper})
     current_owner_key = (
         None
         if len(current_owner_keys) == 0
@@ -766,18 +618,11 @@ def _owner_channel_executable(node, *, bound_ions, owner_specs, owner_ion):
     component_key, owner_key = owner_specs[0]
     if component_key is None and len(bound_ions) == 1 and bound_ions[0][0] == owner_key:
         return node
-    if component_key is None:
-        return _BoundIonChannelRuntime(
-            node,
-            bound_ions=tuple(ion for _, ion in bound_ions),
-            owner_ion=owner_ion,
-        )
-    return _BoundIonChannelCurrentComponentRuntime(
+    return _BoundIonChannelRuntime(
         node,
         bound_ions=tuple(ion for _, ion in bound_ions),
         owner_ion=owner_ion,
         component_key=component_key,
-        owns_state=True,
     )
 
 
@@ -979,19 +824,16 @@ def _root_type_to_family(root_type: type) -> str | None:
     ``"no"`` denotes the NEURON-style nonspecific current-owner
     placeholder family. It is used for written currents such as
     ``USEION no WRITE ino`` and does not imply concentration dynamics.
+
+    This is :func:`braincell._compute.ions.ion_species_key` under the name the
+    binding rules use. Both were four-way ``issubclass`` ladders over the same
+    four ion roots until iteration 8 of the simplification sweep; the shared
+    helper reads the ``ion_symbol`` each root already declares, which also
+    covers the non-ion root types (notably
+    :class:`~braincell.HHTypedNeuron`) that the ``except TypeError`` guard
+    used to catch.
     """
-    try:
-        if issubclass(root_type, runtime_ion.Sodium):
-            return "na"
-        if issubclass(root_type, runtime_ion.Potassium):
-            return "k"
-        if issubclass(root_type, runtime_ion.Calcium):
-            return "ca"
-        if issubclass(root_type, runtime_ion.NonSpecific):
-            return "no"
-    except TypeError:
-        return None
-    return None
+    return ion_species_key(root_type)
 
 
 def _channel_current_owner_specs(cls: type) -> tuple[tuple[str | None, str], ...]:
@@ -1082,9 +924,7 @@ def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_n
             var_name=str(var_name),
         )
         setattr(node, var_name, new_value)
-        hook = getattr(node, "_on_param_updated", None)
-        if callable(hook):
-            hook(var_name, new_value)
+        node._on_param_updated(var_name, new_value)
         return
     new_value = _runtime_param_value(
         layout=layout,
@@ -1092,9 +932,7 @@ def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_n
         state_buffers=runtime.state_buffers,
     )
     setattr(node, var_name, new_value)
-    hook = getattr(node, "_on_param_updated", None)
-    if callable(hook):
-        hook(var_name, new_value)
+    node._on_param_updated(var_name, new_value)
 
 
 def _merged_channel_param_value(

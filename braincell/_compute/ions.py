@@ -21,14 +21,15 @@ with the state buffers afterwards:
 
 - :func:`_build_runtime_ions` — the entry point. Collects the ion declarations
   spread across mechanism layouts, instantiates one runtime ion per instance
-  name, fills in placeholder ions for any of ``na``/``k``/``ca`` that were never
+  name, fills in a placeholder ion for every family
+  :func:`braincell.ion.build_placeholder_ions` supplies that was never
   declared, and returns a 5-tuple of the ion map, the alias map that lets
   channels look an ion up by instance name, family key, or class name, the
   family and class candidate maps, and the per-layout runtime-ion nodes.
 - :func:`_collect_runtime_ion_instances`, :func:`_build_ion_alias_map`,
-  :func:`_runtime_ion_species_key`, :func:`_runtime_ion_family` — the grouping
-  and naming rules, including the conflict checks that reject an instance name
-  reused across two ion classes or two species.
+  :func:`ion_species_key`, :func:`_runtime_ion_species_key` — the grouping and
+  naming rules, including the conflict check that rejects an instance name
+  reused across two ion classes.
 - :func:`_supported_ion_runtime_params`, :func:`_ion_runtime_attr_name`,
   :func:`_normalize_ion_runtime_param_value` — introspection of a runtime ion
   class's constructor and the small amount of renaming/unwrapping needed to
@@ -51,15 +52,15 @@ base classes. It imports nothing from :mod:`braincell._compute.bindings` or
 
 from __future__ import annotations
 
+import functools
 import inspect
 from typing import TYPE_CHECKING
 
 import brainunit as u
 import numpy as np
 
-from braincell import ion as runtime_ion
 from braincell.ion import build_placeholder_ions
-from braincell.ion._base import DynamicNernstIon, FixedIon, InitNernstIon, KineticIon
+from braincell.ion._base import DynamicNernstIon, InitNernstIon
 from braincell.mech import Density, get_registry
 from .layouts import MechanismLayout, _constant_quantity_value
 
@@ -104,10 +105,9 @@ def _build_runtime_ions(
         for layout in record["layouts"]:
             ion_runtime_nodes[layout.id] = runtime_ion
 
-    for family_key in ("na", "k", "ca"):
+    for family_key, default_ion in _build_default_ions(pop_size + (n_point,)).items():
         if family_key in ion_family_candidates:
             continue
-        default_ion = _build_default_ions(pop_size + (n_point,))[family_key]
         ions[family_key] = default_ion
         ion_family_candidates[family_key] = [family_key]
         ion_class_candidates.setdefault(type(default_ion).__name__, []).append(family_key)
@@ -124,6 +124,21 @@ def _build_runtime_ions(
         {key: tuple(value) for key, value in ion_class_candidates.items()},
         ion_runtime_nodes,
     )
+
+
+@functools.lru_cache(maxsize=1)
+def _placeholder_family_keys() -> frozenset[str]:
+    """Return the family keys :func:`braincell.ion.build_placeholder_ions` supplies.
+
+    Notes
+    -----
+    Derived rather than restated. These keys are both the set of families that
+    get a placeholder ion when a cell declares none and the set of instance
+    names reserved from being reused for a different family; keeping one
+    literal list for either would let it drift from the other, which is the
+    defect this replaced.
+    """
+    return frozenset(build_placeholder_ions(size=(1,)))
 
 
 def _build_default_ions(n_point: int) -> dict[str, object]:
@@ -148,10 +163,9 @@ def _collect_runtime_ion_instances(
             continue
         runtime_cls = get_registry().get("ion", mechanism.class_name)
         species_key = _runtime_ion_species_key(runtime_cls)
-        family = _runtime_ion_family(runtime_cls)
 
         instance_name = mechanism.instance_name
-        if instance_name in {"na", "k", "ca"} and instance_name != species_key:
+        if instance_name in _placeholder_family_keys() and instance_name != species_key:
             raise ValueError(
                 f"Ion instance name {instance_name!r} conflicts with canonical family key for a different ion family."
             )
@@ -159,7 +173,6 @@ def _collect_runtime_ion_instances(
         if record is None:
             record = {
                 "runtime_cls": runtime_cls,
-                "family": family,
                 "layouts": [],
                 "declarations": [],
             }
@@ -169,11 +182,6 @@ def _collect_runtime_ion_instances(
             raise ValueError(
                 f"Ion instance name {instance_name!r} cannot mix classes "
                 f"{record['runtime_cls'].__name__!r} and {runtime_cls.__name__!r}."
-            )
-        elif _runtime_ion_species_key(record["runtime_cls"]) != species_key:
-            raise ValueError(
-                f"Ion instance name {instance_name!r} cannot be reused across families "
-                f"{_runtime_ion_species_key(record['runtime_cls'])!r} and {species_key!r}."
             )
 
         record["layouts"].append(layout)
@@ -211,30 +219,45 @@ def _build_ion_alias_map(
     return aliases
 
 
+def ion_species_key(cls: type) -> str | None:
+    """Return the family key of an ion root type, or ``None`` if it is not one.
+
+    Parameters
+    ----------
+    cls : type
+        Any type. Ion roots carry an ``ion_symbol`` class attribute
+        (``braincell.ion.Sodium.ion_symbol == 'Na'``); everything else,
+        including :class:`~braincell.HHTypedNeuron`, does not.
+
+    Returns
+    -------
+    str or None
+        The lowercased ``ion_symbol`` -- one of ``"na"``, ``"k"``, ``"ca"``,
+        ``"no"`` -- or ``None`` for a type that declares no symbol.
+
+    Notes
+    -----
+    This replaces the four-way ``issubclass`` ladder that both this module and
+    :mod:`braincell._compute.bindings` used to carry. The ladder re-derived a
+    value ``braincell.ion`` already declares as data, so the family set was
+    stated in four places across two modules and nothing forced them to agree
+    -- which is how the ``"no"`` family came to be missing from the
+    placeholder seed loop. ``getattr`` also subsumes the ``try/except
+    TypeError`` the ``bindings`` copy needed for non-class inputs.
+    """
+    symbol = getattr(cls, "ion_symbol", None)
+    return symbol.lower() if isinstance(symbol, str) else None
+
+
 def _runtime_ion_species_key(cls: type) -> str:
-    if issubclass(cls, runtime_ion.Sodium):
-        return "na"
-    if issubclass(cls, runtime_ion.Potassium):
-        return "k"
-    if issubclass(cls, runtime_ion.Calcium):
-        return "ca"
-    if issubclass(cls, runtime_ion.NonSpecific):
-        return "no"
-    raise ValueError(f"Unsupported ion runtime class {cls.__name__!r}: cannot infer species key.")
+    """Return the family key of a runtime ion class, raising if it has none."""
+    species_key = ion_species_key(cls)
+    if species_key is None:
+        raise ValueError(f"Unsupported ion runtime class {cls.__name__!r}: cannot infer species key.")
+    return species_key
 
 
-def _runtime_ion_family(cls: type) -> str:
-    if issubclass(cls, KineticIon):
-        return "kinetic"
-    if issubclass(cls, DynamicNernstIon):
-        return "dynamic"
-    if issubclass(cls, InitNernstIon):
-        return "init_nernst"
-    if issubclass(cls, FixedIon):
-        return "fixed"
-    raise ValueError(f"Unsupported ion runtime class {cls.__name__!r}: unsupported ion template family.")
-
-
+@functools.lru_cache(maxsize=None)
 def _supported_ion_runtime_params(cls: type) -> tuple[str, ...]:
     signature = inspect.signature(cls.__init__)
     supported: list[str] = []
@@ -512,5 +535,5 @@ def _sync_runtime_ion(runtime: CellRuntimeState, *, layout_id: int) -> None:
 
     for param_name, value in full_values.items():
         setattr(ion, _ion_runtime_attr_name(ion_cls, param_name), value)
-    if hasattr(ion, "_update_reversal") and callable(getattr(ion, "_update_reversal")):
+    if isinstance(ion, InitNernstIon):
         ion._update_reversal()

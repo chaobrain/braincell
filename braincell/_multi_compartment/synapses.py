@@ -210,7 +210,57 @@ class _SynapseStore:
         if parameter not in self.parameter_columns[synapse_type]:
             raise KeyError(f"Synapse type {synapse_type!r} does not declare parameter {parameter!r}.")
         local = self._type_local_by_id[int(logical_id)]
-        return _take_vector_item(self.parameter_columns[synapse_type][parameter], local)
+        return _take_vector_items(self.parameter_columns[synapse_type][parameter], local)
+
+    def parameter_column(self, logical_ids, parameter: str):
+        """Gather one declared parameter across several logical synapses.
+
+        Parameters
+        ----------
+        logical_ids : array-like of int
+            Stable logical ids, all belonging to the same synapse type.
+        parameter : str
+            Name of a parameter declared by that type.
+
+        Returns
+        -------
+        array-like
+            One vector holding ``parameter`` for each id, in the order given. An
+            empty selection yields an empty dimensionless float array, matching
+            what stacking zero values produced.
+
+        Raises
+        ------
+        TypeError
+            If the ids span more than one synapse type.
+        KeyError
+            If the type does not declare ``parameter``.
+
+        See Also
+        --------
+        parameter_value : Read the same parameter for a single logical id.
+
+        Notes
+        -----
+        This is the vector form of :meth:`parameter_value`, and the form every
+        caller holding a whole selection should use. Reading a selection one id
+        at a time is quadratic: each :meth:`parameter_value` call re-materializes
+        the entire per-type column through ``to_decimal`` only to take a single
+        element, and the caller then restacks the scalars it just tore apart.
+        Slicing the column once is constant in the number of rows read.
+        """
+        ids = np.asarray(logical_ids, dtype=np.int64).reshape(-1)
+        if ids.size == 0:
+            return np.asarray([], dtype=float)
+        types = {str(self.synapse_type[self.row_index(int(item))]) for item in ids.tolist()}
+        if len(types) != 1:
+            raise TypeError("Cannot read one parameter across multiple synapse types.")
+        synapse_type = types.pop()
+        columns = self.parameter_columns[synapse_type]
+        if parameter not in columns:
+            raise KeyError(f"Synapse type {synapse_type!r} does not declare parameter {parameter!r}.")
+        local_rows = np.asarray([self._type_local_by_id[int(item)] for item in ids.tolist()], dtype=np.int64)
+        return _take_vector_items(columns[parameter], local_rows)
 
     def set_parameter(self, logical_ids: np.ndarray, parameter: str, values) -> None:
         self.set_parameters(logical_ids, {parameter: values})
@@ -470,10 +520,7 @@ class SynapseView:
         if not self._cell._initialized:
             if field not in parameter_names:
                 raise KeyError(f"Synapse field {field!r} is unavailable before init_state().")
-            return _stack_synapse_values(
-                [self._store.parameter_value(int(index), field) for index in self._logical_ids.tolist()],
-                parameter=field,
-            )
+            return self._store.parameter_column(self._logical_ids, field)
 
         layout_id = self._store.layout_id(synapse_type)
         node = self._cell.runtime.get_runtime_node(layout_id)
@@ -728,10 +775,16 @@ def _select_declared_parameter_value(value, *, logical_id: int, store: _SynapseS
     return u.Quantity(selected, value.unit) if isinstance(value, u.Quantity) else selected
 
 
-def _take_vector_item(value, index: int):
+def _take_vector_items(value, indices):
+    """Index into one stored parameter column, keeping its unit.
+
+    ``indices`` may be a scalar row or an array of rows; the result follows
+    numpy indexing, so a scalar index yields a scalar and a row vector yields a
+    vector.
+    """
     if isinstance(value, u.Quantity):
-        return u.Quantity(np.asarray(value.to_decimal(value.unit))[index], value.unit)
-    return np.asarray(value)[index]
+        return u.Quantity(np.asarray(value.to_decimal(value.unit))[indices], value.unit)
+    return np.asarray(value)[indices]
 
 
 def _set_vector_items(value, indices: np.ndarray, selected):

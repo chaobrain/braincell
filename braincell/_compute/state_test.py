@@ -24,6 +24,7 @@ import numpy as np
 
 import braincell
 from braincell import (
+    CVPerBranch,
     Cell,
     CurrentClamp,
 )
@@ -97,6 +98,35 @@ class CellRuntimeStateTest(unittest.TestCase):
 
         self.assertIsNot(first, second)
         self.assertEqual(len(second), 1)
+
+    def test_clamp_routing_area_matches_the_cv_that_owns_each_midpoint(self) -> None:
+        """The routing table reads the runtime point-area vector, not ``cv.area``.
+
+        ``build_clamp_routing_table`` no longer walks the CV sequence; it slices
+        the ``point_area`` vector the runtime already built from each node's
+        first role. That is only correct because a CV midpoint reports its own
+        CV as ``roles[0]``, which this pins against a real discretization.
+        """
+        cell = Cell(_build_tree(), cv_policy=CVPerBranch(cv_per_branch=3))
+        cell.place(
+            RootLocation(x=0.5),
+            CurrentClamp(delay=1.0 * u.ms, durations=2.0 * u.ms, amplitudes=0.1 * u.nA),
+        )
+        cell.init_state()
+
+        midpoint_ids = np.asarray(cell.runtime.node_tree.cv_to_mid_node_id, dtype=np.int64)
+        np.testing.assert_allclose(
+            np.asarray(cell.runtime.point_area.to_decimal(u.cm**2))[midpoint_ids],
+            [float(np.asarray(cv.area.to_decimal(u.cm**2))) for cv in cell.cvs],
+            rtol=0.0,
+        )
+        table = cell.runtime.clamp_routing_table
+        clamped_cv = int(np.flatnonzero(midpoint_ids == table.midpoint_ids[0])[0])
+        np.testing.assert_allclose(
+            table.midpoint_area,
+            [float(np.asarray(cell.cvs[clamped_cv].area.to_decimal(u.cm**2)))],
+            rtol=0.0,
+        )
 
     def test_state_mutation_updates_buffer_without_rebuild(self) -> None:
         cell = Cell(_build_tree())

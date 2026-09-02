@@ -26,8 +26,9 @@ import brainstate
 import brainunit as u
 import numpy as np
 
-from braincell import Branch, Morphology
+from braincell import Morphology
 from braincell._base_channel import Channel, IonInfo
+from braincell._discretization._testing import make_two_branch_morpho
 from braincell.ion import NonSpecific, Potassium
 from braincell.mech import register_channel
 
@@ -56,11 +57,15 @@ class _RuntimeTestTwoOwnerChannel(Channel):
 
 
 def _build_tree() -> Morphology:
-    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-    dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
-    tree = Morphology.from_root(soma, name="soma")
-    tree.soma.dend = dend
-    return tree
+    """Return the canonical two-branch test morphology.
+
+    Delegates to :func:`braincell._discretization._testing.make_two_branch_morpho`.
+    This module used to carry a byte-identical copy of that body while
+    ``scheduling_test.py`` imported the original, so ``_compute`` had two
+    spellings of one fixture. The local name is kept because the ~110 call sites
+    across the four runtime test modules read as ``Cell(_build_tree())``.
+    """
+    return make_two_branch_morpho()
 
 
 def _quantity_set_at(value, index: int, replacement):

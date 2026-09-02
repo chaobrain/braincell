@@ -32,14 +32,12 @@ __all__ = [
 class NodeScheduling:
     """Execution-oriented grouping derived from a node tree."""
 
-    algorithm: str
     row_to_point_id: np.ndarray
     point_id_to_row: np.ndarray
     groups: tuple[np.ndarray, ...]
     parent_rows: np.ndarray
     edges: np.ndarray
     level_size: np.ndarray
-    level_start: np.ndarray
 
 
 def build_node_scheduling(
@@ -81,7 +79,6 @@ def build_node_scheduling(
     if len(groups) == 0:
         edges = np.empty((0, 2), dtype=np.int32)
         level_size = np.empty((0,), dtype=np.int32)
-        level_start = np.empty((0,), dtype=np.int32)
     else:
         edge_pairs: list[list[int]] = []
         for group in groups:
@@ -91,17 +88,14 @@ def build_node_scheduling(
                     edge_pairs.append([int(row), parent_row])
         edges = np.asarray(edge_pairs, dtype=np.int32) if edge_pairs else np.empty((0, 2), dtype=np.int32)
         level_size = np.asarray([len(group) for group in groups], dtype=np.int32)
-        level_start = np.concatenate([np.asarray([0], dtype=np.int32), np.cumsum(level_size, dtype=np.int32)])[:-1]
 
     return NodeScheduling(
-        algorithm=algorithm,
         row_to_point_id=row_to_point_id,
         point_id_to_row=point_id_to_row,
         groups=groups,
         parent_rows=parent_rows,
         edges=edges,
         level_size=level_size,
-        level_start=level_start,
     )
 
 

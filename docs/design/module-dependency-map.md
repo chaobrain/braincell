@@ -38,7 +38,7 @@ flowchart TD
     PROBES["probes.py<br/>sample_probe(s)"]
     RUN["run.py<br/>RunResult / run"]
     CVBASE["`_discretization.base`<br/>CV / Node / Discretization<br/>build_discretization"]
-    CVNODE["`_discretization.node_build`<br/>build_node_tree_from_cvs<br/>locate_node_on_branch"]
+    CVNODE["`_discretization.node_build`<br/>build_node_tree_from_cvs"]
     CVPOLICY["`_discretization.policy`<br/>CVPolicy / CVPerBranch / ..."]
     CVGEOM["`_discretization.geometry`<br/>CVGeometryResult<br/>build_cv_geometry"]
     CVMECH["`_discretization.mechanism`<br/>PaintRule / PlaceRule<br/>normalize / merge"]
@@ -74,7 +74,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     BASE["base.py<br/>CV / Node / Discretization<br/>build_discretization(...)"]
-    NODEBUILD["node_build.py<br/>build_node_tree_from_cvs<br/>locate_node_on_branch"]
+    NODEBUILD["node_build.py<br/>build_node_tree_from_cvs"]
     POLICY["policy.py<br/>CVPolicy<br/>CVPerBranch / MaxCVLen / DLambda"]
     GEOM["geometry.py<br/>CVGeometryResult<br/>build_cv_geometry"]
     MECHLOWER["mechanism.py<br/>PaintRule / PlaceRule<br/>normalize / merge"]
@@ -105,7 +105,7 @@ flowchart TD
 
 - `CV`：`region`、`diam_mid`、`...`
 - `build_discretization(...)`
-- `NodeTree` / `build_node_tree_from_cvs(...)` / `locate_node_on_branch(...)`
+- `NodeTree` / `build_node_tree_from_cvs(...)`
 - `PaintRule` / `PlaceRule`
 - `normalize_paint_rules(...)` / `normalize_place_rule(...)`
 - `merge_paint_rules(...)` / `merge_place_rules(...)`

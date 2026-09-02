@@ -16,14 +16,11 @@
 """Unit tests for :class:`braincell.Cell`."""
 
 import unittest
-from unittest import mock
 
 import brainstate
 import brainunit as u
 import jax
 import jax.numpy as jnp
-import matplotlib.axes
-import matplotlib.pyplot as plt
 import numpy as np
 
 import braincell
@@ -42,7 +39,7 @@ from braincell import (
     connect,
 )
 from braincell._multi_compartment import cell as cell_module
-from braincell.filter import AllRegion, BranchSlice, RootLocation, at
+from braincell.filter import AllRegion, LocsetBatch, RootLocation, at
 from braincell.mech import StateProbe
 from braincell.quad import DiffEqSingleState, DiffEqState, get_integrator
 
@@ -1095,6 +1092,62 @@ class CellPopulationAxisIsMandatoryTest(unittest.TestCase):
                 cell = Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=pop_size)
                 cell.init_state()
                 self.assertEqual(tuple(cell.V.value.shape), expected + (cell.n_cv,))
+
+
+class AlignedBatchPlacementLandsEachMemberOnItsOwnLocationTest(unittest.TestCase):
+    """An aligned ``LocsetBatch`` must place member *n* at member *n*'s location.
+
+    ``build_cv_mechanisms`` resolves the batch by indexing it inside a generator
+    expression, so every ``LocsetBatch`` member is a temporary that dies as soon
+    as it has been resolved. While ``_RegionCache`` keyed its results on
+    ``id()``, CPython reused the freed address for the next member and the cache
+    replayed the previous member's locations -- silently placing synapses on the
+    wrong branch and the wrong CV for every member after the first. Nothing
+    caught it: the only other ``LocsetBatch`` coverage drives ``.loc()``, which
+    does not go through that cache.
+    """
+
+    def _two_branch_cell(self, pop_size: int, *, cv_per_branch: int = 1) -> Cell:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[5.0, 0.5] * u.um, type="dendrite")
+        tree = Morphology.from_root(soma, name="soma")
+        tree.soma.dend = dend
+        return Cell(tree, pop_size=pop_size, cv_policy=CVPerBranch(cv_per_branch=cv_per_branch))
+
+    def test_each_population_member_keeps_its_own_branch_and_x(self) -> None:
+        expected = ((0, 0.1), (1, 0.9), (0, 0.2), (1, 0.8))
+        cell = self._two_branch_cell(len(expected))
+        batch = LocsetBatch.from_columns(
+            np.asarray([[branch] for branch, _ in expected], dtype=np.int64),
+            np.asarray([[x] for _, x in expected], dtype=float),
+        )
+        cell[np.arange(len(expected))].place(
+            batch,
+            mech.Synapse("ExpSyn", name="syn", tau=5.0 * u.ms, e=0.0 * u.mV),
+        )
+
+        placed = {
+            int(placement.population_index): (int(placement.branch_id), round(float(placement.branch_x), 6))
+            for placement in cell._discretization.point_placements
+        }
+        self.assertEqual(placed, dict(enumerate(expected)))
+
+    def test_members_on_the_same_branch_still_land_on_distinct_cvs(self) -> None:
+        expected = ((1, 0.1), (1, 0.5), (1, 0.9))
+        cell = self._two_branch_cell(len(expected), cv_per_branch=3)
+        batch = LocsetBatch.from_columns(
+            np.asarray([[branch] for branch, _ in expected], dtype=np.int64),
+            np.asarray([[x] for _, x in expected], dtype=float),
+        )
+        cell[np.arange(len(expected))].place(
+            batch,
+            mech.Synapse("ExpSyn", name="syn", tau=5.0 * u.ms, e=0.0 * u.mV),
+        )
+
+        cv_by_member = {
+            int(placement.population_index): int(placement.cv_id) for placement in cell._discretization.point_placements
+        }
+        self.assertEqual(len(set(cv_by_member.values())), len(expected), cv_by_member)
 
 
 def _hh_cell(pop_size, *, calcium: bool = True) -> Cell:

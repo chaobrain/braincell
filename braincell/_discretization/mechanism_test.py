@@ -18,12 +18,15 @@
 import unittest
 
 import brainunit as u
+import numpy as np
 
 from braincell._discretization._testing import (
     build_geo,
     make_cable,
     make_single_branch_morpho,
+    make_two_branch_morpho,
 )
+from braincell._discretization.base import DEFAULT_CABLE
 from braincell._discretization.geometry import (
     CVGeometryResult,
     _GeoCV,
@@ -32,7 +35,6 @@ from braincell._discretization.geometry import (
 from braincell._discretization.mechanism import (
     PaintRule,
     PlaceRule,
-    _DEFAULT_CABLE,
     _MechBucket,
     _RegionCache,
     _apply_density,
@@ -47,6 +49,7 @@ from braincell._discretization.mechanism import (
     normalize_place_rule,
 )
 from braincell.filter import AllRegion, AtLocation, BranchSlice
+from braincell.filter.locset import LocsetBatch
 from braincell.mech import CableProperty, Channel, CurrentClamp, Ion, StateProbe
 from braincell.morph.morphology import Morphology
 
@@ -244,6 +247,29 @@ class RegionCacheTest(unittest.TestCase):
         self.assertIs(a, b)
         self.assertEqual(a, ((0, 0.5, "soma(0.5)"),))
 
+    def test_points_does_not_alias_distinct_temporary_locsets(self) -> None:
+        """Each batch member must get its own locations, not the previous one's.
+
+        ``build_cv_mechanisms`` feeds this cache freshly built ``LocsetBatch``
+        members inside a generator expression, so each argument is unreferenced
+        the moment ``points`` returns. A cache keyed on ``id()`` therefore hands
+        member *n* whatever member *n-1* left at the same reused address. The
+        two tests above never caught it because they hold their locset in a
+        local, which keeps the address unique.
+        """
+        morpho = make_two_branch_morpho()
+        batch = LocsetBatch.from_columns(
+            np.asarray([[0], [1], [0], [1]], dtype=np.int64),
+            np.asarray([[0.1], [0.9], [0.2], [0.8]], dtype=float),
+            None,
+        )
+        cache = _RegionCache(morpho)
+        got = [cache.points(batch[index]) for index in range(len(batch))]
+        self.assertEqual(
+            [tuple((bid, round(x, 6)) for bid, x, _ in row) for row in got],
+            [((0, 0.1),), ((1, 0.9),), ((0, 0.2),), ((1, 0.8),)],
+        )
+
 
 # =============================================================================
 # Mechanism lowering
@@ -279,7 +305,6 @@ class CoverageFractionTest(unittest.TestCase):
             branch_type="soma",
             prox=0.0,
             dist=0.5,
-            midpoint=0.25,
             parent_cv=None,
             children_cv=(),
             length_um=5.0,
@@ -301,21 +326,21 @@ class CoverageFractionTest(unittest.TestCase):
 class ApplyDensityTest(unittest.TestCase):
     def test_channel_full_coverage_no_scaling(self) -> None:
         ch = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
-        bucket = _MechBucket(cable=_DEFAULT_CABLE, density_by_key={}, points=[])
+        bucket = _MechBucket(cable=DEFAULT_CABLE, density_by_key={}, points=[])
         _apply_density(bucket, ch, region_key=AllRegion(), fraction=1.0)
         stored = next(iter(bucket.density_by_key.values()))
         self.assertEqual(stored.coverage_area_fraction, 1.0)
 
     def test_channel_half_coverage_records_fraction(self) -> None:
         ch = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
-        bucket = _MechBucket(cable=_DEFAULT_CABLE, density_by_key={}, points=[])
+        bucket = _MechBucket(cable=DEFAULT_CABLE, density_by_key={}, points=[])
         _apply_density(bucket, ch, region_key=AllRegion(), fraction=0.5)
         stored = next(iter(bucket.density_by_key.values()))
         self.assertEqual(stored.coverage_area_fraction, 0.5)
 
     def test_ion_ignores_coverage(self) -> None:
         ion = Ion("SodiumFixed")
-        bucket = _MechBucket(cable=_DEFAULT_CABLE, density_by_key={}, points=[])
+        bucket = _MechBucket(cable=DEFAULT_CABLE, density_by_key={}, points=[])
         _apply_density(bucket, ion, region_key=AllRegion(), fraction=0.5)
         stored = next(iter(bucket.density_by_key.values()))
         self.assertEqual(stored.coverage_area_fraction, 1.0)
@@ -323,7 +348,7 @@ class ApplyDensityTest(unittest.TestCase):
     def test_same_key_replaces(self) -> None:
         c1 = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
         c2 = Channel("IL", g_max=0.2 * (u.mS / u.cm**2), E=-70 * u.mV)
-        bucket = _MechBucket(cable=_DEFAULT_CABLE, density_by_key={}, points=[])
+        bucket = _MechBucket(cable=DEFAULT_CABLE, density_by_key={}, points=[])
         region = AllRegion()
         _apply_density(bucket, c1, region_key=region, fraction=1.0)
         _apply_density(bucket, c2, region_key=region, fraction=1.0)
@@ -352,7 +377,7 @@ class ResolvePointNameTest(unittest.TestCase):
 class ApplyPlaceTest(unittest.TestCase):
     def test_auto_generated_duplicate_gets_stable_placement_suffix(self) -> None:
         seen: set[str] = set()
-        bucket = _MechBucket(cable=_DEFAULT_CABLE, density_by_key={}, points=[])
+        bucket = _MechBucket(cable=DEFAULT_CABLE, density_by_key={}, points=[])
         probe = StateProbe(field="v")
         _apply_place(bucket, probe, display_name="loc_0", placement_id=0, seen_names=seen)
         _apply_place(bucket, probe, display_name="loc_0", placement_id=1, seen_names=seen)
@@ -363,7 +388,7 @@ class ApplyPlaceTest(unittest.TestCase):
 
     def test_user_named_duplicate_allowed(self) -> None:
         seen: set[str] = set()
-        bucket = _MechBucket(cable=_DEFAULT_CABLE, density_by_key={}, points=[])
+        bucket = _MechBucket(cable=DEFAULT_CABLE, density_by_key={}, points=[])
         a = StateProbe(field="v", name="dup")
         b = StateProbe(field="v", name="dup")
         _apply_place(bucket, a, display_name="loc_0", seen_names=seen)

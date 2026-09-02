@@ -26,7 +26,7 @@ from braincell._discretization._testing import (
     make_branch,
     make_single_branch_morpho,
 )
-from braincell._discretization.base import build_discretization
+from braincell._discretization.base import EPS_PARAM, build_discretization, locate_cv_on_branch
 from braincell._discretization.mechanism import (
     PlaceRule,
     _coverage_fraction,
@@ -55,6 +55,60 @@ def _build_cvs(morpho, *, policy, paint_rules, place_rules):
         paint_rules=paint_rules,
         place_rules=place_rules,
     ).cvs
+
+
+class _FakeCV:
+    """Minimal stand-in exposing the two fields the locator reads."""
+
+    def __init__(self, id_: int, prox: float, dist: float) -> None:
+        self.id = id_
+        self.prox = prox
+        self.dist = dist
+
+
+class LocateCVOnBranchTest(unittest.TestCase):
+    """Cover the single CV locator shared by every stage of the layer.
+
+    These cases previously lived in ``node_build_test.py`` and
+    ``geometry_test.py``, against two more implementations of this
+    function. Both duplicates are gone; the tests moved to the surviving
+    definition's sibling.
+    """
+
+    def _cvs(self, tiles):
+        return tuple(_FakeCV(i, p, d) for i, (p, d) in enumerate(tiles))
+
+    def test_interior_x_lands_in_matching_cv(self) -> None:
+        cvs = self._cvs([(0.0, 0.3), (0.3, 0.7), (0.7, 1.0)])
+        got = locate_cv_on_branch((0, 1, 2), cvs, x=0.5, epsilon=EPS_PARAM)
+        self.assertEqual(got, 1)
+
+    def test_x_near_one_returns_last_cv(self) -> None:
+        cvs = self._cvs([(0.0, 0.3), (0.3, 0.7), (0.7, 1.0)])
+        got = locate_cv_on_branch((0, 1, 2), cvs, x=0.999, epsilon=EPS_PARAM)
+        self.assertEqual(got, 2)
+
+    def test_internal_boundary_belongs_to_the_distal_cv(self) -> None:
+        """The tiling is half-open, so a boundary hit resolves distally."""
+        cvs = self._cvs([(0.0, 0.3), (0.3, 0.7), (0.7, 1.0)])
+        self.assertEqual(locate_cv_on_branch((0, 1, 2), cvs, x=0.3, epsilon=EPS_PARAM), 1)
+        self.assertEqual(locate_cv_on_branch((0, 1, 2), cvs, x=0.7, epsilon=EPS_PARAM), 2)
+
+    def test_x_in_gap_between_tiles_raises(self) -> None:
+        cvs = self._cvs([(0.0, 0.4), (0.6, 1.0)])
+        with self.assertRaises(ValueError) as ctx:
+            locate_cv_on_branch((0, 1), cvs, x=0.5, epsilon=EPS_PARAM)
+        self.assertIn("0.5", str(ctx.exception))
+
+    def test_x_outside_a_partial_tiling_raises_rather_than_snapping(self) -> None:
+        """A branch tiling that does not reach ``x`` is an error, not a clamp."""
+        cvs = self._cvs([(0.2, 0.8)])
+        with self.assertRaises(ValueError):
+            locate_cv_on_branch((0,), cvs, x=0.1, epsilon=EPS_PARAM)
+
+    def test_empty_tiling_raises(self) -> None:
+        with self.assertRaisesRegex(ValueError, "empty branch tiling"):
+            locate_cv_on_branch((), (), x=0.5, epsilon=EPS_PARAM)
 
 
 class CVShapeTest(unittest.TestCase):

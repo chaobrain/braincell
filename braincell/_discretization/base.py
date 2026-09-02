@@ -38,9 +38,10 @@ import brainunit as u
 import numpy as np
 
 from braincell.filter import RegionMask
-from braincell.mech import CVContext, Density, Point
+from braincell.mech import CableProperty, CVContext, Density, Point
 
 if TYPE_CHECKING:
+    from braincell._discretization.geometry import _GeoCV
     from braincell._discretization.mechanism import PaintRule, PlaceRule
     from braincell._discretization.policy import CVPolicy
     from braincell.morph.morphology import Morphology
@@ -54,7 +55,11 @@ __all__ = [
     "CVEdge",
     "CVPointMechanism",
     "CVTree",
+    "DEFAULT_CABLE",
     "Discretization",
+    "EPS_AREA_UM2",
+    "EPS_LEN_UM",
+    "EPS_PARAM",
     "Half",
     "Node",
     "NodeEdge",
@@ -68,7 +73,23 @@ __all__ = [
     "locate_cv_on_branch",
 ]
 
-_EPS_PARAM = 1e-9
+# The comparison tolerances for the whole discretization layer. They live
+# here, in the one module that imports no sibling at module scope, so that
+# every stage compares against the same numbers rather than against four
+# separately declared copies that happen to be equal today.
+EPS_PARAM = 1e-9  # tolerance for a normalized branch coordinate in [0, 1]
+EPS_LEN_UM = 1e-6  # tolerance for a physical length in um
+EPS_AREA_UM2 = 1e-9  # tolerance for a lateral area in um^2
+
+# The package default cable properties, applied by ``default_paint_rules()``
+# and assumed by ``DLambda`` when sizing CVs. One object, because a policy
+# that sizes CVs for one set of electrics while lowering applies another is
+# silently wrong and no test compares the two.
+DEFAULT_CABLE = CableProperty(
+    resting_potential=-65.0 * u.mV,
+    membrane_capacitance=1.0 * (u.uF / u.cm**2),
+    axial_resistivity=100.0 * (u.ohm * u.cm),
+)
 
 
 @dataclass(frozen=True)
@@ -359,13 +380,19 @@ class NodeEdgeRole:
         Source CV id.
     half : {"prox", "dist"}
         Which half of the source CV contributes to the edge.
-    r_axial : brainunit.Quantity
-        Axial resistance carried by that half-edge.
+
+    Notes
+    -----
+    The half-edge's axial resistance is deliberately *not* stored here. It
+    is ``cvs[cv_id].r_axial_prox`` or ``.r_axial_dist`` -- a select on a
+    field the CV already owns -- and the one consumer that needs it
+    (``braincell.quad._staggered``) performs that select itself from the CV
+    tuple. Materializing it per role built a ``Quantity`` per edge on every
+    discretization that nothing ever read.
     """
 
     cv_id: int
     half: Half
-    r_axial: u.Quantity
 
 
 @dataclass(frozen=True)
@@ -404,9 +431,6 @@ class NodeTree:
         Id of the unique root node.
     cv_to_mid_node_id : numpy.ndarray
         ``(n_cv,)`` array mapping each CV id to its midpoint node id.
-    branch_endpoint_node_id : numpy.ndarray
-        ``(n_branch, 2)`` array mapping each branch to its proximal and
-        distal endpoint node ids.
 
     Notes
     -----
@@ -419,7 +443,6 @@ class NodeTree:
     edges: tuple[NodeEdge, ...]
     root_node_id: int
     cv_to_mid_node_id: np.ndarray
-    branch_endpoint_node_id: np.ndarray
 
     def __repr__(self) -> str:
         return f"NodeTree(n_nodes={len(self.nodes)!r}, n_edges={len(self.edges)!r}, root_node_id={self.root_node_id!r})"
@@ -485,24 +508,48 @@ class Discretization:
         """
         return self.node_tree.nodes
 
-    def locate_cv(self, *, branch_id: int, x: float) -> int:
-        """Return the CV that owns one normalized branch location."""
-        ids = self.cv_tree.branch_to_cv_ids[int(branch_id)]
-        return locate_cv_on_branch(
-            ids,
-            self.cvs,
-            x=float(x),
-        )
-
 
 def locate_cv_on_branch(
     ids: tuple[int, ...],
-    cvs: tuple[CV, ...],
+    cvs: "tuple[CV, ...] | tuple[_GeoCV, ...]",
     *,
     x: float,
-    epsilon: float = _EPS_PARAM,
+    epsilon: float = EPS_PARAM,
 ) -> int:
-    """Return the CV owning a normalized coordinate on one branch."""
+    """Return the CV owning a normalized coordinate on one branch.
+
+    Parameters
+    ----------
+    ids : tuple of int
+        Ordered CV ids tiling one branch, indexing into ``cvs``.
+    cvs : tuple of CV or tuple of _GeoCV
+        CV records indexed by CV id. Only ``.prox`` and ``.dist`` are read,
+        so the geometry-stage and finalized records are interchangeable
+        here.
+    x : float
+        Normalized branch coordinate in ``[0, 1]``.
+    epsilon : float, optional
+        Comparison tolerance. The default is ``EPS_PARAM``.
+
+    Returns
+    -------
+    int
+        Owning CV id.
+
+    Raises
+    ------
+    ValueError
+        If ``ids`` is empty, or if ``x`` falls in no CV interval -- which
+        means the caller passed a tiling that :func:`validate_bounds` would
+        have rejected.
+
+    Notes
+    -----
+    The tiling is half-open, so a coordinate landing exactly on an internal
+    CV boundary belongs to the distal CV. The two endpoint guards make
+    ``x = 0`` and ``x = 1`` resolve to the terminal CVs rather than falling
+    off either end of that convention.
+    """
     if not ids:
         raise ValueError("Cannot locate a CV on an empty branch tiling.")
     if x <= 0.0 + epsilon:

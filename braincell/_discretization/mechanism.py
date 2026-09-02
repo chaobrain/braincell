@@ -41,12 +41,10 @@ from braincell.mech import (
     StateProbe,
 )
 from braincell.morph.morphology import Morphology
-from .base import CVPointMechanism, Position
+from .base import DEFAULT_CABLE, EPS_AREA_UM2, EPS_PARAM, CVPointMechanism, Position
 from .context import build_cv_contexts
 from .geometry import (
     CVGeometryResult,
-    EPS_AREA_UM2,
-    EPS_PARAM,
     _GeoCV,
     _build_frusta,
     _lateral_area_um2,
@@ -62,12 +60,6 @@ __all__ = [
     "normalize_paint_rules",
     "normalize_place_rule",
 ]
-
-_DEFAULT_CABLE = CableProperty(
-    resting_potential=-65.0 * u.mV,
-    membrane_capacitance=1.0 * (u.uF / u.cm**2),
-    axial_resistivity=100.0 * (u.ohm * u.cm),
-)
 
 
 @dataclass(frozen=True)
@@ -124,40 +116,59 @@ class _RegionCVCoverage:
 
 
 class _RegionCache:
-    """Per-build cache of region / locset evaluation outputs."""
+    """Per-build cache of region / locset evaluation outputs.
+
+    Notes
+    -----
+    Entries are keyed by expression *value*, which is both a correctness
+    requirement and a hit-rate win over keying on ``id()``.
+
+    An ``id`` is unique only among *live* objects, and neither the mask
+    dicts nor the callers retain the expression they were keyed on.
+    :func:`build_cv_mechanisms` resolves an aligned :class:`LocsetBatch` by
+    indexing it inside a generator expression, so every member is a
+    temporary that dies the moment :meth:`points` returns; CPython then
+    hands the next member the freed address and an ``id`` cache replays the
+    previous member's locations onto it.
+
+    In the other direction, two ``AllRegion()`` instances from two separate
+    ``cell.paint(...)`` calls compare equal but never share an ``id``, so an
+    ``id`` cache re-walks the whole morphology once per paint rule.
+
+    Both stores are :class:`~braincell.filter.SelectionCache` instances so
+    that this memoization -- including the fall-through for expressions
+    carrying an unhashable payload -- is the one implementation the filter
+    package already owns. They are separate from ``_selection`` because they
+    hold different values for the same keys: ``_selection`` maps an
+    expression to its mask, these map it to what lowering derives from it.
+    """
 
     def __init__(self, morpho: Morphology) -> None:
         self._morpho = morpho
         self._selection = SelectionCache()
-        self._region_by_id: dict[int, dict[int, tuple[tuple[float, float], ...]]] = {}
-        self._locset_by_id: dict[int, tuple[tuple[int, float, str], ...]] = {}
+        self._intervals = SelectionCache()
+        self._points = SelectionCache()
 
     def intervals(self, region: RegionExpr) -> dict[int, tuple[tuple[float, float], ...]]:
-        key = id(region)
-        cached = self._region_by_id.get(key)
-        if cached is not None:
-            return cached
+        return self._intervals.evaluated(region, self._morpho, lambda: self._compute_intervals(region))
+
+    def _compute_intervals(self, region: RegionExpr) -> dict[int, tuple[tuple[float, float], ...]]:
         mask = region.evaluate(self._morpho, cache=self._selection)
         grouped: dict[int, list[tuple[float, float]]] = {}
         for branch_id, prox, dist in mask.intervals:
             grouped.setdefault(int(branch_id), []).append((float(prox), float(dist)))
-        result = {bid: tuple(ranges) for bid, ranges in grouped.items()}
-        self._region_by_id[key] = result
-        return result
+        return {bid: tuple(ranges) for bid, ranges in grouped.items()}
 
     def points(self, locset: LocsetExpr | LocsetMask) -> tuple[tuple[int, float, str], ...]:
-        key = id(locset)
-        cached = self._locset_by_id.get(key)
-        if cached is not None:
-            return cached
+        return self._points.evaluated(locset, self._morpho, lambda: self._compute_points(locset))
+
+    def _compute_points(self, locset: LocsetExpr | LocsetMask) -> tuple[tuple[int, float, str], ...]:
         mask = locset.evaluate(self._morpho, cache=self._selection) if isinstance(locset, LocsetExpr) else locset
         names = mask.resolved_display_names(self._morpho)
-        result = tuple(
+        return tuple(
             (int(branch_id), float(branch_x), str(name))
             for branch_id, branch_x, name in zip(mask.branch_id, mask.branch_x, names)
         )
-        self._locset_by_id[key] = result
-        return result
 
 
 def default_paint_rules() -> tuple[PaintRule, ...]:
@@ -169,7 +180,7 @@ def default_paint_rules() -> tuple[PaintRule, ...]:
         One global rule applying the package default cable properties to
         ``AllRegion()``.
     """
-    return (PaintRule(region=AllRegion(), mechanism=_DEFAULT_CABLE),)
+    return (PaintRule(region=AllRegion(), mechanism=DEFAULT_CABLE),)
 
 
 def normalize_paint_rules(
@@ -483,7 +494,7 @@ def _apply_place(
 
 def _init_bucket() -> _MechBucket:
     return _MechBucket(
-        cable=_DEFAULT_CABLE,
+        cable=DEFAULT_CABLE,
         density_by_key={},
         points=[],
         point_roles=[],

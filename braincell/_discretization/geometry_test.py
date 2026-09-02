@@ -27,14 +27,12 @@ from braincell._discretization._testing import (
 )
 from braincell._discretization.geometry import (
     _Frustum,
-    _GeoCV,
     _axial_factor_per_cm,
     _boundary_radii_um,
     _build_frusta,
     _lateral_area_um2,
     _midpoint_radius_um,
     _split_frusta,
-    locate_cv_on_branch as _locate_cv_on_branch,
     validate_bounds as _validate_bounds,
     validate_connectivity as _validate_connectivity,
     validate_morphology as _validate_morpho,
@@ -284,32 +282,6 @@ class BuildGeoTest(unittest.TestCase):
         self.assertEqual(len(geos), 3)
         self.assertEqual(geos[2].parent_cv, 1)
         self.assertIn(2, geos[1].children_cv)
-
-
-class LocateCVOnBranchTest(unittest.TestCase):
-    def test_raises_on_bad_bounds(self) -> None:
-        g = _GeoCV(
-            id=0,
-            branch_id=0,
-            branch_type="soma",
-            prox=0.2,
-            dist=0.8,
-            midpoint=0.5,
-            parent_cv=None,
-            children_cv=(),
-            length_um=6.0,
-            lateral_area_um2=1.0,
-            axial_factor_total_per_cm=1.0,
-            axial_factor_prox_per_cm=0.5,
-            axial_factor_dist_per_cm=0.5,
-            r_prox_um=1.0,
-            r_mid_um=1.0,
-            diam_arc_mean_um=2.0,
-            r_dist_um=1.0,
-        )
-        # x=0.9 and x=0.1 are out of [0.2, 0.8] — raise, not snap.
-        with self.assertRaises(ValueError):
-            _locate_cv_on_branch((0,), (g,), x=0.1)
 
 
 # =============================================================================

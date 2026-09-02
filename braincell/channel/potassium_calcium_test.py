@@ -41,31 +41,17 @@ from braincell.channel.potassium_calcium import (
 )
 from braincell.ion import Calcium, Potassium
 from braincell.mech import get_registry
+from braincell.channel._testing import (
+    DENSITY_UNIT,
+    ca_info,
+    k_info,
+    voltage,
+)
 
 
 def _k_info(size: int = 1) -> IonInfo:
-    return IonInfo(
-        Ci=jnp.full((size,), 140.0) * u.mM,
-        Co=jnp.full((size,), 2.5) * u.mM,
-        E=jnp.full((size,), -90.0) * u.mV,
-        valence=1,
-    )
-
-
-def _ca_info(size: int = 1, C: float = 1e-4) -> IonInfo:
-    return IonInfo(
-        Ci=jnp.full((size,), C) * u.mM,
-        Co=jnp.full((size,), 2.0) * u.mM,
-        E=jnp.full((size,), 120.0) * u.mV,
-        valence=2,
-    )
-
-
-def _V(values, unit=u.mV):
-    return jnp.asarray(values) * unit
-
-
-_DENSITY_UNIT = u.mS / u.cm**2 * u.mV
+    """Potassium at the physiological 140 mM intracellular concentration."""
+    return k_info(size, Ci=140.0)
 
 
 class _MixedPotassiumCalciumTemplateTest:
@@ -91,9 +77,9 @@ class IAHPDe1994Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
 
     def test_reset_state_matches_steady_state(self) -> None:
         ch = AHP_De1994(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info(C=1e-3)
+        ca = ca_info(Ci=1e-3)
         ch.init_state(V, k, ca)
         ch.reset_state(V, k, ca)
 
@@ -103,26 +89,26 @@ class IAHPDe1994Test(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
 
     def test_current_matches_p_squared_form(self) -> None:
         ch = AHP_De1994(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info(C=1e-3)
+        ca = ca_info(Ci=1e-3)
         ch.init_state(V, k, ca)
         ch.reset_state(V, k, ca)
         i = ch.current(V, k, ca)
         expected = ch.g_max * ch.p.value**2 * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_compute_derivative_uses_first_order_kinetics(self) -> None:
         ch = AHP_De1994(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info(C=1e-3)
+        ca = ca_info(Ci=1e-3)
         ch.init_state(V, k, ca)
         ch.p.value = jnp.array([0.2])
         ch.compute_derivative(V, k, ca)
@@ -149,16 +135,16 @@ class SK_SU2015_DCNTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
 
     def test_reset_state_sets_z_to_zinf(self) -> None:
         ch = SK_SU2015_DCN(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info(C=3e-4)
+        ca = ca_info(Ci=3e-4)
         ch.init_state(V, k, ca)
         ch.reset_state(V, k, ca)
         self.assertTrue(u.math.allclose(ch.z.value, ch.f_z_inf(V, k, ca), atol=1e-6))
 
     def test_z_inf_uses_direct_formula(self) -> None:
         ch = SK_SU2015_DCN(size=3)
-        V = _V([-60.0, -60.0, -60.0])
+        V = voltage([-60.0, -60.0, -60.0])
         k = _k_info(3)
         ca = IonInfo(
             Ci=jnp.asarray([5.5e-5, 3.2e-4, 1.01e-3]) * u.mM,
@@ -172,7 +158,7 @@ class SK_SU2015_DCNTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
 
     def test_z_tau_uses_direct_formula_and_qdeltat(self) -> None:
         ch = SK_SU2015_DCN(size=3, qdeltat=2.0)
-        V = _V([-60.0, -60.0, -60.0])
+        V = voltage([-60.0, -60.0, -60.0])
         k = _k_info(3)
         ca = IonInfo(
             Ci=jnp.asarray([5.5e-5, 0.00401, 0.00601]) * u.mM,
@@ -194,9 +180,9 @@ class SK_SU2015_DCNTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
 
     def test_compute_derivative_matches_inf_tau_form(self) -> None:
         ch = SK_SU2015_DCN(size=1, qdeltat=2.0)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info(C=3e-4)
+        ca = ca_info(Ci=3e-4)
         ch.init_state(V, k, ca)
         ch.z.value = jnp.array([0.2])
         ch.compute_derivative(V, k, ca)
@@ -205,17 +191,17 @@ class SK_SU2015_DCNTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCase):
 
     def test_current_matches_mod_formula_with_braincell_sign(self) -> None:
         ch = SK_SU2015_DCN(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info(C=3e-4)
+        ca = ca_info(Ci=3e-4)
         ch.init_state(V, k, ca)
         ch.z.value = jnp.array([0.5])
         current = ch.current(V, k, ca)
         expected = ch.g_max * ch.z.value * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -227,35 +213,35 @@ class Kca3p1_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
 
     def test_reset_state_matches_p_inf(self) -> None:
         ch = Kca3p1_MA2020_GoC(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info(C=1e-3)
+        ca = ca_info(Ci=1e-3)
         ch.init_state(V, k, ca)
         ch.reset_state(V, k, ca)
         self.assertTrue(u.math.allclose(ch.p.value, ch.p_inf(V, ca), atol=1e-6))
 
     def test_current_matches_g_times_p_times_drive(self) -> None:
         ch = Kca3p1_MA2020_GoC(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info(C=1e-3)
+        ca = ca_info(Ci=1e-3)
         ch.init_state(V, k, ca)
         ch.reset_state(V, k, ca)
         i = ch.current(V, k, ca)
         expected = ch.g_max * ch.p.value * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_compute_derivative_runs(self) -> None:
         ch = Kca3p1_MA2020_GoC(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info(C=1e-3)
+        ca = ca_info(Ci=1e-3)
         ch.init_state(V, k, ca)
         ch.reset_state(V, k, ca)
         ch.p.value = jnp.array([0.3])
@@ -265,9 +251,9 @@ class Kca3p1_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
     def test_compute_derivative_matches_reference_without_temperature_scaling(self) -> None:
         cold = Kca3p1_MA2020_GoC(size=1, temp=u.celsius2kelvin(22.0))
         warm = Kca3p1_MA2020_GoC(size=1, temp=u.celsius2kelvin(37.0))
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info(C=1e-3)
+        ca = ca_info(Ci=1e-3)
 
         for ch in (cold, warm):
             ch.init_state(V, k, ca)
@@ -297,9 +283,9 @@ class Kca3p1InheritedCellVariantTest(unittest.TestCase):
         self.assertIs(registry.get("channel", "Kca3p1_MA2024_PC"), Kca3p1_MA2024_PC)
 
     def test_cell_variants_match_goc_state_derivative_and_current(self) -> None:
-        V = _V([-55.0])
+        V = voltage([-55.0])
         k = _k_info()
-        ca = _ca_info(C=8e-4)
+        ca = ca_info(Ci=8e-4)
         goc = Kca3p1_MA2020_GoC(size=1)
 
         for cls in (Kca3p1_MA2025_BC, Kca3p1_MA2024_PC):
@@ -327,8 +313,8 @@ class Kca3p1InheritedCellVariantTest(unittest.TestCase):
                 i_variant = variant.current(V, k, ca)
                 self.assertTrue(
                     u.math.allclose(
-                        i_variant.to_decimal(_DENSITY_UNIT),
-                        i_goc.to_decimal(_DENSITY_UNIT),
+                        i_variant.to_decimal(DENSITY_UNIT),
+                        i_goc.to_decimal(DENSITY_UNIT),
                         atol=1e-6,
                     )
                 )
@@ -340,9 +326,9 @@ class Kca2p2_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
 
     def test_init_state_creates_independent_microstates(self) -> None:
         ch = Kca2p2_MA2020_GoC(size=2)
-        V = _V([-60.0, -50.0])
+        V = voltage([-60.0, -50.0])
         k = _k_info(2)
-        ca = _ca_info(2)
+        ca = ca_info(2)
         ch.init_state(V, k, ca)
         self.assertEqual(ch.state_names, ("C2", "C3", "C4", "O1", "O2"))
         self.assertEqual(ch.redundant_state, "C1")
@@ -351,9 +337,9 @@ class Kca2p2_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
 
     def test_reset_state_solves_steady_state_with_total_probability_one(self) -> None:
         ch = Kca2p2_MA2020_GoC(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info()
+        ca = ca_info()
         ch.init_state(V, k, ca)
         ch.reset_state(V, k, ca)
         states = ch.state_values()
@@ -362,9 +348,9 @@ class Kca2p2_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
 
     def test_current_matches_open_states_times_drive(self) -> None:
         ch = Kca2p2_MA2020_GoC(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info()
+        ca = ca_info()
         ch.init_state(V, k, ca)
         ch.C2.value = jnp.zeros(1)
         ch.C3.value = jnp.zeros(1)
@@ -376,17 +362,17 @@ class Kca2p2_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
         expected = ch.g_max * (states["O1"] + states["O2"]) * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_compute_derivative_runs(self) -> None:
         ch = Kca2p2_MA2020_GoC(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info()
+        ca = ca_info()
         ch.init_state(V, k, ca)
         ch.reset_state(V, k, ca)
         ch.compute_derivative(V, k, ca)
@@ -406,9 +392,9 @@ class Kca1p1_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
 
     def test_init_state_creates_independent_closed_and_open_states(self) -> None:
         ch = Kca1p1_MA2020_GoC(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info()
+        ca = ca_info()
         ch.init_state(V, k, ca)
         self.assertEqual(ch.redundant_state, "C0")
         self.assertEqual(ch.state_names, ("C1", "C2", "C3", "C4", "O0", "O1", "O2", "O3", "O4"))
@@ -417,9 +403,9 @@ class Kca1p1_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
 
     def test_reset_state_solves_steady_state_with_total_probability_one(self) -> None:
         ch = Kca1p1_MA2020_GoC(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info()
+        ca = ca_info()
         ch.init_state(V, k, ca)
         ch.reset_state(V, k, ca)
         states = ch.state_values()
@@ -428,9 +414,9 @@ class Kca1p1_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
 
     def test_current_sums_all_open_states(self) -> None:
         ch = Kca1p1_MA2020_GoC(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info()
+        ca = ca_info()
         ch.init_state(V, k, ca)
         for i in range(1, 5):
             getattr(ch, f"C{i}").value = jnp.zeros(1)
@@ -441,17 +427,17 @@ class Kca1p1_MA2020_GoCTest(_MixedPotassiumCalciumTemplateTest, unittest.TestCas
         expected = ch.g_max * (states["O0"] + states["O1"] + states["O2"] + states["O3"] + states["O4"]) * (k.E - V)
         self.assertTrue(
             u.math.allclose(
-                i_val.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i_val.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_compute_derivative_runs(self) -> None:
         ch = Kca1p1_MA2020_GoC(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info()
+        ca = ca_info()
         ch.init_state(V, k, ca)
         ch.reset_state(V, k, ca)
         ch.compute_derivative(V, k, ca)
@@ -488,9 +474,9 @@ class KcaInheritedCellVariantTest(unittest.TestCase):
                 self.assertEqual(cls.__module__, "braincell.channel")
 
     def test_kca2p2_variants_inherit_markov_behavior(self) -> None:
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info()
+        ca = ca_info()
         for name, cls, base in self.KCA2P2_VARIANTS:
             with self.subTest(name=name):
                 ch = cls(size=1)
@@ -504,16 +490,16 @@ class KcaInheritedCellVariantTest(unittest.TestCase):
                 expected = ch.g_max * (ch.state_values()["O1"] + ch.state_values()["O2"]) * (k.E - V)
                 self.assertTrue(
                     u.math.allclose(
-                        current.to_decimal(_DENSITY_UNIT),
-                        expected.to_decimal(_DENSITY_UNIT),
+                        current.to_decimal(DENSITY_UNIT),
+                        expected.to_decimal(DENSITY_UNIT),
                         atol=1e-6,
                     )
                 )
 
     def test_kca1p1_variants_inherit_markov_behavior(self) -> None:
-        V = _V([-60.0])
+        V = voltage([-60.0])
         k = _k_info()
-        ca = _ca_info()
+        ca = ca_info()
         for name, cls, base in self.KCA1P1_VARIANTS:
             with self.subTest(name=name):
                 ch = cls(size=1)
@@ -532,8 +518,8 @@ class KcaInheritedCellVariantTest(unittest.TestCase):
                 )
                 self.assertTrue(
                     u.math.allclose(
-                        current.to_decimal(_DENSITY_UNIT),
-                        expected.to_decimal(_DENSITY_UNIT),
+                        current.to_decimal(DENSITY_UNIT),
+                        expected.to_decimal(DENSITY_UNIT),
                         atol=1e-6,
                     )
                 )

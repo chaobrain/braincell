@@ -26,7 +26,7 @@ import jax
 from braincell._base_channel import IonInfo
 from braincell._base_neuron import HHTypedNeuron
 from braincell._typing import ArrayLike, Initializer, Size
-from braincell.channel._base import Gate, HH, OhmicHH, ghk_flux, q10_factor
+from braincell.channel._base import Gate, GhkHH, HH, OhmicHH, cached_q10_factor
 from braincell.ion import Calcium
 from braincell.mech import register_channel
 
@@ -36,6 +36,8 @@ _CAV3P1_NMODL_TEMP_OFFSET = 0.04 * u.kelvin
 _CAV3P3_NMODL_FARADAY = 96520.0 * (u.coulomb / u.mol)
 _CAV3P3_NMODL_GAS_CONSTANT = 8.3134 * (u.joule / (u.kelvin * u.mol))
 _CAV3P3_NMODL_TEMP_OFFSET = -0.01 * u.kelvin
+_SU2015_DCN_ZETA_PER_MV_KELVIN = -23.20764929
+_SU2015_DCN_FLUX_SCALE = 4.47814e6
 
 __all__ = [
     "CaN_IS2008",
@@ -98,11 +100,43 @@ def _cav3p3_nmodl_ghk_flux(V, ci, co, z, temp):
     return u.math.where(u.math.abs(exp_term - 1) < 1e-6, small_branch, regular_branch)
 
 
-def _freeze_quantity_gradient(value):
-    return u.Quantity(
-        jax.lax.stop_gradient(u.get_mantissa(value)),
-        u.get_unit(value),
+def _su2015_dcn_ghk_drive(V, ci, co, temp):
+    """Constant-field drive shared by the two SU2015 DCN calcium mechanisms.
+
+    Unlike the Cav3.1 and Cav3.3 helpers this one is not a :attr:`GhkHH.ghk`
+    implementation, and the two callers stay on :class:`HH` with a hand-written
+    ``current``. The DCN ``.mod`` sources do not spell out ``F`` and ``R``: they
+    ship two magic numbers that already fold in Faraday's constant, the gas
+    constant, the valence and the mM-to-M conversion. Recovering the separate
+    factors would change the arithmetic, so the drive is computed on stripped
+    magnitudes and the caller attaches ``mA/cm^2`` to the finished product --
+    which is also what keeps the reported unit spelled the same way as every
+    other channel's.
+    """
+    v_mV = V.to_decimal(u.mV)
+    temp_K = temp.to_decimal(u.kelvin)
+    A = u.math.exp(_SU2015_DCN_ZETA_PER_MV_KELVIN * v_mV / temp_K)
+    return (
+        (_SU2015_DCN_FLUX_SCALE * v_mV / temp_K)
+        * ((ci.to_decimal(u.mM) / 1000.0) - (co.to_decimal(u.mM) / 1000.0) * A)
+        / (1.0 - A)
     )
+
+
+class _FrozenCav3p1Ghk:
+    """Mixin for the three Cav2.1 variants that freeze the drive *and* swap helpers.
+
+    Their ``.mod`` deposits transcribe the Cav3.1 constants rather than the
+    ones :func:`~braincell.channel._base.ghk_flux` uses, so each frozen class
+    differs from its unfrozen sibling in the forward current as well as in the
+    gradient -- by around 5e-4 relative. That was previously implicit in three
+    copies of a ``current`` body; declaring both facts here states the anomaly
+    once and lets each frozen class inherit its parameters from the unfrozen
+    sibling it is meant to mirror.
+    """
+
+    ghk = staticmethod(_cav3p1_nmodl_ghk_flux)
+    freeze_drive_gradient = True
 
 
 @register_channel("CaN_IS2008")
@@ -509,7 +543,7 @@ class CaT_HP1992(OhmicHH):
 
 
 @register_channel("CaHT_HM1992")
-class CaHT_HM1992(OhmicHH):
+class CaHT_HM1992(CaT_HM1992):
     r"""Depolarized-shift variant of the Huguenard & McCormick 1992 T current.
 
     :math:`p^2 q` HH gating with an ohmic driving force, using the
@@ -616,11 +650,6 @@ class CaHT_HM1992(OhmicHH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Calcium
-    gates = (
-        Gate("p", power=2, q10="q10_p", temp_ref="temp_ref_p"),
-        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
-    )
 
     def __init__(
         self,
@@ -634,33 +663,18 @@ class CaHT_HM1992(OhmicHH):
         V_sh: Initializer = 25.0 * u.mV,
         name: Optional[str] = None,
     ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.q10_p = braintools.init.param(q10_p, self.varshape, allow_none=False)
-        self.temp_ref_p = braintools.init.param(temp_ref_p, self.varshape, allow_none=False)
-        self.q10_q = braintools.init.param(q10_q, self.varshape, allow_none=False)
-        self.temp_ref_q = braintools.init.param(temp_ref_q, self.varshape, allow_none=False)
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-
-    def f_p_inf(self, V, Ca: IonInfo):
-        V = (V - self.V_sh).to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp(-(V + 59.0) / 6.2))
-
-    def f_p_tau(self, V, Ca: IonInfo):
-        V = (V - self.V_sh).to_decimal(u.mV)
-        return 1.0 / (u.math.exp(-(V + 132.0) / 16.7) + u.math.exp((V + 16.8) / 18.2)) + 0.612
-
-    def f_q_inf(self, V, Ca: IonInfo):
-        V = (V - self.V_sh).to_decimal(u.mV)
-        return 1.0 / (1.0 + u.math.exp((V + 83.0) / 4.0))
-
-    def f_q_tau(self, V, Ca: IonInfo):
-        V = (V - self.V_sh).to_decimal(u.mV)
-        return u.math.where(
-            V >= -80.0,
-            u.math.exp(-(V + 22.0) / 10.5) + 28.0,
-            u.math.exp((V + 467.0) / 66.6),
+        # Every gate, constant and rate function is ``CaT_HM1992``'s; the
+        # signature is re-declared only to move ``V_sh``'s default.
+        super().__init__(
+            size=size,
+            g_max=g_max,
+            temp=temp,
+            q10_p=q10_p,
+            temp_ref_p=temp_ref_p,
+            q10_q=q10_q,
+            temp_ref_q=temp_ref_q,
+            V_sh=V_sh,
+            name=name,
         )
 
 
@@ -1038,19 +1052,13 @@ class CaHVA_SU2015_DCN(HH):
         self.qdeltat = braintools.init.param(qdeltat, self.varshape, allow_none=False)
 
     def current(self, V, Ca: IonInfo):
-        v_mV = V.to_decimal(u.mV)
-        temp = self.temp.to_decimal(u.kelvin)
-        ci = Ca.Ci.to_decimal(u.mM)
-        co = Ca.Co.to_decimal(u.mM)
+        drive = _su2015_dcn_ghk_drive(V, Ca.Ci, Ca.Co, self.temp)
         perm = self.perm.to_decimal(u.cm / u.second)
-        A = u.math.exp(-23.20764929 * v_mV / temp)
-        drive = (4.47814e6 * v_mV / temp) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
-        current_value = perm * self.m.value**3 * drive
         # NEURON's raw ``ica`` is outward-positive, so inward calcium entry
         # appears as a negative current. BrainCell channel currents use the
         # repo-wide inward-positive convention, so imported mechanisms flip
         # the sign here and comparisons should use ``-neuron_ica``.
-        return -current_value * (u.mA / (u.cm**2))
+        return -(perm * self.conductance_factor(V, Ca) * drive) * (u.mA / (u.cm**2))
 
     def f_m_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
@@ -1367,19 +1375,13 @@ class CaLVA_SU2015_DCN(HH):
         self.qdeltat = braintools.init.param(qdeltat, self.varshape, allow_none=False)
 
     def current(self, V, Ca: IonInfo):
-        v_mV = V.to_decimal(u.mV)
-        temp = self.temp.to_decimal(u.kelvin)
-        ci = Ca.Ci.to_decimal(u.mM)
-        co = Ca.Co.to_decimal(u.mM)
+        drive = _su2015_dcn_ghk_drive(V, Ca.Ci, Ca.Co, self.temp)
         perm = self.perm.to_decimal(u.cm / u.second)
-        A = u.math.exp(-23.20764929 * v_mV / temp)
-        drive = (4.47814e6 * v_mV / temp) * ((ci / 1000.0) - (co / 1000.0) * A) / (1.0 - A)
-        current_value = perm * self.m.value**2 * self.h.value * drive
         # NEURON's raw ``ical`` is outward-positive, so inward calcium entry
         # appears as a negative current. BrainCell channel currents use the
         # repo-wide inward-positive convention, so imported mechanisms flip
         # the sign here and comparisons should use ``-neuron_ical``.
-        return -current_value * (u.mA / (u.cm**2))
+        return -(perm * self.conductance_factor(V, Ca) * drive) * (u.mA / (u.cm**2))
 
     def f_m_inf(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
@@ -1493,10 +1495,10 @@ class Cav1p2_MA2020_GoC(OhmicHH):
     cited above and does not resolve that third credit, so no
     reference entry is written for it.
 
-    ``V_sh`` is accepted, stored and never read: no rate method of
-    this class uses it. That reproduces the mod file, whose
-    ``PARAMETER`` block likewise declares ``vshift = 0 (mV)`` and
-    never uses it. In the same spirit, the three gates are wired for
+    The mod file's ``PARAMETER`` block declares ``vshift = 0 (mV)``
+    and never uses it; BrainCell does not expose a ``V_sh`` for it,
+    since a shift that silently does nothing is worse than none. In
+    the same spirit, the three gates are wired for
     Q10 scaling through ``Gate(q10="q10", temp_ref="temp_ref")``, but
     the shipped defaults (``q10 = 1.0`` and
     ``temp = temp_ref = 22 degC``) make ``phi`` exactly 1, matching
@@ -1559,7 +1561,6 @@ class Cav1p2_MA2020_GoC(OhmicHH):
         self,
         size: Size,
         g_max: Initializer = 0.0002 * (u.siemens / u.cm**2),
-        V_sh: Initializer = 0.0 * u.mV,
         temp: ArrayLike = u.celsius2kelvin(22.0),
         q10: Initializer = 1.0,
         temp_ref: ArrayLike = u.celsius2kelvin(22.0),
@@ -1567,7 +1568,6 @@ class Cav1p2_MA2020_GoC(OhmicHH):
     ):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.q10 = braintools.init.param(q10, self.varshape, allow_none=False)
         self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
@@ -1777,10 +1777,10 @@ class Cav1p3_MA2020_GoC(OhmicHH):
     cited above and does not resolve that third credit, so no
     reference entry is written for it.
 
-    ``V_sh`` is accepted, stored and never read: no rate method of
-    this class uses it. That reproduces the mod file, whose
-    ``PARAMETER`` block likewise declares ``vshift = 0 (mV)`` and
-    never uses it. In the same spirit, the three gates are wired for
+    The mod file's ``PARAMETER`` block declares ``vshift = 0 (mV)``
+    and never uses it; BrainCell does not expose a ``V_sh`` for it,
+    since a shift that silently does nothing is worse than none. In
+    the same spirit, the three gates are wired for
     Q10 scaling through ``Gate(q10="q10", temp_ref="temp_ref")``, but
     the shipped defaults (``q10 = 1.0`` and
     ``temp = temp_ref = 22 degC``) make ``phi`` exactly 1, matching
@@ -1846,7 +1846,6 @@ class Cav1p3_MA2020_GoC(OhmicHH):
         self,
         size: Size,
         g_max: Initializer = 0.000005 * (u.siemens / u.cm**2),
-        V_sh: Initializer = 0.0 * u.mV,
         temp: ArrayLike = u.celsius2kelvin(22.0),
         q10: Initializer = 1.0,
         temp_ref: ArrayLike = u.celsius2kelvin(22.0),
@@ -1854,7 +1853,6 @@ class Cav1p3_MA2020_GoC(OhmicHH):
     ):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.q10 = braintools.init.param(q10, self.varshape, allow_none=False)
         self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
@@ -1970,7 +1968,7 @@ class Cav1p3_MA2025_BC(Cav1p3_MA2020_GoC):
 
 
 @register_channel("Cav3p1_MA2020_GoC")
-class Cav3p1_MA2020_GoC(HH):
+class Cav3p1_MA2020_GoC(GhkHH):
     r"""Golgi cell Cav3.1 low-threshold calcium current with GHK drive.
 
     The Cav3.1 (T-type) low-threshold calcium current of the
@@ -2021,9 +2019,6 @@ class Cav3p1_MA2020_GoC(HH):
         mod file's ``pcabar`` -- despite the ``g_max`` name and
         conductance-like spelling. Defaults to ``2.5e-4 cm/s`` (see
         Notes).
-    V_sh : array-like or callable, optional
-        Threshold shift. Accepted and stored, but read by no method
-        of this class (see Notes). Defaults to ``0.0 mV``.
     temp : array-like, optional
         Absolute temperature. Enters both :math:`q_t` and the GHK
         flux. Defaults to 22 degrees Celsius.
@@ -2103,9 +2098,9 @@ class Cav3p1_MA2020_GoC(HH):
     ``g_max`` is a permeability in ``cm/s``, not a conductance
     density: the name is BrainCell's uniform parameter name for the
     scale factor in front of the gating product, and this mechanism's
-    current law is a permeability-scaled GHK flux. ``V_sh`` is
-    accepted, stored and never read; the mod file declares no
-    corresponding parameter at all.
+    current law is a permeability-scaled GHK flux. The mod file
+    declares no threshold-shift parameter, and neither does this
+    class.
 
     ``g_max``'s default is the ``pcabar`` of the cell-model deposit
     this mechanism was imported from -- a value tuned for that model,
@@ -2135,12 +2130,12 @@ class Cav3p1_MA2020_GoC(HH):
         Gate("p", power=2),
         Gate("q"),
     )
+    ghk = staticmethod(_cav3p1_nmodl_ghk_flux)
 
     def __init__(
         self,
         size: Size,
         g_max: Initializer = 2.5e-4 * (u.cm / u.second),
-        V_sh: Initializer = 0.0 * u.mV,
         temp: ArrayLike = u.celsius2kelvin(22.0),
         q10: Initializer = 3.0,
         temp_ref: ArrayLike = u.celsius2kelvin(37.0),
@@ -2148,7 +2143,6 @@ class Cav3p1_MA2020_GoC(HH):
     ):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.q10 = braintools.init.param(q10, self.varshape, allow_none=False)
         self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
@@ -2168,18 +2162,18 @@ class Cav3p1_MA2020_GoC(HH):
         self.k_tau_h1 = 7.0 * u.mV
         self.z = 2
 
-    def current(self, V, Ca: IonInfo):
-        drive = _cav3p1_nmodl_ghk_flux(V=V, ci=Ca.Ci, co=Ca.Co, z=self.z, temp=self.temp)
-        return -self.g_max * self.conductance_factor(V, Ca) * drive
-
     def f_p_inf(self, V, Ca: IonInfo):
         return 1.0 / (1.0 + u.math.exp((V - self.v0_m_inf) / self.k_m_inf))
 
     def f_q_inf(self, V, Ca: IonInfo):
         return 1.0 / (1.0 + u.math.exp((V - self.v0_h_inf) / self.k_h_inf))
 
+    def _qt(self):
+        """Memoised ``qt``; both tau branches need it and neither depends on V."""
+        return cached_q10_factor(self, "_qt_memo", self.q10, self.temp, self.temp_ref)
+
     def f_p_tau(self, V, Ca: IonInfo):
-        qt = q10_factor(self.q10, self.temp, self.temp_ref)
+        qt = self._qt()
         return u.math.where(
             V <= -90.0 * u.mV,
             1.0,
@@ -2197,7 +2191,7 @@ class Cav3p1_MA2020_GoC(HH):
         )
 
     def f_q_tau(self, V, Ca: IonInfo):
-        qt = q10_factor(self.q10, self.temp, self.temp_ref)
+        qt = self._qt()
         return (self.C_tau_h + self.A_tau_h / u.math.exp((V - self.v0_tau_h1) / self.k_tau_h1)) / qt
 
 
@@ -2219,10 +2213,6 @@ class Cav3p1_MA2024_PC(Cav3p1_MA2020_GoC):
         Calcium permeability entering the GHK flux (the mod file's
         ``pcabar``), default ``2.5e-4 cm/s``. Inherited from
         :class:`Cav3p1_MA2020_GoC`.
-    V_sh : array-like or callable, optional
-        Accepted but read by no method of this class (see
-        :class:`Cav3p1_MA2020_GoC` Notes). Default ``0.0 mV``.
-        Inherited from :class:`Cav3p1_MA2020_GoC`.
     temp : array-like, optional
         Absolute temperature entering both the ``qt`` factor and the
         GHK flux, default 22 degrees Celsius. Inherited from
@@ -2311,10 +2301,6 @@ class Cav3p1_MA2020_GoC_Frozen(Cav3p1_MA2020_GoC):
         Calcium permeability entering the GHK flux (the mod file's
         ``pcabar``), default ``2.5e-4 cm/s``. Inherited from
         :class:`Cav3p1_MA2020_GoC`.
-    V_sh : array-like or callable, optional
-        Accepted but read by no method of this class (see
-        :class:`Cav3p1_MA2020_GoC` Notes). Default ``0.0 mV``.
-        Inherited from :class:`Cav3p1_MA2020_GoC`.
     temp : array-like, optional
         Absolute temperature entering both the ``qt`` factor and the
         GHK flux, default 22 degrees Celsius. Inherited from
@@ -2333,23 +2319,19 @@ class Cav3p1_MA2020_GoC_Frozen(Cav3p1_MA2020_GoC):
     Cav3p1_MA2020_GoC : The base class; every equation, the GHK
         helper's constants and the header corrections are documented
         there.
-    Cav3p1_MA2024_PC_Frozen : Purkinje-cell counterpart with
-        numerically identical behaviour but a different class graph:
-        it subclasses :class:`~braincell.channel._base.HH` directly
-        and re-declares everything rather than inheriting.
+    Cav3p1_MA2024_PC_Frozen : Purkinje-cell counterpart, built the
+        same way on top of :class:`Cav3p1_MA2024_PC`.
 
     Notes
     -----
     "Frozen" describes the gradient path, not the forward numerics and
     not the channel states. Both gates keep integrating exactly as in
-    the base class -- nothing stops evolving. What
-    :meth:`current` changes is that the membrane potential handed to
-    the GHK helper is first passed through the module-level
-    ``_freeze_quantity_gradient``, which rebuilds the quantity from
-    :func:`jax.lax.stop_gradient` applied to its mantissa. The
-    explicit voltage dependence of the GHK driving force therefore
-    contributes nothing to reverse-mode gradients, while the value it
-    computes is unchanged.
+    the base class -- nothing stops evolving. The whole class body is
+    ``freeze_drive_gradient = True``: :attr:`~braincell.channel.GhkHH.freeze_drive_gradient`
+    routes the membrane potential through
+    :func:`~braincell.channel.freeze_gradient` before it reaches the GHK
+    helper, so the drive's explicit voltage dependence contributes nothing to
+    reverse-mode gradients while the value it computes is unchanged.
 
     The unfrozen ``V`` is still passed to
     :meth:`~braincell.channel._base.HH.conductance_factor`, but that
@@ -2382,15 +2364,11 @@ class Cav3p1_MA2020_GoC_Frozen(Cav3p1_MA2020_GoC):
     """
 
     __module__ = "braincell.channel"
-
-    def current(self, V, Ca: IonInfo):
-        frozen_V = _freeze_quantity_gradient(V)
-        drive = _cav3p1_nmodl_ghk_flux(V=frozen_V, ci=Ca.Ci, co=Ca.Co, z=self.z, temp=self.temp)
-        return -self.g_max * self.conductance_factor(V, Ca) * drive
+    freeze_drive_gradient = True
 
 
 @register_channel("Cav3p1_MA2024_PC_Frozen")
-class Cav3p1_MA2024_PC_Frozen(HH):
+class Cav3p1_MA2024_PC_Frozen(Cav3p1_MA2024_PC):
     r"""Purkinje cell Cav3.1 with the GHK drive frozen for autodiff.
 
     A standalone Purkinje-cell Cav3.1 mechanism that stops the
@@ -2412,9 +2390,6 @@ class Cav3p1_MA2024_PC_Frozen(HH):
         Calcium permeability entering the GHK flux (the mod file's
         ``pcabar``), despite the ``g_max`` name. Defaults to
         ``2.5e-4 cm/s``.
-    V_sh : array-like or callable, optional
-        Threshold shift. Accepted and stored, but read by no method
-        of this class (see Notes). Defaults to ``0.0 mV``.
     temp : array-like, optional
         Absolute temperature. Enters both the ``qt`` factor and the
         GHK flux. Defaults to 22 degrees Celsius.
@@ -2429,34 +2404,27 @@ class Cav3p1_MA2024_PC_Frozen(HH):
     See Also
     --------
     Cav3p1_MA2024_PC : The unfrozen Purkinje-cell import of the same
-        mechanism. This class is **not** derived from it.
+        mechanism, and this class's base.
     Cav3p1_MA2020_GoC : Where the equation set, the GHK helper's
         constants, the tau-embedded temperature handling and the mod
         header corrections are documented in full.
     Cav3p1_MA2020_GoC_Frozen : Golgi-cell counterpart with the same
-        freezing behaviour, reached by inheritance instead.
+        freezing behaviour, built the same way.
 
     Notes
     -----
-    **This class is not a subclass of the unfrozen Purkinje-cell
-    import, and the two frozen Cav3.1 classes in this module are not
-    built the same way.** :class:`Cav3p1_MA2020_GoC_Frozen` derives
-    from :class:`Cav3p1_MA2020_GoC` and overrides :meth:`current`
-    alone.
-    This class derives from :class:`~braincell.channel._base.HH`
-    directly and re-declares everything: ``root_type``, both gates,
-    the whole constructor and parameter block, ``f_p_inf``,
-    ``f_q_inf``, ``f_p_tau``, ``f_q_tau`` and ``current``. The two
-    frozen variants therefore compute the same numbers while sharing
-    no code, and a change to :class:`Cav3p1_MA2020_GoC` propagates to
-    one of them and not to the other.
+    Both frozen Cav3.1 classes in this module are built the same way:
+    each subclasses its own unfrozen sibling and declares
+    ``freeze_drive_gradient = True``, so a change to
+    :class:`Cav3p1_MA2020_GoC` reaches both.
 
     "Frozen" describes the gradient path, not the forward numerics and
     not the channel states. Both gates keep integrating normally --
-    nothing stops evolving. :meth:`current` passes the membrane
-    potential through the module-level ``_freeze_quantity_gradient``,
-    which rebuilds the quantity from :func:`jax.lax.stop_gradient`
-    applied to its mantissa, before handing it to the GHK helper. The
+    nothing stops evolving. :attr:`~braincell.channel.GhkHH.freeze_drive_gradient`
+    routes the membrane potential through
+    :func:`~braincell.channel.freeze_gradient` before it reaches the GHK
+    helper, so the drive's explicit voltage dependence contributes nothing to
+    reverse-mode gradients while the value it computes is unchanged. The
     unfrozen ``V`` still reaches
     :meth:`~braincell.channel._base.HH.conductance_factor`, but that
     method ignores its voltage argument and reads only the gate
@@ -2471,8 +2439,7 @@ class Cav3p1_MA2024_PC_Frozen(HH):
     observe.
 
     As in :class:`Cav3p1_MA2020_GoC`, ``g_max`` is a permeability in
-    ``cm/s`` rather than a conductance density, ``V_sh`` is accepted
-    and never read with no corresponding parameter in the mod file,
+    ``cm/s`` rather than a conductance density,
     the temperature factor ``qt`` is embedded in the tau expressions
     instead of in ``Gate``, the ``tau_p`` constant branch at
     ``V <= -90 mV`` is not divided by ``qt``, and ``current()`` uses
@@ -2502,76 +2469,7 @@ class Cav3p1_MA2024_PC_Frozen(HH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Calcium
-    gates = (
-        Gate("p", power=2),
-        Gate("q"),
-    )
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 2.5e-4 * (u.cm / u.second),
-        V_sh: Initializer = 0.0 * u.mV,
-        temp: ArrayLike = u.celsius2kelvin(22.0),
-        q10: Initializer = 3.0,
-        temp_ref: ArrayLike = u.celsius2kelvin(37.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.q10 = braintools.init.param(q10, self.varshape, allow_none=False)
-        self.temp_ref = braintools.init.param(temp_ref, self.varshape, allow_none=False)
-        self.v0_m_inf = -52.0 * u.mV
-        self.v0_h_inf = -72.0 * u.mV
-        self.k_m_inf = -5.0 * u.mV
-        self.k_h_inf = 7.0 * u.mV
-        self.C_tau_m = 1.0
-        self.A_tau_m = 1.0
-        self.v0_tau_m1 = -40.0 * u.mV
-        self.v0_tau_m2 = -102.0 * u.mV
-        self.k_tau_m1 = 9.0 * u.mV
-        self.k_tau_m2 = -18.0 * u.mV
-        self.C_tau_h = 15.0
-        self.A_tau_h = 1.0
-        self.v0_tau_h1 = -32.0 * u.mV
-        self.k_tau_h1 = 7.0 * u.mV
-        self.z = 2
-
-    def current(self, V, Ca: IonInfo):
-        frozen_V = _freeze_quantity_gradient(V)
-        drive = _cav3p1_nmodl_ghk_flux(V=frozen_V, ci=Ca.Ci, co=Ca.Co, z=self.z, temp=self.temp)
-        return -self.g_max * self.conductance_factor(V, Ca) * drive
-
-    def f_p_inf(self, V, Ca: IonInfo):
-        return 1.0 / (1.0 + u.math.exp((V - self.v0_m_inf) / self.k_m_inf))
-
-    def f_q_inf(self, V, Ca: IonInfo):
-        return 1.0 / (1.0 + u.math.exp((V - self.v0_h_inf) / self.k_h_inf))
-
-    def f_p_tau(self, V, Ca: IonInfo):
-        qt = q10_factor(self.q10, self.temp, self.temp_ref)
-        return u.math.where(
-            V <= -90.0 * u.mV,
-            1.0,
-            (
-                self.C_tau_m
-                + (
-                    self.A_tau_m
-                    / (
-                        u.math.exp((V - self.v0_tau_m1) / self.k_tau_m1)
-                        + u.math.exp((V - self.v0_tau_m2) / self.k_tau_m2)
-                    )
-                )
-            )
-            / qt,
-        )
-
-    def f_q_tau(self, V, Ca: IonInfo):
-        qt = q10_factor(self.q10, self.temp, self.temp_ref)
-        return (self.C_tau_h + self.A_tau_h / u.math.exp((V - self.v0_tau_h1) / self.k_tau_h1)) / qt
+    freeze_drive_gradient = True
 
 
 @register_channel("Cav3p1Test_PC24")
@@ -2739,9 +2637,13 @@ class Cav3p1Test_PC24(HH):
         _ = Ca
         return 1.0 / (1.0 + u.math.exp((V - self.v0_h_inf) / self.k_h_inf))
 
+    def _qt(self):
+        """Memoised ``qt``; both tau branches need it and neither depends on V."""
+        return cached_q10_factor(self, "_qt_memo", self.q10, self.temp, self.temp_ref)
+
     def f_p_tau(self, V, Ca: IonInfo):
         _ = Ca
-        qt = q10_factor(self.q10, self.temp, self.temp_ref)
+        qt = self._qt()
         return u.math.where(
             V <= -90.0 * u.mV,
             1.0,
@@ -2760,12 +2662,12 @@ class Cav3p1Test_PC24(HH):
 
     def f_q_tau(self, V, Ca: IonInfo):
         _ = Ca
-        qt = q10_factor(self.q10, self.temp, self.temp_ref)
+        qt = self._qt()
         return (self.C_tau_h + self.A_tau_h / u.math.exp((V - self.v0_tau_h1) / self.k_tau_h1)) / qt
 
 
 @register_channel("Cav2p1_RI2021_SC")
-class Cav2p1_RI2021_SC(HH):
+class Cav2p1_RI2021_SC(GhkHH):
     r"""Stellate cell Cav2.1 P-type calcium current with GHK drive.
 
     The Cav2.1 (P-type) calcium current of the cerebellar stellate
@@ -2928,16 +2830,6 @@ class Cav2p1_RI2021_SC(HH):
 
     def _shifted_voltage(self, V):
         return V - self.V_sh
-
-    def current(self, V, Ca: IonInfo):
-        drive = ghk_flux(
-            V=self._shifted_voltage(V),
-            ci=Ca.Ci,
-            co=Ca.Co,
-            z=self.z,
-            temp=self.temp,
-        )
-        return -self.g_max * self.conductance_factor(V, Ca) * drive
 
     def f_m_inf(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V)
@@ -3114,7 +3006,7 @@ class Cav2p1_MA2024_PC(Cav2p1_RI2021_SC):
 
 
 @register_channel("Cav2p1_MA2024_PC_Frozen")
-class Cav2p1_MA2024_PC_Frozen(HH):
+class Cav2p1_MA2024_PC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2024_PC):
     r"""Purkinje cell Cav2.1 with the GHK drive frozen for autodiff.
 
     A standalone Purkinje-cell Cav2.1 mechanism that stops the
@@ -3150,42 +3042,40 @@ class Cav2p1_MA2024_PC_Frozen(HH):
     See Also
     --------
     Cav2p1_MA2024_PC : The unfrozen Purkinje-cell import of the same
-        mechanism. This class is **not** derived from it.
+        mechanism, and this class's base.
     Cav2p1_RI2021_SC : Where the equation set, the permeability
         discrepancy and the mod header corrections are documented in
         full.
-    Cav2p1_RI2021_SC_Frozen : Stellate-cell frozen variant, which
-        *is* a subclass of this class and overrides nothing.
-    Cav2p1_MA2025_BC_Frozen : Basket-cell frozen variant, likewise a
-        subclass of this class overriding nothing.
+    Cav2p1_RI2021_SC_Frozen : Stellate-cell frozen variant, built the
+        same way on top of :class:`Cav2p1_RI2021_SC`.
+    Cav2p1_MA2025_BC_Frozen : Basket-cell frozen variant, likewise
+        built on top of :class:`Cav2p1_MA2025_BC`.
 
     Notes
     -----
-    **This class is not a subclass of the unfrozen Purkinje-cell
-    import.** It derives from
-    :class:`~braincell.channel._base.HH` directly and re-declares
-    everything: ``root_type``, the gate, the whole constructor and
-    parameter block, ``f_m_inf``, ``f_m_tau`` and ``current``. A
-    change to :class:`Cav2p1_RI2021_SC` therefore does not propagate
-    here. The two Cav2.1 frozen siblings,
-    :class:`Cav2p1_RI2021_SC_Frozen` and
-    :class:`Cav2p1_MA2025_BC_Frozen`, are subclasses of *this* class
-    and add nothing but a registry key.
+    The class body is the two declarations ``_FrozenCav3p1Ghk``
+    supplies. Every gate, constant and rate function comes from
+    :class:`Cav2p1_MA2024_PC`, so a change to
+    :class:`Cav2p1_RI2021_SC` propagates here. The two Cav2.1 frozen
+    siblings, :class:`Cav2p1_RI2021_SC_Frozen` and
+    :class:`Cav2p1_MA2025_BC_Frozen`, are built the same way over
+    their own unfrozen classes rather than over this one.
 
     "Frozen" describes the gradient path, not the channel states.
     The ``m`` gate keeps integrating exactly as in the unfrozen
-    class -- nothing stops evolving. :meth:`current` passes the
-    membrane potential through the module-level
-    ``_freeze_quantity_gradient``, which rebuilds the quantity from
-    :func:`jax.lax.stop_gradient` applied to its mantissa, before
-    handing it to the GHK helper. The unfrozen ``V`` still reaches
+    class -- nothing stops evolving. :attr:`~braincell.channel.GhkHH.freeze_drive_gradient`
+    routes the membrane potential through
+    :func:`~braincell.channel.freeze_gradient` before it reaches the GHK
+    helper, so the drive's explicit voltage dependence contributes nothing to
+    reverse-mode gradients while the value it computes is unchanged. The unfrozen ``V`` still reaches
     :meth:`~braincell.channel._base.HH.conductance_factor`, but that
     method ignores its voltage argument and reads only the gate
     states, so the distinction affects neither value nor gradient
     there.
 
     **The freezing is not the only difference from the unfrozen
-    class.** :meth:`current` here calls the module-level
+    class.** ``_FrozenCav3p1Ghk`` also declares
+    :attr:`~braincell.channel.GhkHH.ghk` as the module-level
     ``_cav3p1_nmodl_ghk_flux`` helper, whereas
     :class:`Cav2p1_RI2021_SC` calls the shared
     :func:`~braincell.channel._base.ghk_flux`. The two helpers use
@@ -3235,54 +3125,10 @@ class Cav2p1_MA2024_PC_Frozen(HH):
     """
 
     __module__ = "braincell.channel"
-    root_type = Calcium
-    gates = (Gate("m", power=3, q10=3.0, temp_ref=u.celsius2kelvin(23.0)),)
-
-    def __init__(
-        self,
-        size: Size,
-        g_max: Initializer = 2.2e-4 * (u.cm / u.second),
-        V_sh: Initializer = 0.0 * u.mV,
-        temp: ArrayLike = u.celsius2kelvin(23.0),
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.vhalfm = -29.458 * u.mV
-        self.cvm = 8.429 * u.mV
-        self.z = 2
-
-    def _shifted_voltage(self, V):
-        return V - self.V_sh
-
-    def current(self, V, Ca: IonInfo):
-        frozen_V = _freeze_quantity_gradient(V)
-        drive = _cav3p1_nmodl_ghk_flux(
-            V=self._shifted_voltage(frozen_V),
-            ci=Ca.Ci,
-            co=Ca.Co,
-            z=self.z,
-            temp=self.temp,
-        )
-        return -self.g_max * self.conductance_factor(V, Ca) * drive
-
-    def f_m_inf(self, V, Ca: IonInfo):
-        V = self._shifted_voltage(V)
-        return 1.0 / (1.0 + u.math.exp(-(V - self.vhalfm) / self.cvm))
-
-    def f_m_tau(self, V, Ca: IonInfo):
-        V = self._shifted_voltage(V).to_decimal(u.mV)
-        return u.math.where(
-            V >= -40.0,
-            0.2702 + 1.1622 * u.math.exp(-((V + 26.798) ** 2) / 164.19),
-            0.6923 * u.math.exp(V / 1089.372),
-        )
 
 
 @register_channel("Cav2p1_RI2021_SC_Frozen")
-class Cav2p1_RI2021_SC_Frozen(Cav2p1_MA2024_PC_Frozen):
+class Cav2p1_RI2021_SC_Frozen(_FrozenCav3p1Ghk, Cav2p1_RI2021_SC):
     r"""Stellate cell Cav2.1 with the GHK drive frozen for autodiff.
 
     The stellate-cell registration of the frozen-GHK Cav2.1
@@ -3313,28 +3159,21 @@ class Cav2p1_RI2021_SC_Frozen(Cav2p1_MA2024_PC_Frozen):
 
     See Also
     --------
-    Cav2p1_MA2024_PC_Frozen : The base class; the freezing
-        mechanism, the GHK helper's constants and the difference
-        from the unfrozen classes are documented there.
+    Cav2p1_MA2024_PC_Frozen : The Purkinje-cell frozen variant,
+        where the freezing mechanism, the GHK helper's constants and
+        the difference from the unfrozen classes are documented.
     Cav2p1_RI2021_SC : The unfrozen stellate-cell import of the same
-        mechanism. This class is **not** derived from it, and is not
-        numerically identical to it.
+        mechanism, and this class's base. The two are **not**
+        numerically identical: see the Notes.
 
     Notes
     -----
-    **The cell-type suffix in this class's name describes its model
-    citation, not its implementation.** The class body is empty
-    apart from ``__module__``: every gate, constant, rate function
-    and the ``current`` method come from
-    :class:`Cav2p1_MA2024_PC_Frozen`, the Purkinje-cell frozen
-    variant. That is sound because ``SC/channel/Cav2p1_RI21_SC.mod``
-    and ``PC/channel/Cav2p1_MA24_PC.mod`` are identical apart from
-    their ``SUFFIX`` lines and a ``g_equiv`` diagnostic, but it does
-    mean the stellate-cell class inherits from a Purkinje-cell one
-    rather than from :class:`Cav2p1_RI2021_SC`. Per the
-    bibliography's attribution scan this subclass contributes no
-    rate-function code of its own; its zero literal overlap in that
-    scan is an artefact of the constants living in the base class.
+    The class body is the two declarations ``_FrozenCav3p1Ghk``
+    supplies; every gate, constant and rate function comes from
+    :class:`Cav2p1_RI2021_SC`. Per the bibliography's attribution
+    scan this subclass contributes no rate-function code of its own;
+    its zero literal overlap in that scan is an artefact of the
+    constants living in the base class.
 
     Everything in :class:`Cav2p1_MA2024_PC_Frozen`'s Notes applies
     unchanged and is not repeated here: no channel state stops
@@ -3371,7 +3210,7 @@ class Cav2p1_RI2021_SC_Frozen(Cav2p1_MA2024_PC_Frozen):
 
 
 @register_channel("Cav2p1_MA2025_BC_Frozen")
-class Cav2p1_MA2025_BC_Frozen(Cav2p1_MA2024_PC_Frozen):
+class Cav2p1_MA2025_BC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2025_BC):
     r"""Basket cell Cav2.1 with the GHK drive frozen for autodiff.
 
     The basket-cell registration of the frozen-GHK Cav2.1 mechanism
@@ -3402,24 +3241,17 @@ class Cav2p1_MA2025_BC_Frozen(Cav2p1_MA2024_PC_Frozen):
 
     See Also
     --------
-    Cav2p1_MA2024_PC_Frozen : The base class; the freezing
-        mechanism, the GHK helper's constants and the difference
-        from the unfrozen classes are documented there.
+    Cav2p1_MA2024_PC_Frozen : The Purkinje-cell frozen variant,
+        where the freezing mechanism, the GHK helper's constants and
+        the difference from the unfrozen classes are documented.
     Cav2p1_MA2025_BC : The unfrozen basket-cell import of the same
-        mechanism. This class is **not** derived from it, and is not
-        numerically identical to it.
+        mechanism, and this class's base. The two are **not**
+        numerically identical: see the Notes.
 
     Notes
     -----
-    **The cell-type suffix in this class's name describes its model
-    citation, not its implementation.** The class body is empty
-    apart from ``__module__``: every gate, constant, rate function
-    and the ``current`` method come from
-    :class:`Cav2p1_MA2024_PC_Frozen`, the Purkinje-cell frozen
-    variant. That is sound because ``BC/channel/Cav2p1_MA25_BC.mod``
-    and ``PC/channel/Cav2p1_MA24_PC.mod`` are identical apart from
-    their ``SUFFIX`` lines, but it does mean the basket-cell class
-    inherits from a Purkinje-cell one rather than from
+    The class body is the two declarations ``_FrozenCav3p1Ghk``
+    supplies; every gate, constant and rate function comes from
     :class:`Cav2p1_MA2025_BC`. Per the bibliography's attribution
     scan this subclass contributes no rate-function code of its own;
     its zero literal overlap in that scan is an artefact of the
@@ -3457,180 +3289,6 @@ class Cav2p1_MA2025_BC_Frozen(Cav2p1_MA2024_PC_Frozen):
     """
 
     __module__ = "braincell.channel"
-
-
-@register_channel("Cav3p3_MA2024_PC_Frozen")
-class Cav3p3_MA2024_PC_Frozen(HH):
-    r"""Purkinje cell Cav3.3 with the GHK drive frozen for autodiff.
-
-    A standalone Purkinje-cell Cav3.3 mechanism that stops the
-    gradient through the membrane potential where it enters the
-    constant-field (GHK) flux term. Its kinetics, its named
-    parameter block and its forward current are numerically
-    identical to :class:`Cav3p3_MA2024_PC`'s, and its attribution is
-    the same: the Cav3.3 kinetics of the CA3 hippocampal pyramidal
-    neuron model of (Xu & Clancy, 2008) [1]_, imported for the human
-    Purkinje cell model of (Masoli et al., 2024) [2]_. It inherits
-    none of that code -- see Notes.
-
-    Parameters
-    ----------
-    size : brainstate.typing.Size
-        Channel state shape.
-    perm : array-like or callable, optional
-        Calcium permeability entering the GHK flux, the mod file's
-        ``pcabar``. Defaults to ``1.0e-4 cm/s``.
-    g_scale : array-like or callable, optional
-        Dimensionless empirical scale factor multiplying the flux,
-        carrying the numeric value of the mod file's
-        ``gCav3_3bar``. Defaults to ``1.0e-5``.
-    temp : array-like, optional
-        Absolute temperature. Enters both the gates' Q10 factor and
-        the GHK flux. Defaults to 36 degrees Celsius.
-    V_sh : array-like or callable, optional
-        Voltage shift subtracted from :math:`V` before every rate
-        and before the GHK term. Defaults to ``0.0 mV``. The mod
-        file declares no corresponding parameter.
-    name : str, optional
-        Optional channel name.
-
-    See Also
-    --------
-    Cav3p3_MA2024_PC : The unfrozen Purkinje-cell import of the same
-        mechanism. This class is **not** derived from it.
-    Cav3p3_RI2021_SC : Where the equation set, the GHK helper's
-        constants and the current-law scaling caveat are documented
-        in full.
-    Cav2p1_MA2024_PC_Frozen : The module's other standalone frozen
-        variant, which additionally swaps GHK helpers and so is
-        *not* numerically identical to its unfrozen counterpart.
-
-    Notes
-    -----
-    **This class is not a subclass of the unfrozen Purkinje-cell
-    import, and the module's frozen variants are not all built the
-    same way.** :class:`Cav3p3_MA2024_PC` derives from
-    :class:`Cav3p3_RI2021_SC`; this class derives from
-    :class:`~braincell.channel._base.HH` directly and re-declares
-    everything: ``root_type``, both gates, the whole constructor and
-    parameter block, ``f_n_inf``, ``f_l_inf``, ``f_n_tau``,
-    ``f_l_tau`` and ``current``. The two therefore compute the same
-    forward numbers while sharing no code, and a change to
-    :class:`Cav3p3_RI2021_SC` propagates to one and not the other.
-
-    "Frozen" describes the gradient path, not the forward numerics
-    and not the channel states. Both gates keep integrating normally
-    -- nothing stops evolving. :meth:`current` passes the membrane
-    potential through the module-level
-    ``_freeze_quantity_gradient``, which rebuilds the quantity from
-    :func:`jax.lax.stop_gradient` applied to its mantissa, before
-    handing it to the GHK helper. The unfrozen ``V`` still reaches
-    :meth:`~braincell.channel._base.HH.conductance_factor`, but that
-    method ignores its voltage argument and reads only the gate
-    states, so the distinction affects neither value nor gradient
-    there. **Unlike** :class:`Cav2p1_MA2024_PC_Frozen`, this class
-    calls the same ``_cav3p3_nmodl_ghk_flux`` helper its unfrozen
-    counterpart calls, so freezing is the only difference between
-    the two and the forward current is unchanged.
-
-    The kinetics are those of ``PC/channel/Cav3p3_MA24_PC.mod``,
-    which is identical to ``SC/channel/Cav3p3_RI21_SC.mod`` apart
-    from its ``SUFFIX`` line and a ``g_equiv`` diagnostic. No mod
-    file ships a frozen-gradient variant: freezing is a BrainCell
-    autodiff facility with no counterpart in NMODL, so it is not an
-    import deviation and changes nothing a NEURON comparison would
-    observe.
-
-    As in :class:`Cav3p3_RI2021_SC`, the mod file's current-law
-    scaling is not dimensionally self-consistent and ``g_scale`` is
-    therefore dimensionless, the GHK helper carries the mod file's
-    own ``F``/``R`` constants and its ``celsius + 273.14`` Kelvin
-    conversion plus a small-argument series branch the mod file
-    lacks, ``V_sh`` has no counterpart in the mod file, the Q10 is
-    declared on the ``Gate`` objects, and ``current()`` negates
-    NEURON's outward-positive ``ica``. The ``perm`` and ``g_scale``
-    defaults are the deposit's tuned values, not values reported by
-    the origin paper.
-
-    References
-    ----------
-    .. [1] Xu, J., & Clancy, C. E. (2008). Ionic mechanisms of
-           endogenous bursting in CA3 hippocampal pyramidal neurons:
-           A model study. PLoS ONE, 3(4), e2056.
-           doi:10.1371/journal.pone.0002056
-    .. [2] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
-           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
-           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
-           A., & D'Angelo, E. (2024). Human Purkinje cells outperform
-           mouse Purkinje cells in dendritic complexity and
-           computational capacity. Communications Biology, 7(1), 5.
-           doi:10.1038/s42003-023-05689-y
-    """
-
-    __module__ = "braincell.channel"
-    root_type = Calcium
-    gates = (
-        Gate("n", power=2, q10=2.3, temp_ref=u.celsius2kelvin(28.0)),
-        Gate("l", q10=2.3, temp_ref=u.celsius2kelvin(28.0)),
-    )
-
-    def __init__(
-        self,
-        size: Size,
-        perm: Initializer = 1.0e-4 * (u.cm / u.second),
-        g_scale: Initializer = 1.0e-5,
-        temp: ArrayLike = u.celsius2kelvin(36.0),
-        V_sh: Initializer = 0.0 * u.mV,
-        name: Optional[str] = None,
-    ):
-        super().__init__(size=size, name=name)
-        self.perm = braintools.init.param(perm, self.varshape, allow_none=False)
-        self.g_scale = braintools.init.param(g_scale, self.varshape, allow_none=False)
-        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
-        self.vhalfn = -41.5 * u.mV
-        self.vhalfl = -69.8 * u.mV
-        self.kn = 6.2 * u.mV
-        self.kl = -6.1 * u.mV
-        self.z = 2
-
-    def _shifted_voltage(self, V):
-        return V - self.V_sh
-
-    def current(self, V, Ca: IonInfo):
-        frozen_V = _freeze_quantity_gradient(V)
-        drive = _cav3p3_nmodl_ghk_flux(
-            V=self._shifted_voltage(frozen_V),
-            ci=Ca.Ci,
-            co=Ca.Co,
-            z=self.z,
-            temp=self.temp,
-        )
-        return -self.g_scale * self.perm * self.conductance_factor(V, Ca) * drive
-
-    def f_n_inf(self, V, Ca: IonInfo):
-        V = self._shifted_voltage(V)
-        return 1.0 / (1.0 + u.math.exp(-(V - self.vhalfn) / self.kn))
-
-    def f_l_inf(self, V, Ca: IonInfo):
-        V = self._shifted_voltage(V)
-        return 1.0 / (1.0 + u.math.exp(-(V - self.vhalfl) / self.kl))
-
-    def f_n_tau(self, V, Ca: IonInfo):
-        V = self._shifted_voltage(V).to_decimal(u.mV)
-        return u.math.where(
-            V > -60.0,
-            7.2 + 0.02 * u.math.exp(-V / 14.7),
-            0.875 * u.math.exp((V + 120.0) / 41.0),
-        )
-
-    def f_l_tau(self, V, Ca: IonInfo):
-        V = self._shifted_voltage(V).to_decimal(u.mV)
-        return u.math.where(
-            V > -60.0,
-            79.5 + 2.0 * u.math.exp(-V / 9.3),
-            260.0,
-        )
 
 
 @register_channel("Cav3p2_RI2021_SC")
@@ -4031,7 +3689,7 @@ class Cav3p2_MA2024_PC(Cav3p2_RI2021_SC):
 
 
 @register_channel("Cav3p3_RI2021_SC")
-class Cav3p3_RI2021_SC(HH):
+class Cav3p3_RI2021_SC(GhkHH):
     r"""Stellate cell Cav3.3 low-threshold calcium current, GHK drive.
 
     The Cav3.3 (T-type, alpha1I) low-threshold calcium current of
@@ -4195,6 +3853,7 @@ class Cav3p3_RI2021_SC(HH):
         Gate("n", power=2, q10=2.3, temp_ref=u.celsius2kelvin(28.0)),
         Gate("l", q10=2.3, temp_ref=u.celsius2kelvin(28.0)),
     )
+    ghk = staticmethod(_cav3p3_nmodl_ghk_flux)
 
     def __init__(
         self,
@@ -4219,15 +3878,8 @@ class Cav3p3_RI2021_SC(HH):
     def _shifted_voltage(self, V):
         return V - self.V_sh
 
-    def current(self, V, Ca: IonInfo):
-        drive = _cav3p3_nmodl_ghk_flux(
-            V=self._shifted_voltage(V),
-            ci=Ca.Ci,
-            co=Ca.Co,
-            z=self.z,
-            temp=self.temp,
-        )
-        return -self.g_scale * self.perm * self.conductance_factor(V, Ca) * drive
+    def permeability(self):
+        return self.g_scale * self.perm
 
     def f_n_inf(self, V, Ca: IonInfo):
         V = self._shifted_voltage(V)
@@ -4328,6 +3980,111 @@ class Cav3p3_MA2024_PC(Cav3p3_RI2021_SC):
     """
 
     __module__ = "braincell.channel"
+
+
+@register_channel("Cav3p3_MA2024_PC_Frozen")
+class Cav3p3_MA2024_PC_Frozen(Cav3p3_MA2024_PC):
+    r"""Purkinje cell Cav3.3 with the GHK drive frozen for autodiff.
+
+    A standalone Purkinje-cell Cav3.3 mechanism that stops the
+    gradient through the membrane potential where it enters the
+    constant-field (GHK) flux term. Its kinetics, its named
+    parameter block and its forward current are numerically
+    identical to :class:`Cav3p3_MA2024_PC`'s, and its attribution is
+    the same: the Cav3.3 kinetics of the CA3 hippocampal pyramidal
+    neuron model of (Xu & Clancy, 2008) [1]_, imported for the human
+    Purkinje cell model of (Masoli et al., 2024) [2]_. It inherits
+    none of that code -- see Notes.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    perm : array-like or callable, optional
+        Calcium permeability entering the GHK flux, the mod file's
+        ``pcabar``. Defaults to ``1.0e-4 cm/s``.
+    g_scale : array-like or callable, optional
+        Dimensionless empirical scale factor multiplying the flux,
+        carrying the numeric value of the mod file's
+        ``gCav3_3bar``. Defaults to ``1.0e-5``.
+    temp : array-like, optional
+        Absolute temperature. Enters both the gates' Q10 factor and
+        the GHK flux. Defaults to 36 degrees Celsius.
+    V_sh : array-like or callable, optional
+        Voltage shift subtracted from :math:`V` before every rate
+        and before the GHK term. Defaults to ``0.0 mV``. The mod
+        file declares no corresponding parameter.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    Cav3p3_MA2024_PC : The unfrozen Purkinje-cell import of the same
+        mechanism, and this class's base.
+    Cav3p3_RI2021_SC : Where the equation set, the GHK helper's
+        constants and the current-law scaling caveat are documented
+        in full.
+    Cav2p1_MA2024_PC_Frozen : The module's other family of frozen
+        variants, which additionally swap GHK helpers and so are
+        *not* numerically identical to their unfrozen counterparts.
+
+    Notes
+    -----
+    The class body is ``freeze_drive_gradient = True``. Every gate,
+    constant and rate function comes from :class:`Cav3p3_MA2024_PC`,
+    so a change to :class:`Cav3p3_RI2021_SC` reaches this class too.
+
+    "Frozen" describes the gradient path, not the forward numerics
+    and not the channel states. Both gates keep integrating normally
+    -- nothing stops evolving. :attr:`~braincell.channel.GhkHH.freeze_drive_gradient`
+    routes the membrane potential through
+    :func:`~braincell.channel.freeze_gradient` before it reaches the GHK
+    helper, so the drive's explicit voltage dependence contributes nothing to
+    reverse-mode gradients while the value it computes is unchanged. The unfrozen ``V`` still reaches
+    :meth:`~braincell.channel._base.HH.conductance_factor`, but that
+    method ignores its voltage argument and reads only the gate
+    states, so the distinction affects neither value nor gradient
+    there. **Unlike** :class:`Cav2p1_MA2024_PC_Frozen`, this class
+    inherits the same ``_cav3p3_nmodl_ghk_flux`` helper its unfrozen
+    counterpart uses, so freezing is the only difference between
+    the two and the forward current is unchanged.
+
+    The kinetics are those of ``PC/channel/Cav3p3_MA24_PC.mod``,
+    which is identical to ``SC/channel/Cav3p3_RI21_SC.mod`` apart
+    from its ``SUFFIX`` line and a ``g_equiv`` diagnostic. No mod
+    file ships a frozen-gradient variant: freezing is a BrainCell
+    autodiff facility with no counterpart in NMODL, so it is not an
+    import deviation and changes nothing a NEURON comparison would
+    observe.
+
+    As in :class:`Cav3p3_RI2021_SC`, the mod file's current-law
+    scaling is not dimensionally self-consistent and ``g_scale`` is
+    therefore dimensionless, the GHK helper carries the mod file's
+    own ``F``/``R`` constants and its ``celsius + 273.14`` Kelvin
+    conversion plus a small-argument series branch the mod file
+    lacks, ``V_sh`` has no counterpart in the mod file, the Q10 is
+    declared on the ``Gate`` objects, and ``current()`` negates
+    NEURON's outward-positive ``ica``. The ``perm`` and ``g_scale``
+    defaults are the deposit's tuned values, not values reported by
+    the origin paper.
+
+    References
+    ----------
+    .. [1] Xu, J., & Clancy, C. E. (2008). Ionic mechanisms of
+           endogenous bursting in CA3 hippocampal pyramidal neurons:
+           A model study. PLoS ONE, 3(4), e2056.
+           doi:10.1371/journal.pone.0002056
+    .. [2] Masoli, S., Sanchez-Ponce, D., Vrieler, N., Abu-Haya, K.,
+           Lerner, V., Shahar, T., Nedelescu, H., Rizza, M. F.,
+           Benavides-Piccione, R., DeFelipe, J., Yarom, Y., Munoz,
+           A., & D'Angelo, E. (2024). Human Purkinje cells outperform
+           mouse Purkinje cells in dendritic complexity and
+           computational capacity. Communications Biology, 7(1), 5.
+           doi:10.1038/s42003-023-05689-y
+    """
+
+    __module__ = "braincell.channel"
+    freeze_drive_gradient = True
 
 
 @register_channel("CaHVA_MA2020_GoC")

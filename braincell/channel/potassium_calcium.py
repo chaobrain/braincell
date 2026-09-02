@@ -44,9 +44,13 @@ import jax
 
 from braincell._base_channel import IonInfo
 from braincell._typing import ArrayLike, Initializer, Size
-from braincell.channel._base import Gate, Markov, OhmicHH, Transition, q10_factor
+from braincell.channel._base import Gate, OhmicHH, OhmicMarkov, Transition, cached_q10_factor
 from braincell.ion import Calcium, Potassium
 from braincell.mech import register_channel
+
+#: Hoisted so the identity-keyed memo in ``cached_q10_factor`` can hit:
+#: a freshly built ``celsius2kelvin`` result would miss on every call.
+_TEMP_REF_23C = u.celsius2kelvin(23.0)
 
 __all__ = [
     "AHP_De1994",
@@ -606,7 +610,7 @@ class Kca3p1_MA2024_PC(Kca3p1_MA2020_GoC):
 
 
 @register_channel("Kca2p2_MA2020_GoC")
-class Kca2p2_MA2020_GoC(Markov):
+class Kca2p2_MA2020_GoC(OhmicMarkov):
     r"""Kca2.2 (SK2) calcium-activated K current, Golgi cell.
 
     Template-based import of ``Kca2p2_MA20_GoC.mod``, part of the
@@ -719,6 +723,7 @@ class Kca2p2_MA2020_GoC(Markov):
         Transition("C4", "O2", "diro2_t", "invo2_t"),
     )
     dependent_state = "C1"
+    open_states = ("O1", "O2")
 
     def __init__(
         self,
@@ -751,11 +756,7 @@ class Kca2p2_MA2020_GoC(Markov):
         self.dirc4 = 80.0
 
     def _phi(self):
-        return q10_factor(self.q10_base, self.temp, u.celsius2kelvin(23.0))
-
-    def current(self, V, K: IonInfo, Ca: IonInfo):
-        states = self.state_values()
-        return self.g_max * (states["O1"] + states["O2"]) * (K.E - V)
+        return cached_q10_factor(self, "_phi_memo", self.q10_base, self.temp, _TEMP_REF_23C)
 
     def dirc2_t_ca(self, V, K: IonInfo, Ca: IonInfo):
         return self.dirc2 * self._phi() * (Ca.Ci / u.mM) / self.diff
@@ -1098,7 +1099,7 @@ class Kca2p2_RI2021_SC(Kca2p2_MA2020_GoC):
 
 
 @register_channel("Kca1p1_MA2020_GoC")
-class Kca1p1_MA2020_GoC(Markov):
+class Kca1p1_MA2020_GoC(OhmicMarkov):
     r"""Kca1.1 (BK/mslo) Ca- and voltage-activated K current, Golgi cell.
 
     Template-based import of ``Kca1p1_MA20_GoC.mod``, part of the
@@ -1221,6 +1222,7 @@ class Kca1p1_MA2020_GoC(Markov):
         Transition("C4", "O4", "f4", "b4"),
     )
     dependent_state = "C0"
+    open_states = ("O0", "O1", "O2", "O3", "O4")
 
     def __init__(
         self,
@@ -1258,17 +1260,13 @@ class Kca1p1_MA2020_GoC(Markov):
         self.pb4 = 92e-3
 
     def _phi(self):
-        return q10_factor(self.q10_base, self.temp, u.celsius2kelvin(23.0))
+        return cached_q10_factor(self, "_phi_memo", self.q10_base, self.temp, _TEMP_REF_23C)
 
     def _alpha_factor(self, V):
         return u.math.exp((self.Qo * u.faraday_constant * V) / (u.gas_constant * self.temp))
 
     def _beta_factor(self, V):
         return u.math.exp((self.Qc * u.faraday_constant * V) / (u.gas_constant * self.temp))
-
-    def current(self, V, K: IonInfo, Ca: IonInfo):
-        states = self.state_values()
-        return self.g_max * (states["O0"] + states["O1"] + states["O2"] + states["O3"] + states["O4"]) * (K.E - V)
 
     def c01(self, V, K: IonInfo, Ca: IonInfo):
         return 4 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()

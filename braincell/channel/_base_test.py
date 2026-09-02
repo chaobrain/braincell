@@ -15,7 +15,6 @@
 # ==============================================================================
 
 import unittest
-import warnings
 
 import braintools
 import brainunit as u
@@ -24,34 +23,31 @@ import jax.numpy as jnp
 
 from braincell._base_channel import IonInfo
 from braincell.channel._base import Gate
+from braincell.channel._base import GhkHH
 from braincell.channel._base import HH
 from braincell.channel._base import Markov
 from braincell.channel._base import OhmicHH
+from braincell.channel._base import OhmicMarkov
 from braincell.channel._base import Transition
+from braincell.channel._base import cached_q10_factor
+from braincell.channel._base import freeze_gradient
 from braincell.channel._base import ghk_flux
+from braincell.channel._base import is_disabled
 from braincell.channel._base import q10_factor
 from braincell.ion import Calcium
 from braincell.ion import Potassium
 from braincell.quad import get_integrator
 from braincell.quad.protocol import DiffEqState
-
-
-def _k_info(size: int = 1) -> IonInfo:
-    return IonInfo(
-        Ci=jnp.full((size,), 0.04) * u.mM,
-        Co=jnp.full((size,), 2.5) * u.mM,
-        E=jnp.full((size,), -90.0) * u.mV,
-        valence=1,
-    )
+from braincell.channel.potassium import Kv1p1_MA2025_BC
+from braincell.channel._testing import (
+    ca_info,
+    k_info,
+)
 
 
 def _ca_info(size: int = 1) -> IonInfo:
-    return IonInfo(
-        Ci=jnp.full((size,), 2.0e-4) * u.mM,
-        Co=jnp.full((size,), 2.0) * u.mM,
-        E=jnp.full((size,), 120.0) * u.mV,
-        valence=2,
-    )
+    """Calcium at the 2e-4 mM the template fixtures were tuned against."""
+    return ca_info(size, Ci=2.0e-4)
 
 
 class _ExampleHHInfTau(HH):
@@ -172,6 +168,39 @@ class _ExampleGHK(HH):
         )
 
 
+class _ExampleGhkHH(GhkHH):
+    """``_ExampleGHK`` rewritten on the template, with a voltage shift."""
+
+    root_type = Calcium
+    gates = (Gate("p", power=2, phi=1.5), Gate("q", power=1))
+
+    def __init__(self, size=1, V_sh=5.0 * u.mV):
+        super().__init__(size=size, name=None)
+        self.g_max = braintools.init.param(0.01 * (u.cm / u.second), self.varshape, allow_none=False)
+        self.V_sh = V_sh
+        self.z = 2
+        self.temp = u.celsius2kelvin(36.0)
+
+    def _shifted_voltage(self, V):
+        return V - self.V_sh
+
+    def f_p_inf(self, V, Ca: IonInfo):
+        _ = (V, Ca)
+        return 0.25
+
+    def f_p_tau(self, V, Ca: IonInfo):
+        _ = (V, Ca)
+        return 2.0
+
+    def f_q_inf(self, V, Ca: IonInfo):
+        _ = (V, Ca)
+        return 0.5
+
+    def f_q_tau(self, V, Ca: IonInfo):
+        _ = (V, Ca)
+        return 4.0
+
+
 class _ExampleMarkov(Markov):
     root_type = Potassium
     pairs = (
@@ -207,41 +236,21 @@ class _ExampleMarkovSteadyReset(_ExampleMarkov):
     reset_to_steady_state = True
 
 
-class _ExampleMarkovImplicitDependent(Markov):
-    root_type = Potassium
-    pairs = (
-        Transition("C", "O", "open_rate", "close_rate"),
-        ("O", "I", "inactivate_rate", None),
-    )
+class _ExampleMarkovTwoOpenStates(OhmicMarkov):
+    """Two conducting states, the trailing one eliminated.
 
-    def __init__(self, size=1):
-        super().__init__(size=size, name=None)
-        self.g_max = braintools.init.param(0.3 * (u.mS / u.cm**2), self.varshape, allow_none=False)
+    ``dependent_state`` is the *last* declared state, so this fixture also
+    covers the reconstruction branch of :meth:`OhmicMarkov.conductance_factor`
+    -- an open state that is itself the eliminated one.
+    """
 
-    def open_rate(self, V, K: IonInfo):
-        _ = (V, K)
-        return 0.2
-
-    def close_rate(self, V, K: IonInfo):
-        _ = (V, K)
-        return 0.1
-
-    def inactivate_rate(self, V, K: IonInfo):
-        _ = (V, K)
-        return 0.05
-
-    def current(self, V, K: IonInfo):
-        states = self.state_values()
-        return self.g_max * states["O"] * (K.E - V)
-
-
-class _ExampleMarkovTwoOpenStates(Markov):
     root_type = Potassium
     pairs = (
         Transition("C", "O1", "open1_rate", "close1_rate"),
         ("O1", "O2", "open2_rate", "close2_rate"),
     )
-    dependent_state = "O2"  # what the implicit scan resolved to; pinned so reordering cannot move it
+    dependent_state = "O2"
+    open_states = ("O1", "O2")
 
     def __init__(self, size=1):
         super().__init__(size=size, name=None)
@@ -262,10 +271,6 @@ class _ExampleMarkovTwoOpenStates(Markov):
     def close2_rate(self, V, K: IonInfo):
         _ = (V, K)
         return 0.02
-
-    def current(self, V, K: IonInfo):
-        states = self.state_values()
-        return self.g_max * (states["O1"] + states["O2"]) * (K.E - V)
 
 
 class _ExampleMarkovVoltageOnlyRates(Markov):
@@ -378,10 +383,77 @@ class ChannelTemplateTest(unittest.TestCase):
         expected = q10_factor(3.0, ch.temp, u.celsius2kelvin(22.0))
         self.assertTrue(u.math.allclose(ch.gate_phi(type(ch).gates[0]), expected, atol=1e-12))
 
+    def test_cached_q10_factor_reuses_the_value_for_unchanged_inputs(self) -> None:
+        ch = _ExampleHHInfTau(size=1)
+        ref = u.celsius2kelvin(22.0)
+        first = cached_q10_factor(ch, "_memo", 3.0, ch.temp, ref)
+        again = cached_q10_factor(ch, "_memo", 3.0, ch.temp, ref)
+
+        self.assertIs(again, first)
+        self.assertTrue(u.math.allclose(first, q10_factor(3.0, ch.temp, ref), atol=1e-12))
+
+    def test_cached_q10_factor_recomputes_when_a_parameter_is_rebound(self) -> None:
+        # The memo is identity-keyed, so rebinding `self.temp` -- which is what
+        # a per-cell temperature sweep does -- has to invalidate it.
+        ch = _ExampleHHInfTau(size=1)
+        ref = u.celsius2kelvin(22.0)
+        first = cached_q10_factor(ch, "_memo", 3.0, ch.temp, ref)
+        ch.temp = u.celsius2kelvin(6.0)
+        second = cached_q10_factor(ch, "_memo", 3.0, ch.temp, ref)
+
+        self.assertIsNot(second, first)
+        self.assertTrue(u.math.allclose(second, q10_factor(3.0, ch.temp, ref), atol=1e-12))
+
+    def test_freeze_gradient_keeps_the_value_and_drops_the_derivative(self) -> None:
+        frozen = freeze_gradient(jnp.array([-60.0, -40.0]) * u.mV)
+        self.assertEqual(u.get_unit(frozen), u.mV)
+        self.assertTrue(u.math.allclose(frozen, jnp.array([-60.0, -40.0]) * u.mV, atol=1e-12 * u.mV))
+
+        # Freeze-then-shift: a `V_sh` downstream of the freeze must keep its
+        # own gradient path, which `stop_gradient(V - V_sh)` would sever.
+        def shifted(V_sh):
+            return u.get_mantissa(freeze_gradient(jnp.array(-60.0) * u.mV) - V_sh * u.mV) ** 2
+
+        self.assertAlmostEqual(float(jax.grad(lambda mV: u.get_mantissa(freeze_gradient(mV * u.mV)))(-60.0)), 0.0)
+        self.assertAlmostEqual(float(jax.grad(shifted)(5.0)), -2.0 * (-65.0), places=4)
+
+    def test_is_disabled_reads_a_concrete_all_zero_flag(self) -> None:
+        self.assertTrue(is_disabled(0.0))
+        self.assertTrue(is_disabled(jnp.zeros((3,)) * (u.mS / u.cm**2)))
+        self.assertFalse(is_disabled(jnp.array([0.0, 1e-9, 0.0]) * (u.mS / u.cm**2)))
+
+    def test_is_disabled_is_false_under_tracing(self) -> None:
+        # A traced flag has no concrete value, so the fast path must not fire
+        # and silently drop the term from the compiled graph.
+        seen = []
+        jax.jit(lambda g: seen.append(is_disabled(g)) or g)(jnp.zeros((3,)))
+        self.assertEqual(seen, [False])
+
+    def test_is_disabled_reads_a_concrete_flag_from_inside_a_trace(self) -> None:
+        # The flag is a stored parameter, so it stays concrete even when the
+        # channel is traced. The predicate must not stage a jax op to inspect
+        # it: under an open trace every jax op returns a tracer, and
+        # ``bool(tracer)`` raises -- which would make every gating-current
+        # channel unusable under ``jit``/``for_loop``, the execution model
+        # this package mandates.
+        flag = jnp.zeros((3,))
+        seen = []
+        jax.make_jaxpr(lambda: seen.append(is_disabled(flag)) or jnp.zeros(()))()
+        self.assertEqual(seen, [True])
+
+    def test_gating_current_channel_traces_under_jit(self) -> None:
+        # Regression for the same defect, at the level a user would hit it.
+        ch = Kv1p1_MA2025_BC(size=3)
+        V = jnp.full((3,), -65.0) * u.mV
+        K = k_info(size=3)
+        ch.init_state(V, K)
+        jaxpr = jax.make_jaxpr(lambda v: ch.current(v, K))(V.mantissa * u.mV)
+        self.assertGreater(len(jaxpr.eqns), 0)
+
     def test_hh_inf_tau_channel(self) -> None:
         ch = _ExampleHHInfTau(size=1)
         V = jnp.array([-60.0]) * u.mV
-        K = _k_info()
+        K = k_info()
 
         ch.init_state(V, K)
         ch.reset_state(V, K)
@@ -397,7 +469,7 @@ class ChannelTemplateTest(unittest.TestCase):
     def test_hh_alpha_beta_channel(self) -> None:
         ch = _ExampleHHAlphaBeta(size=1)
         V = jnp.array([-55.0]) * u.mV
-        K = _k_info()
+        K = k_info()
 
         ch.init_state(V, K)
         ch.reset_state(V, K)
@@ -411,7 +483,7 @@ class ChannelTemplateTest(unittest.TestCase):
     def test_hh_mixed_channel_supports_both_forms(self) -> None:
         ch = _ExampleHHMixed(size=1)
         V = jnp.array([-55.0]) * u.mV
-        K = _k_info()
+        K = k_info()
 
         ch.init_state(V, K)
         ch.reset_state(V, K)
@@ -470,6 +542,31 @@ class ChannelTemplateTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not a valid Python identifier"):
             _make_hh("_BadName", {"gates": (Gate("m gate"),)})
 
+    def test_hh_rejects_gate_shadowing_a_class_attribute(self) -> None:
+        # `_bind_state` only sees attributes the constructor set, so a gate
+        # named after a *method* would shadow it with no signal at all.
+        with self.assertRaisesRegex(ValueError, r"gate name 'current' collides"):
+            _make_hh(
+                "_ShadowsMethod",
+                {
+                    "gates": (Gate("current"),),
+                    "f_current_inf": lambda self, V, K: 0.5,
+                    "f_current_tau": lambda self, V, K: 1.0,
+                },
+            )
+
+    def test_markov_rejects_state_shadowing_a_class_attribute(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"Markov state name 'conserve' collides"):
+            _make_markov(
+                "_ShadowsConserve",
+                {
+                    "pairs": (Transition("conserve", "B", "fwd", "bwd"),),
+                    "dependent_state": "B",
+                    "fwd": lambda self, V: 0.1,
+                    "bwd": lambda self, V: 0.2,
+                },
+            )
+
     def test_hh_allows_gateless_abstract_subclass(self) -> None:
         # Abstract intermediates declare no gates and must stay definable.
         cls = _make_hh("_Abstract", {})
@@ -506,12 +603,12 @@ class ChannelTemplateTest(unittest.TestCase):
         ch = cls(1)
         ch.g_max = braintools.init.param(1.0 * (u.mS / u.cm**2), ch.varshape, allow_none=False)
         with self.assertRaisesRegex(ValueError, r"gate 'g_max' collides"):
-            ch.init_state(jnp.array([-60.0]) * u.mV, _k_info())
+            ch.init_state(jnp.array([-60.0]) * u.mV, k_info())
 
     def test_init_state_is_idempotent(self) -> None:
         ch = _ExampleHHInfTau(size=1)
         V = jnp.array([-60.0]) * u.mV
-        K = _k_info()
+        K = k_info()
         ch.init_state(V, K)
         ch.init_state(V, K)  # re-initialisation replaces the existing DiffEqState
         self.assertIsInstance(ch.m, DiffEqState)
@@ -534,6 +631,7 @@ class ChannelTemplateTest(unittest.TestCase):
                 "_MissingRate",
                 {
                     "pairs": (Transition("A", "B", "fwd", "bwd"),),
+                    "dependent_state": "A",
                     "fwd": lambda self, V: 0.1,
                 },
             )
@@ -559,7 +657,7 @@ class ChannelTemplateTest(unittest.TestCase):
         for key, value in attrs.items():
             setattr(ch, key, value)
         V = jnp.array([-60.0]) * u.mV
-        K = _k_info()
+        K = k_info()
         ch.init_state(V, K)
         ch.reset_state(V, K)
         ch.compute_derivative(V, K)
@@ -651,8 +749,8 @@ class ChannelTemplateTest(unittest.TestCase):
         cls = _make_hh("_Arity", {"gates": (Gate("m"),), "f_m_inf": f_m_inf, "f_m_tau": f_m_tau})
         ch = cls(1)
         V = jnp.array([-60.0]) * u.mV
-        ch.init_state(V, _k_info(), _ca_info())
-        ch.compute_derivative(V, _k_info(), _ca_info())
+        ch.init_state(V, k_info(), _ca_info())
+        ch.compute_derivative(V, k_info(), _ca_info())
         self.assertEqual(seen, {"inf": 1, "tau": 2})
 
     def test_gate_method_with_varargs_receives_every_ion(self) -> None:
@@ -668,8 +766,8 @@ class ChannelTemplateTest(unittest.TestCase):
         )
         ch = cls(1)
         V = jnp.array([-60.0]) * u.mV
-        ch.init_state(V, _k_info(), _ca_info())
-        ch.compute_derivative(V, _k_info(), _ca_info())
+        ch.init_state(V, k_info(), _ca_info())
+        ch.compute_derivative(V, k_info(), _ca_info())
         self.assertEqual(seen["n"], 2)
 
     def test_gate_method_demanding_more_ions_than_supplied_raises(self) -> None:
@@ -683,9 +781,9 @@ class ChannelTemplateTest(unittest.TestCase):
         )
         ch = cls(1)
         V = jnp.array([-60.0]) * u.mV
-        ch.init_state(V, _k_info())
+        ch.init_state(V, k_info())
         with self.assertRaisesRegex(TypeError, "expects 2 ion argument"):
-            ch.compute_derivative(V, _k_info())
+            ch.compute_derivative(V, k_info())
 
     # ------------------------------------------------------------------
     # Gate / state clipping
@@ -704,9 +802,9 @@ class ChannelTemplateTest(unittest.TestCase):
     def _factor_at(self, cls, gate_value):
         ch = cls(1)
         V = jnp.array([-60.0]) * u.mV
-        ch.init_state(V, _k_info())
+        ch.init_state(V, k_info())
         ch.m.value = jnp.array([gate_value])
-        return ch.conductance_factor(V, _k_info())
+        return ch.conductance_factor(V, k_info())
 
     def test_gates_are_not_clipped_by_default(self) -> None:
         cls = self._one_gate("_NoClip", power=3)
@@ -729,16 +827,16 @@ class ChannelTemplateTest(unittest.TestCase):
         cls = self._one_gate("_ClipStore", power=1, clip=True)
         ch = cls(1)
         V = jnp.array([-60.0]) * u.mV
-        ch.init_state(V, _k_info())
+        ch.init_state(V, k_info())
         ch.m.value = jnp.array([1.5])
-        ch.conductance_factor(V, _k_info())
+        ch.conductance_factor(V, k_info())
         self.assertTrue(u.math.allclose(ch.m.value, jnp.array([1.5])))
 
     def test_markov_clip_states_defaults_on_and_can_be_disabled(self) -> None:
         self.assertTrue(Markov.clip_states)
         ch = _ExampleMarkov(size=1)
         V = jnp.array([-60.0]) * u.mV
-        K = _k_info()
+        K = k_info()
         ch.init_state(V, K)
         ch.O.value = jnp.array([1.4])
         self.assertTrue(u.math.allclose(ch._kinetic_state_values()["O"], jnp.array([1.0])))
@@ -810,7 +908,7 @@ class ChannelTemplateTest(unittest.TestCase):
         for key, value in attrs.items():
             setattr(ch, key, value)
         V = jnp.array([-60.0]) * u.mV
-        K = _k_info()
+        K = k_info()
         ch.init_state(V, K)
         ch.reset_state(V, K)
         ch.compute_derivative(V, K)
@@ -844,7 +942,7 @@ class ChannelTemplateTest(unittest.TestCase):
         ch = cls(1)
         ch.phi = 2.0 * u.mV
         V = jnp.array([-60.0]) * u.mV
-        K = _k_info()
+        K = k_info()
         ch.init_state(V, K)
         with self.assertRaisesRegex(ValueError, r"_MkBadSS\.fwd must be dimensionless"):
             ch.reset_steady_state(V, K)
@@ -872,33 +970,19 @@ class ChannelTemplateTest(unittest.TestCase):
         b = self._three_state_markov("_OrderB", reordered, dependent_state="A")
         self.assertEqual(a(1)._dependent_state_name(), "A")
         self.assertEqual(b(1)._dependent_state_name(), "A")
-        # ... whereas the implicit fallback would have moved with the order
+        # The discovery order *does* move, which is exactly why the choice has
+        # to be declared rather than read off the end of `pairs`.
         self.assertEqual(a._resolved_state_names[-1], "C")
         self.assertEqual(b._resolved_state_names[-1], "A")
 
-    def test_implicit_dependent_state_warns(self) -> None:
-        cls = self._three_state_markov(
-            "_Implicit",
-            (Transition("A", "B", "r1", "r2"), Transition("B", "C", "r3", "r4")),
-        )
-        with self.assertWarnsRegex(DeprecationWarning, "does not declare `dependent_state`"):
-            self.assertEqual(cls(1)._dependent_state_name(), "C")
-
-    def test_shipped_markov_channels_declare_dependent_state(self) -> None:
-        # Regression lock: reordering `pairs` in any shipped channel must not
-        # be able to silently change which state is eliminated.
-        import braincell.channel as channel_pkg
-
-        implicit = [
-            name
-            for name in dir(channel_pkg)
-            if isinstance(cls := getattr(channel_pkg, name, None), type)
-            and issubclass(cls, Markov)
-            and cls is not Markov
-            and cls.pairs
-            and cls.dependent_state is None
-        ]
-        self.assertEqual(implicit, [])
+    def test_markov_subclass_must_declare_dependent_state(self) -> None:
+        # Reordering `pairs` would otherwise silently change which state is
+        # eliminated, and with it the conditioning of the steady-state solve.
+        with self.assertRaisesRegex(ValueError, r"must declare `dependent_state`"):
+            self._three_state_markov(
+                "_NoDependent",
+                (Transition("A", "B", "r1", "r2"), Transition("B", "C", "r3", "r4")),
+            )
 
     # ------------------------------------------------------------------
     # OhmicHH
@@ -919,7 +1003,7 @@ class ChannelTemplateTest(unittest.TestCase):
     def test_ohmic_current_uses_first_ion_reversal(self) -> None:
         ch = self._ohmic("_Ohmic")
         V = jnp.array([-60.0]) * u.mV
-        K = _k_info()
+        K = k_info()
         ch.init_state(V, K)
         ch.reset_state(V, K)
         expected = ch.g_max * ch.conductance_factor(V, K) * (K.E - V)
@@ -929,7 +1013,7 @@ class ChannelTemplateTest(unittest.TestCase):
         ch = self._ohmic("_OhmicFixed", reversal_potential=lambda self, V, *ions: self.E)
         ch.E = jnp.array([-30.0]) * u.mV
         V = jnp.array([-60.0]) * u.mV
-        K = _k_info()
+        K = k_info()
         ch.init_state(V, K)
         ch.reset_state(V, K)
         expected = ch.g_max * ch.conductance_factor(V, K) * (ch.E - V)
@@ -944,7 +1028,7 @@ class ChannelTemplateTest(unittest.TestCase):
         )
         ch.perm = braintools.init.param(0.25 * (u.mS / u.cm**2), ch.varshape, allow_none=False)
         V = jnp.array([-60.0]) * u.mV
-        K = _k_info()
+        K = k_info()
         ch.init_state(V, K)
         ch.reset_state(V, K)
         expected = ch.perm * ch.conductance_factor(V, K) * (K.E - V)
@@ -955,7 +1039,7 @@ class ChannelTemplateTest(unittest.TestCase):
         # and must draw E from potassium, the first declared ion.
         ch = self._ohmic("_OhmicJoint")
         V = jnp.array([-60.0]) * u.mV
-        K, Ca = _k_info(), _ca_info()
+        K, Ca = k_info(), _ca_info()
         ch.init_state(V, K, Ca)
         ch.reset_state(V, K, Ca)
         self.assertTrue(u.math.allclose(ch.reversal_potential(V, K, Ca), K.E))
@@ -965,6 +1049,7 @@ class ChannelTemplateTest(unittest.TestCase):
             "_TuplePairs",
             {
                 "pairs": (("A", "B", "fwd", "bwd"),),
+                "dependent_state": "A",
                 "fwd": lambda self, V: 0.1,
                 "bwd": lambda self, V: 0.2,
             },
@@ -996,10 +1081,161 @@ class ChannelTemplateTest(unittest.TestCase):
         unit = expected.unit
         self.assertTrue(u.math.allclose(current.to_decimal(unit), expected.to_decimal(unit), atol=1e-6))
 
+    # ------------------------------------------------------------------
+    # GhkHH
+    # ------------------------------------------------------------------
+
+    def _ghk_ready(self, cls=_ExampleGhkHH, **kwargs):
+        ch = cls(size=1, **kwargs)
+        V = jnp.array([-50.0]) * u.mV
+        Ca = _ca_info()
+        ch.init_state(V, Ca)
+        ch.reset_state(V, Ca)
+        return ch, V, Ca
+
+    def test_ghk_hh_current_is_the_sign_flipped_constant_field_flux(self) -> None:
+        ch, V, Ca = self._ghk_ready()
+        expected = (
+            -ch.g_max * ch.p.value**2 * ch.q.value * ghk_flux(V=V - ch.V_sh, ci=Ca.Ci, co=Ca.Co, z=ch.z, temp=ch.temp)
+        )
+        unit = expected.unit
+        self.assertTrue(u.math.allclose(ch.current(V, Ca).to_decimal(unit), expected.to_decimal(unit), atol=1e-12))
+
+    def test_ghk_hh_reads_the_flux_at_the_shifted_voltage(self) -> None:
+        # `_shifted_voltage` must reach the drive, not just the rate methods:
+        # a channel whose `.mod` source offsets `v` offsets the flux too.
+        shifted, V, Ca = self._ghk_ready()
+        unshifted, _, _ = self._ghk_ready(V_sh=0.0 * u.mV)
+        unit = u.mA / u.cm**2
+
+        # Nothing else in `current` depends on V, so shifting the input by
+        # `V_sh` on an unshifted channel has to reproduce the shifted one.
+        self.assertTrue(
+            u.math.allclose(
+                shifted.current(V, Ca).to_decimal(unit),
+                unshifted.current(V - shifted.V_sh, Ca).to_decimal(unit),
+                atol=1e-12,
+            )
+        )
+        self.assertFalse(
+            bool(
+                u.math.allclose(
+                    shifted.current(V, Ca).to_decimal(unit),
+                    unshifted.current(V, Ca).to_decimal(unit),
+                    atol=1e-12,
+                )
+            )
+        )
+
+    def test_ghk_hh_permeability_hook_replaces_g_max(self) -> None:
+        class _RenamedPermeability(_ExampleGhkHH):
+            def __init__(self, size=1, **kwargs):
+                super().__init__(size=size, **kwargs)
+                self.p_max = self.g_max * 3.0
+
+            def permeability(self):
+                return self.p_max
+
+        ch, V, Ca = self._ghk_ready(_RenamedPermeability)
+        baseline, _, _ = self._ghk_ready()
+        unit = u.mA / u.cm**2
+        self.assertTrue(
+            u.math.allclose(
+                ch.current(V, Ca).to_decimal(unit),
+                (baseline.current(V, Ca) * 3.0).to_decimal(unit),
+                atol=1e-12,
+            )
+        )
+
+    def test_ghk_hh_flux_helper_is_a_class_level_declaration(self) -> None:
+        # The catalogue ships three transcriptions of the GHK equation whose
+        # constants differ in the third decimal place, so which one a channel
+        # uses has to be selectable without overriding `current`.
+        calls = []
+
+        def _recording_flux(V, ci, co, z, temp):
+            calls.append(z)
+            return ghk_flux(V=V, ci=ci, co=co, z=z, temp=temp) * 2.0
+
+        class _CustomFlux(_ExampleGhkHH):
+            ghk = staticmethod(_recording_flux)
+
+        ch, V, Ca = self._ghk_ready(_CustomFlux)
+        baseline, _, _ = self._ghk_ready()
+        unit = u.mA / u.cm**2
+        self.assertTrue(
+            u.math.allclose(
+                ch.current(V, Ca).to_decimal(unit),
+                (baseline.current(V, Ca) * 2.0).to_decimal(unit),
+                atol=1e-12,
+            )
+        )
+        self.assertEqual(calls, [2])
+
+    def test_ghk_hh_freeze_drive_gradient_cuts_the_drive_path_only(self) -> None:
+        # Opting in must leave the value untouched and kill only the gradient
+        # that flows through the driving force, matching the `.mod` sources
+        # that treat the flux as a constant within a step.
+        class _FrozenDrive(_ExampleGhkHH):
+            freeze_drive_gradient = True
+
+        live, V, Ca = self._ghk_ready()
+        frozen, _, _ = self._ghk_ready(_FrozenDrive)
+        unit = u.mA / u.cm**2
+
+        self.assertTrue(
+            u.math.allclose(
+                live.current(V, Ca).to_decimal(unit),
+                frozen.current(V, Ca).to_decimal(unit),
+                atol=1e-12,
+            )
+        )
+
+        def sensitivity(ch):
+            return jax.grad(lambda mV: (ch.current(mV * u.mV, Ca) / unit).sum())(u.get_mantissa(V)[0])
+
+        self.assertNotAlmostEqual(float(sensitivity(live)), 0.0)
+        self.assertAlmostEqual(float(sensitivity(frozen)), 0.0)
+
+    # ------------------------------------------------------------------
+    # OhmicMarkov
+    # ------------------------------------------------------------------
+
+    def test_ohmic_markov_rejects_an_undeclared_open_state(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"open_states names \['Z'\]"):
+            type(
+                "_BadOpenStates",
+                (OhmicMarkov,),
+                {
+                    "root_type": Potassium,
+                    "pairs": (Transition("A", "B", "fwd", "bwd"),),
+                    "dependent_state": "A",
+                    "open_states": ("B", "Z"),
+                    "fwd": lambda self, V: 0.1,
+                    "bwd": lambda self, V: 0.2,
+                },
+            )
+
+    def test_ohmic_markov_without_open_states_reports_the_missing_declaration(self) -> None:
+        cls = type(
+            "_NoOpenStates",
+            (OhmicMarkov,),
+            {
+                "root_type": Potassium,
+                "pairs": (Transition("A", "B", "fwd", "bwd"),),
+                "dependent_state": "A",
+                "fwd": lambda self, V: 0.1,
+                "bwd": lambda self, V: 0.2,
+            },
+        )
+        ch = cls(size=1)
+        with self.assertRaisesRegex(NotImplementedError, r"must declare `open_states`"):
+            ch.conductance_factor(jnp.array([-65.0]) * u.mV, k_info())
+
     def test_markov_collects_states_and_builds_dependent_state(self) -> None:
         ch = _ExampleMarkov(size=1)
         V = jnp.array([-65.0]) * u.mV
-        K = _k_info()
+        K = k_info()
 
         ch.init_state(V, K)
         self.assertEqual(ch.state_names, ("O", "I"))
@@ -1052,30 +1288,28 @@ class ChannelTemplateTest(unittest.TestCase):
         self.assertIs(override.solver, get_integrator("euler"))
         self.assertEqual(override.substeps, 2)
 
-    def test_markov_defaults_dependent_state_to_last_discovered_name(self) -> None:
-        ch = _ExampleMarkovImplicitDependent(size=1)
+    def test_markov_eliminates_the_declared_dependent_state(self) -> None:
+        # `_ExampleMarkovTwoOpenStates` declares the trailing state, so this
+        # also covers a dependent state that is not the first one discovered.
+        ch = _ExampleMarkovTwoOpenStates(size=1)
         V = jnp.array([-65.0]) * u.mV
-        K = _k_info()
+        K = k_info()
 
-        with self.assertWarnsRegex(DeprecationWarning, "does not declare `dependent_state`"):
-            ch.init_state(V, K)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            self.assertEqual(ch.redundant_state, "I")
-            self.assertEqual(ch.state_names, ("C", "O"))
-            self.assertTrue(hasattr(ch, "C"))
-            self.assertTrue(hasattr(ch, "O"))
-            self.assertFalse(hasattr(ch, "I"))
+        ch.init_state(V, K)
+        self.assertEqual(ch.redundant_state, "O2")
+        self.assertEqual(ch.state_names, ("C", "O1"))
+        self.assertTrue(hasattr(ch, "C"))
+        self.assertTrue(hasattr(ch, "O1"))
+        self.assertFalse(hasattr(ch, "O2"))
 
-            ch.C.value = jnp.array([0.3])
-            ch.O.value = jnp.array([0.2])
-            states = ch.state_values()
-        self.assertTrue(u.math.allclose(states["I"], jnp.array([0.5]), atol=1e-6))
+        ch.C.value = jnp.array([0.3])
+        ch.O1.value = jnp.array([0.2])
+        self.assertTrue(u.math.allclose(ch.state_values()["O2"], jnp.array([0.5]), atol=1e-6))
 
     def test_markov_pre_and_post_integral_are_no_ops(self) -> None:
         ch = _ExampleMarkov(size=1)
         V = jnp.array([-65.0]) * u.mV
-        K = _k_info()
+        K = k_info()
 
         self.assertIsNone(ch.pre_integral(V, K))
         self.assertIsNone(ch.post_integral(V, K))
@@ -1083,7 +1317,7 @@ class ChannelTemplateTest(unittest.TestCase):
     def test_markov_reset_steady_state_solves_stationary_distribution(self) -> None:
         ch = _ExampleMarkov(size=1)
         V = jnp.array([-65.0]) * u.mV
-        K = _k_info()
+        K = k_info()
 
         ch.init_state(V, K)
         ch.reset_steady_state(V, K)
@@ -1100,7 +1334,7 @@ class ChannelTemplateTest(unittest.TestCase):
     def test_markov_reset_state_zeroes_states_by_default(self) -> None:
         ch = _ExampleMarkov(size=1)
         V = jnp.array([-65.0]) * u.mV
-        K = _k_info()
+        K = k_info()
 
         ch.init_state(V, K)
         ch.reset_steady_state(V, K)
@@ -1114,7 +1348,7 @@ class ChannelTemplateTest(unittest.TestCase):
         opted_in = _ExampleMarkovSteadyReset(size=1)
         baseline = _ExampleMarkov(size=1)
         V = jnp.array([-65.0]) * u.mV
-        K = _k_info()
+        K = k_info()
 
         for ch in (opted_in, baseline):
             ch.init_state(V, K)
@@ -1126,29 +1360,33 @@ class ChannelTemplateTest(unittest.TestCase):
         for name in opted_in.state_names:
             self.assertTrue(u.math.allclose(getattr(opted_in, name).value, getattr(baseline, name).value, atol=1e-12))
 
-    def test_markov_reset_steady_state_supports_implicit_dependent_state(self) -> None:
-        ch = _ExampleMarkovImplicitDependent(size=1)
+    def test_markov_reset_steady_state_with_a_trailing_dependent_state(self) -> None:
+        # The eliminated state is the last one declared here, so the solve has
+        # to drop a trailing row rather than the leading one it drops above.
+        ch = _ExampleMarkovTwoOpenStates(size=1)
         V = jnp.array([-65.0]) * u.mV
-        K = _k_info()
+        K = k_info()
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            ch.init_state(V, K)
-            ch.reset_steady_state(V, K)
-            states = ch.state_values()
+        ch.init_state(V, K)
+        ch.reset_steady_state(V, K)
+        states = ch.state_values()
 
-            total = states["C"] + states["O"] + states["I"]
-            self.assertTrue(u.math.allclose(total, jnp.array([1.0]), atol=1e-6))
-            self.assertTrue(u.math.allclose(states["I"], jnp.array([1.0]), atol=1e-6))
+        total = states["C"] + states["O1"] + states["O2"]
+        self.assertTrue(u.math.allclose(total, jnp.array([1.0]), atol=1e-6))
+        # Detailed balance along the chain: C:O1 = close1/open1, O1:O2 = close2/open2.
+        expected = jnp.array([1.0, 2.0, 5.0])
+        expected = expected / expected.sum()
+        for name, value in zip(("C", "O1", "O2"), expected):
+            self.assertTrue(u.math.allclose(states[name], jnp.array([value]), atol=1e-6))
 
-            ch.compute_derivative(V, K)
+        ch.compute_derivative(V, K)
         self.assertTrue(u.math.allclose(ch.C.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
-        self.assertTrue(u.math.allclose(ch.O.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
+        self.assertTrue(u.math.allclose(ch.O1.derivative, jnp.array([0.0]) / u.ms, atol=1e-6 * u.Hz))
 
     def test_markov_host_steady_state_matches_jax_solver(self) -> None:
         ch = _ExampleMarkovTwoOpenStates(size=3)
         V = jnp.full((3,), -65.0) * u.mV
-        K = _k_info(size=3)
+        K = k_info(size=3)
 
         ch.init_state(V, K)
         host_states = ch._solve_steady_state_host(V, K)
@@ -1161,7 +1399,7 @@ class ChannelTemplateTest(unittest.TestCase):
     def test_markov_steady_state_uses_jax_fallback_when_traced(self) -> None:
         ch = _ExampleMarkovTwoOpenStates(size=3)
         V = jnp.full((3,), -65.0) * u.mV
-        K = _k_info(size=3)
+        K = k_info(size=3)
         ch.init_state(V, K)
 
         solve_open = jax.jit(lambda voltage: ch._solve_steady_state(voltage, K)["O1"])
@@ -1169,28 +1407,10 @@ class ChannelTemplateTest(unittest.TestCase):
         expected = ch._solve_steady_state_jax(V, K)["O1"]
         self.assertTrue(u.math.allclose(actual, expected, atol=1e-6))
 
-    def test_markov_kinetic_states_clip_independent_states_for_dynamics(self) -> None:
+    def test_markov_kinetic_states_clip_independent_states_only(self) -> None:
         ch = _ExampleMarkov(size=1)
         V = jnp.array([-65.0]) * u.mV
-        K = _k_info()
-
-        ch.init_state(V, K)
-        ch.O.value = jnp.array([1.2])
-        ch.I.value = jnp.array([-0.1])
-
-        raw_states = ch.state_values()
-        kinetic_states = ch._kinetic_state_values()
-        self.assertTrue(u.math.allclose(raw_states["O"], jnp.array([1.2]), atol=1e-6))
-        self.assertTrue(u.math.allclose(raw_states["I"], jnp.array([-0.1]), atol=1e-6))
-        self.assertTrue(u.math.allclose(raw_states["C"], jnp.array([-0.1]), atol=1e-6))
-        self.assertTrue(u.math.allclose(kinetic_states["O"], jnp.array([1.0]), atol=1e-6))
-        self.assertTrue(u.math.allclose(kinetic_states["I"], jnp.array([0.0]), atol=1e-6))
-        self.assertTrue(u.math.allclose(kinetic_states["C"], jnp.array([-0.1]), atol=1e-6))
-
-    def test_markov_kinetic_states_can_project_independent_states_only_for_dynamics(self) -> None:
-        ch = _ExampleMarkov(size=1)
-        V = jnp.array([-65.0]) * u.mV
-        K = _k_info()
+        K = k_info()
 
         ch.init_state(V, K)
         ch.O.value = jnp.array([1.2])
@@ -1211,16 +1431,19 @@ class ChannelTemplateTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ch.O.derivative, expected_dO, atol=1e-6 * u.Hz))
         self.assertTrue(u.math.allclose(ch.I.derivative, expected_dI, atol=1e-6 * u.Hz))
 
-    def test_markov_current_can_sum_multiple_open_states_manually(self) -> None:
+    def test_ohmic_markov_current_sums_the_declared_open_states(self) -> None:
+        # ``O2`` is also the dependent state, so this exercises the branch of
+        # ``conductance_factor`` that has to reconstruct an open state.
         ch = _ExampleMarkovTwoOpenStates(size=1)
         V = jnp.array([-65.0]) * u.mV
-        K = _k_info()
+        K = k_info()
 
         ch.init_state(V, K)
         ch.C.value = jnp.array([0.3])
         ch.O1.value = jnp.array([0.2])
         states = ch.state_values()
         self.assertTrue(u.math.allclose(states["O2"], jnp.array([0.5]), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch.conductance_factor(V, K), jnp.array([0.7]), atol=1e-6))
 
         current = ch.current(V, K)
         expected_current = ch.g_max * (states["O1"] + states["O2"]) * (K.E - V)
@@ -1236,7 +1459,7 @@ class ChannelTemplateTest(unittest.TestCase):
     def test_markov_rate_dispatch_respects_declared_signature(self) -> None:
         ch = _ExampleMarkovVoltageOnlyRates(size=1)
         V = jnp.array([-65.0]) * u.mV
-        K = _k_info()
+        K = k_info()
 
         ch.init_state(V, K)
         ch.O.value = jnp.array([0.25])

@@ -16,7 +16,6 @@
 
 from dataclasses import dataclass
 import inspect
-import warnings
 import numpy as np
 from typing import Any, Optional
 from typing import ClassVar
@@ -39,9 +38,18 @@ __all__ = [
     "Transition",
     "HH",
     "OhmicHH",
+    "GhkHH",
     "Markov",
+    "OhmicMarkov",
+    "freeze_gradient",
     "ghk_flux",
+    "q10_factor",
 ]
+
+#: ``u.get_dim(1 / u.ms)``, hoisted out of the per-evaluation validators.
+#: Rebuilding it costs ~15 us per call and it is consulted once per gate and
+#: once per Markov state on every trace.
+_INVERSE_TIME_DIM = u.get_dim(1 / u.ms)
 
 
 def ghk_flux(V, ci, co, z, temp):
@@ -173,6 +181,212 @@ def q10_factor(q10, temp, temp_ref):
     return q10 ** (((temp - temp_ref) / u.kelvin) / 10.0)
 
 
+def cached_q10_factor(owner, slot: str, q10, temp, temp_ref):
+    """Return :func:`q10_factor`, memoised on ``owner`` under ``slot``.
+
+    ``q10_factor`` runs eagerly on concrete parameters and produces a
+    constant, but it is called once per gate per trace on the HH side and
+    once per *rate method* on the Markov side -- 26 times per
+    ``compute_derivative`` for ``Kca1p1_MA2020_GoC``. At ~0.3 ms a call that
+    dominates the trace time of the affected channels.
+
+    The memo is keyed on the *identity* of the three inputs rather than on
+    their values. ``braincell._compute.bindings`` writes runtime parameters by
+    rebinding the attribute (``setattr``) before calling
+    ``_on_param_updated``, so a runtime temperature change replaces
+    ``owner.temp`` with a new object and invalidates the memo automatically.
+
+    Parameters
+    ----------
+    owner : object
+        Instance the memo is stored on.
+    slot : str
+        Attribute name to store the memo under. Must not collide with a
+        parameter or state name.
+    q10, temp, temp_ref : ArrayLike
+        Passed straight through to :func:`q10_factor`.
+
+    Returns
+    -------
+    ArrayLike
+        The dimensionless Q10 factor.
+    """
+    key = (q10, temp, temp_ref)
+    cached = getattr(owner, slot, None)
+    if cached is not None and all(a is b for a, b in zip(cached[0], key)):
+        return cached[1]
+    value = q10_factor(q10, temp, temp_ref)
+    setattr(owner, slot, (key, value))
+    return value
+
+
+def freeze_gradient(value):
+    """Return ``value`` with gradients through it stopped, keeping its unit.
+
+    ``jax.lax.stop_gradient`` operates on arrays, so a
+    :class:`brainunit.Quantity` has to be taken apart and put back together
+    around it. Channels whose published variant freezes the driving force use
+    this; see :attr:`GhkHH.freeze_drive_gradient`.
+
+    Parameters
+    ----------
+    value : ArrayLike
+        A quantity or bare array.
+
+    Returns
+    -------
+    ArrayLike
+        The same value, with the backward pass cut.
+    """
+    return u.Quantity(jax.lax.stop_gradient(u.get_mantissa(value)), u.get_unit(value))
+
+
+def is_disabled(flag) -> bool:
+    """Return True when ``flag`` is concrete and uniformly zero.
+
+    Several imported NMODL mechanisms carry an on/off switch as a *parameter*
+    rather than as a class-level flag, so that it can vary per compartment and
+    stay traceable. The usual encoding is
+    ``value - u.math.where(flag != 0, extra, 0.0 * extra)``, which traces the
+    whole ``extra`` expression even when the switch is off everywhere -- 20 of
+    the 25 equations in ``Kv1p1_MA2025_BC.current``.
+
+    This predicate lets a caller take a Python-level fast path in the common
+    case without giving up either behaviour: it answers ``False`` for a traced
+    flag and for any concrete flag with a non-zero entry, so the array-valued
+    and traced cases still go through ``u.math.where``.
+
+    Parameters
+    ----------
+    flag : ArrayLike
+        The switch parameter.
+
+    Returns
+    -------
+    bool
+        True only if the switch is off everywhere and known at trace time.
+
+    Notes
+    -----
+    The test runs in **numpy**, not ``u.math``/``jnp``. A concrete flag is
+    still inspected from inside an open trace -- ``current`` is called under
+    ``jit``/``for_loop``, which is this package's mandated execution model --
+    and under an open trace every jax operation returns a tracer even when its
+    inputs are concrete, so ``bool()`` on the result would raise
+    ``TracerBoolConversionError``. numpy stages nothing.
+    """
+    if is_traced_value(flag):
+        return False
+    return not bool(np.any(np.asarray(jax.device_get(u.get_mantissa(flag))) != 0))
+
+
+def _steady_state_inputs(owner, V, ions, xp, asarray, template_shape, flat_size):
+    """Flatten ``conserve`` and every transition rate to ``(flat_size,)``.
+
+    The backend-independent half of the steady-state solve. Both
+    :meth:`Markov._solve_steady_state_jax` and
+    :meth:`Markov._solve_steady_state_host` need exactly this, differing only
+    in which array namespace they build it with.
+
+    Parameters
+    ----------
+    owner : Markov
+        The channel whose rates are being resolved.
+    V : ArrayLike
+        Membrane potential the rates are evaluated at.
+    ions : tuple
+        Ion states forwarded to each rate method.
+    xp : module
+        ``numpy`` or ``jax.numpy``; used for ``full`` and ``broadcast_to``.
+    asarray : callable
+        Converts one value to an ``xp`` array. The host backend pulls the
+        value off the device here, which is also what makes it raise on a
+        tracer -- see :meth:`Markov._solve_steady_state`.
+    template_shape : tuple of int
+        Shape every flattened value must broadcast to.
+    flat_size : int
+        ``prod(template_shape)``.
+
+    Returns
+    -------
+    tuple
+        ``(conserve, pair_rates, rates)``, where ``pair_rates`` pairs each
+        :class:`Transition` with its resolved ``(forward, backward)`` arrays
+        and ``rates`` is the flat list used for dtype promotion.
+    """
+
+    def flatten(value, label: str):
+        array = asarray(u.get_magnitude(value))
+        if array.shape != template_shape:
+            if array.size == 1:
+                array = xp.full(template_shape, array.reshape(()), dtype=array.dtype)
+            else:
+                try:
+                    array = xp.broadcast_to(array, template_shape)
+                except ValueError as err:
+                    raise ValueError(
+                        f"{type(owner).__name__}.{label} could not be broadcast to steady-state shape {template_shape}."
+                    ) from err
+        return array.reshape(flat_size)
+
+    conserve = flatten(owner._conserve_value(), "conserve")
+    pair_rates = []
+    rates = []
+    # Resolve each rate once; steady-state assembly reuses the arrays below.
+    for pair in owner._iter_pairs():
+        forward = flatten(owner._transition_rate(pair.forward, V, *ions), pair.forward)
+        backward = None
+        if pair.backward is not None:
+            backward = flatten(owner._transition_rate(pair.backward, V, *ions), pair.backward)
+        pair_rates.append((pair, forward, backward))
+        rates.append(forward)
+        if backward is not None:
+            rates.append(backward)
+    return conserve, pair_rates, rates
+
+
+def _finish_steady_state(owner, xp, solution, conserve, state_names, template_shape, *, check: bool):
+    """Validate, renormalise and unpack a solved steady-state distribution.
+
+    Parameters
+    ----------
+    owner : Markov
+        The channel, named in every error message.
+    xp : module
+        ``numpy`` or ``jax.numpy``.
+    solution : array
+        ``(flat_size, n_states)`` raw solve output.
+    conserve : array
+        ``(flat_size,)`` total probability mass each column must sum to.
+    state_names : tuple of str
+        Column order of ``solution``.
+    template_shape : tuple of int
+        Shape each returned state is reshaped back to.
+    check : bool
+        Run the finiteness / range / non-degeneracy guards. Skipped when the
+        solution is a tracer, where the required Python ``bool`` is unavailable.
+
+    Returns
+    -------
+    dict
+        One entry per state name.
+    """
+    if check:
+        if not bool(xp.all(xp.isfinite(solution))):
+            raise ValueError(f"{type(owner).__name__} steady-state solve returned non-finite values.")
+        tol = 1e-7
+        if bool(xp.any(solution < -tol)) or bool(xp.any(solution > conserve[:, None] + tol)):
+            raise ValueError(f"{type(owner).__name__} steady-state solve returned out-of-range probabilities.")
+
+    solution = xp.clip(solution, 0.0, None)
+    totals = solution.sum(axis=1, keepdims=True)
+    if check and not bool(xp.all(totals > 0.0)):
+        raise ValueError(f"{type(owner).__name__} steady-state solve collapsed to zero probability mass.")
+    solution = solution * (conserve[:, None] / totals)
+
+    return {name: jnp.asarray(solution[:, index].reshape(template_shape)) for index, name in enumerate(state_names)}
+
+
 def _resolve_value(owner, value):
     """Resolve a piece of gate metadata against the owning channel instance.
 
@@ -261,6 +475,22 @@ def _check_identifier(cls: type, name: str, kind: str) -> None:
     """
     if not name.isidentifier():
         raise ValueError(f"{cls.__name__}: {kind} name {name!r} is not a valid Python identifier.")
+
+
+def _check_no_class_attribute(cls: type, name: str, kind: str) -> None:
+    """Reject a declared name that already means something on the class.
+
+    :func:`_bind_state` catches the same collision, but only once
+    ``init_state`` runs on an instance -- and only for attributes the
+    constructor set. A gate called ``current``, ``size`` or ``gates`` shadows a
+    method or a class attribute instead, which ``_bind_state`` cannot see and
+    which produces a failure far from its cause. This runs at class creation.
+    """
+    if hasattr(cls, name):
+        raise ValueError(
+            f"{cls.__name__}: {kind} name {name!r} collides with an existing class attribute "
+            f"of type {type(getattr(cls, name)).__name__}. Rename the {kind}."
+        )
 
 
 def _bind_state(owner, name: str, value, kind: str) -> None:
@@ -353,9 +583,11 @@ def _as_gate_quantity(value, gate: Gate, label: str, *, inverse: bool):
     ``value / time_unit``. A value that already carries a unit is checked
     against the expected dimension and passed through untouched.
     """
-    expected = 1 / gate.time_unit if inverse else gate.time_unit
     if u.get_dim(value) == u.DIMENSIONLESS:
         return value / gate.time_unit if inverse else value * gate.time_unit
+    # Built only on the rare united-value path: constructing ``1 / u.ms`` costs
+    # more than the whole dimensionless branch it used to precede.
+    expected = 1 / gate.time_unit if inverse else gate.time_unit
     if u.get_dim(value) != u.get_dim(expected):
         raise ValueError(
             f"Gate {gate.name!r}: {label} must be dimensionless (read as "
@@ -390,7 +622,7 @@ def _as_markov_rate(value, owner_type: type, rate_name: str):
     dim = u.get_dim(value)
     if dim == u.DIMENSIONLESS:
         return value
-    if dim != u.get_dim(1 / u.ms):
+    if dim != _INVERSE_TIME_DIM:
         raise ValueError(
             f"{owner_type.__name__}.{rate_name} must be dimensionless (read as 1/ms) or carry "
             f"an inverse-time dimension, got dimension {dim}. Check that phi/q10 are dimensionless."
@@ -411,7 +643,7 @@ def _check_derivative(value, label: str):
     Catch it here, where the gate or state is still known, rather than letting
     it surface as a bare unit mismatch far downstream.
     """
-    if u.get_dim(value) != u.get_dim(1 / u.ms):
+    if u.get_dim(value) != _INVERSE_TIME_DIM:
         raise ValueError(
             f"{label}: derivative must have an inverse-time dimension, got "
             f"dimension {u.get_dim(value)}. Check that phi/q10 are dimensionless."
@@ -534,6 +766,7 @@ class HH(Channel):
             if gate.name in seen:
                 raise ValueError(f"{cls.__name__}: gate {gate.name!r} is declared more than once.")
             seen.add(gate.name)
+            _check_no_class_attribute(cls, gate.name, "gate")
 
             has_inf_tau = hasattr(cls, f"f_{gate.name}_inf") and hasattr(cls, f"f_{gate.name}_tau")
             has_alpha_beta = hasattr(cls, f"f_{gate.name}_alpha") and hasattr(cls, f"f_{gate.name}_beta")
@@ -569,14 +802,44 @@ class HH(Channel):
         1. explicit ``phi``
         2. ``q10`` + ``temp_ref`` using ``self.temp``
         3. default ``1.0``
+
+        The ``q10`` branch is memoised per gate through
+        :func:`cached_q10_factor`; 99 of the catalogue's 148 gates take it, and
+        recomputing it once per gate per trace costs ~0.3 ms each.
         """
         if gate.phi is not None:
             return _resolve_value(self, gate.phi)
         if gate.q10 is not None:
-            q10 = _resolve_value(self, gate.q10)
-            temp_ref = _resolve_value(self, gate.temp_ref)
-            return q10_factor(q10, self.temp, temp_ref)
+            return cached_q10_factor(
+                self,
+                f"_gate_phi_memo_{gate.name}",
+                _resolve_value(self, gate.q10),
+                self.temp,
+                _resolve_value(self, gate.temp_ref),
+            )
         return 1.0
+
+    def _shifted_voltage(self, V):
+        """Return the voltage a subclass's rate functions should be read at.
+
+        Defaults to ``V`` unchanged. Mechanisms transcribed from a ``.mod``
+        file that declares a ``vshift``-style offset override this with
+        ``return V - self.V_sh`` (or, where the source's sign convention
+        demands it, ``V + self.V_sh``). Declaring it here gives
+        :class:`GhkHH` one place to apply the shift and gives the four
+        existing overrides a documented contract to override.
+
+        Parameters
+        ----------
+        V : ArrayLike
+            Membrane potential.
+
+        Returns
+        -------
+        ArrayLike
+            The shifted potential, as a voltage.
+        """
+        return V
 
     def _gate_form(self, gate: Gate) -> str:
         return type(self)._gate_forms[gate.name]
@@ -596,12 +859,15 @@ class HH(Channel):
 
     def conductance_factor(self, V, *ions):
         _ = (V, ions)
+        # Seeded from the first gate rather than from a literal ``1.0``: the
+        # leading multiply is exact but still one traced equation per channel.
         product = 1.0
-        for gate in self._iter_gates():
+        for index, gate in enumerate(self._iter_gates()):
             value = self._gate_value(gate)
             if gate.clip:
                 value = u.math.clip(value, 0.0, 1.0)
-            product = product * (value if gate.power == 1 else value**gate.power)
+            factor = value if gate.power == 1 else value**gate.power
+            product = factor if index == 0 else product * factor
         return product
 
     def reset_state(self, V, *ions, batch_size: int = None):
@@ -635,14 +901,68 @@ class HH(Channel):
             self._gate_state(gate).derivative = _check_derivative(derivative, f"Gate {gate.name!r}")
 
 
-class OhmicHH(HH):
+class _OhmicCurrent:
+    r"""Mixin supplying :math:`g \cdot \text{conductance factor} \cdot (E - V)`.
+
+    Kept separate from :class:`OhmicHH` so that :class:`OhmicMarkov` can reach
+    the identical current expression: the two differ only in what
+    ``conductance_factor`` means (a product of gates versus a sum of open
+    probability states), which is the gating template's business rather than
+    the driving force's.
+    """
+
+    def reversal_potential(self, V, *ions):
+        """Return the reversal potential driving the current.
+
+        Parameters
+        ----------
+        V : ArrayLike
+            Membrane potential. Unused by the default implementation; present
+            so overrides can depend on it.
+        *ions : IonInfo
+            Ion states, in the declaration order of ``root_type``.
+
+        Returns
+        -------
+        ArrayLike
+            Reversal potential, as a voltage. Defaults to that of the first
+            ion, which for a joint root type is the first entry of
+            ``root_type.__args__``. A channel whose ``root_type`` is
+            :class:`~braincell.HHTypedNeuron` is called with no ions at all,
+            and falls back to a fixed ``self.E`` set by the constructor.
+            Override to read a non-leading ion, or to ignore an ion that *is*
+            passed.
+        """
+        _ = V
+        return ions[0].E if ions else self.E
+
+    def current(self, V, *ions):
+        """Return the ohmic current through the channel.
+
+        Parameters
+        ----------
+        V : ArrayLike
+            Membrane potential.
+        *ions : IonInfo
+            Ion states, in the declaration order of ``root_type``.
+
+        Returns
+        -------
+        ArrayLike
+            ``g_max * conductance_factor(V, *ions) * (E - V)``, where ``E``
+            comes from :meth:`reversal_potential`.
+        """
+        return self.g_max * self.conductance_factor(V, *ions) * (self.reversal_potential(V, *ions) - V)
+
+
+class OhmicHH(_OhmicCurrent, HH):
     r"""HH gating driven by an ohmic current, :math:`g \cdot \prod g_i^{p_i} \cdot (E - V)`.
 
     Most voltage-gated channels in the catalogue share exactly this current
     expression, so :class:`HH` covers only the gating and this subclass adds
-    the driving force. Channels whose current is not ohmic -- GHK flux and
-    permeability-scaled calcium channels -- inherit :class:`HH` directly and
-    implement :meth:`current` themselves.
+    the driving force. Channels whose current is a constant-field flux use
+    :class:`GhkHH` instead; anything else inherits :class:`HH` directly and
+    implements :meth:`current` itself.
 
     The maximal conductance is read from ``self.g_max``. A channel that names
     it differently, or that scales the driving force some other way, overrides
@@ -651,6 +971,8 @@ class OhmicHH(HH):
     See Also
     --------
     HH : Gating-only template, for channels with a non-ohmic current.
+    GhkHH : Sibling template for constant-field (GHK) calcium currents.
+    OhmicMarkov : The same driving force over Markov probability states.
 
     Examples
     --------
@@ -680,45 +1002,110 @@ class OhmicHH(HH):
 
     __module__ = "braincell.channel"
 
-    def reversal_potential(self, V, *ions):
-        """Return the reversal potential driving the current.
 
-        Parameters
-        ----------
-        V : ArrayLike
-            Membrane potential. Unused by the default implementation; present
-            so overrides can depend on it.
-        *ions : IonInfo
-            Ion states, in the declaration order of ``root_type``.
+class GhkHH(HH):
+    r"""HH gating driven by a constant-field (GHK) flux.
+
+    The catalogue's voltage-gated calcium channels do not carry an ohmic
+    driving force: their current is a permeability times the Goldman-Hodgkin-
+    Katz constant-field flux, sign-flipped into BrainCell's inward-positive
+    convention.
+
+    .. math::
+
+        I = -P \cdot \prod_i g_i^{p_i} \cdot
+            \Phi\!\left(V', [Ca]_i, [Ca]_o, z, T\right)
+
+    The twelve concrete channels that use this form vary along exactly four
+    axes, each of which is a declaration here rather than a re-written
+    :meth:`current`:
+
+    ``ghk``
+        Which flux function to call. Defaults to :func:`ghk_flux`. Mechanisms
+        transcribed from a ``.mod`` file that hardcodes its own Faraday and gas
+        constants point this at the matching helper instead; those constants
+        are load-bearing and differ from the shared ones by up to 2e-3
+        relative, so the choice must stay explicit per class.
+    ``_shifted_voltage``
+        The voltage :math:`V'` the flux is evaluated at. Inherited from
+        :class:`HH`, where it defaults to ``V``.
+    ``freeze_drive_gradient``
+        Whether to cut the backward pass through the driving force. Applied to
+        ``V`` *before* the shift: ``stop_gradient(V) - V_sh`` leaves a live
+        gradient path to ``V_sh`` that ``stop_gradient(V - V_sh)`` would kill,
+        and the published frozen variants were written the first way.
+    ``permeability``
+        The scale factor. Defaults to ``self.g_max``, which occupies the
+        permeability slot a textbook GHK equation writes as :math:`P_s`.
+
+    Note that the gating product is always evaluated at the *unfrozen*,
+    *unshifted* ``V``; only the flux term sees ``V'``.
+
+    Attributes
+    ----------
+    ghk : callable
+        Flux function, called as ``ghk(V=..., ci=..., co=..., z=..., temp=...)``.
+    freeze_drive_gradient : bool
+        Freeze the driving-force gradient. Default ``False``.
+
+    See Also
+    --------
+    OhmicHH : Sibling template for the ohmic driving force.
+    ghk_flux : The default constant-field flux.
+    freeze_gradient : The helper ``freeze_drive_gradient`` switches on.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> from braincell.channel import GhkHH
+        >>> class MyCav(GhkHH):
+        ...     ...
+        >>> class MyCavFrozen(MyCav):
+        ...     freeze_drive_gradient = True
+    """
+
+    __module__ = "braincell.channel"
+
+    ghk = staticmethod(ghk_flux)
+    freeze_drive_gradient: ClassVar[bool] = False
+
+    def permeability(self):
+        """Return the scale multiplying the constant-field flux.
 
         Returns
         -------
         ArrayLike
-            Reversal potential, as a voltage. Defaults to that of the first
-            ion, which for a joint root type is the first entry of
-            ``root_type.__args__``. Override to read a fixed ``self.E`` or a
-            non-leading ion.
+            ``self.g_max`` by default. Channels whose ``.mod`` source scales a
+            separate permeability parameter override this.
         """
-        _ = V
-        return ions[0].E
+        return self.g_max
 
     def current(self, V, *ions):
-        """Return the ohmic current through the channel.
+        """Return the constant-field current through the channel.
 
         Parameters
         ----------
         V : ArrayLike
             Membrane potential.
         *ions : IonInfo
-            Ion states, in the declaration order of ``root_type``.
+            Ion states; the flux reads the first one.
 
         Returns
         -------
         ArrayLike
-            ``g_max * conductance_factor(V, *ions) * (E - V)``, where ``E``
-            comes from :meth:`reversal_potential`.
+            ``-permeability() * conductance_factor(V, *ions) * flux``.
         """
-        return self.g_max * self.conductance_factor(V, *ions) * (self.reversal_potential(V, *ions) - V)
+        ion = ions[0]
+        drive_V = freeze_gradient(V) if type(self).freeze_drive_gradient else V
+        drive = type(self).ghk(
+            V=self._shifted_voltage(drive_V),
+            ci=ion.Ci,
+            co=ion.Co,
+            z=self.z,
+            temp=self.temp,
+        )
+        return -self.permeability() * self.conductance_factor(V, *ions) * drive
 
 
 class Markov(Channel, IndependentIntegration):
@@ -726,10 +1113,11 @@ class Markov(Channel, IndependentIntegration):
 
     ``pairs`` define one conserved probability pool. One state is eliminated
     and reconstructed algebraically from the others; ``dependent_state``
-    names it. Declaring it is required in practice -- the fallback to "the
-    last state discovered while scanning ``pairs``" is order-dependent, so
-    reordering ``pairs`` would silently eliminate a different state, and it
-    now emits a ``DeprecationWarning``.
+    names it, and declaring it is mandatory. Which state is eliminated changes
+    the conditioning of the steady-state solve, so inferring it from the
+    ordering of ``pairs`` -- as this template once did -- meant that
+    reordering an otherwise-equivalent transition table silently changed the
+    model.
 
     ``state_values()`` returns the raw stored states plus the reconstructed
     dependent state. ``compute_derivative()`` uses ``_kinetic_state_values()``,
@@ -756,12 +1144,11 @@ class Markov(Channel, IndependentIntegration):
         per instance the same way as :class:`Gate` metadata -- a ``str``
         names an instance attribute, a callable is applied to the
         instance, anything else is a literal.
-    dependent_state : str or None, default None
+    dependent_state : str
         Name of the state eliminated from the independent set and
-        reconstructed as ``conserve`` minus the others. Declaring it
-        explicitly is effectively required: the ``None`` fallback resolves
-        to "the last state discovered while scanning ``pairs``", which is
-        order-dependent, and doing so emits a ``DeprecationWarning``.
+        reconstructed as ``conserve`` minus the others. Every subclass that
+        declares ``pairs`` must declare this too; omitting it raises
+        ``ValueError`` when the subclass is created.
     default_solver : str, default "backward_euler"
         Solver name used by :class:`IndependentIntegration` when the
         constructor's ``solver`` argument is not supplied.
@@ -823,6 +1210,7 @@ class Markov(Channel, IndependentIntegration):
             for name in (pair.src, pair.dst):
                 if name not in seen:
                     _check_identifier(cls, name, "state")
+                    _check_no_class_attribute(cls, name, "Markov state")
                     names.append(name)
                     seen.add(name)
         if len(names) < 2:
@@ -830,7 +1218,13 @@ class Markov(Channel, IndependentIntegration):
         cls._resolved_state_names = tuple(names)
 
         declared = cls.dependent_state
-        if declared is not None and declared not in seen:
+        if declared is None:
+            raise ValueError(
+                f"{cls.__name__}: Markov subclasses must declare `dependent_state`, naming the state "
+                f"eliminated from the independent set. Choose one of {sorted(seen)}; the choice fixes "
+                f"the conditioning of the steady-state solve, so it cannot be inferred from `pairs`."
+            )
+        if declared not in seen:
             raise ValueError(
                 f"{cls.__name__}: dependent_state {declared!r} is not one of the declared states {sorted(seen)}."
             )
@@ -862,6 +1256,13 @@ class Markov(Channel, IndependentIntegration):
             raise ValueError("substeps must be at least 1.")
 
     def make_integration(self, *args, **kwargs):
+        # Every channel in the catalogue runs one substep, where the loop is
+        # pure overhead: it stages a length-1 scan whose stacked output is
+        # discarded. Skipping it cuts ~19% off the trace time of every Markov
+        # channel and leaves the optimized HLO otherwise unchanged.
+        if self.substeps == 1:
+            self.solver(self, *args, **kwargs)
+            return
         with brainstate.environ.context(dt=brainstate.environ.get_dt() / self.substeps):
             brainstate.transform.for_loop(
                 lambda i: self.solver(self, *args, **kwargs),
@@ -875,22 +1276,10 @@ class Markov(Channel, IndependentIntegration):
         return type(self)._resolved_state_names
 
     def _dependent_state_name(self) -> str:
-        state_names = self._state_names()
-        if len(state_names) < 2:
-            raise ValueError("Markov requires at least two states.")
         declared = type(self).dependent_state
-        if declared is not None:
-            return declared
-        warnings.warn(
-            f"{type(self).__name__} does not declare `dependent_state`, so it falls back to "
-            f"{state_names[-1]!r} -- the last state discovered while scanning `pairs`. Reordering "
-            f"`pairs` would silently eliminate a different state and change the conditioning of "
-            f"the steady-state solve. Set `dependent_state` explicitly; the implicit fallback "
-            f"will be removed.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return state_names[-1]
+        if declared is None:
+            raise ValueError(f"{type(self).__name__} does not declare `dependent_state`.")
+        return declared
 
     def _independent_state_names(self) -> tuple[str, ...]:
         dependent = self._dependent_state_name()
@@ -916,15 +1305,14 @@ class Markov(Channel, IndependentIntegration):
             total = 0.0
         return self._conserve_value() - total
 
-    def _project_independent_state(self, name: str, value):
-        _ = name
-        if not type(self).clip_states:
-            return value
-        return u.math.clip(value, 0.0, 1.0)
-
     def _kinetic_state_values(self):
         raw_states = self._independent_state_values()
-        states = {name: self._project_independent_state(name, value) for name, value in raw_states.items()}
+        if type(self).clip_states:
+            states = {name: u.math.clip(value, 0.0, 1.0) for name, value in raw_states.items()}
+        else:
+            states = dict(raw_states)
+        # Reconstructed from the *raw* sum, not the clipped one, so the pool
+        # still sums to ``conserve``.
         states[self._dependent_state_name()] = self._dependent_state_value(raw_states)
         return states
 
@@ -996,34 +1384,7 @@ class Markov(Channel, IndependentIntegration):
         template_shape = template.shape
         flat_size = int(template.size)
 
-        def _flatten_like(value, label: str):
-            array = jnp.asarray(u.get_magnitude(value))
-            if array.shape != template_shape:
-                if array.size == 1:
-                    array = jnp.full(template_shape, array.reshape(()), dtype=array.dtype)
-                else:
-                    try:
-                        array = jnp.broadcast_to(array, template_shape)
-                    except ValueError as err:
-                        raise ValueError(
-                            f"{type(self).__name__}.{label} could not be broadcast "
-                            f"to steady-state shape {template_shape}."
-                        ) from err
-            return array.reshape(flat_size)
-
-        conserve = _flatten_like(self._conserve_value(), "conserve")
-        pair_rates = []
-        rates = []
-        # Resolve each rate once; steady-state assembly reuses the arrays below.
-        for pair in self._iter_pairs():
-            forward = _flatten_like(self._transition_rate(pair.forward, V, *ions), pair.forward)
-            backward = None
-            if pair.backward is not None:
-                backward = _flatten_like(self._transition_rate(pair.backward, V, *ions), pair.backward)
-            pair_rates.append((pair, forward, backward))
-            rates.append(forward)
-            if backward is not None:
-                rates.append(backward)
+        conserve, pair_rates, rates = _steady_state_inputs(self, V, ions, jnp, jnp.asarray, template_shape, flat_size)
 
         dtype = jnp.result_type(template, conserve, *rates) if rates else jnp.result_type(template, conserve)
         conserve = conserve.astype(dtype)
@@ -1047,22 +1408,16 @@ class Markov(Channel, IndependentIntegration):
         except Exception as err:
             raise ValueError(f"{type(self).__name__} steady-state linear system could not be solved.") from err
 
-        traced = is_traced_value(solution)
-        if not traced:
-            if not bool(jnp.all(jnp.isfinite(solution))):
-                raise ValueError(f"{type(self).__name__} steady-state solve returned non-finite values.")
-
-            tol = 1e-7
-            if bool(jnp.any(solution < -tol)) or bool(jnp.any(solution > conserve[:, None] + tol)):
-                raise ValueError(f"{type(self).__name__} steady-state solve returned out-of-range probabilities.")
-
-        solution = jnp.clip(solution, 0.0, None)
-        totals = solution.sum(axis=1, keepdims=True)
-        if not traced and not bool(jnp.all(totals > 0.0)):
-            raise ValueError(f"{type(self).__name__} steady-state solve collapsed to zero probability mass.")
-        solution = solution * (conserve[:, None] / totals)
-
-        return {name: solution[:, index].reshape(template_shape) for index, name in enumerate(state_names)}
+        return _finish_steady_state(
+            self,
+            jnp,
+            solution,
+            conserve,
+            state_names,
+            template_shape,
+            # A tracer cannot answer the guards' Python ``bool``.
+            check=not is_traced_value(solution),
+        )
 
     def _solve_steady_state_host(self, V, *ions):
         """Return Markov steady-state probabilities using a host NumPy solve."""
@@ -1071,36 +1426,21 @@ class Markov(Channel, IndependentIntegration):
         template = jnp.asarray(u.get_magnitude(self._state_zero()))
         template_shape = template.shape
         flat_size = int(template.size)
+        # Pulled off the device before any rate is resolved: this is the line
+        # that raises under a tracer and sends `_solve_steady_state` to the JAX
+        # path, and it must stay ahead of `_steady_state_inputs` so that no
+        # rate method is evaluated on a doomed attempt.
         template_host = np.asarray(jax.device_get(template))
 
-        def _flatten_like(value, label: str):
-            array = np.asarray(jax.device_get(u.get_magnitude(value)))
-            if array.shape != template_shape:
-                if array.size == 1:
-                    array = np.full(template_shape, array.reshape(()), dtype=array.dtype)
-                else:
-                    try:
-                        array = np.broadcast_to(array, template_shape)
-                    except ValueError as err:
-                        raise ValueError(
-                            f"{type(self).__name__}.{label} could not be broadcast "
-                            f"to steady-state shape {template_shape}."
-                        ) from err
-            return array.reshape(flat_size)
-
-        conserve = _flatten_like(self._conserve_value(), "conserve")
-        pair_rates = []
-        rates = []
-        # Resolve each rate once; steady-state assembly reuses the arrays below.
-        for pair in self._iter_pairs():
-            forward = _flatten_like(self._transition_rate(pair.forward, V, *ions), pair.forward)
-            backward = None
-            if pair.backward is not None:
-                backward = _flatten_like(self._transition_rate(pair.backward, V, *ions), pair.backward)
-            pair_rates.append((pair, forward, backward))
-            rates.append(forward)
-            if backward is not None:
-                rates.append(backward)
+        conserve, pair_rates, rates = _steady_state_inputs(
+            self,
+            V,
+            ions,
+            np,
+            lambda value: np.asarray(jax.device_get(value)),
+            template_shape,
+            flat_size,
+        )
 
         if rates:
             dtype = np.dtype(jnp.result_type(template_host, conserve, *rates))
@@ -1129,20 +1469,7 @@ class Markov(Channel, IndependentIntegration):
         except Exception as err:
             raise ValueError(f"{type(self).__name__} steady-state linear system could not be solved.") from err
 
-        if not np.all(np.isfinite(solution)):
-            raise ValueError(f"{type(self).__name__} steady-state solve returned non-finite values.")
-
-        tol = 1e-7
-        if np.any(solution < -tol) or np.any(solution > conserve[:, None] + tol):
-            raise ValueError(f"{type(self).__name__} steady-state solve returned out-of-range probabilities.")
-
-        solution = np.clip(solution, 0.0, None)
-        totals = solution.sum(axis=1, keepdims=True)
-        if not np.all(totals > 0.0):
-            raise ValueError(f"{type(self).__name__} steady-state solve collapsed to zero probability mass.")
-        solution = solution * (conserve[:, None] / totals)
-
-        return {name: jnp.asarray(solution[:, index].reshape(template_shape)) for index, name in enumerate(state_names)}
+        return _finish_steady_state(self, np, solution, conserve, state_names, template_shape, check=True)
 
     def reset_steady_state(self, V, *ions, batch_size: int = None):
         states = self._solve_steady_state(V, *ions)
@@ -1159,21 +1486,92 @@ class Markov(Channel, IndependentIntegration):
 
     def compute_derivative(self, V, *ions):
         states = self._kinetic_state_values()
-        derivatives = {name: self._state_zero() for name in states}
+        # Only independent states are written back, so an accumulator for the
+        # dependent state would be built across every pair and then dropped --
+        # ~26 traced operations per step for a thirteen-pair scheme. Seeding
+        # with the scalar ``0.0`` rather than a zeros array is exact
+        # (``0.0 - x`` and ``zeros_like(x) - x`` agree bit for bit) and skips
+        # one eager ``zeros_like`` dispatch per state.
+        derivatives = {name: 0.0 for name in self._independent_state_names()}
 
         for pair in self._iter_pairs():
             forward = self._transition_rate(pair.forward, V, *ions)
-            derivatives[pair.src] = derivatives[pair.src] - states[pair.src] * forward
-            derivatives[pair.dst] = derivatives[pair.dst] + states[pair.src] * forward
+            flux = states[pair.src] * forward
+            if pair.src in derivatives:
+                derivatives[pair.src] = derivatives[pair.src] - flux
+            if pair.dst in derivatives:
+                derivatives[pair.dst] = derivatives[pair.dst] + flux
 
             if pair.backward is not None:
                 backward = self._transition_rate(pair.backward, V, *ions)
-                derivatives[pair.src] = derivatives[pair.src] + states[pair.dst] * backward
-                derivatives[pair.dst] = derivatives[pair.dst] - states[pair.dst] * backward
+                reverse = states[pair.dst] * backward
+                if pair.src in derivatives:
+                    derivatives[pair.src] = derivatives[pair.src] + reverse
+                if pair.dst in derivatives:
+                    derivatives[pair.dst] = derivatives[pair.dst] - reverse
 
-        for name in self._independent_state_names():
+        for name, derivative in derivatives.items():
             # The rates are normalised to bare per-ms values, so the single
             # division below is what gives the derivative its unit. `conserve`
             # still reaches the states unchecked, hence the assertion.
-            derivative = derivatives[name] / u.ms
+            derivative = derivative / u.ms
             getattr(self, name).derivative = _check_derivative(derivative, f"{type(self).__name__} state {name!r}")
+
+
+class OhmicMarkov(_OhmicCurrent, Markov):
+    r"""Markov kinetics driven by an ohmic current.
+
+    :class:`Markov` is the sibling of :class:`HH`, but only ``HH`` had a
+    driving-force subclass, so every ohmic Markov channel in the catalogue
+    wrote out ``g_max * (sum of open states) * (E - V)`` by hand and none had a
+    :meth:`~_OhmicCurrent.reversal_potential` hook.
+
+    Declaring :attr:`open_states` supplies the conductance factor and the rest
+    is inherited from the same mixin :class:`OhmicHH` uses.
+
+    Attributes
+    ----------
+    open_states : tuple of str
+        Names of the conducting states, summed left to right in the order
+        given. Every name must be one of the states declared by ``pairs``.
+
+    See Also
+    --------
+    OhmicHH : The same driving force over HH gates.
+    Markov : The gating template this builds on.
+    """
+
+    __module__ = "braincell.channel"
+
+    open_states: ClassVar[tuple[str, ...]] = ()
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        declared = cls._resolved_state_names
+        if not declared:
+            return
+        unknown = tuple(name for name in cls.open_states if name not in declared)
+        if unknown:
+            raise ValueError(
+                f"{cls.__name__}: open_states names {list(unknown)} that are not declared states {sorted(declared)}."
+            )
+
+    def conductance_factor(self, V, *ions):
+        """Return the summed occupancy of the conducting states.
+
+        Reads each independent open state directly rather than going through
+        :meth:`~Markov.state_values`, which would additionally reconstruct the
+        dependent state only to discard it. The reconstruction is done only if
+        an open state *is* the dependent one, which no shipped scheme does.
+        """
+        _ = (V, ions)
+        names = type(self).open_states
+        if not names:
+            raise NotImplementedError(f"{type(self).__name__} must declare `open_states`.")
+        dependent = self._dependent_state_name()
+        reconstructed = self.state_values() if dependent in names else None
+        total = None
+        for name in names:
+            value = reconstructed[name] if name == dependent else getattr(self, name).value
+            total = value if total is None else total + value
+        return total

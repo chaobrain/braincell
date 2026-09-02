@@ -4,6 +4,35 @@
 .. currentmodule:: braincell.channel
 .. automodule:: braincell.channel
 
+Channel Templates
+-----------------
+
+The catalogue below is built from a handful of templates. A new channel
+declares its gates or transitions and its rate functions, and inherits the
+current law from one of these.
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+   Gate
+   Transition
+   HH
+   OhmicHH
+   GhkHH
+   Markov
+   OhmicMarkov
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+
+   ghk_flux
+   q10_factor
+   freeze_gradient
+
+
 Calcium Channels
 ----------------
 
@@ -24,6 +53,7 @@ Calcium Channels
    CaLVA_SU2015_DCN
    CaL_SU2015_DCN
    Ca_ZH2019_IO
+   Ca_ZH2019_IO_Frozen
    Cav1p2_MA2020_GoC
    Cav1p2_MA2025_BC
    Cav1p3_MA2020_GoC
@@ -31,9 +61,12 @@ Calcium Channels
    Cav2p1_MA2024_PC
    Cav2p1_MA2024_PC_Frozen
    Cav2p1_MA2025_BC
+   Cav2p1_MA2025_BC_Frozen
    Cav2p1_RI2021_SC
+   Cav2p1_RI2021_SC_Frozen
    Cav2p3_MA2020_GoC
    Cav3p1_MA2020_GoC
+   Cav3p1_MA2020_GoC_Frozen
    Cav3p1_MA2024_PC
    Cav3p1_MA2024_PC_Frozen
    Cav3p1Test_PC24

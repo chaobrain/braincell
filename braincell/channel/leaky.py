@@ -20,14 +20,14 @@ This module implements leakage channel.
 
 """
 
-from typing import Union, Sequence, Optional
+from typing import Optional
 
 import braintools
 import brainunit as u
 
 from braincell._base_channel import Channel
 from braincell._base_neuron import HHTypedNeuron
-from braincell._typing import Initializer
+from braincell._typing import Initializer, Size
 from braincell.mech import register_channel
 
 __all__ = [
@@ -65,78 +65,19 @@ class LeakageChannel(Channel):
 
     root_type = HHTypedNeuron
 
-    def pre_integral(self, V):
-        """
-        Perform any necessary operations before the integration step.
-
-        Parameters
-        -----------
-        V : array-like
-            The membrane potential.
-        """
-        pass
-
-    def post_integral(self, V):
-        """
-        Perform any necessary operations after the integration step.
-
-        Parameters
-        -----------
-        V : array-like
-            The membrane potential.
-        """
-        pass
-
     def compute_derivative(self, V):
-        """
-        Compute the derivative of the channel state variables.
+        """Do nothing: a leak has no state to integrate.
+
+        This is the one lifecycle method that differs from
+        :class:`~braincell._base_channel.IonChannel`'s default, which raises
+        ``NotImplementedError``. ``pre_integral``, ``post_integral``,
+        ``init_state``, ``reset_state`` and the ``NotImplementedError`` from
+        ``current`` are all inherited unchanged.
 
         Parameters
-        -----------
+        ----------
         V : array-like
             The membrane potential.
-        """
-        pass
-
-    def current(self, V):
-        """
-        Calculate the current through the leakage channel.
-
-        Parameters
-        -----------
-        V : array-like
-            The membrane potential.
-
-        Raises:
-        -------
-        NotImplementedError
-            This method should be implemented by subclasses.
-        """
-        raise NotImplementedError
-
-    def init_state(self, V, batch_size: int = None):
-        """
-        Initialize the state of the leakage channel.
-
-        Parameters
-        -----------
-        V : array-like
-            The membrane potential.
-        batch_size : int, optional
-            The batch size for initialization.
-        """
-        pass
-
-    def reset_state(self, V, batch_size: int = None):
-        """
-        Reset the state of the leakage channel.
-
-        Parameters
-        -----------
-        V : array-like
-            The membrane potential.
-        batch_size : int, optional
-            The batch size for resetting.
         """
         pass
 
@@ -184,7 +125,7 @@ class IL(LeakageChannel):
 
     def __init__(
         self,
-        size: Union[int, Sequence[int]],
+        size: Size,
         g_max: Initializer = 0.1 * (u.mS / u.cm**2),
         E: Initializer = -70.0 * u.mV,
         name: Optional[str] = None,

@@ -256,7 +256,7 @@
 - `Cell.init_state()` 负责 runtime 编译与 state 创建
 - `Cell` 已直接接管 `reset_state/pre_integral/compute_derivative/post_integral/update`
 - `CellRuntimeState` 退化为内部编译缓存，不再作为公开主接口
-- `braincell.mech.Channel("IL")` 与 `braincell.mech.Channel("INa_HH1952")` 已能创建真实 runtime channel，并绑定到默认 `na/k/ca`
+- `braincell.mech.Channel("IL")` 与 `braincell.mech.Channel("Na_HH1952")` 已能创建真实 runtime channel，并绑定到默认 `na/k/ca`
 - `Cell` 已可直接查询 `layouts/get_state/get_point_state/get_cv_state/get_runtime_node/get_ion`
 - `Cell.V` 的公开尺寸现在固定为 `pop_size + (n_cv,)`；`pop_size` 默认 `(1,)` 且不允许为空
 - runtime channel / ion 仍按 `node_tree` 的 `n_point = n_cv + n_branch + 1` 创建，公开尺寸为 `pop_size + (n_point,)`
@@ -280,7 +280,7 @@
 - 已打通 `Channel("IL", ...) -> CellRuntimeState.runtime_nodes -> braincell.channel.IL(size=(n_point,))`
 - 当前 `set_state(layout_id, var_name, value)` 会同步更新 bridge buffer 和已注册的 `IL` runtime node 参数
 - 已增加默认全局固定 ion 容器：`runtime.ions["na" | "k" | "ca"]`
-- 已打通 `Channel("INa_HH1952", ...) -> runtime.get_runtime_node(layout_id) -> runtime.get_ion("na").channels["INa"]`
+- 已打通 `Channel("Na_HH1952", ...) -> runtime.get_runtime_node(layout_id) -> runtime.get_ion("na").channels["Na"]`
 - 当前 `INa_HH1952` spec 里的 `temp` 会在 runtime bridge 中转换成底层构造参数 `phi`
 - 当前仍只支持 dense runtime；`k/ca` 容器已创建但还未绑定新的真实 channel
 - 下一步优先做更多 ion-bound channel 映射，或者设计 `cell.ion[...]` / `cell.soma.channel[...]` 这种更直接的 facade

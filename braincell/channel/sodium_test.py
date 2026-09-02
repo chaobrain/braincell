@@ -20,8 +20,8 @@ import unittest
 import brainstate
 import brainunit as u
 import jax.numpy as jnp
+import pytest
 
-from braincell._base_channel import IonInfo
 from braincell.channel._base import HH, Markov
 from braincell.channel.sodium import (
     Na_Ba2002,
@@ -40,24 +40,27 @@ from braincell.channel.sodium import (
     Nav_MA2020_GrC,
 )
 from braincell.ion import Sodium
-
-brainstate.environ.set(precision=64)
-
-
-def _na_info(size: int = 1) -> IonInfo:
-    return IonInfo(
-        Ci=jnp.full((size,), 0.04) * u.mM,
-        Co=jnp.full((size,), 140.0) * u.mM,
-        E=jnp.full((size,), 50.0) * u.mV,
-        valence=1,
-    )
+from braincell.channel._testing import (
+    DENSITY_UNIT,
+    na_info,
+    voltage,
+)
 
 
-def _V(values, unit=u.mV):
-    return jnp.asarray(values) * unit
+@pytest.fixture(autouse=True)
+def _float64():
+    """Run this module's tests at 64-bit precision.
 
-
-_DENSITY_UNIT = u.mS / u.cm**2 * u.mV
+    The 13-state Nav steady-state solves are ill-conditioned enough that
+    ``reset_state`` misses its stationary distribution at 32 bit. This used to
+    be a bare ``brainstate.environ.set(precision=64)`` at module scope, which
+    is process-global: it silently changed precision for every test module
+    pytest collected afterwards, making their results depend on collection
+    order. Autouse at module scope keeps the setting where it is needed and
+    restores 32 bit on the way out.
+    """
+    with brainstate.environ.context(precision=64):
+        yield
 
 
 def _assert_markov_probability_total(testcase, channel, size: int) -> None:
@@ -122,8 +125,8 @@ class _HHNaMixin:
 
     def test_init_state_creates_gates_shaped_to_size(self) -> None:
         ch = self._make(size=4)
-        V = _V([-60.0, -55.0, -50.0, -45.0])
-        na = _na_info(4)
+        V = voltage([-60.0, -55.0, -50.0, -45.0])
+        na = na_info(4)
 
         ch.init_state(V, na)
         self.assertEqual(ch.p.value.shape, (4,))
@@ -133,8 +136,8 @@ class _HHNaMixin:
 
     def test_reset_state_sets_gates_to_steady_state(self) -> None:
         ch = self._make(size=1)
-        V = _V([-65.0])
-        na = _na_info()
+        V = voltage([-65.0])
+        na = na_info()
         ch.init_state(V, na)
         ch.reset_state(V, na)
 
@@ -149,8 +152,8 @@ class _HHNaMixin:
 
     def test_compute_derivative_matches_hh_equation(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
         ch.init_state(V, na)
         ch.reset_state(V, na)
         ch.p.value = jnp.array([0.1])
@@ -171,8 +174,8 @@ class _HHNaMixin:
 
     def test_current_matches_p3q_formula(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
         ch.init_state(V, na)
         ch.reset_state(V, na)
 
@@ -183,8 +186,8 @@ class _HHNaMixin:
 
     def test_current_is_zero_when_gates_closed(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
         ch.init_state(V, na)
         ch.p.value = jnp.zeros(1)
         ch.q.value = jnp.zeros(1)
@@ -205,10 +208,10 @@ class Na_Ba2002Test(_HHNaMixin, unittest.TestCase):
     def test_V_sh_shifts_rate_functions(self) -> None:
         ch_a = Na_Ba2002(size=1, V_sh=-50.0 * u.mV)
         ch_b = Na_Ba2002(size=1, V_sh=-60.0 * u.mV)
-        na = _na_info()
+        na = na_info()
 
-        V = _V([-55.0])
-        V_shifted = _V([-45.0])
+        V = voltage([-55.0])
+        V_shifted = voltage([-45.0])
         self.assertTrue(u.math.allclose(ch_a.f_p_alpha(V_shifted, na), ch_b.f_p_alpha(V, na), atol=1e-6))
 
 
@@ -226,8 +229,8 @@ class NaFSU15DCNTest(unittest.TestCase):
 
     def test_reset_state_matches_inf_functions(self) -> None:
         ch = NaF_SU2015_DCN(size=1)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
         ch.init_state(V, na)
         ch.reset_state(V, na)
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, na), atol=1e-6))
@@ -235,8 +238,8 @@ class NaFSU15DCNTest(unittest.TestCase):
 
     def test_current_matches_linear_formula(self) -> None:
         ch = NaF_SU2015_DCN(size=1)
-        V = _V([-40.0])
-        na = _na_info()
+        V = voltage([-40.0])
+        na = na_info()
         ch.init_state(V, na)
         ch.m.value = jnp.array([0.5])
         ch.h.value = jnp.array([0.25])
@@ -244,16 +247,16 @@ class NaFSU15DCNTest(unittest.TestCase):
         expected = ch.g_max * (ch.m.value**3) * ch.h.value * (na.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_tau_matches_mod_formula(self) -> None:
         ch = NaF_SU2015_DCN(size=1)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
         v = V.to_decimal(u.mV)
         expected_m_tau = 5.83 / (jnp.exp((v - 6.4) / -9.0) + jnp.exp((v + 97.0) / 17.0)) + 0.025
         expected_h_tau = 16.67 / (jnp.exp((v - 8.3) / -29.0) + jnp.exp((v + 66.0) / 9.0)) + 0.2
@@ -267,8 +270,8 @@ class NaPSU15DCNTest(unittest.TestCase):
 
     def test_reset_state_matches_inf_functions(self) -> None:
         ch = NaP_SU2015_DCN(size=1)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
         ch.init_state(V, na)
         ch.reset_state(V, na)
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, na), atol=1e-6))
@@ -276,8 +279,8 @@ class NaPSU15DCNTest(unittest.TestCase):
 
     def test_current_matches_linear_formula(self) -> None:
         ch = NaP_SU2015_DCN(size=1)
-        V = _V([-50.0])
-        na = _na_info()
+        V = voltage([-50.0])
+        na = na_info()
         ch.init_state(V, na)
         ch.m.value = jnp.array([0.5])
         ch.h.value = jnp.array([0.25])
@@ -285,16 +288,16 @@ class NaPSU15DCNTest(unittest.TestCase):
         expected = ch.g_max * (ch.m.value**3) * ch.h.value * (na.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_tau_matches_mod_formula(self) -> None:
         ch = NaP_SU2015_DCN(size=1)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
         v = V.to_decimal(u.mV)
         expected_h_tau = 1750.0 / (1.0 + jnp.exp((v + 65.0) / -8.0)) + 250.0
         self.assertTrue(u.math.allclose(ch.f_m_tau(V, na), jnp.array(50.0), atol=1e-6))
@@ -307,8 +310,8 @@ class NaZH19IOTest(unittest.TestCase):
 
     def test_reset_state_matches_inf_functions(self) -> None:
         ch = Na_ZH2019_IO(size=1)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
         ch.init_state(V, na)
         ch.reset_state(V, na)
         self.assertTrue(u.math.allclose(ch.m.value, ch.f_m_inf(V, na), atol=1e-6))
@@ -316,8 +319,8 @@ class NaZH19IOTest(unittest.TestCase):
 
     def test_current_matches_linear_formula(self) -> None:
         ch = Na_ZH2019_IO(size=1)
-        V = _V([-40.0])
-        na = _na_info()
+        V = voltage([-40.0])
+        na = na_info()
         ch.init_state(V, na)
         ch.m.value = jnp.array([0.5])
         ch.h.value = jnp.array([0.25])
@@ -325,16 +328,16 @@ class NaZH19IOTest(unittest.TestCase):
         expected = ch.g_max * (ch.m.value**3) * ch.h.value * (na.E - V)
         self.assertTrue(
             u.math.allclose(
-                i.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_small_denominator_branches_are_stable(self) -> None:
         ch = Na_ZH2019_IO(size=1)
-        self.assertTrue(u.math.allclose(ch._m_alpha(_V([-41.0])), jnp.array([1.0]), atol=1e-6))
-        self.assertTrue(u.math.allclose(ch._h_beta(_V([-50.0])), jnp.array([10.0]), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch._m_alpha(voltage([-41.0])), jnp.array([1.0]), atol=1e-6))
+        self.assertTrue(u.math.allclose(ch._h_beta(voltage([-50.0])), jnp.array([10.0]), atol=1e-6))
 
     def test_rates_stay_accurate_just_off_the_singularity(self) -> None:
         # `x / (1 - exp(-x))` loses most of its float32 significand for
@@ -343,9 +346,9 @@ class NaZH19IOTest(unittest.TestCase):
         # threshold, and compare against the analytic value `1 + x/2`.
         ch = Na_ZH2019_IO(size=1)
         offsets = jnp.array([-1.0e-3, -1.0e-5, 1.0e-5, 1.0e-3])
-        m_alpha = ch._m_alpha(_V(-41.0 + offsets))
+        m_alpha = ch._m_alpha(voltage(-41.0 + offsets))
         self.assertTrue(u.math.allclose(m_alpha, 1.0 + (offsets / 10.0) / 2.0, atol=1e-6))
-        h_beta = ch._h_beta(_V(-50.0 + offsets))
+        h_beta = ch._h_beta(voltage(-50.0 + offsets))
         self.assertTrue(u.math.allclose(h_beta, 10.0 * (1.0 + (offsets / 10.0) / 2.0), atol=1e-5))
 
 
@@ -407,8 +410,8 @@ class _Nav1p6Mixin:
 
     def test_init_state_derives_visible_state_list_from_pairs(self) -> None:
         ch = self._make(size=3)
-        V = _V([-60.0, -50.0, -40.0])
-        na = _na_info(3)
+        V = voltage([-60.0, -50.0, -40.0])
+        na = na_info(3)
 
         ch.init_state(V, na)
 
@@ -426,8 +429,8 @@ class _Nav1p6Mixin:
 
     def test_state_values_reconstructs_hidden_state_from_probability_conservation(self) -> None:
         ch = self._make(size=1)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
 
         ch.init_state(V, na)
         ch.C1.value = jnp.array([0.2])
@@ -450,8 +453,8 @@ class _Nav1p6Mixin:
 
     def test_current_uses_open_state_only(self) -> None:
         proto = self._make(size=1)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
 
         proto.init_state(V, na)
         proto.reset_state(V, na)
@@ -461,16 +464,16 @@ class _Nav1p6Mixin:
         expected = proto.g_max * proto.O.value * (na.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_compute_derivative_matches_manual_markov_balance(self) -> None:
         proto = self._make(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
 
         proto.init_state(V, na)
         _seed_states(proto)
@@ -492,8 +495,8 @@ class _Nav1p6Mixin:
 
     def test_reset_steady_state_produces_stationary_distribution(self) -> None:
         proto = self._make(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
 
         proto.init_state(V, na)
         proto.reset_steady_state(V, na)
@@ -516,8 +519,8 @@ class _Nav1p6Mixin:
 
     def test_make_integration_updates_states_and_keeps_them_finite(self) -> None:
         proto = self._make(size=2, solver="euler")
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
 
         proto.init_state(V, na)
         _seed_states(proto)
@@ -545,8 +548,8 @@ class Nav1p6MA24PCTest(_Nav1p6Mixin, unittest.TestCase):
     def test_matches_goc_implementation_under_same_conditions(self) -> None:
         goc = Nav1p6_MA2020_GoC(size=2)
         pc = Nav1p6_MA2024_PC(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
 
         goc.init_state(V, na)
         pc.init_state(V, na)
@@ -573,8 +576,8 @@ class Nav1p6MA24PCTest(_Nav1p6Mixin, unittest.TestCase):
         i_pc = pc.current(V, na)
         self.assertTrue(
             u.math.allclose(
-                i_goc.to_decimal(_DENSITY_UNIT),
-                i_pc.to_decimal(_DENSITY_UNIT),
+                i_goc.to_decimal(DENSITY_UNIT),
+                i_pc.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -584,8 +587,8 @@ class Nav1p6MA25BCTest(_Nav1p6Mixin, unittest.TestCase):
     CLS = Nav1p6_MA2025_BC
 
     def test_reset_state_uses_steady_state_initialization(self) -> None:
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
         reset = Nav1p6_MA2025_BC(size=2)
         steady = Nav1p6_MA2025_BC(size=2)
 
@@ -612,8 +615,8 @@ class Nav1p6MA25BCTest(_Nav1p6Mixin, unittest.TestCase):
     def test_matches_goc_implementation_under_same_conditions(self) -> None:
         goc = Nav1p6_MA2020_GoC(size=2)
         bc = Nav1p6_MA2025_BC(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
 
         goc.init_state(V, na)
         bc.init_state(V, na)
@@ -640,8 +643,8 @@ class Nav1p6MA25BCTest(_Nav1p6Mixin, unittest.TestCase):
         i_bc = bc.current(V, na)
         self.assertTrue(
             u.math.allclose(
-                i_goc.to_decimal(_DENSITY_UNIT),
-                i_bc.to_decimal(_DENSITY_UNIT),
+                i_goc.to_decimal(DENSITY_UNIT),
+                i_bc.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -651,8 +654,8 @@ class Nav1p6RI21SCTest(_Nav1p6Mixin, unittest.TestCase):
     CLS = Nav1p6_RI2021_SC
 
     def test_reset_state_uses_steady_state_initialization(self) -> None:
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
         reset = Nav1p6_RI2021_SC(size=2)
         steady = Nav1p6_RI2021_SC(size=2)
 
@@ -679,8 +682,8 @@ class Nav1p6RI21SCTest(_Nav1p6Mixin, unittest.TestCase):
     def test_matches_goc_implementation_under_same_conditions(self) -> None:
         goc = Nav1p6_MA2020_GoC(size=2)
         sc = Nav1p6_RI2021_SC(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
 
         goc.init_state(V, na)
         sc.init_state(V, na)
@@ -707,8 +710,8 @@ class Nav1p6RI21SCTest(_Nav1p6Mixin, unittest.TestCase):
         i_sc = sc.current(V, na)
         self.assertTrue(
             u.math.allclose(
-                i_goc.to_decimal(_DENSITY_UNIT),
-                i_sc.to_decimal(_DENSITY_UNIT),
+                i_goc.to_decimal(DENSITY_UNIT),
+                i_sc.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -736,8 +739,8 @@ class _Nav1p1Mixin:
 
     def test_init_state_derives_visible_state_list_from_pairs(self) -> None:
         ch = self._make(size=3)
-        V = _V([-60.0, -50.0, -40.0])
-        na = _na_info(3)
+        V = voltage([-60.0, -50.0, -40.0])
+        na = na_info(3)
 
         ch.init_state(V, na)
 
@@ -759,8 +762,8 @@ class _Nav1p1Mixin:
 
     def test_compute_derivative_matches_manual_markov_balance(self) -> None:
         proto = self._make(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
 
         proto.init_state(V, na)
         _seed_states(proto)
@@ -777,8 +780,8 @@ class _Nav1p1Mixin:
 
     def test_current_uses_open_state_when_gate_current_is_off(self) -> None:
         proto = self._make(size=1, gateCurrent=0.0)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
 
         proto.init_state(V, na)
         proto.reset_state(V, na)
@@ -788,16 +791,16 @@ class _Nav1p1Mixin:
         expected = proto.g_max * proto.O.value * (na.E - V)
         self.assertTrue(
             u.math.allclose(
-                i_proto.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                i_proto.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_gate_current_path_matches_manual_formula(self) -> None:
         ch = self._make(size=1, gateCurrent=1.0)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
         ch.init_state(V, na)
         ch.C1.value = jnp.array([0.12])
         ch.C2.value = jnp.array([0.08])
@@ -830,8 +833,8 @@ class _Nav1p1Mixin:
         current = ch.current(V, na)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -842,8 +845,8 @@ class _Nav1p1Mixin:
 
     def test_reset_steady_state_produces_stationary_distribution(self) -> None:
         proto = self._make(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
 
         proto.init_state(V, na)
         proto.reset_steady_state(V, na)
@@ -865,8 +868,8 @@ class _Nav1p1Mixin:
 
     def test_make_integration_updates_states_and_keeps_them_finite(self) -> None:
         proto = self._make(size=2, solver="euler", gateCurrent=0.0)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
 
         proto.init_state(V, na)
         _seed_states(proto)
@@ -888,8 +891,8 @@ class Nav1p1MA25BCTest(_Nav1p1Mixin, unittest.TestCase):
     CLS = Nav1p1_MA2025_BC
 
     def test_reset_state_uses_steady_state_initialization(self) -> None:
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
         reset = Nav1p1_MA2025_BC(size=2)
         steady = Nav1p1_MA2025_BC(size=2)
 
@@ -918,8 +921,8 @@ class Nav1p1RI21SCTest(_Nav1p1Mixin, unittest.TestCase):
     CLS = Nav1p1_RI2021_SC
 
     def test_reset_state_uses_steady_state_initialization(self) -> None:
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
         reset = Nav1p1_RI2021_SC(size=2)
         steady = Nav1p1_RI2021_SC(size=2)
 
@@ -946,8 +949,8 @@ class Nav1p1RI21SCTest(_Nav1p1Mixin, unittest.TestCase):
     def test_matches_bc_implementation_under_same_conditions(self) -> None:
         bc = Nav1p1_MA2025_BC(size=2)
         sc = Nav1p1_RI2021_SC(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
 
         bc.init_state(V, na)
         sc.init_state(V, na)
@@ -974,8 +977,8 @@ class Nav1p1RI21SCTest(_Nav1p1Mixin, unittest.TestCase):
         i_sc = sc.current(V, na)
         self.assertTrue(
             u.math.allclose(
-                i_bc.to_decimal(_DENSITY_UNIT),
-                i_sc.to_decimal(_DENSITY_UNIT),
+                i_bc.to_decimal(DENSITY_UNIT),
+                i_sc.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
@@ -996,8 +999,8 @@ class NavMA20GrCTest(unittest.TestCase):
 
     def test_init_state_and_hidden_state_layout(self) -> None:
         ch = Nav_MA2020_GrC(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
         ch.init_state(V, na)
 
         self.assertEqual(
@@ -1010,7 +1013,7 @@ class NavMA20GrCTest(unittest.TestCase):
 
     def test_rate_formulas_follow_mod_definition(self) -> None:
         ch = Nav_MA2020_GrC(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         factor = 3 ** (((ch.temp - u.celsius2kelvin(20.0)) / u.kelvin) / 10.0)
         alfa = factor * ch.Aalfa * u.math.exp((V / u.mV) / ch.Valfa)
         beta = factor * ch.Abeta * u.math.exp(-(V / u.mV) / ch.Vbeta)
@@ -1021,8 +1024,8 @@ class NavMA20GrCTest(unittest.TestCase):
 
     def test_current_uses_open_state_only(self) -> None:
         ch = Nav_MA2020_GrC(size=1)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
         ch.init_state(V, na)
         ch.O.value = jnp.array([0.2])
         ch.OB.value = jnp.array([0.7])
@@ -1030,16 +1033,16 @@ class NavMA20GrCTest(unittest.TestCase):
         expected = ch.g_max * ch.O.value * (na.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_selected_derivatives_match_manual_markov_balance(self) -> None:
         ch = Nav_MA2020_GrC(size=1)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
         ch.init_state(V, na)
         values = {
             "C1": 0.12,
@@ -1074,8 +1077,8 @@ class NavMA20GrCTest(unittest.TestCase):
 
     def test_reset_steady_state_produces_stationary_distribution(self) -> None:
         ch = Nav_MA2020_GrC(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
         ch.init_state(V, na)
         ch.reset_steady_state(V, na)
         _assert_markov_probability_total(self, ch, 2)
@@ -1083,8 +1086,8 @@ class NavMA20GrCTest(unittest.TestCase):
 
     def test_init_state_uses_steady_state_initialization(self) -> None:
         ch = Nav_MA2020_GrC(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
         ch.init_state(V, na)
         _assert_markov_probability_total(self, ch, 2)
         _assert_markov_stationary(self, ch, V, na, 2)
@@ -1092,8 +1095,8 @@ class NavMA20GrCTest(unittest.TestCase):
     def test_reset_state_uses_steady_state_initialization(self) -> None:
         reset = Nav_MA2020_GrC(size=2)
         steady = Nav_MA2020_GrC(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
         reset.init_state(V, na)
         steady.init_state(V, na)
         reset.reset_state(V, na)
@@ -1120,8 +1123,8 @@ class NaFHFMA20GrCTest(unittest.TestCase):
 
     def test_init_state_and_hidden_state_layout(self) -> None:
         ch = NaFHF_MA2020_GrC(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
         ch.init_state(V, na)
 
         self.assertEqual(
@@ -1134,7 +1137,7 @@ class NaFHFMA20GrCTest(unittest.TestCase):
 
     def test_extended_rate_formulas_follow_mod_definition(self) -> None:
         ch = NaFHF_MA2020_GrC(size=1)
-        V = _V([-60.0])
+        V = voltage([-60.0])
         factor = 3 ** (((ch.temp - u.celsius2kelvin(20.0)) / u.kelvin) / 10.0)
         alfa = factor * ch.Aalfa * u.math.exp((V / u.mV) / ch.Valfa)
         self.assertTrue(u.math.allclose(ch.f33(V), ch.n3 * alfa * ch.c, atol=1e-6))
@@ -1144,8 +1147,8 @@ class NaFHFMA20GrCTest(unittest.TestCase):
 
     def test_current_uses_open_state_only(self) -> None:
         ch = NaFHF_MA2020_GrC(size=1)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
         ch.init_state(V, na)
         ch.O.value = jnp.array([0.2])
         ch.OB.value = jnp.array([0.5])
@@ -1154,16 +1157,16 @@ class NaFHFMA20GrCTest(unittest.TestCase):
         expected = ch.g_max * ch.O.value * (na.E - V)
         self.assertTrue(
             u.math.allclose(
-                current.to_decimal(_DENSITY_UNIT),
-                expected.to_decimal(_DENSITY_UNIT),
+                current.to_decimal(DENSITY_UNIT),
+                expected.to_decimal(DENSITY_UNIT),
                 atol=1e-6,
             )
         )
 
     def test_selected_long_inactivation_derivatives_match_manual_balance(self) -> None:
         ch = NaFHF_MA2020_GrC(size=1)
-        V = _V([-60.0])
-        na = _na_info()
+        V = voltage([-60.0])
+        na = na_info()
         ch.init_state(V, na)
         values = {
             "C1": 0.08,
@@ -1199,8 +1202,8 @@ class NaFHFMA20GrCTest(unittest.TestCase):
 
     def test_reset_steady_state_produces_stationary_distribution(self) -> None:
         ch = NaFHF_MA2020_GrC(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
         ch.init_state(V, na)
         ch.reset_steady_state(V, na)
         _assert_markov_probability_total(self, ch, 2)
@@ -1208,8 +1211,8 @@ class NaFHFMA20GrCTest(unittest.TestCase):
 
     def test_init_state_uses_steady_state_initialization(self) -> None:
         ch = NaFHF_MA2020_GrC(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
         ch.init_state(V, na)
         _assert_markov_probability_total(self, ch, 2)
         _assert_markov_stationary(self, ch, V, na, 2)
@@ -1217,8 +1220,8 @@ class NaFHFMA20GrCTest(unittest.TestCase):
     def test_reset_state_uses_steady_state_initialization(self) -> None:
         reset = NaFHF_MA2020_GrC(size=2)
         steady = NaFHF_MA2020_GrC(size=2)
-        V = _V([-60.0, -50.0])
-        na = _na_info(2)
+        V = voltage([-60.0, -50.0])
+        na = na_info(2)
         reset.init_state(V, na)
         steady.init_state(V, na)
         reset.reset_state(V, na)

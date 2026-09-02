@@ -435,10 +435,15 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         self.assertIsNotNone(node.g.derivative)
         self.assertLess(float(node.g.derivative[0].to_decimal(u.uS / u.ms)), 0.0)
 
-    def test_unmigrated_receptor_models_fail_explicitly(self) -> None:
-        for model in ("AMPA", "GABAa", "NMDA"):
-            with self.assertRaisesRegex(NotImplementedError, "temporarily unavailable"):
-                braincell.mech.Synapse(model)
+    def test_unregistered_synapse_type_fails_at_build_with_a_suggestion(self) -> None:
+        # ``mech.Synapse`` defers name resolution to Cell build, like
+        # ``mech.Channel``/``mech.Ion``. The retired receptor names are
+        # ordinary unknown names on that path, not a special case.
+        for model in ("AMPA", "GABAa", "NMDA", "ExpSynn"):
+            cell = Cell(_build_tree(), solver="staggered", V_init=-60.0 * u.mV)
+            cell.place(at("soma", 0.5), braincell.mech.Synapse(model, name="syn"))
+            with self.assertRaisesRegex(KeyError, "No 'synapse' mechanism registered"):
+                cell.init_state()
 
     def test_expsyn_drive_jumps_g_and_then_decays(self) -> None:
         cell = Cell(

@@ -16,7 +16,7 @@
 """Field-declaration contract for vectorized runtime synapse models.
 
 These specs are what a synapse author writes (see
-:mod:`braincell.synapse.markov`), so their validation is the first thing a
+:mod:`braincell.synapse.exponential`), so their validation is the first thing a
 malformed declaration hits. Until this module moved into
 :mod:`braincell.mech` it had no direct tests at all -- every branch below was
 reachable only through a concrete synapse.
@@ -27,7 +27,7 @@ import unittest
 import brainunit as u
 import numpy as np
 
-from braincell.mech import DerivedSpec, ParameterSpec, StateSpec, positive
+from braincell.mech import ParameterSpec, StateSpec, positive
 
 
 class ParameterSpecTest(unittest.TestCase):
@@ -106,12 +106,6 @@ class PositiveValidatorTest(unittest.TestCase):
     def test_one_bad_entry_rejects_the_whole_array(self) -> None:
         with self.assertRaisesRegex(ValueError, "must be > 0"):
             positive(np.asarray([1.0, -1.0]) * u.ms, "tau")
-
-
-class DerivedSpecTest(unittest.TestCase):
-    def test_derived_spec_is_a_marker_with_value_equality(self) -> None:
-        self.assertEqual(DerivedSpec(), DerivedSpec())
-        self.assertEqual(len({DerivedSpec(), DerivedSpec()}), 1)
 
 
 if __name__ == "__main__":

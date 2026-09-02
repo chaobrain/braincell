@@ -300,10 +300,10 @@ class SynapseTest(unittest.TestCase):
         with self.assertRaises(AttributeError):
             syn.synapse_type = "Exp2Syn"
 
-    def test_unmigrated_receptors_are_rejected(self) -> None:
-        for model in ("AMPA", "GABAa", "NMDA"):
-            with self.assertRaisesRegex(NotImplementedError, "temporarily unavailable"):
-                Synapse(model)
+    def test_synapse_type_is_not_resolved_at_declaration_time(self) -> None:
+        # Name resolution is deferred to Cell build, matching Channel/Ion.
+        # ``_compute.state_test`` covers the registry error that arrives there.
+        self.assertEqual(Synapse("NotARealSynapse").synapse_type, "NotARealSynapse")
 
 
 if __name__ == "__main__":

@@ -415,9 +415,11 @@ metric 属性：
 
 ### `braincell.synapse`
 
-- `AMPA`
-- `GABAa`
-- `NMDA`
+- `ExpSyn`
+- `Exp2Syn`
+
+两者都在 `synapse/exponential.py`，通过 `@register_synapse` 注册，
+使用时经 `braincell.mech.Synapse("ExpSyn")` 声明。
 
 ## 11. IO 接口
 

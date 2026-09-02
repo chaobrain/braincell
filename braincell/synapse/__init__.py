@@ -13,18 +13,9 @@
 # limitations under the License.
 # ==============================================================================
 
-# -*- coding: utf-8 -*-
-
-from braincell.mech import DerivedSpec, ParameterSpec, StateSpec
-from .markov import AMPA, Exp2Syn, ExpSyn, GABAa, NMDA
+from .exponential import Exp2Syn, ExpSyn
 
 __all__ = [
-    "AMPA",
     "Exp2Syn",
     "ExpSyn",
-    "GABAa",
-    "NMDA",
-    "DerivedSpec",
-    "ParameterSpec",
-    "StateSpec",
 ]

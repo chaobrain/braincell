@@ -39,7 +39,7 @@ vocabularies a mechanism author writes against: the event-input
 contracts (:class:`EventInput`, :class:`NoEventInput`,
 :class:`TriggerEventInput`, :class:`ScalarEventInput`) that say what
 discrete events a mechanism can consume, and the field schema
-(:class:`ParameterSpec`, :class:`StateSpec`, :class:`DerivedSpec`) that
+(:class:`ParameterSpec` and :class:`StateSpec`) that
 vectorized runtime synapse models use to declare their parameters and
 states. Both are pure declarations, which keeps this package a leaf:
 :mod:`braincell.mech` imports nothing from :mod:`braincell`. The event
@@ -72,7 +72,7 @@ from ._event_contract import (
 )
 from ._junction import Junction
 from ._params import Params
-from ._synapse_schema import DerivedSpec, ParameterSpec, StateSpec, positive
+from ._synapse_schema import ParameterSpec, StateSpec, positive
 from ._point import (
     CurrentProbe,
     CurrentClamp,
@@ -111,7 +111,6 @@ __all__ = [
     "ScalarEventInput",
     "TriggerEventInput",
     # Runtime synapse field schema
-    "DerivedSpec",
     "ParameterSpec",
     "StateSpec",
     "positive",

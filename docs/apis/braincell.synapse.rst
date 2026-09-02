@@ -1,19 +1,16 @@
 ``braincell.synapse`` module
 ============================
 
-.. currentmodule:: braincell.synapse 
-.. automodule:: braincell.synapse 
+.. currentmodule:: braincell.synapse
+.. automodule:: braincell.synapse
 
-Markov Models
--------------
+Exponential-Decay Synapses
+--------------------------
 
 .. autosummary::
    :toctree: generated/
    :nosignatures:
    :template: classtemplate.rst
 
-   AMPA
-   GABAa
-   NMDA
-
-
+   ExpSyn
+   Exp2Syn

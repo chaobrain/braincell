@@ -34,7 +34,7 @@ import brainunit as u
 
 from braincell._typing import ArrayLike, Size
 from ._misc import TreeNode
-from .mech import DerivedSpec, NoEventInput, ParameterSpec, StateSpec
+from .mech import NoEventInput, ParameterSpec, StateSpec
 from .quad.protocol import DiffEqModule, IndependentIntegration
 
 __all__ = ["IonChannel", "IonInfo", "Channel", "Synapse"]
@@ -338,9 +338,10 @@ class Channel(IonChannel):
 class Synapse(IonChannel):
     """Base class for vectorized runtime point-synapse mechanisms.
 
-    Subclasses declare physical parameters, differential states, and public
-    derived values through explicit schemas. ``current()`` always returns an
-    inward-positive total point current. Discrete input is passed directly to
+    Subclasses declare physical parameters and differential states through
+    explicit schemas; any further public value is a plain property, resolved
+    by name at the call site. ``current()`` always returns an inward-positive
+    total point current. Discrete input is passed directly to
     :meth:`apply_events`; event buffers are owned by runtime routing.
     """
 
@@ -348,7 +349,6 @@ class Synapse(IonChannel):
 
     parameters: Mapping[str, ParameterSpec] = {}
     states: Mapping[str, StateSpec] = {}
-    derived: Mapping[str, DerivedSpec] = {}
     event_input = NoEventInput()
 
     def __init__(self, size: brainstate.typing.Size, name: Optional[str] = None, **parameters):

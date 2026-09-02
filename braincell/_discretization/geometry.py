@@ -21,29 +21,18 @@ time data: they carry geometric and topological facts, but no runtime
 state or instantiated mechanism objects.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import brainunit as u
 import numpy as np
 
-from braincell.morph.branch import Branch
+from braincell.morph.branch import Branch, frustum_areas_um2, length_weighted_mean_radius_um
 from braincell.morph.morphology import Morphology
-
-EPS_PARAM = 1e-9
-EPS_LEN_UM = 1e-6
-EPS_AREA_UM2 = 1e-9
+from .base import EPS_LEN_UM, EPS_PARAM, locate_cv_on_branch
 
 __all__ = [
     "CVGeometryResult",
-    "EPS_AREA_UM2",
-    "EPS_LEN_UM",
-    "EPS_PARAM",
-    "_Frustum",
-    "_GeoCV",
-    "_build_frusta",
-    "_lateral_area_um2",
     "build_cv_geometry",
-    "locate_cv_on_branch",
     "validate_bounds",
     "validate_connectivity",
     "validate_morphology",
@@ -99,8 +88,6 @@ class _GeoCV:
         Proximal normalized branch coordinate.
     dist : float
         Distal normalized branch coordinate.
-    midpoint : float
-        Midpoint coordinate in normalized branch coordinates.
     parent_cv : int or None
         Parent CV id, or ``None`` for the root CV.
     children_cv : tuple of int
@@ -130,7 +117,6 @@ class _GeoCV:
     branch_type: str
     prox: float
     dist: float
-    midpoint: float
     parent_cv: int | None
     children_cv: tuple[int, ...]
     length_um: float
@@ -142,6 +128,16 @@ class _GeoCV:
     r_mid_um: float
     diam_arc_mean_um: float
     r_dist_um: float
+
+    @property
+    def midpoint(self) -> float:
+        """Midpoint coordinate in normalized branch coordinates.
+
+        Derived rather than stored: it is the arithmetic mean of the CV
+        bounds by construction, so a stored copy is one more field to
+        hand-copy on every rebuild and one more chance to drift.
+        """
+        return 0.5 * (self.prox + self.dist)
 
 
 @dataclass(frozen=True)
@@ -327,13 +323,40 @@ def _boundary_radii_um(frusta: tuple[_Frustum, ...]) -> tuple[float, float]:
     return frusta[0].r_prox_um, frusta[-1].r_dist_um
 
 
+def _frustum_arrays(frusta: tuple[_Frustum, ...]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Unpack frusta into the ``(lengths, r0, r1)`` arrays ``morph.branch`` takes.
+
+    Parameters
+    ----------
+    frusta : tuple of _Frustum
+        Clipped geometry slices, in proximal-to-distal order.
+
+    Returns
+    -------
+    tuple of numpy.ndarray
+        Lengths, proximal radii and distal radii in micrometres.
+    """
+    count = len(frusta)
+    return (
+        np.fromiter((piece.length_um for piece in frusta), dtype=float, count=count),
+        np.fromiter((piece.r_prox_um for piece in frusta), dtype=float, count=count),
+        np.fromiter((piece.r_dist_um for piece in frusta), dtype=float, count=count),
+    )
+
+
 def _lateral_area_um2(frusta: tuple[_Frustum, ...]) -> float:
-    total = 0.0
-    pi = float(np.pi)
-    for piece in frusta:
-        slant = float(np.sqrt(piece.length_um**2 + (piece.r_dist_um - piece.r_prox_um) ** 2))
-        total += pi * (piece.r_prox_um + piece.r_dist_um) * slant
-    return total
+    """Return the total lateral membrane area of ``frusta`` in um^2.
+
+    Notes
+    -----
+    The frustum formula itself lives in :mod:`braincell.morph.branch`, which
+    declares itself the single definition of this geometry -- that is what
+    makes ``Morphology.total_area == sum(b.branch.area)`` a consequence
+    rather than a coincidence. A CV's area decides every conductance on it,
+    so a second hand-written copy here would let the discretization and the
+    morphology disagree about the same surface without any test noticing.
+    """
+    return float(np.sum(frustum_areas_um2(*_frustum_arrays(frusta))))
 
 
 def _axial_factor_per_cm(frusta: tuple[_Frustum, ...]) -> float:
@@ -369,14 +392,19 @@ def _midpoint_radius_um(frusta: tuple[_Frustum, ...]) -> float:
 
 
 def _arc_weighted_mean_diam_um(frusta: tuple[_Frustum, ...]) -> float:
-    """Return the arc-length-weighted mean diameter across ``frusta``."""
+    """Return the arc-length-weighted mean diameter across ``frusta``.
+
+    Notes
+    -----
+    This is exactly twice ``morph.branch.length_weighted_mean_radius_um``,
+    which is the shared definition of the same weighting. A CV whose frusta
+    sum to no measurable length has no arc to weight by, so it falls back to
+    its end radii rather than dividing by zero.
+    """
     total_length_um = sum(piece.length_um for piece in frusta)
     if total_length_um <= EPS_LEN_UM:
         return frusta[0].r_prox_um + frusta[-1].r_dist_um
-    weighted = 0.0
-    for piece in frusta:
-        weighted += (piece.r_prox_um + piece.r_dist_um) * piece.length_um
-    return weighted / total_length_um
+    return 2.0 * length_weighted_mean_radius_um(*_frustum_arrays(frusta))
 
 
 def _split_frusta(
@@ -567,50 +595,6 @@ def validate_connectivity(
         visited.update(path)
 
 
-def locate_cv_on_branch(
-    ids: tuple[int, ...],
-    geos: list[_GeoCV] | tuple[_GeoCV, ...],
-    *,
-    x: float,
-) -> int:
-    """Return the CV id that owns one branch coordinate.
-
-    Parameters
-    ----------
-    ids : tuple of int
-        Ordered CV ids on one branch.
-    geos : sequence of _GeoCV
-        Geometry records indexed by CV id.
-    x : float
-        Normalized branch coordinate.
-
-    Returns
-    -------
-    int
-        Owning CV id.
-
-    Raises
-    ------
-    ValueError
-        If ``x`` falls in no CV interval.
-    """
-    if x <= 0.0 + EPS_PARAM:
-        return ids[0]
-    if x >= 1.0 - EPS_PARAM:
-        return ids[-1]
-    for cv_id in ids:
-        geo = geos[cv_id]
-        if geo.prox - EPS_PARAM <= x < geo.dist - EPS_PARAM:
-            return cv_id
-    for cv_id in ids:
-        geo = geos[cv_id]
-        if abs(x - geo.dist) <= EPS_PARAM:
-            return cv_id
-    raise ValueError(
-        f"x={x!r} not owned by any CV in branch; bounds are {[(geos[i].prox, geos[i].dist) for i in ids]!r}."
-    )
-
-
 def build_cv_geometry(
     morpho: Morphology,
     bounds_by_branch: tuple[tuple[tuple[float, float], ...], ...],
@@ -670,7 +654,6 @@ def build_cv_geometry(
                     branch_type=branch.type,
                     prox=prox_f,
                     dist=dist_f,
-                    midpoint=midpoint,
                     parent_cv=None,
                     children_cv=(),
                     length_um=length_um,
@@ -707,27 +690,12 @@ def build_cv_geometry(
         if child_cv not in children_by_cv[parent_cv]:
             children_by_cv[parent_cv].append(child_cv)
 
+    # Only the two tree-linkage fields are known at this point; every other
+    # field was final when the record was built. ``replace`` names just those
+    # two, so a field added to ``_GeoCV`` later cannot be silently dropped
+    # here the way a hand-written 17-field rebuild would drop it.
     finalized = tuple(
-        _GeoCV(
-            id=geo.id,
-            branch_id=geo.branch_id,
-            branch_type=geo.branch_type,
-            prox=geo.prox,
-            dist=geo.dist,
-            midpoint=geo.midpoint,
-            parent_cv=parent_by_cv[geo.id],
-            children_cv=tuple(children_by_cv[geo.id]),
-            length_um=geo.length_um,
-            lateral_area_um2=geo.lateral_area_um2,
-            axial_factor_total_per_cm=geo.axial_factor_total_per_cm,
-            axial_factor_prox_per_cm=geo.axial_factor_prox_per_cm,
-            axial_factor_dist_per_cm=geo.axial_factor_dist_per_cm,
-            r_prox_um=geo.r_prox_um,
-            r_mid_um=geo.r_mid_um,
-            diam_arc_mean_um=geo.diam_arc_mean_um,
-            r_dist_um=geo.r_dist_um,
-        )
-        for geo in geos
+        replace(geo, parent_cv=parent_by_cv[geo.id], children_cv=tuple(children_by_cv[geo.id])) for geo in geos
     )
     validate_connectivity(finalized, branch_to_cv_ids, morpho)
     return CVGeometryResult(

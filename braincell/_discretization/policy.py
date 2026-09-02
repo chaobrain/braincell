@@ -24,23 +24,17 @@ from braincell.mech import CableProperty
 from braincell.mech._params import quantity_hashable
 from braincell.morph.branch import branch_class_for_type
 from braincell.morph.morphology import Morphology
+from .base import DEFAULT_CABLE, EPS_LEN_UM, EPS_PARAM
 
 if TYPE_CHECKING:
     from .mechanism import PaintRule
 
-EPS_PARAM = 1e-9  # tolerance for normalized x in [0, 1]
-EPS_LEN_UM = 1e-6  # tolerance for physical μm lengths
 # d_lambda space-constant prefactor yielding μm from sqrt(cm·Ω·cm/(Hz·µF)).
 # The numerical value 1e5 = sqrt(1e-6 cm⁴/F) · (cm→µm conversion); see
 # Hines & Carnevale 2001 §5 / NEURON d_lambda derivation.
 _D_LAMBDA_UM_FACTOR = 1.0e5
 Bounds = tuple[tuple[float, float], ...]
 BoundsByBranch = tuple[Bounds, ...]
-_DEFAULT_D_LAMBDA_CABLE = CableProperty(
-    resting_potential=-65.0 * u.mV,
-    membrane_capacitance=1.0 * (u.uF / u.cm**2),
-    axial_resistivity=100.0 * (u.ohm * u.cm),
-)
 
 
 @dataclass(frozen=True)
@@ -428,7 +422,7 @@ def _bounds_from_d_lambda(
     n_cv = int(np.ceil((electrotonic_length / d_lambda) - EPS_PARAM))
     n_cv = max(1, n_cv)
     n_cv = _promote_to_odd(n_cv, keep_odd=keep_odd)
-    return tuple((float(offset) / float(n_cv), float(offset + 1) / float(n_cv)) for offset in range(n_cv))
+    return _uniform_bounds_for_count(n_cv)
 
 
 def _resolve_branch_cable_properties(
@@ -437,7 +431,7 @@ def _resolve_branch_cable_properties(
     paint_rules: tuple["PaintRule", ...] | None,
 ) -> tuple[tuple[float, float], ...]:
     branch_intervals: list[list[tuple[float, float, CableProperty]]] = [
-        [(0.0, 1.0, _DEFAULT_D_LAMBDA_CABLE)] for _ in morpho.branches
+        [(0.0, 1.0, DEFAULT_CABLE)] for _ in morpho.branches
     ]
     for rule in paint_rules or ():
         mechanism = getattr(rule, "mechanism", None)

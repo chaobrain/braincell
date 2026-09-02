@@ -565,7 +565,7 @@ internal dependencies · status · open work**.
   - `braincell/cv/_policy.py` — `CVPolicy` ABC plus `CVPerBranch`,
     `MaxCVLen`, `DLambda`, `CVPolicyByTypeRule`, `CompositeByTypePolicy`.
   - `braincell/_discretization/topology.py` — `NodeTree`, `Node`, `NodeEdge`,
-    `build_node_tree`, `locate_node_on_branch`.
+    `build_node_tree`.
   - `braincell/_compute/scheduling.py` — `NodeScheduling`,
     `build_node_scheduling` (DHS grouping for vectorized parent
     traversal lives here too).

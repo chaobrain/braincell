@@ -28,6 +28,7 @@ import numpy as np
 from braincell.morph.morphology import Morphology
 from .base import (
     CV,
+    EPS_PARAM,
     Node,
     NodeEdge,
     NodeEdgeRole,
@@ -37,14 +38,8 @@ from .base import (
     locate_cv_on_branch,
 )
 
-__all__ = [
-    "_EPS_PARAM",
-    "_locate_branch_cv_by_x",
-    "build_node_tree_from_cvs",
-    "locate_node_on_branch",
-]
+__all__ = ["build_node_tree_from_cvs"]
 
-_EPS_PARAM = 1e-9
 _POSITION_ORDER = {"prox": 0, "mid": 1, "dist": 2}
 
 
@@ -150,7 +145,6 @@ def build_node_tree_from_cvs(
         if branch.parent is None:
             attachment_node_id = root_node_id
             attach_x = 0.0
-            ordered_cv_ids = branch_cv_ids
         else:
             edge = edge_by_child_branch[branch_id]
             attachment_node_id = _resolve_attachment_node(
@@ -162,13 +156,22 @@ def build_node_tree_from_cvs(
                 cvs=cvs,
             )
             attach_x = float(edge.child_x)
-            ordered_cv_ids = branch_cv_ids if attach_x <= _EPS_PARAM else tuple(reversed(branch_cv_ids))
+
+        # The branch is walked from ``attach_x`` towards ``1 - attach_x``. That
+        # one direction fixes everything downstream: the CV order, which end
+        # each endpoint node sits at, and which half of a CV an edge role
+        # covers. It is constant for the whole branch, so it is decided here
+        # rather than re-derived from ``attach_x`` at each of the four sites.
+        walk_from_prox = attach_x <= EPS_PARAM
+        ordered_cv_ids = branch_cv_ids if walk_from_prox else tuple(reversed(branch_cv_ids))
+        entry_side: Position = "prox" if walk_from_prox else "dist"
+        exit_side: Position = "dist" if walk_from_prox else "prox"
 
         first_cv_id = ordered_cv_ids[0]
         add_node_role(
             attachment_node_id,
             cv_id=first_cv_id,
-            position=_entry_position_for_walk(attach_x),
+            position=entry_side,
         )
         branch_endpoint_node_id_by_x[(branch_id, float(attach_x))] = attachment_node_id
 
@@ -180,7 +183,7 @@ def build_node_tree_from_cvs(
         terminal_cv_id = ordered_cv_ids[-1]
         terminal_node_id = new_node(
             cv_id=terminal_cv_id,
-            position=_exit_position_for_walk(attach_x),
+            position=exit_side,
         )
         branch_endpoint_node_id_by_x[(branch_id, float(1.0 - attach_x))] = terminal_node_id
 
@@ -196,22 +199,17 @@ def build_node_tree_from_cvs(
                 parent_node_id,
                 midpoint_node_id,
                 cv_id=cv_id,
-                half=_entry_half_for_walk(attach_x),
+                half=entry_side,
             )
             add_edge_role(
                 midpoint_node_id,
                 child_node_id,
                 cv_id=cv_id,
-                half=_exit_half_for_walk(attach_x),
+                half=exit_side,
             )
 
     if np.any(cv_to_mid_node_id < 0):
         raise ValueError("Node tree is missing CV midpoint nodes.")
-
-    branch_endpoint_node_id = _build_branch_endpoint_node_id(
-        branch_endpoint_node_id_by_x=branch_endpoint_node_id_by_x,
-        n_branches=len(morpho.branches),
-    )
 
     node_roles = tuple(
         tuple(
@@ -260,11 +258,7 @@ def build_node_tree_from_cvs(
             parent_node_id=parent_node_id,
             child_node_id=child_node_id,
             roles=tuple(
-                NodeEdgeRole(
-                    cv_id=cv_id,
-                    half=half,
-                    r_axial=_role_axial_resistance(cvs, cv_id=cv_id, half=half),
-                )
+                NodeEdgeRole(cv_id=cv_id, half=half)
                 for cv_id, half in sorted(
                     cv_roles,
                     key=lambda item: (item[0], item[1]),
@@ -281,47 +275,6 @@ def build_node_tree_from_cvs(
         edges=edges,
         root_node_id=root_node_id,
         cv_to_mid_node_id=cv_to_mid_node_id,
-        branch_endpoint_node_id=branch_endpoint_node_id,
-    )
-
-
-def locate_node_on_branch(
-    node_tree: NodeTree,
-    *,
-    cvs: tuple[CV, ...],
-    branch_id: int,
-    x: float,
-) -> int:
-    """Return the node id selected by a branch coordinate.
-
-    Parameters
-    ----------
-    node_tree : NodeTree
-        Node tree defining midpoint and endpoint node ids.
-    cvs : tuple of CV
-        Source CV tuple used to resolve interior ownership.
-    branch_id : int
-        Branch id to query.
-    x : float
-        Normalized branch coordinate.
-
-    Returns
-    -------
-    int
-        Selected node id.
-    """
-
-    cv_ids_by_branch = _group_cv_ids_by_branch(
-        cvs=cvs,
-        n_branches=node_tree.branch_endpoint_node_id.shape[0],
-    )
-    return _locate_node_id_on_branch(
-        int(branch_id),
-        float(x),
-        cvs=cvs,
-        cv_ids_by_branch=cv_ids_by_branch,
-        cv_to_mid_node_id=node_tree.cv_to_mid_node_id,
-        branch_endpoint_node_id=node_tree.branch_endpoint_node_id,
     )
 
 
@@ -336,20 +289,6 @@ def _group_cv_ids_by_branch(
     return tuple(tuple(ids) for ids in grouped)
 
 
-def _build_branch_endpoint_node_id(
-    *,
-    branch_endpoint_node_id_by_x: dict[tuple[int, float], int],
-    n_branches: int,
-) -> np.ndarray:
-    endpoint_ids = np.full((n_branches, 2), -1, dtype=np.int32)
-    for branch_id in range(n_branches):
-        endpoint_ids[branch_id, 0] = branch_endpoint_node_id_by_x[(branch_id, 0.0)]
-        endpoint_ids[branch_id, 1] = branch_endpoint_node_id_by_x[(branch_id, 1.0)]
-    if np.any(endpoint_ids < 0):
-        raise ValueError("Node tree is missing branch endpoint nodes.")
-    return endpoint_ids
-
-
 def _resolve_attachment_node(
     parent_branch_id: int,
     *,
@@ -359,95 +298,14 @@ def _resolve_attachment_node(
     cv_ids_by_branch: tuple[tuple[int, ...], ...],
     cvs: tuple[CV, ...],
 ) -> int:
-    if parent_x <= 0.0 + _EPS_PARAM:
+    if parent_x <= 0.0 + EPS_PARAM:
         return branch_endpoint_node_id_by_x[(parent_branch_id, 0.0)]
-    if parent_x >= 1.0 - _EPS_PARAM:
+    if parent_x >= 1.0 - EPS_PARAM:
         return branch_endpoint_node_id_by_x[(parent_branch_id, 1.0)]
-    cv_id = _locate_branch_cv_by_x(
+    cv_id = locate_cv_on_branch(
         cv_ids_by_branch[parent_branch_id],
         cvs,
         x=float(parent_x),
-        epsilon=_EPS_PARAM,
+        epsilon=EPS_PARAM,
     )
     return int(cv_to_mid_node_id[cv_id])
-
-
-def _locate_node_id_on_branch(
-    branch_id: int,
-    x: float,
-    *,
-    cvs: tuple[CV, ...],
-    cv_ids_by_branch: tuple[tuple[int, ...], ...],
-    cv_to_mid_node_id: np.ndarray,
-    branch_endpoint_node_id: np.ndarray,
-) -> int:
-    if x <= 0.0 + _EPS_PARAM:
-        return int(branch_endpoint_node_id[int(branch_id), 0])
-    if x >= 1.0 - _EPS_PARAM:
-        return int(branch_endpoint_node_id[int(branch_id), 1])
-    cv_id = _locate_branch_cv_by_x(
-        cv_ids_by_branch[int(branch_id)],
-        cvs,
-        x=float(x),
-        epsilon=_EPS_PARAM,
-    )
-    return int(cv_to_mid_node_id[cv_id])
-
-
-def _locate_branch_cv_by_x(
-    ids: tuple[int, ...],
-    cvs: tuple[CV, ...],
-    *,
-    x: float,
-    epsilon: float,
-) -> int:
-    """Return the CV id whose normalized half-open interval contains ``x``.
-
-    Parameters
-    ----------
-    ids : tuple of int
-        Ordered CV ids on one branch.
-    cvs : tuple of CV
-        Source CV tuple indexed by CV id.
-    x : float
-        Normalized branch coordinate.
-    epsilon : float
-        Comparison tolerance.
-
-    Returns
-    -------
-    int
-        Owning CV id.
-    """
-
-    return locate_cv_on_branch(ids, cvs, x=x, epsilon=epsilon)
-
-
-def _entry_half_for_walk(attach_x: float) -> str:
-    return "prox" if attach_x <= _EPS_PARAM else "dist"
-
-
-def _exit_half_for_walk(attach_x: float) -> str:
-    return "dist" if attach_x <= _EPS_PARAM else "prox"
-
-
-def _entry_position_for_walk(attach_x: float) -> Position:
-    return "prox" if attach_x <= _EPS_PARAM else "dist"
-
-
-def _exit_position_for_walk(attach_x: float) -> Position:
-    return "dist" if attach_x <= _EPS_PARAM else "prox"
-
-
-def _role_axial_resistance(
-    cvs: tuple[CV, ...],
-    *,
-    cv_id: int,
-    half: str,
-):
-    cv = cvs[int(cv_id)]
-    if half == "prox":
-        return cv.r_axial_prox
-    if half == "dist":
-        return cv.r_axial_dist
-    raise ValueError(f"Unsupported half {half!r}.")

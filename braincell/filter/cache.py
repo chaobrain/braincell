@@ -28,9 +28,13 @@ _MISS = object()
 class SelectionCache:
     """Scratch space threaded through a whole selection expression tree.
 
-    Sub-expression memoization is the whole of it: :meth:`evaluated` lets a
-    composite reuse an operand's mask instead of walking the morphology
-    again, so ``(A | B) & (A | C)`` evaluates ``A`` once rather than twice.
+    Memoization keyed by expression value is the whole of it:
+    :meth:`evaluated` lets a composite reuse an operand's mask instead of
+    walking the morphology again, so ``(A | B) & (A | C)`` evaluates ``A``
+    once rather than twice. Consumers that derive something *from* a mask
+    can memoize that too, by giving it its own cache instance rather than
+    sharing the keyspace holding the masks -- see ``_RegionCache`` in
+    ``braincell._discretization.mechanism``.
 
     Notes
     -----
@@ -57,18 +61,20 @@ class SelectionCache:
 
         Parameters
         ----------
-        expr : RegionExpr or LocsetExpr
+        expr : RegionExpr or LocsetExpr or LocsetMask
             The expression being evaluated. Used as the memo key, so the
-            result is shared between operands that compare equal.
+            result is shared between operands that compare equal -- and,
+            just as importantly, *not* shared between two that do not.
         morpho : braincell.Morphology
             Morphology the result belongs to.
         evaluate : callable
-            Zero-argument thunk producing the mask when there is no hit.
+            Zero-argument thunk producing the value when there is no hit.
 
         Returns
         -------
-        RegionMask or LocsetMask
-            The freshly computed or previously memoized mask.
+        object
+            The freshly computed or previously memoized value -- a mask for
+            the sub-expression cache, whatever the thunk returns otherwise.
 
         Notes
         -----

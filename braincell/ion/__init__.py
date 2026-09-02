@@ -57,15 +57,28 @@ __all__ = _calcium_all + _nonspecific_all + _potassium_all + _sodium_all + ["bui
 
 
 def build_placeholder_ions(size=(1,)) -> dict[str, object]:
-    """Return default Na/K/Ca fixed-ion containers for scaffolding.
+    """Return one fixed-ion container per ion family, keyed by family symbol.
 
-    Used by test doubles and by :class:`HHTypedNeuron` construction
-    before the real runtime ion containers are instantiated.
+    Scaffolding for the compute layer: ``braincell._compute.ions`` calls
+    this to obtain a default container for a family a model refers to but
+    never declares. The containers carry only the class-level defaults,
+    so they stand in for a real ion rather than modelling one.
+
+    Not called during :class:`~braincell.HHTypedNeuron` construction --
+    ``braincell/_multi_compartment/cell_test.py`` asserts the opposite,
+    since building four ion containers per cell at ``__init__`` would be
+    wasted work for the common case where every family is declared.
 
     Parameters
     ----------
     size : tuple of int, optional
         Varshape of the ion containers. Defaults to ``(1,)``.
+
+    Returns
+    -------
+    dict
+        Maps each family symbol -- ``"na"``, ``"k"``, ``"ca"``, ``"no"``
+        -- to a freshly constructed fixed-ion container.
     """
     return {
         "na": SodiumFixed(size=size),

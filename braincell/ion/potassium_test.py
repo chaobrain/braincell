@@ -20,16 +20,12 @@ import unittest
 import brainunit as u
 import jax.numpy as jnp
 
-from braincell._base_channel import IonInfo
 from braincell._base_ion import Ion
 from braincell._base_neuron import HHTypedNeuron
 from braincell.channel.potassium import K_TM1991
 from braincell.ion._base import InitNernstIon
+from braincell.ion._testing import V as _V, FixedIonContractTests
 from braincell.ion.potassium import Potassium, PotassiumFixed, PotassiumInitNernst
-
-
-def _V(values, unit=u.mV):
-    return jnp.asarray(values) * unit
 
 
 class PotassiumBaseTest(unittest.TestCase):
@@ -41,27 +37,9 @@ class PotassiumBaseTest(unittest.TestCase):
     def test_root_type_is_hh_typed_neuron(self) -> None:
         self.assertIs(Potassium.root_type, HHTypedNeuron)
 
-    def test_module_attribute_is_public_namespace(self) -> None:
-        self.assertEqual(Potassium.__module__, "braincell.ion")
-
 
 class PotassiumFixedDefaultsTest(unittest.TestCase):
     """Defaults and parameter storage for :class:`PotassiumFixed`."""
-
-    def test_default_reversal_potential_is_minus_95_mV(self) -> None:
-        k = PotassiumFixed(size=1)
-        self.assertTrue(u.math.allclose(k.E, -95.0 * u.mV, atol=1e-9 * u.mV))
-
-    def test_default_intracellular_and_extracellular_concentrations(self) -> None:
-        k = PotassiumFixed(size=1)
-        self.assertTrue(u.math.allclose(k.Ci, 54.4 * u.mM, atol=1e-9 * u.mM))
-        self.assertTrue(u.math.allclose(k.Co, 2.5 * u.mM, atol=1e-9 * u.mM))
-        self.assertTrue(u.math.allclose(k.valence, jnp.ones((1,)), atol=1e-9))
-
-    def test_varshape_matches_size(self) -> None:
-        self.assertEqual(PotassiumFixed(size=1).varshape, (1,))
-        self.assertEqual(PotassiumFixed(size=5).varshape, (5,))
-        self.assertEqual(PotassiumFixed(size=(2, 3)).varshape, (2, 3))
 
     def test_custom_scalar_parameters_are_honoured(self) -> None:
         k = PotassiumFixed(size=2, E=-80.0 * u.mV, Ci=0.1 * u.mM, Co=3.0 * u.mM, valence=1)
@@ -69,63 +47,14 @@ class PotassiumFixedDefaultsTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(k.Ci, 0.1 * u.mM, atol=1e-9 * u.mM))
         self.assertTrue(u.math.allclose(k.Co, 3.0 * u.mM, atol=1e-9 * u.mM))
 
-    def test_callable_parameters_broadcast_across_size(self) -> None:
-        k = PotassiumFixed(
-            size=3,
-            E=lambda shape: jnp.array([-90.0, -95.0, -100.0]) * u.mV,
-            Ci=lambda shape: jnp.array([0.04, 0.05, 0.06]) * u.mM,
-            Co=lambda shape: jnp.array([2.5, 2.6, 2.7]) * u.mM,
-        )
-        self.assertEqual(k.E.shape, (3,))
-        self.assertEqual(k.Ci.shape, (3,))
-        self.assertEqual(k.Co.shape, (3,))
-        self.assertTrue(
-            u.math.allclose(
-                k.E,
-                jnp.array([-90.0, -95.0, -100.0]) * u.mV,
-                atol=1e-9 * u.mV,
-            )
-        )
-        self.assertTrue(
-            u.math.allclose(
-                k.Ci,
-                jnp.array([0.04, 0.05, 0.06]) * u.mM,
-                atol=1e-9 * u.mM,
-            )
-        )
-
-
-class PotassiumFixedPackInfoTest(unittest.TestCase):
-    def test_pack_info_returns_ion_info(self) -> None:
-        k = PotassiumFixed(size=1)
-        info = k.pack_info()
-        self.assertIsInstance(info, IonInfo)
-
-    def test_pack_info_fields_match_stored_values(self) -> None:
-        k = PotassiumFixed(size=1, E=-85.0 * u.mV, Ci=0.02 * u.mM, Co=2.8 * u.mM, valence=1)
-        info = k.pack_info()
-        self.assertTrue(u.math.allclose(info.Ci, 0.02 * u.mM, atol=1e-9 * u.mM))
-        self.assertTrue(u.math.allclose(info.Co, 2.8 * u.mM, atol=1e-9 * u.mM))
-        self.assertTrue(u.math.allclose(info.E, -85.0 * u.mV, atol=1e-9 * u.mV))
-        self.assertTrue(u.math.allclose(info.valence, jnp.ones((1,)), atol=1e-9))
-
 
 class PotassiumFixedContainerTest(unittest.TestCase):
     """Ion-as-container behaviour."""
-
-    def test_no_channels_by_default(self) -> None:
-        k = PotassiumFixed(size=1)
-        self.assertEqual(k.channels, {})
-        self.assertEqual(k.external_currents, {})
 
     def test_channels_kwarg_is_attached(self) -> None:
         k = PotassiumFixed(size=1, IK=K_TM1991(size=1))
         self.assertIn("IK", k.channels)
         self.assertIsInstance(k.channels["IK"], K_TM1991)
-
-    def test_current_without_channels_returns_none(self) -> None:
-        k = PotassiumFixed(size=1)
-        self.assertIsNone(k.current(_V([-60.0])))
 
     def test_current_with_channel_delegates_to_channel(self) -> None:
         k = PotassiumFixed(size=1, IK=K_TM1991(size=1))
@@ -134,17 +63,6 @@ class PotassiumFixedContainerTest(unittest.TestCase):
         k.reset_state(V)
         i = k.current(V)
         self.assertEqual(i.shape, (1,))
-
-    def test_register_external_current_rejects_duplicate_keys(self) -> None:
-        k = PotassiumFixed(size=1)
-
-        def fake(V, info):
-            return jnp.array([1.0]) * u.uA / u.cm**2
-
-        k.register_external_current("ext", fake)
-        self.assertIn("ext", k.external_currents)
-        with self.assertRaises(ValueError):
-            k.register_external_current("ext", fake)
 
     def test_current_with_include_external_adds_registered_fn(self) -> None:
         k = PotassiumFixed(size=1, IK=K_TM1991(size=1))
@@ -235,6 +153,17 @@ class PotassiumInitNernstTest(unittest.TestCase):
         k = PotassiumInitNernst(size=1, Ci=60.0 * u.mM, Co=3.0 * u.mM)
         self.assertTrue(u.math.allclose(k.Ci, 60.0 * u.mM, atol=1e-9 * u.mM))
         self.assertTrue(u.math.allclose(k.Co, 3.0 * u.mM, atol=1e-9 * u.mM))
+
+
+class PotassiumFixedContractTest(FixedIonContractTests, unittest.TestCase):
+    """The shared ``FixedIon`` contract, for potassium."""
+
+    ION_CLASS = PotassiumFixed
+    FAMILY_CLASS = Potassium
+    DEFAULT_E = -95.0 * u.mV
+    DEFAULT_CI = 54.4 * u.mM
+    DEFAULT_CO = 2.5 * u.mM
+    DEFAULT_VALENCE = 1
 
 
 if __name__ == "__main__":

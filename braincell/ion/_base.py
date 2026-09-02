@@ -100,6 +100,75 @@ def _nernst(*, Ci, Co, temp, valence):
     return (u.gas_constant * temp / (valence * u.faraday_constant)) * u.math.log(Co / Ci)
 
 
+def _nernst_of(owner):
+    """Return :func:`_nernst` evaluated on one ion's four live fields.
+
+    The three templates that expose a reversal potential -- the stored
+    one on :class:`InitNernstIon` and the recomputed properties on
+    :class:`DynamicNernstIon` and :class:`KineticIon` -- all read the
+    same ``Ci``/``Co``/``temp``/``valence`` quadruple through
+    :func:`_unwrap`. Naming that once keeps the four keyword arguments
+    from drifting out of alignment in one copy only.
+
+    Parameters
+    ----------
+    owner : Any
+        Ion instance carrying ``Ci``, ``Co``, ``temp``, and ``valence``,
+        each either a plain quantity or a :class:`brainstate.State`.
+
+    Returns
+    -------
+    Any
+        The reversal potential, as a voltage.
+    """
+    return _nernst(
+        Ci=_unwrap(owner.Ci),
+        Co=_unwrap(owner.Co),
+        temp=_unwrap(owner.temp),
+        valence=_unwrap(owner.valence),
+    )
+
+
+def species_initializer_view(name: str) -> property:
+    """Return a property exposing ``species_initializers[name]`` as an attribute.
+
+    A kinetic ion must expose every constructor parameter as an
+    attribute of the same name: ``_compute.ions`` reflects over
+    ``cls.__init__``'s signature and reads each parameter back off a
+    baseline instance with ``getattr`` to build the per-layout runtime
+    values. A ``<species>_initializer`` argument therefore cannot simply
+    be folded into the ``species_initializers`` dict and forgotten.
+
+    Storing it a second time as a plain attribute *does* satisfy that
+    contract, but leaves two copies that no longer move together --
+    writing through ``species_initializers`` leaves the attribute
+    stale, and vice versa. A view satisfies the contract with one
+    source of truth.
+
+    Parameters
+    ----------
+    name : str
+        Species name to expose.
+
+    Returns
+    -------
+    property
+        Readable and writable view onto ``species_initializers[name]``.
+
+    See Also
+    --------
+    KineticIon.Ci_initializer : The reserved species' view.
+    """
+
+    def getter(self):
+        return self.species_initializers[name]
+
+    def setter(self, value):
+        self.species_initializers[name] = value
+
+    return property(getter, setter, doc=f"Initializer for the ``{name}`` species.")
+
+
 @dataclass(frozen=True)
 class Factor:
     """Named constant factor for visible-to-amount conversion.
@@ -198,9 +267,13 @@ class Source:
     target : str
         Target diffeq species.
     flux : callable
-        Callable ``flux(owner, V, species_values)`` returning a contribution to
-        the factor-scaled derivative of ``target``. When ``target`` has no
-        factor this reduces to the ordinary visible derivative.
+        Callable ``flux(owner, V, species_values, total_current=None)``
+        returning a contribution to the factor-scaled derivative of
+        ``target``. When ``target`` has no factor this reduces to the
+        ordinary visible derivative. The ``total_current`` keyword is
+        always passed and is ``None`` unless the owning ion sets
+        ``uses_total_current``; a source that ignores it must still
+        accept it.
 
     See Also
     --------
@@ -387,12 +460,7 @@ class InitNernstIon(brainstate.mixin.Mixin):
 
     def _update_reversal(self):
         """Recompute and store ``E`` from the current ``Ci/Co/temp/valence``."""
-        self.E = _nernst(
-            Ci=_unwrap(self.Ci),
-            Co=_unwrap(self.Co),
-            temp=_unwrap(self.temp),
-            valence=_unwrap(self.valence),
-        )
+        self.E = _nernst_of(self)
 
     def _ion_init_state_hook(self, V, batch_size: int = None):
         """Refresh the stored Nernst reversal during ion initialization."""
@@ -509,12 +577,7 @@ class DynamicNernstIon(brainstate.mixin.Mixin):
     @property
     def E(self):
         """Compute ``E`` from the current dynamic ``Ci`` via Nernst."""
-        return _nernst(
-            Ci=_unwrap(self.Ci),
-            Co=_unwrap(self.Co),
-            temp=_unwrap(self.temp),
-            valence=_unwrap(self.valence),
-        )
+        return _nernst_of(self)
 
     def _ion_init_state_hook(self, V, batch_size: int = None):
         """Create the runtime ``Ci`` state from the stored initializer."""
@@ -695,30 +758,91 @@ class KineticIon(IndependentIntegration):
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.species_initializers = dict(species_initializers or {})
 
-    @property
-    def Ci_initializer(self):
-        """Initializer for the reserved ``Ci`` species.
-
-        A view onto ``species_initializers["Ci"]`` rather than a second
-        copy of it: the two were previously written independently by
-        every subclass constructor and could drift apart whenever one
-        of them was rewritten in place.
-        """
-        return self.species_initializers["Ci"]
-
-    @Ci_initializer.setter
-    def Ci_initializer(self, value):
-        self.species_initializers["Ci"] = value
+    #: View onto ``species_initializers["Ci"]`` for the reserved species.
+    Ci_initializer = species_initializer_view("Ci")
 
     @property
     def E(self):
         """Nernst reversal potential from the current ``Ci``."""
-        return _nernst(
-            Ci=_unwrap(self.Ci),
-            Co=_unwrap(self.Co),
-            temp=_unwrap(self.temp),
-            valence=_unwrap(self.valence),
-        )
+        return _nernst_of(self)
+
+    @property
+    def diffeq_species(self) -> tuple[str, ...]:
+        """Names of the species this ion integrates as differential equations.
+
+        Derived from :attr:`species` minus the algebraic species claimed
+        by :attr:`conserves`, and cached per subclass by
+        :meth:`_Specs.for_type`. Subclasses must not restate it: a
+        hand-written copy and the declaration it shadows can disagree,
+        and the only symptom is
+        :meth:`_resolve_species_initializers` rejecting a legitimate
+        override.
+        """
+        return _Specs.for_type(type(self)).diffeq_names
+
+    def _as_initializer(self, value):
+        """Normalize one species initializer, preserving per-point shape.
+
+        A callable is an initializer already. A tuple is a per-point
+        listing that must survive as one array -- with the shared unit
+        factored out when the entries carry one -- rather than being
+        broadcast from its first element. Anything else is a constant.
+        """
+        if callable(value):
+            return value
+        if isinstance(value, tuple):
+            resolved = [item.value if hasattr(item, "value") else item for item in value]
+            first = resolved[0]
+            if hasattr(first, "unit"):
+                unit = first.unit
+                decimals = [u.Quantity(item).to_decimal(unit) for item in resolved]
+                return u.Quantity(u.math.asarray(decimals), unit)
+            return u.math.asarray(resolved)
+        return braintools.init.Constant(value)
+
+    def _resolve_species_initializers(self, *, Ci_initializer, species_initializers) -> dict[str, Any]:
+        """Merge caller overrides onto this ion's declared species defaults.
+
+        Parameters
+        ----------
+        Ci_initializer : Any, optional
+            Override for the reserved ``"Ci"`` species, or ``None`` to
+            take the subclass's own resting default.
+        species_initializers : dict, optional
+            Per-species overrides. Keys must name differential species;
+            an algebraic species is solved from its
+            :class:`Conserve` relation and cannot be seeded.
+
+        Returns
+        -------
+        dict
+            One normalized initializer per declared default, ready to
+            pass to :meth:`_init_kinetic_ion`.
+
+        Raises
+        ------
+        ValueError
+            If ``species_initializers`` names anything outside
+            :attr:`diffeq_species`.
+        """
+        overrides = dict(species_initializers or {})
+        invalid = set(overrides).difference(self.diffeq_species)
+        if invalid:
+            invalid_names = ", ".join(sorted(invalid))
+            raise ValueError(f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}.")
+
+        defaults = self._default_species_initializers(Ci_initializer)
+        defaults.update(overrides)
+        return {name: self._as_initializer(value) for name, value in defaults.items()}
+
+    def _default_species_initializers(self, Ci_initializer) -> dict[str, Any]:
+        """Return this ion's resting species initializers, before overrides.
+
+        Implemented by subclasses that accept a ``species_initializers``
+        argument; the returned mapping is consumed by
+        :meth:`_resolve_species_initializers`.
+        """
+        raise NotImplementedError
 
     def make_integration(self, V, recursive_child: bool = True):
         """Advance this ion with its own solver and substep schedule."""
@@ -729,7 +853,7 @@ class KineticIon(IndependentIntegration):
             )
 
     def _step_solver(self, V, recursive_child: bool = True):
-        args = (V,) if recursive_child else (V, recursive_child)
+        args = (V, recursive_child)
         try:
             self.solver(self, *args, excluded_paths=(("channels",),))
         except TypeError as exc:
@@ -785,10 +909,11 @@ class _RadialShellGeometry(brainstate.mixin.Mixin):
     compartment into ``Nannuli`` concentric shells and scales its
     reaction rates by the resulting per-length volume and surface
     factors. That geometry, the mass-action equilibrium used to seed a
-    buffer's free/bound split, and the ``diam_arc_mean`` precondition
-    the shells depend on are identical across all of those mechanisms;
-    only the reaction network above them differs. Mix this in ahead of
-    :class:`KineticIon` so the geometry lives in one place.
+    buffer's free/bound split, the current-driven ``Ci`` source term,
+    and the ``diam_arc_mean`` precondition the shells depend on are
+    identical across all of those mechanisms; only the reaction network
+    above them differs. Mix this in ahead of :class:`KineticIon` so the
+    geometry lives in one place.
 
     See Also
     --------
@@ -812,58 +937,67 @@ class _RadialShellGeometry(brainstate.mixin.Mixin):
     hooks check it before any species is materialized.
     """
 
-    def _as_initializer(self, value):
-        """Normalize one species initializer, preserving per-point shape.
-
-        A callable is an initializer already. A tuple is a per-point
-        listing that must survive as one array -- with the shared unit
-        factored out when the entries carry one -- rather than being
-        broadcast from its first element. Anything else is a constant.
-        """
-        if callable(value):
-            return value
-        if isinstance(value, tuple):
-            resolved = []
-            for item in value:
-                if hasattr(item, "value"):
-                    resolved.append(item.value)
-                else:
-                    resolved.append(item)
-            first = resolved[0]
-            if hasattr(first, "unit"):
-                unit = first.unit
-                decimals = [u.Quantity(item).to_decimal(unit) for item in resolved]
-                return u.Quantity(u.math.asarray(decimals), unit)
-            return u.math.asarray(resolved)
-        return braintools.init.Constant(value)
-
     def _require_diam_arc_mean(self):
         """Return ``diam_arc_mean``, or raise if the geometry is not set yet."""
         if not hasattr(self, "diam_arc_mean"):
             raise AttributeError(f"{type(self).__name__} requires 'diam_arc_mean' before kinetic state initialization.")
         return self.diam_arc_mean
 
+    def _seed_geometry(self):
+        """Derive and cache the diameter-dependent shell factors.
+
+        ``dsq``, ``dsqvol``, and ``parea`` are fixed once the
+        compartment layer has written ``diam_arc_mean``, but the
+        reaction networks above them read ``dsqvol`` 39 to 97 times
+        within a single ``compute_derivative`` -- each read previously
+        re-deriving the same eight array operations.
+
+        The cache records the diameter it was built from, so rebinding
+        ``diam_arc_mean`` reseeds on the next read rather than serving a
+        stale factor. Both lifecycle hooks call this eagerly so that a
+        missing geometry still fails before any species is materialized.
+        """
+        diam_arc_mean = self._require_diam_arc_mean()
+        self._dsq = diam_arc_mean * diam_arc_mean
+        self._dsqvol = self._dsq * self.vrat
+        self._parea = u.math.pi * diam_arc_mean
+        self._geometry_source = diam_arc_mean
+
+    def _geometry(self, name: str):
+        """Return one cached shell factor, reseeding if the diameter changed."""
+        if getattr(self, "_geometry_source", None) is not self._require_diam_arc_mean():
+            self._seed_geometry()
+        return getattr(self, name)
+
     @property
     def vrat(self):
-        """Outermost-shell volume ratio implied by ``Nannuli``."""
-        dr2 = 0.25 / (self.Nannuli - 1.0)
-        return u.math.pi * (0.5 - (dr2 / 2.0)) * 2.0 * dr2
+        """Outermost-shell volume ratio implied by ``Nannuli``.
+
+        Depends only on ``Nannuli``, which is fixed at construction, so
+        unlike the other three factors this one is available before the
+        compartment layer attaches ``diam_arc_mean``.
+        """
+        cached = getattr(self, "_vrat", None)
+        if cached is None:
+            dr2 = 0.25 / (self.Nannuli - 1.0)
+            cached = u.math.pi * (0.5 - (dr2 / 2.0)) * 2.0 * dr2
+            self._vrat = cached
+        return cached
 
     @property
     def dsq(self):
         """Squared arc-mean diameter of the compartment."""
-        diam_arc_mean = self._require_diam_arc_mean()
-        return diam_arc_mean * diam_arc_mean
+        return self._geometry("_dsq")
 
     @property
     def dsqvol(self):
         """Combined ``dsq * vrat`` volume factor for the outermost shell."""
-        return self.dsq * self.vrat
+        return self._geometry("_dsqvol")
 
     @property
     def parea(self):
         """Perimeter of the compartment, the pump's surface scale factor."""
-        return u.math.pi * self._require_diam_arc_mean()
+        return self._geometry("_parea")
 
     def _ss_buffer_free(self, total, kon, koff, cai):
         """Return the free fraction of a buffer at mass-action equilibrium."""
@@ -873,15 +1007,27 @@ class _RadialShellGeometry(brainstate.mixin.Mixin):
         """Return the calcium-bound fraction of a buffer at equilibrium."""
         return total / (1.0 + koff / (kon * cai))
 
+    def _ci_source_flux(self, total_current):
+        """Return the ``Ci`` source term driven by the aggregate ion current.
+
+        NEURON's raw ``ica`` is efflux-positive, but BrainCell channel
+        currents are inward-positive, so a positive calcium current
+        *increases* the local pool. Returns a correctly-united zero when
+        no current is supplied, so a source declaration need not branch.
+        """
+        if total_current is None:
+            return self.dsqvol * (0.0 * u.mM / u.ms)
+        return (total_current * self.parea) / (2.0 * u.faraday_constant)
+
     def _ion_init_state_hook(self, V, batch_size: int = None):
-        """Check the geometry, then initialize species as ``KineticIon`` does."""
-        self._require_diam_arc_mean()
-        KineticIon._ion_init_state_hook(self, V, batch_size=batch_size)
+        """Seed the geometry, then initialize species as ``KineticIon`` does."""
+        self._seed_geometry()
+        super()._ion_init_state_hook(V, batch_size=batch_size)
 
     def _ion_reset_state_hook(self, V, batch_size: int = None):
-        """Check the geometry, then reset species as ``KineticIon`` does."""
-        self._require_diam_arc_mean()
-        KineticIon._ion_reset_state_hook(self, V, batch_size=batch_size)
+        """Seed the geometry, then reset species as ``KineticIon`` does."""
+        self._seed_geometry()
+        super()._ion_reset_state_hook(V, batch_size=batch_size)
 
 
 class _Specs:
@@ -895,26 +1041,11 @@ class _Specs:
         cached = cls._cache.get(ion_type)
         if cached is None:
             cached = cls(
-                factors=tuple(
-                    type_factor if isinstance(type_factor, Factor) else Factor(*type_factor)
-                    for type_factor in getattr(ion_type, "factors", ())
-                ),
-                species=tuple(
-                    type_species if isinstance(type_species, Species) else Species(*type_species)
-                    for type_species in getattr(ion_type, "species", ())
-                ),
-                reactions=tuple(
-                    type_reaction if isinstance(type_reaction, Reaction) else Reaction(*type_reaction)
-                    for type_reaction in getattr(ion_type, "reactions", ())
-                ),
-                sources=tuple(
-                    type_source if isinstance(type_source, Source) else Source(*type_source)
-                    for type_source in getattr(ion_type, "sources", ())
-                ),
-                conserves=tuple(
-                    type_conserve if isinstance(type_conserve, Conserve) else Conserve(*type_conserve)
-                    for type_conserve in getattr(ion_type, "conserves", ())
-                ),
+                factors=tuple(getattr(ion_type, "factors", ())),
+                species=tuple(getattr(ion_type, "species", ())),
+                reactions=tuple(getattr(ion_type, "reactions", ())),
+                sources=tuple(getattr(ion_type, "sources", ())),
+                conserves=tuple(getattr(ion_type, "conserves", ())),
             )
             cls._cache[ion_type] = cached
         return cached
@@ -984,6 +1115,7 @@ class _Species:
     def __init__(self, owner, specs: _Specs):
         self.owner = owner
         self.specs = specs
+        self._factors = {}
 
     def _species_value(self, spec, batch_size: int = None):
         """Materialize one species initializer at the owner's full state shape.
@@ -1028,29 +1160,6 @@ class _Species:
                 else:
                     setattr(self.owner, spec.name, hidden_state(value))
 
-    def algebraic_state(self, value):
-        """Allocate an algebraic species state matching its siblings' class.
-
-        :meth:`_Conserve.writeback` runs during simulation, *outside* the
-        :func:`~braincell.state_grouping` scope the host establishes around
-        ``init_state``. Reading the ambient scope there would silently
-        produce a plain :class:`brainstate.HiddenState` on a
-        :class:`braincell.Cell`, whose hidden states must all be grouped.
-        Deriving the class from an already-allocated sibling species makes
-        the decision independent of when the allocation happens.
-
-        Falls back to the scoped factory only when no sibling has been
-        allocated yet, which is the genuine initialization path — and that
-        one does run inside the host's scope.
-        """
-        for name in self.specs.species_by_name:
-            sibling = getattr(self.owner, name, None)
-            if isinstance(sibling, brainstate.HiddenState):
-                if isinstance(sibling, brainstate.HiddenGroupState):
-                    return brainstate.HiddenGroupState(value)
-                return brainstate.HiddenState(value)
-        return hidden_state(value)
-
     def value(self, name: str):
         """Return one species' current visible value."""
         raw = getattr(self.owner, name)
@@ -1061,11 +1170,22 @@ class _Species:
         getattr(self.owner, name).derivative = value
 
     def factor_value(self, name: str):
-        """Return one species' concrete factor value, defaulting to ``1``."""
+        """Return one species' concrete factor value, defaulting to ``1``.
+
+        Memoized per factor name for the lifetime of this adapter, which
+        is one derivative evaluation: :class:`Factor` documents its value
+        as constant during a single integration step, and a reaction
+        network reads the same factor once per species it touches -- up
+        to 52 times in one ``compute_derivative``.
+        """
         spec = self.specs.species_by_name[name]
         if spec.factor is None:
             return 1.0
-        return self.specs.factors_by_name[spec.factor].value(self.owner)
+        cached = self._factors.get(spec.factor)
+        if cached is None:
+            cached = self.specs.factors_by_name[spec.factor].value(self.owner)
+            self._factors[spec.factor] = cached
+        return cached
 
     def to_scaled(self, name: str, value=None):
         """Convert a visible species value to its factor-scaled form."""
@@ -1108,19 +1228,14 @@ class _Conserve:
     def writeback(self, V=None):
         """Update cached algebraic species values on the owner object.
 
-        Runs every simulation step, so the allocation branch below is dead
-        in normal flow — :meth:`_Species.init` has already turned every
-        species into a ``State``. It stays defensive rather than raising,
-        but routes through :meth:`_Species.algebraic_state` so that a late
-        allocation cannot silently pick the wrong hidden-state class.
+        Every algebraic species is already a :class:`brainstate.State`
+        by the time this runs: :meth:`_Species.init` allocates the whole
+        table, and both lifecycle hooks call it before their own
+        writeback.
         """
         values = self.resolve(V)
         for name in self.specs.algebraic_names:
-            raw = getattr(self.owner, name)
-            if isinstance(raw, brainstate.State):
-                raw.value = values[name]
-            else:
-                setattr(self.owner, name, self.species.algebraic_state(values[name]))
+            getattr(self.owner, name).value = values[name]
 
 
 class _Flux:
@@ -1153,15 +1268,7 @@ class _Flux:
                     scaled_derivs[name] = scaled_derivs[name] + contrib
 
         for source in self.specs.sources:
-            try:
-                contrib = source.flux(
-                    self.owner,
-                    V,
-                    species_values,
-                    total_current=total_current,
-                )
-            except TypeError:
-                contrib = source.flux(self.owner, V, species_values)
+            contrib = source.flux(self.owner, V, species_values, total_current=total_current)
             scaled_derivs[source.target] = scaled_derivs[source.target] + contrib
 
         for name in self.specs.diffeq_names:

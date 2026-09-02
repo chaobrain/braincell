@@ -49,13 +49,10 @@ from braincell.ion.calcium import (
     ToyCaPumpFactorKinetic_SU2015_DCN,
     ToyCaBindingSourceKinetic_SU2015_DCN,
 )
-from braincell.ion._base import DynamicNernstIon, InitNernstIon, KineticIon
+from braincell.ion._testing import V as _V, KineticPumpContractTests, make_shell_ion
+from braincell.ion._base import DynamicNernstIon, InitNernstIon, KineticIon, _Specs
 from braincell.mech import get_registry
 from braincell.quad.protocol import DiffEqState
-
-
-def _V(values, unit=u.mV):
-    return jnp.asarray(values) * unit
 
 
 class CalciumBaseTest(unittest.TestCase):
@@ -848,14 +845,13 @@ class ToyDiamFactorKinetic_SU2015_DCNTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(info.Ci, ion.Ci.value, atol=1e-12 * u.mM))
 
 
-class CdpStC_MA2020_GoCTest(unittest.TestCase):
+class CdpStC_MA2020_GoCTest(KineticPumpContractTests, unittest.TestCase):
     """Imported GoC calcium pool with preserved KINETIC reactions."""
 
+    ION_CLASS = CdpStC_MA2020_GoC
+
     def _make_ion(self, **kwargs):
-        ion = CdpStC_MA2020_GoC(size=1, **kwargs)
-        ion.diam_mid = jnp.asarray([20.0]) * u.um
-        ion.diam_arc_mean = jnp.asarray([20.0]) * u.um
-        return ion
+        return make_shell_ion(CdpStC_MA2020_GoC, **kwargs)
 
     def test_is_subclass_of_calcium(self) -> None:
         self.assertTrue(issubclass(CdpStC_MA2020_GoC, Calcium))
@@ -922,31 +918,6 @@ class CdpStC_MA2020_GoCTest(unittest.TestCase):
         flux = ion.sources[0].flux(ion, _V([-60.0]), ion.species_values(), total_current=None)
         self.assertTrue(
             u.math.allclose(flux, jnp.array([0.0]) * u.mM * u.um**2 / u.ms, atol=1e-12 * u.mM * u.um**2 / u.ms)
-        )
-
-    def test_positive_inward_current_produces_positive_ci_source_flux(self) -> None:
-        ion = self._make_ion()
-        ion.init_state(_V([-60.0]))
-        flux = ion.sources[0].flux(
-            ion,
-            _V([-60.0]),
-            ion.species_values(),
-            total_current=jnp.array([0.01]) * u.mA / (u.cm**2),
-        )
-        self.assertGreater(float(flux[0].to_decimal(u.mM * u.um**2 / u.ms)), 0.0)
-
-    def test_conserve_keeps_pump_plus_pumpca_equal_total_scaled_pool(self) -> None:
-        ion = self._make_ion()
-        ion.init_state(_V([-60.0]))
-        values = ion.species_values()
-        total = ion.TotalPump * ion.parea
-        combined = ion.pump.value * ion.parea + values["pumpca"] * ion.parea
-        self.assertTrue(
-            u.math.allclose(
-                combined.to_decimal(total.unit),
-                total.to_decimal(total.unit),
-                atol=1e-12,
-            )
         )
 
     def test_reaction_r2_pump_release_is_irreversible(self) -> None:
@@ -1040,10 +1011,7 @@ class CdpStC_CAMOnly_MA2020_GoCTest(unittest.TestCase):
     """Imported GoC calcium pool with only the calmodulin subnetwork."""
 
     def _make_ion(self, **kwargs):
-        ion = CdpStC_CAMOnly_MA2020_GoC(size=1, **kwargs)
-        ion.diam_mid = jnp.asarray([20.0]) * u.um
-        ion.diam_arc_mean = jnp.asarray([20.0]) * u.um
-        return ion
+        return make_shell_ion(CdpStC_CAMOnly_MA2020_GoC, **kwargs)
 
     def test_is_subclass_of_calcium(self) -> None:
         self.assertTrue(issubclass(CdpStC_CAMOnly_MA2020_GoC, Calcium))
@@ -1104,14 +1072,13 @@ class CdpStC_CAMOnly_MA2020_GoCTest(unittest.TestCase):
             self.assertTrue(np.isfinite(arr).all())
 
 
-class CdpStC_NoCAM_MA2020_GoCTest(unittest.TestCase):
+class CdpStC_NoCAM_MA2020_GoCTest(KineticPumpContractTests, unittest.TestCase):
     """Imported GoC calcium pool without the calmodulin subnetwork."""
 
+    ION_CLASS = CdpStC_NoCAM_MA2020_GoC
+
     def _make_ion(self, **kwargs):
-        ion = CdpStC_NoCAM_MA2020_GoC(size=1, **kwargs)
-        ion.diam_mid = jnp.asarray([20.0]) * u.um
-        ion.diam_arc_mean = jnp.asarray([20.0]) * u.um
-        return ion
+        return make_shell_ion(CdpStC_NoCAM_MA2020_GoC, **kwargs)
 
     def test_is_subclass_of_calcium(self) -> None:
         self.assertTrue(issubclass(CdpStC_NoCAM_MA2020_GoC, Calcium))
@@ -1175,31 +1142,6 @@ class CdpStC_NoCAM_MA2020_GoCTest(unittest.TestCase):
         flux = ion.sources[0].flux(ion, _V([-60.0]), ion.species_values(), total_current=None)
         self.assertTrue(
             u.math.allclose(flux, jnp.array([0.0]) * u.mM * u.um**2 / u.ms, atol=1e-12 * u.mM * u.um**2 / u.ms)
-        )
-
-    def test_positive_inward_current_produces_positive_ci_source_flux(self) -> None:
-        ion = self._make_ion()
-        ion.init_state(_V([-60.0]))
-        flux = ion.sources[0].flux(
-            ion,
-            _V([-60.0]),
-            ion.species_values(),
-            total_current=jnp.array([0.01]) * u.mA / (u.cm**2),
-        )
-        self.assertGreater(float(flux[0].to_decimal(u.mM * u.um**2 / u.ms)), 0.0)
-
-    def test_conserve_keeps_pump_plus_pumpca_equal_total_scaled_pool(self) -> None:
-        ion = self._make_ion()
-        ion.init_state(_V([-60.0]))
-        values = ion.species_values()
-        total = ion.TotalPump * ion.parea
-        combined = ion.pump.value * ion.parea + values["pumpca"] * ion.parea
-        self.assertTrue(
-            u.math.allclose(
-                combined.to_decimal(total.unit),
-                total.to_decimal(total.unit),
-                atol=1e-12,
-            )
         )
 
     def test_reaction_r2_pump_release_is_irreversible(self) -> None:
@@ -1266,10 +1208,7 @@ class CdpStCInheritedCellVariantTest(unittest.TestCase):
     )
 
     def _make_ion(self, cls):
-        ion = cls(size=1)
-        ion.diam_mid = jnp.asarray([20.0]) * u.um
-        ion.diam_arc_mean = jnp.asarray([20.0]) * u.um
-        return ion
+        return make_shell_ion(cls)
 
     def test_cell_specific_variants_are_registered_subclasses(self) -> None:
         registry = get_registry()
@@ -1286,7 +1225,14 @@ class CdpStCInheritedCellVariantTest(unittest.TestCase):
                 self.assertIs(cls.reactions, CdpStC_NoCAM_MA2020_GoC.reactions)
                 self.assertIs(cls.sources, CdpStC_NoCAM_MA2020_GoC.sources)
                 self.assertIs(cls.conserves, CdpStC_NoCAM_MA2020_GoC.conserves)
-                self.assertEqual(cls._diffeq_species, CdpStC_NoCAM_MA2020_GoC._diffeq_species)
+                # Derived from the shared species/conserves declarations
+                # above rather than restated per class, so this follows
+                # from them -- but pin it, since it is what
+                # ``_default_species_initializers`` is validated against.
+                self.assertEqual(
+                    _Specs.for_type(cls).diffeq_names,
+                    _Specs.for_type(CdpStC_NoCAM_MA2020_GoC).diffeq_names,
+                )
                 self.assertTrue(cls.uses_total_current)
 
     def test_variants_match_nocam_state_derivative_and_source_flux(self) -> None:
@@ -1333,14 +1279,13 @@ class CdpStCInheritedCellVariantTest(unittest.TestCase):
                 self.assertTrue(u.math.allclose(flux_variant, flux_base, atol=1e-12 * flux_base.unit))
 
 
-class CdpCAM_MA2024_PCTest(unittest.TestCase):
+class CdpCAM_MA2024_PCTest(KineticPumpContractTests, unittest.TestCase):
     """Imported PC calcium pool with active CB and CAM subnetworks."""
 
+    ION_CLASS = CdpCAM_MA2024_PC
+
     def _make_ion(self, **kwargs):
-        ion = CdpCAM_MA2024_PC(size=1, **kwargs)
-        ion.diam_mid = jnp.asarray([20.0]) * u.um
-        ion.diam_arc_mean = jnp.asarray([20.0]) * u.um
-        return ion
+        return make_shell_ion(CdpCAM_MA2024_PC, **kwargs)
 
     def test_is_registered_kinetic_calcium_ion(self) -> None:
         self.assertTrue(issubclass(CdpCAM_MA2024_PC, Calcium))
@@ -1407,31 +1352,6 @@ class CdpCAM_MA2024_PCTest(unittest.TestCase):
     def test_species_initializer_rejects_algebraic_override(self) -> None:
         with self.assertRaisesRegex(ValueError, "differential-species overrides"):
             self._make_ion(species_initializers={"pumpca": 0.0 * (u.mol / u.cm**2)})
-
-    def test_positive_inward_current_produces_positive_ci_source_flux(self) -> None:
-        ion = self._make_ion()
-        ion.init_state(_V([-60.0]))
-        flux = ion.sources[0].flux(
-            ion,
-            _V([-60.0]),
-            ion.species_values(),
-            total_current=jnp.array([0.01]) * u.mA / (u.cm**2),
-        )
-        self.assertGreater(float(flux[0].to_decimal(u.mM * u.um**2 / u.ms)), 0.0)
-
-    def test_conserve_keeps_pump_plus_pumpca_equal_total_scaled_pool(self) -> None:
-        ion = self._make_ion()
-        ion.init_state(_V([-60.0]))
-        values = ion.species_values()
-        total = ion.TotalPump * ion.parea
-        combined = ion.pump.value * ion.parea + values["pumpca"] * ion.parea
-        self.assertTrue(
-            u.math.allclose(
-                combined.to_decimal(total.unit),
-                total.to_decimal(total.unit),
-                atol=1e-12,
-            )
-        )
 
     def test_cb_fast_binding_consumes_cb_and_builds_cb_f_ca(self) -> None:
         ion = self._make_ion()
@@ -1501,14 +1421,13 @@ class CdpCAM_MA2024_PCTest(unittest.TestCase):
         self.assertLess(float(ion.Ci.value[0].to_decimal(u.mM)), 1e-3)
 
 
-class CdpCR_MA2020_GrCTest(unittest.TestCase):
+class CdpCR_MA2020_GrCTest(KineticPumpContractTests, unittest.TestCase):
     """Imported GrC calcium pool with Calretinin buffering."""
 
+    ION_CLASS = CdpCR_MA2020_GrC
+
     def _make_ion(self, **kwargs):
-        ion = CdpCR_MA2020_GrC(size=1, **kwargs)
-        ion.diam_mid = jnp.asarray([20.0]) * u.um
-        ion.diam_arc_mean = jnp.asarray([20.0]) * u.um
-        return ion
+        return make_shell_ion(CdpCR_MA2020_GrC, **kwargs)
 
     def test_is_registered_kinetic_calcium_ion(self) -> None:
         self.assertTrue(issubclass(CdpCR_MA2020_GrC, Calcium))
@@ -1582,31 +1501,6 @@ class CdpCR_MA2020_GrCTest(unittest.TestCase):
     def test_species_initializer_rejects_algebraic_override(self) -> None:
         with self.assertRaisesRegex(ValueError, "differential-species overrides"):
             self._make_ion(species_initializers={"pumpca": 0.0 * (u.mol / u.cm**2)})
-
-    def test_positive_inward_current_produces_positive_ci_source_flux(self) -> None:
-        ion = self._make_ion()
-        ion.init_state(_V([-60.0]))
-        flux = ion.sources[0].flux(
-            ion,
-            _V([-60.0]),
-            ion.species_values(),
-            total_current=jnp.array([0.01]) * u.mA / (u.cm**2),
-        )
-        self.assertGreater(float(flux[0].to_decimal(u.mM * u.um**2 / u.ms)), 0.0)
-
-    def test_conserve_keeps_pump_plus_pumpca_equal_total_scaled_pool(self) -> None:
-        ion = self._make_ion()
-        ion.init_state(_V([-60.0]))
-        values = ion.species_values()
-        total = ion.TotalPump * ion.parea
-        combined = ion.pump.value * ion.parea + values["pumpca"] * ion.parea
-        self.assertTrue(
-            u.math.allclose(
-                combined.to_decimal(total.unit),
-                total.to_decimal(total.unit),
-                atol=1e-12,
-            )
-        )
 
     def test_cr_slow_branch_consumes_cr_and_builds_cr_1c_0n(self) -> None:
         ion = self._make_ion()

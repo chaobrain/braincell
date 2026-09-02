@@ -59,10 +59,6 @@ class _CellScope:
         return _ordered_unique(cv_id for _, cv_id in self.pairs)
 
     @property
-    def branch_ids(self) -> tuple[int, ...]:
-        return self.exact_branch_ids if self.exact_branch_ids is not None else ()
-
-    @property
     def pair_population_index(self) -> np.ndarray:
         return np.asarray([population for population, _ in self.pairs], dtype=np.int64)
 
@@ -118,7 +114,7 @@ class _CellScope:
     def select_region(self, cell, region: RegionExpr | RegionMask) -> "_CellScope":
         if not isinstance(region, (RegionExpr, RegionMask)):
             raise TypeError(f"Cell.on(...) expects RegionExpr or RegionMask, got {type(region).__name__!s}.")
-        fractions = field_resolution.cv_coverage_fractions(cell, region, caller="Cell.on(...)")
+        fractions = field_resolution.cv_area_coverage_fractions(cell, region, caller="Cell.on(...)")
         selected = tuple(cv_id for cv_id, fraction in fractions.items() if float(fraction) > 0.0)
         result = self.select_cv_ids(selected)
         selected_set = set(result.cv_ids)
@@ -255,7 +251,7 @@ def _normalize_selection(selection, *, size: int, name: str) -> tuple[int, ...]:
         selected = (index,)
     else:
         values = np.asarray(selection)
-        if values.ndim != 1 or values.dtype.kind not in "iu" or values.dtype.kind == "b":
+        if values.ndim != 1 or values.dtype.kind not in "iu":
             raise TypeError(f"{name} selection must be an integer, slice, or one-dimensional integer sequence.")
         normalized = []
         for raw in values.tolist():
@@ -273,7 +269,7 @@ def _normalize_global_ids(ids, *, name: str) -> tuple[int, ...]:
     values = np.asarray(ids)
     if values.ndim == 0:
         values = values.reshape(1)
-    if values.ndim != 1 or values.dtype.kind not in "iu" or values.dtype.kind == "b":
+    if values.ndim != 1 or values.dtype.kind not in "iu":
         raise TypeError(f"{name} ids must be a one-dimensional integer selection.")
     return _ordered_unique(int(item) for item in values.tolist())
 

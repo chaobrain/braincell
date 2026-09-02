@@ -41,13 +41,13 @@ from braincell.mech import (
     StateProbe,
 )
 from braincell.morph.morphology import Morphology
-from .base import DEFAULT_CABLE, EPS_AREA_UM2, EPS_PARAM, CVPointMechanism, Position
+from .base import DEFAULT_CABLE, EPS_PARAM, CVPointMechanism, Position
 from .context import build_cv_contexts
 from .geometry import (
     CVGeometryResult,
     _GeoCV,
     _build_frusta,
-    _lateral_area_um2,
+    interval_area_fraction,
 )
 
 __all__ = [
@@ -364,19 +364,14 @@ def _coverage_fraction(
     branch=None,
     frusta_builder=None,
 ) -> float:
-    if geo.lateral_area_um2 <= EPS_AREA_UM2:
-        return 0.0
-    if branch is None:
-        branch = morpho.branches[geo.branch_id]
-    build = frusta_builder if frusta_builder is not None else _build_frusta
-    overlap = 0.0
-    for left, right in intervals:
-        start = max(geo.prox, float(left))
-        end = min(geo.dist, float(right))
-        if end - start <= EPS_PARAM:
-            continue
-        overlap += _lateral_area_um2(build(branch, prox=start, dist=end))
-    return max(0.0, min(1.0, overlap / geo.lateral_area_um2))
+    return interval_area_fraction(
+        morpho.branches[geo.branch_id] if branch is None else branch,
+        prox=geo.prox,
+        dist=geo.dist,
+        lateral_area_um2=geo.lateral_area_um2,
+        intervals=intervals,
+        frusta_builder=frusta_builder,
+    )
 
 
 def _region_cv_coverage(

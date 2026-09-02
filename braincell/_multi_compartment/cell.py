@@ -60,15 +60,11 @@ from braincell._misc import (
     profiler_scope_name as _scope_name,
 )
 from braincell._typing import Initializer, Size
-from braincell._compute.table import (
-    MechanismObjectCell,
-    MechanismObjectTable,
-    mechanism_cell_key,
-)
+from braincell._compute.table import MechanismObjectTable, build_mechanism_object_table
 from braincell._compute.scheduling import build_node_scheduling
 from braincell._compute.state import CellRuntimeState
 from braincell._compute.bindings import _is_root_level_runtime_node
-from braincell._compute.layouts import mechanism_signature
+from braincell._compute.layouts import layout_id_from_key
 from braincell._discretization.mechanism import (
     PaintRule,
     PlaceRule,
@@ -98,7 +94,7 @@ from braincell.quad.protocol import DiffEqGroupState, IndependentIntegration, st
 from braincell.mech import CVContext, Synapse as SynapsePlacement
 from . import currents, field_resolution, probes, run as run_module
 from braincell._compute import bridge
-from .synapses import SynapseView, _SynapseStore
+from .synapses import SynapseView, _SynapseStore, raise_on_name_type_conflict
 from .selection import BranchSelector, CVSelector, _CellScope
 from .density_views import ChannelView, IonView
 
@@ -844,7 +840,6 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._runtime_nodes_cache: tuple[RuntimeNodeView, ...] | None = None
         self._synapse_store_cache: _SynapseStore | None = None
         self._spike_event_source_cache: _CellSpikeSource | None = None
-        self._axial_jax = None
         self._synapse_input_bindings: dict[str, list[tuple[object, object, object]]] = {}
         self._synapse_parameter_overrides: dict[tuple[int, int, str], object] = {}
         self._density_parameter_overrides: dict[tuple[str, str, int, int, str], object] = {}
@@ -1225,8 +1220,20 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._run_loop_cache.clear()
 
     def _discretization_key(self) -> tuple[object, ...]:
+        # ``Morphology`` is mutable and shared -- ``cell.morpho`` hands the
+        # caller the very tree this cell discretizes -- so identity alone
+        # cannot say whether it still looks the way it did when the cache
+        # was filled. ``revision`` advances on every structural change;
+        # pairing it with the identity is the same test
+        # ``braincell.filter.SelectionCache`` applies.
+        #
+        # The ``id()`` is sound here, unlike for a temporary whose address
+        # can be recycled: this cell holds ``self._morpho`` alive for as
+        # long as the key it appears in, and both sites that reassign the
+        # attribute invalidate the cache outright.
         return (
             id(self._morpho),
+            self._morpho.revision,
             self._discretization_policy,
             self._paint_rules,
             self._place_rules,
@@ -1238,6 +1245,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         if self._discretization_cache is not None and self._discretization_cache_key == key:
             return self._discretization_cache
 
+        # Everything below hangs off the discretization, so a key miss has
+        # to drop those caches too -- not just the one being rebuilt.
+        self._invalidate_discretization_cache()
         discretization = build_discretization(
             self._morpho,
             policy=self._discretization_policy,
@@ -1274,7 +1284,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         cvs = self.cvs
         return LocsetMask.from_columns(
             [cv.branch_id for cv in cvs],
-            [(cv.prox + cv.dist) * 0.5 for cv in cvs],
+            [cv.midpoint for cv in cvs],
         )
 
     @property
@@ -1346,20 +1356,20 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     def _validate_synapse_names(self, mechanisms) -> None:
         """Reject one logical group name being reused across model types."""
-        declared = {}
-        for rule in self._place_rules:
-            for mechanism in rule.mechanisms:
-                if isinstance(mechanism, SynapsePlacement):
-                    declared.setdefault(mechanism.instance_name, mechanism.synapse_type)
-        for mechanism in mechanisms:
-            if not isinstance(mechanism, SynapsePlacement):
-                continue
-            previous = declared.setdefault(mechanism.instance_name, mechanism.synapse_type)
-            if previous != mechanism.synapse_type:
-                raise ValueError(
-                    f"Synapses with the same name {mechanism.instance_name!r} cannot use different synapse types "
-                    f"({previous!r} and {mechanism.synapse_type!r})."
-                )
+        declared = raise_on_name_type_conflict(
+            (mechanism.instance_name, mechanism.synapse_type)
+            for rule in self._place_rules
+            for mechanism in rule.mechanisms
+            if isinstance(mechanism, SynapsePlacement)
+        )
+        raise_on_name_type_conflict(
+            (
+                (mechanism.instance_name, mechanism.synapse_type)
+                for mechanism in mechanisms
+                if isinstance(mechanism, SynapsePlacement)
+            ),
+            known=declared,
+        )
 
     @property
     def recordings(self) -> Mapping[str, RecordingSpec]:
@@ -1462,7 +1472,6 @@ class Cell(_CellFacade, HHTypedNeuron):
         # so defer this matrix until ``_get_axial_operator()`` is actually used.
         self._runtime.axial_operator_np = None
         self._runtime.axial_operator_cache = None
-        self._axial_jax = None
         self._initialized = True
         self._runtime_cvs_cache = self._build_runtime_cv_views()
         self._runtime_nodes_cache = self._build_runtime_node_views()
@@ -1506,7 +1515,6 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._runtime = None
         self._runtime_cvs_cache = None
         self._runtime_nodes_cache = None
-        self._axial_jax = None
         self._node_scheduling_cache.clear()
         self._run_loop_cache.clear()
         self._compiled_recording_cache.clear()
@@ -1676,10 +1684,6 @@ class Cell(_CellFacade, HHTypedNeuron):
     def _cv_to_point_unchecked(self, cv_values):
         return bridge.cv_to_point(cv_values, self._runtime)
 
-    # Internal aliases kept while older inspection helpers are still in use.
-    def _discretization_to_point(self, cv_values):
-        return self._cv_to_point(cv_values)
-
     def _point_to_cv(self, point_values):
         self._raise_if_not_initialized("_point_to_cv()")
         return bridge.point_to_cv(point_values, self._runtime)
@@ -1781,7 +1785,6 @@ class Cell(_CellFacade, HHTypedNeuron):
         float_dtype = jnp.asarray(0.0).dtype
         cache = runtime.axial_operator_cache
         if cache is not None and cache.float_dtype == float_dtype:
-            self._axial_jax = cache.operator
             return cache.operator
 
         if runtime.axial_operator_np is None:
@@ -1798,7 +1801,6 @@ class Cell(_CellFacade, HHTypedNeuron):
         cache = AxialOperatorCache(float_dtype=float_dtype, operator=operator)
         if not is_traced_value(operator):
             runtime.axial_operator_cache = cache
-        self._axial_jax = operator
         return operator
 
     def compute_axial_derivative(self, V):
@@ -1819,16 +1821,10 @@ class Cell(_CellFacade, HHTypedNeuron):
     def _family_channel_nodes(self):
         nodes = []
         for path, node in self._top_level_ion_channel_nodes():
-            if isinstance(node, Ion):
-                for child_path, child in brainstate.graph.nodes(
-                    node,
-                    Channel,
-                    allowed_hierarchy=(1, 1),
-                ).items():
-                    if getattr(child, "_skip_family_update", False):
-                        continue
-                    nodes.append((path + child_path, child))
-            elif isinstance(node, MixIons):
+            # ``Ion`` and ``MixIons`` are siblings, not a hierarchy
+            # (both derive from ``IonChannel, Container``), and a channel
+            # under either is reached the same way.
+            if isinstance(node, (Ion, MixIons)):
                 for child_path, child in brainstate.graph.nodes(
                     node,
                     Channel,
@@ -1840,67 +1836,6 @@ class Cell(_CellFacade, HHTypedNeuron):
             elif isinstance(node, Channel):
                 nodes.append((path, node))
         return tuple(nodes)
-
-    def _integrate_selected_ion_channel_states(self, selected_paths, point_V, excluded_paths=()):
-        selected_paths = tuple(tuple(path) for path in selected_paths)
-        if not selected_paths:
-            return
-        excluded_paths = [("V",), *tuple(tuple(path) for path in excluded_paths)]
-
-        def _pre_integral():
-            for path, node in self._top_level_ion_channel_nodes():
-                if isinstance(node, Ion) and path in selected_paths:
-                    node.pre_integral(point_V, recursive_child=False)
-                if isinstance(node, Channel) and path in selected_paths:
-                    node.pre_integral(point_V)
-                if isinstance(node, (Ion, MixIons)):
-                    self._run_selected_child_channel_hook(
-                        node,
-                        path,
-                        selected_paths,
-                        "pre_integral",
-                        point_V,
-                    )
-
-        def _compute_derivative():
-            for path, node in self._top_level_ion_channel_nodes():
-                if isinstance(node, Ion) and path in selected_paths:
-                    node.compute_derivative(point_V, recursive_child=False)
-                if isinstance(node, Channel) and path in selected_paths:
-                    node.compute_derivative(point_V)
-                if isinstance(node, (Ion, MixIons)):
-                    self._run_selected_child_channel_hook(
-                        node,
-                        path,
-                        selected_paths,
-                        "compute_derivative",
-                        point_V,
-                    )
-
-        def _post_integral():
-            for path, node in self._top_level_ion_channel_nodes():
-                if isinstance(node, Ion) and path in selected_paths:
-                    node.post_integral(point_V, recursive_child=False)
-                if isinstance(node, Channel) and path in selected_paths:
-                    node.post_integral(point_V)
-                if isinstance(node, (Ion, MixIons)):
-                    self._run_selected_child_channel_hook(
-                        node,
-                        path,
-                        selected_paths,
-                        "post_integral",
-                        point_V,
-                    )
-
-        _ind_exp_euler_step_selected(
-            self,
-            include_paths=selected_paths,
-            excluded_paths=excluded_paths,
-            pre_integral=_pre_integral,
-            compute_derivative=_compute_derivative,
-            post_integral=_post_integral,
-            allow_empty=True,
-        )
 
     def _integrate_selected_ion_self_states(
         self,
@@ -1929,22 +1864,6 @@ class Cell(_CellFacade, HHTypedNeuron):
             post_integral=lambda: _run_phase("post_integral"),
             allow_empty=True,
         )
-
-    @staticmethod
-    def _run_selected_child_channel_hook(parent, parent_path, selected_paths, hook_name, point_V):
-        for child_path, child in brainstate.graph.nodes(
-            parent,
-            Channel,
-            allowed_hierarchy=(1, 1),
-        ).items():
-            full_path = parent_path + child_path
-            if full_path not in selected_paths:
-                continue
-            if isinstance(parent, Ion):
-                getattr(child, hook_name)(point_V, parent.pack_info())
-            else:
-                infos = tuple([parent._get_ion(root).pack_info() for root in child.root_type.__args__])
-                getattr(child, hook_name)(point_V, *infos)
 
     def _update_ion_channels_by_integration(self, point_V):
         with jax.named_scope("braincell:ion_update:integration:dependent"):
@@ -2050,11 +1969,11 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     def _runtime_node_phase_args(self, path, node, point_V):
         if isinstance(node, RuntimeSynapse):
-            layout_id = _layout_id_from_runtime_path(path)
+            layout_id = layout_id_from_key(path)
             layout = self._runtime.layouts[layout_id]
             if layout.point_index is None:
                 raise ValueError(f"Synapse layout {layout.id!r} is missing point_index.")
-            return (_gather_layout_point_values(point_V, layout),)
+            return (layout.gather_points(point_V),)
         return self._channel_update_args(path, node, point_V)
 
     @staticmethod
@@ -2524,97 +2443,20 @@ class Cell(_CellFacade, HHTypedNeuron):
         return probes.sample_probes(self)
 
     def mech_table(self) -> MechanismObjectTable:
+        """Return the point-domain mechanism table for this cell.
+
+        Returns
+        -------
+        braincell._compute.table.MechanismObjectTable
+            Rows are mechanism identities, columns are point ids.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`init_state` has not been called.
+        """
         self._raise_if_not_initialized("mech_table()")
-        runtime = self._runtime
-        node_tree = self.node_tree
-        column_ids = tuple(range(len(node_tree.nodes)))
-
-        row_keys: list[tuple[str, str]] = []
-        row_labels: list[str] = []
-        row_index_by_key: dict[tuple[str, str], int] = {}
-        pending_cells: list[tuple[int, int, MechanismObjectCell]] = []
-        layout_id_by_signature = {
-            (layout.target,) + mechanism_signature(runtime.get_layout_mechanism(layout.id)): layout.id
-            for layout in runtime.layouts
-        }
-        layout_id_by_synapse_type = {
-            runtime.get_layout_mechanism(layout.id).synapse_type: layout.id
-            for layout in runtime.layouts
-            if isinstance(runtime.get_layout_mechanism(layout.id), SynapsePlacement)
-        }
-
-        def ensure_row(mechanism: object) -> int:
-            row_key = mechanism_cell_key(mechanism)
-            row_index = row_index_by_key.get(row_key)
-            if row_index is not None:
-                return row_index
-            row_index = len(row_keys)
-            row_keys.append(row_key)
-            class_name, instance_name = row_key
-            row_labels.append(class_name if class_name == instance_name else f"{instance_name}:{class_name}")
-            row_index_by_key[row_key] = row_index
-            return row_index
-
-        for cv in self.cvs:
-            midpoint_point_id = int(node_tree.cv_to_mid_node_id[cv.id])
-            for mechanism in cv.density_mech:
-                row_key = mechanism_cell_key(mechanism)
-                row_index = ensure_row(mechanism)
-                layout_id = layout_id_by_signature[("density",) + mechanism_signature(mechanism)]
-                pending_cells.append(
-                    (
-                        row_index,
-                        midpoint_point_id,
-                        MechanismObjectCell(
-                            runtime=runtime,
-                            layout_id=int(layout_id),
-                            class_name=row_key[0],
-                            instance_name=row_key[1],
-                            column_id=midpoint_point_id,
-                            domain="point",
-                            cv_id=None,
-                            point_id=midpoint_point_id,
-                        ),
-                    )
-                )
-
-        for point_id, node in enumerate(node_tree.nodes):
-            for mechanism in node.point_mech:
-                row_key = mechanism_cell_key(mechanism)
-                row_index = ensure_row(mechanism)
-                layout_id = (
-                    layout_id_by_synapse_type[mechanism.synapse_type]
-                    if isinstance(mechanism, SynapsePlacement)
-                    else layout_id_by_signature[("point",) + mechanism_signature(mechanism)]
-                )
-                pending_cells.append(
-                    (
-                        row_index,
-                        int(point_id),
-                        MechanismObjectCell(
-                            runtime=runtime,
-                            layout_id=int(layout_id),
-                            class_name=row_key[0],
-                            instance_name=row_key[1],
-                            column_id=int(point_id),
-                            domain="point",
-                            cv_id=None,
-                            point_id=int(point_id),
-                        ),
-                    )
-                )
-
-        values = np.full((len(row_keys), len(column_ids)), None, dtype=object)
-        for row_index, column_id, cell in pending_cells:
-            values[row_index, int(column_id)] = cell
-
-        return MechanismObjectTable(
-            domain="point",
-            row_keys=tuple(row_keys),
-            row_labels=tuple(row_labels),
-            column_ids=column_ids,
-            values=values,
-        )
+        return build_mechanism_object_table(self._runtime, self.cvs)
 
     # ------------------------------------------------------------------
     # Run (auto-inits from DECLARING)
@@ -2860,20 +2702,6 @@ def _resolve_subsolver_schedule(subsolver, substeps):
         raise ValueError(f"substeps must be at least 1, got {normalized_substeps!r}.")
     solver_name, solver_fn = _resolve_solver(subsolver)
     return solver_name, solver_fn, normalized_substeps
-
-
-def _layout_id_from_runtime_path(path) -> int:
-    if len(path) == 0:
-        raise ValueError(f"Expected runtime layout path ending with 'layout_<id>', got {path!r}.")
-    last = path[-1]
-    if not isinstance(last, str) or not last.startswith("layout_"):
-        raise ValueError(f"Expected runtime layout path ending with 'layout_<id>', got {path!r}.")
-    return int(last.split("_", 1)[1])
-
-
-def _gather_layout_point_values(values, layout):
-    """Gather point values for a broadcast or packed point layout."""
-    return layout.gather_points(values)
 
 
 def _zeros_like_event_template(template):

@@ -36,6 +36,7 @@ from braincell._misc import (
     profiler_call_name as _call_name,
     profiler_scope_name as _scope_name,
 )
+from braincell._compute.layouts import layout_id_from_key
 from braincell._compute.state import CellRuntimeState
 from braincell._compute import bridge
 
@@ -86,7 +87,7 @@ def total_membrane_current_point(
         for key, ch in host.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             with jax.named_scope(_scope_name("braincell:membrane_current:channel", key, ch)):
                 if isinstance(ch, RuntimeSynapse):
-                    layout_id = _layout_id_from_current_key(key)
+                    layout_id = layout_id_from_key(key)
                     layout = runtime.layouts[layout_id]
                     contrib_point = _synapse_contrib_to_point(runtime, layout, ch, point_V)
                     if contrib_point is None:
@@ -105,15 +106,6 @@ def total_membrane_current_point(
                 I_point = I_point + _profile_barrier_current(contrib)
 
     return I_point
-
-
-def _layout_id_from_current_key(key) -> int:
-    if len(key) == 0:
-        raise ValueError(f"Expected runtime object key ending with 'layout_<id>', got {key!r}.")
-    last = key[-1]
-    if not isinstance(last, str) or not last.startswith("layout_"):
-        raise ValueError(f"Expected runtime object key ending with 'layout_<id>', got {key!r}.")
-    return int(last.split("_", 1)[1])
 
 
 def _synapse_contrib_to_point(runtime: CellRuntimeState, layout, syn, point_V):

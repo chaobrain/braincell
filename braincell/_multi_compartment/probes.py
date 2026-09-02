@@ -47,7 +47,7 @@ def sample_probe(rcell: "Cell", name: str) -> object:
     matches: list[tuple[object, object]] = []
     for layout in runtime.layouts:
         declaration = runtime.get_layout_mechanism(layout.id)
-        if isinstance(declaration, (StateProbe, MechanismProbe, CurrentProbe)) and _probe_name(declaration) == name:
+        if isinstance(declaration, _PROBE_TYPES) and _probe_name(declaration) == name:
             matches.append((layout, declaration))
     if len(matches) == 0:
         raise KeyError(f"No probe is registered with name {name!r}.")
@@ -71,7 +71,7 @@ def iter_probe_layouts(runtime: CellRuntimeState):
     seen: set[str] = set()
     for layout in runtime.layouts:
         declaration = runtime.get_layout_mechanism(layout.id)
-        if not isinstance(declaration, (StateProbe, MechanismProbe, CurrentProbe)):
+        if not isinstance(declaration, _PROBE_TYPES):
             continue
         probe_name = _probe_name(declaration)
         if probe_name in seen:
@@ -109,38 +109,58 @@ def _sample_probe_layout(
     point_ids = getattr(layout, "point_index", None)
     if point_ids is None:
         raise ValueError(f"Probe layout {getattr(layout, 'id', None)!r} is missing point_index.")
-    samples = []
-    for point_id in point_ids.tolist():
-        if isinstance(declaration, StateProbe):
-            samples.append(
-                _sample_state_probe_point(
-                    rcell,
-                    runtime,
-                    declaration=declaration,
-                    point_id=int(point_id),
-                )
-            )
-        elif isinstance(declaration, MechanismProbe):
-            samples.append(
-                _sample_mechanism_probe_point(
-                    rcell,
-                    runtime,
-                    declaration=declaration,
-                    point_id=int(point_id),
-                )
-            )
-        elif isinstance(declaration, CurrentProbe):
-            samples.append(
-                _sample_current_probe_point(
-                    rcell,
-                    runtime,
-                    declaration=declaration,
-                    point_id=int(point_id),
-                )
-            )
-        else:  # pragma: no cover
-            raise TypeError(f"Unsupported probe declaration type {type(declaration).__name__!s}.")
-    return _pack_probe_samples(samples)
+    sampler = _POINT_SAMPLERS.get(type(declaration))
+    if sampler is None:  # pragma: no cover
+        raise TypeError(f"Unsupported probe declaration type {type(declaration).__name__!s}.")
+    return _pack_probe_samples(
+        [sampler(rcell, runtime, declaration=declaration, point_id=int(point_id)) for point_id in point_ids.tolist()]
+    )
+
+
+def _matched_density_layout(
+    runtime: CellRuntimeState,
+    *,
+    declaration: object,
+    point_id: int,
+) -> object | None:
+    """Return the one ``Density`` layout named by ``declaration`` at a point.
+
+    Both probe kinds resolve a mechanism name the same way and reject the
+    same ambiguity; they differ only in what a *miss* means, so that is all
+    each caller is left to decide.
+
+    Parameters
+    ----------
+    runtime : braincell._compute.state.CellRuntimeState
+        Runtime holding the point-to-layout map.
+    declaration : braincell.mech.MechanismProbe or braincell.mech.CurrentProbe
+        Probe declaration supplying ``mechanism`` and the probe name.
+    point_id : int
+        Point being sampled.
+
+    Returns
+    -------
+    braincell._compute.layouts.MechanismLayout or None
+        The single match, or ``None`` when nothing at this point carries
+        that name.
+
+    Raises
+    ------
+    ValueError
+        If more than one density mechanism at ``point_id`` claims the name.
+    """
+    matched = [
+        layout
+        for layout in runtime.get_point_layouts(point_id)
+        if isinstance(mechanism := runtime.get_layout_mechanism(layout.id), Density)
+        and mechanism.instance_name == declaration.mechanism
+    ]
+    if len(matched) > 1:
+        raise ValueError(
+            f"Probe {_probe_name(declaration)!r} matched multiple mechanisms named "
+            f"{declaration.mechanism!r} at point {point_id!r}."
+        )
+    return matched[0] if matched else None
 
 
 def _sample_state_probe_point(
@@ -172,18 +192,9 @@ def _sample_mechanism_probe_point(
         selected = raw[..., synapse_view.runtime_index]
         return _pack_synapse_probe_rows(rcell, synapse_view, selected)
 
-    matched_layouts = []
-    for layout in runtime.get_point_layouts(point_id):
-        mechanism = runtime.get_layout_mechanism(layout.id)
-        if isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism:
-            matched_layouts.append(layout)
-    if len(matched_layouts) > 1:
-        raise ValueError(
-            f"Probe {_probe_name(declaration)!r} matched multiple mechanisms named "
-            f"{declaration.mechanism!r} at point {point_id!r}."
-        )
-    if len(matched_layouts) == 1:
-        node = runtime.get_runtime_node(matched_layouts[0].id)
+    matched = _matched_density_layout(runtime, declaration=declaration, point_id=point_id)
+    if matched is not None:
+        node = runtime.get_runtime_node(matched.id)
         raw = _probe_attr_value(
             node,
             declaration.field,
@@ -234,22 +245,13 @@ def _sample_current_probe_point(
             selected = current[..., synapse_view.runtime_index]
             return _pack_synapse_probe_rows(rcell, synapse_view, selected)
 
-        matched_layouts = []
-        for layout in runtime.get_point_layouts(point_id):
-            mechanism = runtime.get_layout_mechanism(layout.id)
-            if isinstance(mechanism, Density) and mechanism.instance_name == declaration.mechanism:
-                matched_layouts.append(layout)
-        if len(matched_layouts) > 1:
-            raise ValueError(
-                f"Probe {_probe_name(declaration)!r} matched multiple mechanisms named "
-                f"{declaration.mechanism!r} at point {point_id!r}."
-            )
-        if len(matched_layouts) == 0:
+        matched = _matched_density_layout(runtime, declaration=declaration, point_id=point_id)
+        if matched is None:
             raise KeyError(
                 f"Probe {_probe_name(declaration)!r} could not find a mechanism named "
                 f"{declaration.mechanism!r} at point {point_id!r}."
             )
-        layout_id = matched_layouts[0].id
+        layout_id = matched.id
         node = runtime.get_runtime_node(layout_id)
         bound_ion_keys = runtime.bound_ion_keys.get(layout_id, ())
         if len(bound_ion_keys) > 1:
@@ -277,6 +279,21 @@ def _sample_current_probe_point(
     ion = runtime.get_ion(declaration.ion)
     current = ion.current(point_V, include_external=False)
     return _select_last_axis(current, point_id)
+
+
+#: The probe declaration types this module can sample, mapped to the
+#: function that samples one point of each. Registering a fourth kind is a
+#: single edit here: the dispatch in :func:`_sample_probe_layout` and the
+#: two membership tests above all read this table.
+_POINT_SAMPLERS = {
+    StateProbe: _sample_state_probe_point,
+    MechanismProbe: _sample_mechanism_probe_point,
+    CurrentProbe: _sample_current_probe_point,
+}
+
+#: Declaration types that count as a probe, for the two membership tests
+#: that scan every layout. Derived from the table so the two cannot drift.
+_PROBE_TYPES = tuple(_POINT_SAMPLERS)
 
 
 def _synapse_probe_view(rcell: "Cell", name: str, *, point_id: int):
@@ -330,20 +347,19 @@ def _probe_current_ion_info(
     *,
     declaration: CurrentProbe,
     mechanism: object,
-    layout_id: int | None = None,
+    layout_id: int,
 ) -> object | None:
+    # The one caller reaches here only inside its own
+    # ``declaration.mechanism is not None`` branch, and always with a
+    # resolved layout, so neither is re-checked.
     if declaration.ion is not None:
         return runtime.get_ion(declaration.ion).pack_info()
 
-    if layout_id is not None:
-        owner_key = runtime.current_owner_keys.get(int(layout_id))
-        if isinstance(owner_key, str):
-            return runtime.get_ion(owner_key).pack_info()
+    owner_key = runtime.current_owner_keys.get(int(layout_id))
+    if isinstance(owner_key, str):
+        return runtime.get_ion(owner_key).pack_info()
 
     mechanism_name = declaration.mechanism
-    if mechanism_name is None:
-        return None
-
     for ion in runtime.ions.values():
         channels = getattr(ion, "channels", None)
         if isinstance(channels, dict) and mechanism_name in channels and channels[mechanism_name] is mechanism:

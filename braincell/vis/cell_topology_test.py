@@ -73,7 +73,11 @@ class PlotCellTopologyCvLevelTest(unittest.TestCase):
             plot_cell_topology(_cell(), level="cv", region=BranchSlice(branch_index=1, prox=0.0, dist=0.5))
 
         coverage = mocked.call_args.kwargs["highlight_fractions"]
-        self.assertAlmostEqual(coverage[1], 0.5)
+        # CV shading is the membrane-area fraction, the same one that scales
+        # a painted conductance. The dendrite tapers, so its proximal half
+        # is 0.5833... of the area and only 0.5 of the length. Branch-level
+        # shading below is a drawing extent and stays length-based.
+        self.assertAlmostEqual(coverage[1], 0.5833333333333334)
         self.assertEqual(mocked.call_args.kwargs["coverage_mode"], "fraction")
 
     def test_any_mode_is_forwarded(self) -> None:

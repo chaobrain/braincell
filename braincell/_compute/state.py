@@ -126,7 +126,7 @@ class CellRuntimeState:
       :meth:`get_point_state`, :meth:`get_cv_state`
     - runtime object lookup: :meth:`get_runtime_node`, :meth:`get_ion`
     - point-level clamp evaluation: :meth:`evaluate_point_clamps`
-    - table views: :meth:`mechanism_cv_table`, :meth:`mechanism_point_table`
+    - table views: :func:`braincell._compute.table.build_mechanism_object_table`
 
     The main collaboration is upward: :class:`Cell` compiles and caches one
     ``CellRuntimeState`` instance, then uses it to install runtime nodes, bridge

@@ -19,7 +19,8 @@ import brainunit as u
 
 import braincell
 from braincell import Branch, Cell, Morphology
-from braincell.filter import BranchSlice
+from braincell._compute.table import build_mechanism_object_table
+from braincell.filter import BranchSlice, RootLocation
 
 
 def _simple_cell() -> Cell:
@@ -52,3 +53,60 @@ class MechanismObjectCellAttrAccess(unittest.TestCase):
         msg = str(ctx.exception)
         self.assertIn("not_a_real_field", msg)
         self.assertIn("g_max", msg)
+
+
+class BuildMechanismObjectTableTest(unittest.TestCase):
+    """The builder is the whole of ``Cell.mech_table()``.
+
+    ``Cell`` used to inline this assembly; it now delegates, so the two
+    must produce the same table, and the table must cover both kinds of
+    mechanism it claims to -- a density painted over the membrane and a
+    point mechanism placed at a location.
+    """
+
+    def _cell_with_both_kinds(self) -> Cell:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        tree = Morphology.from_root(soma, name="soma")
+        cell = Cell(tree)
+        cell.paint(
+            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+            braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm**2), E=-68.0 * u.mV),
+        )
+        cell.place(RootLocation(0.5), braincell.mech.StateProbe(field="v", name="V_root"))
+        cell.init_state()
+        return cell
+
+    def test_it_matches_what_the_cell_method_returns(self) -> None:
+        cell = self._cell_with_both_kinds()
+        direct = build_mechanism_object_table(cell.runtime, cell.cvs)
+        through_cell = cell.mech_table()
+
+        self.assertEqual(direct.domain, through_cell.domain)
+        self.assertEqual(direct.row_keys, through_cell.row_keys)
+        self.assertEqual(direct.row_labels, through_cell.row_labels)
+        self.assertEqual(direct.column_ids, through_cell.column_ids)
+        self.assertEqual(direct.shape, through_cell.shape)
+
+    def test_it_covers_both_a_density_and_a_point_mechanism(self) -> None:
+        table = self._cell_with_both_kinds().mech_table()
+        self.assertIn(("IL", "IL"), table.row_keys)
+        self.assertIn(("StateProbe", "V_root"), table.row_keys)
+
+    def test_every_populated_entry_names_its_own_row_and_column(self) -> None:
+        table = self._cell_with_both_kinds().mech_table()
+        populated = 0
+        for row_index, row_key in enumerate(table.row_keys):
+            for column_index, column_id in enumerate(table.column_ids):
+                entry = table.values[row_index, column_index]
+                if entry is None:
+                    continue
+                populated += 1
+                self.assertEqual((entry.class_name, entry.instance_name), row_key)
+                self.assertEqual(entry.column_id, column_id)
+                self.assertEqual(entry.point_id, column_id)
+                self.assertIsNone(entry.cv_id)
+        self.assertGreater(populated, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -266,6 +266,20 @@ class CV:
         return RegionMask(((self.branch_id, self.prox, self.dist),))
 
     @property
+    def midpoint(self) -> float:
+        """Return the CV midpoint in normalized branch coordinates.
+
+        Derived rather than stored, so it cannot drift from the bounds it
+        is the middle of.
+
+        Returns
+        -------
+        float
+            ``(prox + dist) / 2``, in ``[0, 1]``.
+        """
+        return 0.5 * (self.prox + self.dist)
+
+    @property
     def diam_mid(self) -> u.Quantity:
         """Return the diameter at the CV midpoint.
 

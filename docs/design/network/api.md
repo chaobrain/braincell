@@ -7,7 +7,7 @@ net = braincell.Network("demo", seed=7)
 stim = net.add_population("stim", braincell.NetStim(size=4))
 post = net.add_population("post", cell, layer="demo")
 
-post.cell.place(at("dend_b", 0.7), braincell.mech.SynapseSpec("ExpSyn", name="ampa"))
+post.cell.place(at("dend_b", 0.7), braincell.mech.Synapse("ExpSyn", name="ampa"))
 net.connect(
     "stim_to_post",
     source=stim.event_outputs["spike"],
@@ -382,9 +382,9 @@ Network.connect(
 | --- | --- | --- | --- |
 | `name` | `str` | required | 目标 Cell 内唯一的 Connection call 名称。 |
 | `source` | `Population`, `EventSource`, or `EventSourceView` | required | 已注册 Population 提供的 source 或 source view。 |
-| `synapse` | `SynapseView or SynapseSpec` | required | 已有 Synapse rows，或要放置的新 Synapse 声明。 |
-| `target` | `Population or CellView` | `None` | 使用 `SynapseSpec` 时必需；已有 `SynapseView` 时禁止。 |
-| `locations` | locset expression, mask, batch, or sequence | `None` | 使用 `SynapseSpec` 时传给 `target.place` 的位置。 |
+| `synapse` | `SynapseView or Synapse` | required | 已有 Synapse rows，或要放置的新 Synapse 声明。 |
+| `target` | `Population or CellView` | `None` | 使用 `Synapse` 时必需；已有 `SynapseView` 时禁止。 |
+| `locations` | locset expression, mask, batch, or sequence | `None` | 使用 `Synapse` 时传给 `target.place` 的位置。 |
 | `pairing` | `PairingSpec or None` | `None` | 仅支持已有 `SynapseView`。 |
 | `weight` | quantity or row-aligned quantity | synapse event default | Connection event payload。 |
 | `delay` | time quantity | `0.0 * u.ms` | 标量或 row-aligned 非负延迟。 |
@@ -421,7 +421,7 @@ connection = net.connect(
     source=stim.event_outputs["spike"][2:4],
     target=post.cell[2:4],
     locations=at("dend_b", 0.7),
-    synapse=braincell.mech.SynapseSpec(
+    synapse=braincell.mech.Synapse(
         "Exp2Syn",
         name="slow",
         tau1=0.5 * u.ms,

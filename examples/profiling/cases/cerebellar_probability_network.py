@@ -269,7 +269,7 @@ def _build_population(spec: CellSpec, *, size: int, incoming_configs):
     for cfg in incoming_configs:
         cell.place(
             at("soma", 0.5),
-            mech.SynapseSpec(
+            mech.Synapse(
                 "ExpSyn",
                 tau=cfg["tau_ms"] * u.ms,
                 e=cfg["e_mV"] * u.mV,

@@ -25,7 +25,7 @@ def build_target(size: int):
         cv_policy=braincell.CVPerBranch(),
         pop_size=(size,),
     )
-    synapse = braincell.mech.SynapseSpec(
+    synapse = braincell.mech.Synapse(
         "ExpSyn",
         name="bench_ampa",
         tau=2.0 * u.ms,

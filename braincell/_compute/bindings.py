@@ -80,7 +80,7 @@ from braincell.channel._base import Markov
 from braincell.ion._base import KineticIon
 from braincell.mech import (
     Density,
-    SynapseSpec as SynapsePlacement,
+    Synapse as SynapsePlacement,
     get_registry,
 )
 from braincell.quad import get_integrator

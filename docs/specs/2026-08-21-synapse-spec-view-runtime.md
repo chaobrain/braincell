@@ -4,7 +4,7 @@
 
 Point synapses use three user-visible concepts:
 
-1. `braincell.mech.SynapseSpec` is the immutable placement declaration.
+1. `braincell.mech.Synapse` is the immutable placement declaration.
 2. `braincell.SynapseView` selects stable logical instances.
 3. Registered runtime synapse classes own executable SoA parameters and states.
 
@@ -14,7 +14,7 @@ not inspect or depend on that storage class.
 ## Public contract
 
 ```python
-exp = braincell.mech.SynapseSpec(
+exp = braincell.mech.Synapse(
     "ExpSyn",
     name="parallel_fiber",
     tau=2.0 * u.ms,

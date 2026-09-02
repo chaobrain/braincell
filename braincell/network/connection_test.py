@@ -44,7 +44,7 @@ def _population(size=3):
     )
     morpho = Morphology.from_root(soma, name="soma")
     cell = Cell(morpho, cv_policy=CVPerBranch(), pop_size=(size,))
-    exp = braincell.mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+    exp = braincell.mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
     cell.place(at("soma", 0.5), exp)
     return cell, exp
 
@@ -140,7 +140,7 @@ class ConnectionTest(unittest.TestCase):
 
     def test_mixed_synapse_types_require_type_filter_for_weight(self) -> None:
         cell, exp = _population(2)
-        exp2 = braincell.mech.SynapseSpec("Exp2Syn", name="slow")
+        exp2 = braincell.mech.Synapse("Exp2Syn", name="slow")
         cell.place(at("soma", 0.25), exp2)
         connect("fast", source=NetStim(size=2), synapse=cell.synapses[exp])
         connect("slow", source=NetStim(size=2), synapse=cell.synapses[exp2])
@@ -152,7 +152,7 @@ class ConnectionTest(unittest.TestCase):
 
     def test_connect_rejects_duplicate_name_and_mixed_synapse_group(self) -> None:
         cell, exp = _population(2)
-        other = braincell.mech.SynapseSpec("ExpSyn", name="other")
+        other = braincell.mech.Synapse("ExpSyn", name="other")
         cell.place(at("soma", 0.25), other)
         connect("input", source=NetStim(size=2), synapse=cell.synapses[exp])
 
@@ -247,7 +247,7 @@ class ConnectionTest(unittest.TestCase):
     def test_live_cell_event_output_drives_target_without_replay(self) -> None:
         pre = _hh_population("pre", with_clamp=True)
         post = _hh_population("post")
-        exp = braincell.mech.SynapseSpec("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
+        exp = braincell.mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
         post.place(
             at("soma", 0.5),
             exp,

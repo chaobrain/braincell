@@ -54,7 +54,7 @@ class PopulationTest(unittest.TestCase):
         network = braincell.Network("forwarding")
         source = network.add_population("stim", braincell.NetStim(size=2))
         cell = _cell(2)
-        cell.place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn", name="ampa"))
+        cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="ampa"))
         target = network.add_population("post", cell)
 
         connection = network.connect(
@@ -73,8 +73,8 @@ class PopulationTest(unittest.TestCase):
         network = braincell.Network("recording_demo")
         source = network.add_population("stim", braincell.NetStim(size=4))
         cell = _cell(4)
-        cell[0:2].place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn", name="fast"))
-        cell[2:4].place(at("soma", 0.5), braincell.mech.SynapseSpec("Exp2Syn", name="slow"))
+        cell[0:2].place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="fast"))
+        cell[2:4].place(at("soma", 0.5), braincell.mech.Synapse("Exp2Syn", name="slow"))
         target = network.add_population("post", cell)
         network.connect("stim_fast", source=source.event_outputs["spike"][0:2], synapse=target.synapses["fast"])
         network.connect("stim_slow", source=source.event_outputs["spike"][2:4], synapse=target.synapses["slow"])
@@ -97,7 +97,7 @@ class PopulationTest(unittest.TestCase):
             source=source,
             target=target,
             locations=at("soma", 0.5),
-            synapse=braincell.mech.SynapseSpec("ExpSyn", name="ampa", tau=2.0 * u.ms),
+            synapse=braincell.mech.Synapse("ExpSyn", name="ampa", tau=2.0 * u.ms),
             weight=[0.1, 0.2] * u.uS,
         )
 
@@ -113,7 +113,7 @@ class PopulationTest(unittest.TestCase):
                 source=bad_source,
                 target=bad_target,
                 locations=at("soma", 0.5),
-                synapse=braincell.mech.SynapseSpec("ExpSyn", name="ampa"),
+                synapse=braincell.mech.Synapse("ExpSyn", name="ampa"),
             )
         self.assertEqual(len(bad_target.synapses), 0)
         self.assertEqual(len(bad_target.connections), 0)
@@ -121,7 +121,7 @@ class PopulationTest(unittest.TestCase):
     def test_network_connect_requires_registered_owners(self) -> None:
         network = braincell.Network()
         target_cell = _cell(1)
-        target_cell.place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn", name="ampa"))
+        target_cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="ampa"))
         target = network.add_population("post", target_cell)
 
         with self.assertRaisesRegex(RuntimeError, "source owner is not registered"):
@@ -184,7 +184,7 @@ class PopulationTest(unittest.TestCase):
             braincell.NetStim(size=2, start=[0.05, 0.15] * u.ms, number=1),
         )
         cell = _cell(2)
-        cell.place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn", name="ampa"))
+        cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="ampa"))
         braincell.connect("drive", source=source, synapse=cell.synapses["ampa"], weight=0.1 * u.uS)
         cell[0].soma.record("v", braincell.observe.state("v"), period=0.1 * u.ms)
         network.add_population("post", cell)
@@ -212,7 +212,7 @@ class PopulationTest(unittest.TestCase):
 
     def test_network_rejects_unregistered_direct_source(self) -> None:
         cell = _cell(1)
-        cell.place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn", name="ampa"))
+        cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="ampa"))
         braincell.connect(
             "drive",
             source=braincell.NetStim(),
@@ -266,7 +266,7 @@ class PopulationTest(unittest.TestCase):
     def test_network_connect_auto_registers_full_named_event_source_owner(self) -> None:
         pre_cell = _cell(2)
         post_cell = _cell(2)
-        post_cell.place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn", name="ampa"))
+        post_cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="ampa"))
         network = braincell.Network("auto_output")
         pre = network.add_population("pre", pre_cell)
         post = network.add_population("post", post_cell)
@@ -299,7 +299,7 @@ class PopulationTest(unittest.TestCase):
     def test_network_connect_requires_name_for_additional_event_source(self) -> None:
         pre_cell = _cell(1)
         post_cell = _cell(1)
-        post_cell.place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn", name="ampa"))
+        post_cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="ampa"))
         network = braincell.Network("unnamed_output")
         pre = network.add_population("pre", pre_cell)
         post = network.add_population("post", post_cell)
@@ -318,7 +318,7 @@ class PopulationTest(unittest.TestCase):
     def test_network_connect_rejects_event_output_name_collision_before_mutation(self) -> None:
         pre_cell = _cell(1)
         post_cell = _cell(1)
-        post_cell.place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn", name="ampa"))
+        post_cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="ampa"))
         network = braincell.Network("output_collision")
         pre = network.add_population("pre", pre_cell)
         post = network.add_population("post", post_cell)
@@ -345,7 +345,7 @@ class PopulationTest(unittest.TestCase):
     def test_failed_existing_synapse_connect_does_not_register_event_output(self) -> None:
         pre_cell = _cell(2)
         post_cell = _cell(3)
-        post_cell.place(at("soma", 0.5), braincell.mech.SynapseSpec("ExpSyn", name="ampa"))
+        post_cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="ampa"))
         network = braincell.Network("existing_output_rollback")
         pre = network.add_population("pre", pre_cell)
         post = network.add_population("post", post_cell)
@@ -381,7 +381,7 @@ class PopulationTest(unittest.TestCase):
                 source=detector,
                 target=post,
                 locations=at("soma", 0.5),
-                synapse=braincell.mech.SynapseSpec("ExpSyn", name="ampa"),
+                synapse=braincell.mech.Synapse("ExpSyn", name="ampa"),
             )
 
         self.assertEqual(tuple(pre.event_outputs), ("spike",))

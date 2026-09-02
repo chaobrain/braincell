@@ -64,7 +64,7 @@ from braincell.mech import (
     ProbeMechanism,
     SineClamp,
     StateProbe,
-    SynapseSpec as SynapsePlacement,
+    Synapse as SynapsePlacement,
 )
 from braincell.mech._params import _to_hashable
 

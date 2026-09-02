@@ -35,7 +35,7 @@ def _population(size=3, *, name="post"):
         pop_size=(size,),
         name=name,
     )
-    exp = braincell.mech.SynapseSpec("ExpSyn", name="ampa", tau=2.0 * u.ms, e=0.0 * u.mV)
+    exp = braincell.mech.Synapse("ExpSyn", name="ampa", tau=2.0 * u.ms, e=0.0 * u.mV)
     cell.place(at("soma", 0.5), exp)
     return cell, exp
 
@@ -350,7 +350,7 @@ class NetworkConnectionSamplingTest(unittest.TestCase):
         network = Network(seed=1)
         network.add_population("pre", source)
         network.add_population("post", cell)
-        spec = braincell.mech.SynapseSpec("ExpSyn", name="other", tau=2.0 * u.ms, e=0.0 * u.mV)
+        spec = braincell.mech.Synapse("ExpSyn", name="other", tau=2.0 * u.ms, e=0.0 * u.mV)
         with self.assertRaisesRegex(TypeError, "existing SynapseView"):
             network.connect(
                 "invalid",

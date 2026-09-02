@@ -13,7 +13,7 @@ from the :class:`Mechanism` marker base class and splits into two families:
   (:class:`Density` and its concrete subclasses :class:`Channel` for ion
   channels and :class:`Ion` for ion species).
 - **Point mechanisms** are attached to a single location (:class:`Point` and
-  its subclasses, including :class:`SynapseSpec`, :class:`Junction`, and the probe
+  its subclasses, including :class:`Synapse`, :class:`Junction`, and the probe
   declarations).
 
 The passive cable property and the stimulus clamps
@@ -95,7 +95,7 @@ Point Mechanisms
 
     Point
     Junction
-    SynapseSpec
+    Synapse
 
 
 Probes

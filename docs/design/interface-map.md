@@ -287,8 +287,8 @@ metric 属性：
 - `MechanismProbe`
 - `CurrentProbe`
 - `ProbeMechanism`
-- `SynapseSpec`
-- `SynapseSpec.instance_name`
+- `Synapse`
+- `Synapse.instance_name`
 - `Junction`
 
 ### Registry

@@ -30,7 +30,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._compute.layouts import _stack_synapse_values
-from braincell.mech import SynapseSpec, get_registry
+from braincell.mech import Synapse, get_registry
 
 __all__ = ["SynapseView"]
 
@@ -46,7 +46,7 @@ class _SynapseRecord:
     cv_id: int
     branch_id: int
     branch_x: float
-    mechanism: SynapseSpec
+    mechanism: Synapse
 
 
 class _SynapseStore:
@@ -78,7 +78,7 @@ class _SynapseStore:
         self.cell = cell
         rows = []
         synapse_placements = tuple(
-            placement for placement in cell.point_placements if isinstance(placement.mechanism, SynapseSpec)
+            placement for placement in cell.point_placements if isinstance(placement.mechanism, Synapse)
         )
         if len(cell.pop_size) > 1 and synapse_placements:
             raise ValueError(
@@ -104,7 +104,7 @@ class _SynapseStore:
         self.branch_id = np.asarray([row[2].branch_id for row in rows], dtype=np.int64)
         self.branch_x = np.asarray([row[2].branch_x for row in rows], dtype=float)
         self.mechanism = tuple(row[3] for row in rows)
-        origins = getattr(cell, "_synapse_spec_origins", {})
+        origins = getattr(cell, "_synapse_origins", {})
         self.declaration = tuple(origins.get(id(item), item) for item in self.mechanism)
         self.name = np.asarray([item.instance_name for item in self.mechanism], dtype=object)
         self.synapse_type = np.asarray([item.synapse_type for item in self.mechanism], dtype=object)
@@ -177,7 +177,7 @@ class _SynapseStore:
             (int(logical_id), int(runtime_row)) for runtime_row, logical_id in enumerate(ids.tolist())
         )
 
-    def mechanism_row_layout(self, mechanism: SynapseSpec) -> "_MechanismRowLayout":
+    def mechanism_row_layout(self, mechanism: Synapse) -> "_MechanismRowLayout":
         """Return the cached row layout shared by one declaration's synapses.
 
         The layout depends only on the declaring ``mechanism``, so it is built
@@ -352,7 +352,7 @@ class SynapseView:
         return self._column("synapse_type")
 
     @property
-    def mechanism(self) -> tuple[SynapseSpec, ...]:
+    def mechanism(self) -> tuple[Synapse, ...]:
         """Return immutable declarations associated with selected rows."""
         return tuple(self._store.mechanism[index] for index in self._store.row_indices(self._logical_ids).tolist())
 
@@ -370,7 +370,7 @@ class SynapseView:
         return int(self._logical_ids.size)
 
     def __getitem__(self, selector: object) -> "SynapseView":
-        if isinstance(selector, SynapseSpec):
+        if isinstance(selector, Synapse):
             selected = [
                 logical_id
                 for logical_id in self._logical_ids.tolist()
@@ -678,7 +678,7 @@ class _MechanismRowLayout:
     positions: dict[int, tuple[int, int, int]]
 
     @classmethod
-    def build(cls, store: "_SynapseStore", mechanism: SynapseSpec) -> "_MechanismRowLayout":
+    def build(cls, store: "_SynapseStore", mechanism: Synapse) -> "_MechanismRowLayout":
         matching_rows = np.asarray(
             [row for row, candidate in enumerate(store.mechanism) if candidate is mechanism],
             dtype=np.int64,
@@ -704,7 +704,7 @@ class _MechanismRowLayout:
         )
 
 
-def _select_declared_parameter_value(value, *, logical_id: int, store: _SynapseStore, mechanism: SynapseSpec):
+def _select_declared_parameter_value(value, *, logical_id: int, store: _SynapseStore, mechanism: Synapse):
     shape = getattr(value, "shape", ())
     if shape in ((), None):
         return value

@@ -100,11 +100,11 @@ class RecordingTest(unittest.TestCase):
         )
         cell.place(
             at("dend_a", 0.5),
-            braincell.mech.SynapseSpec("ExpSyn", name="ampa", tau=2.0 * u.ms),
+            braincell.mech.Synapse("ExpSyn", name="ampa", tau=2.0 * u.ms),
         )
         cell.place(
             at("dend_a", 0.7),
-            braincell.mech.SynapseSpec("Exp2Syn", name="nmda", tau1=0.5 * u.ms, tau2=5.0 * u.ms),
+            braincell.mech.Synapse("Exp2Syn", name="nmda", tau1=0.5 * u.ms, tau2=5.0 * u.ms),
         )
         cell.dendrite.record(
             "leak_current",

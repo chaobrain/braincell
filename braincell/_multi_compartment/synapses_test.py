@@ -45,9 +45,9 @@ def _population(size=2):
 class SynapseViewTest(unittest.TestCase):
     def test_repr_aggregates_names_by_type_without_reading_values(self):
         cell = _population()
-        fast = braincell.mech.SynapseSpec("ExpSyn", name="fast")
-        slow = braincell.mech.SynapseSpec("ExpSyn", name="slow")
-        nmda = braincell.mech.SynapseSpec("Exp2Syn", name="nmda")
+        fast = braincell.mech.Synapse("ExpSyn", name="fast")
+        slow = braincell.mech.Synapse("ExpSyn", name="slow")
+        nmda = braincell.mech.Synapse("Exp2Syn", name="nmda")
         cell.place(at("soma", 0.2), fast)
         cell.place(at("soma", 0.4), slow)
         cell.place(at("soma", 0.6), nmda)
@@ -65,8 +65,8 @@ class SynapseViewTest(unittest.TestCase):
 
     def test_root_name_type_and_numeric_selections_are_views(self):
         cell = _population()
-        pf = braincell.mech.SynapseSpec("ExpSyn", name="pf", tau=1.0 * u.ms, e=0.0 * u.mV)
-        aa = braincell.mech.SynapseSpec("ExpSyn", name="aa", tau=2.0 * u.ms, e=0.0 * u.mV)
+        pf = braincell.mech.Synapse("ExpSyn", name="pf", tau=1.0 * u.ms, e=0.0 * u.mV)
+        aa = braincell.mech.Synapse("ExpSyn", name="aa", tau=2.0 * u.ms, e=0.0 * u.mV)
         cell.place(at("soma", 0.31), pf)
         cell.place(at("soma", 0.39), aa)
 
@@ -82,15 +82,15 @@ class SynapseViewTest(unittest.TestCase):
 
     def test_same_name_cannot_identify_different_types(self):
         cell = _population()
-        cell.place(at("soma", 0.31), braincell.mech.SynapseSpec("ExpSyn", name="shared"))
+        cell.place(at("soma", 0.31), braincell.mech.Synapse("ExpSyn", name="shared"))
 
         with self.assertRaisesRegex(ValueError, "same name.*different synapse types"):
-            cell.place(at("soma", 0.39), braincell.mech.SynapseSpec("Exp2Syn", name="shared"))
+            cell.place(at("soma", 0.39), braincell.mech.Synapse("Exp2Syn", name="shared"))
 
     def test_one_flat_runtime_per_type_preserves_logical_instances(self):
         cell = _population()
-        pf = braincell.mech.SynapseSpec("ExpSyn", name="pf", tau=1.0 * u.ms, e=0.0 * u.mV)
-        aa = braincell.mech.SynapseSpec("ExpSyn", name="aa", tau=2.0 * u.ms, e=-5.0 * u.mV)
+        pf = braincell.mech.Synapse("ExpSyn", name="pf", tau=1.0 * u.ms, e=0.0 * u.mV)
+        aa = braincell.mech.Synapse("ExpSyn", name="aa", tau=2.0 * u.ms, e=-5.0 * u.mV)
         cell.place(at("soma", 0.31), pf)
         cell.place(at("soma", 0.39), aa)
 
@@ -105,7 +105,7 @@ class SynapseViewTest(unittest.TestCase):
 
     def test_post_init_parameter_and_state_updates_are_separate(self):
         cell = _population()
-        exp = braincell.mech.SynapseSpec("ExpSyn", name="exp", tau=1.0 * u.ms, e=0.0 * u.mV)
+        exp = braincell.mech.Synapse("ExpSyn", name="exp", tau=1.0 * u.ms, e=0.0 * u.mV)
         cell.place(at("soma", 0.5), exp)
         view = cell.synapses["exp"]
         cell.init_state()
@@ -122,7 +122,7 @@ class SynapseViewTest(unittest.TestCase):
 
     def test_post_init_parameter_validation_is_atomic(self):
         cell = _population()
-        exp2 = braincell.mech.SynapseSpec(
+        exp2 = braincell.mech.Synapse(
             "Exp2Syn",
             name="exp2",
             tau1=1.0 * u.ms,
@@ -146,7 +146,7 @@ class SynapseViewTest(unittest.TestCase):
 
     def test_reset_state_clears_pending_event_payload(self):
         cell = _population()
-        exp = braincell.mech.SynapseSpec("ExpSyn", name="exp")
+        exp = braincell.mech.Synapse("ExpSyn", name="exp")
         cell.place(at("soma", 0.5), exp)
         cell.init_state()
         layout = next(layout for layout, _ in cell.runtime.iter_synapse_layouts())
@@ -161,7 +161,7 @@ class SynapseViewTest(unittest.TestCase):
 
     def test_connection_materializes_stable_synapse_ids(self):
         cell = _population()
-        exp = braincell.mech.SynapseSpec("ExpSyn", name="exp", tau=1.0 * u.ms, e=0.0 * u.mV)
+        exp = braincell.mech.Synapse("ExpSyn", name="exp", tau=1.0 * u.ms, e=0.0 * u.mV)
         cell.place(at("soma", 0.5), exp)
 
         connection = connect(
@@ -175,8 +175,8 @@ class SynapseViewTest(unittest.TestCase):
 
     def test_logical_ids_remain_stable_when_later_placements_change_view_order(self):
         cell = _population()
-        first = braincell.mech.SynapseSpec("ExpSyn", name="first", tau=1.0 * u.ms, e=0.0 * u.mV)
-        later = braincell.mech.SynapseSpec("ExpSyn", name="later", tau=2.0 * u.ms, e=0.0 * u.mV)
+        first = braincell.mech.Synapse("ExpSyn", name="first", tau=1.0 * u.ms, e=0.0 * u.mV)
+        later = braincell.mech.Synapse("ExpSyn", name="later", tau=2.0 * u.ms, e=0.0 * u.mV)
         cell.place(at("soma", 0.3), first)
         original_ids = cell.synapses[first].id
         connection = connect(
@@ -199,7 +199,7 @@ class SynapseViewTest(unittest.TestCase):
             LocsetMask.from_columns([0, 0], [0.2, 0.4]),
             LocsetMask.from_columns([0], [0.7]),
         )
-        exp = braincell.mech.SynapseSpec(
+        exp = braincell.mech.Synapse(
             "ExpSyn",
             name="ragged",
             tau=np.asarray([1.0, 2.0, 3.0]) * u.ms,
@@ -221,7 +221,7 @@ class SynapseViewTest(unittest.TestCase):
             LocsetMask.from_columns([0, 0], [0.2, 0.4]),
             LocsetMask.from_columns([0, 0], [0.6, 0.8]),
         )
-        exp = braincell.mech.SynapseSpec(
+        exp = braincell.mech.Synapse(
             "ExpSyn",
             name="rectangular",
             tau=np.asarray([1.0, 2.0]) * u.ms,
@@ -236,7 +236,7 @@ class SynapseViewTest(unittest.TestCase):
     def test_locset_batch_supports_location_and_population_parameter_axes(self):
         cell = _population()
         locations = cell.cv_midpoints[np.asarray([[0, 0], [0, 0]])]
-        exp = braincell.mech.SynapseSpec(
+        exp = braincell.mech.Synapse(
             "ExpSyn",
             name="batch",
             tau=np.asarray([1.0, 2.0]) * u.ms,
@@ -256,7 +256,7 @@ class SynapseViewTest(unittest.TestCase):
             LocsetMask(),
             LocsetMask.from_columns([0], [0.5]),
         )
-        exp = braincell.mech.SynapseSpec("ExpSyn", name="sparse", tau=2.0 * u.ms, e=0.0 * u.mV)
+        exp = braincell.mech.Synapse("ExpSyn", name="sparse", tau=2.0 * u.ms, e=0.0 * u.mV)
 
         cell.place(locations, exp)
 
@@ -264,8 +264,8 @@ class SynapseViewTest(unittest.TestCase):
 
     def test_bound_input_targets_one_name_inside_shared_type_runtime(self):
         cell = _population()
-        pf = braincell.mech.SynapseSpec("ExpSyn", name="pf", tau=1.0 * u.ms, e=0.0 * u.mV)
-        aa = braincell.mech.SynapseSpec("ExpSyn", name="aa", tau=2.0 * u.ms, e=0.0 * u.mV)
+        pf = braincell.mech.Synapse("ExpSyn", name="pf", tau=1.0 * u.ms, e=0.0 * u.mV)
+        aa = braincell.mech.Synapse("ExpSyn", name="aa", tau=2.0 * u.ms, e=0.0 * u.mV)
         cell.place(at("soma", 0.3), pf)
         cell.place(at("soma", 0.7), aa)
         cell.bind_synapse_input("pf", np.asarray([1.0, 2.0]), weight=0.1 * u.uS)
@@ -283,7 +283,7 @@ class SynapseViewTest(unittest.TestCase):
 
     def test_post_init_set_preserves_trainable_parameter_wrapper(self):
         cell = _population()
-        spec = braincell.mech.SynapseSpec(
+        spec = braincell.mech.Synapse(
             "_SynapseViewTrainableExpSyn",
             name="trainable",
             tau=1.0 * u.ms,

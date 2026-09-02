@@ -97,7 +97,7 @@ from braincell.quad import get_integrator, ind_exp_euler_step
 from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad.protocol import DiffEqGroupState, IndependentIntegration, state_grouping
-from braincell.mech import CVContext, SynapseSpec as SynapsePlacement
+from braincell.mech import CVContext, Synapse as SynapsePlacement
 from . import currents, probes, run as run_module
 from braincell._compute import bridge
 from .synapses import SynapseView, _SynapseStore
@@ -850,7 +850,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._synapse_input_bindings: dict[str, list[tuple[object, object, object]]] = {}
         self._synapse_parameter_overrides: dict[tuple[int, int, str], object] = {}
         self._density_parameter_overrides: dict[tuple[str, str, int, int, str], object] = {}
-        self._synapse_spec_origins: dict[int, SynapsePlacement] = {}
+        self._synapse_origins: dict[int, SynapsePlacement] = {}
         self._connection_store_cache = None
         self._network_owner_ref: weakref.ReferenceType | None = None
         self._recording_specs: dict[str, RecordingSpec] = {}
@@ -1045,12 +1045,12 @@ class Cell(_CellFacade, HHTypedNeuron):
             raise TypeError("Per-cell locset sequences currently support Synapse point mechanisms only.")
 
         lengths = tuple(_resolved_locset_length(locset, self._morpho) for locset in locsets)
-        per_mechanism_rows = tuple(_split_synapse_spec_rows(mechanism, lengths=lengths) for mechanism in mechanisms)
+        per_mechanism_rows = tuple(_split_synapse_rows(mechanism, lengths=lengths) for mechanism in mechanisms)
         incoming = []
         for row, (population_index, locset) in enumerate(zip(population_indices, locsets)):
             row_mechanisms = tuple(rows[row] for rows in per_mechanism_rows)
             for source, materialized in zip(mechanisms, row_mechanisms):
-                self._synapse_spec_origins[id(materialized)] = source
+                self._synapse_origins[id(materialized)] = source
             incoming.append(
                 normalize_place_rule(
                     locset,
@@ -1193,7 +1193,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         Parameters
         ----------
         synapse : str
-            Synapse instance name, matching ``braincell.mech.SynapseSpec(name=...)``
+            Synapse instance name, matching ``braincell.mech.Synapse(name=...)``
             or its default instance name.
         source : array-like or callable
             Presynaptic drive source. Callables are evaluated every step; this
@@ -3765,7 +3765,7 @@ def _resolved_locset_length(locset, morpho: Morphology) -> int:
     return len(locset)
 
 
-def _split_synapse_spec_rows(
+def _split_synapse_rows(
     mechanism: SynapsePlacement,
     *,
     lengths: tuple[int, ...],

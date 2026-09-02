@@ -45,7 +45,7 @@ from .delivery import (
     write_arrivals,
 )
 from .lowering import lower_direct_connections
-from braincell.mech import SynapseSpec
+from braincell.mech import Synapse
 
 
 @dataclass(frozen=True)
@@ -195,14 +195,14 @@ class Network:
             Connection name, unique within the target Cell.
         source : Population, EventSource, or EventSourceView
             Registered event source or a selected source view.
-        synapse : SynapseView or SynapseSpec
+        synapse : SynapseView or Synapse
             Existing logical synapses, or one declaration to place before
             connecting.
         target : Population or CellView, optional
-            Registered Cell target. Required with a ``SynapseSpec`` and
+            Registered Cell target. Required with a ``Synapse`` and
             forbidden with an existing ``SynapseView``.
         locations : LocsetExpr, LocsetMask, LocsetBatch, or sequence, optional
-            Locations forwarded to ``target.place`` for a ``SynapseSpec``.
+            Locations forwarded to ``target.place`` for a ``Synapse``.
         pairing : PairingSpec, optional
             Endpoint sampling declaration. Supported only when ``synapse`` is
             an existing ``SynapseView``.
@@ -238,15 +238,15 @@ class Network:
             self._mark_topology_changed()
             return result
 
-        if not isinstance(synapse, SynapseSpec):
-            raise TypeError("Network.connect synapse must be a SynapseView or SynapseSpec.")
+        if not isinstance(synapse, Synapse):
+            raise TypeError("Network.connect synapse must be a SynapseView or Synapse.")
         if pairing is not None:
             raise TypeError("Network.connect pairing requires an existing SynapseView.")
         if target is None or locations is None:
-            raise TypeError("SynapseSpec connections require both target and locations.")
+            raise TypeError("Synapse connections require both target and locations.")
         target_scope, target_cell = self._resolve_registered_target(target)
         previous_rules = target_cell._place_rules
-        previous_origins = dict(target_cell._synapse_spec_origins)
+        previous_origins = dict(target_cell._synapse_origins)
         previous_ids = set(target_cell.synapses.id.tolist())
         try:
             target_scope.place(locations, synapse)
@@ -268,7 +268,7 @@ class Network:
             )
         except Exception:
             target_cell._place_rules = previous_rules
-            target_cell._synapse_spec_origins = previous_origins
+            target_cell._synapse_origins = previous_origins
             target_cell._invalidate_discretization_cache()
             raise
         self._commit_source_event_output_registration(source_population, pending_event_output)

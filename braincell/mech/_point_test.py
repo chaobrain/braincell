@@ -29,7 +29,7 @@ from braincell.mech import (
     ProbeMechanism,
     SineClamp,
     StateProbe,
-    SynapseSpec,
+    Synapse,
 )
 
 
@@ -42,7 +42,7 @@ class PointBaseTest(unittest.TestCase):
         mechanism_probe = MechanismProbe(name="na_p", mechanism="na_soma", field="p")
         current_probe = CurrentProbe(ion="na", mechanism="na_soma")
         probe = ProbeMechanism(variable="v")
-        syn = SynapseSpec("ExpSyn")
+        syn = Synapse("ExpSyn")
         gap = Junction()
 
         for mech in (cc, sine, fc, state_probe, mechanism_probe, current_probe, probe, syn, gap):
@@ -265,45 +265,45 @@ class ProbeMechanismValidatesInputsTest(unittest.TestCase):
 
 class SynapseTest(unittest.TestCase):
     def test_direct_construction(self) -> None:
-        syn = SynapseSpec("ExpSyn", tau=5.0)
+        syn = Synapse("ExpSyn", tau=5.0)
         self.assertEqual(syn.synapse_type, "ExpSyn")
         self.assertEqual(syn.params["tau"], 5.0)
 
     def test_default_instance_name(self) -> None:
-        syn = SynapseSpec("ExpSyn")
+        syn = Synapse("ExpSyn")
         self.assertEqual(syn.instance_name, "ExpSyn")
 
     def test_override_instance_name(self) -> None:
-        syn = SynapseSpec("ExpSyn", name="fast")
+        syn = Synapse("ExpSyn", name="fast")
         self.assertEqual(syn.instance_name, "fast")
 
     def test_equality_and_hash(self) -> None:
-        a = SynapseSpec("ExpSyn", tau=5.0, e=0.0)
-        b = SynapseSpec("ExpSyn", e=0.0, tau=5.0)
+        a = Synapse("ExpSyn", tau=5.0, e=0.0)
+        b = Synapse("ExpSyn", e=0.0, tau=5.0)
         self.assertEqual(a, b)
         self.assertEqual(hash(a), hash(b))
 
     def test_empty_synapse_type_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            SynapseSpec("")
+            Synapse("")
 
     def test_keyword_synapse_type_rejected(self) -> None:
         with self.assertRaises(TypeError):
-            SynapseSpec(synapse_type="ExpSyn")  # type: ignore[call-arg]
+            Synapse(synapse_type="ExpSyn")  # type: ignore[call-arg]
 
     def test_params_mapping_rejected(self) -> None:
         with self.assertRaisesRegex(TypeError, "keyword arguments"):
-            SynapseSpec("ExpSyn", params={"tau": 5.0})
+            Synapse("ExpSyn", params={"tau": 5.0})
 
     def test_synapse_is_immutable(self) -> None:
-        syn = SynapseSpec("ExpSyn")
+        syn = Synapse("ExpSyn")
         with self.assertRaises(AttributeError):
             syn.synapse_type = "Exp2Syn"
 
     def test_unmigrated_receptors_are_rejected(self) -> None:
         for model in ("AMPA", "GABAa", "NMDA"):
             with self.assertRaisesRegex(NotImplementedError, "temporarily unavailable"):
-                SynapseSpec(model)
+                Synapse(model)
 
 
 if __name__ == "__main__":

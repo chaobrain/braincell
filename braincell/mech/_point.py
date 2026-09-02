@@ -30,7 +30,7 @@ Concrete point mechanisms defined here:
 - :class:`MechanismProbe` — probe for runtime state on a named mechanism.
 - :class:`CurrentProbe` — probe for mechanism or total ion current.
 - :class:`ProbeMechanism` — legacy recorder for a named variable.
-- :class:`SynapseSpec` — registry-keyed synapse declaration.
+- :class:`Synapse` — registry-keyed synapse declaration.
 
 The :class:`~braincell.mech.Junction` gap-junction declaration also
 inherits from :class:`Point` but lives in its own module
@@ -57,7 +57,7 @@ __all__ = [
     "CurrentProbe",
     "ProbeMechanism",
     "SineClamp",
-    "SynapseSpec",
+    "Synapse",
 ]
 
 
@@ -318,7 +318,7 @@ class ProbeMechanism(_LegacyProbe):
             raise TypeError(f"ProbeMechanism.target must be str or None, got {type(self.target).__name__!r}.")
 
 
-class SynapseSpec(Point):
+class Synapse(Point):
     """Registry-keyed synapse declaration.
 
     Parameters
@@ -336,8 +336,8 @@ class SynapseSpec(Point):
 
     .. code-block:: python
 
-        >>> from braincell.mech import SynapseSpec
-        >>> syn = SynapseSpec("ExpSyn")
+        >>> from braincell.mech import Synapse
+        >>> syn = Synapse("ExpSyn")
         >>> syn.synapse_type
         'ExpSyn'
     """
@@ -352,7 +352,7 @@ class SynapseSpec(Point):
         name: str | None = None,
         **params: Any,
     ) -> None:
-        require_str(synapse_type, "SynapseSpec", "synapse_type")
+        require_str(synapse_type, "Synapse", "synapse_type")
         if synapse_type in {"AMPA", "GABAa", "NMDA"}:
             raise NotImplementedError(
                 f"{synapse_type} is temporarily unavailable while its transmitter-pulse and "
@@ -360,7 +360,7 @@ class SynapseSpec(Point):
             )
         if "params" in params:
             raise TypeError("Synapse parameters must be passed as keyword arguments, not as params={...}.")
-        require_str(name, "SynapseSpec", "name", optional=True)
+        require_str(name, "Synapse", "name", optional=True)
         object.__setattr__(self, "synapse_type", synapse_type)
         object.__setattr__(self, "params", Params(params) if params else Params())
         object.__setattr__(self, "name", name)
@@ -385,7 +385,7 @@ class SynapseSpec(Point):
         return hash((type(self).__name__, self.synapse_type, self.params, self.name))
 
     def __repr__(self) -> str:
-        return f"SynapseSpec(synapse_type={self.synapse_type!r}, params={self.params!r}, name={self.name!r})"
+        return f"Synapse(synapse_type={self.synapse_type!r}, params={self.params!r}, name={self.name!r})"
 
 
 # ---------------------------------------------------------------------------

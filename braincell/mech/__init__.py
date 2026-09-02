@@ -29,7 +29,7 @@ The :mod:`braincell.mech` package is purely declarative: it describes
   :class:`Point` and its concrete subclasses :class:`CurrentClamp`,
   :class:`SineClamp`, :class:`FunctionClamp`, :class:`StateProbe`,
   :class:`MechanismProbe`, :class:`CurrentProbe`, :class:`ProbeMechanism`, and
-  :class:`SynapseSpec`. :class:`Junction` is the gap-junction point
+  :class:`Synapse`. :class:`Junction` is the gap-junction point
   declaration and lives in :mod:`braincell.mech._junction`.
 
 Passive cable properties are recorded via :class:`CableProperty`.
@@ -82,7 +82,7 @@ from ._point import (
     ProbeMechanism,
     SineClamp,
     StateProbe,
-    SynapseSpec,
+    Synapse,
 )
 from ._registry import (
     MechanismEntry,
@@ -125,7 +125,7 @@ __all__ = [
     "ProbeMechanism",
     "SineClamp",
     "StateProbe",
-    "SynapseSpec",
+    "Synapse",
     # Registry
     "MechanismEntry",
     "MechanismRegistry",

@@ -10,7 +10,7 @@ paint declarations
   -> ChannelView / IonView rows (population, CV, owner)
   -> runtime SoA layouts
 
-SynapseSpec declarations
+Synapse declarations
   -> _SynapseStore (logical IDs, locations, parameters)
   -> SynapseView
   -> runtime nodes grouped by synapse type
@@ -43,7 +43,7 @@ Cell store 追加 rows。`Network.connect` 在其外增加：
 
 1. source/target owner 必须已注册；
 2. Network 尚未初始化；
-3. 可选的 SynapseSpec placement transaction；
+3. 可选的 Synapse placement transaction；
 4. topology cache invalidation。
 
 快捷 placement 通过调用前后的 stable logical IDs 找到本次新建 Synapse。异常时恢复 place rules 和

@@ -40,7 +40,7 @@ class Mechanism:
     / :class:`~braincell.mech.StateProbe` /
     :class:`~braincell.mech.MechanismProbe` /
     :class:`~braincell.mech.CurrentProbe` /
-    :class:`~braincell.mech.SynapseSpec` /
+    :class:`~braincell.mech.Synapse` /
     :class:`~braincell.mech.Junction`) inherit from this class.
 
     :class:`Mechanism` exists only to support

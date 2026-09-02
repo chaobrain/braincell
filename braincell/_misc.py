@@ -23,7 +23,16 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-_BOUND_OPERATORS = ("ge", "gt", "le", "lt")
+#: Supported ``bounds`` keys for :func:`normalize_param`, each mapped to the
+#: comparison it applies and the symbol its failure message reports. Iteration
+#: order fixes the order bounds are checked in, so a value violating both
+#: ``ge`` and ``le`` always reports ``ge`` first.
+_COMPARATORS = {
+    "ge": (lambda lhs, rhs: lhs >= rhs, ">="),
+    "gt": (lambda lhs, rhs: lhs > rhs, ">"),
+    "le": (lambda lhs, rhs: lhs <= rhs, "<="),
+    "lt": (lambda lhs, rhs: lhs < rhs, "<"),
+}
 
 #: Longest profiler label XLA keeps intact; longer names are truncated.
 _PROFILER_NAME_LIMIT = 180
@@ -124,8 +133,8 @@ def validate_time_quantity(
         parameters that are legitimately per-element, such as a vector of
         per-contact synaptic delays.
     require_positive : bool, default True
-        Require a strictly positive value. Pass ``False`` where zero is
-        meaningful, such as a zero delay meaning immediate delivery.
+        Require every element to be strictly positive. Pass ``False`` where
+        zero is meaningful, such as a zero delay meaning immediate delivery.
 
     Raises
     ------
@@ -139,11 +148,50 @@ def validate_time_quantity(
     decimal = np.asarray(value.to_decimal(u.ms), dtype=float)
     if require_scalar and decimal.shape not in ((), (1,)):
         raise ValueError(f"{prefix} {name} must be scalar, got shape {decimal.shape!r}.")
-    if require_positive:
-        if decimal.shape not in ((), (1,)):
-            raise ValueError(f"{prefix} {name} must be scalar, got shape {decimal.shape!r}.")
-        if float(decimal.reshape(())) <= 0.0:
-            raise ValueError(f"{prefix} {name} must be > 0, got {value!r}.")
+    if require_positive and not bool(np.all(decimal > 0.0)):
+        raise ValueError(f"{prefix} {name} must be > 0, got {value!r}.")
+
+
+def scalar_decimal(value, unit) -> float:
+    """Convert a scalar quantity to a Python ``float`` in ``unit``.
+
+    Static assembly -- building a jaxpr cache key, sizing a delay ring,
+    computing a step count -- needs a concrete Python number, not an array.
+    This was written out inline at fifteen sites in five modules, in two
+    spellings that behaved differently: the form without ``reshape(())``
+    raises ``TypeError`` on a length-1 quantity that the form with it
+    accepts. This is the accepting form, which matches what
+    :func:`validate_time_quantity` documents as scalar.
+
+    Parameters
+    ----------
+    value : brainunit.Quantity
+        Quantity holding exactly one element.
+    unit : brainunit.Unit
+        Unit to express the result in.
+
+    Returns
+    -------
+    float
+        The magnitude of ``value`` in ``unit``.
+
+    Raises
+    ------
+    ValueError
+        If ``value`` holds more than one element.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell._misc import scalar_decimal
+        >>> scalar_decimal(0.1 * u.ms, u.ms)
+        0.1
+        >>> scalar_decimal(1.0 * u.second, u.ms)
+        1000.0
+    """
+    return float(np.asarray(value.to_decimal(unit), dtype=float).reshape(()))
 
 
 def is_traced_value(value) -> bool:
@@ -295,21 +343,14 @@ def _check_bounds(array: np.ndarray, *, name: str, unit: Any, bounds: dict[str, 
     if not bounds:
         return
 
-    invalid = tuple(key for key in bounds if key not in _BOUND_OPERATORS)
+    invalid = tuple(key for key in bounds if key not in _COMPARATORS)
     if invalid:
         raise ValueError(f"{name} received unsupported bound keys {invalid!r}.")
 
-    comparators = {
-        "ge": (lambda lhs, rhs: lhs >= rhs, ">="),
-        "gt": (lambda lhs, rhs: lhs > rhs, ">"),
-        "le": (lambda lhs, rhs: lhs <= rhs, "<="),
-        "lt": (lambda lhs, rhs: lhs < rhs, "<"),
-    }
-    for key in _BOUND_OPERATORS:
+    for key, (compare, symbol) in _COMPARATORS.items():
         if key not in bounds:
             continue
         bound = _normalize_bound(bounds[key], unit=unit, name=name)
-        compare, symbol = comparators[key]
         if not np.all(compare(array, bound)):
             raise ValueError(f"{name} must satisfy {symbol} {bound!r}.")
 
@@ -390,48 +431,50 @@ def set_module_as(name: str):
 
 
 class Container(brainstate.mixin.Mixin):
+    """Mixin giving a class one named dict of typed child elements.
+
+    Subclasses set ``_container_name`` to the attribute holding the dict --
+    ``"ion_channels"`` on :class:`~braincell.HHTypedNeuron`, ``"channels"``
+    on :class:`~braincell.Ion` -- and children then become reachable by dot
+    and by index: ``neuron.na`` and ``neuron['na']`` both find the child
+    registered under ``"na"``.
+
+    Attributes
+    ----------
+    _container_name : str
+        Name of the attribute holding the child dict. Subclasses must set
+        it as a class attribute.
+
+    Notes
+    -----
+    Subclasses must also implement :meth:`add`, which is what decides how a
+    new element is validated on the way in.
     """
-    A container class that provides a flexible structure for storing and accessing child elements.
-
-    This class extends the brainstate.mixin.Mixin class and implements custom attribute
-    and item access methods. It's designed to manage a collection of child elements
-    of a specific type, providing type checking and convenient access patterns.
-
-    Attributes:
-        _container_name (str): The name of the container attribute that holds the child elements.
-
-    Note:
-        Subclasses should implement the `add` method to define how new elements
-        are added to the container.
-    """
-
-    __module__ = 'braincell'
 
     _container_name: str
 
     @staticmethod
     def _format_elements(child_type: type, **children_as_dict):
-        """
-        Format and validate elements to ensure they are of the correct type.
+        """Type-check named children and return them as a plain dict.
 
-        This method checks each element in the provided dictionary to ensure
-        it is an instance of the specified child_type. It then constructs a
-        new dictionary with validated elements.
+        Parameters
+        ----------
+        child_type : type
+            Type every child must be an instance of.
+        **children_as_dict
+            Candidate children, keyed by the name to register them under.
 
-        Args:
-            child_type (type): The expected type of the child elements.
-            **children_as_dict: Arbitrary keyword arguments representing
-                                the children elements to be formatted and validated.
+        Returns
+        -------
+        dict
+            The validated children, in the order they were passed.
 
-        Returns:
-            dict: A new dictionary containing the validated child elements.
-
-        Raises:
-            TypeError: If any element in children_as_dict is not an instance of child_type.
+        Raises
+        ------
+        TypeError
+            If any child is not an instance of ``child_type``.
         """
         res = {}
-
-        # add dict-typed components
         for k, v in children_as_dict.items():
             if not isinstance(v, child_type):
                 raise TypeError(f'Should be instance of {child_type.__name__}. But we got {type(v)}')
@@ -441,9 +484,7 @@ class Container(brainstate.mixin.Mixin):
     if not TYPE_CHECKING:
 
         def __getitem__(self, item):
-            """
-            Overwrite the slice access (`self['']`).
-            """
+            """Look a child up by name: ``self['na']``."""
             children = self.__getattr__(self._container_name)
             if item in children:
                 return children[item]
@@ -451,71 +492,64 @@ class Container(brainstate.mixin.Mixin):
                 raise ValueError(f'Unknown item {item}, we only found {list(children.keys())}')
 
         def __getattr__(self, item):
-            """
-            Overwrite the dot access (`self.`).
-            """
+            """Look a child up by attribute: ``self.na``."""
             name = super().__getattribute__('_container_name')
-            if item == '_container_name':
-                return name
             children = super().__getattribute__(name)
             if item == name:
                 return children
             return children[item] if item in children else super().__getattribute__(item)
 
     def add(self, *elems, **elements):
-        """
-        Add new elements to the container.
+        """Register new children with the container.
 
-        This method is intended to be implemented by subclasses to define
-        how new elements are added to the container. The base implementation
-        raises a NotImplementedError.
+        Parameters
+        ----------
+        *elems
+            Positional elements to add, for subclasses that accept them.
+        **elements
+            Named elements to add, keyed by the name to register them under.
 
-        Args:
-            *elems: Variable length argument list of elements to be added.
-            **elements: Arbitrary keyword arguments representing named elements to be added.
-
-        Raises:
-            NotImplementedError: This method must be implemented by the subclass.
-
-        Note:
-            Subclasses should override this method to provide specific implementation
-            for adding elements to the container.
+        Raises
+        ------
+        NotImplementedError
+            Always, in the base class. Subclasses must override.
         """
         raise NotImplementedError('Must be implemented by the subclass.')
 
 
 class TreeNode(brainstate.mixin.Mixin):
+    """Mixin enforcing what kind of parent a node may be attached to.
+
+    A leaf declares the parent type it needs as ``root_type``, and
+    :meth:`check_hierarchies` refuses to attach it anywhere else. This is
+    what stops a calcium-dependent channel being hung off a potassium pool.
+
+    Attributes
+    ----------
+    root_type : type
+        Type the root of this node's subtree must be a subclass of.
+        Subclasses must set it as a class attribute.
     """
-    A base class for tree-like structures that enforces type checking between root and leaf nodes.
-
-    This class provides methods to validate the compatibility between root and leaf nodes
-    in a tree-like structure. It's designed to be subclassed by specific node types that
-    need to maintain a consistent hierarchy.
-
-    Attributes:
-        root_type (type): The expected type of the root node for this TreeNode.
-
-    Note:
-        Subclasses should define the `root_type` attribute to specify the expected
-        type of their root node.
-    """
-
-    __module__ = 'braincell'
 
     root_type: type
 
     @staticmethod
     def _root_leaf_pair_check(root: type, leaf: 'TreeNode'):
-        """
-        Check if the root and leaf types are compatible.
+        """Check that one leaf accepts ``root`` as its root type.
 
-        Args:
-            root (type): The type of the root node.
-            leaf (TreeNode): The leaf node to check against the root.
+        Parameters
+        ----------
+        root : type
+            Type of the root node the leaf would be attached to.
+        leaf : TreeNode
+            Leaf whose ``root_type`` is being checked.
 
-        Raises:
-            ValueError: If the leaf does not have a 'root_type' attribute.
-            TypeError: If the root is not a subclass of the leaf's root_type.
+        Raises
+        ------
+        ValueError
+            If ``leaf`` does not declare ``root_type``.
+        TypeError
+            If ``root`` is not a subclass of ``leaf.root_type``.
         """
         if hasattr(leaf, 'root_type'):
             root_type = leaf.root_type
@@ -533,24 +567,30 @@ class TreeNode(brainstate.mixin.Mixin):
 
     @staticmethod
     def check_hierarchies(root: type, *leaves, check_fun: Callable = None, **named_leaves):
-        """
-        Recursively check the hierarchies of nodes against a root type.
+        """Check a whole collection of leaves against one root type.
 
-        This method verifies that all leaves in the hierarchy are compatible with the given root type.
-        It can handle leaves passed as positional arguments (which can be individual nodes, lists, tuples, or dicts)
-        and as keyword arguments.
+        Parameters
+        ----------
+        root : type
+            Type of the root node to check against.
+        *leaves
+            Leaves to check. A list, tuple, or dict is descended into
+            recursively, so a nested container may be passed directly.
+        check_fun : Callable, optional
+            Pair check to use instead of :meth:`_root_leaf_pair_check`.
+            :class:`~braincell.MixIons` supplies its own, because a mixed
+            channel must match one of several ions rather than exactly one.
+        **named_leaves
+            Leaves to check, keyed by name. Unlike ``*leaves`` these are not
+            descended into.
 
-        Args:
-            root (type): The type of the root node to check against.
-            *leaves: Variable length argument list of leaves to check. Can be individual nodes,
-                     lists, tuples, or dicts.
-            check_fun (Callable, optional): A custom function to use for checking root-leaf compatibility.
-                                            If None, uses the default _root_leaf_pair_check method.
-            **named_leaves: Arbitrary keyword arguments representing named leaves to check.
-
-        Raises:
-            ValueError: If an unsupported type is encountered in leaves or if a named leaf
-                        is not an instance of brainstate.graph.Node.
+        Raises
+        ------
+        ValueError
+            If a leaf is not a :class:`brainstate.graph.Node` and is not a
+            list, tuple, or dict of them.
+        TypeError
+            If a leaf's ``root_type`` does not accept ``root``.
         """
         if check_fun is None:
             check_fun = TreeNode._root_leaf_pair_check

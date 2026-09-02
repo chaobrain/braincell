@@ -14,7 +14,7 @@ io -> morph -> filter
 ion / channel / synapse -> concrete runtime mechanisms
 vis -> consumes morph / filter / Cell data for plotting and export (one-way: nothing below it imports vis at load time)
 _single_compartment -> classic single-compartment HH-style neuron frontend
-_base / _base_ion / _base_channel -> shared runtime base classes
+_base_neuron / _base_ion / _base_channel -> shared runtime base classes
 ```
 
 ### 依赖强弱
@@ -38,9 +38,9 @@ _base / _base_ion / _base_channel -> shared runtime base classes
 | `braincell._discretization` | CV 对象、CV policy、paint/place lowering | `morph`、`filter`、`mech` | `_compute`、`Cell` |
 | `braincell._compute` | point topology、runtime state、layout/table | `_discretization`、`mech`、`ion` | `Cell`、`vis.point_topology`、`vis.cell_topology` |
 | `braincell._multi_compartment` | 多隔室 Cell 前端和运行时 facade | 几乎所有核心层 | 顶层 `braincell.Cell` |
-| `braincell._single_compartment` | 单隔室 HH-style neuron | `_base`、`quad` | 顶层 `braincell.SingleCompartment` |
-| `braincell.ion` | Na/K/Ca ion containers | `_base`、`mech`、`quad.protocol` | `channel`、runtime |
-| `braincell.channel` | 具体 ion channel 实现 | `_base`、`ion`、`mech` | 用户、runtime registry |
+| `braincell._single_compartment` | 单隔室 HH-style neuron | `_base_neuron`、`quad` | 顶层 `braincell.SingleCompartment` |
+| `braincell.ion` | Na/K/Ca ion containers | `_base_ion`、`mech`、`quad.protocol` | `channel`、runtime |
+| `braincell.channel` | 具体 ion channel 实现 | `_base_channel`、`ion`、`mech` | 用户、runtime registry |
 | `braincell.synapse` | 具体 synapse 实现 | `mech` | 用户、runtime registry |
 | `braincell.quad` | integrator registry 和 step functions | `_misc`、`quad.protocol` | single/multi-compartment runtime |
 | `braincell.vis` | 2D/3D scene、backend、morphometry、traces、cell topology | `morph`、`filter`、`_discretization`、`_multi_compartment`、layout/backend | 用户、`Morphology.vis*`（延迟导入） |
@@ -356,7 +356,7 @@ metric 属性：
 
 ### Runtime base classes
 
-文件：`braincell/_base.py`、`braincell/_base_ion.py`、`braincell/_base_channel.py`
+文件：`braincell/_base_neuron.py`、`braincell/_base_ion.py`、`braincell/_base_channel.py`
 
 - `HHTypedNeuron`：`pop_size`、`n_compartment`、`current(...)`、`pre_integral(...)`、`compute_derivative(...)`、`post_integral(...)`、`init_state(...)`、`reset_state(...)`、`add(...)`、`get_spike(...)`
 - `Ion`：`external_currents`、`pre_integral(V)`、`compute_derivative(V)`、`post_integral(V)`、`current(V, include_external=False)`、`init_state(V, batch_size=None)`、`reset_state(V, batch_size=None)`、`update(V, ...)`、`register_external_current(...)`、`pack_info()`、`add(...)`

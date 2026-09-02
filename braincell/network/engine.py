@@ -25,7 +25,7 @@ import brainunit as u
 import jax
 import numpy as np
 
-from braincell._misc import freeze_array, validate_time_quantity
+from braincell._misc import freeze_array, scalar_decimal, validate_time_quantity
 from braincell._multi_compartment import probes as _probes
 from braincell._multi_compartment.run import _duration_steps, _recording_time_mask
 from braincell._multi_compartment.synapses import SynapseView
@@ -549,7 +549,7 @@ class Network:
         event_backend: str,
         brainevent_backend: str | None,
     ) -> tuple:
-        dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
+        dt_ms = scalar_decimal(dt, u.ms)
         runtime_ids = tuple(
             (name, id(population.cell.runtime), population.size)
             for name, population in self._cell_populations().items()
@@ -768,8 +768,8 @@ class Network:
         event_values,
     ) -> dict:
         events = {}
-        start_ms = float(np.asarray(start_t.to_decimal(u.ms)).reshape(()))
-        stop_ms = float(np.asarray(stop_t.to_decimal(u.ms)).reshape(()))
+        start_ms = scalar_decimal(start_t, u.ms)
+        stop_ms = scalar_decimal(stop_t, u.ms)
         event_index = 0
         for name, population in self.populations.items():
             if population.kind != "cell":
@@ -806,7 +806,7 @@ class Network:
         return events
 
     def _run_scheduled_sources_only(self, *, dt, duration) -> NetworkResult:
-        dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
+        dt_ms = scalar_decimal(dt, u.ms)
         if self._scheduled_dt_ms is None:
             self._scheduled_dt_ms = dt_ms
         elif not np.isclose(self._scheduled_dt_ms, dt_ms):

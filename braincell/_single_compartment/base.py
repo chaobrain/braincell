@@ -263,9 +263,15 @@ class SingleCompartment(HHTypedNeuron):
         I_ext = self.sum_current_inputs(I_ext, self.V.value)
         for key, ch in channels.items():
             try:
-                I_ext = I_ext + ch.current(self.V.value)
+                contribution = ch.current(self.V.value)
             except (TypeError, ValueError, RuntimeError, ArithmeticError) as e:
                 raise ValueError(f"Error in computing current for ion channel '{key}': \n{ch}\nError: {e}") from e
+            # An ion pool with no channels of its own returns ``None``: it has
+            # nothing to add, not a zero in some unit it would have to guess.
+            # The common KCa setup -- K and Ca carrying only a mixed channel --
+            # hits this, and used to fail with a unit mismatch against ``None``.
+            if contribution is not None:
+                I_ext = I_ext + contribution
         self.V.derivative = I_ext / self.C
         for ch in self._neuron_driven(channels):
             ch.compute_derivative(self.V.value)

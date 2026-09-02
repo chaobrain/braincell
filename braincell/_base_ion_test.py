@@ -15,12 +15,16 @@
 
 """Unit tests for :mod:`braincell._base_ion`."""
 
+import gc
 import unittest
+import weakref
 
 import brainstate
+import braintools
 import brainunit as u
 import jax.numpy as jnp
 
+import braincell
 from braincell._base_channel import Channel, IonChannel, IonInfo
 from braincell._base_ion import Ion, MixIons, mix_ions
 from braincell.ion import CalciumFixed, PotassiumFixed, SodiumFixed
@@ -63,6 +67,58 @@ class _RecordingKCaChannel(Channel):
 
     def current(self, V, K, Ca):  # pragma: no cover
         return 0.0 * u.nA / u.cm**2
+
+
+class MixIonsConstructorChannelTest(unittest.TestCase):
+    """``MixIons(*ions, **channels)`` must match ``MixIons(*ions).add(...)``.
+
+    The constructor used to update ``self.channels`` directly, skipping the
+    hierarchy check *and* the ``register_external_current`` calls that
+    ``add`` makes. A channel passed to the constructor therefore reached
+    no owner ion, and ``ion.current(V, include_external=True)`` returned
+    ``None`` where the ``add`` spelling returned a current.
+    """
+
+    @staticmethod
+    def _build(via_constructor: bool):
+        k = PotassiumFixed(size=1)
+        ca = CalciumFixed(size=1)
+        channel = _RecordingKCaChannel(size=1)
+        if via_constructor:
+            mix = MixIons(k, ca, kca=channel)
+        else:
+            mix = MixIons(k, ca)
+            mix.add(kca=channel)
+        return k, mix
+
+    def test_constructor_registers_external_currents_like_add(self) -> None:
+        via_init, _ = self._build(True)
+        via_add, _ = self._build(False)
+        self.assertEqual(len(via_init.external_currents), len(via_add.external_currents))
+        self.assertEqual(len(via_init.external_currents), 1)
+
+    def test_constructor_channel_reaches_the_owner_ion_current(self) -> None:
+        V = jnp.zeros((1,)) * u.mV
+        via_init, _ = self._build(True)
+        via_add, _ = self._build(False)
+        self.assertIsNotNone(via_init.current(V, include_external=True))
+        u.math.allclose(
+            via_init.current(V, include_external=True),
+            via_add.current(V, include_external=True),
+        )
+
+    def test_constructor_rejects_a_channel_whose_root_type_does_not_match(self) -> None:
+        class _SodiumOnly(Channel):
+            root_type = SodiumFixed
+
+            def init_state(self, V, Na, batch_size=None):  # pragma: no cover
+                pass
+
+            def current(self, V, Na):  # pragma: no cover
+                return 0.0 * u.nA / u.cm**2
+
+        with self.assertRaises(TypeError):
+            MixIons(PotassiumFixed(size=1), CalciumFixed(size=1), bad=_SodiumOnly(size=1))
 
 
 class MixIonsIndependentUpdateReceiverTest(unittest.TestCase):
@@ -349,6 +405,115 @@ class IonIndependentIntegrationDispatchTest(unittest.TestCase):
         self.assertEqual(len(args), 1)
         self.assertEqual(kwargs, {"recursive_child": False})
         self.assertEqual(ion.channels["child"].calls, [])
+
+
+class EmptyPoolCurrentTest(unittest.TestCase):
+    """A pool with no channels of its own says so with ``None``.
+
+    ``Ion.current`` already returned ``None``; ``MixIons.current`` returned
+    a bare, unitless ``0.0``. The two disagreed, and the second is not a
+    valid addend for a current density -- summing over the pools raised
+    ``UnitMismatchError`` instead of producing a current.
+    """
+
+    def _kca_cell(self):
+        cell = braincell.SingleCompartment(1, V_initializer=braintools.init.Constant(-65.0 * u.mV))
+        cell.k = braincell.ion.PotassiumFixed(1, E=-90.0 * u.mV)
+        cell.ca = braincell.ion.CalciumDetailed(1, C_rest=2.4e-4 * u.mM, tau=10.0 * u.ms, d=0.5 * u.um)
+        cell.kca = braincell.mix_ions(cell.k, cell.ca)
+        cell.kca.add(ahp=braincell.channel.AHP_De1994(1, g_max=10.0 * u.mS / u.cm**2))
+        brainstate.nn.init_all_states(cell)
+        return cell
+
+    def test_both_pool_types_return_none_when_empty(self) -> None:
+        cell = self._kca_cell()
+        V = cell.V.value
+        # The AHP channel belongs to the mixed pool, so neither ion has a
+        # channel of its own.
+        self.assertIsNone(cell.k.current(V))
+        self.assertIsNone(cell.ca.current(V))
+        self.assertIsNone(braincell.mix_ions(cell.k, cell.ca).current(V))
+
+    def test_a_kca_only_model_integrates(self) -> None:
+        # The whole point: this model is the ordinary way to write a
+        # calcium-dependent potassium current, and it used to crash in
+        # ``compute_derivative`` before a single step ran.
+        cell = self._kca_cell()
+        for i in range(3):
+            with brainstate.environ.context(dt=0.01 * u.ms, t=i * 0.01 * u.ms):
+                cell.update(0.0 * u.nA / u.cm**2)
+        self.assertTrue(u.math.isfinite(cell.V.value).all())
+        self.assertTrue(u.math.isfinite(cell.ca.Ci.value).all())
+
+    def test_a_dynamic_ion_accepts_an_absent_drive_current(self) -> None:
+        cell = self._kca_cell()
+        zero = cell.ca._drive_current(None)
+        self.assertEqual(u.get_unit(zero).dim, (u.mA / u.cm**2).dim)
+        self.assertEqual(float(u.math.sum(zero.to_decimal(u.mA / u.cm**2))), 0.0)
+        supplied = 1.0 * u.mA / u.cm**2
+        self.assertIs(cell.ca._drive_current(supplied), supplied)
+
+
+class MixIonsPackingTest(unittest.TestCase):
+    """Each mixed ion is packed once per lifecycle call, not once per channel."""
+
+    def _pool(self, n_channels: int):
+        cell = braincell.SingleCompartment(4, V_initializer=braintools.init.Constant(-65.0 * u.mV))
+        cell.k = braincell.ion.PotassiumFixed(4, E=-90.0 * u.mV)
+        cell.ca = braincell.ion.CalciumDetailed(4, C_rest=2.4e-4 * u.mM, tau=10.0 * u.ms, d=0.5 * u.um)
+        cell.kca = braincell.mix_ions(cell.k, cell.ca)
+        cell.kca.add(
+            **{f"ahp{i}": braincell.channel.AHP_De1994(4, g_max=1.0 * u.mS / u.cm**2) for i in range(n_channels)}
+        )
+        brainstate.nn.init_all_states(cell)
+        return cell
+
+    def test_pack_info_runs_once_per_ion_regardless_of_channel_count(self) -> None:
+        cell = self._pool(5)
+        calls = []
+        for ion in cell.kca.ions:
+            original = ion.pack_info
+
+            def counted(_original=original, _ion=ion):
+                calls.append(type(_ion).__name__)
+                return _original()
+
+            ion.pack_info = counted
+
+        cell.kca.current(cell.V.value)
+        # Two ions, five channels. Packing per (channel, root) would be ten.
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(sorted(calls), sorted({type(ion).__name__ for ion in cell.kca.ions}))
+
+    def test_every_channel_still_receives_its_own_roots_in_order(self) -> None:
+        cell = self._pool(2)
+        infos = cell.kca._pack_ion_infos()
+        channel = cell.kca.channels["ahp0"]
+        selected = cell.kca._infos_for(channel, infos)
+        self.assertEqual(len(selected), len(channel.root_type.__args__))
+        for info, root in zip(selected, channel.root_type.__args__):
+            self.assertIs(info, infos[id(cell.kca._get_ion(root))])
+
+    def test_the_external_current_callback_does_not_retain_the_mixed_pool(self) -> None:
+        # The callback lives in ``Ion._external_currents`` for the life of
+        # the model. Capturing ``self`` pinned the whole ``MixIons``, and
+        # through it every child channel, behind a reference cycle.
+        cell = self._pool(1)
+        callback = next(iter(cell.k.external_currents.values()))
+        captured = [cell_ref.cell_contents for cell_ref in (callback.__closure__ or ())]
+        self.assertFalse(any(isinstance(obj, braincell.MixIons) for obj in captured))
+
+    def test_the_mixed_pool_is_freed_without_the_cyclic_collector(self) -> None:
+        cell = self._pool(1)
+        pool = weakref.ref(cell.kca)
+        channel = weakref.ref(cell.kca.channels["ahp0"])
+        gc.disable()
+        try:
+            del cell
+            self.assertIsNone(pool(), "MixIons survived refcounting alone")
+            self.assertIsNone(channel(), "child channel survived refcounting alone")
+        finally:
+            gc.enable()
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 import brainunit as u
 import numpy as np
 
-from braincell._misc import validate_time_quantity
+from braincell._misc import scalar_decimal, validate_time_quantity
 
 from .core import Population
 from .event import round_half_up_steps_host as _round_half_up_steps
@@ -130,7 +130,7 @@ def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "neare
         raise ValueError(f"Connection delay must be scalar or shape {(n_contact,)!r}, got {delay_ms.shape!r}.")
     if np.any(delay_ms < 0.0):
         raise ValueError("Connection delay must be >= 0.")
-    dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
+    dt_ms = scalar_decimal(dt, u.ms)
     raw_steps = delay_ms / dt_ms
     rounded_raw_steps = np.rint(raw_steps)
     raw_steps = np.where(

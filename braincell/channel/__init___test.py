@@ -28,7 +28,7 @@ import pytest
 
 import braincell.channel as channel
 from braincell._base_channel import Channel
-from braincell._testing import DocstringConformanceTests
+from braincell._testing import DocstringConformanceTests, ReExportTests
 from braincell.channel import (
     _base,
     calcium,
@@ -83,7 +83,7 @@ class ChannelDocstringTest(DocstringConformanceTests, unittest.TestCase):
     no_primary_source = _NO_PRIMARY_SOURCE
 
 
-class ChannelReExportTest(unittest.TestCase):
+class ChannelReExportTest(ReExportTests, unittest.TestCase):
     """Guard the explicit re-export block against drift.
 
     ``braincell/channel/__init__.py`` builds ``__all__`` by concatenating
@@ -95,19 +95,8 @@ class ChannelReExportTest(unittest.TestCase):
     ``import *`` time, far from the edit that caused it.
     """
 
-    def test_every_name_in_all_is_importable(self):
-        missing = [name for name in channel.__all__ if not hasattr(channel, name)]
-        self.assertEqual(missing, [], f"names in __all__ that were never imported: {missing}")
-
-    def test_all_has_no_duplicates(self):
-        duplicated = sorted({name for name in channel.__all__ if channel.__all__.count(name) > 1})
-        self.assertEqual(duplicated, [], f"duplicated entries in __all__: {duplicated}")
-
-    def test_every_submodule_public_name_is_re_exported(self):
-        expected = set()
-        for module in _COVERED_MODULES:
-            expected.update(module.__all__)
-        self.assertEqual(sorted(expected - set(channel.__all__)), [])
+    package = channel
+    reexport_sources = _COVERED_MODULES
 
 
 def _registered_channel_classes():

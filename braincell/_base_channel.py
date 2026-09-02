@@ -35,9 +35,41 @@ import brainunit as u
 from braincell._typing import ArrayLike, Size
 from ._misc import TreeNode
 from .mech import NoEventInput, ParameterSpec, StateSpec
-from .quad.protocol import DiffEqModule, IndependentIntegration
+from .quad.protocol import DiffEqModule, DiffEqSingleState, IndependentIntegration
 
 __all__ = ["IonChannel", "IonInfo", "Channel", "Synapse"]
+
+
+def _normalize_size(size) -> tuple:
+    """Normalize a channel ``size`` argument to a non-empty tuple of ints.
+
+    Parameters
+    ----------
+    size : int or sequence of int
+        Channel shape, ``(..., n_neuron, n_compartment)``.
+
+    Returns
+    -------
+    tuple of int
+        ``size`` as a tuple, with a bare int widened to a 1-tuple.
+
+    Raises
+    ------
+    ValueError
+        If ``size`` is not an int or a non-empty sequence of ints.
+
+    Notes
+    -----
+    Every element is type-checked. The three inlined copies this replaced
+    checked only ``size[0]``, so ``(4, "x")`` was accepted and failed much
+    later with an unrelated message.
+    """
+    if isinstance(size, (int, np.integer)):
+        return (int(size),)
+    if isinstance(size, (list, tuple)) and len(size) > 0:
+        if all(isinstance(item, (int, np.integer)) for item in size):
+            return tuple(int(item) for item in size)
+    raise ValueError(f'size must be int, or a non-empty tuple/list of int. But we got {size!r}')
 
 
 class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
@@ -54,11 +86,11 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
 
     Attributes
     ----------
-    in_size : tuple
-        The dimensions of the ion channel, representing its size (e.g., number of neurons,
-        number of compartments).
-    out_size : tuple
-        Same as in_size, representing the output dimensions of the channel.
+    size : tuple of int
+        The dimensions of the ion channel, ``(..., n_neuron, n_compartment)``.
+    varshape : tuple of int
+        ``size`` without its leading batch dimension, the shape channel
+        state variables are allocated with.
     name : str, optional
         A name identifier for the ion channel.
 
@@ -105,21 +137,7 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
         size: Size,
         name: Optional[str] = None,
     ):
-        # size
-        if isinstance(size, (list, tuple)):
-            if len(size) <= 0:
-                raise ValueError(f'size must be int, or a tuple/list of int. But we got {type(size)}')
-            if not isinstance(size[0], (int, np.integer)):
-                raise ValueError(f'size must be int, or a tuple/list of int.But we got {type(size)}')
-            size = tuple(size)
-        elif isinstance(size, (int, np.integer)):
-            size = (size,)
-        else:
-            raise ValueError(f'size must be int, or a tuple/list of int.But we got {type(size)}')
-        self.size = size
-        assert len(size) >= 1, (
-            'The size of the dendritic dynamics should be at least 1D: (..., n_neuron, n_compartment).'
-        )
+        self.size = _normalize_size(size)
         self.name = name
 
     @property
@@ -206,13 +224,7 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
             Variable length argument list.
         **kwargs
             Arbitrary keyword arguments.
-
-        Raises
-        ------
-        NotImplementedError
-            This method must be implemented by subclasses.
         """
-        pass
 
     def reset_state(self, *args, **kwargs):
         """
@@ -268,33 +280,28 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
 
 
 class IonInfo(NamedTuple):
-    """
-    A named tuple representing the information of an ion in a neuron model.
+    """Everything a channel is told about the ion it depends on.
 
-    This class encapsulates the intracellular/extracellular concentrations of
-    an ion, its reversal potential, and its valence. It is used to store and
-    pass ion-related information in various neuronal simulation contexts.
+    A channel never receives the :class:`~braincell.Ion` itself, only this
+    snapshot, so it cannot reach back into the pool and mutate it.
+    :meth:`braincell.Ion.pack_info` builds one per lifecycle call.
 
-    Attributes:
-        Ci (brainstate.typing.ArrayLike): The intracellular ion concentration.
-            This represents the concentration of the ion inside the cell,
-            typically in units of millimoles per liter (mM).
+    Attributes
+    ----------
+    Ci : brainstate.typing.ArrayLike
+        Intracellular ion concentration, conventionally in ``u.mM``.
+    Co : brainstate.typing.ArrayLike
+        Extracellular ion concentration, conventionally in ``u.mM``.
+    E : brainstate.typing.ArrayLike
+        Reversal potential -- the voltage at which the ion has no net flow
+        across the membrane -- conventionally in ``u.mV``.
+    valence : brainstate.typing.ArrayLike
+        Charge number used in the Nernst and GHK relations.
 
-        Co (brainstate.typing.ArrayLike): The extracellular ion concentration.
-            This represents the concentration of the ion outside the cell,
-            typically in units of millimoles per liter (mM).
-
-        E (brainstate.typing.ArrayLike): The reversal potential.
-            This represents the electrical potential at which there is no net
-            flow of the ion across the membrane, typically in millivolts (mV).
-
-        valence (brainstate.typing.ArrayLike): The ionic valence.
-            This represents the charge number used in Nernst/GHK relations.
-
-    Note:
-        ``Ci``, ``Co``, ``E``, and ``valence`` are expected to be array-like
-        objects or scalars, allowing representation of these properties across
-        multiple neurons or compartments simultaneously.
+    Notes
+    -----
+    Every field may be a scalar or an array shaped like the population, so
+    one snapshot covers all neurons and compartments at once.
     """
 
     Ci: ArrayLike
@@ -304,16 +311,11 @@ class IonInfo(NamedTuple):
 
 
 class Channel(IonChannel):
-    """
-    The base class for modeling channel dynamics in neuronal simulations.
+    """Base class for a channel that draws its current from one ion pool.
 
-    This class extends the IonChannel class to provide a framework for implementing
-    specific ion channel models. It serves as a foundation for creating various types
-    of ion channels, such as voltage-gated or ligand-gated channels.
-
-    Note:
-        Subclasses of Channel should implement specific methods like `current`,
-        `compute_derivative`, etc., to define the behavior of the particular channel type.
+    Subclasses implement :meth:`current` and, when they carry gating state,
+    :meth:`compute_derivative`; every lifecycle method receives an
+    :class:`IonInfo` for each ion named in the subclass's ``root_type``.
 
     Examples
     --------
@@ -351,7 +353,7 @@ class Synapse(IonChannel):
     states: Mapping[str, StateSpec] = {}
     event_input = NoEventInput()
 
-    def __init__(self, size: brainstate.typing.Size, name: Optional[str] = None, **parameters):
+    def __init__(self, size: Size, name: Optional[str] = None, **parameters):
         super().__init__(size=size, name=name)
         unknown = tuple(sorted(set(parameters).difference(self.parameters)))
         if unknown:
@@ -377,7 +379,8 @@ class Synapse(IonChannel):
         for field, spec in self.states.items():
             spec.validate(spec.initial, field)
             value = _broadcast_synapse_initial(spec.initial, self.varshape, batch_size=batch_size)
-            setattr(self, field, _make_synapse_state(value))
+            # Logical synapses are a packed SoA, not a Cell population/spatial grid.
+            setattr(self, field, DiffEqSingleState(value))
 
     def reset_state(self, V_post=None, batch_size=None):
         _ = V_post
@@ -388,13 +391,6 @@ class Synapse(IonChannel):
     def apply_events(self, payload, V_post=None):
         """Apply one already-aggregated event payload vector."""
         _ = payload, V_post
-
-
-def _make_synapse_state(value):
-    # Logical synapses are a packed SoA, not a Cell population/spatial grid.
-    from .quad.protocol import DiffEqSingleState
-
-    return DiffEqSingleState(value)
 
 
 def _broadcast_synapse_initial(initial, shape, *, batch_size=None):

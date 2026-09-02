@@ -541,6 +541,7 @@ class CalciumDetailed(Calcium, DynamicNernstIon):
 
     def derivative(self, Ci, V, total_current=None):
         _ = V
+        total_current = self._drive_current(total_current)
         drive = total_current / (2 * u.faraday_constant * self.d)
         drive = u.math.maximum(drive, u.math.zeros_like(drive))
         return drive + (self.C_rest - Ci) / self.tau
@@ -658,6 +659,7 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
 
     def derivative(self, Ci, V, total_current=None):
         _ = V
+        total_current = self._drive_current(total_current)
         drive = u.math.maximum(self.alpha * total_current, 0.0 * u.mM)
         return drive - self.beta * Ci
 
@@ -3792,8 +3794,7 @@ class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
 
     def derivative(self, Ci, V, total_current=None):
         _ = V
-        if total_current is None:
-            total_current = braintools.init.param(0.0 * (u.mA / u.cm**2), self.varshape)
+        total_current = self._drive_current(total_current)
         # The imported NMODL uses:
         #   cai' = -(kCa / depth) * ica * 1e4 - (cai - caiBase) / tauCa
         # where NEURON raw ``ica`` is negative for inward current. BrainCell
@@ -3962,8 +3963,7 @@ class CdpLVA_SU2015_DCN(Calcium, DynamicNernstIon):
 
     def derivative(self, Ci, V, total_current=None):
         _ = V
-        if total_current is None:
-            total_current = braintools.init.param(0.0 * (u.mA / u.cm**2), self.varshape)
+        total_current = self._drive_current(total_current)
         # The imported NMODL uses:
         #   cali' = -(kCal / depth) * ical * 1e4 - (cali - caliBase) / tauCal
         # where NEURON raw ``ical`` is negative for inward current. BrainCell

@@ -24,6 +24,32 @@ from braincell.filter import BranchSlice, at
 
 
 class RecordingTest(unittest.TestCase):
+    def test_clamp_view_recording_uses_midpoint_time_and_cached_components(self) -> None:
+        cell = _cell(1)
+        first = braincell.CurrentClamp(durations=0.1 * u.ms, amplitudes=0.2 * u.nA)
+        second = braincell.CurrentClamp(durations=0.2 * u.ms, amplitudes=0.3 * u.nA)
+        cell.place(at("soma", 0.5), first, second)
+        cell.clamps["CurrentClamp"].record("clamps")
+        cell.soma.record("external", braincell.observe.clamp_current())
+        cell.soma.record("components", braincell.observe.clamp_current(reduce="none"))
+
+        result = cell.run(dt=0.1 * u.ms, duration=0.3 * u.ms)
+
+        np.testing.assert_allclose(result.samples["clamps"].time.to_decimal(u.ms), [0.05, 0.15, 0.25])
+        np.testing.assert_allclose(
+            result.samples["clamps"].values.to_decimal(u.nA),
+            [[0.2, 0.3], [0.0, 0.3], [0.0, 0.0]],
+        )
+        np.testing.assert_allclose(
+            result.samples["external"].values.to_decimal(u.nA)[:, 0],
+            [0.5, 0.3, 0.0],
+        )
+        np.testing.assert_allclose(
+            result.samples["components"].values.to_decimal(u.nA),
+            result.samples["clamps"].values.to_decimal(u.nA),
+        )
+        self.assertEqual([row.clamp_id for row in result.samples["clamps"].schema.rows], [0, 1])
+
     def test_scalar_cell_spatial_recording(self) -> None:
         soma = braincell.Branch.from_lengths(
             lengths=[20.0] * u.um,

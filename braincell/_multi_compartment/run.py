@@ -249,12 +249,15 @@ def _make_run_loop(rcell: "Cell", *, dt, compiled_recordings: tuple, ordered_pro
 
             def _step(t):
                 with brainstate.environ.context(t=t):
+                    with jax.named_scope("braincell:cell_run:prepare_clamps"):
+                        rcell._prepare_step_clamps(t=t, dt=brainstate.environ.get_dt())
                     with jax.named_scope("braincell:cell_run:sample_recordings"):
                         recording_snapshot = tuple(item.sample() for item in compiled_recordings)
                     with jax.named_scope("braincell:cell_run:begin_step"):
                         rcell._begin_step()
                     with jax.named_scope("braincell:cell_run:update_dynamics"):
-                        rcell._update_dynamics()
+                        with brainstate.environ.context(_braincell_step_clamps_prepared=True):
+                            rcell._update_dynamics()
                     with jax.named_scope("braincell:cell_run:route_live_connections"):
                         rcell._apply_direct_live_connection_events()
                     with jax.named_scope("braincell:cell_run:prepare_next_synapse_inputs"):

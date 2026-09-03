@@ -96,6 +96,7 @@ from braincell.mech import CVContext, Synapse as SynapsePlacement
 from . import currents, field_resolution, probes, run as run_module
 from braincell._compute import bridge
 from .synapses import SynapseView, _SynapseStore, raise_on_name_type_conflict
+from .clamps import ClampView, _ClampStore
 from .selection import BranchSelector, CVSelector, _CellScope
 from .density_views import ChannelView, IonView
 
@@ -582,6 +583,14 @@ class CellView(_CellFacade):
         return selected
 
     @property
+    def clamps(self):
+        """Return logical current clamps owned by this population/spatial view."""
+        selected = self._cell.clamps.for_population(self._population_indices)
+        if self._scope.spatially_restricted:
+            selected = selected.for_scope_pairs(self._scope.pairs)
+        return selected
+
+    @property
     def connections(self):
         """Return routing rows whose destination synapses belong to selected cells."""
         selected = self._cell.connections.for_population(self._population_indices)
@@ -841,6 +850,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._runtime_cvs_cache: tuple[RuntimeCVView, ...] | None = None
         self._runtime_nodes_cache: tuple[RuntimeNodeView, ...] | None = None
         self._synapse_store_cache: _SynapseStore | None = None
+        self._clamp_store_cache: _ClampStore | None = None
         self._spike_event_source_cache: _CellSpikeSource | None = None
         self._synapse_input_bindings: dict[str, list[tuple[object, object, object]]] = {}
         self._synapse_parameter_overrides: dict[tuple[int, int, str], object] = {}
@@ -1220,6 +1230,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._discretization_cache = None
         self._discretization_cache_key = None
         self._synapse_store_cache = None
+        self._clamp_store_cache = None
         self._runtime_cvs_cache = None
         self._runtime_nodes_cache = None
         self._root_scope_cache = None
@@ -1330,6 +1341,11 @@ class Cell(_CellFacade, HHTypedNeuron):
         return SynapseView(self)
 
     @property
+    def clamps(self) -> ClampView:
+        """Return a view over all logical current-clamp instances."""
+        return ClampView(self)
+
+    @property
     def connections(self):
         """Return a unified view over all direct event-routing rows."""
         from braincell.network.connection import ConnectionView
@@ -1351,6 +1367,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         if self._synapse_store_cache is None:
             self._synapse_store_cache = _SynapseStore(self)
         return self._synapse_store_cache
+
+    def _get_clamp_store(self) -> _ClampStore:
+        """Return the logical current-clamp store for this declaration."""
+        if self._clamp_store_cache is None:
+            self._clamp_store_cache = _ClampStore(self)
+        return self._clamp_store_cache
 
     def _get_connection_store(self):
         """Return the private Cell-owned routing-row store."""
@@ -1462,6 +1484,13 @@ class Cell(_CellFacade, HHTypedNeuron):
         self.V = DiffEqGroupState(v_value)
         self.spike = brainstate.ShortTermState(_zero_spike_like(self.V.value))
         self._event_previous_V = brainstate.ShortTermState(self.V.value)
+        clamp_store = self._get_clamp_store()
+        self._step_clamp_components = brainstate.ShortTermState(
+            u.Quantity(jnp.zeros((len(clamp_store.id),), dtype=float), u.nA)
+        )
+        self._step_clamp_point_current = brainstate.ShortTermState(
+            u.Quantity(jnp.zeros(self._runtime.pop_size + (self._runtime.n_point,), dtype=float), u.nA)
+        )
         self._current_time_state.value = 0.0 * u.ms
 
         cv_V = self.V.value
@@ -1518,6 +1547,9 @@ class Cell(_CellFacade, HHTypedNeuron):
             delattr(self, "spike")
         if hasattr(self, "_event_previous_V"):
             delattr(self, "_event_previous_V")
+        for name in ("_step_clamp_components", "_step_clamp_point_current"):
+            if hasattr(self, name):
+                delattr(self, name)
         self._current_time_state.value = 0.0 * u.ms
 
         self._runtime = None
@@ -2017,8 +2049,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         before calling the corresponding internal cell phases.
         """
         self._raise_if_not_initialized("update()")
+        self._prepare_step_clamps()
         self._begin_step()
-        spk = self._update_dynamics()
+        with brainstate.environ.context(_braincell_step_clamps_prepared=True):
+            spk = self._update_dynamics()
         self._prepare_next_synapse_inputs(t=self._resolve_t() + brainstate.environ.get_dt())
         return spk
 
@@ -2038,6 +2072,36 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._raise_if_not_initialized("_begin_step()")
         point_V = self._cv_to_point(self.V.value)
         self._apply_runtime_synapse_events(point_V)
+
+    def _prepare_step_clamps(self, *, t=None, dt=None) -> None:
+        """Sample all current clamps at the main-step midpoint and cache them."""
+        self._raise_if_not_initialized("_prepare_step_clamps()")
+        if len(self._get_clamp_store().id) == 0:
+            return
+        step_t = self._resolve_t() if t is None else t
+        step_dt = brainstate.environ.get_dt() if dt is None else dt
+        components = self._get_clamp_store().evaluate(self._runtime, t=step_t + 0.5 * step_dt)
+        self._step_clamp_components.value = components
+        self._step_clamp_point_current.value = self._get_clamp_store().scatter_to_points(
+            components,
+            pop_size=self._runtime.pop_size,
+            n_point=self._runtime.n_point,
+        )
+
+    def _solver_clamp_point_current(self, *, t):
+        """Return the prepared point current, with a direct-solver fallback."""
+        if brainstate.environ.get("_braincell_step_clamps_prepared", False):
+            return self._step_clamp_point_current.value
+        try:
+            dt = brainstate.environ.get_dt()
+        except KeyError:
+            return self._runtime.evaluate_point_clamps(t=t)
+        components = self._get_clamp_store().evaluate(self._runtime, t=t + 0.5 * dt)
+        return self._get_clamp_store().scatter_to_points(
+            components,
+            pop_size=self._runtime.pop_size,
+            n_point=self._runtime.n_point,
+        )
 
     def _update_dynamics(self):
         """Advance continuous cell dynamics and update spike state.
@@ -2333,6 +2397,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         self.spike.value = _zero_spike_like(self.V.value)
         self._event_previous_V.value = self.V.value
         self._current_time_state.value = 0.0 * u.ms
+        self._step_clamp_components.value = u.Quantity(jnp.zeros_like(self._step_clamp_components.value.mantissa), u.nA)
+        self._step_clamp_point_current.value = u.Quantity(
+            jnp.zeros_like(self._step_clamp_point_current.value.mantissa), u.nA
+        )
         for layout_id in self._runtime.event_buffers:
             self._runtime.clear_event_buffer(layout_id)
         with state_grouping(True):

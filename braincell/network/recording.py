@@ -68,6 +68,12 @@ class _MembraneCurrentObservable:
     pass
 
 
+@dataclass(frozen=True)
+class _ClampCurrentObservable:
+    ids: tuple[int, ...] | None
+    reduce: str
+
+
 class _MechanismObservableBuilder:
     __slots__ = ("_category", "_selector")
 
@@ -134,6 +140,12 @@ class _ObserveNamespace:
         """Observe total membrane current density at selected CVs."""
         return _MembraneCurrentObservable()
 
+    def clamp_current(self, *, reduce: str = "sum"):
+        """Observe cached external clamp current within selected CVs."""
+        if reduce not in {"sum", "none"}:
+            raise ValueError("clamp current reduce must be 'sum' or 'none'.")
+        return _ClampCurrentObservable(None, reduce)
+
 
 observe = _ObserveNamespace()
 
@@ -181,6 +193,9 @@ class RecordingRow:
     mechanism_type: str | None = None
     mechanism_name: str | None = None
     synapse_id: int | None = None
+    clamp_id: int | None = None
+    placement_id: int | None = None
+    clamp_ids: tuple[int, ...] = ()
     contributor_ids: tuple[int, ...] = ()
 
 
@@ -192,6 +207,7 @@ class RecordingSchema:
     rows: tuple[RecordingRow, ...]
     period: object
     schedule_start: object
+    time_offset: object = field(default_factory=lambda: 0.0 * u.ms)
 
     @property
     def size(self) -> int:
@@ -216,7 +232,7 @@ class SampleBlock:
         count = int(self.values.shape[0])
         if count == 0 or self.first_time is None:
             return np.asarray([], dtype=float) * u.ms
-        return self.first_time + np.arange(count) * self.schema.period
+        return self.first_time + self.schema.time_offset + np.arange(count) * self.schema.period
 
 
 def concat_sample_blocks(blocks):
@@ -298,6 +314,7 @@ def compile_recording(cell, spec: RecordingSpec, *, dt):
         rows=rows,
         period=period,
         schedule_start=spec.start,
+        time_offset=(0.5 * dt if isinstance(spec.observable, _ClampCurrentObservable) else 0.0 * u.ms),
     )
     return _CompiledRecording(spec=spec, schema=schema, sample=sampler)
 
@@ -369,7 +386,46 @@ def _observable_rows_and_sampler(cell, spec: RecordingSpec):
 
         return rows, sample
 
+    if isinstance(observable, _ClampCurrentObservable):
+        return _clamp_current_rows_and_sampler(cell, spec.scope, observable)
+
     raise TypeError(f"Unsupported observable {type(observable).__name__!s}.")
+
+
+def _clamp_current_rows_and_sampler(cell, scope, observable: _ClampCurrentObservable):
+    view = cell.clamps.for_scope_pairs(scope.pairs)
+    if observable.ids is not None:
+        selected = set(int(item) for item in observable.ids)
+        view = type(view)(cell, [logical_id for logical_id in view.id.tolist() if logical_id in selected])
+    store_rows = view._store.row_indices(view.id)
+
+    if observable.reduce == "none":
+        rows = tuple(_clamp_recording_row(cell, record) for record in view.instances)
+
+        def sample():
+            values = cell._step_clamp_components.value
+            return values[..., store_rows]
+
+        return rows, sample
+
+    groups: dict[tuple[int, int], list[int]] = {}
+    for store_row, population_index, cv_id in zip(
+        store_rows.tolist(), view.population_index.tolist(), view.cv_id.tolist()
+    ):
+        groups.setdefault((int(population_index), int(cv_id)), []).append(int(store_row))
+    rows = tuple(
+        replace(
+            _spatial_row(cell, pair, field="clamp_current"),
+            clamp_ids=tuple(int(cell.clamps._store.id[index]) for index in indices),
+        )
+        for pair, indices in groups.items()
+    )
+
+    def sample_sum():
+        values = cell._step_clamp_components.value
+        return _stack_values([u.math.sum(values[..., indices], axis=-1) for indices in groups.values()])
+
+    return rows, sample_sum
 
 
 def _current_rows_and_sampler(cell, scope, observable: _CurrentObservable):
@@ -570,6 +626,19 @@ def _synapse_recording_row(cell, view, index: int, field: str) -> RecordingRow:
         mechanism_type=str(view.synapse_type[index]),
         mechanism_name=str(view.name[index]),
         synapse_id=logical_id,
+    )
+
+
+def _clamp_recording_row(cell, record) -> RecordingRow:
+    spatial = _spatial_row(cell, (record.population_index, record.cv_id), field="clamp_current")
+    return replace(
+        spatial,
+        point_id=int(record.point_id),
+        mechanism_category="clamp",
+        mechanism_type=str(record.clamp_type),
+        clamp_id=int(record.id),
+        placement_id=int(record.placement_id),
+        clamp_ids=(int(record.id),),
     )
 
 

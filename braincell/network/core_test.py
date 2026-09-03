@@ -218,6 +218,22 @@ class PopulationTest(unittest.TestCase):
         np.testing.assert_allclose(joined.time.to_decimal(u.ms), [0.0, 0.05, 0.1, 0.15])
         self.assertEqual(joined.samples["cell"]["v"].values.shape[0], 4)
 
+    def test_network_result_contains_midpoint_clamp_recording(self) -> None:
+        cell = _cell(1)
+        cell.place(
+            at("soma", 0.5),
+            braincell.CurrentClamp(durations=0.1 * u.ms, amplitudes=0.2 * u.nA),
+        )
+        cell.clamps.record("input")
+        network = braincell.network.Network()
+        network.add_population("cell", cell)
+
+        result = network.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
+
+        block = result.samples["cell"]["input"]
+        np.testing.assert_allclose(block.time.to_decimal(u.ms), [0.05, 0.15])
+        np.testing.assert_allclose(block.values.to_decimal(u.nA)[:, 0], [0.2, 0.0])
+
     def test_network_rejects_unregistered_direct_source(self) -> None:
         cell = _cell(1)
         cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="ampa"))

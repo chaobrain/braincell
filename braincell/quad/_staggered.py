@@ -548,7 +548,10 @@ def _edge_point_current(target, *, t):
     table = getattr(runtime, "clamp_routing_table", None)
     if table is None or len(table.boundary_ids) == 0:
         return None
-    return runtime.evaluate_point_clamps(t=t, point_ids=table.boundary_ids)
+    point_current = target._solver_clamp_point_current(t=t)
+    mask = jnp.zeros((runtime.n_point,), dtype=point_current.mantissa.dtype)
+    mask = mask.at[table.boundary_ids].set(1.0)
+    return point_current * mask
 
 
 def _edge_current_voltage_delta(edge_point_current, *, dt, static_source: DHSStaticSource):

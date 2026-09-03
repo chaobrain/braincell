@@ -292,6 +292,23 @@ class RuntimeLayoutTest(unittest.TestCase):
         self.assertAlmostEqual(float(current_early[0, 0].to_decimal(u.nA)), 0.0, places=6)
         self.assertAlmostEqual(float(current_late[0, 1].to_decimal(u.nA)), 0.6, places=6)
 
+    def test_current_clamp_decimal_boundaries_have_no_gap_or_terminal_step(self) -> None:
+        cell = Cell(_build_tree())
+        cell.place(
+            RootLocation(x=0.5),
+            CurrentClamp(
+                durations=tuple(0.1 * u.ms for _ in range(10)),
+                amplitudes=tuple(float(index + 1) * u.nA for index in range(10)),
+            ),
+        )
+        cell.init_state()
+
+        at_internal_boundary = cell.runtime.evaluate_point_clamps(t=0.2 * u.ms).to_decimal(u.nA)
+        at_total_duration = cell.runtime.evaluate_point_clamps(t=1.0 * u.ms).to_decimal(u.nA)
+
+        self.assertAlmostEqual(float(at_internal_boundary[0, 1]), 3.0, places=6)
+        self.assertAlmostEqual(float(at_total_duration[0, 1]), 0.0, places=6)
+
     def test_function_clamp_receives_absolute_time(self) -> None:
         cell = Cell(_build_tree())
         cell.place(

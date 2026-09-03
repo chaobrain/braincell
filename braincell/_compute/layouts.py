@@ -1077,8 +1077,8 @@ def _eval_current_clamp(runtime: CellRuntimeState, *, layout_id: int, rows, loca
 
     local_t_ms = u.math.expand_dims(u.math.asarray(local_t.to_decimal(u.ms)), axis=-1)
     ends = jnp.cumsum(dur_rows, axis=-1)
-    starts = ends - dur_rows
-    is_active = (local_t_ms >= 0.0) & (local_t_ms >= starts) & (local_t_ms < ends) & mask_rows
+    starts = jnp.concatenate([jnp.zeros_like(ends[..., :1]), ends[..., :-1]], axis=-1)
+    is_active = _time_ge(local_t_ms, 0.0) & _time_ge(local_t_ms, starts) & _time_lt(local_t_ms, ends) & mask_rows
     current = jnp.sum(jnp.where(is_active, amp_rows, 0.0), axis=-1)
     return u.Quantity(current, u.nA)
 
@@ -1092,10 +1092,29 @@ def _eval_sine_clamp(runtime: CellRuntimeState, *, layout_id: int, rows, local_t
     frequency = gather("frequency")
     phase = u.math.asarray(gather("phase"))
     local_t_ms = local_t.to_decimal(u.ms)
-    active = u.math.logical_and(local_t_ms >= 0.0, local_t < duration)
+    duration_ms = duration.to_decimal(u.ms)
+    active = u.math.logical_and(_time_ge(local_t_ms, 0.0), _time_lt(local_t_ms, duration_ms))
     angle = 2.0 * np.pi * frequency.to_decimal(u.Hz) * local_t.to_decimal(u.second) + phase
     current_decimal = offset_decimal + (u.math.sin(angle) * amplitude_decimal)
     return u.Quantity(u.math.where(active, current_decimal, 0.0), u.nA)
+
+
+def _time_close(left, right):
+    """Return dtype-aware equality for millisecond boundary comparisons."""
+    left = jnp.asarray(left)
+    right = jnp.asarray(right, dtype=left.dtype)
+    dtype = jnp.result_type(left, right)
+    eps = jnp.finfo(dtype).eps
+    scale = jnp.maximum(1.0, jnp.maximum(jnp.abs(left), jnp.abs(right)))
+    return jnp.abs(left - right) <= (4.0 * eps * scale)
+
+
+def _time_ge(left, right):
+    return (left > right) | _time_close(left, right)
+
+
+def _time_lt(left, right):
+    return (left < right) & ~_time_close(left, right)
 
 
 def _eval_function_clamp(runtime: CellRuntimeState, *, layout_id: int, local_index: int, t) -> object:

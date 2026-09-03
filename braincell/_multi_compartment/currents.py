@@ -88,7 +88,7 @@ def _point_mechanism_current(host: "Cell", *, point_V, t):
         I_point = host.sum_current_inputs(zero_density, point_V)
 
     with jax.named_scope("braincell:membrane_current:clamp_density"):
-        I_point = I_point + _clamp_density(runtime, t=t)
+        I_point = I_point + _clamp_density(host, t=t)
 
     with jax.named_scope("braincell:membrane_current:point_synapse_currents"):
         for key, ch in host.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
@@ -150,7 +150,7 @@ def _synapse_contrib_to_point(runtime: CellRuntimeState, layout, syn, point_V):
     return layout.scatter_add_points(contrib_point, syn_contrib)
 
 
-def _clamp_density(runtime: CellRuntimeState, *, t):
+def _clamp_density(host: "Cell", *, t):
     """Return ``(..., n_point) nA/cm^2`` clamp current density.
 
     Reads the pre-built midpoint entries from the clamp routing table; no
@@ -158,10 +158,11 @@ def _clamp_density(runtime: CellRuntimeState, *, t):
 
     Parameters
     ----------
-    runtime : CellRuntimeState
-        Runtime object that owns the clamp layouts and active-table.
+    host : Cell
+        Cell owning the prepared per-step clamp current and routing table.
     t : Quantity[time]
-        Current simulation time.
+        Solver stage time. The prepared clamp value remains fixed for the
+        enclosing main step.
 
     Returns
     -------
@@ -169,11 +170,12 @@ def _clamp_density(runtime: CellRuntimeState, *, t):
         Clamp current density in point space with shape
         ``runtime.pop_size + (runtime.n_point,)``.
     """
+    runtime = host.runtime
     table = runtime.clamp_routing_table
     if table is None or len(table.midpoint_ids) == 0:
         return u.Quantity(jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=float), _CURRENT_DENSITY)
 
-    currents_nA = runtime.evaluate_point_clamps(t=t, point_ids=table.midpoint_ids).to_decimal(u.nA)
+    currents_nA = host._solver_clamp_point_current(t=t).to_decimal(u.nA)
     active_density = currents_nA[..., table.midpoint_ids] / table.midpoint_area
     density = jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=float)
     density = density.at[..., table.midpoint_ids].set(active_density)

@@ -22,7 +22,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from examples.experimental.online_learning.multicv_hh_rtrl import (
+from examples.experimental.optim_gradient_correctness.multicv_hh import (
     FIVE_CV_TARGET_ROW_SCALES,
     THREE_CV_TARGET_ROW_SCALES,
     bptt_loss,

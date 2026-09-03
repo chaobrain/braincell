@@ -27,7 +27,7 @@ import numpy as np
 from braincell._compute._testing import _build_tree
 from braincell.filter import AllRegion, RootLocation
 
-from examples.experimental.online_learning.forward_sensitivity_core import (
+from examples.experimental.optim._forward_sensitivity import (
     bptt_reference_loss,
     build_stateful_step,
     forward_sensitivity_rollout,

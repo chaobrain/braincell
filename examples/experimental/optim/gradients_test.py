@@ -27,7 +27,7 @@ import numpy as np
 
 from braincell._compute._testing import _build_tree
 from braincell.filter import AllRegion
-from examples.experimental.online_learning.rollout_gradients import (
+from examples.experimental.optim.gradients import (
     TrajectoryGradientResult,
     build_rollout_value_and_grad,
     build_trajectory_value_and_grad,

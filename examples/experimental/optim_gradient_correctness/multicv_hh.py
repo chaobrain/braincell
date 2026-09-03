@@ -16,7 +16,7 @@
 """Model-specific compact/full/BPTT regression for configurable HH cells.
 
 This module remains the compact-projection correctness reference. Normal full
-RTRL training experiments should use ``rollout_gradients`` instead.
+RTRL training experiments should use ``gradients`` instead.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ import numpy as np
 
 import braincell
 from braincell.filter import AllRegion, at
-from examples.experimental.online_learning.forward_sensitivity_core import (
+from examples.experimental.optim._forward_sensitivity import (
     ActiveStateProjection,
     ActiveStateSelection,
     FunctionalStep,

@@ -1,4 +1,4 @@
-"""Compatibility imports for the relocated experimental gradient API."""
+"""Experimental optimization APIs being evaluated for ``braincell.optim``."""
 
 from examples.experimental.optim.gradients import (
     FullRTRLDiagnostic,

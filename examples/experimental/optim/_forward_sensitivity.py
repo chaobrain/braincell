@@ -17,7 +17,7 @@
 
 This experimental layer owns state tracing, parameter coordinates, full and
 compact sensitivity recurrence, and parameter-dependent initialization. Use
-``rollout_gradients`` for the higher-level training-facing engine.
+``gradients`` for the higher-level training-facing engine.
 """
 
 from __future__ import annotations

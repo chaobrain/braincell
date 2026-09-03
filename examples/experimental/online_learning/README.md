@@ -10,16 +10,16 @@ PyTree，以便验证数学等价性和工程成本。
 当前代码按职责分层：
 
 ```text
-forward_sensitivity_core.py
+../optim/_forward_sensitivity.py
   StatefulFunction、parameter coordinates、full/compact sensitivity recurrence
             |
-            +--> rollout_gradients.py
+            +--> ../optim/gradients.py
             |      正常 BPTT/RTRL engine 与独立 diagnostics
             |
-            +--> multicv_hh_rtrl.py
+            +--> ../optim_gradient_correctness/multicv_hh.py
                    compact/full/BPTT 的模型级正确性实验
 
-rollout_gradients.py
+../optim/gradients.py
   +--> rtrl_bptt_scaling_benchmark.py
          seed-block、batch-shared GPU benchmark 与 artifacts
   +--> rtrl_bptt_training_comparison.py
@@ -33,20 +33,20 @@ multi-CV 和 scaling 模块分别提供 compact projection 与性能证据。
 
 | 文件 | 责任 | 适用场景 |
 | --- | --- | --- |
-| `forward_sensitivity_core.py` | Stateful step functionization、parameter coordinates、full/compact recurrence、参数相关初始化 | 新的 exact forward-sensitivity 算法和底层正确性验证 |
-| `forward_sensitivity_core_test.py` | Prefix gradient、finite difference、reset、固定 delay 和 shape 测试 | Core 回归 |
-| `rollout_gradients.py` | local one-pass 与 trajectory two-pass engine，自动参数发现和独立 diagnostics | 常规训练实验 |
-| `rollout_gradients_test.py` | BPTT/RTRL 等价、optimizer mapping、reset、global trace loss 和 `S/L/D` 分解 | Engine 回归 |
-| `multicv_hh_rtrl.py` | 可配置 HH Cell 的 compact/full/BPTT 比较 | Compact RTRL 参考，不是首选训练 API |
-| `multicv_hh_rtrl_test.py` | Directional finite difference、projection identity、distal coupling、multi-CV shape | Compact/full 正确性 oracle |
+| `../optim/_forward_sensitivity.py` | Stateful step functionization、parameter coordinates、full/compact recurrence、参数相关初始化 | 新的 exact forward-sensitivity 算法和底层正确性验证 |
+| `../optim/_forward_sensitivity_test.py` | Prefix gradient、finite difference、reset、固定 delay 和 shape 测试 | Core 回归 |
+| `../optim/gradients.py` | local one-pass 与 trajectory two-pass engine，自动参数发现和独立 diagnostics | 常规训练实验 |
+| `../optim/gradients_test.py` | BPTT/RTRL 等价、optimizer mapping、reset、global trace loss 和 `S/L/D` 分解 | Engine 回归 |
+| `../optim_gradient_correctness/multicv_hh.py` | 可配置 HH Cell 的 compact/full/BPTT 比较 | Compact RTRL 参考，不是首选训练 API |
+| `../optim_gradient_correctness/multicv_hh_test.py` | Directional finite difference、projection identity、distal coupling、multi-CV shape | Compact/full 正确性 oracle |
 | `rtrl_bptt_scaling_benchmark.py` | Block-exact seed `vmap`、batch-shared Cell、独立 worker、GPU monitor、可恢复 suites | 性能实验 |
 | `rtrl_bptt_scaling_benchmark_test.py` | Suite、seed isolation、CPU 小配置、monitor 和 artifact 协议 | Benchmark harness 回归 |
 | `rtrl_bptt_scaling_report.py` | 读取已有 CSV，生成本地 `RESULTS.md` | 整理结果，不运行 JAX/GPU |
 | `rtrl_bptt_scaling_report_test.py` | Report 缺失数据、recursive/ordinary 合并和写入测试 | Report 回归 |
 | `rtrl_bptt_training_comparison.py` | `C5/T40/B16/S32` 的独立 BPTT/RTRL Adam worker、history 和对照图 | 完整训练效率/一致性检查 |
 | `rtrl_bptt_training_comparison_test.py` | 小规模两 epoch 训练与 artifact 协议 | 训练 harness 回归 |
-| `bptt_rtrl_gradient_diagnostics.ipynb` | 同一个 global trajectory loss 下的 BPTT/two-pass RTRL 总梯度对照 | 方法入门 |
-| `single_cv_rtrl_sensitivity.ipynb` | 单 CV sensitivity、learning signal、prefix gradient、Adam moments 和 epoch slider | 理解 online quantity |
+| `../optim_gradient_correctness/gradient_diagnostics.ipynb` | 同一个 global trajectory loss 下的 BPTT/two-pass RTRL 总梯度对照 | 方法入门 |
+| `../optim_gradient_correctness/single_cv_sensitivity.ipynb` | 单 CV sensitivity、learning signal、prefix gradient、Adam moments 和 epoch slider | 理解 online quantity |
 | `rtrl_bptt_scaling_analysis.ipynb` | 只读 CSV/NPZ，绘制 full、large-CV、GPU monitoring 和 backsub A/B | 性能分析；不会启动 benchmark |
 
 测试遵守同目录 `*_test.py` 规则。Notebook 保存已执行输出，因此查看结论不要求重新编译
@@ -58,7 +58,7 @@ Rollout engine 默认从目标 Cell 发现 trainable roots，在 reset 和每步
 可直接交给同一 optimizer state mapping 的梯度：
 
 ```python
-from examples.experimental.online_learning.rollout_gradients import (
+from examples.experimental.optim.gradients import (
     build_rollout_value_and_grad,
 )
 
@@ -94,7 +94,7 @@ Normal mode 只返回逐步 losses、总 loss 和总参数梯度，不保存 sen
 当 loss 依赖整条输出轨迹，使用 opt-in two-pass engine：
 
 ```python
-from examples.experimental.online_learning.rollout_gradients import (
+from examples.experimental.optim.gradients import (
     build_trajectory_value_and_grad,
 )
 
@@ -156,13 +156,13 @@ RTRL 的内存和速度。
 
 ## Compact RTRL 参考
 
-`multicv_hh_rtrl.py` 保留的原因，是它回答了与正常 full RTRL 不同的问题：只传播经过证明的
+`../optim_gradient_correctness/multicv_hh.py` 保留的原因，是它回答了与正常 full RTRL 不同的问题：只传播经过证明的
 active-state projection 时，可以减少多少跨时间 carry。当前 compact adapter 每步仍把
 tangent 嵌回 full functional state 做 whole-step JVP，所以 carry 下降不保证 temporary 或
 墙钟等比例下降。
 
-常规 full RTRL 训练使用 `rollout_gradients.py`；修改 projection 语义或比较
-compact/full/BPTT 时使用 `multicv_hh_rtrl.py`。
+常规 full RTRL 训练使用 `../optim/gradients.py`；修改 projection 语义或比较
+compact/full/BPTT 时使用 `../optim_gradient_correctness/multicv_hh.py`。
 
 ## Scaling Benchmark
 
@@ -259,12 +259,12 @@ python examples/experimental/online_learning/rtrl_bptt_scaling_report.py
 ```
 
 `RESULTS.md` 是本机硬件测量报告，CSV/NPZ 是权威原始数据。稳定的数学与 API 分析见
-[单细胞 Exact Online Forward Sensitivity](../../../docs/design/optim/references/single-cell-online-forward-sensitivity.md)。
+[BPTT/RTRL 通用理论](../../../docs/design/optim/references/bptt-to-rtrl-neuron-derivation.md)。
 
 ## Notebook 阅读顺序
 
-1. `bptt_rtrl_gradient_diagnostics.ipynb`：先确认同一个 global loss 的总梯度相等。
-2. `single_cv_rtrl_sensitivity.ipynb`：理解单参数、时间和 optimizer 行为。
+1. `../optim_gradient_correctness/gradient_diagnostics.ipynb`：先确认同一个 global loss 的总梯度相等。
+2. `../optim_gradient_correctness/single_cv_sensitivity.ipynb`：理解单参数、时间和 optimizer 行为。
 3. `rtrl_bptt_scaling_analysis.ipynb`：查看性能、内存、GPU 和 backsub 数据。
 
 不要把长时间 benchmark 执行单元加入分析 notebook；长任务必须走可恢复 CLI。
@@ -274,7 +274,7 @@ python examples/experimental/online_learning/rtrl_bptt_scaling_report.py
 运行全部实验测试：
 
 ```bash
-pytest -q examples/experimental/online_learning
+pytest -q examples/experimental/online_learning examples/experimental/optim examples/experimental/optim_gradient_correctness
 ```
 
 修改 DHS/backsub 时还要运行：

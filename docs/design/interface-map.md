@@ -105,6 +105,7 @@ _base_neuron / _base_ion / _base_channel -> shared runtime base classes
 
 - `Morphology.from_root(branch, name="soma")`
 - `Morphology.from_swc(path, options=None, mode=None, return_report=False)`
+- `Morphology.to_swc(path)`
 - `Morphology.from_asc(path, return_report=False)`
 - `Morphology.from_neuromorpho(...)`
 - `Morphology.save_checkpoint(path)`

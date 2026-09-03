@@ -17,22 +17,52 @@
 - [Architecture](architecture.md)：参数所有权、binding、materialization 和单位边界。
 - [Implementation plan](implementation-plan.md)：实现阶段、文件边界和验收场景。
 - [Online Learning Experiments](../../../examples/experimental/online_learning/README.md)：experimental forward sensitivity、BPTT/RTRL、notebook 和 benchmark 目录指南。
+- [Parameter Learning Experiments](../../../examples/experimental/parameter_learning/README.md)：Python组合式模型、数据、loss、gradient/non-gradient stage和结果合同。
 
 ### References
 
 以下文档提供实验、方法调研和技术分析，不定义公共 API。与规范文档冲突时，以 API、
-Architecture 和 Implementation plan 为准。
+Architecture 和 Implementation plan 为准。推荐按问题选择阅读，不需要顺序通读。
 
-- [电压轨迹与 Spike-Aware 参数拟合](references/voltage-and-spike-parameter-fitting.md)：现有实验链路和 loss 依据。
-- [非凸搜索与多起点](references/nonconvex-search-and-restarts.md)：局部搜索失效模式和 restart 策略。
-- [优化消融协议](references/optimization-ablation-protocol.md)：优化方法的对照实验规范。
-- [模块化训练诊断](references/modular-training-diagnostics.md)：实验期 observer/evaluator 合同、当前基线证据和逐模块加入顺序。
-- [Spike Count Region 控制](references/spike-count-region-control.md)：离散 spike 区域中的候选接受规则。
-- [Batch Size 与 GPU 吞吐](references/batch-size-and-gpu-throughput.md)：吞吐、显存和统计效率分析。
-- [Staggered Solver BPTT 分析](references/staggered_solver_BPTT_spike_gradient_analysis.md)：可微路径和 solver 风险。
-- [单细胞 Exact Online Forward Sensitivity](references/single-cell-online-forward-sensitivity.md)：固定参数、固定外源 delay 下与 BPTT 等价的正向梯度及成本边界。
-- [从 e-prop 到 HH](references/eprop_to_hh_summary.md)：BPTT、RTRL/forward sensitivity 与 e-prop 的路径分解关系。
-- [Jaxley Parameter Model](references/jaxley-parameter-model.md)：Jaxley 参数选择、sharing 和 simulation replacement 调研。
+#### 训练目标与工作流
+
+- [电压轨迹与 Spike-Aware 参数拟合](references/voltage-and-spike-parameter-fitting.md)：设计
+  subthreshold/spike loss、mask、curriculum 和成功标准时阅读。
+- [模块化训练诊断与优化恢复](references/modular-training-diagnostics.md)：实现 observer、
+  archive、plateau、spike-region 或非局部恢复时阅读。
+- [优化恢复消融协议](references/optimization-ablation-protocol.md)：比较 scheduler、controller
+  和 perturb 策略时使用的固定实验合同。
+
+#### 梯度理论与 Solver
+
+- [BPTT/RTRL 通用理论](references/bptt-to-rtrl-neuron-derivation.md)：通用链式法则、`v/w`
+  梯度路径、online/e-prop 边界和 1-CV HH 示例。
+- [Staggered Solver 梯度分析](references/staggered-solver-gradient-analysis.md)：当前 DHS 与
+  post-voltage 离散程序的一步梯度，以及替换 solver 时的验证边界。
+
+#### 性能
+
+- [Batch Size 与 GPU 吞吐](references/batch-size-and-gpu-throughput.md)：protocol batch、
+  candidate lanes、显存、吞吐和统计效率。
+
+#### 外部方法
+
+- [Jaxley 参数模型](references/jaxley-parameter-model.md)：参数选择、sharing 和 simulation
+  replacement 的实现取舍。
+
+### 主题所有权
+
+同一概念只在主文档中完整定义，其他文档只提供链接和本地上下文：
+
+| 主题 | 唯一主文档 |
+| --- | --- |
+| 公共 trainable API 与错误合同 | [API](api.md) |
+| ownership、binding、materialization、单位 | [Architecture](architecture.md) |
+| voltage/spike loss 与 curriculum | [电压轨迹与 Spike-Aware 参数拟合](references/voltage-and-spike-parameter-fitting.md) |
+| diagnostics、archive、region、recovery | [模块化训练诊断与优化恢复](references/modular-training-diagnostics.md) |
+| BPTT/RTRL 通用公式 | [BPTT/RTRL 通用理论](references/bptt-to-rtrl-neuron-derivation.md) |
+| 当前 solver 的程序导数 | [Staggered Solver 梯度分析](references/staggered-solver-gradient-analysis.md) |
+| 测量数据 | 对应实验结果或性能文档 |
 
 ## 功能地图
 

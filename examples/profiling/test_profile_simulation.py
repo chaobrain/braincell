@@ -20,9 +20,15 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from examples.profiling.cases.cerebellar_probability_network import create_workload
-from examples.profiling.profile_simulation import _parse_args, _profile_options, main
+from examples.profiling.profile_simulation import (
+    _maybe_cuda_profiler_range,
+    _parse_args,
+    _profile_options,
+    main,
+)
 
 
 class TestProfileSimulation(unittest.TestCase):
@@ -101,12 +107,14 @@ class TestProfileSimulation(unittest.TestCase):
                 "--trace-phase",
                 "steady",
                 "--trace-device-only",
+                "--cuda-profiler-range",
             ]
         )
 
         self.assertEqual(args.platform, "cuda")
         self.assertEqual(args.trace_phase, "steady")
         self.assertIs(args.trace_device_only, True)
+        self.assertIs(args.cuda_profiler_range, True)
 
     def test_profile_options_device_only_sets_available_jax_fields(self) -> None:
         class Options:
@@ -127,6 +135,29 @@ class TestProfileSimulation(unittest.TestCase):
         self.assertEqual(options.python_tracer_level, 0)
         self.assertEqual(options.host_tracer_level, 2)
         self.assertIs(options.enable_hlo_proto, True)
+
+    def test_cuda_profiler_range_brackets_body(self) -> None:
+        events = []
+
+        class Runtime:
+            @staticmethod
+            def cudaProfilerStart():
+                events.append("start")
+                return 0
+
+            @staticmethod
+            def cudaProfilerStop():
+                events.append("stop")
+                return 0
+
+        with (
+            patch("ctypes.util.find_library", return_value="libcudart.so"),
+            patch("ctypes.CDLL", return_value=Runtime()),
+        ):
+            with _maybe_cuda_profiler_range(True):
+                events.append("body")
+
+        self.assertEqual(events, ["start", "body", "stop"])
 
 
 if __name__ == "__main__":

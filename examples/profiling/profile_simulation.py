@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import ctypes
+import ctypes.util
 import importlib
 import json
 import os
@@ -96,10 +98,13 @@ def main(argv: list[str] | None = None) -> int:
                 )
 
         steady_results = []
-        with _maybe_jax_trace(
-            jax,
-            args.trace_dir if args.trace_phase == "steady" else None,
-            device_only=args.trace_device_only,
+        with (
+            _maybe_jax_trace(
+                jax,
+                args.trace_dir if args.trace_phase == "steady" else None,
+                device_only=args.trace_device_only,
+            ),
+            _maybe_cuda_profiler_range(args.cuda_profiler_range),
         ):
             for index in range(args.repeat):
                 workload.reset_for_run()
@@ -174,6 +179,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--trace-device-only",
         action="store_true",
         help="Reduce Python trace noise and keep HLO/device metadata when tracing.",
+    )
+    parser.add_argument(
+        "--cuda-profiler-range",
+        action="store_true",
+        help="Bracket steady runs with cudaProfilerStart/Stop for Nsight capture-range.",
     )
 
     case_module = importlib.import_module(CASES[known.case])
@@ -291,6 +301,24 @@ def _profile_options(jax, *, device_only: bool):
     if hasattr(options, "enable_hlo_proto"):
         options.enable_hlo_proto = True
     return options
+
+
+@contextlib.contextmanager
+def _maybe_cuda_profiler_range(enabled: bool):
+    if not enabled:
+        yield
+        return
+    library_name = ctypes.util.find_library("cudart") or "libcudart.so"
+    cudart = ctypes.CDLL(library_name)
+    start_status = int(cudart.cudaProfilerStart())
+    if start_status != 0:
+        raise RuntimeError(f"cudaProfilerStart failed with status {start_status}.")
+    try:
+        yield
+    finally:
+        stop_status = int(cudart.cudaProfilerStop())
+        if stop_status != 0:
+            raise RuntimeError(f"cudaProfilerStop failed with status {stop_status}.")
 
 
 def _save_device_memory_profile(jax, base_path: str, *, label: str) -> str:

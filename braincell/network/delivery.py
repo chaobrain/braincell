@@ -350,7 +350,7 @@ def write_arrivals(
         )
         post_population, layout_id = key
         cell = populations[post_population].cell
-        cell.runtime.event_buffers[layout_id].value = arrival
+        cell._write_event_arrival(layout_id, arrival)
 
 
 def enqueue_future_events(

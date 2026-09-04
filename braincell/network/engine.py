@@ -524,7 +524,7 @@ class Network:
         # runs real gathers outside jit just to discard everything but the
         # names. probe_names() reads the same ordering off the layouts.
         probe_names = {
-            name: tuple(sorted(_probes.probe_names(population.cell)))
+            name: (() if population.cell._uses_reduction else tuple(sorted(_probes.probe_names(population.cell))))
             for name, population in self._cell_populations().items()
         }
         compiled_recordings = {
@@ -557,7 +557,7 @@ class Network:
     ) -> tuple:
         dt_ms = scalar_decimal(dt, u.ms)
         runtime_ids = tuple(
-            (name, id(population.cell.runtime), population.size)
+            (name, id(population.cell._event_runtime()), population.size)
             for name, population in self._cell_populations().items()
         )
         return (
@@ -626,11 +626,14 @@ class Network:
                             for name in ordered_population_names:
                                 self.populations[name].cell._prepare_step_clamps(t=t, dt=dt)
                         with jax.named_scope("braincell:network_run:sample_recordings"):
-                            recording_snapshots = tuple(
-                                compiled.sample()
-                                for name in ordered_population_names
-                                for compiled in compiled_recordings[name]
+                            flat_recordings = tuple(
+                                compiled for name in ordered_population_names for compiled in compiled_recordings[name]
                             )
+                            pre_recording_snapshots = {
+                                index: compiled.sample()
+                                for index, compiled in enumerate(flat_recordings)
+                                if compiled.phase == "pre"
+                            }
                         with jax.named_scope("braincell:network_run:write_arrivals"):
                             write_arrivals(delivery_state, populations=self.populations)
                         with jax.named_scope("braincell:network_run:prepare_inputs"):
@@ -654,6 +657,11 @@ class Network:
                             snapshots = {
                                 name: self.populations[name].cell.sample_probes() for name in ordered_population_names
                             }
+                        with jax.named_scope("braincell:network_run:sample_outputs"):
+                            recording_snapshots = tuple(
+                                pre_recording_snapshots[index] if compiled.phase == "pre" else compiled.sample()
+                                for index, compiled in enumerate(flat_recordings)
+                            )
                         with jax.named_scope("braincell:network_run:record_events"):
                             events = tuple(
                                 view.owner.current_event_count(view.source_id)

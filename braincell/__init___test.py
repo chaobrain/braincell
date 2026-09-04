@@ -41,6 +41,7 @@ _DOMAIN_PACKAGES = (
     "morph",
     "network",
     "quad",
+    "reduction",
     "synapse",
     "trainable",
     "vis",

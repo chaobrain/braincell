@@ -48,6 +48,7 @@ if str(REPO_ROOT) not in sys.path:
 CASES = {
     "neuron_compare_cell": "examples.profiling.cases.neuron_compare_cell",
     "cerebellar_probability_network": "examples.profiling.cases.cerebellar_probability_network",
+    "rtrl_bptt_gradient": "examples.experimental.optim_gradient_scaling.profile_case",
 }
 
 

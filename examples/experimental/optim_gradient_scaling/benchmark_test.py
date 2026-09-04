@@ -26,12 +26,15 @@ import brainunit as u
 import jax
 import numpy as np
 
-from examples.experimental.online_learning.rtrl_bptt_scaling_benchmark import (
+from examples.experimental.optim_gradient_scaling.benchmark import (
+    MECHANISM_FACTORIAL_SPECS,
     BenchmarkConfig,
+    MechanismSpec,
     aggregate_results,
     build_cell,
     prepare_benchmark,
     run_suite,
+    suite_cases,
     suite_configs,
     _phase_metric_fields,
     _summarize_gpu_samples,
@@ -83,6 +86,45 @@ class ScalingBenchmarkTest(unittest.TestCase):
         self.assertEqual({config.n_cv for config in full if config.duration_ms == 40.0}, {1, 3, 5, 7, 9})
         self.assertEqual({config.duration_ms for config in full if config.n_cv == 5}, {10.0, 20.0, 40.0, 80.0})
         self.assertTrue(set(pilot).issubset(full))
+        factorial = suite_cases("mechanism_factorial")
+        self.assertEqual(len(factorial), 30)
+        self.assertEqual({case.config.n_cv for case in factorial}, {3, 5, 9, 17, 33})
+        self.assertEqual({case.mechanism.name for case in factorial}, {spec.name for spec in MECHANISM_FACTORIAL_SPECS})
+        self.assertEqual(len({case.id for case in factorial}), 30)
+
+    def test_mechanism_spec_rejects_unknown_or_unpainted_trainables(self) -> None:
+        with self.assertRaises(ValueError):
+            MechanismSpec("bad", ("leak", "unknown"), ("leak",))
+        with self.assertRaises(ValueError):
+            MechanismSpec("bad", ("leak",), ("leak", "k"))
+
+    def test_mechanism_spec_round_trips_through_json_lists(self) -> None:
+        raw = json.loads(json.dumps(MECHANISM_FACTORIAL_SPECS[2].__dict__))
+        restored = MechanismSpec(**raw)
+        self.assertEqual(restored, MECHANISM_FACTORIAL_SPECS[2])
+        self.assertIsInstance(restored.painted_channels, tuple)
+        self.assertIsInstance(restored.trainable_channels, tuple)
+
+    def test_factorial_cells_have_expected_states_and_parameter_directions(self) -> None:
+        config = BenchmarkConfig(n_cv=3, duration_ms=0.1, batch_size=2, n_seed=2)
+        expected = {
+            "l_fit_l": (1, 1),
+            "lk_fit_l": (2, 1),
+            "lk_fit_lk": (2, 2),
+            "lkn_fit_l": (4, 1),
+            "lkn_fit_lk": (4, 2),
+            "lkn_fit_lkn": (4, 3),
+        }
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            for mechanism in MECHANISM_FACTORIAL_SPECS:
+                with self.subTest(mechanism=mechanism.name):
+                    cell = build_cell(config, trainable=True, mechanism=mechanism)
+                    roots = cell.trainables.parameters().states()
+                    states_per_cv, parameters_per_cv = expected[mechanism.name]
+                    self.assertEqual(mechanism.state_variables_per_cv, states_per_cv)
+                    self.assertEqual(sum(int(state.value.size) for state in roots.values()), parameters_per_cv * 3)
+                    self.assertEqual(set(cell.channels.names), set(mechanism.painted_channels))
+                    self.assertEqual({name.removesuffix(".scale") for name in roots}, set(mechanism.trainable_channels))
 
     def test_cv_and_batch_parameter_contract(self) -> None:
         with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
@@ -110,6 +152,25 @@ class ScalingBenchmarkTest(unittest.TestCase):
         np.testing.assert_allclose(rtrl_loss, bptt_loss, rtol=1e-9, atol=1e-10)
         np.testing.assert_allclose(rtrl_losses, bptt_losses, rtol=1e-9, atol=1e-10)
         np.testing.assert_allclose(rtrl_gradient, bptt_gradient, rtol=1e-8, atol=1e-9)
+
+    def test_all_factorial_cases_match_between_bptt_and_rtrl(self) -> None:
+        config = BenchmarkConfig(n_cv=3, duration_ms=0.1, batch_size=2, n_seed=2)
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            for mechanism in MECHANISM_FACTORIAL_SPECS:
+                outputs = {}
+                for method in ("bptt", "rtrl"):
+                    prepared = prepare_benchmark(config, method, mechanism=mechanism)
+                    outputs[method] = jax.jit(prepared.function)(prepared.seed_roots)
+                    self.assertEqual(
+                        prepared.active_state_count_per_trajectory,
+                        mechanism.state_variables_per_cv * config.n_cv,
+                    )
+                    self.assertEqual(
+                        prepared.parameter_count_per_seed,
+                        mechanism.trainable_channels_per_cv * config.n_cv,
+                    )
+                for bptt, rtrl in zip(outputs["bptt"], outputs["rtrl"]):
+                    np.testing.assert_allclose(rtrl, bptt, rtol=1e-8, atol=1e-9)
 
     def test_seed_vmap_has_no_cross_seed_gradient_block(self) -> None:
         config = BenchmarkConfig(n_cv=1, duration_ms=0.1, batch_size=1, n_seed=2)

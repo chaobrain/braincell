@@ -13,6 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
+# ruff: noqa: E402
+
 """A100 scaling benchmark for reverse BPTT and block-exact full RTRL.
 
 The public ``run`` command launches every method/configuration in a fresh
@@ -49,7 +51,7 @@ import numpy as np
 
 import braincell
 from braincell.filter import AllRegion, at
-from examples.experimental.online_learning.rollout_gradients import build_rollout_value_and_grad
+from examples.experimental.optim.gradients import build_rollout_value_and_grad
 
 DT_MS = 0.025
 RNG_SEED = 20260828
@@ -63,6 +65,67 @@ _BASE_G_MAX = {
     "na": 120.0 * u.mS / u.cm**2,
     "k": 10.0 * u.mS / u.cm**2,
 }
+_CHANNEL_ORDER = tuple(_BASE_G_MAX)
+_STATE_VARIABLES_PER_CHANNEL = {"leak": 0, "na": 2, "k": 1}
+
+
+@dataclass(frozen=True)
+class MechanismSpec:
+    """Static channel and optimizer subset for one factorial case."""
+
+    name: str
+    painted_channels: tuple[str, ...]
+    trainable_channels: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        painted_channels = tuple(self.painted_channels)
+        trainable_channels = tuple(self.trainable_channels)
+        object.__setattr__(self, "painted_channels", painted_channels)
+        object.__setattr__(self, "trainable_channels", trainable_channels)
+        painted = set(painted_channels)
+        trainable = set(trainable_channels)
+        known = set(_CHANNEL_ORDER)
+        if not self.name:
+            raise ValueError("MechanismSpec.name must be non-empty.")
+        if not painted or not painted.issubset(known):
+            raise ValueError(f"painted_channels must be a non-empty subset of {_CHANNEL_ORDER!r}.")
+        if not trainable or not trainable.issubset(painted):
+            raise ValueError("trainable_channels must be a non-empty subset of painted_channels.")
+        if tuple(channel for channel in _CHANNEL_ORDER if channel in painted) != painted_channels:
+            raise ValueError(f"painted_channels must follow {_CHANNEL_ORDER!r} order.")
+        if tuple(channel for channel in _CHANNEL_ORDER if channel in trainable) != trainable_channels:
+            raise ValueError(f"trainable_channels must follow {_CHANNEL_ORDER!r} order.")
+
+    @property
+    def state_variables_per_cv(self) -> int:
+        """Return voltage plus painted-channel gate states per CV."""
+        return 1 + sum(_STATE_VARIABLES_PER_CHANNEL[channel] for channel in self.painted_channels)
+
+    @property
+    def trainable_channels_per_cv(self) -> int:
+        """Return the number of independent per-CV channel scales."""
+        return len(self.trainable_channels)
+
+    @property
+    def painted_label(self) -> str:
+        """Return a compact CSV-safe painted-channel label."""
+        return "+".join(self.painted_channels)
+
+    @property
+    def trainable_label(self) -> str:
+        """Return a compact CSV-safe trainable-channel label."""
+        return "+".join(self.trainable_channels)
+
+
+FULL_HH_SPEC = MechanismSpec("lkn_fit_lkn", ("leak", "na", "k"), ("leak", "na", "k"))
+MECHANISM_FACTORIAL_SPECS = (
+    MechanismSpec("l_fit_l", ("leak",), ("leak",)),
+    MechanismSpec("lk_fit_l", ("leak", "k"), ("leak",)),
+    MechanismSpec("lk_fit_lk", ("leak", "k"), ("leak", "k")),
+    MechanismSpec("lkn_fit_l", ("leak", "na", "k"), ("leak",)),
+    MechanismSpec("lkn_fit_lk", ("leak", "na", "k"), ("leak", "k")),
+    FULL_HH_SPEC,
+)
 
 
 @dataclass(frozen=True, order=True)
@@ -95,6 +158,20 @@ class BenchmarkConfig:
         return f"c{self.n_cv}_t{duration}_b{self.batch_size}_s{self.n_seed}"
 
 
+@dataclass(frozen=True)
+class BenchmarkCase:
+    """One benchmark configuration plus an optional mechanism case suffix."""
+
+    config: BenchmarkConfig
+    mechanism: MechanismSpec = FULL_HH_SPEC
+    suffix: str | None = None
+
+    @property
+    def id(self) -> str:
+        """Return the persistent case identifier."""
+        return self.config.id if self.suffix is None else f"{self.config.id}__{self.suffix}"
+
+
 class PreparedBenchmark(NamedTuple):
     """Compiled-input metadata for one method/configuration."""
 
@@ -102,6 +179,7 @@ class PreparedBenchmark(NamedTuple):
     seed_roots: object
     state_scalar_count_per_seed: int
     parameter_count_per_seed: int
+    active_state_count_per_trajectory: int
     rtrl_carry_bytes: int | None
 
 
@@ -134,6 +212,21 @@ def suite_configs(name: str) -> tuple[BenchmarkConfig, ...]:
     else:
         raise ValueError(f"Unknown suite {name!r}.")
     return tuple(sorted(configs))
+
+
+def suite_cases(name: str) -> tuple[BenchmarkCase, ...]:
+    """Return persistent cases for a standard or mechanism-factorial suite."""
+    if name == "mechanism_factorial":
+        return tuple(
+            BenchmarkCase(
+                BenchmarkConfig(n_cv, 40.0, 16, 16),
+                mechanism,
+                suffix=mechanism.name,
+            )
+            for n_cv in (3, 5, 9, 17, 33)
+            for mechanism in MECHANISM_FACTORIAL_SPECS
+        )
+    return tuple(BenchmarkCase(config) for config in suite_configs(name))
 
 
 def build_morphology(n_cv: int) -> braincell.Morphology:
@@ -186,8 +279,18 @@ def current_amplitudes(batch_size: int) -> object:
     return u.Quantity(np.linspace(0.03, 0.08, batch_size, dtype=np.float64), u.nA)
 
 
-def build_cell(config: BenchmarkConfig, *, trainable: bool) -> braincell.Cell:
+def build_cell(
+    config: BenchmarkConfig,
+    *,
+    trainable: bool,
+    mechanism: MechanismSpec = FULL_HH_SPEC,
+    trainable_channels: tuple[str, ...] | None = None,
+    trainable_group_by: str = "cv",
+) -> braincell.Cell:
     """Build one batch-population Cell whose parameters are shared over batch."""
+    selected_trainables = mechanism.trainable_channels if trainable_channels is None else tuple(trainable_channels)
+    if not set(selected_trainables).issubset(mechanism.painted_channels):
+        raise ValueError("trainable_channels must be a subset of the painted mechanism channels.")
     scales = target_row_scales(config.n_cv)
     cell = braincell.Cell(
         build_morphology(config.n_cv),
@@ -197,7 +300,25 @@ def build_cell(config: BenchmarkConfig, *, trainable: bool) -> braincell.Cell:
         solver="staggered",
     )
     channel_scales = {
-        name: 1.0 if trainable else float(scales[name][0]) if config.n_cv == 1 else scales[name] for name in _BASE_G_MAX
+        name: 1.0 if trainable else float(scales[name][0]) if config.n_cv == 1 else scales[name]
+        for name in mechanism.painted_channels
+    }
+    channel_mechanisms = {
+        "leak": braincell.mech.Channel(
+            "IL",
+            name="leak",
+            g_max=channel_scales.get("leak", 1.0) * _BASE_G_MAX["leak"],
+        ),
+        "na": braincell.mech.Channel(
+            "Na_HH1952",
+            name="na",
+            g_max=channel_scales.get("na", 1.0) * _BASE_G_MAX["na"],
+        ),
+        "k": braincell.mech.Channel(
+            "K_HH1952",
+            name="k",
+            g_max=channel_scales.get("k", 1.0) * _BASE_G_MAX["k"],
+        ),
     }
     cell.paint(
         AllRegion(),
@@ -208,21 +329,21 @@ def build_cell(config: BenchmarkConfig, *, trainable: bool) -> braincell.Cell:
         ),
         braincell.mech.Ion("SodiumFixed", E=50.0 * u.mV),
         braincell.mech.Ion("PotassiumFixed", E=-77.0 * u.mV),
-        braincell.mech.Channel("IL", name="leak", g_max=channel_scales["leak"] * _BASE_G_MAX["leak"]),
-        braincell.mech.Channel("Na_HH1952", name="na", g_max=channel_scales["na"] * _BASE_G_MAX["na"]),
-        braincell.mech.Channel("K_HH1952", name="k", g_max=channel_scales["k"] * _BASE_G_MAX["k"]),
+        *(channel_mechanisms[name] for name in mechanism.painted_channels),
     )
     cell.place(
         at("soma", 0.5),
         braincell.mech.CurrentClamp(
             delay=0.0 * u.ms,
-            durations=(config.duration_ms + DT_MS) * u.ms,
+            durations=config.duration_ms * u.ms,
             amplitudes=current_amplitudes(config.batch_size),
         ),
     )
     if trainable:
-        for name in ("leak", "na", "k"):
-            cell.channels[name].trainable(g_max=braincell.trainable.scale(group_by="cv", name=f"{name}.scale"))
+        for name in selected_trainables:
+            cell.channels[name].trainable(
+                g_max=braincell.trainable.scale(group_by=trainable_group_by, name=f"{name}.scale")
+            )
     cell.init_state()
     if cell.n_cv != config.n_cv:
         raise RuntimeError(f"Requested {config.n_cv} CVs but built {cell.n_cv}.")
@@ -252,7 +373,12 @@ def seed_parameter_roots(parameter_states, *, n_seed: int) -> tuple[object, ...]
     return tuple(roots)
 
 
-def prepare_benchmark(config: BenchmarkConfig, method: str) -> PreparedBenchmark:
+def prepare_benchmark(
+    config: BenchmarkConfig,
+    method: str,
+    *,
+    mechanism: MechanismSpec = FULL_HH_SPEC,
+) -> PreparedBenchmark:
     """Build one seed-blocked gradient kernel and its static inputs."""
     if method not in METHODS:
         raise ValueError(f"method must be one of {METHODS!r}.")
@@ -260,11 +386,11 @@ def prepare_benchmark(config: BenchmarkConfig, method: str) -> PreparedBenchmark
     measured_backsub = os.environ.get("BRAINCELL_DHS_BACKSUB", "recursive")
     os.environ["BRAINCELL_DHS_BACKSUB"] = "recursive"
     try:
-        target_cell = build_cell(config, trainable=False)
+        target_cell = build_cell(config, trainable=False, mechanism=FULL_HH_SPEC)
         target_voltage = simulate_voltage(target_cell, times_ms)
     finally:
         os.environ["BRAINCELL_DHS_BACKSUB"] = measured_backsub
-    candidate = build_cell(config, trainable=True)
+    candidate = build_cell(config, trainable=True, mechanism=mechanism)
 
     def rollout_step(data):
         time_ms, target_mv = data
@@ -306,6 +432,7 @@ def prepare_benchmark(config: BenchmarkConfig, method: str) -> PreparedBenchmark
         seed_roots=seed_roots,
         state_scalar_count_per_seed=state_count,
         parameter_count_per_seed=parameter_count,
+        active_state_count_per_trajectory=mechanism.state_variables_per_cv * config.n_cv,
         rtrl_carry_bytes=carry_bytes,
     )
 
@@ -318,6 +445,8 @@ def run_trial(
     output_path: Path,
     physical_gpu: int | None,
     backsub: str = "recursive",
+    mechanism: MechanismSpec = FULL_HH_SPEC,
+    config_id: str | None = None,
 ) -> dict[str, object]:
     """Compile, execute, and persist one isolated benchmark trial."""
     if repeats < 1:
@@ -328,16 +457,21 @@ def run_trial(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     result: dict[str, object] = {
         **asdict(config),
-        "config_id": config.id,
+        "config_id": config.id if config_id is None else config_id,
         "method": method,
         "backsub": backsub,
+        "mechanism_case": mechanism.name,
+        "painted_channels": mechanism.painted_label,
+        "trainable_channels": mechanism.trainable_label,
+        "state_variables_per_cv": mechanism.state_variables_per_cv,
+        "trainable_channels_per_cv": mechanism.trainable_channels_per_cv,
         "num_steps": config.num_steps,
         "repeats": repeats,
         "status": "running",
     }
     try:
         with jax.enable_x64(True), brainstate.environ.context(dt=DT_MS * u.ms, precision=64):
-            prepared = prepare_benchmark(config, method)
+            prepared = prepare_benchmark(config, method, mechanism=mechanism)
             arguments = (prepared.seed_roots,)
             compile_monitor = _GpuPhaseMonitor(physical_gpu)
             compile_monitor.start()
@@ -391,7 +525,9 @@ def run_trial(
                     "state_scalar_count_per_seed": prepared.state_scalar_count_per_seed,
                     "parameter_count_per_seed": prepared.parameter_count_per_seed,
                     "parameter_count_total": prepared.parameter_count_per_seed * config.n_seed,
-                    "active_state_estimate_per_seed": 4 * config.batch_size * config.n_cv,
+                    "n_x": prepared.active_state_count_per_trajectory,
+                    "n_theta": prepared.parameter_count_per_seed,
+                    "active_state_estimate_per_seed": (config.batch_size * prepared.active_state_count_per_trajectory),
                     "gradient_shape": list(gradient_np.shape),
                     "loss_shape": list(loss_np.shape),
                     "losses_shape": list(losses_np.shape),
@@ -427,7 +563,7 @@ def run_suite(
     backsub: str = "recursive",
 ) -> Path:
     """Launch isolated workers and aggregate their results."""
-    configs = suite_configs(suite)
+    cases = suite_cases(suite)
     if backsub not in BACKSUBS:
         raise ValueError(f"backsub must be one of {BACKSUBS!r}.")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -445,15 +581,23 @@ def run_suite(
         "methods": METHODS,
         "backsub": backsub,
         "python_executable": str(python_executable or sys.executable),
-        "configs": [asdict(config) | {"config_id": config.id} for config in configs],
+        "configs": [
+            asdict(case.config)
+            | {
+                "config_id": case.id,
+                "mechanism": asdict(case.mechanism),
+            }
+            for case in cases
+        ],
     }
     _write_json(output_dir / "manifest.json", manifest)
     commands = []
     worker_python = str(python_executable or sys.executable)
-    for config in configs:
+    for case in cases:
+        config = case.config
         for method in METHODS:
             backsub_suffix = "" if backsub == "recursive" else f"__{backsub}"
-            trial_path = trial_dir / f"{config.id}__{method}{backsub_suffix}.json"
+            trial_path = trial_dir / f"{case.id}__{method}{backsub_suffix}.json"
             if resume and _trial_succeeded(trial_path):
                 continue
             command = [
@@ -462,6 +606,10 @@ def run_suite(
                 "worker",
                 "--config",
                 json.dumps(asdict(config)),
+                "--config-id",
+                case.id,
+                "--mechanism",
+                json.dumps(asdict(case.mechanism)),
                 "--method",
                 method,
                 "--repeats",
@@ -473,7 +621,7 @@ def run_suite(
                 "--backsub",
                 backsub,
             ]
-            commands.append((config, method, trial_path, command))
+            commands.append((case, method, trial_path, command))
     if dry_run:
         for _, _, _, command in commands:
             print(" ".join(command))
@@ -489,10 +637,11 @@ def run_suite(
             "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
         }
     )
-    for index, (config, method, trial_path, command) in enumerate(commands, start=1):
-        print(f"[{index}/{len(commands)}] {config.id} {method}", flush=True)
+    for index, (case, method, trial_path, command) in enumerate(commands, start=1):
+        config = case.config
+        print(f"[{index}/{len(commands)}] {case.id} {method}", flush=True)
         completed = subprocess.run(command, env=environment, text=True, capture_output=True, check=False)
-        (log_dir / f"{config.id}__{method}.log").write_text(
+        (log_dir / f"{case.id}__{method}.log").write_text(
             completed.stdout + ("\nSTDERR\n" + completed.stderr if completed.stderr else ""),
             encoding="utf-8",
         )
@@ -501,7 +650,8 @@ def run_suite(
                 trial_path,
                 {
                     **asdict(config),
-                    "config_id": config.id,
+                    "config_id": case.id,
+                    "mechanism_case": case.mechanism.name,
                     "method": method,
                     "status": "subprocess_error",
                     "returncode": completed.returncode,
@@ -738,7 +888,11 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     run = subparsers.add_parser("run", help="Run an isolated benchmark suite.")
-    run.add_argument("--suite", choices=("pilot", "full", "large_cv", "backsub_ab"), default="pilot")
+    run.add_argument(
+        "--suite",
+        choices=("pilot", "full", "large_cv", "backsub_ab", "mechanism_factorial"),
+        default="pilot",
+    )
     run.add_argument("--output-dir", type=Path)
     run.add_argument("--gpu", type=int, default=7)
     run.add_argument("--repeats", type=int, default=10)
@@ -749,6 +903,8 @@ def _parser() -> argparse.ArgumentParser:
 
     worker = subparsers.add_parser("worker", help=argparse.SUPPRESS)
     worker.add_argument("--config", required=True)
+    worker.add_argument("--config-id")
+    worker.add_argument("--mechanism")
     worker.add_argument("--method", choices=METHODS, required=True)
     worker.add_argument("--repeats", type=int, required=True)
     worker.add_argument("--output", type=Path, required=True)
@@ -761,6 +917,7 @@ def main(argv=None) -> None:
     args = _parser().parse_args(argv)
     if args.command == "worker":
         config = BenchmarkConfig(**json.loads(args.config))
+        mechanism = FULL_HH_SPEC if args.mechanism is None else MechanismSpec(**json.loads(args.mechanism))
         run_trial(
             config,
             args.method,
@@ -768,6 +925,8 @@ def main(argv=None) -> None:
             output_path=args.output,
             physical_gpu=args.physical_gpu,
             backsub=args.backsub,
+            mechanism=mechanism,
+            config_id=args.config_id,
         )
         return
     output_dir = args.output_dir or _default_output_dir(args.suite)

@@ -20,9 +20,9 @@ from __future__ import annotations
 import argparse
 import csv
 from datetime import datetime, timezone
-import json
 import math
 from pathlib import Path
+import statistics
 
 ARTIFACT_ROOT = Path(__file__).resolve().parent / "artifacts" / "rtrl_bptt_scaling"
 KNOWN_RUNS = (
@@ -30,6 +30,8 @@ KNOWN_RUNS = (
     "full_block_exact",
     "large_cv_block_exact",
     "backsub_ordinary_block_exact",
+    "mechanism_factorial_block_exact",
+    "controlled_complexity_a100",
 )
 
 
@@ -78,7 +80,7 @@ def generate_report(artifact_root: Path) -> str:
             "",
             "## Model And Complexity",
             "",
-            "Each seed owns `3C` Leak/Na/K per-CV parameter coordinates. A batch shares those parameters.",
+            "In the legacy per-CV full-HH suites, each seed owns `3C` Leak/Na/K parameter coordinates. A batch shares those parameters.",
             "Seeds are differentiated as independent blocks, so no cross-seed zero sensitivity is stored.",
             "",
             "```text",
@@ -140,6 +142,88 @@ def generate_report(artifact_root: Path) -> str:
             "At `C=25` reverse BPTT crosses a measured execution regime boundary: runtime rises more sharply than temporary memory.",
             "RTRL carry follows the expected near-quadratic CV scaling; GPU wall time grows more slowly while parameter directions remain parallel.",
             "",
+            "## Controlled Complexity",
+            "",
+        ]
+    )
+    controlled_rows = [row for row in rows if row.get("run") == "controlled_complexity_a100"]
+    controlled_groups = {}
+    for row in controlled_rows:
+        key = (row["config_id"], row["workload"], row["method"], int(row["n_x"]), int(row["n_theta"]))
+        controlled_groups.setdefault(key, []).append(row)
+    controlled_summary = []
+    for (config_id, workload, method, n_x, n_theta), group in sorted(controlled_groups.items()):
+        times = [float(row["steady_median_seconds"]) for row in group]
+        controlled_summary.append(
+            (
+                config_id,
+                workload,
+                str(method).upper(),
+                n_x,
+                n_theta,
+                len(group),
+                _seconds(statistics.median(times)),
+                f"{min(times):.4f}--{max(times):.4f}",
+                _bytes(statistics.median(float(row["temporary_bytes"]) for row in group)),
+            )
+        )
+    if controlled_summary:
+        lines.extend(
+            _table(
+                (
+                    "Configuration",
+                    "Workload",
+                    "Method",
+                    "Nx",
+                    "Ntheta",
+                    "Workers",
+                    "Median",
+                    "Worker range",
+                    "XLA temporary",
+                ),
+                controlled_summary,
+            )
+        )
+    else:
+        lines.append("No stored controlled-complexity run was found.")
+    lines.extend(
+        [
+            "",
+            "Synthetic rows independently control `Nx` and `Ntheta`; full-HH rows are application-level scaling and are not pure complexity proofs.",
+            "The `hh_parameter` row-grouped `Ntheta=528` result is retained here as a cross-batch zero-sensitivity diagnostic and is excluded from Figure 4D.",
+            "",
+            "## Mechanism Factorial Ablation",
+            "",
+        ]
+    )
+    factorial_rows = []
+    for row in recursive:
+        if row.get("run") != "mechanism_factorial_block_exact":
+            continue
+        factorial_rows.append(
+            (
+                int(row["n_cv"]),
+                row["mechanism_case"],
+                str(row["method"]).upper(),
+                int(row["n_x"]),
+                int(row["n_theta"]),
+                _seconds(row["steady_median_seconds"]),
+                _bytes(row["temporary_bytes"]),
+                "-" if row.get("rtrl_carry_bytes") is None else _bytes(row["rtrl_carry_bytes"]),
+            )
+        )
+    if factorial_rows:
+        lines.extend(
+            _table(
+                ("CV", "Case", "Method", "Nx", "Ntheta", "Steady", "XLA temporary", "RTRL carry"),
+                sorted(factorial_rows),
+            )
+        )
+    else:
+        lines.append("No stored mechanism-factorial ablation was found.")
+    lines.extend(
+        [
+            "",
             "## Ordinary Hines Backsub A/B",
             "",
         ]
@@ -187,10 +271,13 @@ def generate_report(artifact_root: Path) -> str:
         ]
     )
     worst_gradient = max(float(row.get("gradient_max_rel_error") or 0.0) for row in rows)
+    worst_gradient_l2 = max(float(row.get("gradient_relative_l2_error") or 0.0) for row in rows)
     worst_loss = max(float(row.get("loss_max_abs_error") or 0.0) for row in rows)
     lines.extend(
         [
             f"Worst paired BPTT/RTRL relative gradient error: `{worst_gradient:.3e}`.",
+            "",
+            f"Worst paired BPTT/RTRL relative L2 gradient error: `{worst_gradient_l2:.3e}`.",
             "",
             f"Worst paired BPTT/RTRL absolute loss error: `{worst_loss:.3e}`.",
             "",
@@ -199,16 +286,22 @@ def generate_report(artifact_root: Path) -> str:
             "## Reproduction",
             "",
             "```bash",
-            "python examples/experimental/online_learning/rtrl_bptt_scaling_benchmark.py run \\",
+            "python examples/experimental/optim_gradient_scaling/benchmark.py run \\",
             "  --suite full --gpu 7 --repeats 10 \\",
             "  --python /home/swl/anaconda3/envs/braincell_311/bin/python \\",
-            "  --output-dir examples/experimental/online_learning/artifacts/rtrl_bptt_scaling/full_block_exact \\",
+            "  --output-dir examples/experimental/optim_gradient_scaling/artifacts/rtrl_bptt_scaling/full_block_exact \\",
             "  --resume",
             "",
-            "python examples/experimental/online_learning/rtrl_bptt_scaling_report.py",
+            "python examples/experimental/optim_gradient_scaling/controlled_complexity.py run \\",
+            "  --suite all --gpu 7 --repeats 10 --replicates 3 \\",
+            "  --python /home/swl/anaconda3/envs/braincell_311/bin/python \\",
+            "  --output-dir examples/experimental/optim_gradient_scaling/artifacts/rtrl_bptt_scaling/controlled_complexity_a100 \\",
+            "  --resume",
+            "",
+            "python examples/experimental/optim_gradient_scaling/report.py",
             "```",
             "",
-            "Plots are stored in `../../rtrl_bptt_scaling_analysis.ipynb` relative to the artifact directories.",
+            "Plots are stored in `../../analysis.ipynb` relative to the artifact directories.",
             "",
         ]
     )

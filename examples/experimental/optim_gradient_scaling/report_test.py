@@ -20,7 +20,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from examples.experimental.online_learning.rtrl_bptt_scaling_report import (
+from examples.experimental.optim_gradient_scaling.report import (
     generate_report,
     load_result_rows,
     write_report,
@@ -49,6 +49,18 @@ class ScalingReportTest(unittest.TestCase):
             output = write_report(root)
             self.assertEqual(output, root / "RESULTS.md")
             self.assertIn("# RTRL/BPTT Scaling Results", output.read_text())
+
+    def test_report_preserves_and_aggregates_controlled_worker_replicates(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_controlled_run(root)
+
+            rows = load_result_rows(root)
+            self.assertEqual(len(rows), 6)
+            report = generate_report(root)
+            self.assertIn("## Controlled Complexity", report)
+            self.assertIn("synthetic_nx32_ntheta8", report)
+            self.assertIn("| 3 | 2.000 s | 1.0000--3.0000 |", report)
 
     @staticmethod
     def _write_run(root: Path, name: str, *, backsub: str | None) -> None:
@@ -97,6 +109,48 @@ class ScalingReportTest(unittest.TestCase):
                 if backsub is not None:
                     row["backsub"] = backsub
                 writer.writerow(row)
+
+    @staticmethod
+    def _write_controlled_run(root: Path) -> None:
+        directory = root / "controlled_complexity_a100"
+        directory.mkdir()
+        fields = [
+            "config_id",
+            "status",
+            "workload",
+            "method",
+            "replicate",
+            "n_x",
+            "n_theta",
+            "backsub",
+            "steady_median_seconds",
+            "temporary_bytes",
+            "gpu_peak_steady_bytes",
+            "gradient_max_rel_error",
+            "loss_max_abs_error",
+        ]
+        with (directory / "results.csv").open("w", newline="") as stream:
+            writer = csv.DictWriter(stream, fieldnames=fields)
+            writer.writeheader()
+            for replicate in (1, 2, 3):
+                for method in ("bptt", "rtrl"):
+                    writer.writerow(
+                        {
+                            "config_id": "synthetic_nx32_ntheta8",
+                            "status": "ok",
+                            "workload": "synthetic",
+                            "method": method,
+                            "replicate": replicate,
+                            "n_x": 32,
+                            "n_theta": 8,
+                            "backsub": "recursive",
+                            "steady_median_seconds": replicate,
+                            "temporary_bytes": 1000,
+                            "gpu_peak_steady_bytes": 2000,
+                            "gradient_max_rel_error": 1e-10,
+                            "loss_max_abs_error": 1e-12,
+                        }
+                    )
 
 
 if __name__ == "__main__":

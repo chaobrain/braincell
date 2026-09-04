@@ -147,22 +147,22 @@ class BuildFrustaTest(unittest.TestCase):
         # with a non-positive radius — defense in depth.
         import brainstate
 
-        brainstate.environ.set(precision=64)
-        branch = Branch.from_lengths(
-            lengths=np.asarray([10.0]) * u.um,
-            radii_proximal=np.asarray([1e-20]) * u.um,
-            radii_distal=np.asarray([1e-20]) * u.um,
-            type="dendrite",
-        )
-        # Now spoof the radii via object.__setattr__ to simulate a corrupt
-        # upstream branch — validator should still reject.
-        with self.assertRaises(ValueError):
-            object.__setattr__(
-                branch,
-                "radii_proximal",
-                np.asarray([0.0]) * u.um,
+        with brainstate.environ.context(precision=64):
+            branch = Branch.from_lengths(
+                lengths=np.asarray([10.0]) * u.um,
+                radii_proximal=np.asarray([1e-20]) * u.um,
+                radii_distal=np.asarray([1e-20]) * u.um,
+                type="dendrite",
             )
-            _build_frusta(branch, prox=0.0, dist=1.0)
+            # Now spoof the radii via object.__setattr__ to simulate a corrupt
+            # upstream branch — validator should still reject.
+            with self.assertRaises(ValueError):
+                object.__setattr__(
+                    branch,
+                    "radii_proximal",
+                    np.asarray([0.0]) * u.um,
+                )
+                _build_frusta(branch, prox=0.0, dist=1.0)
 
 
 class FrustumScalarsTest(unittest.TestCase):

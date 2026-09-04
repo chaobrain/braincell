@@ -440,6 +440,8 @@ class DhsRuntimeCacheTest(unittest.TestCase):
             self.assertIs(source32, source64)
             self.assertEqual(cache64.float_dtype, jnp.dtype(jnp.float64))
             self.assertIsNot(cache32, cache64)
+            self.assertEqual(cell.V.value.dtype, jnp.dtype(jnp.float32))
+            self.assertEqual(cell._point_V.value.dtype, jnp.dtype(jnp.float32))
 
     def test_numeric_operands_preserve_an_existing_dtype(self):
         # ``_build_dhs_numeric_state`` materializes its operands with

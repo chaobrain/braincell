@@ -93,7 +93,7 @@ def total_membrane_rate_point(host: "Cell", *, point_V, point_capacitance, t):
 
     with jax.named_scope("braincell:point_membrane_rate:current_inputs"):
         zero_density = u.Quantity(
-            jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=float),
+            jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=u.get_mantissa(point_V).dtype),
             _CURRENT_DENSITY,
         )
         input_density = host.sum_current_inputs(zero_density, point_V)
@@ -118,13 +118,13 @@ def _point_mechanism_current(host: "Cell", *, point_V, t):
     runtime = host.runtime
     with jax.named_scope("braincell:membrane_current:current_inputs"):
         zero_density = u.Quantity(
-            jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=float),
+            jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=u.get_mantissa(point_V).dtype),
             _CURRENT_DENSITY,
         )
         I_point = host.sum_current_inputs(zero_density, point_V)
 
     with jax.named_scope("braincell:membrane_current:clamp_density"):
-        I_point = I_point + _clamp_density(host, t=t)
+        I_point = I_point + _clamp_density(host, t=t, dtype=u.get_mantissa(point_V).dtype)
 
     with jax.named_scope("braincell:membrane_current:point_synapse_currents"):
         for key, ch in host.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
@@ -160,7 +160,7 @@ def _density_current_cv(host: "Cell", *, V_cv):
             current = contribution if current is None else current + contribution
     if current is not None:
         return current
-    return u.Quantity(jnp.zeros(V_cv.shape, dtype=float), _CURRENT_DENSITY)
+    return u.Quantity(jnp.zeros(V_cv.shape, dtype=u.get_mantissa(V_cv).dtype), _CURRENT_DENSITY)
 
 
 def _synapse_contrib_to_point(runtime: CellRuntimeState, layout, syn, point_V):
@@ -194,7 +194,7 @@ def _synapse_absolute_current_point(runtime: CellRuntimeState, layout, syn, poin
     return layout.scatter_add_points(contrib_point, contrib)
 
 
-def _clamp_density(host: "Cell", *, t):
+def _clamp_density(host: "Cell", *, t, dtype):
     """Return ``(..., n_point) nA/cm^2`` clamp current density.
 
     Reads the pre-built midpoint entries from the clamp routing table; no
@@ -217,10 +217,10 @@ def _clamp_density(host: "Cell", *, t):
     runtime = host.runtime
     table = runtime.clamp_routing_table
     if table is None or len(table.midpoint_ids) == 0:
-        return u.Quantity(jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=float), _CURRENT_DENSITY)
+        return u.Quantity(jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=dtype), _CURRENT_DENSITY)
 
     currents_nA = host._solver_clamp_point_current(t=t).to_decimal(u.nA)
     active_density = currents_nA[..., table.midpoint_ids] / table.midpoint_area
-    density = jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=float)
+    density = jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=dtype)
     density = density.at[..., table.midpoint_ids].set(active_density)
     return u.Quantity(density, _CURRENT_DENSITY)

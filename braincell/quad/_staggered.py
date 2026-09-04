@@ -306,7 +306,10 @@ def dhs_voltage_step(target, *args, t: T = None, dt: DT = None):
         linear, const = _point_linear_and_const_term(
             target,
             point_V_n,
-            point_capacitance=_point_capacitance(static_source),
+            point_capacitance=_point_capacitance(
+                static_source,
+                dtype=u.get_mantissa(point_V_n).dtype,
+            ),
             t=t,
         )
     with jax.named_scope("braincell:dhs:build_numeric_state"):
@@ -519,13 +522,17 @@ def _build_dhs_numeric_state(
 
     point_ids_by_row = static_source.row_to_point_id_np
     voltage_by_row = point_V_n[..., point_ids_by_row]
+    numeric_dtype = u.get_mantissa(point_V_n).dtype
     linear_ms_inv = u.math.asarray(linear[..., point_ids_by_row], unit=u.ms**-1)
     const_by_row = const[..., point_ids_by_row]
     dt_ms = u.math.asarray(dt, unit=u.ms)
 
-    diag_base = static_cache.diag_ms_inv * dt_ms
-    lower_base = static_cache.lowers_ms_inv * dt_ms
-    upper_base = static_cache.uppers_ms_inv * dt_ms
+    # Cache precision follows the ambient solver setting, while an initialized
+    # cell keeps its state dtype. Materialize numeric operands in the latter so
+    # elimination never scatters float64 updates into float32 state buffers.
+    diag_base = static_cache.diag_ms_inv.astype(numeric_dtype) * dt_ms
+    lower_base = static_cache.lowers_ms_inv.astype(numeric_dtype) * dt_ms
+    upper_base = static_cache.uppers_ms_inv.astype(numeric_dtype) * dt_ms
     diags = u.math.broadcast_to(_with_sentinel(diag_base, 1.0)[None, :], (batch_size, n_point + 1))
     diags = diags.at[:, :n_point].add(-dt_ms * linear_ms_inv)
     diags = diags.at[:, static_source.dynamic_rows_np].add(
@@ -545,11 +552,11 @@ def _build_dhs_numeric_state(
     )
 
 
-def _point_capacitance(static_source: DHSStaticSource):
+def _point_capacitance(static_source: DHSStaticSource, *, dtype):
     return (
         jnp.asarray(
             static_source.point_capacitance_uF_np,
-            dtype=brainstate.environ.dftype(),
+            dtype=dtype,
         )
         * u.uF
     )

@@ -82,7 +82,7 @@ documented API allows are in scope. In particular:
 - **Numerical disagreement is not a vulnerability.** A simulation that diverges from
   NEURON, an integrator that loses accuracy on a stiff channel, or a solver that fails
   to converge is a correctness bug — please open a normal GitHub issue.
-- **Non-public API surface.** Per section 6 of `TODO.md`, only the documented public
+- **Non-public API surface.** Per section 6 of `docs/design/TODO.md`, only the documented public
   API is a stable surface; anything else is internal and may change without
   deprecation. Reports that depend on reaching into private modules will generally be
   treated as ordinary bugs.

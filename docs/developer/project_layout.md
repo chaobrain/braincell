@@ -77,6 +77,10 @@ neither of which is part of this published site:
   architecture maps that outlive any one change. A topic that needs several
   documents gets a subdirectory (`docs/design/network/`).
 
+`docs/design/TODO.md` is the living project-wide architecture and status
+index. Keep detailed contracts in their topic documents and link them from
+the index instead of duplicating their full specification there.
+
 Files are named for what they document rather than where the code lives, so
 `docs/design/io-swc-reader-invariants.md` rather than a `README.md` beside the
 reader. Code that depends on a note cites it by `docs/` path from the module

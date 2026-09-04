@@ -211,7 +211,7 @@ through the registry (`mech.Synapse("ExpSyn")`) or through
 `braincell/mech/_synapse_schema_test.py:19` (a Sphinx `:mod:` role that would
 otherwise dangle), `docs/design/network/module-layout.md:43-44`,
 `docs/apis/braincell.synapse.rst`, `docs/design/interface-map.md:416-420`,
-`docs/developer/extending.ipynb`, `TODO.md:163` and `TODO.md:1219-1220`.
+`docs/developer/extending.ipynb` and `docs/design/TODO.md`.
 
 `docs/specs/*` and `changelog.md` keep their `markov.py` references: they are
 dated records of a state that was true when written.

@@ -274,7 +274,7 @@ inherit the reasoning rather than the rediscovery.
    That is a migration, not a simplification.
 
 4. **`Junction` has no construction site outside its own tests**, but
-   `TODO.md:472` tracks "Junction runtime wiring" as planned work. Flagged, not
+   `docs/design/TODO.md` tracks "Junction runtime wiring" as planned work. Flagged, not
    deleted.
 
 5. **The `Density` / `Synapse` duplication is not unified.** They are the

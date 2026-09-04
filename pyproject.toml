@@ -33,7 +33,7 @@ classifiers = [
 ]
 dynamic = [ "version" ]
 # Runtime dependencies. `jax` and `scipy` are intentionally left unpinned:
-# TODO.md section 8 specifies "recent" for both, and braincell must not
+# docs/design/TODO.md section 8 specifies "recent" for both, and braincell must not
 # constrain which JAX backend build (CPU / CUDA / TPU) a user installs.
 dependencies = [
   "brainevent>=0.0.7",

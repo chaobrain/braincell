@@ -16,8 +16,8 @@
 - [API](api.md)：当前公共接口、调用方式、参数和错误合同。
 - [Architecture](architecture.md)：参数所有权、binding、materialization 和单位边界。
 - [Implementation plan](implementation-plan.md)：实现阶段、文件边界和验收场景。
-- [Online Learning Experiments](../../../examples/experimental/online_learning/README.md)：experimental forward sensitivity、BPTT/RTRL、notebook 和 benchmark 目录指南。
-- [Parameter Learning Experiments](../../../examples/experimental/parameter_learning/README.md)：Python组合式模型、数据、loss、gradient/non-gradient stage和结果合同。
+- [Optimization Experiments](../../../examples/experimental/README.md)：experimental gradient core、正确性、scaling 和训练实验导航。
+- [Parameter Learning Experiments](../../../examples/experimental/optim_parameter_fitting/README.md)：Python组合式模型、数据、loss、gradient/non-gradient stage和结果合同。
 
 ### References
 

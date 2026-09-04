@@ -187,7 +187,7 @@ silent-to-spike margin，不能写成现行 API。
 | [`get_spike`](../../../../braincell/_base_neuron.py) | surrogate crossing 已存在 | 继续作为 event 信号，不承担完整 loss |
 
 详细旧实现由 Git 历史追溯；当前入口见
-[Parameter Learning README](../../../../examples/experimental/parameter_learning/README.md)。
+[Parameter Learning README](../../../../examples/experimental/optim_parameter_fitting/README.md)。
 
 ## 四个实验模板
 

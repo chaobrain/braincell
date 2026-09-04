@@ -22,7 +22,7 @@ import unittest
 import brainunit as u
 import numpy as np
 
-from examples.experimental.parameter_learning.training_diagnostics import plot_diagnostics
+from examples.experimental.optim_parameter_fitting.diagnostics import plot_diagnostics
 from examples.multi_compartment.trainable_hh_multistart import (
     SCALE_BOUNDS,
     plot_result,

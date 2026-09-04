@@ -26,7 +26,7 @@ import jax.numpy as jnp
 import numpy as np
 from braincell.filter import AllRegion, at
 
-from examples.experimental.parameter_learning.training_diagnostics import (
+from examples.experimental.optim_parameter_fitting.diagnostics import (
     DiagnosticConfig,
     StateSignals,
     UpdateSignals,

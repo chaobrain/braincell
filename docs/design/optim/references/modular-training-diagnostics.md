@@ -4,7 +4,7 @@
 
 本文是参数学习实验的非规范性 reference，统一定义观测、归档、spike-region 和非凸恢复
 合同；不定义 BrainCell 公共 API，也不引入 Trainer。当前实验实现位于
-[`training_diagnostics.py`](../../../../examples/experimental/parameter_learning/training_diagnostics.py)。
+[`diagnostics.py`](../../../../examples/experimental/optim_parameter_fitting/diagnostics.py)。
 参数选择与 runtime 映射仍由 `braincell.trainable` 负责，优化器由 BrainTools 或用户代码
 负责。
 

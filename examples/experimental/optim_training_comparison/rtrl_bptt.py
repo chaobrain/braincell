@@ -13,6 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
+# ruff: noqa: E402
+
 """End-to-end Adam comparison for block-exact BPTT and full RTRL gradients."""
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from examples.experimental.online_learning.rtrl_bptt_scaling_benchmark import (
+from examples.experimental.optim_gradient_scaling.benchmark import (
     BACKSUBS,
     DT_MS,
     METHODS,
@@ -60,6 +62,7 @@ def run_training_worker(
     learning_rate: float,
     output_json: Path,
     backsub: str = "recursive",
+    execution_seed_count: int | None = None,
 ) -> dict[str, object]:
     """Train one method and persist its complete seed/epoch history."""
     if method not in METHODS:
@@ -68,6 +71,9 @@ def run_training_worker(
         raise ValueError(f"backsub must be one of {BACKSUBS!r}.")
     if epochs < 1 or learning_rate <= 0.0:
         raise ValueError("epochs and learning_rate must be positive.")
+    execution_seed_count = config.n_seed if execution_seed_count is None else int(execution_seed_count)
+    if execution_seed_count < config.n_seed:
+        raise ValueError("execution_seed_count must be at least config.n_seed.")
     os.environ["BRAINCELL_DHS_BACKSUB"] = backsub
     output_json.parent.mkdir(parents=True, exist_ok=True)
 
@@ -80,8 +86,13 @@ def run_training_worker(
         optimizer.register_trainable_weights(parameter_states)
 
         example_roots = tuple(state.value for state in parameter_states.values())
+        execution_function = _seed_padded_function(
+            prepared.function,
+            requested_seed_count=config.n_seed,
+            execution_seed_count=execution_seed_count,
+        )
         started = time.perf_counter()
-        compiled = jax.jit(prepared.function).lower(example_roots).compile()
+        compiled = jax.jit(execution_function).lower(example_roots).compile()
         compile_seconds = time.perf_counter() - started
         memory = compiled.memory_analysis()
 
@@ -124,6 +135,7 @@ def run_training_worker(
         "config_id": config.id,
         "method": method,
         "backsub": backsub,
+        "execution_seed_count": execution_seed_count,
         "epochs": epochs,
         "learning_rate": learning_rate,
         "status": "ok",
@@ -195,6 +207,7 @@ def run_comparison(
     gpu: int,
     python_executable: Path,
     resume: bool,
+    execution_seed_count: int | None = None,
 ) -> dict[str, object]:
     """Launch isolated method workers and combine their histories."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -210,8 +223,10 @@ def run_comparison(
             "gpu": gpu,
             "python": str(python_executable),
             "methods": METHODS,
+            "execution_seed_count": execution_seed_count,
         },
     )
+    expected_execution_seed_count = config.n_seed if execution_seed_count is None else int(execution_seed_count)
     environment = os.environ.copy()
     environment.update(
         {
@@ -223,8 +238,11 @@ def run_comparison(
     )
     for method in METHODS:
         output_json = output_dir / f"{method}.json"
-        if resume and output_json.exists() and _read_json(output_json).get("status") == "ok":
-            continue
+        if resume and output_json.exists():
+            existing = _read_json(output_json)
+            existing_execution_seed_count = int(existing.get("execution_seed_count", existing.get("n_seed", 0)))
+            if existing.get("status") == "ok" and existing_execution_seed_count == expected_execution_seed_count:
+                continue
         command = [
             str(python_executable),
             str(Path(__file__).resolve()),
@@ -240,6 +258,8 @@ def run_comparison(
             "--output",
             str(output_json),
         ]
+        if execution_seed_count is not None:
+            command.extend(["--execution-seed-count", str(execution_seed_count)])
         completed = subprocess.run(command, env=environment, text=True, capture_output=True, check=False)
         (log_dir / f"{method}.log").write_text(
             completed.stdout + ("\nSTDERR\n" + completed.stderr if completed.stderr else ""),
@@ -256,6 +276,24 @@ def _stack_roots(roots) -> object:
         value = jnp.asarray(value)
         arrays.append(value[:, None] if value.ndim == 1 else value)
     return jnp.stack(arrays, axis=1)
+
+
+def _seed_padded_function(function, *, requested_seed_count: int, execution_seed_count: int):
+    """Return a function with a larger static seed extent and requested-size outputs."""
+    if execution_seed_count < requested_seed_count:
+        raise ValueError("execution_seed_count must preserve every requested seed.")
+    indices = jnp.arange(execution_seed_count, dtype=jnp.int32) % requested_seed_count
+
+    def execute(roots):
+        execution_roots = tuple(root[indices] for root in roots)
+        loss, losses, gradient = function(execution_roots)
+        return (
+            loss[:requested_seed_count],
+            losses[:requested_seed_count],
+            gradient[:requested_seed_count],
+        )
+
+    return execute
 
 
 def _unflatten_gradient(flat_gradient, roots) -> dict[str, object]:
@@ -331,6 +369,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--output-dir", type=Path)
     run.add_argument("--resume", action="store_true")
     run.add_argument("--config", default=json.dumps(asdict(DEFAULT_CONFIG)))
+    run.add_argument("--execution-seed-count", type=int)
 
     worker = subparsers.add_parser("worker")
     worker.add_argument("--config", required=True)
@@ -338,6 +377,7 @@ def _parser() -> argparse.ArgumentParser:
     worker.add_argument("--epochs", type=int, required=True)
     worker.add_argument("--learning-rate", type=float, required=True)
     worker.add_argument("--output", type=Path, required=True)
+    worker.add_argument("--execution-seed-count", type=int)
     return parser
 
 
@@ -351,6 +391,7 @@ def main(argv=None) -> None:
             epochs=args.epochs,
             learning_rate=args.learning_rate,
             output_json=args.output,
+            execution_seed_count=args.execution_seed_count,
         )
         return
     output_dir = args.output_dir or _default_output_dir(config, args.epochs)
@@ -362,6 +403,7 @@ def main(argv=None) -> None:
         gpu=args.gpu,
         python_executable=args.python,
         resume=args.resume,
+        execution_seed_count=args.execution_seed_count,
     )
     print(output_dir)
     print(json.dumps(comparison, indent=2, sort_keys=True))

@@ -1,5 +1,15 @@
 # DBNN 约化模型设计大纲
 
+> 架构更新（2026-09-04）：`docs/specs/2026-09-04-cell-reduction-runtime.md` 已定义并实现
+> Cell 挂载式约化运行时。DBNN 不再作为独立的 Network population 类型接入，而是实现
+> `ReductionModel`，注册到已经拥有形态、突触和连接声明的 detailed Cell 上。本文的 DBNN
+> 数学、数据生成、训练和资产校验设计仍然有效；第 6 至 8 节中关于“独立 runner 优先、暂不
+> 接入 Network”以及未来另建网络节点协议的分阶段描述，均由新规格取代。
+>
+> 新模型必须遵守的接口、生命周期、输入输出 shape 和接入步骤见
+> [`model-integration-guide.md`](model-integration-guide.md)。第 6 至 8 节的旧接入路线仅作为历史
+> 设计背景保留，不应再据此实现另一套 population 或 Network 协议。
+
 ## 1. 目标
 
 DBNN 是 BrainCell `reduction` 模块中的一种细胞约化模型。它以一个已经完成形态、

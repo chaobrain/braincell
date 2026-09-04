@@ -86,7 +86,9 @@ from braincell._discretization.base import (
 )
 from braincell.filter import LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask, at
 from braincell.network.event import EventOutputCollection, _CellSpikeSource
-from braincell.network.recording import RecordingSpec, compile_recording
+from braincell.network.recording import RecordingSpec, compile_recording, recording_is_active
+from braincell.reduction import ReductionOutput, ReductionViewCollection
+from braincell.reduction.runtime import ReductionInputRuntime, build_reduction_input_runtime
 from braincell.morph.morphology import Morphology, clone_morpho
 from braincell.quad import get_integrator, ind_exp_euler_step
 from braincell.quad._exp_euler import _ind_exp_euler_step_selected
@@ -604,6 +606,20 @@ class CellView(_CellFacade):
         return self._cell.event_outputs.for_population(self._population_indices)
 
     @property
+    def reductions(self) -> ReductionViewCollection:
+        """Return registered reduction models over selected population members."""
+        if self._scope.spatially_restricted:
+            raise RuntimeError("Reduction parameters can only be selected by population, not by morphology location.")
+        return ReductionViewCollection(self._cell, self._population_indices)
+
+    @property
+    def outputs(self) -> Mapping[str, object]:
+        """Return initialized model outputs gathered over selected members."""
+        if self._scope.spatially_restricted:
+            raise RuntimeError("Model outputs can only be selected by population, not by morphology location.")
+        return self._cell._selected_outputs(self._population_indices)
+
+    @property
     def V_init(self):
         """Return effective initial voltages for selected cells."""
         return self._cell._selected_population_parameter("V_init", self._population_indices)
@@ -639,6 +655,14 @@ class CellView(_CellFacade):
     def spike(self):
         """Return initialized spike values gathered over selected cells."""
         self._cell._raise_if_not_initialized("CellView.spike")
+        if self._cell._uses_reduction:
+            return _select_model_output(
+                self._cell.spike.value,
+                population_indices=self._population_indices,
+                population_size=self._cell._population_size,
+                batch_size=self._cell._runtime_batch_size,
+                detailed=False,
+            )
         return _select_population_value(
             self._cell.spike.value,
             population_indices=self._population_indices,
@@ -847,6 +871,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._run_loop_cache: dict[tuple[object, ...], object] = {}
 
         self._runtime: CellRuntimeState | None = None
+        self._reduction_models: dict[str, object] = {}
+        self._selected_model_name = "detailed"
+        self._reduction_input_runtime: ReductionInputRuntime | None = None
+        self._reduction_output_states: dict[str, brainstate.State] = {}
+        self._pending_reduction_inputs = None
+        self._runtime_batch_size: int | None = None
         self._runtime_cvs_cache: tuple[RuntimeCVView, ...] | None = None
         self._runtime_nodes_cache: tuple[RuntimeNodeView, ...] | None = None
         self._synapse_store_cache: _SynapseStore | None = None
@@ -1357,6 +1387,43 @@ class Cell(_CellFacade, HHTypedNeuron):
         """Return named live event-output ports for this cell population."""
         return EventOutputCollection(self)
 
+    @property
+    def reductions(self) -> ReductionViewCollection:
+        """Return all Cell-local registered reduction models."""
+        return ReductionViewCollection(self, tuple(range(self._population_size)))
+
+    @property
+    def outputs(self) -> Mapping[str, object]:
+        """Return the selected model's initialized raw outputs."""
+        return self._selected_outputs(tuple(range(self._population_size)))
+
+    def add_reduction(self, name: str, model):
+        """Register one interchangeable reduced model under a Cell-local name."""
+        self._raise_if_initialized("add a reduction model")
+        if not isinstance(name, str) or not name:
+            raise ValueError("Reduction model name must be a non-empty string.")
+        if name == "detailed":
+            raise ValueError("Reduction model name 'detailed' is reserved for the full Cell model.")
+        if name in self._reduction_models:
+            raise ValueError(f"Cell already has a reduction model named {name!r}.")
+        required = ("init_state", "update", "reset_state", "reset")
+        missing = tuple(method for method in required if not callable(getattr(model, method, None)))
+        if missing:
+            raise TypeError(f"Reduction model {type(model).__name__!r} is missing callable methods {missing!r}.")
+        self._reduction_models[name] = model
+        self._run_loop_cache.clear()
+        return self.reductions[name]
+
+    def use_model(self, name: str = "detailed") -> "Cell":
+        """Select the detailed model or one registered reduction for the next initialization."""
+        self._raise_if_initialized("select a Cell execution model")
+        if name != "detailed" and name not in self._reduction_models:
+            raise KeyError(f"Unknown Cell model {name!r}; available reductions: {tuple(self._reduction_models)!r}.")
+        self._selected_model_name = name
+        self._run_loop_cache.clear()
+        self._compiled_recording_cache.clear()
+        return self
+
     def _get_spike_event_source(self) -> _CellSpikeSource:
         if self._spike_event_source_cache is None:
             self._spike_event_source_cache = _CellSpikeSource(self)
@@ -1419,9 +1486,78 @@ class Cell(_CellFacade, HHTypedNeuron):
         key = (dt_ms, tuple(self._recording_specs))
         cached = self._compiled_recording_cache.get(key)
         if cached is None:
-            cached = tuple(compile_recording(self, spec, dt=dt) for spec in self._recording_specs.values())
+            cached = tuple(
+                compile_recording(self, spec, dt=dt)
+                for spec in self._recording_specs.values()
+                if recording_is_active(self, spec)
+            )
             self._compiled_recording_cache[key] = cached
         return cached
+
+    @property
+    def _uses_reduction(self) -> bool:
+        return self._selected_model_name != "detailed"
+
+    def _selected_outputs(self, population_indices: tuple[int, ...]) -> Mapping[str, object]:
+        if not self._initialized:
+            return MappingProxyType({})
+        if not self._uses_reduction:
+            values = {"voltage": self.V.value}
+        else:
+            values = {name: state.value for name, state in self._reduction_output_states.items()}
+        selected = {
+            name: _select_model_output(
+                value,
+                population_indices=population_indices,
+                population_size=self._population_size,
+                batch_size=self._runtime_batch_size,
+                detailed=not self._uses_reduction,
+            )
+            for name, value in values.items()
+        }
+        return MappingProxyType(selected)
+
+    def _validate_reduction_output(self, output) -> ReductionOutput:
+        if not isinstance(output, ReductionOutput):
+            raise TypeError(
+                f"Reduction model {self._selected_model_name!r} must return ReductionOutput, "
+                f"got {type(output).__name__!s}."
+            )
+        prefix = ((self._runtime_batch_size,) if self._runtime_batch_size is not None else ()) + self.pop_size
+        event_shape = tuple(getattr(output.event, "shape", ()))
+        if event_shape != prefix:
+            raise ValueError(f"Reduction event shape must be {prefix!r} for this Cell, got {event_shape!r}.")
+        for name, value in output.values.items():
+            shape = tuple(getattr(value, "shape", ()))
+            if shape[: len(prefix)] != prefix:
+                raise ValueError(
+                    f"Reduction output {name!r} must start with Cell runtime shape {prefix!r}, got {shape!r}."
+                )
+        return output
+
+    def _publish_reduction_output(self, output, *, initialize: bool = False) -> None:
+        output = self._validate_reduction_output(output)
+        if initialize:
+            self._reduction_output_states = {
+                name: brainstate.ShortTermState(value) for name, value in output.values.items()
+            }
+            self.spike = brainstate.ShortTermState(output.event)
+            return
+        if tuple(output.values) != tuple(self._reduction_output_states):
+            raise ValueError(
+                "Reduction output names must remain unchanged after init_state(); "
+                f"expected {tuple(self._reduction_output_states)!r}, got {tuple(output.values)!r}."
+            )
+        for name, value in output.values.items():
+            current = self._reduction_output_states[name].value
+            expected = tuple(current.shape)
+            actual = tuple(getattr(value, "shape", ()))
+            if actual != expected:
+                raise ValueError(f"Reduction output {name!r} changed shape from {expected!r} to {actual!r}.")
+            _require_same_value_type(current, value, name=f"Reduction output {name!r}")
+            self._reduction_output_states[name].value = value
+        _require_same_value_type(self.spike.value, output.event, name="Reduction event")
+        self.spike.value = output.event
 
     def get_point_placement(self, placement_id: int):
         """Return one static point placement by its stable id."""
@@ -1451,6 +1587,15 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._morpho = morpho
         self._invalidate_discretization_cache()
         _ = self._discretization
+        if batch_size is not None:
+            if isinstance(batch_size, bool) or not isinstance(batch_size, (int, np.integer)):
+                raise TypeError("Cell init_state() batch_size must be an integer or None.")
+            if int(batch_size) < 1:
+                raise ValueError("Cell init_state() batch_size must be >= 1.")
+        self._runtime_batch_size = None if batch_size is None else int(batch_size)
+        if self._uses_reduction:
+            self._init_reduction_state(batch_size=batch_size)
+            return
         self._runtime = CellRuntimeState.from_cell(self)
 
         # Save scalar V_th declaration before the vector overwrite below.
@@ -1514,6 +1659,18 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._runtime_cvs_cache = self._build_runtime_cv_views()
         self._runtime_nodes_cache = self._build_runtime_node_views()
 
+    def _init_reduction_state(self, *, batch_size=None) -> None:
+        """Allocate only packed synapse inputs plus the selected reduced model."""
+        self._in_size = self.pop_size
+        self._out_size = self.pop_size
+        self._reduction_input_runtime = build_reduction_input_runtime(self)
+        model = self._reduction_models[self._selected_model_name]
+        output = model.init_state(self._reduction_input_runtime.context, batch_size=batch_size)
+        self._publish_reduction_output(output, initialize=True)
+        self._pending_reduction_inputs = self._reduction_input_runtime.take_inputs()
+        self._current_time_state.value = 0.0 * u.ms
+        self._initialized = True
+
     def reset(self) -> None:
         """Drop runtime and per-step state; return to DECLARING.
 
@@ -1535,6 +1692,9 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         self.connections.clear_runtime()
 
+        if self._uses_reduction:
+            self._reduction_models[self._selected_model_name].reset()
+
         for name in ("_in_size", "_out_size", "ion_channels", "C"):
             if hasattr(self, name):
                 delattr(self, name)
@@ -1554,6 +1714,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._current_time_state.value = 0.0 * u.ms
 
         self._runtime = None
+        self._reduction_input_runtime = None
+        self._reduction_output_states = {}
+        self._pending_reduction_inputs = None
+        self._runtime_batch_size = None
         self.trainables.runtime_reset()
         self._runtime_cvs_cache = None
         self._runtime_nodes_cache = None
@@ -1573,11 +1737,15 @@ class Cell(_CellFacade, HHTypedNeuron):
     @property
     def runtime(self) -> CellRuntimeState:
         self._raise_if_not_initialized("runtime")
+        if self._uses_reduction:
+            raise RuntimeError("Detailed Cell runtime is unavailable while a reduction model is selected.")
         return self._runtime
 
     @property
     def n_point(self) -> int:
         self._raise_if_not_initialized("n_point")
+        if self._uses_reduction:
+            raise RuntimeError("Detailed point runtime is unavailable while a reduction model is selected.")
         return self._runtime.n_point
 
     @property
@@ -2097,12 +2265,17 @@ class Cell(_CellFacade, HHTypedNeuron):
         delivered; it does not integrate continuous synapse dynamics.
         """
         self._raise_if_not_initialized("_begin_step()")
+        if self._uses_reduction:
+            self._pending_reduction_inputs = self._reduction_input_runtime.take_inputs()
+            return
         point_V = self._point_voltage_for_mechanisms(self.V.value)
         self._apply_runtime_synapse_events(point_V)
 
     def _prepare_step_clamps(self, *, t=None, dt=None) -> None:
         """Sample all current clamps at the main-step midpoint and cache them."""
         self._raise_if_not_initialized("_prepare_step_clamps()")
+        if self._uses_reduction:
+            return
         if len(self._get_clamp_store().id) == 0:
             return
         step_t = self._resolve_t() if t is None else t
@@ -2160,10 +2333,15 @@ class Cell(_CellFacade, HHTypedNeuron):
         """
         self._raise_if_not_initialized("_update_dynamics()")
 
-        last_V = self.V.value
-        self._event_previous_V.value = last_V
         if brainstate.environ.get("dt", None) is None:
             raise ValueError("Cell.update(...) requires brainstate.environ['dt'] to be set.")
+        if self._uses_reduction:
+            output = self._reduction_models[self._selected_model_name].update(self._pending_reduction_inputs)
+            self._publish_reduction_output(output)
+            return self.spike.value
+
+        last_V = self.V.value
+        self._event_previous_V.value = last_V
 
         with jax.named_scope("braincell:cell_update:solver"):
             self.solver(self)
@@ -2190,6 +2368,13 @@ class Cell(_CellFacade, HHTypedNeuron):
         delivery layer before this preparation phase.
         """
         self._raise_if_not_initialized("_prepare_next_synapse_inputs()")
+        if self._uses_reduction:
+            if t is None:
+                self._prepare_runtime_synapse_inputs(None)
+            else:
+                with brainstate.environ.context(t=t):
+                    self._prepare_runtime_synapse_inputs(None)
+            return
         point_V = self._point_voltage_for_mechanisms(self.V.value)
         if t is None:
             self._prepare_runtime_synapse_inputs(point_V)
@@ -2248,10 +2433,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         _ = point_V
         self._raise_if_not_initialized("_prepare_runtime_synapse_inputs()")
         t = self._resolve_t()
-        for layout, _ in self._runtime.iter_synapse_layouts():
-            if layout.id not in self._runtime.event_buffers:
+        for layout in self._event_layouts():
+            if layout.id not in self._event_runtime().event_buffers:
                 continue
-            total_drive = self._runtime.get_event_buffer(layout.id)
+            total_drive = self._event_runtime().get_event_buffer(layout.id)
             contact_drive = self._evaluate_contact_inputs(
                 layout,
                 t=t,
@@ -2263,7 +2448,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                 layout,
                 total_drive,
             )
-            self._runtime.event_buffers[layout.id].value = total_drive
+            self._set_event_buffer(layout.id, total_drive)
 
     def _evaluate_contact_inputs(self, layout, *, t, template, scheduled_only=True):
         """Return weighted Connection arrivals addressed to one synapse layout."""
@@ -2303,12 +2488,13 @@ class Cell(_CellFacade, HHTypedNeuron):
         if dt is None:
             raise ValueError("Live Connection delivery requires brainstate.environ['dt'].")
         t = self._resolve_t()
-        layouts = tuple(self._runtime.iter_synapse_layouts())
+        layouts = self._event_layouts()
         drives = {}
-        for layout, _ in layouts:
-            if layout.id not in self._runtime.event_buffers:
+        event_runtime = self._event_runtime()
+        for layout in layouts:
+            if layout.id not in event_runtime.event_buffers:
                 continue
-            drives[layout.id] = _zeros_like_event_template(self._runtime.get_event_buffer(layout.id))
+            drives[layout.id] = _zeros_like_event_template(event_runtime.get_event_buffer(layout.id))
 
         synapse_store = self._get_synapse_store()
         for connection in live_connections:
@@ -2317,27 +2503,58 @@ class Cell(_CellFacade, HHTypedNeuron):
             layout_id = synapse_store.layout_id(synapse_type)
             if layout_id not in drives:
                 continue
-            template = self._runtime.get_event_buffer(layout_id)
+            template = event_runtime.get_event_buffer(layout_id)
             contribution = counts * u.math.asarray(_connection_event_weight(template, connection.weight))
             local_indices = synapse_store.runtime_rows(connection.synapse_id).astype(np.int32)
             drives[layout_id] = drives[layout_id].at[local_indices].add(contribution)
 
-        point_v = self._cv_to_point(self.V.value)
-        for layout, synapse in layouts:
+        point_v = None if self._uses_reduction else self._cv_to_point(self.V.value)
+        for layout in layouts:
             if layout.id not in drives:
                 continue
-            template = self._runtime.get_event_buffer(layout.id)
+            template = event_runtime.get_event_buffer(layout.id)
             drive = _rewrap_event_template(template, drives[layout.id])
             self._apply_synapse_layout_event_drive(layout.id, drive, point_v=point_v)
 
     def _apply_synapse_layout_event_drive(self, layout_id: int, drive, *, point_v=None) -> None:
         """Apply one already-aggregated boundary payload to a runtime layout."""
+        if self._uses_reduction:
+            current = self._reduction_input_runtime.get_event_buffer(layout_id)
+            self._set_event_buffer(layout_id, current + _coerce_drive_like(drive, current))
+            return
         layout = self._runtime.layouts[int(layout_id)]
         synapse = self._runtime.get_runtime_node(layout.id)
         if point_v is None:
             point_v = self._cv_to_point(self.V.value)
         args = (layout.gather_points(point_v),)
         synapse.apply_events(drive, *args)
+
+    def _event_runtime(self):
+        """Return the detailed or reduced owner of packed event buffers."""
+        return self._reduction_input_runtime if self._uses_reduction else self._runtime
+
+    def _event_layouts(self):
+        """Return executable synapse input layouts without exposing runtime nodes."""
+        if self._uses_reduction:
+            return self._reduction_input_runtime.layouts
+        return tuple(layout for layout, _ in self._runtime.iter_synapse_layouts())
+
+    def _event_layout(self, layout_id: int):
+        """Return one input layout by its stable runtime id."""
+        for layout in self._event_layouts():
+            if int(layout.id) == int(layout_id):
+                return layout
+        raise KeyError(f"Unknown synapse event layout id {layout_id!r}.")
+
+    def _set_event_buffer(self, layout_id: int, value) -> None:
+        self._event_runtime().event_buffers[int(layout_id)].value = value
+
+    def _write_event_arrival(self, layout_id: int, arrival) -> None:
+        """Merge one Network arrival with any event staged for this boundary."""
+        if self._uses_reduction:
+            current = self._reduction_input_runtime.get_event_buffer(layout_id)
+            arrival = current + _coerce_drive_like(arrival, current)
+        self._set_event_buffer(layout_id, arrival)
 
     def _evaluate_bound_synapse_inputs(self, layout, template):
         drive = u.math.zeros_like(template)
@@ -2419,6 +2636,20 @@ class Cell(_CellFacade, HHTypedNeuron):
         """
         self._raise_if_network_owned("reset_state()")
         self._raise_if_not_initialized("reset_state()")
+        if self._uses_reduction:
+            requested_batch = None if batch_size is None else int(batch_size)
+            if requested_batch != self._runtime_batch_size:
+                raise ValueError(
+                    "Reduced Cell reset_state() must preserve the init_state() batch size; "
+                    f"expected {self._runtime_batch_size!r}, got {requested_batch!r}."
+                )
+            self.connections.reset_runtime()
+            self._reduction_input_runtime.clear_event_buffers()
+            output = self._reduction_models[self._selected_model_name].reset_state(batch_size=batch_size)
+            self._publish_reduction_output(output)
+            self._pending_reduction_inputs = self._reduction_input_runtime.take_inputs()
+            self._current_time_state.value = 0.0 * u.ms
+            return
         if self.trainables.bindings():
             self.trainables.materialize()
         self.connections.reset_runtime()
@@ -2446,6 +2677,8 @@ class Cell(_CellFacade, HHTypedNeuron):
     @property
     def layouts(self):
         self._raise_if_not_initialized("layouts")
+        if self._uses_reduction:
+            raise RuntimeError("Detailed mechanism layouts are unavailable while a reduction model is selected.")
         return self._runtime.layouts
 
     @property
@@ -2500,10 +2733,14 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     def sample_probe(self, name: str):
         self._raise_if_not_initialized("sample_probe()")
+        if self._uses_reduction:
+            raise KeyError(f"Detailed probe {name!r} is inactive while a reduction model is selected.")
         return probes.sample_probe(self, name)
 
     def sample_probes(self) -> dict[str, object]:
         self._raise_if_not_initialized("sample_probes()")
+        if self._uses_reduction:
+            return {}
         return probes.sample_probes(self)
 
     def mech_table(self) -> MechanismObjectTable:
@@ -2520,6 +2757,8 @@ class Cell(_CellFacade, HHTypedNeuron):
             If :meth:`init_state` has not been called.
         """
         self._raise_if_not_initialized("mech_table()")
+        if self._uses_reduction:
+            raise RuntimeError("Detailed mechanism inspection is unavailable while a reduction model is selected.")
         return build_mechanism_object_table(self._runtime, self.cvs)
 
     # ------------------------------------------------------------------
@@ -2538,7 +2777,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             raise RuntimeError(f"Cell belongs to Network {owner_name!r}; run it through Network {owner_name!r}.")
         if not self._initialized:
             self.init_state()
-        elif self.trainables.bindings():
+        elif not self._uses_reduction and self.trainables.bindings():
             self.trainables.materialize()
         return run_module.run(self, dt=dt, duration=duration)
 
@@ -2667,6 +2906,38 @@ def _select_population_value(value, *, population_indices: tuple[int, ...], popu
     index = [slice(None)] * len(shape)
     index[axis] = np.asarray(population_indices, dtype=np.int32)
     return value[tuple(index)]
+
+
+def _select_model_output(
+    value,
+    *,
+    population_indices: tuple[int, ...],
+    population_size: int,
+    batch_size: int | None,
+    detailed: bool,
+):
+    """Gather the explicit population axis from a detailed or reduced output."""
+    shape = tuple(getattr(value, "shape", ()))
+    if not shape:
+        return value
+    axis = (1 if batch_size is not None else 0) if not detailed else len(shape) - 2
+    if shape[axis] != population_size:
+        raise RuntimeError(f"Cell output population axis has size {shape[axis]!r}; expected {population_size!r}.")
+    index = [slice(None)] * len(shape)
+    index[axis] = np.asarray(population_indices, dtype=np.int32)
+    return value[tuple(index)]
+
+
+def _require_same_value_type(previous, current, *, name: str) -> None:
+    """Require one reduced output to preserve dtype and exact unit."""
+    previous_unit = u.get_unit(previous)
+    current_unit = u.get_unit(current)
+    if previous_unit != current_unit:
+        raise TypeError(f"{name} changed unit from {previous_unit!r} to {current_unit!r}.")
+    previous_dtype = jnp.asarray(u.get_magnitude(previous)).dtype
+    current_dtype = jnp.asarray(u.get_magnitude(current)).dtype
+    if previous_dtype != current_dtype:
+        raise TypeError(f"{name} changed dtype from {previous_dtype!r} to {current_dtype!r}.")
 
 
 def _select_packed_population_value(value, *, owners: np.ndarray, population_indices: tuple[int, ...]):

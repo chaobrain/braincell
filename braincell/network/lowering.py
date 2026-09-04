@@ -73,7 +73,7 @@ def lower_direct_connections(
                 raise TypeError("One direct Connection block must target exactly one synapse type.")
             synapse_type = str(synapse_types[0])
             layout_id = post.cell._get_synapse_store().layout_id(synapse_type)
-            layout = post.cell.runtime.layouts[layout_id]
+            layout = post.cell._event_layout(layout_id)
             synapse_index = post.cell._get_synapse_store().runtime_rows(connection.synapse_id).astype(np.int32)
             delay_steps = _expand_delay_steps(
                 connection.delay,

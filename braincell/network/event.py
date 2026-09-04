@@ -523,6 +523,8 @@ class VoltageCrossingSource(EventSource):
     def current_event_count(self, source_index):
         """Return current-boundary crossing values for selected detector rows."""
         self.cells._raise_if_not_initialized("read VoltageCrossingSource")
+        if self.cells._uses_reduction:
+            raise RuntimeError("VoltageCrossingSource is unavailable while its Cell uses a reduction model.")
         if not hasattr(self.cells, "_event_previous_V"):
             raise RuntimeError("Cell runtime does not expose previous voltage for threshold detection.")
         source_index = np.asarray(source_index, dtype=np.int64)
@@ -591,9 +593,9 @@ class _CellSpikeSource(EventSource):
         self.cell._raise_if_not_initialized("read cell.event_outputs['spike']")
         source_index = np.asarray(source_index, dtype=np.int64)
         spike = self.cell.spike.value
-        if len(self.cell.pop_size) == 0:
-            return u.math.broadcast_to(spike[self.cv_id], source_index.shape)
-        return spike[source_index, self.cv_id]
+        if self.cell._uses_reduction:
+            return spike[..., source_index]
+        return spike[..., source_index, self.cv_id]
 
 
 class EventOutputCollection:

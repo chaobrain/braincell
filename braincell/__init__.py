@@ -27,7 +27,7 @@ from braincell.quad.protocol import (
     hidden_state,
     state_grouping,
 )
-from . import quad, mech, channel, synapse, ion, filter, morph, trainable
+from . import quad, mech, channel, synapse, ion, filter, morph, reduction, trainable
 from ._base_channel import (
     Channel,
     IonInfo,
@@ -78,6 +78,20 @@ from .network.event import (
     VoltageCrossingSource,
 )
 from .network.recording import EventSeries, RecordingSchema, RecordingSpec, SampleBlock, observe
+from .reduction import (
+    EventAccumulatorReduction,
+    PayloadAccumulatorReduction,
+    ReductionContext,
+    ReductionInputGroup,
+    ReductionInputGroupSchema,
+    ReductionInputs,
+    ReductionModel,
+    ReductionOutput,
+    ReductionSynapse,
+    ReductionView,
+    ReductionViewCollection,
+    SynapticKernelAccumulatorReduction,
+)
 from ._version import (
     __version__,
     __version_info__,
@@ -133,6 +147,7 @@ __all__ = [
     "DiffEqModule",
     "DiffEqSingleState",
     "DiffEqState",
+    "EventAccumulatorReduction",
     "EventSequence",
     "EventSeries",
     "EventSource",
@@ -155,9 +170,19 @@ __all__ = [
     "NetworkResult",
     "Node",
     "NodeTree",
+    "PayloadAccumulatorReduction",
     "PointPlacement",
     "RecordingSchema",
     "RecordingSpec",
+    "ReductionContext",
+    "ReductionInputGroup",
+    "ReductionInputGroupSchema",
+    "ReductionInputs",
+    "ReductionModel",
+    "ReductionOutput",
+    "ReductionSynapse",
+    "ReductionView",
+    "ReductionViewCollection",
     "RunResult",
     "SampleBlock",
     "SineClamp",
@@ -165,6 +190,7 @@ __all__ = [
     "Soma",
     "Synapse",
     "SynapseView",
+    "SynapticKernelAccumulatorReduction",
     "VoltageCrossingSource",
     "__version__",
     "__version_info__",
@@ -180,6 +206,7 @@ __all__ = [
     "network",
     "observe",
     "quad",
+    "reduction",
     "state",
     "state_grouping",
     "synapse",

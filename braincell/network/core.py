@@ -53,6 +53,7 @@ class Population:
             "size",
             "ids",
             "event_outputs",
+            "outputs",
             "synapses",
             "connections",
             "metadata",
@@ -97,6 +98,13 @@ class Population:
             return MappingProxyType(result)
         port = "spike" if self.kind == "netstim" else "event"
         return MappingProxyType({port: self.model.view})
+
+    @property
+    def outputs(self):
+        """Return raw outputs exposed by a Cell population."""
+        if self.kind != "cell":
+            raise TypeError(f"Population {self.name!r} owns {self.kind}, not a Cell with raw outputs.")
+        return self.model.outputs
 
     @property
     def synapses(self):

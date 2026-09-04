@@ -51,7 +51,7 @@ dependencies = [
 ]
 # Convenience aggregator: everything a user-facing install might need
 optional-dependencies.all = [
-  "braincell[io,vis]",
+  "braincell[io,optim,vis]",
 ]
 # JAX backends. Pick exactly one; they are mutually exclusive.
 optional-dependencies.cpu = [ "jax[cpu]" ]
@@ -81,6 +81,8 @@ optional-dependencies.doc = [
 ]
 # NeuroMorpho.Org client in braincell.io.neuromorpho
 optional-dependencies.io = [ "requests" ]
+# Experimental black-box parameter search through braintools wrappers.
+optional-dependencies.optim = [ "nevergrad" ]
 # Testing dependencies. pytest-benchmark is optional at runtime -- the
 # benchmarks skip themselves when it is absent.
 optional-dependencies.testing = [

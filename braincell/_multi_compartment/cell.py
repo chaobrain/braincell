@@ -1491,6 +1491,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._step_clamp_point_current = brainstate.ShortTermState(
             u.Quantity(jnp.zeros(self._runtime.pop_size + (self._runtime.n_point,), dtype=float), u.nA)
         )
+        self._point_V = brainstate.ShortTermState(self._initial_point_voltage(self.V.value))
         self._current_time_state.value = 0.0 * u.ms
 
         cv_V = self.V.value
@@ -1547,7 +1548,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             delattr(self, "spike")
         if hasattr(self, "_event_previous_V"):
             delattr(self, "_event_previous_V")
-        for name in ("_step_clamp_components", "_step_clamp_point_current"):
+        for name in ("_step_clamp_components", "_step_clamp_point_current", "_point_V"):
             if hasattr(self, name):
                 delattr(self, name)
         self._current_time_state.value = 0.0 * u.ms
@@ -1721,6 +1722,32 @@ class Cell(_CellFacade, HHTypedNeuron):
     def _cv_to_point(self, cv_values):
         self._raise_if_not_initialized("_cv_to_point()")
         return bridge.cv_to_point(cv_values, self._runtime)
+
+    def _initial_point_voltage(self, cv_values):
+        """Expand CV voltage to every point for the initial DHS linearization."""
+
+        return cv_values[..., self._runtime.point_to_representative_cv_np]
+
+    def _dhs_point_voltage(self, cv_values=None):
+        """Return cached DHS point voltage with current midpoint values."""
+
+        values = self.V.value if cv_values is None else cv_values
+        point_values = self._point_V.value
+        midpoint_ids = self._runtime.node_tree.cv_to_mid_node_id
+        return point_values.at[..., midpoint_ids].set(values)
+
+    def _set_dhs_point_voltage(self, point_values):
+        """Publish one complete point-tree voltage solution."""
+
+        self._point_V.value = point_values
+
+    def _point_voltage_for_mechanisms(self, cv_values=None):
+        """Return the electrical point voltage used by the active solver."""
+
+        values = self.V.value if cv_values is None else cv_values
+        if self._solver_name in {"staggered", "dhs_voltage"} and hasattr(self, "_point_V"):
+            return self._dhs_point_voltage(values)
+        return bridge.cv_to_point(values, self._runtime)
 
     def _cv_to_point_unchecked(self, cv_values):
         return bridge.cv_to_point(cv_values, self._runtime)
@@ -2070,7 +2097,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         delivered; it does not integrate continuous synapse dynamics.
         """
         self._raise_if_not_initialized("_begin_step()")
-        point_V = self._cv_to_point(self.V.value)
+        point_V = self._point_voltage_for_mechanisms(self.V.value)
         self._apply_runtime_synapse_events(point_V)
 
     def _prepare_step_clamps(self, *, t=None, dt=None) -> None:
@@ -2090,11 +2117,15 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     def _solver_clamp_point_current(self, *, t):
         """Return the prepared point current, with a direct-solver fallback."""
+        if len(self._get_clamp_store().id) == 0:
+            return self._step_clamp_point_current.value
         if brainstate.environ.get("_braincell_step_clamps_prepared", False):
             return self._step_clamp_point_current.value
         try:
             dt = brainstate.environ.get_dt()
         except KeyError:
+            return self._runtime.evaluate_point_clamps(t=t)
+        if u.get_unit(dt).is_unitless:
             return self._runtime.evaluate_point_clamps(t=t)
         components = self._get_clamp_store().evaluate(self._runtime, t=t + 0.5 * dt)
         return self._get_clamp_store().scatter_to_points(
@@ -2159,7 +2190,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         delivery layer before this preparation phase.
         """
         self._raise_if_not_initialized("_prepare_next_synapse_inputs()")
-        point_V = self._cv_to_point(self.V.value)
+        point_V = self._point_voltage_for_mechanisms(self.V.value)
         if t is None:
             self._prepare_runtime_synapse_inputs(point_V)
         else:
@@ -2394,6 +2425,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         v_value = self._materialize_population_parameter("V_init")
         self._V_init_materialized = v_value
         self.V.value = bridge.expand_with_batch_axis(v_value, batch_size, name="Cell.V")
+        self._point_V.value = self._initial_point_voltage(self.V.value)
         self.spike.value = _zero_spike_like(self.V.value)
         self._event_previous_V.value = self.V.value
         self._current_time_state.value = 0.0 * u.ms

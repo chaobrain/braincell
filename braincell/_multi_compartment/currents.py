@@ -17,10 +17,10 @@
 
 Responsibilities:
 
-1. Evaluate sparse inputs, clamps, and placed synapses in point space.
-2. Gather their contribution onto CV midpoint rows.
-3. Evaluate painted density channels directly in CV space.
-4. Return the combined CV-space current for the voltage update.
+1. Preserve the CV-space current path used by derivative solvers.
+2. Evaluate the staggered/DHS membrane rate directly in full point space.
+3. Keep density mechanisms on CV midpoints and point mechanisms at their
+   declared electrical points.
 """
 
 from typing import TYPE_CHECKING
@@ -42,7 +42,7 @@ from braincell._compute import bridge
 if TYPE_CHECKING:
     from .cell import Cell
 
-__all__ = ["total_membrane_current", "total_membrane_current_point"]
+__all__ = ["total_membrane_current", "total_membrane_current_point", "total_membrane_rate_point"]
 
 _CURRENT_DENSITY = u.nA / u.cm**2
 
@@ -76,6 +76,42 @@ def total_membrane_current_point(
         t=t,
     )
     return bridge.cv_to_point(total_cv, host.runtime)
+
+
+def total_membrane_rate_point(host: "Cell", *, point_V, point_capacitance, t):
+    """Return the staggered membrane contribution on every point-tree row.
+
+    Density currents are evaluated only at CV midpoints. Synapses and clamps
+    remain absolute point currents and are normalized by the same row scale as
+    the DHS axial equation, including on algebraic boundary rows.
+    """
+
+    runtime = host.runtime
+    V_cv = bridge.point_to_cv(point_V, runtime)
+    with jax.named_scope("braincell:point_membrane_rate:density"):
+        rate_cv = _density_current_cv(host, V_cv=V_cv) / host.C
+
+    with jax.named_scope("braincell:point_membrane_rate:current_inputs"):
+        zero_density = u.Quantity(
+            jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=float),
+            _CURRENT_DENSITY,
+        )
+        input_density = host.sum_current_inputs(zero_density, point_V)
+        rate_cv = rate_cv + bridge.point_to_cv(input_density, runtime) / host.C
+
+    rate_point = bridge.cv_to_point(rate_cv, runtime)
+    point_current = host._solver_clamp_point_current(t=t)
+    with jax.named_scope("braincell:point_membrane_rate:synapses"):
+        for key, synapse in host.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
+            if not isinstance(synapse, RuntimeSynapse):
+                continue
+            layout_id = layout_id_from_key(key)
+            layout = runtime.layouts[layout_id]
+            contribution = _synapse_absolute_current_point(runtime, layout, synapse, point_V)
+            if contribution is not None:
+                point_current = point_current + contribution
+
+    return rate_point + point_current / point_capacitance
 
 
 def _point_mechanism_current(host: "Cell", *, point_V, t):
@@ -128,6 +164,16 @@ def _density_current_cv(host: "Cell", *, V_cv):
 
 
 def _synapse_contrib_to_point(runtime: CellRuntimeState, layout, syn, point_V):
+    contrib_point = _synapse_absolute_current_point(runtime, layout, syn, point_V)
+    if contrib_point is None:
+        return None
+    point_area = runtime.point_area
+    return contrib_point / point_area
+
+
+def _synapse_absolute_current_point(runtime: CellRuntimeState, layout, syn, point_V):
+    """Scatter one runtime synapse's inward-positive absolute point current."""
+
     local_voltage = layout.gather_points(point_V)
     try:
         contrib = jax.named_call(
@@ -138,16 +184,14 @@ def _synapse_contrib_to_point(runtime: CellRuntimeState, layout, syn, point_V):
         raise ValueError(f"Error computing current for synapse layout {layout.id!r}:\n{syn}\nError: {exc}") from exc
     if contrib is None:
         return None
-    point_area = runtime.point_area[..., layout.point_index]
-    syn_contrib = contrib / point_area
     if hasattr(contrib, "unit"):
         contrib_point = u.Quantity(
-            jnp.zeros(point_V.shape, dtype=u.get_mantissa(syn_contrib).dtype),
-            syn_contrib.unit,
+            jnp.zeros(point_V.shape, dtype=u.get_mantissa(contrib).dtype),
+            contrib.unit,
         )
     else:
-        contrib_point = jnp.zeros(point_V.shape, dtype=jnp.asarray(syn_contrib).dtype)
-    return layout.scatter_add_points(contrib_point, syn_contrib)
+        contrib_point = jnp.zeros(point_V.shape, dtype=jnp.asarray(contrib).dtype)
+    return layout.scatter_add_points(contrib_point, contrib)
 
 
 def _clamp_density(host: "Cell", *, t):

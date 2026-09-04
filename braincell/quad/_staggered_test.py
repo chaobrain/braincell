@@ -27,7 +27,6 @@ from unittest.mock import patch
 
 import brainstate
 import brainunit as u
-import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -38,7 +37,10 @@ from braincell import (
     CurrentClamp,
     DiffEqModule,
     Morphology,
+    NetStim,
+    connect,
     mech,
+    observe,
 )
 from braincell.filter import AllRegion, RootLocation
 from braincell.quad import get_registry, staggered_step
@@ -179,7 +181,10 @@ class StaggeredAutodiffTest(unittest.TestCase):
             with brainstate.environ.context(dt=0.025 * u.ms, precision=64):
                 v0 = jnp.asarray(-65.0, dtype=jnp.float64)
                 g_max = jnp.asarray(12.0, dtype=jnp.float64)
-                grad_v0, grad_g_max = jax.grad(objective, argnums=(0, 1))(v0, g_max)
+                grad_v0, grad_g_max = brainstate.transform.grad(
+                    objective,
+                    argnums=(0, 1),
+                )(v0, g_max)
 
                 epsilon = 1e-3
                 finite_diff_v0 = (objective(v0 + epsilon, g_max) - objective(v0 - epsilon, g_max)) / (2.0 * epsilon)
@@ -467,6 +472,69 @@ class DhsEndpointClampTest(unittest.TestCase):
         after = float(cell.V.value[0, 0].to_decimal(u.mV))
 
         self.assertGreater(after, before)
+
+
+class DhsEndpointSynapseNeuronReferenceTest(unittest.TestCase):
+    @staticmethod
+    def _run_expsyn_at(x):
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(
+            Morphology.from_root(soma, name="soma"),
+            cv_policy=CVPerBranch(),
+            V_init=-65.0 * u.mV,
+            solver="staggered",
+        )
+        cell.paint(
+            AllRegion(),
+            mech.CableProperty(
+                resting_potential=-65.0 * u.mV,
+                membrane_capacitance=1.0 * u.uF / u.cm**2,
+                axial_resistivity=100.0 * u.ohm * u.cm,
+            ),
+            mech.Channel(
+                "IL",
+                name="leak",
+                g_max=0.1 * u.mS / u.cm**2,
+                E=-65.0 * u.mV,
+            ),
+        )
+        synapse = mech.Synapse("ExpSyn", name="syn", tau=2.0 * u.ms, e=0.0 * u.mV)
+        cell.place(RootLocation(x=x), synapse)
+        connect(
+            f"drive_{x}",
+            source=NetStim(start=1.0 * u.ms, number=1),
+            synapse=cell.synapses[synapse],
+            weight=0.01 * u.uS,
+        )
+        cell.soma.record("v", observe.state("v"))
+
+        result = cell.run(dt=0.025 * u.ms, duration=5.0 * u.ms)
+        trace = np.asarray(result.samples["v"].values.to_decimal(u.mV), dtype=float)[:, 0]
+        final = float(np.asarray(cell.V.value.to_decimal(u.mV)).reshape(-1)[0])
+        return float(np.max(trace)), final
+
+    def test_endpoint_and_midpoint_match_fixed_neuron_reference(self):
+        # Generated once with NEURON 8.2.6, fixed-step secondorder=0:
+        # L=diam=20 um, nseg=1, Ra=100 ohm cm, cm=1 uF/cm2,
+        # pas.g=0.0001 S/cm2, pas.e=-65 mV, ExpSyn(tau=2 ms, e=0),
+        # NetCon event at 1 ms with weight=0.01 uS, dt=0.025 ms.
+        neuron_reference = {
+            0.0: (-25.36324335207355, -25.809036761905066),
+            0.5: (-25.359568290945035, -25.805809720317054),
+        }
+
+        with brainstate.environ.context(precision=64):
+            endpoint = self._run_expsyn_at(0.0)
+            midpoint = self._run_expsyn_at(0.5)
+
+        np.testing.assert_allclose(endpoint, neuron_reference[0.0], rtol=0.0, atol=1e-8)
+        np.testing.assert_allclose(midpoint, neuron_reference[0.5], rtol=0.0, atol=1e-8)
+        self.assertLess(endpoint[0], midpoint[0])
+        self.assertLess(endpoint[1], midpoint[1])
 
 
 class DhsMidpointClampPopulationTest(unittest.TestCase):

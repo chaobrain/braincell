@@ -161,6 +161,7 @@ class CellRuntimeState:
     bound_ion_keys: dict[int, tuple[str, ...]]
     current_owner_keys: dict[int, str | tuple[str, ...] | None]
     midpoint_mask_np: np.ndarray
+    point_to_representative_cv_np: np.ndarray
     merged_channel_layout_groups: dict[int, tuple[int, ...]] | None = None
     dhs_static_source_np: object | None = None
     dhs_static_cache: object | None = None
@@ -461,11 +462,13 @@ class CellRuntimeState:
         )
         cv_area = u.Quantity(cv_area_decimal, area_unit)
         point_area_decimal = np.zeros((n_point,), dtype=float)
+        point_to_representative_cv_np = np.empty((n_point,), dtype=np.int32)
         for point in node_tree.nodes:
             roles = tuple(point.roles)
             if len(roles) == 0:
-                continue
+                raise ValueError(f"Point {point.id!r} is not associated with any CV.")
             cv_id = int(roles[0].cv_id)
+            point_to_representative_cv_np[int(point.id)] = cv_id
             point_area_decimal[int(point.id)] = cv_area_decimal[cv_id]
         point_area = u.Quantity(point_area_decimal, area_unit)
         midpoint_ids = np.asarray(node_tree.cv_to_mid_node_id, dtype=np.int32)
@@ -498,6 +501,7 @@ class CellRuntimeState:
             bound_ion_keys=bound_ion_keys,
             current_owner_keys=current_owner_keys,
             midpoint_mask_np=midpoint_mask_np,
+            point_to_representative_cv_np=point_to_representative_cv_np,
             merged_channel_layout_groups=merged_channel_layout_groups,
             clamp_routing_table=clamp_routing_table,
             cv_area=cv_area,

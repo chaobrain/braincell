@@ -16,6 +16,7 @@
 import unittest
 
 import brainunit as u
+import jax.numpy as jnp
 import numpy as np
 
 import braincell
@@ -24,6 +25,35 @@ from braincell.filter import BranchSlice, at
 
 
 class RecordingTest(unittest.TestCase):
+    def test_synapse_current_uses_staggered_point_voltage(self) -> None:
+        soma = braincell.Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = braincell.Cell(
+            braincell.Morphology.from_root(soma, name="soma"),
+            cv_policy=braincell.CVPerBranch(),
+            solver="staggered",
+        )
+        synapse = braincell.mech.Synapse("ExpSyn", name="syn", e=0.0 * u.mV)
+        cell.place(at("soma", 0.0), synapse)
+        cell.record(
+            "syn_current",
+            braincell.observe.synapse(name="syn").current(reduce="none"),
+        )
+        cell.init_state()
+
+        layout = next(layout for layout in cell.runtime.layouts if layout.kind == "synapse:ExpSyn")
+        runtime_synapse = cell.runtime.get_runtime_node(layout.id)
+        runtime_synapse.g.value = runtime_synapse.g.value + 0.01 * u.uS
+        cell.V.value = cell.V.value.at[..., 0].set(-60.0 * u.mV)
+        cell._set_dhs_point_voltage(jnp.asarray([[-40.0, -60.0, -60.0]]) * u.mV)
+
+        sampled = cell._compiled_recordings(0.025 * u.ms)[0].sample()
+
+        np.testing.assert_allclose(sampled.to_decimal(u.nA), [0.4], rtol=0.0, atol=1e-7)
+
     def test_clamp_view_recording_uses_midpoint_time_and_cached_components(self) -> None:
         cell = _cell(1)
         first = braincell.CurrentClamp(durations=0.1 * u.ms, amplitudes=0.2 * u.nA)

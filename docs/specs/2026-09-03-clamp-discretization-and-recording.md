@@ -51,3 +51,10 @@ creating gaps, overlaps, or an extra terminal sample.
 `ClampView` is intentionally generic enough to include voltage clamps later.
 Voltage commands, feedback current, controller state, and solver constraints
 are not part of this change and require a separate specification.
+
+Exact boundary-point voltage dependence is currently implemented only by the
+staggered/DHS voltage solve. Derivative-based explicit solvers still project
+point mechanisms onto CV midpoint voltage and do not expose boundary rows or
+re-evaluate mechanisms at Runge-Kutta substeps. Extending those solvers needs a
+separate point-state and stage-sampling design; it is intentionally TODO rather
+than approximated by the DHS implementation.

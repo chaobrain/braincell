@@ -507,9 +507,7 @@ def _sample_synapse_field(view, field: str):
 
 
 def _sample_synapse_current(cell, view):
-    from braincell._compute import bridge
-
-    point_v = bridge.cv_to_point(cell.V.value, cell.runtime)
+    point_v = cell._point_voltage_for_mechanisms(cell.V.value)
     groups = []
     for positions, selected in _synapse_type_groups(view):
         synapse_type = selected._require_homogeneous_type()

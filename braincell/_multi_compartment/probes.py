@@ -33,7 +33,6 @@ from braincell.mech import (
     MechanismProbe,
     StateProbe,
 )
-from braincell._compute import bridge
 
 if TYPE_CHECKING:
     from .cell import Cell
@@ -173,6 +172,8 @@ def _sample_state_probe_point(
 ) -> object:
     if declaration.field != "v":
         raise ValueError(f"Unsupported StateProbe field {declaration.field!r}.")
+    if rcell.solver_name in {"staggered", "dhs_voltage"}:
+        return _select_last_axis(rcell._point_voltage_for_mechanisms(rcell.V.value), point_id)
     cv_id = _representative_cv_id(runtime, point_id=point_id)
     return _select_last_axis(rcell.V.value, cv_id)
 
@@ -229,7 +230,7 @@ def _sample_current_probe_point(
     declaration: CurrentProbe,
     point_id: int,
 ) -> object:
-    point_V = bridge.cv_to_point(rcell.V.value, runtime)
+    point_V = rcell._point_voltage_for_mechanisms(rcell.V.value)
     cv_id = _representative_cv_id(runtime, point_id=point_id)
     if declaration.mechanism is not None:
         synapse_view = _synapse_probe_view(rcell, declaration.mechanism, point_id=point_id)

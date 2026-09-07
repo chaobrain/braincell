@@ -6,7 +6,8 @@
 在相应代码和测试合入前，所有阶段均视为未实现。
 
 本文保留首版 P0 的历史分阶段计划。其中三个 Channel 和手写参数白名单的范围已被
-[Channel Learning](../../specs/2026-09-07-channel-learning.md) 扩展取代；当前契约以
+[Channel Learning](../../specs/2026-09-07-channel-learning.md) 和
+[Ion Learning](../../specs/2026-09-07-ion-learning.md) 扩展取代；当前契约以
 [API](api.md) 和 [Architecture](architecture.md) 为准。
 
 更宽的模型优化能力地图见 [Design overview](design-overview.md)，内部模型见

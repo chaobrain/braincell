@@ -423,7 +423,7 @@ class CellRuntimeState:
                         shape=shape,
                     )
 
-        _allocate_extra_channel_parameters(
+        _allocate_extra_density_parameters(
             cell=cell,
             layouts=layouts,
             layout_mechanisms=layout_mechanisms,
@@ -742,7 +742,7 @@ class CellRuntimeState:
         return u.Quantity(point_current_decimal, u.nA)
 
 
-def _allocate_extra_channel_parameters(
+def _allocate_extra_density_parameters(
     *,
     cell,
     layouts,
@@ -754,21 +754,35 @@ def _allocate_extra_channel_parameters(
     """Allocate explicitly supplied fields with no numeric signature default."""
     supplied = {}
     for (category, owner, population, cv, field), value in cell._density_parameter_overrides.items():
-        if category == "channel":
-            supplied.setdefault((owner, field), {})[(population, cv)] = value
+        if category in {"channel", "ion"}:
+            supplied.setdefault((category, owner, field), {})[(population, cv)] = value
     for binding in cell.trainables.bindings():
         values = binding._evaluate()
-        rows = supplied.setdefault((binding.target_owner, binding.target_field), {})
+        rows = supplied.setdefault((binding._rows[0].category, binding.target_owner, binding.target_field), {})
         for index, row in enumerate(binding._rows):
             rows[(row.population_index, row.cv_id)] = values[index]
 
     for layout in layouts:
         mechanism = layout_mechanisms[layout.id]
-        if not isinstance(mechanism, Density) or mechanism.category != "channel":
+        if not isinstance(mechanism, Density) or mechanism.category not in {"channel", "ion"}:
             continue
-        for (owner, field), rows in supplied.items():
+        if mechanism.category == "ion":
+            for (layout_id, field), state in state_buffers.items():
+                if (
+                    layout_id == layout.id
+                    and field.endswith("_initializer")
+                    and isinstance(state, RuntimeParameterState)
+                ):
+                    mask = np.zeros(state.full_shape, dtype=bool)
+                    if mechanism.params.get(field) is not None:
+                        mask[..., list(layout.source_cv_ids)] = True
+                    for population, cv in supplied.get(("ion", mechanism.instance_name, field), {}):
+                        if cv in layout.source_cv_ids:
+                            mask[population, cv] = True
+                    state.initial_override_mask = mask
+        for (category, owner, field), rows in supplied.items():
             key = (layout.id, field)
-            if owner != mechanism.instance_name or key in state_buffers:
+            if category != mechanism.category or owner != mechanism.instance_name or key in state_buffers:
                 continue
             expected = {(population, cv) for population in range(int(np.prod(pop_size))) for cv in layout.source_cv_ids}
             if not expected.intersection(rows):

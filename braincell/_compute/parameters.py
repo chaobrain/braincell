@@ -13,13 +13,15 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Signature-derived channel metadata and compact density parameter storage."""
+"""Signature-derived Channel/Ion metadata and compact parameter storage."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 import inspect
+import functools
 
+import braintools
 import brainunit as u
 import jax.numpy as jnp
 import numpy as np
@@ -40,35 +42,56 @@ __all__ = [
 
 
 def density_parameter_schema(mechanism: Density) -> Mapping[str, ParameterSpec]:
-    """Return signature metadata for channels and existing schemas for other densities."""
+    """Return Channel/Ion signature metadata or an existing density schema."""
     runtime_cls = get_registry().get(mechanism.category, mechanism.class_name)
-    if mechanism.category == "channel":
-        return {
-            name: _SignatureParameterSpec(
-                mechanism.params.get(name, parameter.default)
-                if parameter.default is inspect.Parameter.empty or parameter.default is None
-                else parameter.default
-            )
-            for name, parameter in _channel_signature(runtime_cls).items()
-        }
+    if mechanism.category in {"channel", "ion"}:
+        result = {}
+        for name, parameter in _density_signature(runtime_cls).items():
+            default = parameter.default
+            if mechanism.category == "ion":
+                default = _ion_default(runtime_cls, name, default)
+            if default is inspect.Parameter.empty or default is None or callable(default):
+                default = mechanism.params.get(name, default)
+            result[name] = _SignatureParameterSpec(default)
+        return result
     schema = getattr(runtime_cls, "parameters", {})
     return schema if isinstance(schema, Mapping) else {}
 
 
-def _channel_signature(runtime_cls) -> dict[str, inspect.Parameter]:
+def _density_signature(runtime_cls) -> dict[str, inspect.Parameter]:
     # BrainState's metaclass exposes (*args, **kwargs) on the class itself.
     parameters = tuple(inspect.signature(runtime_cls.__init__).parameters.values())[1:]
     result = {}
     if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters):
         parent = next((cls for cls in runtime_cls.__mro__[1:] if "__init__" in vars(cls)), None)
         if parent is not None and parent is not object:
-            result.update(_channel_signature(parent))
+            result.update(_density_signature(parent))
     result.update(
         (p.name, p)
         for p in parameters
         if p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
     )
     return result
+
+
+def _ion_default(runtime_cls, name, default):
+    if name in {"size", "name", "solver", "species_initializers"}:
+        return default
+    if default is not None and not isinstance(default, braintools.init.Initialization):
+        return default
+    node = _ion_default_node(runtime_cls)
+    attr = "_Ci_initializer" if name == "Ci_initializer" and hasattr(node, "_Ci_initializer") else name
+    value = getattr(node, attr, default)
+    if callable(value):
+        value = value((1,))
+    if tuple(getattr(value, "shape", ())) == (1,):
+        value = value[0]
+    return value
+
+
+@functools.lru_cache(maxsize=None)
+def _ion_default_node(runtime_cls):
+    return runtime_cls(size=(1,))
 
 
 class _SignatureParameterSpec(ParameterSpec):
@@ -92,12 +115,18 @@ def _is_buffer_value(value: object) -> bool:
 def density_parameter_names(mechanism: Density) -> tuple[str, ...]:
     """Return fields needing numeric runtime storage, not a trainability whitelist."""
     schema = density_parameter_schema(mechanism)
-    if mechanism.category == "channel":
+    if mechanism.category in {"channel", "ion"}:
         names = dict.fromkeys((*schema, *mechanism.params))
         return tuple(
             name
             for name in names
-            if _is_buffer_value(mechanism.params.get(name, schema[name].default if name in schema else None))
+            if _is_buffer_value(
+                mechanism.params[name]
+                if name in mechanism.params and mechanism.params[name] is not None
+                else schema[name].default
+                if name in schema
+                else None
+            )
         )
     return tuple(schema) if schema else tuple(mechanism.params)
 
@@ -110,7 +139,12 @@ def density_parameter_spec(mechanism: Density, name: str) -> ParameterSpec | Non
 def density_parameter_value(mechanism: Density, name: str) -> object:
     """Resolve an explicit declaration value or its schema default."""
     if name in mechanism.params:
-        return mechanism.params[name]
+        value = mechanism.params[name]
+        if mechanism.category == "ion" and isinstance(value, braintools.init.Initialization):
+            value = value((1,))
+            return value[0] if tuple(getattr(value, "shape", ())) == (1,) else value
+        if value is not None or mechanism.category != "ion":
+            return value
     spec = density_parameter_spec(mechanism, name)
     if spec is None or spec.default is inspect.Parameter.empty:
         raise KeyError(f"Mechanism has no parameter {name!r}.")

@@ -27,10 +27,23 @@ from braincell._compute.parameters import (
     set_parameter_row,
 )
 from braincell._parameter_schema import ParameterSpec
-from braincell.mech import Channel, get_registry
+from braincell.mech import Channel, Ion, get_registry
 
 
 class SignatureParameterTest(unittest.TestCase):
+    def test_registered_ion_numeric_defaults_are_valid(self):
+        from braincell._compute.parameters import density_parameter_names
+
+        for class_name in get_registry().names("ion"):
+            if class_name.startswith("_"):
+                continue
+            mechanism = Ion(class_name)
+            schema = density_parameter_schema(mechanism)
+            for field in density_parameter_names(mechanism):
+                with self.subTest(ion=class_name, field=field):
+                    value = density_parameter_value(mechanism, field)
+                    make_runtime_parameter_state(value, full_shape=(1, 2), spec=schema[field], name=field)
+
     def test_previously_unclassified_channel_has_signature_defaults(self):
         mechanism = Channel("Na_TM1991")
         schema = density_parameter_schema(mechanism)

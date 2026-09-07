@@ -516,5 +516,19 @@ class MixIonsPackingTest(unittest.TestCase):
             gc.enable()
 
 
+class IonRuntimeParameterTest(unittest.TestCase):
+    def test_attribute_assignment_preserves_runtime_parameter_identity(self):
+        from braincell._parameter_schema import RuntimeParameterState
+        from braincell.ion import SodiumFixed
+
+        ion = SodiumFixed(size=2)
+        parameter = RuntimeParameterState(50 * u.mV, full_shape=(2,))
+        ion.E = parameter
+        self.assertTrue(u.math.allclose(ion.E, 50 * u.mV))
+        ion.E = 45 * u.mV
+        self.assertIs(vars(ion)["E"], parameter)
+        self.assertTrue(u.math.allclose(ion.E, 45 * u.mV))
+
+
 if __name__ == "__main__":
     unittest.main()

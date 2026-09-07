@@ -84,13 +84,13 @@ runtime delivery buffer 能保持 JAX trace 和固定 shape 后才接入。
 
 ## Parameter Schema
 
-Channel 的候选字段来自实际 `__init__` 签名，包括转发的父类签名，不再维护
+Channel 和 Ion 的候选字段来自实际 `__init__` 签名，包括转发的父类签名，不再维护
 `ParameterSpec` 科学分类白名单。内部仍生成默认值、单位验证所需的 metadata；数值
 缓冲分配与训练资格是不同问题，非数值配置不因出现在签名中就被强制数组化。
 
 只有签名中的参数可选择；内部 gate state、硬编码常数不会自动暴露。选择后可能
 获得非零梯度、合法零梯度，或者原有数值转换、形状和静态控制流错误。dtype 不被
-当作可学习性的判据。Ion 和 Synapse 的参数管理不受此 Channel 扩展影响。
+当作可学习性的判据。Synapse 保持原有参数管理。
 
 ## Runtime 参数列
 
@@ -103,6 +103,17 @@ Channel 的数值物理参数由非可训 `RuntimeParameterState(LongTermState)`
 不会因数值从相同变为不同而触发第二步 JIT 重编译。
 压缩轴同时考虑 binding 的分组和区域所有权，不能仅因初始值相同而合并独立区域。
 浮点训练值写入整数默认缓冲时提升 dtype，避免截断数值并切断梯度。
+
+Ion 复用相同的紧凑布局参数列；同名 Ion 跨布局合并到持久的完整矩形参数状态，
+同步使用 JAX scatter，不把 tracer 转回 NumPy。自动 root 名包含 category，避免
+同名 Channel/Ion 字段冲突。参数精度服从 JAX/BrainState 的配置，不再隐式依赖
+旧 Ion NumPy 合并路径的 float64。
+
+初始参数和动态物种分别存储。初值覆盖使用可跟踪的区域 mask，未覆盖点在 reset
+时求模型默认值；完全显式的数值初值仍可作为 Quantity 读取。缓冲物平衡初值和
+caiBase/caliBase 默认关系保存计算方式，不保存构造时的结果。
+InitNernst 的存储电位使用 LongTermState，保持原有刷新时机并避免 JIT 缓存旧值。
+Nannuli 派生的 vrat/dsqvol 动态求值，反应图与单次导数求值内的 factor 复用保留。
 
 ## TrainableManager
 

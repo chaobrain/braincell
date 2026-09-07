@@ -191,7 +191,9 @@ class TrainableManager(brainstate.nn.Module):
         mechanism = view.rows[0].mechanism
         schema = density_parameter_schema(mechanism)
         if target_field not in schema:
-            raise KeyError(f"Channel {mechanism.class_name!r} has no trainable parameter {target_field!r}.")
+            raise KeyError(
+                f"{mechanism.category.title()} {mechanism.class_name!r} has no trainable parameter {target_field!r}."
+            )
 
         rows = tuple(
             _TargetRow(
@@ -359,7 +361,7 @@ def _base_name(rows, field: str, source: ParameterSource) -> str:
         :8
     ]
     role = "direct" if isinstance(source, DirectSource) else "scale" if isinstance(source, ScaleSource) else "function"
-    return f"channel.{rows[0].owner}.{field}.{role}.{fingerprint}"
+    return f"{rows[0].category}.{rows[0].owner}.{field}.{role}.{fingerprint}"
 
 
 def _group_indices(rows, group_by: str) -> tuple[np.ndarray, int]:

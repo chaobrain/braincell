@@ -5,7 +5,7 @@
 本目录讨论 BrainCell 模型参数优化所需的接口、架构和实验依据。目录名 `optim` 表示
 问题域，不对应 `braincell.optim` Python 模块，也不表示 BrainCell 自己实现优化算法。
 
-当前已经实现的首个公共 API 是：在三个 Channel 上选择可训参数，并把低维参数或 latent
+当前已经实现的公共 API 是：在 Channel 和 Ion 上选择签名参数，并把低维参数或 latent
 函数映射到 runtime 物理字段。数据、loss、搜索、诊断和结果协议仍处于需求或实验阶段，
 在形成稳定合同前不预先占用公共类型名。
 
@@ -117,12 +117,12 @@ optimizer.register_trainable_weights(states)
 
 ## 当前范围
 
-当前覆盖 multi-compartment `ChannelView` 上由 Channel 构造签名声明的参数，
+当前覆盖 multi-compartment `ChannelView` 和 `IonView` 上由构造签名声明的参数，
 不需要手写可训参数白名单，并要求在 `init_state()` 前声明。是否可微以及是否有
 非零梯度取决于模型运算和损失；既有类型、单位、形状及静态控制流错误仍有效。
 以下内容不属于当前实现：
 
-- Ion、Synapse 和 Connection weight；
+- Synapse 和 Connection weight；
 - Network 参数聚合与自动物化；
 - cable、Cell initial value 和 topology 参数；
 - 初始化后改变 trainable ownership；

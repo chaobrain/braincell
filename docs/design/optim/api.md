@@ -7,8 +7,8 @@
 [Implementation plan](implementation-plan.md)，更宽的模型优化能力边界见
 [Design overview](design-overview.md)。
 
-当前范围为 multi-compartment `ChannelView` 上构造签名显式声明的参数，
-不再要求 Channel 维护可训参数字典。Ion、Synapse、Connection、Network 聚合、
+当前范围为 multi-compartment `ChannelView` 和 `IonView` 上构造签名显式声明的参数，
+不再要求 Channel 或 Ion 维护可训参数字典。Synapse、Connection、Network 聚合、
 数据、loss、搜索、history、checkpoint 和诊断接口不在本文预先占用公共名称。
 
 ## Quick Start
@@ -63,6 +63,7 @@ View 公开：
 
 ```text
 ChannelView.trainable(**fields) -> ChannelView
+IonView.trainable(**fields) -> IonView
 ```
 
 ## `View.trainable()`
@@ -94,7 +95,7 @@ na.trainable(
 
 - 只能在 `Cell.init_state()` 前调用；
 - View 必须非空，并且只选择一个逻辑 mechanism owner；
-- target 必须出现在 Channel 构造签名中；单位、形状和模型原有运算约束仍适用；
+- target 必须出现在 Channel/Ion 构造签名中；单位、形状和模型原有运算约束仍适用；
 - 同一逻辑 row/field 只能有一个 binding；
 - 多字段调用原子注册，失败时不留下部分 roots 或 bindings；
 - 注册不会立即写 runtime；初始化时分配物理缓冲并进行 materialization；
@@ -112,7 +113,7 @@ na.trainable(
 
 表中为典型数值参数，并非额外白名单。整数默认值不代表不可微，例如浓度指数 `n`；
 布尔比较可能产生零梯度，Python 控制流或字符串配置则可能在转换、初始化或求导时
-自然报错。系统不承诺非零梯度，也不自动判断可辨识性。Ion、动态 gate state 和
+自然报错。系统不承诺非零梯度，也不自动判断可辨识性。动态 gate state 和
 不在构造签名中的内部常数不因本次扩展而成为候选项。
 
 省略的数值参数可从签名读取默认值并在初始化前 `.set()`。必填参数没有虚构默认值；
@@ -120,6 +121,30 @@ na.trainable(
 运行时布局的所有有效行，不能猜测未选行的默认值。
 
 温度派生的 sodium `phi` 在属性访问时重算；显式独立 `phi` 参数保持独立。
+
+### Ion 候选参数与初始状态
+
+Ion 使用同一参数 source、分组、区域选择和共享 root 机制，例如：
+
+```python
+import brainunit as u
+
+cell.ions["pool"].trainable(
+    Ci_initializer=braincell.trainable.parameter(0.001 * u.mM, group_by="all"),
+    tau=braincell.trainable.scale(name="clearance"),
+)
+```
+
+`Ci_initializer` 是初始参数，`Ci(t)` 是动态状态。loss 内先 `reset_state()` 再模拟；
+reset 读取当前训练初值，不重置 optimizer root。固定 Ion 的 `Ci` 则是普通物理参数。
+`Co/Ci/valence` 的 None 默认值按模型默认值解析。复杂 Ion 的默认初值在 reset 时
+根据当前参数推导，显式初值覆盖仍然独立，未选区域继续使用模型默认关系。
+
+固定 `E` 不因浓度改变而更新；InitNernst 在 init/reset/参数同步时刷新存储电位，
+DynamicNernst/KineticIon 在读取时计算电位。`species_initializers` 的既有覆盖功能保留，
+但不新增该字典内部字段的训练路径；已有具名 `BC_initializer` 等参数可直接选择。
+
+示例见 [Ion learning](../../../examples/multi_compartment/ion_learning.ipynb)。
 
 ## `parameter()`
 
@@ -472,7 +497,7 @@ connections.trainable(
 )
 ```
 
-Ion/Synapse/Connection binding 和 Network 聚合不属于 P0，只有在对应 runtime buffer 能
+Synapse/Connection binding 和 Network 聚合不属于当前实现，只有在对应 runtime buffer 能
 保持固定 shape、单位和 JAX trace 后才进入正式 API。
 
 ## Errors
@@ -480,7 +505,7 @@ Ion/Synapse/Connection binding 和 Network 聚合不属于 P0，只有在对应 
 P0 必须在明确边界拒绝：
 
 - 空 selection 或一个 View 跨多个逻辑 owners；
-- 不在 Channel 构造签名中的 target；
+- 不在 Channel/Ion 构造签名中的 target；
 - 初始化后新增 binding；
 - 重叠 row/field ownership；
 - root name 冲突或共享对象使用冲突名称；

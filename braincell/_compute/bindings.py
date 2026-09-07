@@ -950,7 +950,7 @@ def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_n
     layout = runtime.layouts[int(layout_id)]
     kind = layout.kind
     if kind.startswith("ion:"):
-        _sync_runtime_ion(runtime, layout_id=int(layout_id))
+        _sync_runtime_ion(runtime, layout_id=int(layout_id), var_name=var_name)
         return
     merged_groups = runtime.merged_channel_layout_groups or {}
     merged_layout_ids = merged_groups.get(int(layout_id))

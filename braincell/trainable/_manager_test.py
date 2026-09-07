@@ -40,6 +40,224 @@ def _leak_cell(*, pop_size=(2,)):
 
 
 class TrainableManagerTest(unittest.TestCase):
+    def test_ion_initial_scale_uses_current_derived_default_before_init(self):
+        cell = braincell.Cell(_build_tree())
+        cell.paint(AllRegion(), braincell.mech.Ion("CdpHVA_SU2015_DCN", name="pool", caiBase=0.001 * u.mM))
+        cell.soma.ions["pool"].set(caiBase=0.002 * u.mM)
+        self.assertTrue(u.math.allclose(cell.ions["pool"].Ci_initializer, u.math.asarray([0.002, 0.001]) * u.mM))
+        cell.ions["pool"].trainable(Ci_initializer=braincell.trainable.scale(name="initial"))
+        cell.init_state()
+        self.assertTrue(u.math.allclose(cell.get_ion("pool").Ci.value, u.math.asarray([[0.002, 0.001]]) * u.mM))
+
+    def test_ion_initial_parameter_survives_repeated_compiled_reset(self):
+        cell = braincell.Cell(_build_tree())
+        cell.paint(AllRegion(), braincell.mech.Ion("CalciumDetailed", name="pool"))
+        cell.ions["pool"].trainable(
+            Ci_initializer=braincell.trainable.parameter(0.001 * u.mM, group_by="all", name="initial")
+        )
+        cell.init_state()
+
+        def initial_concentration():
+            cell.reset_state()
+            return cell.get_ion("pool").Ci.value.to_decimal(u.mM).sum()
+
+        run = brainstate.transform.jit(initial_concentration)
+        grad = brainstate.transform.jit(
+            brainstate.transform.grad(initial_concentration, grad_states=cell.trainables.parameters().states())
+        )
+        first = run()
+        self.assertGreater(float(u.get_mantissa(grad()["initial"])), 0)
+        cell.trainables.parameters().set_physical_values({"initial": 0.002 * u.mM})
+        self.assertTrue(u.math.allclose(run(), first * 2))
+        self.assertGreater(float(u.get_mantissa(grad()["initial"])), 0)
+
+    def test_ion_signature_defaults_and_regional_gradients(self):
+        cell = braincell.Cell(_build_tree(), pop_size=(2,))
+        cell.paint(AllRegion(), braincell.mech.Ion("SodiumInitNernst", name="pool"))
+        self.assertTrue(u.math.allclose(cell.ions["pool"].Ci, 10 * u.mM))
+        cell[0].soma.ions["pool"].trainable(temp=braincell.trainable.parameter(group_by="all", name="temp"))
+        cell.init_state()
+
+        def voltage():
+            cell.reset_state()
+            return cell.get_ion("pool").E.to_decimal(u.mV)[0, 0]
+
+        run = brainstate.transform.jit(voltage)
+        first = run()
+        original = cell.get_ion("pool").temp
+        values = cell.trainables.parameters().physical_values()
+        cell.trainables.parameters().set_physical_values({"temp": values["temp"] + 10 * u.kelvin})
+        self.assertGreater(float(run()), float(first))
+        self.assertTrue(u.math.allclose(cell.get_ion("pool").temp[1], original[1]))
+        gradient = brainstate.transform.grad(voltage, grad_states=cell.trainables.parameters().states())()
+        self.assertGreater(float(u.get_mantissa(gradient["temp"])), 0)
+
+    def test_ion_derived_initializers_and_partial_explicit_initials(self):
+        cell = braincell.Cell(_build_tree(), pop_size=(2,))
+        cell.paint(AllRegion(), braincell.mech.Ion("CdpHVA_SU2015_DCN", name="pool"))
+        cell.ions["pool"].trainable(caiBase=braincell.trainable.scale(name="base"))
+        cell[0].soma.ions["pool"].trainable(
+            Ci_initializer=braincell.trainable.parameter(0.001 * u.mM, group_by="all", name="initial")
+        )
+        cell.init_state()
+
+        def start():
+            cell.reset_state()
+            return cell.get_ion("pool").Ci.value.to_decimal(u.mM)
+
+        run = brainstate.transform.jit(start)
+        first = run()
+        cell.trainables.parameters().set_physical_values({"base": 2.0, "initial": 0.001 * u.mM})
+        second = run()
+        self.assertTrue(u.math.allclose(first[0, 0], second[0, 0]))
+        self.assertTrue(u.math.allclose(first[1] * 2, second[1]))
+        self.assertTrue(u.math.allclose(cell.ions["pool"].Ci_initializer.to_decimal(u.mM), second.reshape(-1)))
+
+    def test_ion_kinetic_rate_gradient_matches_finite_difference(self):
+        cell = braincell.Cell(_build_tree())
+        cell.paint(AllRegion(), braincell.mech.Ion("ToyCaBindingKinetic_SU2015_DCN", name="pool"))
+        cell.ions["pool"].trainable(kf=braincell.trainable.scale(name="rate"))
+        cell.init_state()
+
+        def loss():
+            cell.reset_state()
+            ion = cell.get_ion("pool")
+            ion.compute_derivative(-65 * u.mV)
+            return ion.BC.derivative.to_decimal(u.mM / u.ms).sum()
+
+        evaluate = brainstate.transform.jit(loss)
+        grad = brainstate.transform.jit(
+            brainstate.transform.grad(loss, grad_states=cell.trainables.parameters().states())
+        )
+        actual = float(grad()["rate"])
+        cell.trainables.parameters().set_physical_values({"rate": 1.001})
+        plus = evaluate()
+        cell.trainables.parameters().set_physical_values({"rate": 0.999})
+        minus = evaluate()
+        self.assertGreater(actual, 0)
+        np.testing.assert_allclose(actual, (plus - minus) / 0.002, rtol=0.002)
+
+    def test_ion_zero_gradient_and_natural_errors(self):
+        cell = braincell.Cell(_build_tree())
+        cell.paint(AllRegion(), braincell.mech.Ion("SodiumFixed", name="pool"))
+        cell.ions["pool"].trainable(Ci=braincell.trainable.scale(name="concentration"))
+        cell.init_state()
+
+        def loss():
+            cell.reset_state()
+            return cell.get_ion("pool").E.to_decimal(u.mV).sum()
+
+        gradient = brainstate.transform.grad(loss, grad_states=cell.trainables.parameters().states())()
+        self.assertEqual(float(gradient["concentration"]), 0)
+        for field, value in (("E", 1 * u.ms), ("name", "pool")):
+            invalid = braincell.Cell(_build_tree())
+            invalid.paint(AllRegion(), braincell.mech.Ion("SodiumFixed", name="pool"))
+            with self.assertRaises((TypeError, ValueError)):
+                invalid.ions["pool"].trainable(**{field: braincell.trainable.parameter(value, group_by="all")})
+
+    def test_ion_post_init_set_changes_independent_initializer(self):
+        cell = braincell.Cell(_build_tree(), pop_size=(2,))
+        cell.paint(AllRegion(), braincell.mech.Ion("CalciumDetailed", name="pool"))
+        cell.init_state()
+        cell[0].soma.ions["pool"].set(Ci_initializer=0.001 * u.mM)
+        cell.reset_state()
+        self.assertTrue(u.math.allclose(cell.get_ion("pool").Ci.value[0, 0], 0.001 * u.mM))
+        self.assertTrue(u.math.allclose(cell.get_ion("pool").Ci.value[1], 2.4e-4 * u.mM))
+
+    def test_ion_radial_defaults_have_repeatable_compiled_gradients(self):
+        cell = braincell.Cell(_build_tree())
+        cell.paint(AllRegion(), braincell.mech.Ion("CdpStC_NoCAM_MA2020_GoC", name="pool"))
+        cell.ions["pool"].trainable(
+            Nannuli=braincell.trainable.scale(name="shell"),
+            Buffnull2=braincell.trainable.scale(name="buffer"),
+        )
+        cell.init_state()
+
+        def loss():
+            cell.reset_state()
+            ion = cell.get_ion("pool")
+            return (ion.Buff2.value.to_decimal(u.mM) * ion.dsqvol.to_decimal(u.um**2)).sum()
+
+        run = brainstate.transform.jit(loss)
+        grad = brainstate.transform.jit(
+            brainstate.transform.grad(loss, grad_states=cell.trainables.parameters().states())
+        )
+        first = run()
+        g = grad()
+        self.assertLess(float(g["shell"]), 0)
+        self.assertGreater(float(g["buffer"]), 0)
+        cell.trainables.parameters().set_physical_values({"shell": 1.0, "buffer": 2.0})
+        self.assertTrue(u.math.allclose(run(), first * 2))
+        self.assertTrue(u.math.allclose(grad()["shell"], g["shell"] * 2))
+
+    def test_ion_integer_default_keeps_continuous_regional_values(self):
+        cell = braincell.Cell(_build_tree())
+        cell.paint(AllRegion(), braincell.mech.Ion("SodiumInitNernst", name="pool"))
+        cell.ions["pool"].set(valence=np.array([1.5, 2.5]))
+        cell.ions["pool"].trainable(valence=braincell.trainable.parameter(group_by="row", name="charge"))
+        cell.init_state()
+        np.testing.assert_allclose(cell.get_ion("pool").valence, [[1.5, 2.5]])
+
+        def loss():
+            cell.reset_state()
+            return cell.get_ion("pool").E.to_decimal(u.mV).sum()
+
+        gradient = brainstate.transform.grad(loss, grad_states=cell.trainables.parameters().states())()
+        self.assertTrue(u.math.all(gradient["charge"] < 0))
+
+    def test_ion_configuration_keeps_scalar_conversion_and_natural_error(self):
+        cell = braincell.Cell(_build_tree())
+        cell.paint(AllRegion(), braincell.mech.Ion("ToyCaBindingKinetic_SU2015_DCN", name="pool"))
+        cell.ions["pool"].trainable(substeps=braincell.trainable.parameter(3.5, group_by="all", name="steps"))
+        cell.init_state()
+        self.assertEqual(cell.get_ion("pool").substeps, 3)
+
+        def loss():
+            cell.reset_state()
+            return cell.get_ion("pool").Ci.value.to_decimal(u.mM).sum()
+
+        with self.assertRaises((jax.errors.ConcretizationTypeError, jax.errors.TracerArrayConversionError)):
+            brainstate.transform.grad(loss, grad_states=cell.trainables.parameters().states())()
+
+    def test_ion_split_layouts_keep_independent_groups(self):
+        for group in ("all", "row", "population", "cv"):
+            cell = braincell.Cell(_build_tree(), pop_size=(2,))
+            cell.paint(BranchSlice(0, 0, 1), braincell.mech.Ion("SodiumFixed", name="pool", E=50 * u.mV))
+            cell.paint(BranchSlice(1, 0, 1), braincell.mech.Ion("SodiumFixed", name="pool", E=55 * u.mV))
+            cell.ions["pool"].trainable(E=braincell.trainable.scale(group_by=group, name="factor"))
+            cell.init_state()
+
+            def loss():
+                cell.reset_state()
+                return cell.get_ion("pool").E.to_decimal(u.mV).sum()
+
+            gradient = brainstate.transform.grad(loss, grad_states=cell.trainables.parameters().states())()
+            self.assertTrue(u.math.all(gradient["factor"] > 0))
+            self.assertAlmostEqual(float(u.math.sum(gradient["factor"])), 210)
+            before = cell.trainables.parameters().states()["factor"]
+            cell.reset()
+            cell.init_state()
+            self.assertIs(cell.trainables.parameters().states()["factor"], before)
+
+    def test_ion_and_channel_share_a_root_and_parameterized_ion_profile(self):
+        cell = braincell.Cell(_build_tree())
+        cell.paint(
+            AllRegion(), braincell.mech.Ion("SodiumFixed", name="pool"), braincell.mech.Channel("IL", name="leak")
+        )
+        factor = brainstate.nn.Param(1.0)
+        cell.ions["pool"].trainable(E=braincell.trainable.scale(factor, name="shared"))
+        cell.channels["leak"].trainable(g_max=braincell.trainable.scale(factor, name="shared"))
+        slope = brainstate.nn.Param(1.0 * u.mM)
+        cell.ions["pool"].trainable(
+            Co=braincell.trainable.parameterized(lambda ctx, slope: 140 * u.mM + ctx.cv_id * slope, slope=slope)
+        )
+        cell.init_state()
+        self.assertEqual(len(cell.trainables.parameters().states()), 2)
+        np.testing.assert_allclose(cell.get_ion("pool").Co.to_decimal(u.mM), [[140, 141]])
+        self.assertTrue(
+            any(name.startswith("ion.") for name in cell.trainables.parameters().states() if name != "shared")
+        )
+
     def test_missing_and_none_defaults_can_be_supplied_before_initialization(self):
         cell = braincell.Cell(_build_tree())
         cell.paint(AllRegion(), braincell.mech.Channel("_SignatureRequiredLeak", name="leak"))

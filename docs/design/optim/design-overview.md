@@ -71,8 +71,8 @@ Architecture 和 Implementation plan 为准。推荐按问题选择阅读，不�
 | 能力域 | BrainCell 应负责 | 复用或用户负责 | 当前状态 |
 | --- | --- | --- | --- |
 | 数据集 | 单位、shape、PyTree 兼容性要求 | 文件、切分、增强、DataLoader | 尚未形成 API |
-| 可训参数 | 参数选择、共享自由度、稳定状态树 | BrainState `nn.Param` / `ParamState` | P0 已设计 |
-| 参数映射 | direct、scale、latent function 到 runtime field | 用户空间函数 | P0 已设计 |
+| 可训参数 | 参数选择、共享自由度、稳定状态树 | BrainState `nn.Param` / `ParamState` | 已实现 Cell 与 Network 参数入口 |
+| 参数映射 | direct、scale、latent function 到 runtime field | 用户空间函数 | 已实现 |
 | 损失 | 仿真输出与单位边界的互操作原则 | BrainTools metric 或用户 callable | 实验阶段 |
 | 优化器 | 提供原始 ParamState tree | `braintools.optim` 或用户 optimizer | 直接复用 |
 | 预采点 | 参数 tree 的批量赋值和候选形状 | Sobol/LHS/Nevergrad/SciPy | 需求阶段 |
@@ -93,7 +93,7 @@ View selection
   -> init/reset/run materialization
   -> existing BrainCell simulation
 
-Future: Network.trainables
+Network.trainables
   -> aggregate target Cell managers
   -> one deduplicated ParameterSet
 ```
@@ -117,21 +117,20 @@ optimizer.register_trainable_weights(states)
 
 ## 当前范围
 
-当前覆盖 multi-compartment `ChannelView` 和 `IonView` 上由构造签名声明的参数，
+当前覆盖 multi-compartment Channel、Ion、Synapse 由构造签名声明的参数，
+以及 Connection weight、电压检测阈值和 Network 参数聚合，
 不需要手写可训参数白名单，并要求在 `init_state()` 前声明。是否可微以及是否有
 非零梯度取决于模型运算和损失；既有类型、单位、形状及静态控制流错误仍有效。
 以下内容不属于当前实现：
 
-- Synapse 和 Connection weight；
-- Network 参数聚合与自动物化；
 - cable、Cell initial value 和 topology 参数；
 - 初始化后改变 trainable ownership；
 - Dataset、loss composition、history、checkpoint 和 convergence 公共类型；
 - optimizer、scheduler 或通用搜索算法。
 
-Synapse 与 Connection 不需要另一套参数系统。它们后续实现相同的 `View.trainable()`；
+Synapse 与 Connection 复用相同的 `View.trainable()`；
 因为 SynapseStore 和 ConnectionStore 都由目标 Cell 持有，binding 仍进入该 Cell 的
-`trainables` manager。未来 `Network.trainables` 负责跨 Cell 聚合。
+`trainables` manager。`Network.trainables` 负责跨 Cell 聚合。
 
 ## 设计原则
 

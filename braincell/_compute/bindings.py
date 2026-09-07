@@ -73,6 +73,7 @@ from typing import TYPE_CHECKING
 import brainunit as u
 import jax.numpy as jnp
 import numpy as np
+import brainstate
 
 from braincell._base_channel import Channel
 from braincell.channel._base import Markov
@@ -354,7 +355,7 @@ def _instantiate_runtime_node(
         # The runtime class's declared parameters are the same schema state.py used to
         # write these buffers, so select against it rather than inferring which buffers
         # are constructor arguments from a leading-underscore naming convention.
-        declared = set(runtime_cls.parameters)
+        declared = set(runtime_cls.parameter_info())
         parameter_names = tuple(
             var_name
             for layout_id, var_name in state_buffers
@@ -369,7 +370,17 @@ def _instantiate_runtime_node(
             for var_name in parameter_names
         }
         size = (int(layout.n_active),)
-        node = runtime_cls(size=size, name=mechanism.synapse_type, **params)
+        node = runtime_cls(
+            size=size,
+            name=mechanism.synapse_type,
+            **{
+                key: value.dense_value() if isinstance(value, RuntimeParameterState) else value
+                for key, value in params.items()
+            },
+        )
+        for key, value in params.items():
+            if isinstance(value, RuntimeParameterState) and not isinstance(getattr(node, key), brainstate.nn.Param):
+                setattr(node, key, value)
         return node, (), None
 
     if layout.target != "density" or layout.layout != "dense":

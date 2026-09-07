@@ -844,6 +844,8 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         self._V_th = V_th
         self._V_th_declaration = V_th
+        self._V_th_parameter = None
+        self._next_detector_id = 0
         self._V_init = V_init
         self._V_init_materialized = None
         self._population_parameter_overrides: dict[str, dict[int, object]] = {
@@ -965,7 +967,7 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     @property
     def V_th(self):
-        return self._V_th
+        return self._V_th if self._V_th_parameter is None else self._V_th_parameter.value
 
     @V_th.setter
     def V_th(self, value) -> None:
@@ -974,6 +976,11 @@ class Cell(_CellFacade, HHTypedNeuron):
         # ``_initialized`` is still False at that point. After
         # ``init_state`` completes, the guard rejects further assignment.
         self._raise_if_initialized("assign V_th")
+        if self._V_th_parameter is not None:
+            from braincell.trainable._targets import require_unbound
+
+            require_unbound(self, "threshold", "V_th", range(self._population_size * self.n_compartment), "threshold")
+            self._V_th_parameter.value = bridge.fill_like(self.varshape, value)
         self._V_th = value
         if hasattr(self, "_population_parameter_overrides"):
             self._population_parameter_overrides["V_th"].clear()
@@ -1108,6 +1115,11 @@ class Cell(_CellFacade, HHTypedNeuron):
         if unknown:
             raise KeyError(f"CellView.set() does not support parameters {sorted(unknown)!r}.")
         indices = tuple(int(index) for index in population_indices)
+        if "V_th" in parameters and self._V_th_parameter is not None:
+            from braincell.trainable._targets import require_unbound
+
+            logical = {i * self.n_compartment + cv for i in indices for cv in range(self.n_compartment)}
+            require_unbound(self, "threshold", "V_th", logical, "threshold")
         for name, value in parameters.items():
             overrides = self._population_parameter_overrides[name]
             if value is None:
@@ -1127,10 +1139,12 @@ class Cell(_CellFacade, HHTypedNeuron):
                 overrides[index] = item
             if name == "V_init":
                 self._V_init_materialized = None
+            elif self._V_th_parameter is not None:
+                self._V_th_parameter.value = self._materialize_population_parameter("V_th")
 
     def _materialize_population_parameter(self, name: str):
         if name == "V_th":
-            value = bridge.fill_like(self.varshape, self._V_th)
+            value = bridge.fill_like(self.varshape, self.V_th)
         elif name == "V_init":
             initializer = self._V_init
             if initializer is None:
@@ -1148,7 +1162,7 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     def _selected_population_parameter(self, name: str, population_indices):
         if name == "V_th" and self._initialized:
-            values = self._V_th
+            values = self.V_th
         elif name == "V_init" and self._V_init_materialized is not None:
             values = self._V_init_materialized
         else:

@@ -16,6 +16,7 @@
 import unittest
 
 import brainstate
+import braintools
 import brainunit as u
 import numpy as np
 
@@ -126,6 +127,27 @@ class NetStimTest(unittest.TestCase):
 
 
 class EventSourceTest(unittest.TestCase):
+    def test_threshold_equality_directions_and_surrogate_override(self):
+        cell = _two_cv_population(size=1)
+        rising = VoltageCrossingSource(cell, threshold=0.0 * u.mV)
+        falling = VoltageCrossingSource(cell, threshold=0.0 * u.mV, direction="falling")
+        custom = VoltageCrossingSource(cell, threshold=0.0 * u.mV, spk_fun=braintools.surrogate.Sigmoid())
+        cell.init_state()
+        for last in (-1.0, 0.0, 1.0):
+            for new in (-1.0, 0.0, 1.0):
+                cell._event_previous_V.value = np.full((1, 2), last) * u.mV
+                cell.V.value = np.full((1, 2), new) * u.mV
+                for detector, expected in (
+                    (rising, last < 0.0 <= new),
+                    (falling, last > 0.0 >= new),
+                    (custom, last < 0.0 <= new),
+                ):
+                    np.testing.assert_array_equal(detector.current_event_count([0]), [float(expected)])
+        cell.reset_state()
+        np.testing.assert_array_equal(rising.current_event_count([0]), [0.0])
+        with self.assertRaises(TypeError):
+            VoltageCrossingSource(cell, spk_fun="not callable")
+
     def test_event_source_view_preserves_order_and_duplicates(self) -> None:
         source = NetStim(size=3)
         view = source[[2, 0, 2]]

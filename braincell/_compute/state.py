@@ -353,8 +353,10 @@ class CellRuntimeState:
                         f"Unsupported event input {type(event_input).__name__!r} for {mechanism.synapse_type!r}."
                     )
                 logical_ids = np.asarray(synapse_ids, dtype=np.int64)
-                for var_name in tuple(runtime_cls.parameters):
-                    state_buffers[(layout_spec.id, var_name)] = synapse_store.parameter_column(logical_ids, var_name)
+                for var_name in runtime_cls.parameter_info():
+                    state_buffers[(layout_spec.id, var_name)] = RuntimeParameterState(
+                        synapse_store.parameter_column(logical_ids, var_name), axis="row", full_shape=(len(point_ids),)
+                    )
                     state_shapes[(layout_spec.id, var_name)] = (len(point_ids),)
                 synapse_store.bind_runtime(mechanism.synapse_type, layout_spec.id, logical_ids)
                 continue

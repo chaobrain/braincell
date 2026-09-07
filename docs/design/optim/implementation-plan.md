@@ -2,8 +2,10 @@
 
 ## 文档状态
 
-本文定义 [Trainable Parameter API](api.md) 的实现顺序和验收边界。它不是代码状态报告；
-在相应代码和测试合入前，所有阶段均视为未实现。
+本文保留首版实现顺序和验收边界。当前已覆盖 Channel、Ion、Synapse、Connection weight、
+电压检测阈值和 Network 聚合；接口见 [API](api.md)，后续扩展验收见
+[Synapse/Network 记录](../../specs/2026-09-07-synapse-network-learning.md) 和
+[双向 Population 记录](../../specs/2026-09-07-bidirectional-population-learning.md)。
 
 本文保留首版 P0 的历史分阶段计划。其中三个 Channel 和手写参数白名单的范围已被
 [Channel Learning](../../specs/2026-09-07-channel-learning.md) 和

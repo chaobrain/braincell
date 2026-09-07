@@ -1035,8 +1035,11 @@ internal dependencies · status · open work**.
     `TrainableManager`, plus direct, shared-scale, and callable latent sources.
   - [x] Cell-local ChannelView mappings for the initial supported channel
     families, with transactional validation and differentiable materialization.
-  - [ ] Ion, Synapse and Connection parameters, Network aggregation, and
-    broader parameter families.
+  - [x] Constructor-discovered Ion and Synapse parameters, Connection weight,
+    voltage detector thresholds, and Network root aggregation with compiled
+    single-step training. CPU scope and evidence: [learning verification](../specs/2026-09-07-synapse-network-learning.md)
+    and [bidirectional populations](../specs/2026-09-07-bidirectional-population-learning.md).
+  - [ ] Cable, initial-state, and topology parameter training.
 - **Design authority** — [`optim/design-overview.md`](optim/design-overview.md)
   and its linked API, architecture, implementation plan, and references.
 

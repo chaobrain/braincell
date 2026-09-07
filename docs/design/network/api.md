@@ -44,6 +44,7 @@ braincell.Network(name=None, *, seed=0)
 | `seed` | Network 级随机种子。 |
 | `populations` | `population_name -> Population` 映射。 |
 | `connections` | 全网 Connection 查询入口。 |
+| `trainables` | 聚合 Cell 的可训 roots 和 bindings，按对象身份去重；见 [训练接口](../optim/api.md#synapse-connection-network)。 |
 
 ### `Network.add_population`
 
@@ -180,6 +181,7 @@ VoltageCrossingSource(
     location=None,
     threshold=<Cell.V_th>,
     direction="rising",
+    spk_fun=None,
     name=None,
 ) -> VoltageCrossingSource
 ```
@@ -195,6 +197,7 @@ VoltageCrossingSource(
 | `location` | locset expression or mask | root midpoint | 一个或多个连续 morphology 点；重复位置保留。 |
 | `threshold` | voltage quantity | omitted | 省略时逐 endpoint 使用 Cell 自身的异质 `V_th`；显式值可为 scalar、每 Cell 的 `(P,)`、每位置的 `(1,L)`、`(P,L)` 或 flat endpoint rows。 |
 | `direction` | `{"rising", "falling"}` | `"rising"` | rising 为 `v_prev < threshold <= v_next`；falling 为反向 crossing。 |
+| `spk_fun` | callable or `None` | `None` | 默认使用 Cell.spk_fun；自定义函数接收无量纲电压偏差，前向须为零点取 1 的硬阶跃，反向提供代理导数。 |
 | `name` | `str or None` | `None` | 额外 event output 自动注册时所需的稳定名称。 |
 
 #### Endpoint rows
@@ -208,8 +211,9 @@ Population-major，再按 locset 原始顺序排列。以下只读数组把 sour
 | `location_index` | endpoint 在已解析 locset 中的行号。 |
 | `cv_id` | 连续位置最终所属的 CV。 |
 
-省略 threshold 的 rising detector 与 Cell canonical spike 使用同一个 `cell.spike` 计算结果。显式 threshold
-始终独立比较前后两步电压；省略 threshold 的 falling detector 也会独立使用 Cell `V_th` 比较。
+同时省略 threshold 和 spk_fun 的 rising detector 复用 `cell.spike`。其余情况根据前后两步
+电压计算事件；省略 threshold 时使用 Cell.V_th。到达阈值计一次，在阈值停留不重复发放。
+检测器支持初始化前调用 `trainable(threshold=source)`，规则见 [训练接口](../optim/api.md#synapse-connection-network)。
 
 ```python
 all_cv = braincell.VoltageCrossingSource(
@@ -963,6 +967,19 @@ NetworkResult.concat(parts) -> NetworkResult
 和 recording schemas。
 
 ## Lifecycle and Run
+
+### Compiled training steps
+
+```text
+Network.prepare_run(*, dt, delay_quantization="nearest", event_backend="auto",
+                    brainevent_backend="jax_raw") -> Network
+Network.update() -> dict[str, Array]
+```
+
+在 JIT 外调用 `prepare_run` 初始化并配置固定 dt、后端与 delay queues，返回当前 Network。
+`update` 每步物化训练参数、推进网络，返回 Cell population 名称到浮点 spike 数组的映射；
+重复模拟通过 BrainState 编译循环运行。尚未 prepare 时调用 update 会抛出 RuntimeError。
+绑定与可运行示例见 [训练接口](../optim/api.md#synapse-connection-network)。
 
 ### `Network.run`
 

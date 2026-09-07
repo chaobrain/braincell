@@ -15,6 +15,7 @@
 
 import unittest
 
+import brainstate
 import brainunit as u
 import numpy as np
 
@@ -25,12 +26,76 @@ from braincell.network._testing import make_runtime_network, make_threshold_cell
 
 
 class NetworkRuntimeTest(unittest.TestCase):
-    def test_cell_with_trainable_bindings_is_rejected_until_network_aggregation_exists(self) -> None:
+    def test_preparation_requires_cell_and_keeps_configuration_static(self):
+        net = Network("source_only")
+        net.add_population("input", braincell.NetStim())
+        with self.assertRaisesRegex(ValueError, "at least one Cell"):
+            net.prepare_run(dt=0.1 * u.ms)
+        net = make_runtime_network()
+        net.prepare_run(dt=0.1 * u.ms, event_backend="scatter")
+        with self.assertRaisesRegex(RuntimeError, "configuration is fixed"):
+            net.prepare_run(dt=0.2 * u.ms, event_backend="scatter")
+
+    def test_cell_with_trainable_bindings_is_aggregated_without_copying(self) -> None:
         cell = make_threshold_cell()
         cell.paint(AllRegion(), braincell.mech.Channel("IL", name="leak"))
         cell.channels["leak"].trainable(g_max=braincell.trainable.scale(name="factor"))
-        with self.assertRaisesRegex(NotImplementedError, "Network aggregation"):
-            Network("network").add_population("cell", cell)
+        network = Network("network")
+        network.add_population("cell", cell)
+        self.assertIs(
+            network.trainables.parameters().states()["cell.factor"], cell.trainables.parameters().states()["factor"]
+        )
+
+    def test_prepared_network_keeps_weight_and_threshold_gradients(self):
+        for backend in ("scatter", "brainevent"):
+            with self.subTest(backend=backend):
+                network = make_runtime_network(delay=0.2 * u.ms)
+                post = network.populations["post"].cell
+                pre = network.populations["pre"].cell
+                post.connections["drive"].trainable(weight=braincell.trainable.scale(name="w"))
+                pre.event_outputs["spike"].trainable(threshold=braincell.trainable.parameter(group_by="all", name="th"))
+                network.prepare_run(dt=0.1 * u.ms, event_backend=backend)
+                synapse = post.runtime.get_runtime_node(post.synapses["exp"]._store.layout_id("ExpSyn"))
+
+                def observe():
+                    network.reset_state()
+                    brainstate.transform.for_loop(lambda _: network.update(), np.arange(5))
+                    return synapse.g.value.to_decimal(u.uS).sum()
+
+                run = brainstate.transform.jit(observe)
+                grad = brainstate.transform.jit(
+                    brainstate.transform.grad(observe, grad_states=network.trainables.parameters().states())
+                )
+                first = run()
+                gradients = grad()
+                self.assertGreater(float(first), 0.0)
+                self.assertNotEqual(float(gradients["post.w"]), 0.0)
+                self.assertNotEqual(float(u.get_mantissa(gradients["pre.th"])), 0.0)
+                values = network.trainables.parameters().physical_values()
+                values["post.w"] = 2.0
+                network.trainables.parameters().set_physical_values(values)
+                np.testing.assert_allclose(run(), 2 * first, rtol=1e-6)
+
+    def test_prepare_required_and_update_matches_run(self):
+        network = make_runtime_network(delay=0.2 * u.ms)
+        with self.assertRaisesRegex(RuntimeError, "prepare_run"):
+            network.update()
+        network.prepare_run(dt=0.1 * u.ms, event_backend="scatter")
+        post = network.populations["post"].cell
+        synapse = post.runtime.get_runtime_node(post.synapses["exp"]._store.layout_id("ExpSyn"))
+
+        def step(_):
+            network.update()
+            return synapse.g.value
+
+        actual = brainstate.transform.for_loop(step, np.arange(5))
+        reference = make_runtime_network(delay=0.2 * u.ms).run(
+            dt=0.1 * u.ms, duration=0.5 * u.ms, event_backend="scatter"
+        )
+        # This fixture records before the step; update() exposes post-step state.
+        np.testing.assert_allclose(
+            actual.to_decimal(u.uS)[:-1], reference.samples["post"]["g"].values.to_decimal(u.uS)[1:], rtol=1e-6
+        )
 
     def test_cell_has_one_network_execution_owner(self) -> None:
         cell = make_threshold_cell()

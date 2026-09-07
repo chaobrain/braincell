@@ -25,8 +25,8 @@ import numpy as np
 
 from braincell._base_channel import Synapse
 from braincell._base_neuron import HHTypedNeuron
+from braincell._typing import Initializer, Size
 from braincell.mech import (
-    ParameterSpec,
     ScalarEventInput,
     StateSpec,
     positive,
@@ -49,15 +49,31 @@ class ExpSyn(Synapse):
     - decay: ``g' = -g / tau``
     - step-boundary event: ``g <- g + weighted_pre_drive``
     - inward-positive point current: ``I = g * (e - V_post)``
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Packed synapse shape.
+    name : str or None, optional
+        Runtime node name.
+    tau : brainstate.typing.ArrayLike or callable, optional
+        Positive decay time constant, default 0.1 ms.
+    e : brainstate.typing.ArrayLike or callable, optional
+        Reversal voltage, default 0 mV.
     """
 
     root_type = HHTypedNeuron
-    parameters = {
-        "tau": ParameterSpec(0.1 * u.ms, validator=positive),
-        "e": ParameterSpec(0.0 * u.mV),
-    }
     states = {"g": StateSpec(0.0 * u.uS)}
     event_input = ScalarEventInput(u.uS, aggregation="sum")
+
+    def __init__(self, size: Size, name: str | None = None, tau: Initializer = 0.1 * u.ms, e: Initializer = 0.0 * u.mV):
+        super().__init__(size=size, name=name)
+        self._init_parameters(tau=tau, e=e)
+
+    @classmethod
+    def validate_parameter_values(cls, parameters):
+        """Require a positive decay time constant."""
+        positive(parameters["tau"], "tau")
 
     def apply_events(self, payload, V_post=None):
         _ = V_post
@@ -83,19 +99,38 @@ class Exp2Syn(Synapse):
     - conductance: ``g = B - A``
     - inward-positive point current: ``I = g * (e - V_post)``
     - step-boundary event: ``A <- A + weighted_pre_drive * factor`` and same for ``B``
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Packed synapse shape.
+    name : str or None, optional
+        Runtime node name.
+    tau1 : brainstate.typing.ArrayLike or callable, optional
+        Positive rise time constant, default 0.1 ms.
+    tau2 : brainstate.typing.ArrayLike or callable, optional
+        Decay time constant greater than tau1, default 10 ms.
+    e : brainstate.typing.ArrayLike or callable, optional
+        Reversal voltage, default 0 mV.
     """
 
     root_type = HHTypedNeuron
-    parameters = {
-        "tau1": ParameterSpec(0.1 * u.ms, validator=positive),
-        "tau2": ParameterSpec(10.0 * u.ms, validator=positive),
-        "e": ParameterSpec(0.0 * u.mV),
-    }
     states = {
         "A": StateSpec(0.0 * u.uS),
         "B": StateSpec(0.0 * u.uS),
     }
     event_input = ScalarEventInput(u.uS, aggregation="sum")
+
+    def __init__(
+        self,
+        size: Size,
+        name: str | None = None,
+        tau1: Initializer = 0.1 * u.ms,
+        tau2: Initializer = 10.0 * u.ms,
+        e: Initializer = 0.0 * u.mV,
+    ):
+        super().__init__(size=size, name=name)
+        self._init_parameters(tau1=tau1, tau2=tau2, e=e)
 
     @classmethod
     def validate_parameter_values(cls, parameters) -> None:
@@ -115,6 +150,8 @@ class Exp2Syn(Synapse):
         quantities, so that a caller mixing ``us`` and ``ms`` is ordered on
         physical duration rather than on raw magnitude.
         """
+        positive(parameters["tau1"], "tau1")
+        positive(parameters["tau2"], "tau2")
         tau1 = np.asarray(u.Quantity(parameters["tau1"]).to_decimal(u.ms))
         tau2 = np.asarray(u.Quantity(parameters["tau2"]).to_decimal(u.ms))
         if np.any(tau1 >= tau2):

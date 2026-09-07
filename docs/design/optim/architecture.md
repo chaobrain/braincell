@@ -50,10 +50,10 @@ Cell.trainables -> TrainableManager
   ParameterSet construction
   materialization
 
-Future: Network.trainables -> aggregate TrainableManager
+Network.trainables -> aggregate Cell TrainableManagers
 ```
 
-Cell manager 是实际 owner，并作为 Cell graph 的子 module 保存 `nn.Param`。未来 Network
+Cell manager 是实际 owner，并作为 Cell graph 的子 module 保存 `nn.Param`。Network
 manager 只形成跨 Cell 聚合 view，不复制 roots。
 
 这使核心 Cell 的侵入保持在两个边界：
@@ -75,12 +75,12 @@ View 只把 target selection 和 source 交给目标 Cell manager，不保存 op
 | ConnectionView | target Cell ConnectionStore/runtime delivery | target Cell |
 
 `NetworkConnections` 只聚合查询 Cell-owned ConnectionView，没有第二份 connection columns。
-因此未来训练 connection weight 时，`ConnectionView.trainable(weight=...)` 仍注册到目标
-Cell manager。未来全网优化仍应聚合 Cell managers，不在 Connection 或 Population 上增加
+因此训练 connection weight 时，`ConnectionView.trainable(weight=...)` 注册到目标
+Cell manager。全网优化聚合 Cell managers，不在 Connection 或 Population 上增加
 独立 manager。
 
-delay 影响离散调度和 queue schema，不作为首批连续 trainable field。weight 只有在
-runtime delivery buffer 能保持 JAX trace 和固定 shape 后才接入。
+delay 影响离散调度和 queue schema，训练时保持固定。weight 保存在运行时参数 State 中，
+投递算子每次调用读取当前值，参数更新沿用已有 topology、delay queues 和固定 shape。
 
 ## Parameter Schema
 
@@ -90,7 +90,21 @@ Channel 和 Ion 的候选字段来自实际 `__init__` 签名，包括转发的�
 
 只有签名中的参数可选择；内部 gate state、硬编码常数不会自动暴露。选择后可能
 获得非零梯度、合法零梯度，或者原有数值转换、形状和静态控制流错误。dtype 不被
-当作可学习性的判据。Synapse 保持原有参数管理。
+当作可学习性的判据。Synapse 同样从构造签名生成 ParameterSpec；非空的旧式 `parameters`
+字典会抛出 TypeError。子类在构造器中显式声明参数，并由 `_init_parameters` 完成初始化与校验。
+
+## 网络梯度路径
+
+`prepare_run` 在 tracing 外建立 runtime。`Network.update` 每步先物化各 Cell 参数，再更新
+Cell、检测器和事件队列。队列采用 BrainState State 保存，完整 RTRL 将它们纳入动态状态。
+
+事件上穿条件为 `last < threshold <= next`，下穿反向；到达阈值计一次，停留不重复。
+前向为硬事件值，反向经 Cell 或检测器指定的 `spk_fun` 代理导数。后突触参数和 weight
+可以沿连续投递路径求导，上游电压与 threshold 则经过事件代理导数。
+
+稀疏投递为双线性运算 `y = scatter(event * weight)`。BrainEvent 前向保留稀疏后端，
+custom JVP 用 scatter 计算 `dy = scatter(devent * weight + event * dweight)`，支持
+完整 RTRL 的批量切向量。验证入口见 [双向 Population 记录](../../specs/2026-09-07-bidirectional-population-learning.md)。
 
 ## Runtime 参数列
 

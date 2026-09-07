@@ -7,9 +7,8 @@
 [Implementation plan](implementation-plan.md)，更宽的模型优化能力边界见
 [Design overview](design-overview.md)。
 
-当前范围为 multi-compartment `ChannelView` 和 `IonView` 上构造签名显式声明的参数，
-不再要求 Channel 或 Ion 维护可训参数字典。Synapse、Connection、Network 聚合、
-数据、loss、搜索、history、checkpoint 和诊断接口不在本文预先占用公共名称。
+当前覆盖 multi-compartment Channel、Ion、Synapse 构造签名显式声明的参数，
+Connection weight、电压检测阈值和 Network 参数聚合。机制通过构造签名提供候选参数。
 
 ## Quick Start
 
@@ -64,6 +63,8 @@ View 公开：
 ```text
 ChannelView.trainable(**fields) -> ChannelView
 IonView.trainable(**fields) -> IonView
+SynapseView.trainable(**fields) -> SynapseView
+ConnectionView.trainable(weight=source) -> ConnectionView
 ```
 
 ## `View.trainable()`
@@ -95,7 +96,7 @@ na.trainable(
 
 - 只能在 `Cell.init_state()` 前调用；
 - View 必须非空，并且只选择一个逻辑 mechanism owner；
-- target 必须出现在 Channel/Ion 构造签名中；单位、形状和模型原有运算约束仍适用；
+- 机制 target 必须出现在 Channel/Ion/Synapse 构造签名中；单位、形状和模型原有运算约束仍适用；
 - 同一逻辑 row/field 只能有一个 binding；
 - 多字段调用原子注册，失败时不留下部分 roots 或 bindings；
 - 注册不会立即写 runtime；初始化时分配物理缓冲并进行 materialization；
@@ -483,29 +484,43 @@ cell.trainables.materialize()
 `reset_state()` 不回滚 roots 或 scale baseline。完整 `Cell.reset()` 清除 runtime；旧 runtime
 buffer 引用随之失效。
 
-## Deferred Owners
+## Synapse, Connection, Network
 
-后续 owner 复用同一 source 和 manager，不创建新 namespace：
+以下调用示例复用已构造的 `synapses`、`connections`、`cell` 和 `net`：
 
 ```python
-synapses.trainable(
-    tau=braincell.trainable.parameter(...)
-)
-
-connections.trainable(
-    weight=braincell.trainable.scale(...)
-)
+synapses.trainable(tau=braincell.trainable.parameter())
+connections.trainable(weight=braincell.trainable.scale())
+cell.event_outputs["spike"].trainable(threshold=braincell.trainable.parameter())
+parameters = net.trainables.parameters()
 ```
 
-Synapse/Connection binding 和 Network 聚合不属于当前实现，只有在对应 runtime buffer 能
-保持固定 shape、单位和 JAX trace 后才进入正式 API。
+Synapse 和 Connection 的 binding 由目标 Cell 持有。`group_by="row"` 按稳定 logical ID
+区分突触或 contact；其余共享分组规则沿用同一参数系统。Connection 只开放 weight，delay
+训练抛出 `NotImplementedError`，因为它决定离散队列布局。
+
+默认 spike output 的 threshold 绑定 Cell.V_th；显式 `VoltageCrossingSource` 阈值由检测器独立
+持有。声明须在 Cell 初始化前完成。Network 聚合 Cell roots，按对象身份去重并限定参数名称，
+不复制 ParamState；可通过聚合 manager 物化参数。
+
+```text
+Network.prepare_run(*, dt, delay_quantization="nearest", event_backend="auto",
+                    brainevent_backend="jax_raw") -> Network
+Network.update() -> dict[str, Array]
+```
+
+在 JIT 外调用 `prepare_run` 完成初始化和固定步长、队列、后端配置，再将 `update` 放入
+`brainstate.transform.for_loop` 等编译循环。每步先物化当前 roots，随后推进网络并返回
+Cell population 名称到浮点 spike 数组的映射。`reset_state` 清空动态状态及在途事件，保留 roots。
+完整实例与 CPU 验证见 [Synapse/Network 学习记录](../../specs/2026-09-07-synapse-network-learning.md)
+和 [双向 Population 验证](../../specs/2026-09-07-bidirectional-population-learning.md)。
 
 ## Errors
 
 P0 必须在明确边界拒绝：
 
 - 空 selection 或一个 View 跨多个逻辑 owners；
-- 不在 Channel/Ion 构造签名中的 target；
+- 不在 Channel/Ion/Synapse 构造签名中的机制 target；
 - 初始化后新增 binding；
 - 重叠 row/field ownership；
 - root name 冲突或共享对象使用冲突名称；

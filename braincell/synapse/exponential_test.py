@@ -25,12 +25,15 @@ from braincell.mech import ScalarEventInput
 
 
 class SynapseSchemaTest(unittest.TestCase):
-    def test_expsyn_schema_is_the_only_parameter_source(self) -> None:
+    def test_expsyn_signature_is_the_only_parameter_source(self) -> None:
+        import inspect
+
         model = braincell.synapse.ExpSyn
-        self.assertEqual(tuple(model.parameters), ("tau", "e"))
+        self.assertIn("tau", inspect.signature(model.__init__).parameters)
+        self.assertEqual(tuple(model.parameter_info()), ("tau", "e"))
         self.assertEqual(tuple(model.states), ("g",))
         self.assertEqual(model.event_input, ScalarEventInput(u.uS, aggregation="sum"))
-        self.assertNotIn("weight", model.parameters)
+        self.assertNotIn("weight", model.parameter_info())
         self.assertFalse(hasattr(model, "event_weight_unit"))
         self.assertFalse(hasattr(model, "current_sign"))
         self.assertFalse(hasattr(model, "current_units"))
@@ -38,7 +41,7 @@ class SynapseSchemaTest(unittest.TestCase):
     def test_physical_validation_is_not_a_learning_transform(self) -> None:
         with self.assertRaisesRegex(ValueError, "must be > 0"):
             braincell.synapse.ExpSyn(1, tau=0.0 * u.ms)
-        field = braincell.synapse.ExpSyn.parameters["tau"]
+        field = braincell.synapse.ExpSyn.parameter_info()["tau"]
         self.assertFalse(hasattr(field, "trainable"))
         self.assertFalse(hasattr(field, "transform"))
 

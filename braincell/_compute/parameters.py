@@ -26,7 +26,8 @@ import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._parameter_schema import ParameterSpec, RuntimeParameterState
+from braincell._parameter_schema import ParameterSpec, RuntimeParameterState, constructor_parameters
+from braincell._parameter_schema import SignatureParameterSpec as _SignatureParameterSpec
 from braincell.mech import Density, get_registry
 
 __all__ = [
@@ -59,19 +60,7 @@ def density_parameter_schema(mechanism: Density) -> Mapping[str, ParameterSpec]:
 
 
 def _density_signature(runtime_cls) -> dict[str, inspect.Parameter]:
-    # BrainState's metaclass exposes (*args, **kwargs) on the class itself.
-    parameters = tuple(inspect.signature(runtime_cls.__init__).parameters.values())[1:]
-    result = {}
-    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters):
-        parent = next((cls for cls in runtime_cls.__mro__[1:] if "__init__" in vars(cls)), None)
-        if parent is not None and parent is not object:
-            result.update(_density_signature(parent))
-    result.update(
-        (p.name, p)
-        for p in parameters
-        if p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-    )
-    return result
+    return constructor_parameters(runtime_cls)
 
 
 def _ion_default(runtime_cls, name, default):
@@ -92,14 +81,6 @@ def _ion_default(runtime_cls, name, default):
 @functools.lru_cache(maxsize=None)
 def _ion_default_node(runtime_cls):
     return runtime_cls(size=(1,))
-
-
-class _SignatureParameterSpec(ParameterSpec):
-    def validate(self, value: object, name: str) -> None:
-        default = self.default
-        if default is inspect.Parameter.empty or default is None or callable(default):
-            default = value
-        ParameterSpec(default).validate(value, name)
 
 
 def _is_buffer_value(value: object) -> bool:

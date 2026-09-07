@@ -20,8 +20,11 @@ ring-buffer arrival machinery is exercised end-to-end from ``engine_test.py``
 via :meth:`Network.run`."""
 
 import unittest
+from types import SimpleNamespace
 
 import brainunit as u
+import jax
+import jax.numpy as jnp
 import numpy as np
 
 
@@ -53,6 +56,45 @@ class ZerosLikeTest(unittest.TestCase):
 
 
 class DeliveryTest(unittest.TestCase):
+    def test_brainevent_batched_weight_and_event_derivatives(self) -> None:
+        from braincell.network.delivery import DeliveryBlock, make_delivery_op
+
+        try:
+            import brainevent
+        except ImportError:
+            self.skipTest("brainevent is unavailable")
+        if not hasattr(brainevent, "coomv"):
+            self.skipTest("brainevent.coomv is unavailable")
+
+        for weights in (jnp.asarray([0.2, 0.3, 0.4, 0.5]), jnp.asarray([0.2])):
+            for unit in (u.UNITLESS, u.uS):
+                with self.subTest(weights=weights.shape, unit=unit):
+                    source = SimpleNamespace(n_active=2)
+
+                    def evaluate(weight, event, backend):
+                        block = DeliveryBlock(
+                            source, 0, np.asarray([0, 1, 0, 1]), np.asarray([0, 0, 1, 1]), weight * unit
+                        )
+                        result = make_delivery_op(block, pre_size=2, backend=backend)(event)
+                        self.assertEqual(u.get_unit(result), unit)
+                        return u.get_mantissa(result)
+
+                    event = jnp.asarray([1.0, 0.5])
+                    directions = jnp.eye(weights.size + event.size)
+                    results = []
+                    for backend in ("scatter", "brainevent"):
+                        call = lambda w, e: evaluate(w, e, backend)
+                        primal, linear = jax.linearize(call, weights, event)
+                        tangent = jax.jit(jax.vmap(linear))(
+                            directions[:, : weights.size], directions[:, weights.size :]
+                        )
+                        reverse = jax.jit(jax.grad(lambda w, e: call(w, e).sum(), argnums=(0, 1)))(weights, event)
+                        bool_event = jax.jit(lambda w: call(w, jnp.asarray([True, False])))(weights)
+                        bool_gradient = jax.jit(jax.grad(lambda w: call(w, jnp.asarray([True, False])).sum()))(weights)
+                        results.append((primal, tangent, reverse, bool_event, bool_gradient))
+                    for expected, actual in zip(jax.tree.leaves(results[0]), jax.tree.leaves(results[1])):
+                        np.testing.assert_allclose(actual, expected, rtol=1e-6, atol=1e-7)
+
     def test_event_backend_brainevent_requires_coomv(self) -> None:
         import braincell.network.delivery as delivery
 

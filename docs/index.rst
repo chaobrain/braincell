@@ -193,11 +193,8 @@ The docs are layered by what you are trying to do:
    :maxdepth: 1
    :caption: Developer Guide
 
-   developer/contributing
-   developer/project_layout
-   developer/testing
-   developer/extending
-   developer/troubleshooting
+   repository
+   developer/index
 
 .. toctree::
    :hidden:

@@ -6,7 +6,7 @@ apply it.
 
 | Directory | Responsibility |
 | --- | --- |
-| [`optim/`](optim/) | Model-independent BPTT/RTRL gradient interfaces being evaluated for `braincell.optim` |
+| [`optim/`](optim/) | Experimental BPTT/RTRL gradient interfaces; no public package commitment |
 | [`optim_gradient_correctness/`](optim_gradient_correctness/) | One-CV and multicompartment numerical correctness |
 | [`optim_gradient_scaling/`](optim_gradient_scaling/) | State, parameter, time, batch, and seed scaling |
 | [`optim_training_comparison/`](optim_training_comparison/) | Matched end-to-end BPTT/RTRL training |
@@ -18,6 +18,9 @@ The dependency direction is strict: experiment directories may import
 `examples.experimental.optim`, while the core must not import an experiment.
 Parameter selection, sharing, transforms, and materialization remain in the
 public `braincell.trainable` package.
+
+Current capabilities, proposals, and measured evidence are separated in the
+[optimization design overview](../../docs/design/optim/TODO.md).
 
 Generated data, traces, figures, and reports are stored in each experiment's
 ignored `artifacts/` directory.

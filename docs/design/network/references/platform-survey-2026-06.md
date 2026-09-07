@@ -1,8 +1,11 @@
 # Network / Synapse 平台调研
 
+关联：[Network TODO](../TODO.md)、[当前架构](../current/architecture.md)、[运行时扩展](../proposals/runtime-extensions.md)。
+采用状态：作为已有架构取舍和后续扩展的比较背景；各平台的能力不能直接推断为 BrainCell 已支持。
+
 > **Historical, non-normative reference (2026-06).** 本文记录当时对
 > NEURON/CoreNEURON、Arbor、Jaxley 和 brainevent 的调研。文中的 BrainCell 建议已经被
-> [Network Builder API](../api.md) 与 [内部架构规范](../architecture.md) 部分替代；实现和
+> [Network Builder API](../current/api.md) 与 [内部架构规范](../current/architecture.md) 部分替代；实现和
 > 评审不得把本文当作当前规范。
 
 本文聚焦四条相关路线：

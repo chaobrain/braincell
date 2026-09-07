@@ -2,6 +2,9 @@
 
 ## 文档定位
 
+采用状态：参数选择与 replacement 的取舍已体现在 [当前架构](../current/architecture.md)；
+具体调用见 [当前 API](../current/api.md)。这不表示 BrainCell 采用 Jaxley 的全部分组或存储协议。
+
 本文解释 BrainCell trainable architecture 对 Jaxley 参数选择与 replacement 的取舍，不定义
 BrainCell API。调研固定在 Jaxley commit `2638cca2665ec056c40c932dcee924192fc94da2`；
 后续版本可能不同，BrainCell 不依赖其私有实现。

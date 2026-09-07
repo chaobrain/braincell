@@ -1,98 +1,38 @@
-# Project Layout
+# 代码与设计导航
 
-`braincell` is organized so that the **public API is flat** (everything is
-re-exported through the top-level `braincell` namespace) while the
-**implementation is layered** into underscore-prefixed internal packages. This
-page maps the package tree onto the {doc}`../concepts/architecture` layers.
+先按要修改的功能找到源码，再阅读该模块的 TODO 和 Current。
+目录职责及规划中的调整见 [仓库组织指南](../repository.md)，跨模块数据流见
+[系统总览](https://github.com/chaobrain/braincell/blob/main/docs/design/architecture/current/system-overview.md)。
 
-## Naming convention
+## 按任务定位
 
-- **Internal packages** carry a leading underscore (`_base`, `_cv`, `_compute`,
-  `_single_compartment`, `_multi_compartment`, `_misc`) because their *import
-  paths* are not part of the supported public API.
-- **Public re-exports** flow through `braincell/__init__.py`, plus the curated
-  sub-namespaces `braincell.channel`, `braincell.ion`, `braincell.synapse`,
-  `braincell.mech`, `braincell.quad`, `braincell.morph`, `braincell.filter`,
-  `braincell.io`, and `braincell.vis`.
-- **Modules inside** an internal package are unprefixed (`base.py`, `lower.py`,
-  `runtime.py`) because they are import targets for sibling code in the same
-  package.
+源码路径相对仓库根目录。每个模块的 TODO 提供当前事项及 API、架构、proposal 的入口。
 
-## The map
+| 要修改什么 | 源码入口 | 设计入口 |
+| --- | --- | --- |
+| 形态构造、连接、统计 | `braincell/morph/` | [Morph](https://github.com/chaobrain/braincell/blob/main/docs/design/morph/TODO.md) |
+| SWC/ASC、checkpoint、在线形态读取 | `braincell/io/` | [IO](https://github.com/chaobrain/braincell/blob/main/docs/design/io/TODO.md) |
+| 区域、位点与连续采样 | `braincell/filter/` | [Filter](https://github.com/chaobrain/braincell/blob/main/docs/design/filter/TODO.md) |
+| 机制声明与注册 | `braincell/mech/` | [Mech](https://github.com/chaobrain/braincell/blob/main/docs/design/mech/TODO.md) |
+| 通道与离子动力学 | `braincell/channel/`、`braincell/ion/` | [Channel](https://github.com/chaobrain/braincell/blob/main/docs/design/channel/TODO.md)、[Ion](https://github.com/chaobrain/braincell/blob/main/docs/design/ion/TODO.md) |
+| Cell、离散与运行时绑定 | `braincell/_multi_compartment/`、`braincell/_discretization/`、`braincell/_compute/` | [Cell](https://github.com/chaobrain/braincell/blob/main/docs/design/cell/TODO.md) |
+| 单室模型 | `braincell/_single_compartment/` | [Single/Cell 统一讨论](https://github.com/chaobrain/braincell/blob/main/docs/design/cell/proposals/single-multi-compartment-unification.md) |
+| 突触动力学 | `braincell/synapse/` | [Synapse](https://github.com/chaobrain/braincell/blob/main/docs/design/synapse/TODO.md) |
+| 网络、事件源与连接 | `braincell/network/` | [Network](https://github.com/chaobrain/braincell/blob/main/docs/design/network/TODO.md) |
+| 数值积分与电压求解 | `braincell/quad/` | [Quad](https://github.com/chaobrain/braincell/blob/main/docs/design/quad/TODO.md) |
+| 参数选择与学习映射 | `braincell/trainable/` | [Optim](https://github.com/chaobrain/braincell/blob/main/docs/design/optim/TODO.md) |
+| 图形展示 | `braincell/vis/` | [Vis](https://github.com/chaobrain/braincell/blob/main/docs/design/vis/TODO.md) |
 
-```{list-table}
-:header-rows: 1
-:widths: 30 30 40
+内部源码路径与公共导入名不同。例如 Branch、Morphology 从 `braincell` 顶层导入，
+机制声明从 `braincell.mech` 导入；实际调用以对应模块 Current 的公开入口为准。
 
-* - Package
-  - Layer
-  - Responsibility
-* - `_base`, `_base_channel`, `_base_ion`
-  - declaration
-  - `HHTypedNeuron`, `IonChannel`, `Ion`, `MixIons`, `Channel`, `Synapse`
-* - `_single_compartment`
-  - declaration
-  - the `SingleCompartment` class
-* - `_multi_compartment`
-  - declaration + runtime
-  - `Cell`, `RunResult`, paint/place pipeline, probes, run loop
-* - `mech`
-  - declaration
-  - the declarative mechanism specs (`Channel`, `Ion`, clamps, `Synapse`, …)
-* - `filter`
-  - declaration
-  - region & locset selection algebra
-* - `morph`
-  - geometry
-  - `Branch`, `Morphology`, typed branches, the mutable analysis tree
-* - `_cv`
-  - discretization
-  - control volumes and CV policies
-* - `_compute`
-  - runtime
-  - the execution graph and `CellRuntimeState`
-* - `quad`
-  - integration
-  - the integrator protocol and solver registry
-* - `channel`, `ion`, `synapse`
-  - library
-  - concrete, self-registering mechanism implementations
-* - `io`
-  - IO
-  - SWC / ASC / NeuroML2 readers, NeuroMorpho client, checkpointing
-* - `vis`
-  - visualization
-  - 2-D / 3-D rendering, morphometry, export
-```
+## 阅读与更新顺序
 
-## Prose lives under `docs/`
+1. 从模块 TODO 找到事项；Current 描述当前行为，proposals 保存尚需讨论或实施的方案。
+2. 对照源码和相邻 `*_test.py`，确认现有约束和实际使用方式。
+3. 查看对应示例或数值对照，确定修改后要验证的结果。
+4. 实现后更新受影响的 Current、示例和事项状态；必要的历史决定按日期保存在 specs。
 
-No `.md` file sits inside `braincell/`. Written material has two homes,
-neither of which is part of this published site:
-
-- `docs/specs/YYYY-MM-DD-<slug>.md` — the spec and plan for a single change,
-  written before the implementation. The date prefix keeps the directory in
-  chronological order.
-- `docs/design/<topic>.md` — durable design notes, invariants, and
-  architecture maps that outlive any one change. A topic that needs several
-  documents gets a subdirectory (`docs/design/network/`).
-
-`docs/design/TODO.md` is the living project-wide architecture and status
-index. Keep detailed contracts in their topic documents and link them from
-the index instead of duplicating their full specification there.
-
-Files are named for what they document rather than where the code lives, so
-`docs/design/io-swc-reader-invariants.md` rather than a `README.md` beside the
-reader. Code that depends on a note cites it by `docs/` path from the module
-docstring.
-
-## Tests are co-located
-
-Test files live **next to the source** they cover and are named `*_test.py`
-(e.g. `braincell/io/neuromorpho/client.py` →
-`braincell/io/neuromorpho/client_test.py`). This is the only naming pytest
-discovers reliably in this repo. See {doc}`testing`.
-
-## See also
-
-- {doc}`../concepts/architecture` — the conceptual layers this maps onto.
+新增机制的步骤见 [扩展指南](extending.md)，测试定位与 fixture 用法见 [测试指南](testing.md)。
+Design 的文档分工和状态定义由
+[Design 规范](https://github.com/chaobrain/braincell/blob/main/docs/design/AGENTS.md) 维护。

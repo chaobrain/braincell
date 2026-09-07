@@ -572,6 +572,11 @@ Optimizer 若逐步消费梯度，应消费本步新增 contribution，而不是
 - cell-generated spike 经 ring buffer 反馈到未来状态；
 - loss 直接依赖 hard event 或 continuous event time。
 
+当前实验实现已经把 cell-generated floating event 和固定 delay ring buffers 纳入全状态
+递推，比较时使用同一 surrogate；见 [网络验证](../current/results/synapse-network-learning.md)。
+这覆盖第二项的已测模型和 surrogate event loss，不支持 trainable delay，也不等于具有
+continuous event-time root-finding 的导数。多 CV 和多 population 分别有证据，任意组合尚未穷举。
+
 ## 7. Exact RTRL 与 e-prop 的边界
 
 Exact full-state RTRL 直接保存：
@@ -611,9 +616,10 @@ derivative 或 eligibility locality。
 | 每步微分 | 一个 VJP/cotangent | $N_\theta$ 个 tangent directions |
 | Prefix gradient | 需要 reverse prefix | 前向时立即可得 |
 
-Checkpoint/rematerialization 可以用重算降低 BPTT tape。RTRL memory 与时间长度无关，但
+Checkpoint/rematerialization 可以用重算降低 BPTT tape。RTRL 的递归 sensitivity carry 与时间长度无关，但
 推进全部 parameter directions 的计算和 carry 会随 $N_\theta$ 增长。具体墙钟还由 solver、
 硬件并行度、batch、静态 shape 和编译器调度决定，不能仅由大 O 排序。
+完整输入、逐步 loss 或显式输出的 sensitivity history 仍可随 T 增长；不要把 carry 与进程内存混用。
 
 以下条件下，RTRL 与 full BPTT 对同一个离散 objective 完全等价：
 
@@ -624,8 +630,9 @@ Checkpoint/rematerialization 可以用重算降低 BPTT tape。RTRL memory 与�
 5. local loss、direct term 和 learning signal 被完整计入；
 6. 两者对同一个实际离散 solver program 求导。
 
-连续 HH 动作电位属于 $v/w$ 动力学。只要 loss 读取 voltage trace 而不读取离散 spike
-readout，梯度不需要经过 surrogate event。具体 solver 和 readout 的程序导数见独立 solver
+连续 HH 动作电位属于 $v/w$ 动力学。在没有 event feedback 的模型中，若 loss 只读取
+voltage trace 而不读取离散 spike readout，梯度不需要经过 surrogate event；有突触反馈时
+voltage loss 仍可能经过检测器。具体 solver 和 readout 的程序导数见独立 solver
 文档。
 
 ## 9. 建议的 PPT 页面顺序

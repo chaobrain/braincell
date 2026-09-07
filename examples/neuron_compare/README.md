@@ -15,6 +15,9 @@
 
 ## Typical Flow
 
+小脑 ion、channel 和整细胞导入的范围、比较配置及未完成验证，统一见
+[Cerebellum Import Progress](cerebellum-import-progress.md)。
+
 通常按下面的流程组织每个家族：
 
 1. 准备输入配置。

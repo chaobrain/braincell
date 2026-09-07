@@ -8,7 +8,7 @@ derivative，不重复 BPTT、RTRL、online update 或多步 loss 理论。通�
 [BPTT/RTRL 理论](./bptt-to-rtrl-neuron-derivation.md)。
 
 本文是非规范性技术分析，不定义 Trainable Parameter API。规范性参数合同见
-[API](../api.md) 和 [Architecture](../architecture.md)。
+[API](../current/api.md) 和 [Architecture](../current/architecture.md)。
 
 实现入口：
 
@@ -376,14 +376,18 @@ Ordinary Hines 与 recursive-doubling backsub 目标是同一线性系统，理�
 $$
 z_+=\frac{v_{n+1}-v_{\mathrm{th}}}{\Delta v_s},
 \qquad
-z_-=\frac{v_{\mathrm{th}}-v_n}{\Delta v_s},
+z_-=\frac{v_n-v_{\mathrm{th}}}{\Delta v_s},
 $$
 
 $$
 o_{n+1}^{\mathrm{spike}}
 =
-H_{\mathrm{sg}}(z_+)H_{\mathrm{sg}}(z_-).
+H_{\mathrm{sg}}(z_+)\left(1-H_{\mathrm{sg}}(z_-)\right).
 $$
+
+这里 Delta v_s 为 20 mV，hard step 在零点取 1，因此旧电压必须严格小于阈值，
+新电压可以等于阈值。离开等值点不会再次发放；完整升/降沿合同见
+[事件架构](../current/architecture.md#event-derivatives)。
 
 默认 `ReluGrad(alpha=0.3, width=1)` 在 forward 使用 hard step，在 backward 使用有限支撑
 三角 slope：
@@ -397,7 +401,7 @@ $$
 $$
 \frac{\widetilde\partial o_{n+1}^{\mathrm{spike}}}{\partial v_{n+1}}
 =
-H(z_-)\frac{\rho(z_+)}{\Delta v_s},
+\left(1-H(z_-)\right)\frac{\rho(z_+)}{\Delta v_s},
 $$
 
 $$
@@ -407,8 +411,9 @@ $$
 $$
 
 该 surrogate 只有在 loss 读取 `Cell.spike`、filtered event trace，或 spike feedback 影响未来
-state 时才进入目标路径。单纯拟合连续 voltage trace 时，动作电位仍由连续 $v/w$ dynamics
-产生，梯度不经过这个 readout。
+state 时才进入目标路径。没有 event feedback、且 loss 只读取连续 voltage trace 时，
+动作电位由连续 $v/w$ dynamics 产生，梯度不经过这个 readout；有突触反馈时即使只读
+voltage，跨 Cell 路径也可能经过 surrogate。
 
 ## 10. Solver-gradient 验证
 

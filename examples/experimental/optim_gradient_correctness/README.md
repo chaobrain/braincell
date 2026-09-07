@@ -9,9 +9,12 @@ mixing those checks with performance conclusions.
 - `gradient_diagnostics.ipynb` inspects sensitivity, learning-signal, direct,
   and eligibility-gradient decompositions.
 - `autapse.py` compares full-state RTRL and BPTT through single-Cell feedback
-  and two-Cell event delivery. [Scope and results](../../../docs/specs/2026-09-07-synapse-network-learning.md).
-- `bidirectional.py` checks independently parameterized populations and twelve
-  bidirectional contacts. [Scope and results](../../../docs/specs/2026-09-07-bidirectional-population-learning.md).
+  and two-Cell event delivery. Scope and results:
+  [Synapse and Network Learning Results](../../../docs/design/optim/current/results/synapse-network-learning.md).
+- `bidirectional.py` checks independent populations of sizes two and three,
+  trainable parameters on both sides, twelve bidirectional contacts, and fits
+  with both gradient methods. Current results:
+  [Bidirectional Population Learning](../../../docs/design/optim/current/results/synapse-network-learning.md#双向-population).
 
 ```bash
 pytest -q examples/experimental/optim_gradient_correctness

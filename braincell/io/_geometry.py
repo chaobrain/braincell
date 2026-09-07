@@ -112,7 +112,7 @@ def should_copy_attach_point(
       with the attachment but carries a different radius still gets the
       copied point, so the branch boundary keeps its radius jump as a
       zero-length first segment. That behaviour is an invariant recorded in
-      ``docs/design/io-swc-reader-invariants.md``.
+      ``docs/design/io/current/swc-reader-invariants.md``.
     * The ASC reader passes ``False``. Neurolucida traces repeat the parent
       terminal coordinate routinely, and NEURON's ``read_nlcda3.hoc``
       suppresses the duplicate on coincident xyz regardless of diameter.

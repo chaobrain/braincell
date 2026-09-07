@@ -1,7 +1,9 @@
 # Experimental Optimization Core
 
-This package contains the model-independent optimization interfaces currently
-being evaluated for a future `braincell.optim` package.
+This package contains experimental model-independent gradient interfaces.
+It does not reserve or promise a future public `braincell.optim` package.
+Current usage and boundaries live in
+[Experimental Workflows](../../../docs/design/optim/current/experimental-workflows.md).
 
 - `gradients.py` exposes fixed-shape rollout and trajectory gradient engines
   with `method="bptt"` and `method="rtrl"`.

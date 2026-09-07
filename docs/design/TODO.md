@@ -1,1313 +1,190 @@
-# BrainCell Project Design and TODO
-
-> Status: living document. Tracks both the architectural intent of the
-> `braincell` package and the current implementation state of every major
-> subsystem. Status markers in this file follow:
->
-> - `[x]` shipped — implemented, covered by `*_test.py`, and documented at
->   its intended public or internal surface.
-> - `[~]` partial — implementation exists but is missing functionality,
->   tests, or runtime integration. Specific gaps are listed inline.
-> - `[ ]` planned — design agreed, code not yet written.
->
-> This document describes committed repository state. Experimental work in an
-> uncommitted working tree does not become a shipped capability until its API,
-> implementation, and tests land together.
-
----
-
-## Document Navigation
-
-- [Mission and scope](#1-mission-and-scope)
-- [Top-level architecture](#2-top-level-architecture)
-- [Module catalogue](#3-module-catalogue)
-- [Cross-cutting concerns](#4-cross-cutting-concerns)
-- [Public API contract](#6-public-api-contract)
-- [End-to-end workflows](#7-end-to-end-user-workflows)
-
-Detailed network and parameter-training contracts live in
-[`network/`](network/design-overview.md) and [`optim/`](optim/design-overview.md).
-Those topic directories are authoritative when their details are more specific
-than this project-level summary.
-
-## Current Architecture Snapshot
-
-The committed repository currently provides:
-
-- [x] **Cerebellum channel/ion imports and tests expanded.** The channel
-  catalogue now includes PC MA2024 channel variants and the calcium-ion
-  catalogue includes concrete Cerebellum kinetic-ion imports such as
-  `CdpStC_*`, `CdpCAM_MA2024_PC`, and `CdpCR_MA2020_GrC`, with co-located
-  unit tests and NEURON-comparison notebooks under `examples/neuron_compare`.
-- [x] **PC MA2024 assembly scaffold added.** `examples/neuron_compare/cell/pc_ma2024`
-  contains the simplified NEURON assembly, the matching BrainCell assembly,
-  shared parameter loading, debug variants, and `run.ipynb` for side-by-side
-  simulation.
-- [x] **Direct multi-compartment runtime.** `Cell` owns declaration and runtime
-  state, is initialized with `init_state()`, and advances directly with
-  `run()`. The former `Cell -> RunnableCell` build boundary no longer exists.
-- [x] **Population network runtime.** `braincell.network` owns population
-  registration, event routing, initialization and result aggregation while
-  synapses, connections and recordings remain owned by their target `Cell`.
-- [x] **Trainable parameter mappings.** `braincell.trainable` maps selected
-  channel fields from direct, shared-scale or latent parameter sources into
-  runtime values. Optimizers, losses and training loops remain user-owned.
-- [x] **SWC writing and structural round trips.** `Morphology.to_swc()` writes
-  branch trees through `braincell.io.swc`; focused tests cover shared branch
-  endpoints, soma attachments, reversed branches and validation failures.
-- [x] **NEURON-style ion-current snapshot mode added.** `Cell(...,
-  cache_ion_total_current=True)` caches the total ion current at the start of
-  the staggered step, before voltage or ion state advances, so current-driven
-  ion mechanisms can read the same precomputed current snapshot that
-  NEURON-style scheduling expects.
-- [x] **Frozen voltage channel variants added where needed.** Some PC calcium
-  channels now have `_Frozen` variants which stop differentiation through the
-  voltage used inside the current expression, matching the intended NEURON
-  semantics for those mechanisms during the comparison.
-- [x] **Two ion/channel update schedules are available.**
-  `ion_channel_update_order="family"` restores the NEURON-like family
-  ordering for ion/channel updates; `"integration"` keeps the previous
-  BrainCell integration-oriented ordering.
-- [x] **Homogeneous multi-compartment `Cell` populations now support
-  multi-dimensional `pop_size`.** `Cell(..., pop_size=(...))` expands
-  runtime state to `pop_size + (n_cv,)`, point-space runtime arrays to
-  `pop_size + (n_point,)`, and supports population-specific
-  `CurrentClamp(...)` amplitudes such as `(2,)` or `(2, 2)`-shaped
-  current grids. Regression coverage includes `(2,)` and `(2, 2)`
-  populations.
-- [x] **The population axis is mandatory.** `pop_size` defaults to `1`
-  and an explicitly empty `pop_size=()` is rejected, so every `Cell`
-  hidden state is at least two-dimensional and its trailing axis always
-  enumerates compartments or points. That invariant is what lets `Cell`
-  states be `brainstate.HiddenGroupState` (`Cell.V` is a
-  `braincell.DiffEqGroupState`) while `SingleCompartment`, which has no
-  spatial axis, keeps the plain `brainstate.HiddenState`. See
-  `docs/specs/2026-08-13-cell-hidden-group-state.md`.
-- [x] **The channel template layer validates at class-definition time.**
-  `HH` and `Markov` resolve and check `gates` / `pairs` in
-  `__init_subclass__`, so a mistyped gate name, a duplicate, a gate
-  defining neither (or both) rate forms, a transition naming a missing
-  rate method, and a `dependent_state` outside the state set are all
-  rejected when the class is created rather than at `reset_state()`.
-  `init_state` refuses to bind a gate over a non-`DiffEqState`
-  attribute, which used to silently replace a constructor parameter.
-- [x] **Gate and transition rates carry real units.** `Gate.time_unit`
-  (default `u.ms`) says what a bare `f_*_tau` / `f_*_alpha` / `f_*_beta`
-  return means; a united return is used as given and a wrong dimension
-  is rejected against the gate by name. Markov transition rates accept
-  the same two forms against a fixed `u.ms`. Every state derivative is
-  asserted to be an inverse time before it reaches the integrator,
-  which is what catches a dimensioned `phi`.
-- [x] **`OhmicHH` carries the ohmic driving force.** 63 channels that
-  restated `g_max * conductance_factor(...) * (E - V)` verbatim now
-  inherit it; a channel reading a fixed `self.E` overrides
-  `reversal_potential()`. GHK-flux and permeability-scaled channels
-  keep inheriting `HH` and writing their own `current()`.
-- [x] **Gate metadata binds by attribute name.** `Gate(q10="q10")`
-  replaces the 75 `lambda self: self.q10` closures, which were
-  unpicklable and invisible to tooling. The callable form still works.
-- [~] **Gate/state clipping is an explicit policy.** `Gate.clip`
-  defaults to `False` (NEURON does not clip HH gates, and the catalogue
-  is validated against those mechanisms); `Markov.clip_states` defaults
-  to `True`. Both project only the value fed to the conductance product
-  or the kinetics, never the stored state. Remaining gap: the implicit
-  `dependent_state` fallback still exists behind a `DeprecationWarning`
-  and is slated for removal.
-
-## 1. Mission and Scope
-
-BrainCell is a JAX-native library for **biologically detailed cell and network
-modelling**. It targets the same workload as NEURON, Arbor, and BluePyOpt but
-expresses models as differentiable, vectorized JAX programs so that
-multi-compartment populations can be simulated, connected, batched, and
-parameterized inside the broader `brain*` ecosystem (`brainstate`,
-`brainunit`, `brainevent`, `braintools`, `brainpy`).
-
-The library owns seven concerns end-to-end:
-
-1. **Morphology ingestion** — read SWC / ASC / NeuroML2, validate, cache.
-2. **Geometry & discretization** — turn a morphology + a CV policy into
-   immutable control-volume (CV) arrays suitable for vectorized solvers.
-3. **Mechanism declaration** — paint cable properties, density mechanisms,
-   and ion channels onto regions; place point mechanisms onto locsets.
-4. **Runtime lowering** — initialize `Cell` with resolved ion species,
-   channel state, point-mechanism storage, and a DHS-ordered node tree.
-5. **Numerical integration** — provide a registry of explicit, implicit,
-   exponential, and staggered step functions, including a custom DHS
-   voltage solver for branched cables.
-6. **Network execution** — connect event sources to Cell-owned synapses,
-   schedule delayed delivery, and aggregate samples and sparse events.
-7. **Parameterization** — expose selected physical fields through stable,
-   unit-aware trainable parameter mappings.
-
-Out of scope (for this iteration): a BrainCell-owned optimizer or Trainer,
-plasticity learning rules, trainable topology, NEURON HOC compatibility, GUI
-tools, and stand-alone NMODL execution. The previous `mech/nmodl/` research
-tree has been removed; if NMODL support returns, it will be a separate codegen
-design targeting the mechanism registry.
-
----
-
-## 2. Top-Level Architecture
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                         braincell.io                                 │
-│   SWC / ASC / NeuroML2 readers · checkpoints · NeuroMorpho client    │
-└─────────────────────────────┬────────────────────────────────────────┘
-                              │ Morphology
-                              ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                       braincell.morph                                │
-│           Branch (frozen) · Morphology (mutable tree)                │
-└──────────────┬───────────────────────────────────┬───────────────────┘
-               │ Morphology                        │
-               ▼                                   ▼
-┌─────────────────────────────┐    ┌────────────────────────────────────┐
-│      braincell.filter       │    │           braincell.mech           │
-│  RegionExpr · LocsetExpr    │    │  Mechanism · CableProperty         │
-│  SelectionCache             │    │  Density · Point · Junction        │
-│                             │    │  MechanismRegistry                 │
-└──────────────┬──────────────┘    └─────────────────┬──────────────────┘
-               │ selection                           │ declarations
-               ▼                                     ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│ braincell._discretization   │        braincell._compute              │
-│ CV/CVTree · policies      │ layouts · bindings · scheduling  │
-│ geometry · mechanism rules│ CellRuntimeState · bridge · table │
-├─────────────────────────────┴────────────────────────────────────────┤
-│                braincell._multi_compartment (Cell)                   │
-│ declaration + initialized runtime · views · run · recording           │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │ HHTypedNeuron
-                               ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                        braincell.quad                                │
-│   IntegratorRegistry · explicit / implicit / exp_euler / staggered   │
-│   steps · dhs_voltage_step (branched-cable Hines solver)             │
-└──────────────────────────────┬───────────────────────────────────────┘
-                               │ DiffEqState
-                               ▼
-                  brainstate / JAX execution
-```
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│        braincell.ion · braincell.channel · braincell.synapse         │
-│   concrete Ion species (Na, K, Ca) · IonChannel implementations      │
-│   (Na, K, Ca, Ih, K_Ca, leaky) · exponential synapse models          │
-└──────────────────────────────────────────────────────────────────────┘
-   (supply concrete mechanism objects consumed by mech.Density /
-    mech.Point declarations and installed inside braincell.Cell)
-```
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                         braincell.vis                                │
-│   2D / 3D scenes · matplotlib & PyVista backends ·                   │
-│   region / locset / value overlays                                   │
-└──────────────────────────────────────────────────────────────────────┘
-       (consumes Branch / Morphology / Cell / RegionExpr / LocsetExpr)
-```
-
-The directional rule of thumb:
-**`io -> morph -> {filter, mech} -> _discretization -> _compute -> Cell -> quad`**,
-with `ion` / `channel` / `synapse` as peer top-level modules supplying concrete
-mechanism implementations that `mech` wraps into `Density` (`Channel` /
-`Ion`) and `Point` (`CurrentClamp`, `Synapse`, `Junction`, …) declarations
-at paint/place time. `network` orchestrates initialized Cells and event
-sources; `trainable` binds parameter sources into Cell-owned runtime fields;
-`vis` reads anything from `morph` upward. Shared runtime bases live in
-`_base_neuron`, `_base_ion`, and `_base_channel`.
-
----
-
-## 3. Module Catalogue
-
-Each subsection lists: **purpose · key types · public API surface ·
-internal dependencies · status · open work**.
-
-### 3.1 `braincell.morph` — morphology data model
-
-- **Purpose** — owns the canonical in-memory representation of a neuron's
-  geometry. Splits cleanly into immutable per-branch geometry (`Branch`)
-  and a mutable owning tree (`Morphology`).
-- **Key types**
-  - `Branch` (frozen dataclass) and typed subclasses `Soma`, `Dendrite`,
-    `Axon`, `BasalDendrite`, `ApicalDendrite`, `CustomBranch`.
-    Built via `Branch.from_lengths` / `Branch.from_points`.
-  - `branch_class_for_type(type_str)` factory used by IO readers.
-  - `Morphology` — mutable owning tree, root attachment, attribute-style
-    children (`morpho.soma.dendrite = ...`), `topo()` text rendering,
-    `branches`, `edges`, `branch_by_order`.
-  - `MorphoBranch` — node view exposing parent / children navigation.
-  - `MorphoEdge` — frozen, read-only directed edge between two
-    `MorphoBranch` nodes.
-  - `MorphoMetric` — frozen snapshot of `n_branches`, `total_length`,
-    `total_area`, `total_volume`, `max_path_distance`,
-    `max_euclidean_distance`, `max_branch_order`, range boxes, etc.
-- **Status**
-  - [x] Branch geometry, area, volume, point/length constructors.
-  - [x] Morphology root construction, `attach`, sugar attribute API,
-    topology queries, `topo()` text tree.
-  - [x] `Morphology.from_swc` / `Morphology.from_asc` constructors.
-  - [x] `save_checkpoint` / `load_checkpoint` (`.bcm` self-contained
-    format) plus `pickle` / `copy.deepcopy` support.
-  - [x] `MorphoMetric` covering total length / area / volume, branch
-    order, path distance, Euclidean distance.
-  - [ ] **Tree editing primitives**: delete subtree, splice subtree,
-    merge two morphologies at a chosen attachment point, swap a branch
-    with another while preserving orientation.
-  - [ ] **In-place geometry transforms**: translate / rotate / scale /
-    align principal axis, with corresponding metric invalidation.
-- **Open risks**
-  - Mutability of `Morphology` versus the immutability of `Branch`
-    (and downstream caches in `Cell`) makes accidental aliasing easy.
-    Tree-edit operations must follow the existing
-    `Morphology.clone()` discipline used by `Cell`.
-
-### 3.2 `braincell.io` — file-format ingestion
-
-- **Purpose** — read morphologies from common neuroscience formats and
-  produce a `Morphology` plus a structured report describing parsing
-  decisions and validation issues.
-- **Key types**
-  - `swc.SwcReader`, `SwcReadOptions`, `SwcReport`, `SwcIssue` plus
-    rulebook (`rules.py`) and soma reconstruction (`soma.py`).
-  - `asc.AscReader`, `AscReport`, `AscIssue`, `AscMetadata`.
-  - `neuroml2.NeuroMlReader`.
-  - `neuromorpho` package — three-tier NeuroMorpho.Org integration:
-    - Tier 1: `load_neuromorpho` (also re-exported as
-      `braincell.load_neuromorpho`), `fetch_neuromorpho`, and the
-      `Morphology.from_neuromorpho` classmethod sibling to `from_swc` /
-      `from_asc`.
-    - Tier 2: `NeuroMorphoClient` (typed `search` / `iter_search`,
-      `get_neuron`, `get_measurement`, `describe`, `download` with
-      `dry_run=True`, configurable `retries` / `backoff_base`).
-    - Tier 3: `NeuroMorphoCache`, `NeuroMorphoCacheLayout`,
-      `NeuroMorphoQuery`, `NeuroMorphoMeasurement`, `NeuroMorphoFilePlan`,
-      `NeuroMorphoUrls`, `NeuroMorphoCacheStatus`,
-      `NeuroMorphoSearchPage`, `NeuroMorphoDetail`,
-      `NeuroMorphoDownloadItem`, `NeuroMorphoDownloadRecord`,
-      `NeuroMorphoNeuron`, plus pure URL helpers
-      (`build_standard_swc_url`, `build_original_file_url`,
-      `infer_original_extension`, `plan_neuron_files`).
-    - Errors: `NeuroMorphoError`, `NeuroMorphoHTTPError`,
-      `NeuroMorphoNotFoundError`.
-  - `io.checkpoint` — `save_branch` / `load_branch` /
-    `save_morpho` / `load_morpho` and the `.bcm` single-file format.
-- **Status**
-  - [x] SWC import + rulebook validation + report.
-  - [x] SWC export through `Morphology.to_swc()` / `swc.write_swc()`,
-    with structural round-trip coverage for branch endpoint duplication,
-    soma interior attachments, reversed branches, and invalid geometry.
-  - [~] ASC import: most Neurolucida trees, metadata, and
-    `Morphology.from_asc(..., return_report=True)` work; **gaps**:
-    spine markers, contour-only somas, and multi-tree files are still
-    handled minimally — see `io/asc/reader_test.py` skips.
-  - [ ] NeuroML2 import — reader stub exists; needs cell, segment-group,
-    biophysics decoding and round-trip tests.
-  - [x] NEURON-based diff harness via `examples/neuron_compare/morph/neuron_diff.py`.
-  - [x] NeuroMorpho.Org integration: Tier 1 `load_neuromorpho` /
-    `fetch_neuromorpho` one-liners, Tier 2 `NeuroMorphoClient` with
-    typed `iter_search` / `download` / retries, Tier 3 `NeuroMorphoCache`
-    plus pure URL helpers, full NumPy-doc docstrings, and
-    `Morphology.from_neuromorpho` classmethod. Notebook walkthrough at
-    `examples/multi_compartment/neuromorpho.ipynb` shows the full search → cache →
-    metric-diff loop.
-  - [ ] Automated metric diff against published NeuroMorpho reference
-    statistics promoted from the notebook into a pytest case (so the
-    NeuroMorpho corpus becomes a wide regression net).
-  - [x] Checkpoint API and `.bcm` format with notebook tutorial
-    (`examples/multi_compartment/morphology-checkpoint.ipynb`).
-  - [ ] **NMODL parsing compiler** — deferred. The previous
-    `mech/nmodl/` research tree has been removed from the working
-    copy; if NMODL support returns it will land as a codegen pass
-    targeting the mechanism registry (see §3.4 / M5 Phase 4).
-- **Open risks**
-  - Format heterogeneity is the dominant source of bugs. Every reader
-    must produce a `Report` so user-facing tools can surface issues
-    instead of silently massaging geometry.
-
-### 3.3 `braincell.filter` — region & locset selection
-
-- **Purpose** — declarative, composable selection of regions of a
-  morphology and points on it. The cell layer consumes these to map
-  user intent onto control volumes.
-- **Key types**
-  - `RegionExpr` family: `BranchSlice`, `branch_in(...)` predicates for
-    branch metadata / topology, `branch_range(...)` for scalar branch
-    properties and metrics, set operations
-    (union / intersection / difference / complement).
-  - `LocsetExpr` family: root, branch points, terminals, region-driven
-    uniform sampling, region-driven random sampling.
-  - `SelectionCache` — memoizes resolved index sets for stable
-    Morphology objects.
-- **Status**
-  - [x] BranchSlice, broadcasted inputs, set algebra.
-  - [x] Discrete predicates (type / name / branch_order / parent_id /
-    n_children / n_tapers / branch_id).
-  - [x] Continuous `branch_range(...)` with both numeric and `Quantity`
-    bounds.
-  - [x] Branch scalar metric filters: `length`, `mean_radius`, `area`,
-    `volume`.
-  - [ ] **Radius-range filter** (e.g., `radius_range(0.5*u.um, 2*u.um)`).
-  - [ ] **Path-distance filter** (graph distance from soma along the
-    tree).
-  - [ ] **Euclidean-distance filter** (3-D distance from a chosen
-    anchor point).
-  - [ ] **Subtree region** — everything reachable below a given branch
-    or locset; needs to interoperate with the planned
-    `Morphology` subtree-edit operations.
-  - [x] Locset: root, branch points, terminals.
-  - [x] Locset: uniform / random sampling driven by a region.
-  - [~] **Locset anchors and fixed-step sampling**: `RegionAnchors` and
-    explicit `at(branch, x)` locations are implemented; `StepSamples`
-    remains a reserved expression that raises `NotImplementedError`.
-- **Open risks**
-  - The reserved distance/radius/subtree expressions must reuse the existing
-    morphology spatial metrics and `SelectionCache`; they must not introduce
-    a second geometry cache with different invalidation semantics.
-
-### 3.4 `braincell.mech` — mechanism declarations
-
-- **Purpose** — strongly-typed, purely-declarative containers used by
-  the `Cell` frontend. Everything here describes *what to install*, not
-  *how to integrate*: no `brainstate`, no JAX, no runtime state. The
-  concrete ion species, ion channels, and synapses live in peer
-  top-level modules (`braincell.ion`, `braincell.channel`,
-  `braincell.synapse`) and register themselves with the
-  `MechanismRegistry` at import time via class-level decorators; the
-  runtime lowering in `braincell._compute` resolves a
-  `Density.class_name` through the registry when it installs channels
-  on a cell.
-- **Key files & types**
-  - `mech/_base.py` — `Mechanism` marker base class. Every mechanism
-    declaration (density or point) inherits from it, so consumers can
-    check `isinstance(x, Mechanism)` without having to know whether
-    they hold a `Density` or a `Point`.
-  - `mech/_registry.py` — `MechanismEntry(category, name, cls,
-    aliases)` frozen dataclass, `MechanismRegistry` with
-    `register` / `unregister` / `add_alias` / `contains` / `get` /
-    `entry` / `names` / `items` / `clear`, the `_REGISTRY` singleton
-    accessed via `get_registry()`, and the three class-level
-    decorators `register_channel` / `register_ion` /
-    `register_synapse`. Unknown-name lookups raise `KeyError` with a
-    `difflib`-based "did you mean ...?" suggestion (same pattern as
-    `braincell.quad._registry`). Three valid categories:
-    `"channel"`, `"ion"`, `"synapse"`.
-  - `mech/_params.py` — `Params(Mapping[str, Any])` frozen hashable
-    mapping. `__hash__` uses `frozenset(self._items.items())`, so
-    `Channel("IL", g_max=..., E=...)` and `Channel("IL", E=...,
-    g_max=...)` deduplicate into a single paint-layout group. Iteration
-    order is the declared order so `repr()` is stable. Accepts
-    `Mapping`, `(k,v)` tuples, or another `Params` in the constructor
-    (`Params.coerce(value)`), supports `**params` unpacking via the
-    `Mapping` protocol, and exposes non-mutating `with_updates(...)` /
-    `without(...)`.
-  - `mech/_density.py` — `Density(Mechanism)` abstract base plus the
-    concrete subclasses `Channel(Density)` and `Ion(Density)`. `Density`
-    is a manually-immutable `__slots__` class (not a dataclass) with a
-    `category: ClassVar[str]` discriminator set by each subclass
-    (`"channel"` / `"ion"`). The constructor accepts `class_name` as
-    either a string **or** a class (`braincell.channel.IL`); types are
-    resolved to their canonical registry name via reverse lookup.
-    `coverage_area_fraction` is a dedicated first-class field, not a
-    pseudo-parameter. `instance_name` falls back to `class_name`,
-    `identity = (instance_name, class_name)` drives paint-layout
-    grouping, and `with_params(...)` / `with_coverage(...)` /
-    `with_name(...)` return non-mutating copies via an internal
-    `object.__new__` + `object.__setattr__` bypass. `Channel` and
-    `Ion` collect parameters via `**params` kwargs.
-  - `mech/_point.py` — `Point(Mechanism)` plain base class (not a
-    `Union`; use `isinstance(x, Point)` in consumers) plus concrete
-    frozen-dataclass subclasses `CurrentClamp`, `SineClamp`,
-    `FunctionClamp`, `ProbeMechanism`, and `Synapse`. `CurrentClamp`
-    has one canonical form `(start, durations, amplitudes)` and a
-    `CurrentClamp(delay=..., durations=duration, amplitudes=amplitude)` classmethod
-    shortcut. `Synapse` is itself a frozen dataclass
-    (`synapse_type`, `params`, `name`); there is no separate factory
-    function.
-  - `mech/_junction.py` — `Junction(Point)` frozen dataclass for
-    gap-junction coupling declarations. Placeholder implementation
-    (`params` field only); lives in its own module so downstream
-    work on gap-junction state and partner wiring has a clean home.
-  - `mech/_cable.py` — `CableProperty` frozen dataclass
-    (`resting_potential`, `membrane_capacitance`, `axial_resistivity`,
-    `temperature`, all `brainunit` quantities; temperature defaults to
-    36 °C via a `default_factory` and is coerced to kelvin in
-    `__post_init__`). Exposes non-mutating `with_updates(**kwargs)`.
-  - `mech/__init__.py` — re-exports the public surface
-    (`Mechanism`, `Density`, `Channel`, `Ion`, `Point`, `CurrentClamp`,
-    `SineClamp`, `FunctionClamp`, `ProbeMechanism`, `Synapse`,
-    `Junction`, `CableProperty`, `Params`, registry API).
-  - Co-located tests: `_base_test.py`, `_registry_test.py`,
-    `_params_test.py`, `_density_test.py`, `_point_test.py`,
-    `_junction_test.py`, `_cable_test.py`.
-- **Status**
-  - [x] `CableProperty`, `Density` (with `Channel` / `Ion`
-    subclasses), and the full `Point` family (`CurrentClamp`,
-    `SineClamp`, `FunctionClamp`, `ProbeMechanism`, `Synapse`,
-    `Junction`) with `brainunit`-typed fields and co-located tests.
-    Everything inherits from a shared `Mechanism` marker base class.
-  - [x] **One type per concept.** The legacy `MechanismSpec` /
-    `DensityMechanism` duality and the eight `density_*` isinstance-
-    dispatch helpers in `spec.py` are gone. Every density declaration
-    is a `Density` subclass (`Channel` or `Ion`) carrying a
-    `category` `ClassVar`; every point declaration is a `Point`
-    subclass.
-  - [x] **Class-based `Channel` / `Ion`.** `braincell.mech.Channel`
-    and `braincell.mech.Ion` are real classes (not factory functions)
-    inheriting from `Density`. They accept the target class as either
-    a string name (`"IL"`) or the concrete class object
-    (`braincell.channel.IL`); the class form is reverse-looked-up in
-    the registry to produce the canonical name so aliases continue to
-    collapse into one identity. Top-level `braincell.Channel` /
-    `braincell.Ion` still point at the runtime base classes from
-    `_base_channel.py` / `_base_ion.py`; the declaration-layer classes are
-    reached via
-    `braincell.mech.Channel` / `braincell.mech.Ion` to avoid the
-    name collision.
-  - [x] **Mechanism registry.** `MechanismRegistry` + the
-    `@register_channel` / `@register_ion` / `@register_synapse`
-    decorators ship in `mech/_registry.py`. ~49 concrete classes in
-    `braincell.channel`, `braincell.ion`, and `braincell.synapse`
-    self-register at import time. `get_registry().get(category,
-    class_name)` is the single lookup path used by
-    `_compute/parameters.py` and `_compute/bindings.py` to resolve
-    `Density.class_name` into a
-    runtime class. Channel-to-ion binding is inferred from
-    `issubclass(cls.root_type, Sodium / Potassium / Calcium)`, not
-    from hardcoded class-name matching. Abstract base classes
-    (`LeakageChannel`, `SodiumChannel`, `Calcium`, …) are deliberately
-    **not** decorated.
-  - [x] **Hash-stable Params.** `Params.__hash__` uses
-    `frozenset(items)` so two `Channel(...)` calls with the same
-    parameters in different keyword order compare equal and
-    deduplicate into the same paint-layout group. Only `params` is
-    hash-insensitive; `class_name`, `name`, `category`, and
-    `coverage_area_fraction` remain position-sensitive.
-  - [x] **`coverage_area_fraction` as a first-class field** on
-    `Density`. The old abstraction leak where coverage was smuggled
-    through ordinary mechanism parameters is gone; `_discretization`
-    and `_compute` preserve it as geometry metadata.
-  - [x] **Unified `CurrentClamp`.** One canonical frozen-dataclass
-    form `(delay, durations, amplitudes)`. The old
-    `CurrentClamp(amplitude=, delay=, duration=)` compatibility form
-    is gone; use `CurrentClamp(delay=..., durations=duration, amplitudes=amplitude)`.
-  - [x] **Consumer simplification.** `_discretization/mechanism.py` and
-    the `_compute` layout, binding, parameter, and table modules operate
-    directly on the declaration types without a parallel spec hierarchy.
-  - [ ] **Parameter-unit validation** — `Params` currently stores
-    values untyped. Needs compile-time validation that each value
-    carries the brainunit dimension the target channel declares
-    (e.g. `g_max` must be in `S/cm²`, `E` in `mV`), with an error
-    that points at the offending `paint(...)` call. The infrastructure
-    for this lives on the mechanism registry: each entry can declare
-    the expected unit per parameter name.
-  - [ ] **`Junction` runtime wiring** — `Junction` currently ships
-    as a placeholder frozen dataclass with only a `params` field.
-    It needs a `partner` reference (locset or another placed
-    `Junction`), symmetric pair resolution in the runtime, and a
-    gap-junction current contribution in the voltage solve. Tracked
-    as the first sub-task in milestone M5 Phase 3.
-  - [ ] **`ProbeMechanism` variable taxonomy** — `variable` is
-    currently a free-form string. Promote it to a typed enum of known
-    probes (`"v"`, `"ina"`, `"ik"`, `"ica"`, `"cai"`, `"cao"`,
-    channel gate names, …) so user typos fail at declaration time
-    rather than silently producing empty traces.
-  - [ ] **Mechanism validation harness** — a structured comparison
-    against NEURON `.mod` reference traces for every channel in
-    `braincell.channel`. The previous `mech/mod_validate/` tree has
-    been removed from the working copy; the harness needs to be
-    re-introduced as a package under `braincell/mech/` (or a sibling
-    test package) and promoted to automated pytest cases. Tracked in
-    milestone M5.
-  - [ ] **NMODL ingestion** — deferred. If NMODL support returns it
-    must target the mechanism registry so generated channels land
-    under the standard naming convention in `braincell.channel`
-    rather than creating a parallel hierarchy.
-- **Open risks**
-  - **Hash-insensitive `Params` equality** only kicks in for the
-    `params` field; `class_name`, `name`, `category`, and
-    `coverage_area_fraction` stay position-sensitive. Do not extend
-    the hash-insensitive treatment to other fields without first
-    understanding the paint-layout grouping contract in
-    `_discretization/mechanism.py`.
-  - **Class-level decorator ordering.** Registration is a side
-    effect of importing `braincell.channel` / `braincell.ion` /
-    `braincell.synapse`. If a user imports `braincell.mech` alone
-    (without importing the concrete modules) the registry is empty —
-    by design. The canonical entry points in `braincell/__init__.py`
-    already import all three, so normal users never see this.
-  - **Ion binding inference** uses
-    `issubclass(cls.root_type, Sodium/Potassium/Calcium)` in
-    `_compute/bindings.py`. New ion species must either set
-    `root_type` on their channels or we extend the dispatch to walk
-    a lookup table — do not hardcode class-name matching.
-  - **Name collision with runtime `Channel` / `Ion` bases.** The
-    declaration-layer `Channel` / `Ion` classes live under
-    `braincell.mech`, not at the top level of `braincell`, because
-    `braincell.Channel` / `braincell.Ion` already resolve to the
-    runtime base classes from `_base_channel.py` / `_base_ion.py`.
-    Tutorials and user code
-    should use the fully-qualified `braincell.mech.Channel` /
-    `braincell.mech.Ion` when declaring mechanisms on a `Cell`.
-  - The module is intentionally free of `brainstate` / JAX state —
-    keeping `mech` purely declarative makes importing `braincell.mech`
-    cheap and keeps the declaration frontend usable even in
-    environments where the numerical runtime is absent. Do not
-    import `brainstate`, `jax`, or any concrete channel/ion/synapse
-    class inside `braincell/mech/`. The one permitted dynamic
-    import is inside `_density._resolve_class_name`, which consults
-    the registry via a lazy `from ._registry import get_registry`
-    local import when a user passes a class object instead of a
-    name string.
-
-### 3.5 `_discretization` / `_compute` / `_multi_compartment` — Cell runtime
-
-- **Purpose** — turn *(Morphology, CVPolicy, paint/place declarations)*
-  into an initialized, directly runnable `Cell(HHTypedNeuron)`:
-  - `braincell._discretization` owns immutable CV geometry, policies,
-    mechanism rules, `CVTree`, and declaration-time `NodeTree` data.
-  - `braincell._compute` owns runtime layouts, bindings, CV/point bridges,
-    scheduling, tables, and `CellRuntimeState`.
-  - `braincell._multi_compartment` owns `Cell`, its spatial and mechanism
-    views, clamps, synapses, probes, and `RunResult`.
-- **Status**
-  - [x] `Cell(morpho, pop_size=..., cv_policy=...)`, `paint`, and `place`
-    form the declaration phase; declarations freeze after initialization.
-  - [x] `Cell.init_state()` lowers the declaration and installs runtime
-    state on the same object. `Cell.run(dt=..., duration=...)` advances it
-    directly; there is no public build phase or `RunnableCell`.
-  - [x] CV policies, geometry, axial-resistance partitioning, mechanism
-    lowering, point topology, DHS scheduling, and CV/point conversion.
-  - [x] Homogeneous populations with mandatory population axes and
-    multi-dimensional `pop_size`.
-  - [x] Cell, Channel, Ion, Synapse and Clamp views with Cell-owned
-    connection, recording, and trainable-parameter storage.
-  - [x] Fixed-step clamps retain their exact continuous interval at runtime;
-    density parameters are materialized on CVs rather than non-CV points.
-  - [x] NEURON-compatible ion-current snapshots and selectable
-    `"family"` / `"integration"` ion-channel update ordering.
-- **Open risks**
-  - Declaration shapes and ownership must remain fixed after
-    `init_state()` so JIT state trees and network routing stay stable.
-  - Parameter materialization may change values without changing runtime
-    layout, topology, units, or state shape.
-
-### 3.6 `braincell.quad` — numerical integrators
-
-- **Purpose** — provide a uniform registry of step functions over
-  `DiffEqModule` targets, plus the specialized branched-cable voltage
-  solver.
-- **Key types**
-  - `IntegratorRegistry`, `IntegratorEntry`, `register_integrator`,
-    `get_registry`, `get_integrator`. Decorator-based registration with
-    canonical name, aliases, category, order, description, deprecation.
-  - `_RegistryDictView` exposes a read-only `all_integrators` mapping
-    for legacy callers.
-  - `DiffEqModule`, `DiffEqState`, `IndependentIntegration` —
-    structural protocols and helpers for step functions.
-  - **Explicit families**: `euler_step`, `rk2/3/4_step`, `heun2/3_step`,
-    `midpoint_step`, `ralston2/3/4_step`, `ssprk3_step`.
-  - **Implicit / mixed**: `backward_euler_step`, `implicit_euler_step`.
-  - **Exponential Euler**: `exp_euler_step`, `ind_exp_euler_step`.
-  - **Staggered**: `staggered_step` (DHS voltage solve +
-    `ind_exp_euler` for ion-channel state, the workhorse for full
-    cells).
-  - **Voltage solvers**: `dhs_voltage_step` (DHS branched Hines),
-    `dense_voltage_step`, `sparse_voltage_step`.
-- **Status**
-  - [x] Registry, alias resolution, "did you mean ...?" suggestions.
-  - [x] Backwards-compatible `all_integrators` mapping view.
-  - [x] All explicit RK / Heun / Ralston / Midpoint / SSPRK families.
-  - [x] Backward Euler and implicit Euler. The six cell-only variants
-    (`implicit_rk4`, `implicit_exp_euler`, `cn_rk4`, `cn_exp_euler`,
-    `exp_exp_euler`, `splitting`) were removed: they had rotted against
-    several `brainstate` / `Cell` API generations and none could be
-    invoked successfully. `braincell/quad/_implicit_test.py` pins their
-    absence from the registry.
-  - [x] Exponential Euler (`exp_euler_step`, `ind_exp_euler_step`).
-  - [x] Staggered solver (`staggered_step`).
-  - [x] The staggered full-cell path calls
-    `cache_ion_total_currents(...)` when the target supports it, so
-    NEURON-compatible ion-current snapshot semantics can be selected at
-    the `Cell` level without changing the integrator API.
-  - [x] DHS voltage solver (`dhs_voltage_step`).
-  - [ ] **Adaptive timestep wrapper** that produces a registered
-    integrator from any embedded RK pair.
-  - [x] **Convergence test matrix** — pytest-driven order-of-accuracy
-    checks for every registered integrator on a small set of
-    reference ODEs (passive cable, single HH spike, two-branch Y).
-  - [ ] **Performance benchmarks** vs NEURON / Arbor on the standard
-    Mainen / Hay / L5PC cells, run nightly via `CI-daily.yml`.
-
-### 3.7 `braincell.vis` — visualization
-
-- **Purpose** — render morphologies and cell-level data with both an
-  interactive 3D backend (PyVista) and a static / publication 2D
-  backend (matplotlib), plus a dependency-light Plotly backend for
-  interactive notebook 3D without VTK.
-- **Key types and files**
-  - `scene.py` — frozen dataclass primitives (`Polyline2D`, `Polygon2D`,
-    `Circle2D`, `Label2D`, `BranchPolyline3D`, `BranchTypeBatch3D`),
-    `RenderScene2D` / `RenderScene3D` containers, `RenderRequest`,
-    `OverlaySpec`.
-  - `scene2d.py`, `scene3d.py` — scene builders that strip brainunits
-    (`.to_decimal(u.um)`) and translate morphology + layout into
-    primitive tuples.
-  - `plot2d.py`, `plot3d.py` — high-level user entry points.
-  - `backend.py` — `RenderBackend` Protocol + `BackendChooser`.
-  - `backend_matplotlib.py`, `backend_pyvista.py`, `backend_plotly.py` —
-    concrete backends with lazy optional imports. The matplotlib
-    backend attaches per-artist pick metadata; the PyVista backend
-    attaches a point→branch lookup so `enable_point_picking` can
-    resolve clicks.
-  - `hooks.py` — `VisHooks(on_pick=..., on_hover=..., on_leave=...)`
-    plus the `PickInfo` payload delivered to user callbacks
-    (backend-agnostic; wired in both matplotlib and PyVista).
-  - `export.py` — unified `save_figure(figure, path, dpi=..., transparent=...)`
-    that dispatches on matplotlib `Axes`/`Figure`, pyvista `Plotter`,
-    or plotly `Figure`.
-  - `compare.py` — generalized `compare_morphologies([m1, m2, ...])` and
-    `compare_values(morpho, [values_a, values_b, ...])` side-by-side
-    helpers built on top of `plot2d`.
-  - `pytest-benchmark` baselines for layout build, scene build, and
-    end-to-end plot2d render on 50 / 500 / 2000-branch synthetic
-    morphologies, skipped when `pytest-benchmark` is not installed.
-    Filed with the module each measures: `layout/_dispatch_test.py`,
-    `scene2d_test.py`, `plot2d_test.py`.
-  - `layout/` — 2D tree-layout engine split across
-    `_common.py` (shared dataclasses + tree helpers),
-    `_geometry.py` (pure-numeric sampling and branch construction),
-    `_collision.py` (spatial-hash collision scoring),
-    `_config.py` (`LayoutConfig` frozen dataclass, the tunable
-    knobs), `_cache.py` (`LayoutCache` LRU keyed on a morphology
-    snapshot plus the layout config), `_stem.py` / `_balloon.py` /
-    `_radial.py` / `_legacy.py` (layout families), and `_dispatch.py`
-    (`build_layout_branches_2d` entry point, cache-aware). Each file
-    ships with a sibling `*_test.py`.
-  - `compare2d.py` — side-by-side comparison of layout families on the
-    same morphology (legacy, specific to layout-family gallery).
-  - `config.py` — `VisDefaults` dataclass singleton plus
-    `configure_defaults` / `get_defaults` / `reset_defaults`,
-    `theme(**overrides)` scoped context manager, and
-    `PublicationTheme` / `publication_theme()` which flips both vis
-    defaults and matplotlib `rcParams` for LaTeX-friendly output.
-  - `_values.py` — colour-by-values normalisation (per-branch /
-    per-segment / per-centerline-point → per-point scalar arrays)
-    plus :mod:`brainunit` unit-label extraction.
-  - `movie.py` — `plot_movie` time-varying colour-by-values
-    animation (matplotlib `FuncAnimation` + pyvista
-    `Plotter.open_movie`).
-  - `traces.py` — `plot_traces` morphology-synchronized time-series
-    panels.
-  - `morphometry.py` — `plot_dendrogram`, `plot_topology`,
-    `plot_sholl`, `plot_branch_order_histogram`, and the
-    `compute_sholl_profile` / `ShollProfile` helpers.
-  - `_testing.py` — shared morphology builders, the `FakeBackend`
-    scene-capturing double, `VisDefaultsResetMixin`, and the
-    `PYTEST_BENCHMARK_AVAILABLE` plugin probe.
-- **Status**
-  - [x] 3D rendering of `Branch` / `Morphology` with point geometry,
-    scene composition, PyVista backend.
-  - [x] 2D projected mode driven by real points.
-  - [x] 2D tree auto-layout.
-  - [x] 2D frustum auto-layout.
-  - [x] Stem / balloon / radial360 layout family with matplotlib
-    comparison output.
-  - [x] `OverlaySpec` plumbed end-to-end for `region` / `locset` /
-    `values`, with per-CV value colormaps, locset scatter markers,
-    and region recolor passes consumed by both backends.
-  - [x] `RenderRequest` uses a neutral `backend_options` mapping;
-    backend-specific kwargs no longer pollute the shared schema.
-  - [x] Backend capability registry via `supported_scene_kinds:
-    frozenset[str]` so a future backend can declare multi-format
-    support.
-  - [x] `plot3d(mode="skeleton")` fast-preview path (centerline-only,
-    no tube generation) alongside the default `"geometry"` mode.
-  - [x] `RenderScene2D.draw_order` honored by the matplotlib backend
-    (primitives sorted by draw_order → `zorder=` argument).
-  - [x] `braincell.vis.theme(**overrides)` context manager for scoped
-    style overrides; tests no longer need manual `reset_defaults()`.
-  - [x] Shared `vis/_testing.py` helpers and parametrized layout-family
-    tests covering the shared invariants across stem / balloon /
-    radial_360.
-  - [x] **`layout2d.py` refactor** into `vis/layout/` with separate
-    files for `_common.py`, `_dispatch.py`, `_stem.py`, `_balloon.py`,
-    `_radial.py`, `_legacy.py`, `_collision.py`, `_geometry.py`,
-    and a `_config.py` holding the `LayoutConfig` frozen dataclass
-    (M6 Phase 2). The legacy family now emits a `DeprecationWarning`,
-    the collision backend uses a 2D spatial hash, and `plot2d`
-    accepts `layout_config=` as an optional user knob.
-  - [x] **Color-by-values** for 2D and 3D scenes: accept per-branch /
-    per-segment / per-centerline-point scalars. The matplotlib
-    backend uses vectorized `LineCollection` / `PolyCollection`
-    (10–50× speedup on dense scenes), the PyVista backend writes
-    `polydata.point_data["values"]` and calls
-    `add_mesh(scalars=..., cmap=..., scalar_bar_args=...)`. Proper
-    colorbars with unit labels, plus `vmin` / `vmax` / `cmap` /
-    `norm` surfaced through `plot2d` / `plot3d` (M6 Phase 3).
-  - [x] **`plot_movie`** — time-varying values over a morphology
-    using matplotlib `FuncAnimation` (2D) or
-    `pyvista.Plotter.open_movie` (3D). The 2D path builds the scene
-    once and mutates the `LineCollection` / `PolyCollection` scalar
-    array per frame; the 3D path rewrites
-    `polydata.point_data["values"]` and writes one frame per
-    timestep.
-  - [x] **`plot_traces`** — stacked time-series panels at `locset`
-    locations, color-synced with markers on a left-hand morphology
-    view (optional).
-  - [x] **Morphometry / topology plots**: `plot_dendrogram`,
-    `plot_topology`, `plot_sholl` (with `compute_sholl_profile` and
-    `ShollProfile` helpers), `plot_branch_order_histogram`.
-  - [x] **Layout caching** — `LayoutCache` LRU keyed on a stable
-    morphology snapshot plus the `LayoutConfig` hash. The
-    dispatcher consults `get_default_layout_cache()` on every call;
-    callers can pass a scoped `cache=LayoutCache(...)` or opt out
-    with `use_cache=False`.
-  - [ ] **Visual regression tests** — the `pytest-mpl` suite was
-    removed in 2026-08. Its baseline directory was never committed and
-    CI never passed `--mpl`, so no comparison had ever run; the 12
-    tests were figure constructors with no assertions. Eight duplicated
-    existing coverage and were dropped, four were rewritten as real
-    matplotlib-artist assertions in `backend_matplotlib_test.py`. See
-    `docs/specs/2026-08-19-vis-baselines-and-coverage-gaps.md`.
-    Reinstating pixel regression needs committed baselines plus a
-    Linux-only CI job that actually passes `--mpl`.
-  - [x] **Generalized comparison**: `compare_morphologies([m1, m2, ...])`
-    and `compare_values(morpho, [values_a, values_b, ...])` in
-    `vis/compare.py` (M6 Phase 4).
-  - [x] **Interactivity**: `VisHooks(on_pick=, on_hover=, on_leave=)` +
-    `PickInfo` in `vis/hooks.py`. The matplotlib backend attaches
-    per-artist pick metadata and wires `pick_event` /
-    `motion_notify_event` handlers; the PyVista backend builds a
-    point→branch lookup and calls `enable_point_picking`
-    (M6 Phase 4).
-  - [x] **Plotly backend**: `backend_plotly.py` renders value scenes
-    as `Scatter3d` traces with per-point `line.color` / `colorscale`
-    and a shared scalar bar; gated on
-    `importlib.util.find_spec("plotly")` so the base install stays
-    dependency-free (M6 Phase 4).
-  - [x] **Export polish**: unified `save_figure(figure, path, ...)` in
-    `vis/export.py` that dispatches on matplotlib `Axes`/`Figure`,
-    pyvista `Plotter`, or plotly `Figure`; `PublicationTheme` preset
-    plus `publication_theme()` context manager in `config.py` that
-    flips both vis defaults and matplotlib `rcParams` (serif font,
-    thicker lines, no grid, print-friendly palette) (M6 Phase 4).
-  - [x] **Performance baselines** via `pytest-benchmark`, co-located
-    with the modules they measure (`vis/layout/_dispatch_test.py`,
-    `vis/scene2d_test.py`, `vis/plot2d_test.py`) — layout build, scene
-    build, and plot2d render on 50 / 500 / 2000-branch synthetic
-    morphologies, skipped when the plugin is absent (M6 Phase 4).
-  - [x] **Narrative tutorial**: `examples/multi_compartment/vis.ipynb` — quick start,
-    layout gallery, styling/themes, color-by-values, overlays, movie,
-    trace panels, morphometry, interactivity, publication export,
-    comparison (M6 Phase 4).
-  - [x] **Sphinx autodoc wiring**: `docs/apis/vis.rst` exposes the
-    whole public surface (plot entry points, morphometry helpers,
-    comparison helpers, hooks, themes, layout engine) through
-    `autosummary` and is linked from `docs/index.rst` (M6 Phase 4).
-- **Open risks**
-  - The stem layout family still holds the most bug-prone code
-    (heuristic collision avoidance, the multi-weight scoring
-    function). After the Phase 2 split it lives in `vis/layout/_stem.py`
-    but remains the largest file in the package. Tuning individual
-    scoring weights now goes through `LayoutConfig` rather than
-    editing module-level constants, which makes experiments safer.
-  - Optional dependencies (`matplotlib`, `pyvista`, `plotly`,
-    `pytest-benchmark`) must stay lazy-imported inside
-    the backend that uses them. The import-time test from §4.5 /
-    risk #5 should grow to assert that none of the heavy optional
-    deps are loaded after `import braincell.vis`.
-  - `VisHooks` on the matplotlib backend relies on `pick_event` and
-    `motion_notify_event`, which only fire with an interactive
-    matplotlib backend. Notebook users should pick a GUI backend
-    (e.g. `%matplotlib widget`) — the Agg backend used in tests
-    will register the handlers but never deliver events, which the
-    tests explicitly cover.
-
-### 3.8 `braincell.ion` — ion species
-
-- **Purpose** — concrete `Ion` subclasses modelling intra/extracellular
-  concentration, reversal potential, and the container of ion-bearing
-  channels that consume the species' `IonInfo`. Lives as a peer
-  top-level module (not under `mech`) because the classes are runtime
-  objects with JAX state, not declarations.
-- **Key files & types**
-  - `braincell/ion/_base.py` — reusable `FixedIon`, `InitNernstIon`,
-    `DynamicNernstIon`, and `KineticIon` lifecycle templates.
-  - `braincell/ion/sodium.py` — `Sodium` (abstract base with
-    `root_type = HHTypedNeuron`), `SodiumFixed`, and `SodiumInitNernst`.
-  - `braincell/ion/potassium.py` — `Potassium` abstract base and
-    fixed and initialized-Nernst variants.
-  - `braincell/ion/calcium.py` — `Calcium` base class,
-    fixed/initialized-Nernst variants, and two concrete dynamics models:
-    - `CalciumDetailed` — Destexhe et al. 1993 thin-shell model with
-      tunable `d`, `tau`, `C_rest`, `C0`, `T`.
-    - `CalciumFirstOrder` — Bazhenov et al. 1998 first-order pool
-      (`Ca' = α I_Ca − β Ca`).
-      Both expose `C` as a `DiffEqState`, compute the Nernst reversal
-      `E = (RT/2F) log(C0/C)` as a property, and forward
-      `compute_derivative` to every attached `Channel` child.
-  - Co-located tests: `sodium_test.py`, `potassium_test.py`,
-    `calcium_test.py`.
-- **Status**
-  - [x] `SodiumFixed` / `PotassiumFixed` / `CalciumFixed` parameter
-    storage, container (`**channels`) attachment, and `pack_info()`
-    returning an `IonInfo(C, E)` tuple.
-  - [x] `CalciumDetailed` / `CalciumFirstOrder` with Nernst reversal
-    and full derivative wiring to child calcium channels.
-  - [x] `KineticIon`-based Cerebellum calcium-pool mechanisms imported
-    for the current comparison work, including `CdpStC_MA2020_GoC`,
-    `CdpStC_NoCAM_MA2020_GoC`, `CdpStC_CAMOnly_MA2020_GoC`,
-    `CdpStC_MA2025_BC`, `CdpStC_RI2021_SC`, `CdpCAM_MA2024_PC`, and
-    `CdpCR_MA2020_GrC`.
-  - [x] Co-located unit tests (~75) covering defaults, custom
-    parameters, callable broadcasts, `init_state` /
-    `reset_state` / `compute_derivative`, `pack_info`,
-    external-current registration, Nernst formula edge cases, and
-    child-channel forwarding.
-  - [ ] **`SodiumDetailed` / `SodiumFirstOrder`** — activity-
-    dependent Na⁺ accumulation (e.g., for spike-frequency adaptation
-    driven by a Na/K pump). Parallel to the calcium dynamics pair
-    and needed to reproduce several of the published cortical
-    models in `examples/`.
-  - [ ] **`PotassiumDetailed` / `PotassiumFirstOrder`** — activity-
-    dependent intracellular / extracellular K⁺ accumulation for
-    network-level effects and K-pump dynamics, with the same
-    Nernst-reversal property as the calcium path.
-  - [ ] **`Chloride` ion** (`Chloride`, `ChlorideFixed`,
-    `ChlorideDynamics`) in a new `braincell/ion/chloride.py` plus a
-    sibling `chloride_test.py`. Needed for quantitative GABAa
-    modelling and developmental E_Cl shifts.
-  - [x] **Shared ion lifecycle templates** — package-private `FixedIon`,
-    `InitNernstIon`, `DynamicNernstIon`, and `KineticIon` mixins own the
-    reusable initialization, reversal, and kinetics contracts.
-  - [x] **`__init__.py` hygiene** — ion and channel re-export sets are
-    explicit, deduplicated, and guarded by package-level re-export tests.
-  - [x] **Mechanism-registry plumbing** — every concrete `Ion`
-    subclass now self-registers via `@register_ion("CalciumFixed")` /
-    `@register_ion("CalciumDetailed")` / `@register_ion("CalciumFirstOrder")` /
-    `@register_ion("SodiumFixed")` / `@register_ion("PotassiumFixed")`
-    at import time, and `braincell.mech.Ion("CalciumFixed")` resolves
-    through the registry described in §3.4.
-  - [x] **Current-driven ion dynamics can use cached ion current.**
-    Kinetic ions that consume total calcium current can receive the
-    runtime snapshot created by `cache_ion_total_current=True`, matching
-    the NEURON-style separation between channel-current evaluation and
-    ion-state integration.
-  - [ ] **Consistent external-current registration** — audit that
-    every dynamics class honours `include_external=True` in its
-    `derivative` (the existing `CalciumDetailed.derivative` already
-    does; the contract must stay alive across future refactors).
-- **Open risks**
-  - **Nernst unit trap.** Nernst factors resolve correctly only when every
-    term remains a `brainunit` quantity; changes to the shared ion templates
-    must preserve units through graph flattening and materialization.
-  - **Shared lifecycle contracts.** New ion families must use the common
-    template hooks and contract tests so child-channel reset and derivative
-    forwarding cannot diverge by species.
-  - **Test-side coupling with `braincell.channel`.** The calcium
-    tests instantiate `CaT_HM1992` to exercise child-channel
-    forwarding, so a heavy top-level import in `braincell.channel`
-    would drag through the ion suite. Keep the channel package
-    tree-shakable (see §3.9 risks).
-
-### 3.9 `braincell.channel` — concrete ion channels
-
-- **Purpose** — the library's catalogue of ready-to-use HH-style and
-  Markov-kinetics ion channels. Every class is a subclass of
-  `Channel` from `_base_channel.py` (so every instance is an `IonChannel`
-  that registers its gate state as `DiffEqState`s) and declares
-  `root_type = HHTypedNeuron`. Channels are container children of
-  an `Ion` species or of a `SingleCompartment` / `Cell` directly.
-- **Key families**
-  - `sodium.py` — `Na_Ba2002`, `Na_TM1991`, `Na_HH1952`, persistent,
-    resurgent, and cell-specific Nav families.
-  - `potassium.py` — delayed rectifier, A-type, inward rectifier, Kv,
-    and M-current families such as `KDR_Ba2002`, `K_HH1952`, and the
-    MA2020/MA2024 cell-specific variants.
-  - `calcium.py` — T/L/HVA/LVA and Cav families, including frozen-gradient
-    variants used by controlled NEURON comparisons.
-  - `braincell/channel/leaky.py` — `LeakageChannel` base and the
-    passive leak `IL`.
-  - `hyperpolarization_activated.py`, `potassium_calcium.py`, and
-    `potassium_sodium.py` — HCN and mixed-ion channel families.
-- **Status**
-  - [x] Concrete channel families use current-free mechanism names such as
-    `Na_HH1952`, `K_HH1952`, `CaT_HM1992`, and `HCN_HM1992`; the removed
-    leading-`I` compatibility aliases are not public API.
-  - [x] Co-located tests cover kinetics, current sign and shape, lifecycle,
-    template invariants, and representative reference voltages.
-  - [x] Concrete classes self-register with the mechanism registry at import
-    time; abstract family bases are deliberately not registered.
-  - [x] **PC MA2024 channel set imported.** Sodium, potassium,
-    calcium, calcium-activated potassium, and HCN PC variants have been
-    added and covered by targeted tests. The calcium channel set also
-    includes `_Frozen` variants for the NEURON-comparison path where the
-    current expression must treat voltage as fixed with respect to
-    differentiation.
-  - [ ] **Parameter metadata** — each channel should declare the
-    unit of every user-facing parameter (`g_max` in `S/cm²`, `E` in
-    `mV`, time constants in `ms`, …) so that `Density.params`
-    validation can produce an actionable error at paint time rather
-    than an opaque JAX trace failure. Store the per-parameter unit
-    on `MechanismEntry.metadata` and consult it during
-    `Density.__init__`.
-  - [~] **GHK current formulation** — `GhkHH` and `ghk_flux` are implemented,
-    tested, and used by selected Cav channels; the remaining work is a
-    catalogue-wide audit of which published mechanisms require GHK rather
-    than an ohmic driving force.
-  - [~] **Q10 temperature scaling audit** — shared `q10_factor` and
-    `cached_q10_factor` helpers exist and most gates use the template path;
-    remaining family-specific temperature assumptions need documentation.
-  - [ ] **NEURON `.mod` validation** — for every channel in the
-    catalogue, compare voltage-clamp and current-clamp traces
-    against the reference `.mod` implementation within a tight
-    tolerance. Requires re-introducing the `mech/mod_validate/`
-    harness (see §3.4) and wiring it into milestone M5.
-  - [ ] **Chloride channels** — add a `braincell/channel/chloride.py`
-    module once `braincell.ion.Chloride` lands, covering the passive
-    leak plus GABAa-reversal-driven phasic conductance.
-  - [ ] **Stiff-channel integrator audit** — run the convergence matrix
-    over every channel to identify models that require a dedicated
-    integration path.
-  - [ ] **Gate-variable naming convention** — most channels use
-    `p`/`q` for activation / inactivation and a handful use bespoke
-    names (`m`, `h`, `n`, `s`, …). Tests already rely on the
-    `p`/`q` convention; unifying the rest will need a deprecation
-    path because downstream code reaches into `channel.p.value`.
-- **Open risks**
-  - **Import cost.** The package has thirty-plus classes and pulls
-    `braintools.init`, `brainunit`, and `jax.numpy` at import time.
-    New families should stay in their own module so the package
-    remains tree-shakable, and should avoid importing numpy at
-    module top level beyond what is already there.
-  - **Cross-ion channels.** `potassium_calcium.py` channels depend
-    on the attached calcium pool's `C` state. Compile-time checks
-    that the parent `Cell` actually has a calcium ion attached would
-    prevent silent `KeyError` / `AttributeError` at simulate time;
-    this belongs on the mechanism registry in §3.4.
-  - **API drift vs NEURON naming.** Upstream `.mod` files use lowercase
-    suffixes (`ih`, `ik`, `ikdr`), while BrainCell names mechanisms by
-    family/model and provenance. Any validation harness
-    needs a stable alias table so the diff does not become a
-    renaming exercise every time a new channel lands.
-
-### 3.10 `braincell` package root — neuron base classes
-
-- `_base_neuron.py`, `_base_ion.py`, and `_base_channel.py` define the
-  runtime bases composed by concrete neurons and mechanisms.
-- `_single_compartment/` owns `SingleCompartment`, the simplest concrete
-  neuron and a numerical sanity surface.
-- `_multi_compartment/` owns the directly initialized and executed `Cell`,
-  its views, point-mechanism stores, probes, and `RunResult` (see §3.5).
-- `_misc.py` — `normalize_param` (the brainunit gatekeeper), helpers,
-  decorators (`set_module_as`, `deprecation_getattr`), `Container`.
-- `_typing.py` — type aliases (`Initializer`, `ArrayLike`, `T`, `DT`).
-
-### 3.11 `braincell.network` — population and event runtime
-
-- **Purpose** — register Cells and event sources, connect source outputs to
-  Cell-owned synapses, coordinate lifecycle and delayed delivery, and
-  aggregate immutable sample and sparse-event results.
-- **Status**
-  - [x] Direct `Network`, `Population`, `NetworkConnections`, and
-    `NetworkResult` model with no separate public build phase.
-  - [x] Named connection calls, explicit or sampled endpoint pairing,
-    heterogeneous delays, split runs, reset semantics, and cached schedules.
-  - [x] Static recording schemas with regular `SampleBlock` outputs and
-    sparse `EventSeries` outputs.
-  - [ ] Chunked large-N pairing, automatic sparse/dense delay queues,
-    post-initialization topology mutation, and network batch runtime.
-- **Design authority** — [`network/design-overview.md`](network/design-overview.md)
-  and its linked API, architecture, issues, and implementation documents.
-
-### 3.12 `braincell.trainable` — parameter ownership and mapping
-
-- **Purpose** — bind optimizer-facing parameter roots to selected physical
-  runtime fields while preserving units, sharing semantics, and stable JAX
-  state trees. It does not own optimizers, losses, datasets, or training loops.
-- **Status**
-  - [x] `ParameterSource`, `ParameterBinding`, `ParameterSet`, and
-    `TrainableManager`, plus direct, shared-scale, and callable latent sources.
-  - [x] Cell-local ChannelView mappings for the initial supported channel
-    families, with transactional validation and differentiable materialization.
-  - [x] Constructor-discovered Ion and Synapse parameters, Connection weight,
-    voltage detector thresholds, and Network root aggregation with compiled
-    single-step training. CPU scope and evidence: [learning verification](../specs/2026-09-07-synapse-network-learning.md)
-    and [bidirectional populations](../specs/2026-09-07-bidirectional-population-learning.md).
-  - [ ] Cable, initial-state, and topology parameter training.
-- **Design authority** — [`optim/design-overview.md`](optim/design-overview.md)
-  and its linked API, architecture, implementation plan, and references.
-
----
-
-## 4. Cross-Cutting Concerns
-
-### 4.1 Units
-
-`brainunit` is non-negotiable. Every public API that takes a physical
-quantity routes through `_misc.normalize_param`, which **rejects bare
-numerics with `TypeError`**. New modules must:
-
-- accept inputs as `python_number/np.ndarray/jax.Array * brainunit_unit`;
-- store quantities in canonical SI units internally;
-- expose values back to users with units attached, never raw floats.
-
-### 4.2 Immutability discipline
-
-- `Branch`, `CV`, `MorphoEdge`, `MorphoMetric`, `IntegratorEntry`,
-  `PaintRule`, `PlaceRule`, `CableProperty` are frozen dataclasses.
-- `Morphology` is mutable and carries a monotonic `revision`. Before
-  initialization, `Cell` keys its discretization cache by morphology identity
-  and revision; structural mutation after initialization must not silently
-  reshape runtime state.
-- `IntegratorRegistry` is the single mutable global; entries are
-  added at import time via decorators and never mutated afterwards.
-
-### 4.3 Cell declaration and initialization
-
-`Cell` owns both its mutable declaration and, after initialization, its JAX
-runtime state. Structural declarations are accepted only before
-`init_state()`:
-
-```
-Cell(morpho, policy)
-  -> cell.paint(region, density_mech)
-  -> cell.place(locset, point_mech)
-  -> cell.init_state()
-  -> cell.run(dt=..., duration=...)         # returns RunResult
-```
-
-After initialization, topology-changing paint/place/connect/recording calls
-are rejected. Parameter mappings may materialize new values into the existing
-layout, but must not change the state-tree structure. `reset_state()` resets
-runtime values without reopening the declaration phase.
-
-### 4.4 Testing
-
-- pytest with `unittest.TestCase`; tests live next to source as
-  `<module>_test.py`, with no exceptions. The `*` must name a real
-  sibling module; the one sanctioned exception is a package-scope guard
-  in `<package>/__init___test.py`.
-- `conftest.py` forces `JAX_PLATFORMS=cpu` and `MPLBACKEND=Agg`.
-- IO test fixtures live in `examples/multi_compartment/morpho_files/`.
-- New code is expected to ship with co-located tests and to keep
-  per-module test runtime under a few seconds on CPU.
-
-### 4.5 Documentation
-
-- All public classes / methods / functions use **NumPy-style
-  docstrings** (see CLAUDE.md for the canonical template).
-- Examples must be `.. code-block:: python` blocks compatible with
-  doctest.
-- High-level narrative documentation lives under `docs/`; design
-  notebooks live under `examples/multi_compartment/`.
-
----
-
-## 5. Data-Model Summary
-
-| Layer | Type | Mutability | Lifetime | Owner |
-|---|---|---|---|---|
-| Geometry | `Branch`, `Soma`, `Dendrite`, ... | frozen | morphology lifetime | user / IO reader |
-| Geometry | `Morphology` | mutable tree | until edited | user |
-| Geometry view | `MorphoBranch`, `MorphoEdge` | frozen view | follows tree | `Morphology` |
-| Metrics | `MorphoMetric` | frozen snapshot | recomputed on demand | `Morphology` |
-| Selection | `RegionExpr`, `LocsetExpr` | frozen expression | reusable | user |
-| Selection cache | `SelectionCache` | mutable | per-Morphology | filter layer |
-| Mechanisms | `CableProperty`, `Density` (`Channel`, `Ion`), `Point*` (`CurrentClamp`, `Synapse`, `Junction`, …) | frozen dataclass / slots | declaration | user |
-| Mechanisms | `Ion`, `Channel`, `IonChannel`, `MixIons` | hybrid (JAX state) | per-initialized Cell | `Cell` |
-| Discretization | `CV` | frozen | declaration cache / initialization | `Cell` |
-| Discretization | `PaintRule`, `PlaceRule` | frozen | declaration | `Cell` |
-| Topology | `CVTree`, `NodeTree`, `Node`, `NodeEdge` | frozen | declaration cache / initialization | `Cell` |
-| Scheduling | `NodeScheduling` | frozen | initialized runtime | `Cell` |
-| Runtime | `CellRuntimeState` and mechanism stores | brainstate-managed | initialized runtime | `Cell` |
-| Network | `Population`, connection/recording stores | mixed | network lifecycle | source / target owner |
-| Parameters | `ParameterSet`, `ParameterBinding` | stable structure, mutable values | training lifecycle | `TrainableManager` |
-| Numerics | `IntegratorEntry` | frozen | process lifetime | `IntegratorRegistry` |
-| Numerics | `DiffEqState`, `IndependentIntegration` | brainstate-managed | per-step | step function |
-
----
-
-## 6. Public API Contract
-
-The list below is the *intended* stable surface. Anything not on it is
-internal and may change without deprecation.
-
-- **Morphology layer**: `Branch`, `Soma`, `Dendrite`, `Axon`,
-  `BasalDendrite`, `ApicalDendrite`, `CustomBranch`,
-  `branch_class_for_type`, `Morphology`, `MorphoBranch`, `MorphoEdge`,
-  `MorphoMetric`. The `Morphology` class also exposes the
-  `from_swc` / `from_asc` / `from_neuromorpho` classmethod constructors.
-- **External-data entry points**: `braincell.io.load_neuromorpho` and
-  `Morphology.from_neuromorpho`.
-  Tier-2 / Tier-3 NeuroMorpho.Org symbols (`NeuroMorphoClient`,
-  `NeuroMorphoCache`, `NeuroMorphoQuery`, `NeuroMorphoMeasurement`,
-  `NeuroMorphoError`, …) live under `braincell.io.neuromorpho` and
-  `braincell.io`.
-- **Filter layer**: `RegionExpr`, `LocsetExpr`, `SelectionCache`.
-- **Mechanism declaration layer** (`braincell.mech`): `Mechanism`
-  (marker base), `CableProperty`, `Density` (and its concrete
-  subclasses `Channel` / `Ion`, which accept the target as either a
-  string or a class object), `Point` (and its concrete subclasses
-  `CurrentClamp`, `SineClamp`, `FunctionClamp`, `ProbeMechanism`,
-  `Synapse`, `Junction`), the frozen `Params` mapping, and the
-  registry API (`MechanismRegistry`, `MechanismEntry`,
-  `get_registry`, `register_channel`, `register_ion`,
-  `register_synapse`).
-- **Ion species** (`braincell.ion`): `Sodium`, `SodiumFixed`,
-  `Potassium`, `PotassiumFixed`, `Calcium`, `CalciumFixed`,
-  `CalciumDetailed`, `CalciumFirstOrder`.
-- **Ion channels** (`braincell.channel`): concrete Na, K, Ca, leak, HCN,
-  calcium-activated potassium, and mixed-ion families exported by the
-  channel package, plus their documented template bases.
-- **Synapses** (`braincell.synapse`): `ExpSyn`, `Exp2Syn` from
-  `synapse.exponential`.
-- **Cell and discretization layer**: `Cell`, `MultiCompartment`, `CellView`,
-  `ChannelView`, `IonView`, `SynapseView`, `ClampView`, `RunResult`, `CV`,
-  `CVTree`, `CVPolicy`, `CVPerBranch`, `CVPerBranchList`, `MaxCVLen`,
-  `DLambda`, `CVPolicyByTypeRule`, `CompositeByTypePolicy`, `Node`,
-  `NodeTree`, and `PointPlacement`. Internal runtime and scheduling records
-  are not part of the top-level contract.
-- **Network layer**: `Network`, `NetworkResult`, `NetworkConnections`,
-  `ConnectionView`, event-source and event-table types, recording schemas,
-  `SampleBlock`, `EventSeries`, `connect`, and `observe`. The deliberately
-  small `braincell.network.__all__` is separate from top-level convenience
-  exports; specialized constructors remain available from their submodules.
-- **Trainable parameter layer** (`braincell.trainable`):
-  `ParameterSource`, `ParameterBinding`, `ParameterSet`, `TrainableManager`,
-  `parameter`, `parameterized`, and `scale`.
-- **Numerics layer**: `register_integrator`, `get_integrator`,
-  `get_registry`, `IntegratorEntry`, `IntegratorRegistry`,
-  `all_integrators`, every `*_step` function listed in
-  `braincell/quad/__init__.py::__all__`, `DiffEqModule`,
-  `DiffEqState`, `IndependentIntegration`.
-- **Neuron base**: `HHTypedNeuron`, `IonChannel`, `Ion`, `IonInfo`,
-  `Channel`, `MixIons`, `mix_ions`, `SingleCompartment`.
-- **Visualization**: top-level `braincell.vis.plot2d` / `plot3d`
-  entry points (the imperative scene API stays internal until it
-  stabilizes).
-
----
-
-## 7. End-to-End User Workflows
-
-### 7.1 Build and inspect a morphology
-
-```python
-import braincell
-import brainunit as u
-
-morpho, report = braincell.Morphology.from_swc("cell.swc", return_report=True)
-print(morpho.topo())
-print(morpho.metric)                  # MorphoMetric snapshot
-soma_region = braincell.filter.branch_in("type", {"soma"})
-distal_region = braincell.filter.branch_range("length", (50 * u.um, None))
-```
-
-### 7.2 Discretize and declare mechanisms
-
-```python
-import braincell.mech as mech
-
-cell = braincell.Cell(morpho, cv_policy=braincell.DLambda(0.1))
-
-cell.paint(
-  braincell.filter.AllRegion(),
-  mech.CableProperty(
-    membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
-    axial_resistivity=100.0 * (u.ohm * u.cm),
-    resting_potential=-65 * u.mV,
-  ),
-)
-cell.paint(soma_region, mech.Ion("SodiumFixed"))
-# mech.Channel / mech.Ion accept either a registry name string or the
-# concrete class itself — both route through the mechanism registry.
-cell.paint(soma_region, mech.Channel(braincell.channel.Na_Ba2002, g_max=0.12 * u.S / u.cm ** 2))
-cell.place(
-    braincell.filter.at("soma", 0.5),
-    mech.CurrentClamp(delay=10 * u.ms, durations=50 * u.ms, amplitudes=0.2 * u.nA),
-)
-cell.place(braincell.filter.at("soma", 0.5), mech.StateProbe(name="soma_v"))
-```
-
-### 7.3 Run a simulation
-
-```python
-cell.init_state()
-result = cell.run(dt=0.025 * u.ms, duration=100 * u.ms)
-print(result.traces["soma_v"].shape)
-```
-
-`cell.init_state()` freezes structural declarations and installs runtime state
-on the same `Cell`. Subsequent runtime inspection, reset, recording, and
-continued runs use that initialized object.
-
-### 7.4 Compare two morphologies visually
-
-```python
-braincell.vis.compare2d(morpho_a, morpho_b, layout="frustum")
-```
-
----
-
-## 8. External Dependencies
-
-| Package | Floor | Role |
-|---|---|---|
-| `python` | 3.11 | language; classifiers claim 3.11–3.14 (see note) |
-| `jax` | recent | autodiff, vmap, jit, GPU/TPU — deliberately unpinned |
-| `brainunit` | >= 0.0.8 | units (mandatory at every API boundary) |
-| `brainstate` | >= 0.5.4 | stateful simulation framework |
-| `brainevent` | >= 0.0.7 | sparse event / CSR ops |
-| `braintools` | >= 0.1.0 | brain modeling utilities |
-| `brainpy` | >= 2.7.5 | brain dynamics library |
-| `numpy` | >= 2.0 | arrays |
-| `scipy` | recent | scientific helpers |
-| `pyvista` | optional | 3D visualization backend |
-| `matplotlib` | optional | 2D visualization backend |
-| `NEURON` | dev only | reference comparator under `examples/multi_compartment/` |
-
-This table and `[project].dependencies` in `pyproject.toml` are kept in
-sync; `pyproject.toml` is the machine-readable source of truth, and the
-`requirements*.txt` files are thin pointers to its extras.
-
-`pyproject.toml` is the source of truth for dependency floors. In particular,
-`brainstate>=0.5.4` is required for current JAX compatibility and
-`numpy>=2.0` reflects the tested support policy. Experimental dependencies in
-an uncommitted worktree are not part of this table.
-
-Optional dependencies must be **lazily imported** so the base install
-stays small — use `importlib.util.find_spec` plus PEP 562
-`__getattr__` for the visualization backends.
-
-> **Note — Python version coverage.** The `classifiers` list advertises
-> 3.11 through 3.14, but `CI.yml` and `CI-daily.yml` both run a
-> single-entry `python-version: ["3.13"]` matrix. Three of the four
-> advertised versions are therefore untested. Either widen the CI matrix
-> or narrow the classifiers.
-
----
-
-## 9. Glossary
-
-- **CV (control volume)** — atomic spatial unit produced by the
-  discretization layer; the array-of-CVs is what the integrator sees.
-- **CV policy** — rule that turns a `Branch` into a sequence of CVs
-  (e.g., `DLambda(0.1)`, `MaxCVLen(10*u.um)`, `CVPerBranch(n)`).
-- **Paint** — install a *distributed* mechanism (cable or density)
-  onto a `RegionExpr`.
-- **Place** — install a *point* mechanism (clamp, probe, synapse,
-  gap junction) onto a `LocsetExpr`.
-- **DHS** — Dependent Hines Solver: parent-pointer-driven elimination
-  ordering used by `dhs_voltage_step`, designed to vectorize the
-  classic Hines solver across batched cells.
-- **Staggered step** — split integrator that solves the voltage
-  system implicitly (DHS) and the gating variables with exponential
-  Euler in alternating half-steps.
-- **`.bcm` file** — BrainCell Morphology, the self-contained
-  checkpoint format produced by `io/checkpoint.py`.
+# BrainCell Project TODO
+
+BrainCell 用带物理单位的形态、机制和事件声明构建可微分的细胞与网络模型。
+本页按模块列出已有能力、后续目标和主要缺口；任务拆分、下一步与验收细节由各模块 TODO 维护。
+系统职责与数据流见 [系统总览](architecture/current/system-overview.md)。
+
+## 进度口径
+
+- `[x]` **已完成**：沿用 shipped 口径，实现、相关测试、设计及适用示例已随提交验收。
+- `[~]` **部分完成 / 实施中 / 待提交验收**：已有能力或正在实现，具体缺项及实施、提交阶段随条目说明；待提交验收表示工作区实现与验证已完成。
+- `[ ]` **待讨论 / 讨论中 / 已确认待实施**：问题待分析、方案正在讨论，或方案和验收边界已确定、等待实现。
+
+Current 描述工作区行为，条目状态按其所列范围判断。详细规则见
+[进度维护规范](AGENTS.md#全局-todo-规格)；历史条目及原始验证口径见
+[整理前快照](../specs/2026-09-07-design-todo-snapshot.md)。
+
+## 模块里程碑
+
+### Architecture：系统分工与公共约定
+
+协作入口：[Architecture TODO](architecture/TODO.md)。
+
+- [x] **数据与状态分工**：形态和机制声明经 Cell 构建为运行时状态，Network 协调事件与推进，Trainable 管理参数映射。 [系统总览](architecture/current/system-overview.md)
+- [~] **Python 支持覆盖**：现有 CI 主要测试 3.13，classifiers 声明 3.11 至 3.14；需要扩展测试矩阵或调整支持声明。 [版本覆盖](architecture/TODO.md#当前需要推进的事项)
+- [ ] **公共接口命名**：统一声明类型与运行时基类的区分方式，并明确公共导出、内部路径及兼容策略。状态：**待讨论**。 [接口一致性](architecture/proposals/interface-consistency.md)
+
+### Morph：形态构造与编辑
+
+协作入口：[Morph TODO](morph/TODO.md)。
+
+- [x] **分支几何**：通过长度、半径或三维采样点构造 Branch，计算长度、面积和体积。 [Branch 几何](morph/current/api.md#branch-几何)
+- [x] **树构建与连接**：构造 Morphology，在指定位置连接分支，保留父子关系和连接方向。 [树连接](morph/current/api.md#morphology-与连接)
+- [x] **查询、统计与复制**：提供树遍历、分支视图、路径及几何指标；通过独立复制创建可修改的形态副本。 [查询与指标](morph/current/api.md#查询视图和指标)
+- [ ] **子树编辑**：支持删除、拼接和替换子树，需确定分支身份、引用及连接方向的保持规则。状态：**待讨论**。 [编辑事项](morph/TODO.md#当前需要推进的事项)
+- [ ] **几何变换**：支持平移、旋转、缩放和主轴对齐，并更新依赖几何的指标及派生缓存。状态：**待讨论**。 [变换事项](morph/TODO.md#当前需要推进的事项)
+- [ ] **公共导出**：评估在顶层入口之外，同时从 morph 子包导出 Branch 和 Morphology 的收益与依赖影响。状态：**待讨论**。 [导出事项](morph/TODO.md#当前需要推进的事项)
+
+### IO：形态读写与外部数据
+
+协作入口：[IO TODO](io/TODO.md)。
+
+- [x] **SWC 读写与结构往返**：导入形态及诊断报告，处理 soma 和分支连接，并将树写回 SWC；已有共享端点、反向分支等回归。 [SWC API](io/current/api.md#swc-读取与检查)
+- [x] **形态 checkpoint**：以自包含的 .bcm 格式保存和恢复形态，配有调用示例。 [Checkpoint](io/current/api.md#checkpoint)
+- [x] **NeuroMorpho 检索与下载**：提供便捷加载、客户端检索、下载及缓存，返回形态和元数据。 [NeuroMorpho](io/current/neuromorpho.md)
+- [~] **ASC 几何与标记覆盖**：已有树和元数据导入；spine、轮廓 soma 及多树案例仍需补齐处理与验证。 [ASC 覆盖](io/TODO.md#当前需要推进的事项)
+- [~] **自动几何对照**：已有 NEURON 形态差异工具，下一步将 NeuroMorpho 指标比较整理为固定数据集、单位和容差的回归。 [对照事项](io/TODO.md#当前需要推进的事项)
+- [ ] **NeuroML2 导入**：将 cell 和 segment-group 映射为 Morphology；当前 reader 仍是 stub，最小映射与验收样本待确定。状态：**待讨论**。 [导入事项](io/TODO.md#当前需要推进的事项)
+
+### Filter：区域、位点与空间参数
+
+协作入口：[Filter TODO](filter/TODO.md)。
+
+- [x] **区域与集合运算**：按分支及形态标签选择区间，组合交、并、差，并缓存解析结果供 Cell 使用。 [区域 API](filter/current/api.md#区域)
+- [x] **离散位点与采样批次**：选择根、末端、分叉或显式位置，支持区域内均匀及随机取点和批次组合。 [位点 API](filter/current/api.md#位点和批次)
+- [x] **连续采样与空间参数**：按长度、面积、体积测度和 density 采样，空间 callable 可读取形态上下文与指标。 [连续采样](filter/current/sampling.md)、[空间参数](filter/current/spatial-callable-parameters.md)
+- [ ] **半径、距离与子树区域**：扩展阈值切分、路径距离、欧氏距离及子树选择；需确定单位、边界和树修改后的缓存规则。状态：**待讨论**。 [区域扩展](filter/TODO.md#当前需要推进的事项)
+- [ ] **区域锚点与固定步长取点**：实现 RegionAnchors 和 StepSamples 的区域相对位置、端点及重复值规则；两者当前均为预留表达式。状态：**待讨论**。 [位点扩展](filter/TODO.md#当前需要推进的事项)
+- [ ] **随机流一致性**：让旧 RandomSamples 的 NumPy 局部流与 BrainState 随机上下文方案衔接。状态：**待讨论**。 [随机上下文](network/proposals/random-context.md)
+
+### Mech：机制声明与运行时契约
+
+协作入口：[Mech TODO](mech/TODO.md)。
+
+- [x] **机制声明与注册**：将 Channel、Ion、Synapse 等模型注册为可解析声明，供 paint/place 构建实际机制。 [声明 API](mech/current/api.md)
+- [x] **刺激与事件输入**：提供电流钳、电压钳和事件输入契约，将声明交给 Cell 和 Network 绑定执行。 [声明到运行时](mech/current/architecture.md)
+- [~] **Junction 电耦合**：已有占位声明，仍缺 partner 身份、对称配对及电压方程中的电流贡献。 [接线缺口](mech/proposals/runtime-extensions.md)
+- [ ] **参数单位诊断**：在构造或 paint 阶段定位错误参数、物理维度和声明位置，所需元数据与 Channel/Ion 共同设计。状态：**待讨论**。 [参数诊断](mech/TODO.md)
+- [ ] **旧 Probe 迁移**：核对旧字段声明与现行 observe 的对应关系，确定错误校验和迁移方式。状态：**待讨论**。 [迁移事项](mech/TODO.md)
+- [ ] **模型验证框架**：从现有 NEURON 比较例子提取可复用的电压钳、电流钳及误差验收流程。状态：**待讨论**。 [机制验证](mech/proposals/runtime-extensions.md#机制生成与验证)
+- [ ] **NMODL 生成器**：研究以 registry 为目标的机制代码生成，先确定最小语法集和标准模板的映射。状态：**待讨论**。 [生成方向](mech/proposals/runtime-extensions.md#机制生成与验证)
+
+### Channel：通道模板与模型目录
+
+协作入口：[Channel TODO](channel/TODO.md)。
+
+- [x] **HH 与 Markov 模板**：统一门状态、转移、生命周期和速率单位，在类定义时检查名称、速率形式及依赖；Markov 必须显式指定 dependent_state。 [模板约束](channel/current/template-invariants.md)
+- [x] **电流与裁剪策略**：提供 ohmic/GHK 驱动力、Q10 辅助函数及显式裁剪配置，复用各模型共有的计算。 [模板 API](channel/current/api.md)
+- [x] **通道目录与注册**：提供钠、钾、钙、HCN、混合离子和漏通道家族，包含 PC MA2024 等导入模型及相邻测试。 [模型入口](channel/current/api.md)
+- [~] **GHK 与温度审计**：模板和部分模型已采用共享驱动力及温度路径，仍需逐家族核对原模型要求与参数来源。 [审计事项](channel/TODO.md#当前需要推进的事项)
+- [~] **逐模型精度与刚性验收**：在已有定向测试和模型比较基础上，补全目录级 MOD 对照与 dt/solver 收敛矩阵。 [验证事项](channel/TODO.md#当前需要推进的事项)
+- [ ] **参数单位元数据**：确定参数维度的维护位置，与 Mech 的声明校验及错误定位衔接。状态：**待讨论**。 [元数据事项](channel/TODO.md#当前需要推进的事项)
+- [ ] **门变量命名**：为 p/q 与模型自定义名称设计兼容路径，保留状态读写的可追溯关系。状态：**待讨论**。 [命名事项](channel/TODO.md#当前需要推进的事项)
+- [ ] **氯通道**：在 Chloride 离子家族确定后，补齐相应电流与反转电位的模型。状态：**待讨论**。 [氯通道事项](channel/TODO.md#当前需要推进的事项)
+
+### Ion：离子状态与浓度动力学
+
+协作入口：[Ion TODO](ion/TODO.md)。
+
+- [x] **固定值与 Nernst 模型**：提供钠、钾、钙等固定反转电位或浓度驱动的反转电位，以及共享的子通道生命周期。 [固定值与 Nernst](ion/current/api.md#固定值与-nernst-模型)
+- [x] **KineticIon 反应模型**：声明物种、反应、source、factor 和守恒关系，接入 Cell 的浓度状态及电流输入。 [KineticIon](ion/current/kinetic-ion-api.md)
+- [~] **动态钙浓度**：已有 Detailed、FirstOrder 和小脑动力学模型；CalciumFirstOrder 的默认 alpha/beta 缺少正确单位转换，仍不能完成对应导数路径。 [具体缺项](ion/current/api.md#动态钙浓度)
+- [ ] **动态钠、钾浓度**：扩展内外浓度、泵和电流驱动模型，为活动依赖的离子积累提供状态方程。状态：**待讨论**。 [家族扩展](ion/TODO.md#当前需要推进的事项)
+- [ ] **Chloride 家族**：确定固定与动态氯反转电位，以及 GABA 模型所需的浓度方程。状态：**待讨论**。 [氯离子事项](ion/TODO.md#当前需要推进的事项)
+- [ ] **外部电流一致性**：逐模型核对 include_external、总电流缓存及电流到浓度导数的转换。状态：**待讨论**。 [电流审计](ion/TODO.md#当前需要推进的事项)
+- [ ] **模型来源补全**：补齐共享文献表中未核实的归因和模型版本，为通道及离子对照提供依据。状态：**待讨论**。 [来源事项](ion/TODO.md#当前需要推进的事项)
+
+### Cell：声明、离散与细胞运行
+
+协作入口：[Cell TODO](cell/TODO.md)。
+
+- [x] **声明与空间离散**：通过 morphology、CVPolicy 和 paint/place 构建电缆、密度机制与点机制布局。 [构造与 CVPolicy](cell/current/api.md#cell-构造)
+- [x] **CV 与 point 状态**：密度机制使用 CV 空间，点机制使用 point 空间；population 轴支持多维形状，并保留末尾空间轴。 [状态布局](cell/current/architecture.md#状态布局)
+- [x] **生命周期与直接运行**：Cell 直接初始化、重置和按固定步长推进，支持连续运行及带时间范围的结果。 [生命周期](cell/current/api.md#生命周期)、[运行与结果](cell/current/api.md#运行与结果)
+- [x] **视图、观测与状态读写**：按 population、区域和机制选择状态，读取轨迹或 buffer，并记录固定步长刺激结果。 [Views](cell/current/views.md)、[状态查询](cell/current/api.md#运行时查询)
+- [x] **离子电流快照与调度**：staggered 可读取步首总离子电流，并选择 family 或 integration 的机制更新顺序。 [调度契约](cell/current/architecture.md#离子电流快照与调度)
+- [~] **显式 solver 的边界输入**：显式路径已推进 CV 电压，消元时仍遗漏端点刺激和突触的等效贡献；修复方案正在讨论。 [边界输入](cell/proposals/explicit-solver-boundary-inputs.md)
+- [ ] **Single 与多室统一**：从单 branch、特殊单 CV policy 和位点语义开始，使单方程 ODE 模型兼容 Cell；形态等效与积分路径仍需比较。状态：**讨论中**。 [统一提案](cell/proposals/single-multi-compartment-unification.md)
+- [ ] **生命周期与查询风格**：明确 reset/reset_state 的命名，并统一缓存查询与触发构建操作的表达。状态：**待讨论**。 [接口事项](cell/TODO.md#当前需要推进的事项)
+
+### Quad：积分方法与电压求解
+
+协作入口：[Quad TODO](quad/TODO.md)。
+
+- [x] **积分注册与通用 ODE**：提供显式 RK、隐式和指数方法，通过统一步函数及阶段协议推进模型状态。 [积分 API](quad/current/api.md)
+- [x] **Staggered 与 DHS**：按机制和电压阶段推进，使用树结构求解包含边界与分叉约束的电缆系统。 [求解架构](quad/current/architecture.md)
+- [~] **精度与性能对照**：已有算法回归、收敛测试及电缆数值对照，仍缺 Mainen/Hay/L5PC 等标准模型上的统一精度、编译和计时比较。 [对照事项](quad/TODO.md)
+- [~] **显式边界输入**：已有 CV 导数推进，仍需与 Cell 共同补入边界刺激和突触反馈；修复方案正在讨论。 [边界方案](cell/proposals/explicit-solver-boundary-inputs.md)
+- [ ] **Single 积分路径**：在 single 统一中比较共享边界装配与独立 ODE 积分，核对等价性和 solver 一致性。状态：**讨论中**。 [路径方案](cell/proposals/single-multi-compartment-unification.md)
+- [ ] **自适应步长**：基于 embedded RK 误差估计推进，同时处理事件时间和记录采样对齐。状态：**待讨论**。 [步长事项](quad/TODO.md)
+
+### Synapse：突触动力学与状态
+
+协作入口：[Synapse TODO](synapse/TODO.md)。
+
+- [x] **指数突触模型**：ExpSyn 和 Exp2Syn 提供事件驱动的电导动力学、电流计算及状态重置。 [模型 API](synapse/current/api.md)
+- [x] **Cell-owned 突触状态**：突触状态由目标 Cell 持有，连接投递事件并乘权，空间布局与生命周期由 Cell 管理。 [状态与事件](synapse/current/architecture.md)
+- [ ] **内部动力学可塑性**：通过新的 Synapse 模型表达释放或内部状态的可塑变化，与只更新 Connection weight 的规则区分。状态：**讨论中**。 [可塑性方案](network/proposals/connection-plasticity.md)
+- [ ] **模型验证覆盖**：在已有初始化、衰减和事件测试之外，扩展事件序列、时间常数及电压驱动力的参照对照。状态：**待讨论**。 [验证事项](synapse/TODO.md)
+
+### Network：组网、事件与结果
+
+协作入口：[Network TODO](network/TODO.md)。
+
+- [x] **Population 与网络生命周期**：注册 Cell population 和事件源，协调初始化、重置与连续运行。 [Network API](network/current/api.md)
+- [x] **端点配对与连接**：通过显式索引或采样配对建立具名连接，管理连接权重及异构延迟。 [配对](network/current/pairing.md)、[连接](network/current/connections.md)
+- [x] **事件路由与记录**：调度延迟投递，聚合规则采样和稀疏事件，保持目标 Cell 的状态归属。 [事件架构](network/current/architecture.md)、[Recording](network/current/recording.md)
+- [ ] **统一随机上下文**：用 BrainState 随机区域管理网络、source 和 pairing 的默认随机流，确定局部子流与迁移语义。状态：**讨论中**。 [随机方案](network/proposals/random-context.md)
+- [ ] **Connection 权重可塑性**：根据上下游 spike 或电压维护规则状态并更新 weight，确定信号绑定及更新顺序。状态：**讨论中**。 [可塑性方案](network/proposals/connection-plasticity.md)
+- [ ] **大规模事件与配对**：研究稀疏 delay slots 和分块 endpoint generators，控制静态 shape、调度开销及内存。状态：**待讨论**。 [运行时扩展](network/proposals/runtime-extensions.md)
+- [ ] **可学习拓扑**：定义结构变化的状态、梯度及重编译协议。状态：**待讨论**。 [拓扑方案](network/proposals/runtime-extensions.md#i-10-trainable-topology)
+- [ ] **网络 batch**：确定网络 batch 的连接、事件和状态轴语义。状态：**待讨论**。 [Batch 方案](network/proposals/runtime-extensions.md#network-batch-runtime)
+
+### Optim：参数映射与训练验证
+
+协作入口：[Optim TODO](optim/TODO.md)。
+
+- [x] **参数 source 与映射**：提供 direct、共享 scale、parameterized 映射及分组，保留物理单位、共享关系和 reset/materialization 语义。 [参数 API](optim/current/api.md)
+- [x] **Channel 与 Ion 参数训练**：按构造签名发现候选参数，支持 Cell 内通道和离子参数绑定；已有单参数教学拟合及相关回归。 [支持度](optim/current/parameter-support.md)、[结果](optim/current/results/parameter-learning.md)
+- [x] **训练与诊断实验**：已有固定参数 rollout 的 BPTT/RTRL、分阶段拟合、搜索、敏感度诊断及刺激设计实验，入口位于 examples/experimental。 [实验工作流](optim/current/experimental-workflows.md)
+- [x] **Synapse 与 Network 参数训练**：支持突触参数、静态连接 weight、检测阈值和网络 roots 聚合，已通过 CPU 梯度及拟合验收并提交。 [接口范围](optim/current/api.md#synapse-connection-network)、[验证记录](optim/current/results/synapse-network-learning.md#提交验收)
+- [~] **组合精度与性能验证**：已有多 CV、population、CPU/GPU 等单项结果；新事件网络的 GPU、多 CV 与多 population 组合及 checkpoint 比较仍缺证据。 [验证缺口](optim/proposals/roadmap.md#验证缺口)
+- [ ] **可塑性参数训练**：明确动态 weight 初值、规则参数与运行中状态的关系，连接可塑性调度和梯度验收。状态：**讨论中**。 [训练提案](optim/proposals/connection-plasticity.md)
+- [ ] **训练自动恢复**：在已有历史 archive 和诊断基础上，设计 plateau、SGDR、perturb 控制器及恢复协议。状态：**讨论中**。 [恢复方案](optim/proposals/training-recovery.md)
+- [ ] **参数范围与公共训练协议**：确定 Cell 初值和 cable 参数的 owner，以及可复用训练协议、稳定 grouping 和持久化边界。状态：**待讨论**。 [后续方向](optim/proposals/roadmap.md)
+- [ ] **Rollout 内参数更新**：定义逐步更新参数时的参数历史、状态演化及梯度含义。状态：**待讨论**。 [研究方向](optim/proposals/roadmap.md#rollout-内更新参数)
+
+### Reduction：约化模型接入
+
+协作入口：[Reduction TODO](reduction/TODO.md)。
+
+- [x] **可替换的 Cell 约化运行时**：通过 ReductionModel 接入 Cell 的生命周期、输入输出和网络运行，已有示例及回归。 [接入指南](reduction/current/model-integration-guide.md)
+- [ ] **DBNN 数据、训练与部署**：沿用现有挂载契约，确定数据布局、训练规模、模型资产与分阶段验收。状态：**讨论中**。 [DBNN 提案](reduction/proposals/DBNN-plan.md)
+
+### Vis：形态、拓扑与结果展示
+
+协作入口：[Vis TODO](vis/TODO.md)。
+
+- [x] **形态与空间数据绘图**：提供 2D/3D 几何和树形布局，按 branch、segment 或采样点着色，并高亮区域与位点。 [绘图 API](vis/current/api.md)
+- [x] **Cell 拓扑与动态结果**：展示 branch、CV、point 拓扑、时间轨迹、多模型比较和动画。 [展示能力](vis/current/visualization.md#当前支持什么)
+- [x] **交互与导出**：按后端提供拾取、图片、动画及 HTML 导出；后端之间的交互能力有明确差异。 [后端支持](vis/current/visualization.md#后端与数据)
+- [~] **渲染回归**：已有布局、场景和图元断言，仍缺代表性像素基线及执行图像比较的 CI。 [验证现状](vis/current/visualization.md#验证现状)
+- [ ] **迁入 BrainTools**：讨论公共可视化模块归属、数据入口、简单绘图与 GUI，以及旧调用的兼容方案。状态：**讨论中**。 [迁移提案](vis/proposals/braintools-migration.md)
+
+## 跨模块依赖与阻塞
+
+- [ ] **单方程 ODE 兼容到 Cell**：Cell 牵头确定特殊 policy 与 place 语义，Filter 配合位点表达，Quad 比较积分路径；先确定单 branch 情形，再讨论分叉形态等效。状态：**讨论中**。 [Cell 统一方案](cell/proposals/single-multi-compartment-unification.md)
+- [~] **显式积分完整处理边界输入**：Cell 牵头将 point 刺激和 Synapse 电流传入消元后的 RHS，Quad 配合边界约束及完整五行系统对照；现有完整装配位于 staggered 路径。 [边界输入问题](cell/proposals/explicit-solver-boundary-inputs.md)
+- [ ] **统一随机区域**：Network 牵头，source、pairing 与 Filter 配合默认随机流和局部子流设计，使区域内自定义随机调用也能统一管理。状态：**讨论中**。 [随机上下文](network/proposals/random-context.md)
+- [ ] **可塑性与参数训练**：Network 牵头明确 Connection weight 更新，Synapse 管理内部动力学，Optim 绑定规则参数及初值；需确定信号读取和更新顺序。状态：**讨论中**。 [可塑性](network/proposals/connection-plasticity.md)、[训练提案](optim/proposals/connection-plasticity.md)
+- [ ] **空间编辑后的缓存一致性**：Morph 牵头定义结构和几何修订，Filter、Cell 配合选择结果与离散缓存的失效，保证编辑后重新构建使用新形态。状态：**待讨论**。 [Morph](morph/TODO.md)、[Filter](filter/TODO.md)
+- [ ] **单位诊断与模型验证**：Mech 牵头建立声明诊断及验证框架，Channel/Ion 提供参数维度、模型来源和参考机制；已有模型比较需整理成可复用验收流程。状态：**待讨论**。 [Mech](mech/TODO.md)、[Channel](channel/TODO.md)、[Ion](ion/TODO.md)
+- [ ] **量化 GABA 与氯反转电位**：Ion 牵头建立 Chloride 状态和反转电位，Channel、Synapse 配合电流及事件模型；当前仍缺氯离子家族。状态：**待讨论**。 [Ion](ion/TODO.md)、[Channel](channel/TODO.md)
+- [~] **大规模精度与性能结论**：Optim 牵头训练组合验证，Quad 提供 solver/dt 对照，Cell、Network 配合多 CV 与多 population 场景；GPU 和 checkpoint 的组合证据尚不完整。 [Optim 验证缺口](optim/proposals/roadmap.md#验证缺口)、[Quad](quad/TODO.md)
+- [~] **Python 支持范围一致**：Architecture 牵头，CI 配置与依赖维护配合；在现有 3.13 测试基础上扩展矩阵或收窄 3.11 至 3.14 的声明。 [版本覆盖](architecture/TODO.md)
+
+## 专题与维护入口
+
+- [小脑示例进度](../../examples/neuron_compare/cerebellum-import-progress.md)：具体模型导入、PC 装配与数值比较。
+- [共享 Ion/Channel 文献表](ion/references/ion-channel-bibliography.md)：模型来源、版本和归因证据。
+- [Design 规范](AGENTS.md)：文档职责及进度维护；提交前检查遵循 [仓库约定](../../AGENTS.md#design-code-and-examples)。

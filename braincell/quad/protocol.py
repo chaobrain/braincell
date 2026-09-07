@@ -27,7 +27,7 @@ Which class a hidden state gets is a per-host decision:
 trailing compartment axis with :class:`DiffEqGroupState`. See
 ``docs/specs/2026-08-13-cell-hidden-group-state.md``,
 ``docs/specs/2026-08-14-diffeq-state-mixin-split.md``, and
-``docs/design/cell.md``.
+``docs/design/cell/current/architecture.md``.
 """
 
 import contextlib

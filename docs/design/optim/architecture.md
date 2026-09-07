@@ -84,29 +84,25 @@ runtime delivery buffer 能保持 JAX trace 和固定 shape 后才接入。
 
 ## Parameter Schema
 
-Channel、Ion 和后续 Synapse 统一使用显式字段角色：
+Channel 的候选字段来自实际 `__init__` 签名，包括转发的父类签名，不再维护
+`ParameterSpec` 科学分类白名单。内部仍生成默认值、单位验证所需的 metadata；数值
+缓冲分配与训练资格是不同问题，非数值配置不因出现在签名中就被强制数组化。
 
-| Role | 含义 | 例子 | 可训练 |
-| --- | --- | --- | --- |
-| `parameter` | 连续、shape-preserving、进入 forward | `g_max`, `E`, `tau`, `V_sh` | 候选 |
-| `state` | 随时间积分或由 reset 初始化 | gates, dynamic concentration | 否 |
-| `derived` | 根据 parameter/state 计算 | Nernst-derived `E`, factor | 否 |
-| `static` | 决定结构、shape 或调度 | solver, substeps, valence, topology | 否 |
-
-P0 采用显式 `ParameterSpec` 白名单，不根据构造函数签名或数值 dtype 自动开放。spec
-只保存 unit/default prototype 和 validator；是否开放训练属于 owner binding 策略，不污染
-物理 schema。Synapse 现有 spec 迁移为公共 schema，但首批 trainable owner 只有三个
-Channel 类。
+只有签名中的参数可选择；内部 gate state、硬编码常数不会自动暴露。选择后可能
+获得非零梯度、合法零梯度，或者原有数值转换、形状和静态控制流错误。dtype 不被
+当作可学习性的判据。Ion 和 Synapse 的参数管理不受此 Channel 扩展影响。
 
 ## Runtime 参数列
 
-schema Channel 的物理参数由非可训 `RuntimeParameterState(LongTermState)` 保存。状态内部按
+Channel 的数值物理参数由非可训 `RuntimeParameterState(LongTermState)` 保存。状态内部按
 `uniform`、`population`、`cv` 或 `row` 保存最小值，Channel 读取时才广播为执行矩形；旧的
 `get_state()` 和 buffer inspection 仍获得矩形兼容视图。point mask 在读取 conductance 时
 应用，因此 scalar `g_max` 不必为未 paint 点分配完整数组。
 
 首次 materialization 冻结参数列的轴语义。optimizer 之后只改变同 shape 的 state value，
 不会因数值从相同变为不同而触发第二步 JIT 重编译。
+压缩轴同时考虑 binding 的分组和区域所有权，不能仅因初始值相同而合并独立区域。
+浮点训练值写入整数默认缓冲时提升 dtype，避免截断数值并切断梯度。
 
 ## TrainableManager
 
@@ -239,7 +235,7 @@ materialization 必须位于 differentiated trace 内。若参数影响 reset �
 完整实现调研见 [Jaxley Parameter Model](references/jaxley-parameter-model.md)。本架构只冻结
 直接影响 BrainCell 的结论：
 
-- 使用显式 parameter/state schema，而不是从构造函数或 dtype 猜测；
+- 保留显式 gate/Markov 状态声明；Channel 参数由构造签名发现，不用 dtype 判断可微性；
 - View selection 和稳定 row metadata 决定 sharing；
 - 低维 root 通过 gather/scatter 映射到 dense runtime values；
 - BrainCell root 由 `nn.Param` graph state 持有，不要求显式 `simulate(params)`；

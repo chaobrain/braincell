@@ -117,9 +117,10 @@ optimizer.register_trainable_weights(states)
 
 ## 当前范围
 
-P0 只覆盖 multi-compartment `ChannelView` 上 `IL`、`Na_HH1952`、`K_HH1952` 的连续
-物理参数，并要求在
-`init_state()` 前声明。以下内容不属于首批实现：
+当前覆盖 multi-compartment `ChannelView` 上由 Channel 构造签名声明的参数，
+不需要手写可训参数白名单，并要求在 `init_state()` 前声明。是否可微以及是否有
+非零梯度取决于模型运算和损失；既有类型、单位、形状及静态控制流错误仍有效。
+以下内容不属于当前实现：
 
 - Ion、Synapse 和 Connection weight；
 - Network 参数聚合与自动物化；

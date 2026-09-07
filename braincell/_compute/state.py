@@ -423,6 +423,14 @@ class CellRuntimeState:
                         shape=shape,
                     )
 
+        _allocate_extra_channel_parameters(
+            cell=cell,
+            layouts=layouts,
+            layout_mechanisms=layout_mechanisms,
+            state_buffers=state_buffers,
+            state_shapes=state_shapes,
+            pop_size=pop_size,
+        )
         _apply_density_parameter_overrides(
             cell=cell,
             layouts=tuple(layouts),
@@ -732,6 +740,63 @@ class CellRuntimeState:
             local_current_decimal = _quantity_sequence_to_decimal_vector(local_currents, unit=u.nA)
             point_current_decimal = point_current_decimal.at[..., point_index].add(local_current_decimal)
         return u.Quantity(point_current_decimal, u.nA)
+
+
+def _allocate_extra_channel_parameters(
+    *,
+    cell,
+    layouts,
+    layout_mechanisms,
+    state_buffers,
+    state_shapes,
+    pop_size,
+) -> None:
+    """Allocate explicitly supplied fields with no numeric signature default."""
+    supplied = {}
+    for (category, owner, population, cv, field), value in cell._density_parameter_overrides.items():
+        if category == "channel":
+            supplied.setdefault((owner, field), {})[(population, cv)] = value
+    for binding in cell.trainables.bindings():
+        values = binding._evaluate()
+        rows = supplied.setdefault((binding.target_owner, binding.target_field), {})
+        for index, row in enumerate(binding._rows):
+            rows[(row.population_index, row.cv_id)] = values[index]
+
+    for layout in layouts:
+        mechanism = layout_mechanisms[layout.id]
+        if not isinstance(mechanism, Density) or mechanism.category != "channel":
+            continue
+        for (owner, field), rows in supplied.items():
+            key = (layout.id, field)
+            if owner != mechanism.instance_name or key in state_buffers:
+                continue
+            expected = {(population, cv) for population in range(int(np.prod(pop_size))) for cv in layout.source_cv_ids}
+            if not expected.intersection(rows):
+                continue
+            if not expected.issubset(rows):
+                raise ValueError(
+                    f"Channel {owner!r}.{field} has no numeric default; supply a value for every active row."
+                )
+            full_shape = pop_size + (len(cell.cvs),)
+            first = rows[min(expected)]
+            state = make_runtime_parameter_state(
+                first,
+                full_shape=full_shape,
+                spec=density_parameter_spec(mechanism, field),
+                name=field,
+                point_mask=layout.cv_mask,
+            )
+            for population, cv in sorted(expected):
+                set_parameter_row(
+                    state,
+                    population_index=population,
+                    point_id=cv,
+                    population_size=int(np.prod(pop_size)),
+                    point_size=len(cell.cvs),
+                    value=rows[(population, cv)],
+                )
+            state_buffers[key] = state
+            state_shapes[key] = full_shape
 
 
 def _apply_density_parameter_overrides(

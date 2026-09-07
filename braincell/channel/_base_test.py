@@ -404,6 +404,28 @@ class ChannelTemplateTest(unittest.TestCase):
         self.assertIsNot(second, first)
         self.assertTrue(u.math.allclose(second, q10_factor(3.0, ch.temp, ref), atol=1e-12))
 
+    def test_cached_q10_does_not_leak_traced_inputs_or_outputs(self) -> None:
+        ch = _ExampleHHInfTau(size=1)
+        ref = u.celsius2kelvin(22.0)
+
+        def evaluate(offset):
+            return cached_q10_factor(ch, "_traced_memo", 3.0, ref + offset * u.kelvin, ref)
+
+        with jax.checking_leaks():
+            result = jax.jit(jax.value_and_grad(evaluate))(10.0)
+        self.assertAlmostEqual(float(result[0]), 3.0, places=5)
+        self.assertGreater(float(result[1]), 0.0)
+        self.assertFalse(hasattr(ch, "_traced_memo"))
+
+        concrete_q10 = jnp.asarray(3.0)
+
+        def concrete_inputs():
+            return cached_q10_factor(ch, "_concrete_memo", concrete_q10, ref, ref)
+
+        with jax.checking_leaks():
+            self.assertAlmostEqual(float(jax.jit(concrete_inputs)()), 1.0)
+        self.assertFalse(hasattr(ch, "_concrete_memo"))
+
     def test_freeze_gradient_keeps_the_value_and_drops_the_derivative(self) -> None:
         frozen = freeze_gradient(jnp.array([-60.0, -40.0]) * u.mV)
         self.assertEqual(u.get_unit(frozen), u.mV)

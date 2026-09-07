@@ -337,7 +337,6 @@ class Channel(IonChannel):
 
     __module__ = 'braincell'
 
-    parameters: Mapping[str, ParameterSpec] = {}
     states: Mapping[str, StateSpec] = {}
 
     def __getattribute__(self, name: str):

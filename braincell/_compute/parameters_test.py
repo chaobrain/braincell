@@ -20,8 +20,43 @@ import unittest
 import brainunit as u
 import numpy as np
 
-from braincell._compute.parameters import make_runtime_parameter_state, set_parameter_row
+from braincell._compute.parameters import (
+    density_parameter_schema,
+    density_parameter_value,
+    make_runtime_parameter_state,
+    set_parameter_row,
+)
 from braincell._parameter_schema import ParameterSpec
+from braincell.mech import Channel, get_registry
+
+
+class SignatureParameterTest(unittest.TestCase):
+    def test_previously_unclassified_channel_has_signature_defaults(self):
+        mechanism = Channel("Na_TM1991")
+        schema = density_parameter_schema(mechanism)
+        self.assertIn("V_sh", schema)
+        self.assertIn("name", schema)
+        self.assertNotIn("arbitrary_keyword", schema)
+        self.assertEqual(density_parameter_value(mechanism, "V_sh"), schema["V_sh"].default)
+
+    def test_forwarded_signature_exposes_parent_defaults(self):
+        schema = density_parameter_schema(Channel("Ca_ZH2019_IO_Frozen"))
+        self.assertIn("mMidV", schema)
+        self.assertIn("freeze_m_inf", schema)
+
+    def test_registered_channel_numeric_defaults_are_valid(self):
+        from braincell._compute.parameters import density_parameter_names
+
+        for class_name in get_registry().names("channel"):
+            if class_name.startswith("_"):
+                continue
+            mechanism = Channel(class_name)
+            schema = density_parameter_schema(mechanism)
+            for field in density_parameter_names(mechanism):
+                with self.subTest(channel=class_name, field=field):
+                    value = density_parameter_value(mechanism, field)
+                    if not callable(value):
+                        make_runtime_parameter_state(value, full_shape=(1, 2), spec=schema[field], name=field)
 
 
 class RuntimeParameterStateTest(unittest.TestCase):

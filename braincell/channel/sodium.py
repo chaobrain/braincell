@@ -26,7 +26,7 @@ from braincell._base_channel import IonInfo
 from braincell._typing import ArrayLike, Initializer, Size
 from braincell.channel._base import Gate, OhmicHH, OhmicMarkov, is_disabled, q10_factor
 from braincell.ion import Sodium
-from braincell.mech import ParameterSpec, StateSpec, register_channel
+from braincell.mech import StateSpec, register_channel
 
 __all__ = [
     "Na_Ba2002",
@@ -360,13 +360,6 @@ class Na_HH1952(OhmicHH):
         Gate("p", power=3, q10="q10", temp_ref="temp_ref"),
         Gate("q", q10="q10", temp_ref="temp_ref"),
     )
-    parameters = {
-        "g_max": ParameterSpec(_NA_HH1952_G_MAX_DEFAULT),
-        "temp": ParameterSpec(_NA_HH1952_TEMP_DEFAULT),
-        "q10": ParameterSpec(_NA_HH1952_Q10_DEFAULT),
-        "temp_ref": ParameterSpec(_NA_HH1952_TEMP_REF_DEFAULT),
-        "V_sh": ParameterSpec(_NA_HH1952_V_SH_DEFAULT),
-    }
     states = {"p": StateSpec(), "q": StateSpec()}
 
     def __init__(
@@ -876,7 +869,6 @@ class Nav1p6_MA2020_GoC(OhmicMarkov):
         super().__init__(size=size, name=name, solver=solver, substeps=substeps)
 
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.phi = q10_factor(3, self.temp, u.celsius2kelvin(22.0))
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
 
         self.Con = 0.005
@@ -902,6 +894,11 @@ class Nav1p6_MA2020_GoC(OhmicMarkov):
 
         self.alfac = (self.Oon / self.Con) ** (1 / 4)
         self.btfac = (self.Ooff / self.Coff) ** (1 / 4)
+
+    @property
+    def phi(self):
+        """Return the rate factor at the current temperature."""
+        return q10_factor(3, self.temp, u.celsius2kelvin(22.0))
 
     f01 = lambda self, V: 4 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
     f02 = lambda self, V: 3 * self.alpha * u.math.exp((V / u.mV) / self.x1) * self.phi
@@ -1307,7 +1304,6 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
             solver=solver,
             substeps=substeps,
         )
-        self.phi = q10_factor(2.7, self.temp, u.celsius2kelvin(22.0))
         self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
         self.Oon = 2.3
         self.epsilon = 1e-12
@@ -1315,6 +1311,11 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
         self.gunit = 15.0e-9 * u.mS
         self.e0 = 1.60217646e-19 * u.coulomb
         self.alfac = (self.Oon / self.Con) ** (1 / 4)
+
+    @property
+    def phi(self):
+        """Return this variant's rate factor at the current temperature."""
+        return q10_factor(2.7, self.temp, u.celsius2kelvin(22.0))
 
     def current(self, V, Na: IonInfo):
         conductive = super().current(V, Na)
@@ -1575,7 +1576,6 @@ class Nav_MA2020_GrC(OhmicMarkov):
 
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.phi = q10_factor(3, self.temp, u.celsius2kelvin(20.0))
 
         self.Aalfa = 353.91
         self.Valfa = 13.99
@@ -1598,6 +1598,11 @@ class Nav_MA2020_GrC(OhmicMarkov):
     def init_state(self, V, Na: IonInfo, batch_size: int = None):
         super().init_state(V, Na, batch_size=batch_size)
         self.reset_steady_state(V, Na, batch_size=batch_size)
+
+    @property
+    def phi(self):
+        """Return the rate factor at the current temperature."""
+        return q10_factor(3, self.temp, u.celsius2kelvin(20.0))
 
     alfa = lambda self, V: self.phi * self.Aalfa * u.math.exp((V / u.mV) / self.Valfa)
     beta = lambda self, V: self.phi * self.Abeta * u.math.exp(-(V / u.mV) / self.Vbeta)
@@ -1799,7 +1804,6 @@ class NaFHF_MA2020_GrC(Nav_MA2020_GrC):
 
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
-        self.phi = q10_factor(3, self.temp, u.celsius2kelvin(20.0))
 
         self.Aalfa = 353.91
         self.Valfa = 13.99
@@ -1822,6 +1826,11 @@ class NaFHF_MA2020_GrC(Nav_MA2020_GrC):
         self.ALoff = 0.5
         self.c = 20.0
         self.d = 0.075
+
+    @property
+    def phi(self):
+        """Return the rate factor at the current temperature."""
+        return q10_factor(3, self.temp, u.celsius2kelvin(20.0))
 
     Lon = lambda self, V: self.phi * self.ALon
     Loff = lambda self, V: self.phi * self.ALoff

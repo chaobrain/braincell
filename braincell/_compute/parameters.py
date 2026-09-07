@@ -13,11 +13,12 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Schema-aware density parameter storage."""
+"""Signature-derived channel metadata and compact density parameter storage."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+import inspect
 
 import brainunit as u
 import jax.numpy as jnp
@@ -39,15 +40,65 @@ __all__ = [
 
 
 def density_parameter_schema(mechanism: Density) -> Mapping[str, ParameterSpec]:
-    """Return the explicit runtime parameter schema for one density declaration."""
+    """Return signature metadata for channels and existing schemas for other densities."""
     runtime_cls = get_registry().get(mechanism.category, mechanism.class_name)
+    if mechanism.category == "channel":
+        return {
+            name: _SignatureParameterSpec(
+                mechanism.params.get(name, parameter.default)
+                if parameter.default is inspect.Parameter.empty or parameter.default is None
+                else parameter.default
+            )
+            for name, parameter in _channel_signature(runtime_cls).items()
+        }
     schema = getattr(runtime_cls, "parameters", {})
     return schema if isinstance(schema, Mapping) else {}
 
 
+def _channel_signature(runtime_cls) -> dict[str, inspect.Parameter]:
+    # BrainState's metaclass exposes (*args, **kwargs) on the class itself.
+    parameters = tuple(inspect.signature(runtime_cls.__init__).parameters.values())[1:]
+    result = {}
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters):
+        parent = next((cls for cls in runtime_cls.__mro__[1:] if "__init__" in vars(cls)), None)
+        if parent is not None and parent is not object:
+            result.update(_channel_signature(parent))
+    result.update(
+        (p.name, p)
+        for p in parameters
+        if p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+    )
+    return result
+
+
+class _SignatureParameterSpec(ParameterSpec):
+    def validate(self, value: object, name: str) -> None:
+        default = self.default
+        if default is inspect.Parameter.empty or default is None or callable(default):
+            default = value
+        ParameterSpec(default).validate(value, name)
+
+
+def _is_buffer_value(value: object) -> bool:
+    """Distinguish numeric storage from ordinary constructor configuration."""
+    if callable(value) and value is not inspect.Parameter.empty:
+        return True
+    try:
+        return np.asarray(u.get_mantissa(value)).dtype.kind in "biufc"
+    except (TypeError, ValueError):
+        return False
+
+
 def density_parameter_names(mechanism: Density) -> tuple[str, ...]:
-    """Return schema fields for migrated mechanisms and explicit fields otherwise."""
+    """Return fields needing numeric runtime storage, not a trainability whitelist."""
     schema = density_parameter_schema(mechanism)
+    if mechanism.category == "channel":
+        names = dict.fromkeys((*schema, *mechanism.params))
+        return tuple(
+            name
+            for name in names
+            if _is_buffer_value(mechanism.params.get(name, schema[name].default if name in schema else None))
+        )
     return tuple(schema) if schema else tuple(mechanism.params)
 
 
@@ -61,7 +112,7 @@ def density_parameter_value(mechanism: Density, name: str) -> object:
     if name in mechanism.params:
         return mechanism.params[name]
     spec = density_parameter_spec(mechanism, name)
-    if spec is None:
+    if spec is None or spec.default is inspect.Parameter.empty:
         raise KeyError(f"Mechanism has no parameter {name!r}.")
     return spec.default
 
@@ -151,12 +202,15 @@ def set_parameter_row(
         if not isinstance(value, u.Quantity):
             raise TypeError(f"Density parameter requires a Quantity compatible with {unit}.")
         replacement = value.to_decimal(unit)
-        mantissa = jnp.asarray(current.to_decimal(unit)).at[population_index, point_id].set(replacement)
+        dtype = jnp.result_type(current.mantissa, replacement)
+        mantissa = jnp.asarray(current.to_decimal(unit), dtype=dtype).at[population_index, point_id].set(replacement)
         state.value = u.Quantity(mantissa, unit)
     else:
         if isinstance(value, u.Quantity):
             raise TypeError("Dimensionless density parameter cannot be assigned a Quantity.")
-        state.value = jnp.asarray(current).at[population_index, point_id].set(value)
+        state.value = (
+            jnp.asarray(current, dtype=jnp.result_type(current, value)).at[population_index, point_id].set(value)
+        )
     state.axis = "row"
 
 

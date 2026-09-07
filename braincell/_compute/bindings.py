@@ -386,7 +386,7 @@ def _instantiate_runtime_node(
         size = next(iter(params.values())).shape
     else:
         size = pop_size + (layout.spatial_axis_len,)
-    node = runtime_cls(size=size, **params)
+    node = runtime_cls(size=size, **_constructor_parameter_values(params))
     _attach_runtime_parameter_states(node, params)
     bound_ions, current_owner_specs = _resolve_channel_runtime_bindings(
         runtime_cls=runtime_cls,
@@ -463,6 +463,17 @@ def _install_merged_channel_nodes(
         )
         if len(owner_specs) != 1:
             continue
+        if any((layout.id, name) not in state_buffers for name in mechanism.params):
+            # Non-numeric constructor arguments cannot be scattered across CVs.
+            continue
+        static_configuration = []
+        for name in density_parameter_names(mechanism):
+            buffer = state_buffers[(layout.id, name)]
+            raw = buffer.value if isinstance(buffer, RuntimeParameterState) else buffer
+            if not isinstance(raw, u.Quantity):
+                array = np.asarray(raw)
+                if array.dtype.kind == "b":
+                    static_configuration.append((name, array.shape, array.tobytes()))
         key = (
             runtime_cls,
             mechanism.instance_name,
@@ -471,6 +482,7 @@ def _install_merged_channel_nodes(
             mechanism.substeps,
             tuple(ion_key for ion_key, _ in bound_ions),
             owner_specs,
+            tuple(static_configuration),
         )
         groups.setdefault(key, []).append((layout, mechanism, runtime_cls, bound_ions, owner_specs))
 
@@ -489,7 +501,7 @@ def _install_merged_channel_nodes(
                 state_buffers=state_buffers,
             )
             size = pop_size + (n_cv,)
-            node = runtime_cls(size=size, **params)
+            node = runtime_cls(size=size, **_constructor_parameter_values(params))
             _attach_runtime_parameter_states(node, params)
             cv_mask = np.zeros((n_cv,), dtype=bool)
             for layout, *_ in merge_items:
@@ -554,17 +566,19 @@ def _merged_channel_constructor_params(
     state_buffers: dict[tuple[int, str], np.ndarray],
 ) -> dict[str, object]:
     all_param_names = []
-    for _layout, mechanism, *_ in items:
-        for name in density_parameter_names(mechanism):
+    for layout, mechanism, *_ in items:
+        for buffer_layout_id, name in state_buffers:
+            if buffer_layout_id != layout.id:
+                continue
             if name not in all_param_names:
                 all_param_names.append(name)
 
-    params = {}
+    params = {
+        name: value for name, value in items[0][1].params.items() if name not in density_parameter_names(items[0][1])
+    }
     full_shape = pop_size + (n_cv,)
     for var_name in all_param_names:
-        value_items = [
-            (layout, mechanism) for layout, mechanism, *_ in items if var_name in density_parameter_names(mechanism)
-        ]
+        value_items = [(layout, mechanism) for layout, mechanism, *_ in items if (layout.id, var_name) in state_buffers]
         if not value_items:
             continue
         first_layout, _first_mechanism = value_items[0]
@@ -946,6 +960,7 @@ def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_n
             layout_ids=merged_layout_ids,
             var_name=str(var_name),
         )
+        new_value = _preserve_parameter_coercion(node, var_name, new_value)
         setattr(node, var_name, new_value)
         node._on_param_updated(var_name, new_value)
         return
@@ -954,8 +969,18 @@ def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_n
         var_name=var_name,
         state_buffers=runtime.state_buffers,
     )
+    new_value = _preserve_parameter_coercion(node, var_name, new_value)
     setattr(node, var_name, new_value)
     node._on_param_updated(var_name, new_value)
+
+
+def _preserve_parameter_coercion(node, name, value):
+    """Keep scalar bool/int constructor conversions on subsequent writes."""
+    current = vars(node).get(name)
+    if type(current) in (bool, int):
+        raw = value.value if isinstance(value, RuntimeParameterState) else value
+        return type(current)(raw)
+    return value
 
 
 def _merged_channel_param_value(
@@ -1022,16 +1047,41 @@ def _runtime_constructor_params(
     if mechanism.category != "channel":
         return {}
     return {
-        var_name: _runtime_param_value(layout=layout, var_name=var_name, state_buffers=state_buffers)
-        for var_name in density_parameter_names(mechanism)
+        **dict(mechanism.params),
+        **{
+            var_name: _runtime_param_value(layout=layout, var_name=var_name, state_buffers=state_buffers)
+            for buffer_layout_id, var_name in state_buffers
+            if buffer_layout_id == layout.id
+        },
     }
+
+
+def _constructor_parameter_values(params: dict[str, object]) -> dict[str, object]:
+    """Pass arrays so a scalar result identifies an actual constructor coercion."""
+    result = dict(params)
+    for name, value in params.items():
+        if isinstance(value, RuntimeParameterState):
+            array = u.math.asarray(value.value)
+            if not isinstance(array, u.Quantity):
+                if array.dtype.kind == "b":
+                    concrete = np.asarray(array)
+                    if concrete.size and np.all(concrete == concrete.flat[0]):
+                        array = array.reshape(-1)[0]
+            result[name] = array
+    return result
 
 
 def _attach_runtime_parameter_states(node: object, params: dict[str, object]) -> None:
     """Restore schema parameter states unwrapped by ``braintools.init.param``."""
     for name, value in params.items():
         if isinstance(value, RuntimeParameterState):
-            setattr(node, name, value)
+            # Retain explicit constructor coercions and forced subclass settings.
+            current = getattr(node, name, None)
+            if isinstance(current, (bool, int)):
+                value.value = current
+                value.axis = "uniform"
+            else:
+                setattr(node, name, value)
 
 
 def _is_root_level_runtime_node(kind: str) -> bool:

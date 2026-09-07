@@ -7,8 +7,8 @@
 [Implementation plan](implementation-plan.md)，更宽的模型优化能力边界见
 [Design overview](design-overview.md)。
 
-当前 P0 范围为 multi-compartment `ChannelView` 上的 `IL`、`Na_HH1952` 和
-`K_HH1952`。Ion、Synapse、Connection、Network 聚合、
+当前范围为 multi-compartment `ChannelView` 上构造签名显式声明的参数，
+不再要求 Channel 维护可训参数字典。Ion、Synapse、Connection、Network 聚合、
 数据、loss、搜索、history、checkpoint 和诊断接口不在本文预先占用公共名称。
 
 ## Quick Start
@@ -94,24 +94,32 @@ na.trainable(
 
 - 只能在 `Cell.init_state()` 前调用；
 - View 必须非空，并且只选择一个逻辑 mechanism owner；
-- target 必须由统一 schema 标记为连续、shape-preserving、trainable parameter；
+- target 必须出现在 Channel 构造签名中；单位、形状和模型原有运算约束仍适用；
 - 同一逻辑 row/field 只能有一个 binding；
 - 多字段调用原子注册，失败时不留下部分 roots 或 bindings；
-- 注册不会立即写 runtime，第一次写入发生在 `init_state()` 的 materialization 阶段；
+- 注册不会立即写 runtime；初始化时分配物理缓冲并进行 materialization；
 - 普通 `set()` 已建立的当前值可以作为 direct initial 或 scale baseline。
 
-### P0 supported targets
+### Channel 候选参数
 
-首条实现链覆盖：
+候选项从 `__init__` 获取，包括继承和转发的已声明参数，而不是任意 `**kwargs`。
 
 | Mechanism | Candidate fields |
 | --- | --- |
 | `IL` | `g_max`, `E` |
-| `Na_HH1952` | continuous declared physical parameters |
-| `K_HH1952` | continuous declared physical parameters |
+| `Na_HH1952` / `K_HH1952` | `g_max`, `V_sh`, `temp`, `q10`, `temp_ref` 等签名参数 |
+| 其他 Channel | 该类构造签名中的参数，不需要另加白名单 |
 
-动态 concentration、gate state、derived Nernst potential、`valence`、solver、substeps 和
-topology 不可作为 P0 target。
+表中为典型数值参数，并非额外白名单。整数默认值不代表不可微，例如浓度指数 `n`；
+布尔比较可能产生零梯度，Python 控制流或字符串配置则可能在转换、初始化或求导时
+自然报错。系统不承诺非零梯度，也不自动判断可辨识性。Ion、动态 gate state 和
+不在构造签名中的内部常数不因本次扩展而成为候选项。
+
+省略的数值参数可从签名读取默认值并在初始化前 `.set()`。必填参数没有虚构默认值；
+若签名没有数值默认值，必须显式提供初值或覆盖值。通过 View 补值时，需覆盖该
+运行时布局的所有有效行，不能猜测未选行的默认值。
+
+温度派生的 sodium `phi` 在属性访问时重算；显式独立 `phi` 参数保持独立。
 
 ## `parameter()`
 
@@ -472,7 +480,7 @@ Ion/Synapse/Connection binding 和 Network 聚合不属于 P0，只有在对应 
 P0 必须在明确边界拒绝：
 
 - 空 selection 或一个 View 跨多个逻辑 owners；
-- 未知字段、state、derived、static、整数、布尔或 topology target；
+- 不在 Channel 构造签名中的 target；
 - 初始化后新增 binding；
 - 重叠 row/field ownership；
 - root name 冲突或共享对象使用冲突名称；
@@ -482,6 +490,9 @@ P0 必须在明确边界拒绝：
 - parameterized signature 不稳定或 callable 非 JAX-traceable；
 - ParameterSet tree 缺 key、多 key、shape/dtype/单位不匹配；
 - 任意可能造成部分 root 或部分 target 写入的失败。
+
+不额外拒绝整数或布尔候选，也不把零梯度视为错误。实际运算仍可能因静态控制流、
+不合法类型等原因失败，这与签名候选发现是两件事。
 
 ## References
 

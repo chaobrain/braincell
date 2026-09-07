@@ -147,7 +147,7 @@ class _DensityView:
         return self
 
     def parameter_info(self):
-        """Return the declared physical parameter schema for this owner."""
+        """Return parameter metadata, inferred from the constructor for channels."""
         self._require_one_owner("inspect parameters")
         if not self._rows:
             return {}
@@ -342,6 +342,7 @@ def _set_population_point(buffer, *, population_index, point_id, population_size
         mantissa = jnp.asarray(buffer)
     if mantissa.shape[-1] != point_size:
         raise ValueError("Density parameter buffer does not expose the point axis.")
+    mantissa = mantissa.astype(jnp.result_type(mantissa, decimal))
     if mantissa.ndim >= 2 and mantissa.shape[0] == population_size:
         mantissa = mantissa.at[population_index, point_id].set(decimal)
     else:

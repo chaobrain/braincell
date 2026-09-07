@@ -131,6 +131,7 @@ class TrainableManager(brainstate.nn.Module):
         pending: dict[tuple[int, str], tuple[RuntimeParameterState, object, str]] = {}
         for binding, values in evaluated:
             required_axis = _binding_axis(binding)
+            selection_axes = {}
             if tuple(getattr(values, "shape", ())) != (len(binding._rows),):
                 raise ValueError(
                     f"Binding {binding.name!r} returned shape {getattr(values, 'shape', ())!r}; "
@@ -147,10 +148,17 @@ class TrainableManager(brainstate.nn.Module):
                         )
                     pending[key] = (state, state.dense_value(), required_axis)
                 state, full, pending_axis = pending[key]
+                # Equal initial values do not imply shared trainable ownership.
+                if layout.id not in selection_axes:
+                    selected = np.zeros(state.full_shape, dtype=bool)
+                    for selected_row in binding._rows:
+                        if selected_row.cv_id in layout.source_cv_ids:
+                            selected[selected_row.population_index, selected_row.cv_id] = True
+                    selection_axes[layout.id] = _compact_axis(selected, state.point_mask)
                 pending[key] = (
                     state,
                     _set_row(full, row.population_index, row.cv_id, values[index]),
-                    _join_axes(pending_axis, required_axis),
+                    _join_axes(_join_axes(pending_axis, required_axis), selection_axes[layout.id]),
                 )
 
         commits = []
@@ -182,10 +190,6 @@ class TrainableManager(brainstate.nn.Module):
             raise TypeError(f"Field {target_field!r} expects a braincell.trainable parameter source.")
         mechanism = view.rows[0].mechanism
         schema = density_parameter_schema(mechanism)
-        if not schema:
-            raise NotImplementedError(
-                f"Channel {mechanism.class_name!r} has no trainable parameter schema in this release."
-            )
         if target_field not in schema:
             raise KeyError(f"Channel {mechanism.class_name!r} has no trainable parameter {target_field!r}.")
 
@@ -205,7 +209,8 @@ class TrainableManager(brainstate.nn.Module):
         if overlap:
             raise ValueError(f"Trainable target rows are already bound: {tuple(sorted(overlap))!r}.")
 
-        current = tuple(view._row_value(source_row, target_field) for source_row in view.rows)
+        needs_current = isinstance(source, ScaleSource) or (isinstance(source, DirectSource) and source.initial is None)
+        current = tuple(view._row_value(source_row, target_field) for source_row in view.rows) if needs_current else ()
         base_name = _base_name(rows, target_field, source)
         if isinstance(source, DirectSource):
             evaluate, root_names = self._prepare_direct(source, rows, current, base_name)
@@ -227,7 +232,7 @@ class TrainableManager(brainstate.nn.Module):
             )
         for index in range(len(rows)):
             schema[target_field].validate(sample[index], target_field)
-        unit = schema[target_field].default.unit if isinstance(schema[target_field].default, u.Quantity) else None
+        unit = sample.unit if isinstance(sample, u.Quantity) else None
         binding = ParameterBinding(
             name=base_name,
             target_owner=rows[0].owner,
@@ -461,13 +466,13 @@ def _set_row(full: object, population_index: int, point_id: int, value: object):
     if isinstance(full, u.Quantity):
         if not isinstance(value, u.Quantity):
             raise TypeError(f"Materialized value requires a Quantity compatible with {full.unit}.")
-        mantissa = (
-            jnp.asarray(full.to_decimal(full.unit)).at[population_index, point_id].set(value.to_decimal(full.unit))
-        )
+        replacement = value.to_decimal(full.unit)
+        dtype = jnp.result_type(full.mantissa, replacement)
+        mantissa = jnp.asarray(full.to_decimal(full.unit), dtype=dtype).at[population_index, point_id].set(replacement)
         return u.Quantity(mantissa, full.unit)
     if isinstance(value, u.Quantity):
         raise TypeError("Materialized value must be dimensionless.")
-    return jnp.asarray(full).at[population_index, point_id].set(value)
+    return jnp.asarray(full, dtype=jnp.result_type(full, value)).at[population_index, point_id].set(value)
 
 
 def _compact_axis(value: object, point_mask: object | None) -> str:

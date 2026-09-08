@@ -20,7 +20,8 @@ ring-buffer arrival machinery is exercised end-to-end from ``engine_test.py``
 via :meth:`Network.run`."""
 
 import unittest
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
+from unittest.mock import patch
 
 import brainunit as u
 import jax
@@ -95,18 +96,14 @@ class DeliveryTest(unittest.TestCase):
                     for expected, actual in zip(jax.tree.leaves(results[0]), jax.tree.leaves(results[1])):
                         np.testing.assert_allclose(actual, expected, rtol=1e-6, atol=1e-7)
 
-    def test_event_backend_brainevent_requires_coomv(self) -> None:
+    def test_event_backend_selection_without_coomv(self) -> None:
         import braincell.network.delivery as delivery
 
-        try:
-            import brainevent
-        except Exception:
-            return
-        if hasattr(brainevent, "coomv"):
-            return
-
-        with self.assertRaisesRegex(RuntimeError, "brainevent.coomv"):
-            delivery.resolve_event_backend("brainevent")
+        with patch.dict("sys.modules", {"brainevent": ModuleType("brainevent")}):
+            self.assertEqual(delivery.resolve_event_backend("auto"), "scatter")
+            self.assertEqual(delivery.resolve_event_backend("scatter"), "scatter")
+            with self.assertRaisesRegex(RuntimeError, "brainevent.coomv"):
+                delivery.resolve_event_backend("brainevent")
 
 
 if __name__ == "__main__":

@@ -47,34 +47,44 @@ class NetworkRuntimeTest(unittest.TestCase):
         )
 
     def test_prepared_network_keeps_weight_and_threshold_gradients(self):
-        for backend in ("scatter", "brainevent"):
-            with self.subTest(backend=backend):
-                network = make_runtime_network(delay=0.2 * u.ms)
-                post = network.populations["post"].cell
-                pre = network.populations["pre"].cell
-                post.connections["drive"].trainable(weight=braincell.trainable.scale(name="w"))
-                pre.event_outputs["spike"].trainable(threshold=braincell.trainable.parameter(group_by="all", name="th"))
-                network.prepare_run(dt=0.1 * u.ms, event_backend=backend)
-                synapse = post.runtime.get_runtime_node(post.synapses["exp"]._store.layout_id("ExpSyn"))
+        self._check_prepared_network_gradients("scatter")
 
-                def observe():
-                    network.reset_state()
-                    brainstate.transform.for_loop(lambda _: network.update(), np.arange(5))
-                    return synapse.g.value.to_decimal(u.uS).sum()
+    def test_prepared_network_keeps_weight_and_threshold_gradients_brainevent(self):
+        try:
+            import brainevent
+        except ImportError:
+            self.skipTest("brainevent is unavailable")
+        if not hasattr(brainevent, "coomv"):
+            self.skipTest("brainevent.coomv is unavailable")
+        self._check_prepared_network_gradients("brainevent")
 
-                run = brainstate.transform.jit(observe)
-                grad = brainstate.transform.jit(
-                    brainstate.transform.grad(observe, grad_states=network.trainables.parameters().states())
-                )
-                first = run()
-                gradients = grad()
-                self.assertGreater(float(first), 0.0)
-                self.assertNotEqual(float(gradients["post.w"]), 0.0)
-                self.assertNotEqual(float(u.get_mantissa(gradients["pre.th"])), 0.0)
-                values = network.trainables.parameters().physical_values()
-                values["post.w"] = 2.0
-                network.trainables.parameters().set_physical_values(values)
-                np.testing.assert_allclose(run(), 2 * first, rtol=1e-6)
+    def _check_prepared_network_gradients(self, backend):
+        network = make_runtime_network(delay=0.2 * u.ms)
+        post = network.populations["post"].cell
+        pre = network.populations["pre"].cell
+        post.connections["drive"].trainable(weight=braincell.trainable.scale(name="w"))
+        pre.event_outputs["spike"].trainable(threshold=braincell.trainable.parameter(group_by="all", name="th"))
+        network.prepare_run(dt=0.1 * u.ms, event_backend=backend)
+        synapse = post.runtime.get_runtime_node(post.synapses["exp"]._store.layout_id("ExpSyn"))
+
+        def observe():
+            network.reset_state()
+            brainstate.transform.for_loop(lambda _: network.update(), np.arange(5))
+            return synapse.g.value.to_decimal(u.uS).sum()
+
+        run = brainstate.transform.jit(observe)
+        grad = brainstate.transform.jit(
+            brainstate.transform.grad(observe, grad_states=network.trainables.parameters().states())
+        )
+        first = run()
+        gradients = grad()
+        self.assertGreater(float(first), 0.0)
+        self.assertNotEqual(float(gradients["post.w"]), 0.0)
+        self.assertNotEqual(float(u.get_mantissa(gradients["pre.th"])), 0.0)
+        values = network.trainables.parameters().physical_values()
+        values["post.w"] = 2.0
+        network.trainables.parameters().set_physical_values(values)
+        np.testing.assert_allclose(run(), 2 * first, rtol=1e-6)
 
     def test_prepare_required_and_update_matches_run(self):
         network = make_runtime_network(delay=0.2 * u.ms)

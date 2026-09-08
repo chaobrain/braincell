@@ -39,6 +39,21 @@ def _cell():
 
 
 class DensityViewTest(unittest.TestCase):
+    def test_schema_default_is_visible_and_settable_before_init(self) -> None:
+        cell = _cell()
+        cell.paint(BranchSlice([0, 1], 0.0, 1.0), braincell.mech.Channel("IL", name="leak"))
+        leak = cell.dendrite.channels["leak"]
+        expected = leak.get("g_max")
+        self.assertTrue(u.math.allclose(leak.g_max, expected))
+        self.assertEqual(expected.shape, (len(leak),))
+        leak.set(E=-65.0 * u.mV)
+        self.assertTrue(u.math.allclose(leak.E, -65.0 * u.mV))
+
+    def test_parameter_info_uses_migrated_schema(self) -> None:
+        cell = _cell()
+        cell.paint(BranchSlice([0, 1], 0.0, 1.0), braincell.mech.Channel("IL", name="leak"))
+        self.assertEqual(tuple(cell.channels["leak"].parameter_info()), ("g_max", "E"))
+
     def test_same_owner_across_disjoint_cvs_has_one_view(self) -> None:
         cell = _cell()
         cell.paint(

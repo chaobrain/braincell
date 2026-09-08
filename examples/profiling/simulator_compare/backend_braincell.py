@@ -59,7 +59,12 @@ from common import (
 )
 
 
-def build_cell(batch_size: int, *, linearizer: str = "point") -> tuple[Cell, dict]:
+def build_cell(
+    batch_size: int,
+    *,
+    linearizer: str = "point",
+    amplitudes_na: object | None = None,
+) -> tuple[Cell, dict]:
     brainstate.environ.set(precision=32)
     morph = Morphology.from_swc(MORPHOLOGY_PATH, mode="neuron")
     cell = Cell(
@@ -102,7 +107,11 @@ def build_cell(batch_size: int, *, linearizer: str = "point") -> tuple[Cell, dic
     )
     for branch in PROBE_BRANCHES:
         cell.place(at(branch, PROBE_X), mech.StateProbe(name=f"v_b{branch}"))
-    amplitudes = u.Quantity(jnp.asarray(current_amplitudes(batch_size)), u.nA)
+    if amplitudes_na is None:
+        amplitudes_na = current_amplitudes(batch_size)
+    amplitudes = u.Quantity(jnp.asarray(amplitudes_na), u.nA)
+    if amplitudes.shape != (batch_size,):
+        raise ValueError(f"amplitudes_na must have shape ({batch_size},), got {amplitudes.shape!r}.")
     cell.place(
         at(0, PROBE_X),
         mech.CurrentClamp(
@@ -182,10 +191,7 @@ def run_backend(
     if host_result is None:
         host_result = jax.device_get(result)
 
-    host_traces = [
-        np.asarray(host_result.traces[f"v_b{branch}"].to_decimal(u.mV))
-        for branch in PROBE_BRANCHES
-    ]
+    host_traces = [np.asarray(host_result.traces[f"v_b{branch}"].to_decimal(u.mV)) for branch in PROBE_BRANCHES]
     traces = np.stack([trace[:, 0] for trace in host_traces])
     all_finite = all(bool(np.isfinite(trace).all()) for trace in host_traces)
     trace_output_bytes = sum(trace.nbytes for trace in host_traces)

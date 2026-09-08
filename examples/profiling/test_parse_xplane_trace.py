@@ -48,6 +48,9 @@ class TestParseXPlaneTrace(unittest.TestCase):
                 ("braincell:cell_update:solver", 1, 10_000),
             ],
         )
+        self.assertEqual(
+            [(row.name, row.total_ps) for row in summary.kernels], [("fusion_b", 20_000), ("fusion_a", 10_000)]
+        )
 
     def test_summarize_trace_inclusive_charges_all_braincell_scopes(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -94,10 +97,7 @@ class TestParseXPlaneTrace(unittest.TestCase):
             rows = summarize_dhs_level_scopes(summary)
 
         self.assertEqual(
-            [
-                (row.phase, row.level, row.width, row.popsize, row.work_items)
-                for row in rows
-            ],
+            [(row.phase, row.level, row.width, row.popsize, row.work_items) for row in rows],
             [
                 ("forward", 1, 2, 32, 64),
                 ("forward", 2, 4, 32, 128),
@@ -120,10 +120,7 @@ class TestParseXPlaneTrace(unittest.TestCase):
             rows = summarize_dhs_level_scopes(summary)
 
         self.assertEqual(
-            [
-                (row.phase, row.level, row.width, row.popsize, row.work_items)
-                for row in rows
-            ],
+            [(row.phase, row.level, row.width, row.popsize, row.work_items) for row in rows],
             [
                 ("forward_level", 0, 256, 32, 8192),
                 ("forward_level", 1, 64, 32, 2048),
@@ -132,6 +129,9 @@ class TestParseXPlaneTrace(unittest.TestCase):
         self.assertEqual(rows[0].grid, "4,1,1")
         self.assertEqual(rows[0].block, "256,1,1")
         self.assertAlmostEqual(rows[0].occ_pct, 75.0)
+        self.assertEqual(summary.kernels[0].grid, "4,1,1")
+        self.assertEqual(summary.kernels[0].block, "256,1,1")
+        self.assertAlmostEqual(summary.kernels[0].mean_occ_pct, 75.0)
 
 
 def _write_trace(tmp_path: Path) -> Path:
@@ -151,9 +151,7 @@ def _write_trace(tmp_path: Path) -> Path:
                 "args": {
                     "kernel_details": "regs:1",
                     "name": (
-                        "jit(scan)/jit(main)/while/body/"
-                        "braincell:cell_run:update_dynamics/"
-                        "braincell:cell_update:solver"
+                        "jit(scan)/jit(main)/while/body/braincell:cell_run:update_dynamics/braincell:cell_update:solver"
                     ),
                 },
             },
@@ -211,18 +209,12 @@ def _write_real_dhs_level_trace(tmp_path: Path) -> Path:
             _trace_event(
                 "braincell:dhs:forward_level:i=000:edges=000256:batch=32",
                 0.08,
-                kernel_details=(
-                    "regs:16 static_shared:0 dynamic_shared:0 "
-                    "grid:4,1,1 block:256,1,1 occ_pct:75"
-                ),
+                kernel_details=("regs:16 static_shared:0 dynamic_shared:0 grid:4,1,1 block:256,1,1 occ_pct:75"),
             ),
             _trace_event(
                 "braincell:dhs:forward_level:i=001:edges=000064:batch=32",
                 0.06,
-                kernel_details=(
-                    "regs:16 static_shared:0 dynamic_shared:0 "
-                    "grid:1,1,1 block:64,1,1 occ_pct:25"
-                ),
+                kernel_details=("regs:16 static_shared:0 dynamic_shared:0 grid:1,1,1 block:64,1,1 occ_pct:25"),
             ),
         ]
     }

@@ -100,7 +100,7 @@ change.
    `ICaN_IS2008`, …) no longer resolve; `braincell.channel.INa_HH1952` raises
    `AttributeError`. Verified repo-wide first: every remaining occurrence of
    the 20 names is prose (provenance sentences in docstrings, planning notes in
-   `docs/design/`, `TODO.md`) or a tutorial cell that *defines its own*
+   `docs/design/`, `docs/design/TODO.md`) or a tutorial cell that *defines its own*
    `class ICaT_HP1992(...)`. The only code that read the shim was its own three
    tests. `IL` is untouched — that is a real current name, not an old alias.
 

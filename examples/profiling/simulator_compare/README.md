@@ -62,6 +62,23 @@ Fast smoke run (still only GPU 2 or 3, and no NEURON above N=10):
   --output results/smoke.json
 ```
 
+BrainCell runtime ablation compares native population batching with an outer
+state `vmap`, with spike bookkeeping either enabled or disabled. Each case runs
+in an isolated process, validates its voltage traces against the population
+baseline, and records compilation, steady-state, transfer, and GPU-memory data:
+
+```bash
+/home/swl/anaconda3/envs/braincell_311/bin/python braincell_ablation.py run \
+  --batch-sizes 10,100,1000 \
+  --gpu 7 \
+  --output results/braincell_ablation.json
+```
+
+The resulting JSON and CSV contain all four `population|vmap` by
+`tracked|off` combinations for every batch size. The `off` mode is restricted
+to isolated cells without runtime synapses because it deliberately bypasses
+event bookkeeping.
+
 The run writes raw backend JSON files plus aggregate JSON, CSV, PNG, and SVG outputs.
 When both GPU backends are present it also writes the diagnostic figures described below.
 Filled markers are measured values; hollow NEURON markers are extrapolated.
@@ -89,4 +106,5 @@ Run implementation tests without starting a full benchmark:
 
 ```bash
 /home/swl/anaconda3/envs/braincell_311/bin/python -m pytest -q test_simulator_compare.py
+/home/swl/anaconda3/envs/braincell_311/bin/python -m pytest -q braincell_ablation_test.py
 ```

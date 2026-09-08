@@ -905,19 +905,28 @@ def layout_values_to_point_space(cell, layout, raw_values, *, field: str, caller
         count.
     """
     n_point = cell.n_point
+    density_point_ids = np.asarray(
+        [cell.node_tree.cv_to_mid_node_id[int(cv_id)] for cv_id in layout.source_cv_ids],
+        dtype=np.int32,
+    )
     raw_values = single_population_view(cell, raw_values, field=field, caller=caller)
     raw, _, rewrap = split_unit(raw_values)
     point_values = np.full((n_point,), np.nan, dtype=float)
 
     if raw.ndim == 0:
-        if layout.point_index is None:
-            raise ValueError(f"Layout {layout.id!r} has no point_index for field {field!r}.")
-        point_values[np.asarray(layout.point_index, dtype=np.int32)] = float(raw)
+        indices = density_point_ids if layout.target == "density" else layout.point_index
+        if indices is None:
+            raise ValueError(f"Layout {layout.id!r} has no spatial index for field {field!r}.")
+        point_values[np.asarray(indices, dtype=np.int32)] = float(raw)
         return rewrap(point_values)
     if raw.ndim != 1:
         raise ValueError(f"{caller} only supports 1-D value fields; {field!r} is not 1-D.")
 
     array = raw.reshape(-1)
+    if layout.target == "density" and array.shape[0] == cell.n_cv:
+        cv_ids = np.asarray(layout.source_cv_ids, dtype=np.int32)
+        point_values[density_point_ids] = array[cv_ids]
+        return rewrap(point_values)
     if array.shape[0] == n_point:
         if layout.point_index is None:
             raise ValueError(f"Layout {layout.id!r} has no point_index for field {field!r}.")

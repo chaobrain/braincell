@@ -380,6 +380,49 @@ class Morphology:
         reader = SwcReader() if options is None else SwcReader(options=options)
         return reader.read(path, return_report=return_report)
 
+    def to_swc(self, path):
+        """Write this morphology to a standard SWC file.
+
+        Parameters
+        ----------
+        path : str or os.PathLike
+            Destination path. ``.swc`` is appended when the supplied path
+            has no suffix.
+
+        Returns
+        -------
+        Path
+            The final path written.
+
+        Raises
+        ------
+        ValueError
+            If any branch lacks complete point geometry.
+
+        See Also
+        --------
+        from_swc : Load a morphology from an SWC file.
+        save_checkpoint : Write a lossless BrainCell morphology checkpoint.
+
+        Notes
+        -----
+        SWC does not preserve branch names or explicit boundaries between
+        consecutive branches of the same type. Generic ``dendrite`` branches
+        are written as SWC type 3 and import as ``basal_dendrite``.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> from braincell import Morphology
+            >>> morph = Morphology.from_swc("neuron.swc")  # doctest: +SKIP
+            >>> morph.to_swc("copy.swc")  # doctest: +SKIP
+        """
+        from braincell.io.swc.writer import write_swc
+
+        return write_swc(self, path)
+
     @classmethod
     def from_asc(cls, path, *, return_report: bool = False):
         """Load a morphology from a Neurolucida ASC file.

@@ -37,12 +37,18 @@ from braincell import (
     CurrentClamp,
     DiffEqModule,
     Morphology,
+    NetStim,
+    connect,
+    mech,
+    observe,
 )
-from braincell.filter import RootLocation
+from braincell.filter import AllRegion, RootLocation
 from braincell.quad import get_registry, staggered_step
 from braincell.quad._staggered import (
     _build_backsub_indices,
+    _build_dhs_ordinary_backsub_order,
     _linear_and_const_term,
+    comp_backsub_hines_raw,
     comp_backsub_raw,
     comp_triang_raw,
     dhs_voltage_step,
@@ -108,6 +114,90 @@ class DhsLinearizationUnitTest(unittest.TestCase):
         np.testing.assert_allclose(np.asarray(linear.to_decimal(expected_linear_unit)), [-0.1, -0.1])
         self.assertEqual(u.get_unit(const), u.get_unit(2.0 * u.nA / u.uF))
         np.testing.assert_allclose(np.asarray((V_n * linear + const).to_decimal(u.nA / u.uF)), [2.0, 2.0])
+
+
+class StaggeredAutodiffTest(unittest.TestCase):
+    @staticmethod
+    def _hh_cell():
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(
+            Morphology.from_root(soma, name="soma"),
+            cv_policy=CVPerBranch(),
+            V_init=-65.0 * u.mV,
+            solver="staggered",
+        )
+        cell.paint(
+            AllRegion(),
+            mech.Channel(
+                "Na_HH1952",
+                name="na_hh",
+                g_max=12.0 * (u.mS / u.cm**2),
+            ),
+        )
+        cell.paint(
+            AllRegion(),
+            mech.Channel(
+                "K_HH1952",
+                name="k_hh",
+                g_max=3.6 * (u.mS / u.cm**2),
+            ),
+        )
+        cell.paint(
+            AllRegion(),
+            mech.Channel(
+                "IL",
+                name="leak",
+                g_max=0.3 * (u.mS / u.cm**2),
+                E=-54.3 * u.mV,
+            ),
+        )
+        cell.init_state()
+        return cell
+
+    def test_multistep_voltage_and_conductance_gradients_match_finite_difference(self):
+        cell = self._hh_cell()
+        sodium = cell.ion_channels["na"].channels["na_hh"]
+        original_g_max = sodium.g_max
+        conductance_unit = u.mS / u.cm**2
+        active_mask = u.get_mantissa(original_g_max) != 0
+
+        def objective(v0_mantissa, g_max_mantissa):
+            sodium.g_max = active_mask * g_max_mantissa * conductance_unit
+            cell.reset_state()
+            cell.V.value = jnp.broadcast_to(v0_mantissa, cell.V.value.shape) * u.mV
+
+            def step(_):
+                cell.update()
+                return cell.V.value
+
+            trace = brainstate.transform.for_loop(step, jnp.arange(6))
+            return jnp.sum(trace[-1].to_decimal(u.mV))
+
+        try:
+            with brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+                v0 = jnp.asarray(-65.0, dtype=jnp.float64)
+                g_max = jnp.asarray(12.0, dtype=jnp.float64)
+                grad_v0, grad_g_max = brainstate.transform.grad(
+                    objective,
+                    argnums=(0, 1),
+                )(v0, g_max)
+
+                epsilon = 1e-3
+                finite_diff_v0 = (objective(v0 + epsilon, g_max) - objective(v0 - epsilon, g_max)) / (2.0 * epsilon)
+                finite_diff_g_max = (objective(v0, g_max + epsilon) - objective(v0, g_max - epsilon)) / (2.0 * epsilon)
+
+            for gradient in (grad_v0, grad_g_max):
+                self.assertTrue(bool(jnp.isfinite(gradient)))
+                self.assertNotEqual(float(gradient), 0.0)
+            np.testing.assert_allclose(grad_v0, finite_diff_v0, rtol=1e-4, atol=1e-8)
+            np.testing.assert_allclose(grad_g_max, finite_diff_g_max, rtol=1e-4, atol=1e-8)
+        finally:
+            sodium.g_max = original_g_max
+            cell.reset_state()
 
 
 class CompTriangRawTest(unittest.TestCase):
@@ -176,6 +266,46 @@ class CompBacksubRawTest(unittest.TestCase):
         out = comp_backsub_raw(diags, solves, lowers, backsub_indices)
         self.assertIsInstance(out, u.Quantity)
         self.assertTrue(u.get_unit(out).has_same_dim(u.mV))
+
+
+class CompBacksubHinesRawTest(unittest.TestCase):
+    def test_chain_matches_recursive_doubling(self):
+        diags = jnp.asarray([[2.0, 3.0, 4.0, 1.0]])
+        solves = jnp.asarray([[4.0, 3.0, 8.0, 0.0]]) * u.mV
+        lowers = jnp.asarray([0.0, -1.0, -2.0, 0.0])
+        ordinary_edges = np.asarray([[1, 0], [2, 1]], dtype=np.int32)
+        ordinary_offsets = np.asarray([0, 1, 2], dtype=np.int32)
+        parent_lookup = np.asarray([3, 0, 1, 3], dtype=np.int32)
+        recursive_indices = _build_backsub_indices(parent_lookup, n_nodes=3)
+
+        ordinary = comp_backsub_hines_raw(diags, solves, lowers, ordinary_edges, ordinary_offsets)
+        recursive = comp_backsub_raw(diags, solves, lowers, recursive_indices)
+
+        self.assertIsInstance(ordinary, u.Quantity)
+        np.testing.assert_allclose(ordinary.to_decimal(u.mV), recursive.to_decimal(u.mV), rtol=1e-6, atol=1e-7)
+
+    def test_schedule_is_root_to_leaf_and_covers_each_edge(self):
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        morphology = Morphology.from_root(soma, name="soma")
+        parent = "soma"
+        for index in range(3):
+            branch = Branch.from_lengths(lengths=[20.0] * u.um, radii=[2.0, 2.0] * u.um, type="dendrite")
+            name = f"dend_{index}"
+            morphology.attach(parent=parent, child_branch=branch, child_name=name, parent_x=1.0)
+            parent = name
+        cell = Cell(morphology, cv_policy=CVPerBranch())
+        cell.init_state()
+        scheduling = cell.node_scheduling(algorithm="dhs")
+        edges, level_size = _build_dhs_ordinary_backsub_order(scheduling)
+
+        self.assertEqual(edges.shape[0], len(cell.node_tree.nodes) - 1)
+        self.assertEqual(int(level_size.sum()), edges.shape[0])
+        roots = np.flatnonzero(scheduling.parent_rows < 0)
+        self.assertEqual(len(roots), 1)
+        seen = {int(roots[0])}
+        for child, parent_row in edges.tolist():
+            self.assertIn(parent_row, seen)
+            seen.add(child)
 
 
 class BuildBacksubIndicesTest(unittest.TestCase):
@@ -310,6 +440,8 @@ class DhsRuntimeCacheTest(unittest.TestCase):
             self.assertIs(source32, source64)
             self.assertEqual(cache64.float_dtype, jnp.dtype(jnp.float64))
             self.assertIsNot(cache32, cache64)
+            self.assertEqual(cell.V.value.dtype, jnp.dtype(jnp.float32))
+            self.assertEqual(cell._point_V.value.dtype, jnp.dtype(jnp.float32))
 
     def test_numeric_operands_preserve_an_existing_dtype(self):
         # ``_build_dhs_numeric_state`` materializes its operands with
@@ -342,6 +474,69 @@ class DhsEndpointClampTest(unittest.TestCase):
         after = float(cell.V.value[0, 0].to_decimal(u.mV))
 
         self.assertGreater(after, before)
+
+
+class DhsEndpointSynapseNeuronReferenceTest(unittest.TestCase):
+    @staticmethod
+    def _run_expsyn_at(x):
+        soma = Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = Cell(
+            Morphology.from_root(soma, name="soma"),
+            cv_policy=CVPerBranch(),
+            V_init=-65.0 * u.mV,
+            solver="staggered",
+        )
+        cell.paint(
+            AllRegion(),
+            mech.CableProperty(
+                resting_potential=-65.0 * u.mV,
+                membrane_capacitance=1.0 * u.uF / u.cm**2,
+                axial_resistivity=100.0 * u.ohm * u.cm,
+            ),
+            mech.Channel(
+                "IL",
+                name="leak",
+                g_max=0.1 * u.mS / u.cm**2,
+                E=-65.0 * u.mV,
+            ),
+        )
+        synapse = mech.Synapse("ExpSyn", name="syn", tau=2.0 * u.ms, e=0.0 * u.mV)
+        cell.place(RootLocation(x=x), synapse)
+        connect(
+            f"drive_{x}",
+            source=NetStim(start=1.0 * u.ms, number=1),
+            synapse=cell.synapses[synapse],
+            weight=0.01 * u.uS,
+        )
+        cell.soma.record("v", observe.state("v"))
+
+        result = cell.run(dt=0.025 * u.ms, duration=5.0 * u.ms)
+        trace = np.asarray(result.samples["v"].values.to_decimal(u.mV), dtype=float)[:, 0]
+        final = float(np.asarray(cell.V.value.to_decimal(u.mV)).reshape(-1)[0])
+        return float(np.max(trace)), final
+
+    def test_endpoint_and_midpoint_match_fixed_neuron_reference(self):
+        # Generated once with NEURON 8.2.6, fixed-step secondorder=0:
+        # L=diam=20 um, nseg=1, Ra=100 ohm cm, cm=1 uF/cm2,
+        # pas.g=0.0001 S/cm2, pas.e=-65 mV, ExpSyn(tau=2 ms, e=0),
+        # NetCon event at 1 ms with weight=0.01 uS, dt=0.025 ms.
+        neuron_reference = {
+            0.0: (-25.36324335207355, -25.809036761905066),
+            0.5: (-25.359568290945035, -25.805809720317054),
+        }
+
+        with brainstate.environ.context(precision=64):
+            endpoint = self._run_expsyn_at(0.0)
+            midpoint = self._run_expsyn_at(0.5)
+
+        np.testing.assert_allclose(endpoint, neuron_reference[0.0], rtol=0.0, atol=1e-8)
+        np.testing.assert_allclose(midpoint, neuron_reference[0.5], rtol=0.0, atol=1e-8)
+        self.assertLess(endpoint[0], midpoint[0])
+        self.assertLess(endpoint[1], midpoint[1])
 
 
 class DhsMidpointClampPopulationTest(unittest.TestCase):

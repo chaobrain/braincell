@@ -16,6 +16,7 @@
 import unittest
 
 import brainunit as u
+import jax.numpy as jnp
 import numpy as np
 
 import braincell
@@ -24,6 +25,61 @@ from braincell.filter import BranchSlice, at
 
 
 class RecordingTest(unittest.TestCase):
+    def test_synapse_current_uses_staggered_point_voltage(self) -> None:
+        soma = braincell.Branch.from_lengths(
+            lengths=[20.0] * u.um,
+            radii=[10.0, 10.0] * u.um,
+            type="soma",
+        )
+        cell = braincell.Cell(
+            braincell.Morphology.from_root(soma, name="soma"),
+            cv_policy=braincell.CVPerBranch(),
+            solver="staggered",
+        )
+        synapse = braincell.mech.Synapse("ExpSyn", name="syn", e=0.0 * u.mV)
+        cell.place(at("soma", 0.0), synapse)
+        cell.record(
+            "syn_current",
+            braincell.observe.synapse(name="syn").current(reduce="none"),
+        )
+        cell.init_state()
+
+        layout = next(layout for layout in cell.runtime.layouts if layout.kind == "synapse:ExpSyn")
+        runtime_synapse = cell.runtime.get_runtime_node(layout.id)
+        runtime_synapse.g.value = runtime_synapse.g.value + 0.01 * u.uS
+        cell.V.value = cell.V.value.at[..., 0].set(-60.0 * u.mV)
+        cell._set_dhs_point_voltage(jnp.asarray([[-40.0, -60.0, -60.0]]) * u.mV)
+
+        sampled = cell._compiled_recordings(0.025 * u.ms)[0].sample()
+
+        np.testing.assert_allclose(sampled.to_decimal(u.nA), [0.4], rtol=0.0, atol=1e-7)
+
+    def test_clamp_view_recording_uses_midpoint_time_and_cached_components(self) -> None:
+        cell = _cell(1)
+        first = braincell.CurrentClamp(durations=0.1 * u.ms, amplitudes=0.2 * u.nA)
+        second = braincell.CurrentClamp(durations=0.2 * u.ms, amplitudes=0.3 * u.nA)
+        cell.place(at("soma", 0.5), first, second)
+        cell.clamps["CurrentClamp"].record("clamps")
+        cell.soma.record("external", braincell.observe.clamp_current())
+        cell.soma.record("components", braincell.observe.clamp_current(reduce="none"))
+
+        result = cell.run(dt=0.1 * u.ms, duration=0.3 * u.ms)
+
+        np.testing.assert_allclose(result.samples["clamps"].time.to_decimal(u.ms), [0.05, 0.15, 0.25])
+        np.testing.assert_allclose(
+            result.samples["clamps"].values.to_decimal(u.nA),
+            [[0.2, 0.3], [0.0, 0.3], [0.0, 0.0]],
+        )
+        np.testing.assert_allclose(
+            result.samples["external"].values.to_decimal(u.nA)[:, 0],
+            [0.5, 0.3, 0.0],
+        )
+        np.testing.assert_allclose(
+            result.samples["components"].values.to_decimal(u.nA),
+            result.samples["clamps"].values.to_decimal(u.nA),
+        )
+        self.assertEqual([row.clamp_id for row in result.samples["clamps"].schema.rows], [0, 1])
+
     def test_scalar_cell_spatial_recording(self) -> None:
         soma = braincell.Branch.from_lengths(
             lengths=[20.0] * u.um,
@@ -51,6 +107,46 @@ class RecordingTest(unittest.TestCase):
         self.assertEqual(first.samples["soma_v"].values.shape, (2, 1))
         self.assertEqual(first.samples["soma_v"].schema.rows[0].population_index, 0)
         self.assertEqual(first.samples["soma_v"].schema.rows[0].branch_id, 0)
+
+    def test_recordings_support_different_fixed_sampling_periods(self) -> None:
+        cell = _cell(1)
+        cell.soma.record("fast", braincell.observe.state("v"), period=0.1 * u.ms)
+        cell.soma.record("slow", braincell.observe.state("v"), period=0.2 * u.ms)
+
+        first = cell.run(dt=0.05 * u.ms, duration=0.4 * u.ms)
+        second = cell.run(dt=0.05 * u.ms, duration=0.4 * u.ms)
+
+        self.assertEqual(first.samples["fast"].values.shape, (4, 1))
+        self.assertEqual(first.samples["slow"].values.shape, (2, 1))
+        np.testing.assert_allclose(first.samples["fast"].time.to_decimal(u.ms), [0.0, 0.1, 0.2, 0.3])
+        np.testing.assert_allclose(second.samples["slow"].time.to_decimal(u.ms), [0.4, 0.6])
+
+    def test_unaligned_eager_recording_warns_and_keeps_variable_length_results(self) -> None:
+        cell = _cell(1)
+        cell.soma.record("v", braincell.observe.state("v"), period=0.1 * u.ms)
+
+        with self.assertWarnsRegex(RuntimeWarning, "unsupported under jax.jit/grad"):
+            first = cell.run(dt=0.05 * u.ms, duration=0.15 * u.ms)
+        with self.assertWarnsRegex(RuntimeWarning, "unsupported under jax.jit/grad"):
+            second = cell.run(dt=0.05 * u.ms, duration=0.15 * u.ms)
+
+        np.testing.assert_allclose(first.samples["v"].time.to_decimal(u.ms), [0.0, 0.1])
+        np.testing.assert_allclose(second.samples["v"].time.to_decimal(u.ms), [0.2])
+        self.assertEqual(first.samples["v"].values.shape, (2, 1))
+        self.assertEqual(second.samples["v"].values.shape, (1, 1))
+
+    def test_nonzero_start_remains_available_in_eager_mode(self) -> None:
+        cell = _cell(1)
+        cell.soma.record(
+            "v",
+            braincell.observe.state("v"),
+            period=0.1 * u.ms,
+            start=0.1 * u.ms,
+        )
+
+        result = cell.run(dt=0.05 * u.ms, duration=0.3 * u.ms)
+
+        np.testing.assert_allclose(result.samples["v"].time.to_decimal(u.ms), [0.1, 0.2])
 
     def test_split_result_concatenates_to_single_run(self) -> None:
         split = _cell(1)

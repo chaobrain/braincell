@@ -165,7 +165,7 @@ Three further things the second round corrected:
   That asymmetry is deliberate — clipping an HH gate's derivative input weakens the very term that
   pulls it back into range — but it was undocumented, and is now argued for in
   `docs/design/channel-template-invariants.md`.
-- `TODO.md` and `changelog.md` were untouched, which CONTRIBUTING.md asks for on a change that adds
+- `docs/design/TODO.md` and `changelog.md` were untouched, which CONTRIBUTING.md asks for on a change that adds
   a public class, two public `Gate` fields and a `DeprecationWarning`.
 - `AGENTS.md` rule 8's clause requiring a `docs/` note to be cited from the module docstring was
   removed **on the maintainer's explicit instruction**, not to dodge a check this branch would have

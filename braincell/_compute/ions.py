@@ -35,9 +35,9 @@ with the state buffers afterwards:
   class's constructor and the small amount of renaming/unwrapping needed to
   read a param back off an instance.
 - :func:`_ion_param_broadcast` and :func:`_ion_param_scatter` — the rectangular
-  buffer algebra. A baseline param is broadcast onto the full point shape once,
-  then each sparse declaration layout scatters its own buffer into it, so the
-  common rectangular path needs no Python loop over per-point
+  buffer algebra. A baseline param is broadcast onto the full CV shape once,
+  then each declaration layout scatters its own CV rows into it, so the
+  common rectangular path needs no Python loop over per-CV
   :class:`brainunit.Quantity` boxes.
 - :func:`_sync_runtime_ion` — the post-compilation counterpart, rebuilding one
   runtime ion's params from the current state buffers when a buffer is written.
@@ -70,7 +70,7 @@ if TYPE_CHECKING:
 
 def _build_runtime_ions(
     *,
-    n_point: int,
+    n_cv: int,
     layouts: tuple[MechanismLayout, ...],
     layout_mechanisms: dict[int, object],
     state_buffers: dict[tuple[int, str], np.ndarray],
@@ -97,7 +97,7 @@ def _build_runtime_ions(
             layouts=tuple(record["layouts"]),
             declarations=tuple(record["declarations"]),
             state_buffers=state_buffers,
-            n_point=n_point,
+            n_cv=n_cv,
             pop_size=pop_size,
         )
         ions[instance_name] = runtime_ion
@@ -105,7 +105,7 @@ def _build_runtime_ions(
         for layout in record["layouts"]:
             ion_runtime_nodes[layout.id] = runtime_ion
 
-    for family_key, default_ion in _build_default_ions(pop_size + (n_point,)).items():
+    for family_key, default_ion in _build_default_ions(pop_size + (n_cv,)).items():
         if family_key in ion_family_candidates:
             continue
         ions[family_key] = default_ion
@@ -299,12 +299,12 @@ def _instantiate_runtime_ion_instance(
     layouts: tuple[MechanismLayout, ...],
     declarations: tuple[Density, ...],
     state_buffers: dict,
-    n_point: int,
+    n_cv: int,
     pop_size: tuple[int, ...] = (),
 ) -> object:
-    """Build one runtime ion instance from its sparse declaration layouts.
+    """Build one runtime ion instance from its density declaration layouts.
 
-    Start from a baseline ion and replace per-point params where each
+    Start from a baseline ion and replace per-CV params where each
     declaration layout requests them. Each layout's buffer is scattered
     into the accumulated array by :func:`_ion_param_scatter`, which uses
     ``np.put_along_axis`` on the Quantity mantissa — no Python loops on
@@ -323,7 +323,7 @@ def _instantiate_runtime_ion_instance(
             f"{sorted(invalid)!r} on {runtime_cls.__name__!r}."
         )
 
-    full_size = pop_size + (n_point,)
+    full_size = pop_size + (n_cv,)
     baseline_ion = runtime_cls(size=full_size)
     full_param_values: dict[str, object] = {}
     for param_name in supported_params:
@@ -335,9 +335,7 @@ def _instantiate_runtime_ion_instance(
         full_param_values[param_name] = _ion_param_broadcast(baseline_value, shape=full_size)
 
     for layout, declaration in zip(layouts, declarations):
-        point_index = layout.point_index
-        if point_index is None:
-            raise ValueError(f"Ion layout {layout.id!r} is missing point_index.")
+        point_index = np.asarray(layout.source_cv_ids, dtype=np.int32)
         for param_name in declaration.params.keys():
             buffer = state_buffers[(layout.id, param_name)]
             full_param_values[param_name] = _ion_param_scatter(
@@ -415,7 +413,7 @@ def _ion_param_scatter(
 
     For ``Ci_initializer`` on :class:`DynamicNernstIon` (which may hold a
     State-wrapped callable), box the ``target``/``buffer`` values into an
-    object-dtype array with a per-point Python loop, then scatter that
+    object-dtype array with a per-CV Python loop, then scatter that
     array via ``np.put_along_axis`` like the other branches. Rectangular
     Quantity and ndarray buffers scatter directly via ``np.put_along_axis``
     onto a copy of ``target``, with unit coercion for Quantity buffers.
@@ -424,7 +422,7 @@ def _ion_param_scatter(
         target_unit = target.unit
         src_mantissa = np.asarray(buffer.mantissa, dtype=np.float64)
         target_mantissa = np.asarray(target.mantissa, dtype=np.float64)
-        # Sparse buffers end with n_active; dense buffers end with n_point.
+        # Layout buffers and runtime ions both end with the CV axis.
         # Any leading axes are homogeneous-population dimensions.
         if src_mantissa.shape[-1:] == point_index.shape:
             src = src_mantissa
@@ -511,7 +509,7 @@ def _sync_runtime_ion(runtime: CellRuntimeState, *, layout_id: int) -> None:
             param_name,
             getattr(ion, _ion_runtime_attr_name(ion_cls, param_name)),
         )
-        full_values[param_name] = _ion_param_broadcast(baseline, shape=runtime.pop_size + (runtime.n_point,))
+        full_values[param_name] = _ion_param_broadcast(baseline, shape=runtime.pop_size + (runtime.n_cv,))
 
     for candidate in runtime.layouts:
         candidate_mechanism = runtime.layout_mechanisms[candidate.id]
@@ -521,8 +519,6 @@ def _sync_runtime_ion(runtime: CellRuntimeState, *, layout_id: int) -> None:
             continue
         if candidate_mechanism.instance_name != instance_name:
             continue
-        if candidate.point_index is None:
-            raise ValueError(f"Ion layout {candidate.id!r} is missing point_index.")
         for param_name in candidate_mechanism.params.keys():
             buffer = runtime.state_buffers[(candidate.id, param_name)]
             full_values[param_name] = _ion_param_scatter(
@@ -530,7 +526,7 @@ def _sync_runtime_ion(runtime: CellRuntimeState, *, layout_id: int) -> None:
                 param_name=param_name,
                 target=full_values[param_name],
                 buffer=buffer,
-                point_index=candidate.point_index,
+                point_index=np.asarray(candidate.source_cv_ids, dtype=np.int32),
             )
 
     for param_name, value in full_values.items():

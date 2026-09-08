@@ -1,6 +1,6 @@
 # BrainCell 模块依赖与公共接口速览
 
-本文基于当前仓库源码扫描整理，用于和合作者讨论接口命名与子模块分工。它不是完整 API 文档，也不替代 `README.md`、`TODO.md` 或自动生成的 `docs/apis/*` 文档。
+本文基于当前仓库源码扫描整理，用于和合作者讨论接口命名与子模块分工。它不是完整 API 文档，也不替代 `README.md`、`docs/design/TODO.md` 或自动生成的 `docs/apis/*` 文档。
 
 ## 1. 总体结构
 
@@ -105,6 +105,7 @@ _base_neuron / _base_ion / _base_channel -> shared runtime base classes
 
 - `Morphology.from_root(branch, name="soma")`
 - `Morphology.from_swc(path, options=None, mode=None, return_report=False)`
+- `Morphology.to_swc(path)`
 - `Morphology.from_asc(path, return_report=False)`
 - `Morphology.from_neuromorpho(...)`
 - `Morphology.save_checkpoint(path)`

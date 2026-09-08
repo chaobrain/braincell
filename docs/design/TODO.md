@@ -1,20 +1,38 @@
-# BrainCell – Project Design Document
+# BrainCell Project Design and TODO
 
 > Status: living document. Tracks both the architectural intent of the
 > `braincell` package and the current implementation state of every major
 > subsystem. Status markers in this file follow:
 >
-> - `[x]` shipped — implemented, covered by `*_test.py`, exported from the
->   public API.
+> - `[x]` shipped — implemented, covered by `*_test.py`, and documented at
+>   its intended public or internal surface.
 > - `[~]` partial — implementation exists but is missing functionality,
 >   tests, or runtime integration. Specific gaps are listed inline.
 > - `[ ]` planned — design agreed, code not yet written.
+>
+> This document describes committed repository state. Experimental work in an
+> uncommitted working tree does not become a shipped capability until its API,
+> implementation, and tests land together.
 
 ---
 
-## Current Local Progress Snapshot
+## Document Navigation
 
-This working tree currently has the Cerebellum/PC comparison work in progress:
+- [Mission and scope](#1-mission-and-scope)
+- [Top-level architecture](#2-top-level-architecture)
+- [Module catalogue](#3-module-catalogue)
+- [Cross-cutting concerns](#4-cross-cutting-concerns)
+- [Public API contract](#6-public-api-contract)
+- [End-to-end workflows](#7-end-to-end-user-workflows)
+
+Detailed network and parameter-training contracts live in
+[`network/`](network/design-overview.md) and [`optim/`](optim/design-overview.md).
+Those topic directories are authoritative when their details are more specific
+than this project-level summary.
+
+## Current Architecture Snapshot
+
+The committed repository currently provides:
 
 - [x] **Cerebellum channel/ion imports and tests expanded.** The channel
   catalogue now includes PC MA2024 channel variants and the calcium-ion
@@ -25,6 +43,18 @@ This working tree currently has the Cerebellum/PC comparison work in progress:
   contains the simplified NEURON assembly, the matching BrainCell assembly,
   shared parameter loading, debug variants, and `run.ipynb` for side-by-side
   simulation.
+- [x] **Direct multi-compartment runtime.** `Cell` owns declaration and runtime
+  state, is initialized with `init_state()`, and advances directly with
+  `run()`. The former `Cell -> RunnableCell` build boundary no longer exists.
+- [x] **Population network runtime.** `braincell.network` owns population
+  registration, event routing, initialization and result aggregation while
+  synapses, connections and recordings remain owned by their target `Cell`.
+- [x] **Trainable parameter mappings.** `braincell.trainable` maps selected
+  channel fields from direct, shared-scale or latent parameter sources into
+  runtime values. Optimizers, losses and training loops remain user-owned.
+- [x] **SWC writing and structural round trips.** `Morphology.to_swc()` writes
+  branch trees through `braincell.io.swc`; focused tests cover shared branch
+  endpoints, soma attachments, reversed branches and validation failures.
 - [x] **NEURON-style ion-current snapshot mode added.** `Cell(...,
   cache_ion_total_current=True)` caches the total ion current at the start of
   the staggered step, before voltage or ion state advances, so current-driven
@@ -86,30 +116,35 @@ This working tree currently has the Cerebellum/PC comparison work in progress:
 
 ## 1. Mission and Scope
 
-BrainCell is a JAX-native library for **biologically detailed single-cell
-modelling**. It targets the same workload as NEURON, Arbor, and BluePyOpt
-but expresses everything as differentiable, vectorized JAX programs so that
-multi-compartment cells can be simulated, batched, and trained inside the
-broader `brain*` ecosystem (`brainstate`, `brainunit`, `brainevent`,
-`braintools`, `brainpy`).
+BrainCell is a JAX-native library for **biologically detailed cell and network
+modelling**. It targets the same workload as NEURON, Arbor, and BluePyOpt but
+expresses models as differentiable, vectorized JAX programs so that
+multi-compartment populations can be simulated, connected, batched, and
+parameterized inside the broader `brain*` ecosystem (`brainstate`,
+`brainunit`, `brainevent`, `braintools`, `brainpy`).
 
-The library owns five concerns end-to-end:
+The library owns seven concerns end-to-end:
 
 1. **Morphology ingestion** — read SWC / ASC / NeuroML2, validate, cache.
 2. **Geometry & discretization** — turn a morphology + a CV policy into
    immutable control-volume (CV) arrays suitable for vectorized solvers.
 3. **Mechanism declaration** — paint cable properties, density mechanisms,
    and ion channels onto regions; place point mechanisms onto locsets.
-4. **Compilation** — lower the declaration into a `HHTypedNeuron` with
-   resolved ion species, channel state, and a DHS-ordered node tree.
+4. **Runtime lowering** — initialize `Cell` with resolved ion species,
+   channel state, point-mechanism storage, and a DHS-ordered node tree.
 5. **Numerical integration** — provide a registry of explicit, implicit,
    exponential, and staggered step functions, including a custom DHS
    voltage solver for branched cables.
+6. **Network execution** — connect event sources to Cell-owned synapses,
+   schedule delayed delivery, and aggregate samples and sparse events.
+7. **Parameterization** — expose selected physical fields through stable,
+   unit-aware trainable parameter mappings.
 
-Out of scope (for this iteration): network simulation, plasticity learning
-rules, NEURON HOC compatibility, GUI tools, and stand-alone NMODL execution
-(the previous `mech/nmodl/` research tree has been removed; NMODL support,
-if it returns, lives behind milestone M5 Phase 4).
+Out of scope (for this iteration): a BrainCell-owned optimizer or Trainer,
+plasticity learning rules, trainable topology, NEURON HOC compatibility, GUI
+tools, and stand-alone NMODL execution. The previous `mech/nmodl/` research
+tree has been removed; if NMODL support returns, it will be a separate codegen
+design targeting the mechanism registry.
 
 ---
 
@@ -137,12 +172,12 @@ if it returns, lives behind milestone M5 Phase 4).
                │ selection                           │ declarations
                ▼                                     ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│   braincell.cv              │           braincell.compute            │
-│   CV · CVPolicy ·           │   NodeTree · NodeScheduling ·        │
-│   PaintRule / PlaceRule     │   CellRuntimeState · assignment table  │
+│ braincell._discretization   │        braincell._compute              │
+│ CV/CVTree · policies      │ layouts · bindings · scheduling  │
+│ geometry · mechanism rules│ CellRuntimeState · bridge · table │
 ├─────────────────────────────┴────────────────────────────────────────┤
 │                braincell._multi_compartment (Cell)                   │
-│    declaration frontend · lazy rebuild · runtime facade              │
+│ declaration + initialized runtime · views · run · recording           │
 └──────────────────────────────┬───────────────────────────────────────┘
                                │ HHTypedNeuron
                                ▼
@@ -176,13 +211,14 @@ if it returns, lives behind milestone M5 Phase 4).
 ```
 
 The directional rule of thumb:
-**`io → morph → {filter, mech} → cv → compute → _multi_compartment → quad`**,
+**`io -> morph -> {filter, mech} -> _discretization -> _compute -> Cell -> quad`**,
 with `ion` / `channel` / `synapse` as peer top-level modules supplying concrete
 mechanism implementations that `mech` wraps into `Density` (`Channel` /
 `Ion`) and `Point` (`CurrentClamp`, `Synapse`, `Junction`, …) declarations
-at paint/place time, `vis` reading anything from `morph` upward, and
-`_base` providing shared abstract types (`HHTypedNeuron`, `IonChannel`,
-`Ion`, `Channel`, `MixIons`) for everything below `Cell`.
+at paint/place time. `network` orchestrates initialized Cells and event
+sources; `trainable` binds parameter sources into Cell-owned runtime fields;
+`vis` reads anything from `morph` upward. Shared runtime bases live in
+`_base_neuron`, `_base_ion`, and `_base_channel`.
 
 ---
 
@@ -262,10 +298,13 @@ internal dependencies · status · open work**.
     `save_morpho` / `load_morpho` and the `.bcm` single-file format.
 - **Status**
   - [x] SWC import + rulebook validation + report.
+  - [x] SWC export through `Morphology.to_swc()` / `swc.write_swc()`,
+    with structural round-trip coverage for branch endpoint duplication,
+    soma interior attachments, reversed branches, and invalid geometry.
   - [~] ASC import: most Neurolucida trees, metadata, and
     `Morphology.from_asc(..., return_report=True)` work; **gaps**:
     spine markers, contour-only somas, and multi-tree files are still
-    handled minimally — see `io/asc/test.py` skips.
+    handled minimally — see `io/asc/reader_test.py` skips.
   - [ ] NeuroML2 import — reader stub exists; needs cell, segment-group,
     biophysics decoding and round-trip tests.
   - [x] NEURON-based diff harness via `examples/neuron_compare/morph/neuron_diff.py`.
@@ -322,13 +361,13 @@ internal dependencies · status · open work**.
     `Morphology` subtree-edit operations.
   - [x] Locset: root, branch points, terminals.
   - [x] Locset: uniform / random sampling driven by a region.
-  - [ ] **Locset: explicit anchors** and **fixed-step sampling** along
-    a region.
+  - [~] **Locset anchors and fixed-step sampling**: `RegionAnchors` and
+    explicit `at(branch, x)` locations are implemented; `StepSamples`
+    remains a reserved expression that raises `NotImplementedError`.
 - **Open risks**
-  - Distance-based filters require a precomputed
-    `path_distance` / `euclidean_distance` array per branch; this needs
-    to live on `MorphoMetric` (or a sibling object) and invalidate
-    cleanly when the `Morphology` is edited.
+  - The reserved distance/radius/subtree expressions must reuse the existing
+    morphology spatial metrics and `SelectionCache`; they must not introduce
+    a second geometry cache with different invalidation semantics.
 
 ### 3.4 `braincell.mech` — mechanism declarations
 
@@ -339,7 +378,7 @@ internal dependencies · status · open work**.
   top-level modules (`braincell.ion`, `braincell.channel`,
   `braincell.synapse`) and register themselves with the
   `MechanismRegistry` at import time via class-level decorators; the
-  runtime lowering in `braincell.compute._runtime` resolves a
+  runtime lowering in `braincell._compute` resolves a
   `Density.class_name` through the registry when it installs channels
   on a cell.
 - **Key files & types**
@@ -425,7 +464,8 @@ internal dependencies · status · open work**.
     the registry to produce the canonical name so aliases continue to
     collapse into one identity. Top-level `braincell.Channel` /
     `braincell.Ion` still point at the runtime base classes from
-    `_base.py`; the declaration-layer classes are reached via
+    `_base_channel.py` / `_base_ion.py`; the declaration-layer classes are
+    reached via
     `braincell.mech.Channel` / `braincell.mech.Ion` to avoid the
     name collision.
   - [x] **Mechanism registry.** `MechanismRegistry` + the
@@ -434,7 +474,8 @@ internal dependencies · status · open work**.
     `braincell.channel`, `braincell.ion`, and `braincell.synapse`
     self-register at import time. `get_registry().get(category,
     class_name)` is the single lookup path used by
-    `compute/_runtime.py` to resolve `Density.class_name` into a
+    `_compute/parameters.py` and `_compute/bindings.py` to resolve
+    `Density.class_name` into a
     runtime class. Channel-to-ion binding is inferred from
     `issubclass(cls.root_type, Sodium / Potassium / Calcium)`, not
     from hardcoded class-name matching. Abstract base classes
@@ -447,21 +488,16 @@ internal dependencies · status · open work**.
     hash-insensitive; `class_name`, `name`, `category`, and
     `coverage_area_fraction` remain position-sensitive.
   - [x] **`coverage_area_fraction` as a first-class field** on
-    `Density`. The old abstraction leak where
-    `cv/_mech._scale_density_for_coverage` smuggled the coverage
-    fraction through `params["coverage_area_fraction"]` and
-    `compute/_runtime._runtime_constructor_params` had to filter it
-    back out is gone.
+    `Density`. The old abstraction leak where coverage was smuggled
+    through ordinary mechanism parameters is gone; `_discretization`
+    and `_compute` preserve it as geometry metadata.
   - [x] **Unified `CurrentClamp`.** One canonical frozen-dataclass
     form `(delay, durations, amplitudes)`. The old
     `CurrentClamp(amplitude=, delay=, duration=)` compatibility form
     is gone; use `CurrentClamp(delay=..., durations=duration, amplitudes=amplitude)`.
-  - [x] **Consumer simplification.** `cv/_mech.py`,
-    `compute/_runtime.py`, `compute/_assignment_table.py` have been
-    rewritten against the new types. `mechanism_signature` collapses
-    to `(type(m).__qualname__, m)` (structural equality does the rest),
-    `_resolve_runtime_channel_spec` is deleted, `mechanism_cell_key`
-    is a straight attribute read.
+  - [x] **Consumer simplification.** `_discretization/mechanism.py` and
+    the `_compute` layout, binding, parameter, and table modules operate
+    directly on the declaration types without a parallel spec hierarchy.
   - [ ] **Parameter-unit validation** — `Params` currently stores
     values untyped. Needs compile-time validation that each value
     carries the brainunit dimension the target channel declares
@@ -497,7 +533,7 @@ internal dependencies · status · open work**.
     `coverage_area_fraction` stay position-sensitive. Do not extend
     the hash-insensitive treatment to other fields without first
     understanding the paint-layout grouping contract in
-    `cv/_mech.py`.
+    `_discretization/mechanism.py`.
   - **Class-level decorator ordering.** Registration is a side
     effect of importing `braincell.channel` / `braincell.ion` /
     `braincell.synapse`. If a user imports `braincell.mech` alone
@@ -506,14 +542,15 @@ internal dependencies · status · open work**.
     already import all three, so normal users never see this.
   - **Ion binding inference** uses
     `issubclass(cls.root_type, Sodium/Potassium/Calcium)` in
-    `compute/_runtime.py`. New ion species must either set
+    `_compute/bindings.py`. New ion species must either set
     `root_type` on their channels or we extend the dispatch to walk
     a lookup table — do not hardcode class-name matching.
-  - **Name collision with `_base.Channel` / `_base.Ion`.** The
+  - **Name collision with runtime `Channel` / `Ion` bases.** The
     declaration-layer `Channel` / `Ion` classes live under
     `braincell.mech`, not at the top level of `braincell`, because
     `braincell.Channel` / `braincell.Ion` already resolve to the
-    runtime base classes from `_base.py`. Tutorials and user code
+    runtime base classes from `_base_channel.py` / `_base_ion.py`.
+    Tutorials and user code
     should use the fully-qualified `braincell.mech.Channel` /
     `braincell.mech.Ion` when declaring mechanisms on a `Cell`.
   - The module is intentionally free of `brainstate` / JAX state —
@@ -527,105 +564,37 @@ internal dependencies · status · open work**.
     local import when a user passes a class object instead of a
     name string.
 
-### 3.5 `braincell.cv` / `braincell.compute` / `_multi_compartment` — declaration, discretization, runtime
+### 3.5 `_discretization` / `_compute` / `_multi_compartment` — Cell runtime
 
-- **Purpose** — the orchestration layer. Three co-operating pieces turn
-  *(Morphology, CVPolicy, paint/place declarations)* into a runnable
-  `HHTypedNeuron`:
-  - `braincell.cv` owns the pure control-volume layer (geometry +
-    mechanism rules + policies).
-  - `braincell.compute` owns the execution-graph / runtime lowering
-    built on top of `cv`.
-  - `braincell._multi_compartment` owns the public `Cell` (mutable
-    declaration) and `RunnableCell` (frozen `HHTypedNeuron` runtime)
-    classes. The split replaces the old monolithic, dirty-flag-driven
-    `Cell` with a one-way pipeline `Cell → RunnableCell` driven by
-    `cell.build()`.
-- **Key files**
-  - `braincell/_multi_compartment/` — package.
-    - `cell.py` — `Cell` declaration frontend (mutable, no JAX state).
-    - `runnable.py` — `RunnableCell(HHTypedNeuron)` frozen runtime.
-    - `build.py` — `cell.build()` lowering pipeline.
-    - `bridge.py` — `cv_to_point` / `point_to_cv` scatter/gather.
-    - `currents.py` — `total_membrane_current` pipeline (bugs #1/#2
-      fixed: external current routed through `sum_current_inputs(init=)`;
-      ambiguous `(n_point,)` total current rejected).
-    - `clamp_table.py` — `ClampActiveTable` precomputed once at build.
-    - `probes.py` — `sample_probe(rcell, ...)` / `sample_probes(rcell)`.
-    - `run.py` — `rcell.run(dt=, duration=)` and the `RunResult`
-      pytree-registered dataclass.
-    - `*_test.py` — one co-located test per source module.
-  - `braincell/cv/_discretization.py` — `CV` dataclass plus `assemble_cv` to
-    materialize the array-of-CVs view.
-  - `braincell/cv/_geo.py` — `build_cv_geo` reduces a `Morphology` +
-    `CVPolicy` into per-CV geometry (length, area, volume, axial
-    conductance, parent index).
-  - `braincell/cv/_mech.py` — `PaintRule`, `PlaceRule`, default rules,
-    normalization, `init_cv_mech`, paint/place application.
-  - `braincell/cv/_policy.py` — `CVPolicy` ABC plus `CVPerBranch`,
-    `MaxCVLen`, `DLambda`, `CVPolicyByTypeRule`, `CompositeByTypePolicy`.
-  - `braincell/_discretization/topology.py` — `NodeTree`, `Node`, `NodeEdge`,
-    `build_node_tree`.
-  - `braincell/_compute/scheduling.py` — `NodeScheduling`,
-    `build_node_scheduling` (DHS grouping for vectorized parent
-    traversal lives here too).
-  - `braincell/compute/_assignment_table.py` — `MechanismObjectCell`,
-    `MechanismObjectTable` keyed by `mechanism_cell_key`.
-  - `braincell/compute/_runtime.py` — `CellRuntimeState`,
-    `install_cell_runtime`, `cv_value_vector`, midpoint scatter/gather
-    utilities. Tests in `_runtime_test.py`.
+- **Purpose** — turn *(Morphology, CVPolicy, paint/place declarations)*
+  into an initialized, directly runnable `Cell(HHTypedNeuron)`:
+  - `braincell._discretization` owns immutable CV geometry, policies,
+    mechanism rules, `CVTree`, and declaration-time `NodeTree` data.
+  - `braincell._compute` owns runtime layouts, bindings, CV/point bridges,
+    scheduling, tables, and `CellRuntimeState`.
+  - `braincell._multi_compartment` owns `Cell`, its spatial and mechanism
+    views, clamps, synapses, probes, and `RunResult`.
 - **Status**
-  - [x] `Cell(morpho, cv_policy)` declaration entry, morphology
-    snapshotting, `paint` / `place` API. `Cell` is pure declaration —
-    no JAX state and no dirty flags; `cell.cvs` / `cell.n_cv` are
-    lazy previews memoized on declaration state.
-  - [x] CV discretization: `CVPolicy` base + concrete policies, CV
-    geometry, axial-resistance partitioning across branch joints.
-  - [x] Mechanism mapping: cable paint, density paint, point place
-    lowered into per-CV records.
-  - [x] NodeTree: compute points, compute edges, attachment handling.
-  - [x] Scheduling: `NodeScheduling` + DHS grouping for the voltage
-    solver.
-  - [x] **Execution layer**: `cell.build()` lowers a declaration into
-    a frozen `RunnableCell(HHTypedNeuron)` via
-    `_multi_compartment/build.py`. The pipeline allocates `V` / `spike`
-    and per-channel / per-ion `DiffEqState`, installs a
-    `CellRuntimeState` with a precomputed `ClampActiveTable`, caches
-    the axial operator, and wires `rcell.run(dt=, duration=)` on top
-    of the `quad/` registry (default `staggered`). Trace recording
-    uses `StateProbe` / `MechanismProbe` / `CurrentProbe` sampled via
-    `rcell.sample_probe(...)` / `rcell.sample_probes()`. Multi-compartment
-    external current is represented by placed point clamps
-    (`CurrentClamp`, `SineClamp`, or `FunctionClamp`) and converted from
-    total current to point current density through the runtime
-    `ClampActiveTable`.
-  - [x] **Ion/channel scheduling controls.** `Cell` now exposes
-    `cache_ion_total_current` and `ion_channel_update_order`. The
-    current-cache path snapshots per-ion total current at the start of
-    the staggered step, before voltage or ion state advances, which is
-    needed for NEURON-compatible current-driven calcium-pool
-    mechanisms. The update-order knob
-    supports `"family"` for NEURON-like ion-family ordering and
-    `"integration"` for the previous integration-grouped behavior.
-  - [x] **Same-name channels on different layouts are preserved.**
-    Runtime channel keys now distinguish layout instances, so painting
-    the same channel class/name onto disjoint regions (for example soma
-    and dendrite) no longer overwrites `Ion.channels`.
-  - [x] **PC MA2024 full-cell comparison scaffold.**
-    `examples/neuron_compare/cell/pc_ma2024` assembles a simplified
-    NEURON PC and a matching BrainCell PC from the same morphology and
-    parameter table. The NEURON side removes manually constructed axon
-    and spine sections so both sides follow the imported ASC/SWC
-    morphology semantics.
+  - [x] `Cell(morpho, pop_size=..., cv_policy=...)`, `paint`, and `place`
+    form the declaration phase; declarations freeze after initialization.
+  - [x] `Cell.init_state()` lowers the declaration and installs runtime
+    state on the same object. `Cell.run(dt=..., duration=...)` advances it
+    directly; there is no public build phase or `RunnableCell`.
+  - [x] CV policies, geometry, axial-resistance partitioning, mechanism
+    lowering, point topology, DHS scheduling, and CV/point conversion.
+  - [x] Homogeneous populations with mandatory population axes and
+    multi-dimensional `pop_size`.
+  - [x] Cell, Channel, Ion, Synapse and Clamp views with Cell-owned
+    connection, recording, and trainable-parameter storage.
+  - [x] Fixed-step clamps retain their exact continuous interval at runtime;
+    density parameters are materialized on CVs rather than non-CV points.
+  - [x] NEURON-compatible ion-current snapshots and selectable
+    `"family"` / `"integration"` ion-channel update ordering.
 - **Open risks**
-  - The `Cell → RunnableCell` arrow is one-way; `RunnableCell` must
-    never mutate or consult the originating `Cell`. Any future
-    convenience that tries to "rebuild in place" would re-introduce
-    the dirty-flag surface that this refactor removed.
-  - The runtime/state shape must remain stable across `jit`
-    re-traces — every change to declared mechanisms on `Cell` is
-    allowed to re-trace, but parameter updates on an existing
-    `RunnableCell` must not.
+  - Declaration shapes and ownership must remain fixed after
+    `init_state()` so JIT state trees and network routing stay stable.
+  - Parameter materialization may change values without changing runtime
+    layout, topology, units, or state shape.
 
 ### 3.6 `braincell.quad` — numerical integrators
 
@@ -867,15 +836,14 @@ internal dependencies · status · open work**.
   top-level module (not under `mech`) because the classes are runtime
   objects with JAX state, not declarations.
 - **Key files & types**
+  - `braincell/ion/_base.py` — reusable `FixedIon`, `InitNernstIon`,
+    `DynamicNernstIon`, and `KineticIon` lifecycle templates.
   - `braincell/ion/sodium.py` — `Sodium` (abstract base with
-    `root_type = HHTypedNeuron`) and `SodiumFixed` (constant `E`, `C`;
-    parameterised via `braintools.init.param`).
+    `root_type = HHTypedNeuron`), `SodiumFixed`, and `SodiumInitNernst`.
   - `braincell/ion/potassium.py` — `Potassium` abstract base and
-    `PotassiumFixed` with a custom `reset_state` that walks attached
-    child `Channel` nodes.
+    fixed and initialized-Nernst variants.
   - `braincell/ion/calcium.py` — `Calcium` base class,
-    `CalciumFixed`, the shared `_CalciumDynamics` parent, and two
-    concrete dynamics models:
+    fixed/initialized-Nernst variants, and two concrete dynamics models:
     - `CalciumDetailed` — Destexhe et al. 1993 thin-shell model with
       tunable `d`, `tau`, `C_rest`, `C0`, `T`.
     - `CalciumFirstOrder` — Bazhenov et al. 1998 first-order pool
@@ -914,20 +882,11 @@ internal dependencies · status · open work**.
     `ChlorideDynamics`) in a new `braincell/ion/chloride.py` plus a
     sibling `chloride_test.py`. Needed for quantitative GABAa
     modelling and developmental E_Cl shifts.
-  - [ ] **`_IonDynamics` shared base** — the current
-    `_CalciumDynamics` in `calcium.py` is already a reusable pattern
-    (DiffEqState concentration + Nernst reversal + forwarded
-    `compute_derivative`). Lift it to a package-private
-    `braincell/ion/_dynamics.py` and have the Na / K / Cl dynamics
-    subclass it with their own valence (`z`) and `derivative`.
-  - [x] **`__init__.py` hygiene** — `braincell/ion/__init__.py` and
-    `braincell/channel/__init__.py` now list every re-export
-    explicitly (27 and 119 names), each guarded by a re-export test.
-    The star imports and the `_sodium_all` / `_potassium_all` /
-    `_calcium_all` indirection are gone, so `from braincell.ion import
-    Calcium` is a single lookup and Sphinx autodoc sees the symbols
-    statically. `F403` / `F405` are no longer silenced in
-    `pyproject.toml`.
+  - [x] **Shared ion lifecycle templates** — package-private `FixedIon`,
+    `InitNernstIon`, `DynamicNernstIon`, and `KineticIon` mixins own the
+    reusable initialization, reversal, and kinetics contracts.
+  - [x] **`__init__.py` hygiene** — ion and channel re-export sets are
+    explicit, deduplicated, and guarded by package-level re-export tests.
   - [x] **Mechanism-registry plumbing** — every concrete `Ion`
     subclass now self-registers via `@register_ion("CalciumFixed")` /
     `@register_ion("CalciumDetailed")` / `@register_ion("CalciumFirstOrder")` /
@@ -944,21 +903,14 @@ internal dependencies · status · open work**.
     `derivative` (the existing `CalciumDetailed.derivative` already
     does; the contract must stay alive across future refactors).
 - **Open risks**
-  - **Nernst unit trap.** `gas_constant * T / (2 * faraday_constant)`
-    only resolves to mV when every factor carries its brainunit
-    quantity. `_CalciumDynamics` caches this factor on `__init__`;
-    any change to how `Ion.__init__` stores parameters must re-check
-    that the cached constant survives `brainstate.graph` pytree
-    flattening.
-  - **`reset_state` asymmetry.** `SodiumFixed.reset_state` inherits
-    from `Ion`, but `PotassiumFixed` / `CalciumFixed` override it
-    with an explicit `check_hierarchies` call and
-    `_CalciumDynamics.reset_state` re-samples `C.value` from the
-    stored initializer. The four flavours must stay in sync or one
-    species silently skips its child-channel resets. Covered by the
-    existing lifecycle tests but worth watching every refactor.
+  - **Nernst unit trap.** Nernst factors resolve correctly only when every
+    term remains a `brainunit` quantity; changes to the shared ion templates
+    must preserve units through graph flattening and materialization.
+  - **Shared lifecycle contracts.** New ion families must use the common
+    template hooks and contract tests so child-channel reset and derivative
+    forwarding cannot diverge by species.
   - **Test-side coupling with `braincell.channel`.** The calcium
-    tests instantiate `ICaT_HM1992` to exercise child-channel
+    tests instantiate `CaT_HM1992` to exercise child-channel
     forwarding, so a heavy top-level import in `braincell.channel`
     would drag through the ion suite. Keep the channel package
     tree-shakable (see §3.9 risks).
@@ -967,59 +919,30 @@ internal dependencies · status · open work**.
 
 - **Purpose** — the library's catalogue of ready-to-use HH-style and
   Markov-kinetics ion channels. Every class is a subclass of
-  `Channel` from `_base.py` (so every instance is an `IonChannel`
+  `Channel` from `_base_channel.py` (so every instance is an `IonChannel`
   that registers its gate state as `DiffEqState`s) and declares
   `root_type = HHTypedNeuron`. Channels are container children of
   an `Ion` species or of a `SingleCompartment` / `Cell` directly.
 - **Key families**
-  - `braincell/channel/sodium.py` — `SodiumChannel` base, the
-    `INa_p3q_markov` template (m³h), concrete models
-    `INa_Ba2002` / `INa_TM1991` / `INa_HH1952`, and the
-    resurgent-Na `INa_Rsg` which opts into `IndependentIntegration`
-    because its Markov state is integrated with its own step inside
-    the staggered solver.
-  - `braincell/channel/potassium.py` — `PotassiumChannel` base, the
-    delayed-rectifier template `IK_p4_markov` with concrete DR
-    models (`IKDR_Ba2002`, `IK_TM1991`, `IK_HH1952`), A-type templates
-    (`IKA_p4q_ss` with `IKA1_HM1992` / `IKA2_HM1992`), a second
-    A-type (`IKK2_pq_ss` with `IKK2A_HM1992` / `IKK2B_HM1992`), the
-    non-inactivating `IKNI_Ya1989`, the potassium leak `IK_Leak`,
-    and a Kv sub-type family (`IKv11_Ak2007`, `IKv34_Ma2020`,
-    `IKv43_Ma2020`, `IKM_Grc_Ma2020`, `IK_Kv_test`).
-  - `braincell/channel/calcium.py` — `CalciumChannel` base, the
-    non-specific `ICaN_IS2008`, the shared `_ICa_p2q_ss` /
-    `_ICa_p2q_markov` templates, T-type models (`ICaT_HM1992`,
-    `ICaT_HP1992`), high-threshold T (`ICaHT_HM1992`,
-    `ICaHT_Re1993`), L-type (`ICaL_IS2008`), and the Ma et al. 2020
-    Cav family (`ICav12_Ma2020`, `ICav13_Ma2020`, `ICav23_Ma2020`,
-    `ICav31_Ma2020`, `ICaGrc_Ma2020`).
+  - `sodium.py` — `Na_Ba2002`, `Na_TM1991`, `Na_HH1952`, persistent,
+    resurgent, and cell-specific Nav families.
+  - `potassium.py` — delayed rectifier, A-type, inward rectifier, Kv,
+    and M-current families such as `KDR_Ba2002`, `K_HH1952`, and the
+    MA2020/MA2024 cell-specific variants.
+  - `calcium.py` — T/L/HVA/LVA and Cav families, including frozen-gradient
+    variants used by controlled NEURON comparisons.
   - `braincell/channel/leaky.py` — `LeakageChannel` base and the
-    passive leak `IL` (`g_L (E_L − V)`).
-  - `braincell/channel/hyperpolarization_activated.py` —
-    `Ih_HM1992` plus the Ma 2020 pair (`Ih1_Ma2020`, `Ih2_Ma2020`).
-  - `braincell/channel/potassium_calcium.py` — `KCaChannel` base,
-    calcium-activated afterhyperpolarization `IAHP_De1994`, and the
-    SK / IK / BK-type models from Ma et al. 2020 (`IKca3_1_Ma2020`,
-    `IKca2_2_Ma2020`, `IKca1_1_Ma2020`). These consume an `IonInfo`
-    from the attached calcium ion alongside the membrane voltage.
+    passive leak `IL`.
+  - `hyperpolarization_activated.py`, `potassium_calcium.py`, and
+    `potassium_sodium.py` — HCN and mixed-ion channel families.
 - **Status**
-  - [x] ~30 concrete channel classes across six families, named by
-    the convention `I<species><mechanism>_<Author><Year>`, all
-    documented with NumPy-doc docstrings.
-  - [x] Co-located unit tests (~170 across `sodium_test.py`,
-    `potassium_test.py`, `calcium_test.py`, `leaky_test.py`,
-    `hyperpolarization_activated_test.py`,
-    `potassium_calcium_test.py`) covering steady-state gates at
-    reference voltages, current sign / shape, and `reset_state`
-    idempotency.
-  - [x] **Mechanism-registry plumbing** — every concrete `Channel`
-    subclass (~40 classes across the six channel submodules) now
-    self-registers via `@register_channel("INa_Ba2002")` at import
-    time, with optional aliases (`IL` exposes `"leaky"`). The
-    `(category="channel", class_name="...")` lookup in §3.4 resolves
-    through `get_registry()`. Abstract bases (`SodiumChannel`,
-    `PotassiumChannel`, `CalciumChannel`, `LeakageChannel`,
-    `KCaChannel`) are deliberately not decorated.
+  - [x] Concrete channel families use current-free mechanism names such as
+    `Na_HH1952`, `K_HH1952`, `CaT_HM1992`, and `HCN_HM1992`; the removed
+    leading-`I` compatibility aliases are not public API.
+  - [x] Co-located tests cover kinetics, current sign and shape, lifecycle,
+    template invariants, and representative reference voltages.
+  - [x] Concrete classes self-register with the mechanism registry at import
+    time; abstract family bases are deliberately not registered.
   - [x] **PC MA2024 channel set imported.** Sodium, potassium,
     calcium, calcium-activated potassium, and HCN PC variants have been
     added and covered by targeted tests. The calcium channel set also
@@ -1033,15 +956,13 @@ internal dependencies · status · open work**.
     than an opaque JAX trace failure. Store the per-parameter unit
     on `MechanismEntry.metadata` and consult it during
     `Density.__init__`.
-  - [ ] **GHK current formulation** — calcium channels currently
-    compute `I = g_max * p^a * q^b * (E − V)` with a Nernst-derived
-    `E`. Add an opt-in GHK (Goldman–Hodgkin–Katz) formulation as a
-    mixin so Cav channels can switch to the thermodynamically more
-    accurate form without duplicating gate state.
-  - [ ] **Q10 temperature scaling audit** — a handful of channels
-    (e.g., `IKA_p4q_ss`) already apply a Q10 factor while others do
-    not. Normalise temperature handling via a shared helper in
-    `_base.py` and document the default Q10 per family.
+  - [~] **GHK current formulation** — `GhkHH` and `ghk_flux` are implemented,
+    tested, and used by selected Cav channels; the remaining work is a
+    catalogue-wide audit of which published mechanisms require GHK rather
+    than an ohmic driving force.
+  - [~] **Q10 temperature scaling audit** — shared `q10_factor` and
+    `cached_q10_factor` helpers exist and most gates use the template path;
+    remaining family-specific temperature assumptions need documentation.
   - [ ] **NEURON `.mod` validation** — for every channel in the
     catalogue, compare voltage-clamp and current-clamp traces
     against the reference `.mod` implementation within a tight
@@ -1050,11 +971,9 @@ internal dependencies · status · open work**.
   - [ ] **Chloride channels** — add a `braincell/channel/chloride.py`
     module once `braincell.ion.Chloride` lands, covering the passive
     leak plus GABAa-reversal-driven phasic conductance.
-  - [ ] **Stiff-channel integrator audit** — `INa_Rsg` already opts
-    out of the default exponential-Euler path via
-    `IndependentIntegration`. Run the M7 convergence matrix over
-    every channel to confirm none of the others silently need the
-    same escape hatch.
+  - [ ] **Stiff-channel integrator audit** — run the convergence matrix
+    over every channel to identify models that require a dedicated
+    integration path.
   - [ ] **Gate-variable naming convention** — most channels use
     `p`/`q` for activation / inactivation and a handful use bespoke
     names (`m`, `h`, `n`, `s`, …). Tests already rely on the
@@ -1071,25 +990,55 @@ internal dependencies · status · open work**.
     that the parent `Cell` actually has a calcium ion attached would
     prevent silent `KeyError` / `AttributeError` at simulate time;
     this belongs on the mechanism registry in §3.4.
-  - **API drift vs NEURON naming.** Upstream `.mod` files use
-    lowercase suffixes (`ih`, `ik`, `ikdr`); BrainCell uses
-    `I<Species><Mechanism>_<Author><Year>`. Any validation harness
+  - **API drift vs NEURON naming.** Upstream `.mod` files use lowercase
+    suffixes (`ih`, `ik`, `ikdr`), while BrainCell names mechanisms by
+    family/model and provenance. Any validation harness
     needs a stable alias table so the diff does not become a
     renaming exercise every time a new channel lands.
 
 ### 3.10 `braincell` package root — neuron base classes
 
-- `_base.py` — `HHTypedNeuron`, `IonChannel`, `Ion`, `IonInfo`,
-  `Channel`, `MixIons`, `mix_ions`. These are the abstract building
-  blocks every concrete cell composes.
-- `_single_compartment.py` — `SingleCompartment`, the simplest
-  concrete neuron, used as a sanity surface and example.
-- `_multi_compartment/` — `Cell` (mutable declaration) and
-  `RunnableCell` (frozen `HHTypedNeuron` runtime produced by
-  `cell.build()`), composed with `cv` + `compute` (see §3.5).
+- `_base_neuron.py`, `_base_ion.py`, and `_base_channel.py` define the
+  runtime bases composed by concrete neurons and mechanisms.
+- `_single_compartment/` owns `SingleCompartment`, the simplest concrete
+  neuron and a numerical sanity surface.
+- `_multi_compartment/` owns the directly initialized and executed `Cell`,
+  its views, point-mechanism stores, probes, and `RunResult` (see §3.5).
 - `_misc.py` — `normalize_param` (the brainunit gatekeeper), helpers,
   decorators (`set_module_as`, `deprecation_getattr`), `Container`.
 - `_typing.py` — type aliases (`Initializer`, `ArrayLike`, `T`, `DT`).
+
+### 3.11 `braincell.network` — population and event runtime
+
+- **Purpose** — register Cells and event sources, connect source outputs to
+  Cell-owned synapses, coordinate lifecycle and delayed delivery, and
+  aggregate immutable sample and sparse-event results.
+- **Status**
+  - [x] Direct `Network`, `Population`, `NetworkConnections`, and
+    `NetworkResult` model with no separate public build phase.
+  - [x] Named connection calls, explicit or sampled endpoint pairing,
+    heterogeneous delays, split runs, reset semantics, and cached schedules.
+  - [x] Static recording schemas with regular `SampleBlock` outputs and
+    sparse `EventSeries` outputs.
+  - [ ] Chunked large-N pairing, automatic sparse/dense delay queues,
+    post-initialization topology mutation, and network batch runtime.
+- **Design authority** — [`network/design-overview.md`](network/design-overview.md)
+  and its linked API, architecture, issues, and implementation documents.
+
+### 3.12 `braincell.trainable` — parameter ownership and mapping
+
+- **Purpose** — bind optimizer-facing parameter roots to selected physical
+  runtime fields while preserving units, sharing semantics, and stable JAX
+  state trees. It does not own optimizers, losses, datasets, or training loops.
+- **Status**
+  - [x] `ParameterSource`, `ParameterBinding`, `ParameterSet`, and
+    `TrainableManager`, plus direct, shared-scale, and callable latent sources.
+  - [x] Cell-local ChannelView mappings for the initial supported channel
+    families, with transactional validation and differentiable materialization.
+  - [ ] Ion, Synapse and Connection parameters, Network aggregation, and
+    broader parameter families.
+- **Design authority** — [`optim/design-overview.md`](optim/design-overview.md)
+  and its linked API, architecture, implementation plan, and references.
 
 ---
 
@@ -1109,41 +1058,38 @@ numerics with `TypeError`**. New modules must:
 
 - `Branch`, `CV`, `MorphoEdge`, `MorphoMetric`, `IntegratorEntry`,
   `PaintRule`, `PlaceRule`, `CableProperty` are frozen dataclasses.
-- `Morphology` is mutable but `Cell` always works on a `clone()` of the
-  morphology it was given. Tree-edit operations (planned in §3.1) must
-  preserve this so that `Cell` rebuild flags can stay correct.
+- `Morphology` is mutable and carries a monotonic `revision`. Before
+  initialization, `Cell` keys its discretization cache by morphology identity
+  and revision; structural mutation after initialization must not silently
+  reshape runtime state.
 - `IntegratorRegistry` is the single mutable global; entries are
   added at import time via decorators and never mutated afterwards.
 
-### 4.3 Cell → RunnableCell
+### 4.3 Cell declaration and initialization
 
-`Cell` is intentionally cheap to construct and mutate, and owns
-**no** JAX state. All runtime state is produced by `cell.build()`,
-which returns a frozen `RunnableCell`. The expected sequence is:
+`Cell` owns both its mutable declaration and, after initialization, its JAX
+runtime state. Structural declarations are accepted only before
+`init_state()`:
 
 ```
-Cell(morpho, policy)                        # declaration only
-  → cell.paint(region, density_mech)        # cheap, mutates declaration
-  → cell.place(locset, point_mech)          # cheap, mutates declaration
-  → rcell = cell.build()                    # lower into frozen RunnableCell
-  → rcell.run(dt=..., duration=...)         # JIT and step (returns RunResult)
+Cell(morpho, policy)
+  -> cell.paint(region, density_mech)
+  -> cell.place(locset, point_mech)
+  -> cell.init_state()
+  -> cell.run(dt=..., duration=...)         # returns RunResult
 ```
 
-Calling `cell.build()` twice produces two independent runnables. The
-`Cell` remains safe to mutate afterwards; the `RunnableCell` never
-consults or mutates the originating `Cell`. Execution-layer work must
-preserve this one-way arrow — no dirty-flag state machine, no
-in-place "rebuild on next use".
+After initialization, topology-changing paint/place/connect/recording calls
+are rejected. Parameter mappings may materialize new values into the existing
+layout, but must not change the state-tree structure. `reset_state()` resets
+runtime values without reopening the declaration phase.
 
 ### 4.4 Testing
 
 - pytest with `unittest.TestCase`; tests live next to source as
   `<module>_test.py`, with no exceptions. The `*` must name a real
-  sibling module — the one sanctioned exception is a package-scope guard
-  in `<package>/__init___test.py`. The former `io/swc/test.py` and
-  `io/asc/test.py` matched neither default pytest discovery pattern and
-  were silently never collected; they are now `io/swc/reader_test.py`
-  and `io/asc/reader_test.py`.
+  sibling module; the one sanctioned exception is a package-scope guard
+  in `<package>/__init___test.py`.
 - `conftest.py` forces `JAX_PLATFORMS=cpu` and `MPLBACKEND=Agg`.
 - IO test fixtures live in `examples/multi_compartment/morpho_files/`.
 - New code is expected to ship with co-located tests and to keep
@@ -1164,19 +1110,21 @@ in-place "rebuild on next use".
 
 | Layer | Type | Mutability | Lifetime | Owner |
 |---|---|---|---|---|
-| Geometry | `Branch`, `Soma`, `Dendrite`, ... | frozen | per-build | user / IO reader |
+| Geometry | `Branch`, `Soma`, `Dendrite`, ... | frozen | morphology lifetime | user / IO reader |
 | Geometry | `Morphology` | mutable tree | until edited | user |
 | Geometry view | `MorphoBranch`, `MorphoEdge` | frozen view | follows tree | `Morphology` |
 | Metrics | `MorphoMetric` | frozen snapshot | recomputed on demand | `Morphology` |
 | Selection | `RegionExpr`, `LocsetExpr` | frozen expression | reusable | user |
 | Selection cache | `SelectionCache` | mutable | per-Morphology | filter layer |
 | Mechanisms | `CableProperty`, `Density` (`Channel`, `Ion`), `Point*` (`CurrentClamp`, `Synapse`, `Junction`, …) | frozen dataclass / slots | declaration | user |
-| Mechanisms | `Ion`, `Channel`, `IonChannel`, `MixIons` | hybrid (JAX state) | per-runnable | `RunnableCell` |
-| Discretization | `CV` | frozen | built at `cell.build()` | `Cell` (preview) / `RunnableCell` |
+| Mechanisms | `Ion`, `Channel`, `IonChannel`, `MixIons` | hybrid (JAX state) | per-initialized Cell | `Cell` |
+| Discretization | `CV` | frozen | declaration cache / initialization | `Cell` |
 | Discretization | `PaintRule`, `PlaceRule` | frozen | declaration | `Cell` |
-| Topology | `NodeTree`, `Node`, `NodeEdge` | frozen | built at `cell.build()` | `RunnableCell` |
-| Scheduling | `NodeScheduling` | frozen | built at `cell.build()` | `RunnableCell` |
-| Runtime | `CellRuntimeState`, `ClampActiveTable` | brainstate-managed | per-step | `RunnableCell` |
+| Topology | `CVTree`, `NodeTree`, `Node`, `NodeEdge` | frozen | declaration cache / initialization | `Cell` |
+| Scheduling | `NodeScheduling` | frozen | initialized runtime | `Cell` |
+| Runtime | `CellRuntimeState` and mechanism stores | brainstate-managed | initialized runtime | `Cell` |
+| Network | `Population`, connection/recording stores | mixed | network lifecycle | source / target owner |
+| Parameters | `ParameterSet`, `ParameterBinding` | stable structure, mutable values | training lifecycle | `TrainableManager` |
 | Numerics | `IntegratorEntry` | frozen | process lifetime | `IntegratorRegistry` |
 | Numerics | `DiffEqState`, `IndependentIntegration` | brainstate-managed | per-step | step function |
 
@@ -1192,7 +1140,8 @@ internal and may change without deprecation.
   `branch_class_for_type`, `Morphology`, `MorphoBranch`, `MorphoEdge`,
   `MorphoMetric`. The `Morphology` class also exposes the
   `from_swc` / `from_asc` / `from_neuromorpho` classmethod constructors.
-- **External-data entry points** (top-level re-exports): `load_neuromorpho`.
+- **External-data entry points**: `braincell.io.load_neuromorpho` and
+  `Morphology.from_neuromorpho`.
   Tier-2 / Tier-3 NeuroMorpho.Org symbols (`NeuroMorphoClient`,
   `NeuroMorphoCache`, `NeuroMorphoQuery`, `NeuroMorphoMeasurement`,
   `NeuroMorphoError`, …) live under `braincell.io.neuromorpho` and
@@ -1210,17 +1159,25 @@ internal and may change without deprecation.
 - **Ion species** (`braincell.ion`): `Sodium`, `SodiumFixed`,
   `Potassium`, `PotassiumFixed`, `Calcium`, `CalciumFixed`,
   `CalciumDetailed`, `CalciumFirstOrder`.
-- **Ion channels** (`braincell.channel`): every `I<Species>*`
-  concrete class exported from the six channel submodules (sodium,
-  potassium, calcium, leaky, hyperpolarization_activated,
-  potassium_calcium). Base classes (`SodiumChannel`,
-  `PotassiumChannel`, `CalciumChannel`, `LeakageChannel`,
-  `KCaChannel`) are public for subclassing.
+- **Ion channels** (`braincell.channel`): concrete Na, K, Ca, leak, HCN,
+  calcium-activated potassium, and mixed-ion families exported by the
+  channel package, plus their documented template bases.
 - **Synapses** (`braincell.synapse`): `ExpSyn`, `Exp2Syn` from
   `synapse.exponential`.
-- **Cell layer**: `Cell`, `RunnableCell`, `RunResult`, `CV`, `CVPolicy`,
-  `CVPerBranch`, `MaxCVLen`, `DLambda`, `CVPolicyByTypeRule`,
-  `CompositeByTypePolicy`, `NodeTree`, `NodeScheduling`.
+- **Cell and discretization layer**: `Cell`, `MultiCompartment`, `CellView`,
+  `ChannelView`, `IonView`, `SynapseView`, `ClampView`, `RunResult`, `CV`,
+  `CVTree`, `CVPolicy`, `CVPerBranch`, `CVPerBranchList`, `MaxCVLen`,
+  `DLambda`, `CVPolicyByTypeRule`, `CompositeByTypePolicy`, `Node`,
+  `NodeTree`, and `PointPlacement`. Internal runtime and scheduling records
+  are not part of the top-level contract.
+- **Network layer**: `Network`, `NetworkResult`, `NetworkConnections`,
+  `ConnectionView`, event-source and event-table types, recording schemas,
+  `SampleBlock`, `EventSeries`, `connect`, and `observe`. The deliberately
+  small `braincell.network.__all__` is separate from top-level convenience
+  exports; specialized constructors remain available from their submodules.
+- **Trainable parameter layer** (`braincell.trainable`):
+  `ParameterSource`, `ParameterBinding`, `ParameterSet`, `TrainableManager`,
+  `parameter`, `parameterized`, and `scale`.
 - **Numerics layer**: `register_integrator`, `get_integrator`,
   `get_registry`, `IntegratorEntry`, `IntegratorRegistry`,
   `all_integrators`, every `*_step` function listed in
@@ -1245,8 +1202,8 @@ import brainunit as u
 morpho, report = braincell.Morphology.from_swc("cell.swc", return_report=True)
 print(morpho.topo())
 print(morpho.metric)                  # MorphoMetric snapshot
-soma_region   = braincell.RegionExpr.by_type("soma")
-distal_region = braincell.RegionExpr.branch_range(50 * u.um, None)
+soma_region = braincell.filter.branch_in("type", {"soma"})
+distal_region = braincell.filter.branch_range("length", (50 * u.um, None))
 ```
 
 ### 7.2 Discretize and declare mechanisms
@@ -1257,7 +1214,7 @@ import braincell.mech as mech
 cell = braincell.Cell(morpho, cv_policy=braincell.DLambda(0.1))
 
 cell.paint(
-  braincell.RegionExpr.everywhere(),
+  braincell.filter.AllRegion(),
   mech.CableProperty(
     membrane_capacitance=1.0 * (u.uF / u.cm ** 2),
     axial_resistivity=100.0 * (u.ohm * u.cm),
@@ -1267,27 +1224,25 @@ cell.paint(
 cell.paint(soma_region, mech.Ion("SodiumFixed"))
 # mech.Channel / mech.Ion accept either a registry name string or the
 # concrete class itself — both route through the mechanism registry.
-cell.paint(soma_region, mech.Channel(braincell.channel.INa_Ba2002, g_max=0.12 * u.S / u.cm ** 2))
+cell.paint(soma_region, mech.Channel(braincell.channel.Na_Ba2002, g_max=0.12 * u.S / u.cm ** 2))
 cell.place(
-    braincell.LocsetExpr.root(),
+    braincell.filter.at("soma", 0.5),
     mech.CurrentClamp(delay=10 * u.ms, durations=50 * u.ms, amplitudes=0.2 * u.nA),
 )
-cell.place(braincell.LocsetExpr.terminals(), mech.ProbeMechanism("v"))
+cell.place(braincell.filter.at("soma", 0.5), mech.StateProbe(name="soma_v"))
 ```
 
 ### 7.3 Run a simulation
 
 ```python
-rcell = cell.build()                 # frozen RunnableCell(HHTypedNeuron)
-result = rcell.run(dt=0.025 * u.ms,
-                   duration=100 * u.ms)
-braincell.vis.plot2d(rcell, values=result.traces["soma(0.5)_v"][-1])
+cell.init_state()
+result = cell.run(dt=0.025 * u.ms, duration=100 * u.ms)
+print(result.traces["soma_v"].shape)
 ```
 
-`cell.build()` lowers the declaration into a frozen `RunnableCell` —
-all subsequent runtime inspection (`rcell.layouts`,
-`rcell.node_tree()`, `rcell.sample_probes()`, `rcell.current_time`,
-`rcell.get_state(...)`) lives on the runnable, not on `Cell`.
+`cell.init_state()` freezes structural declarations and installs runtime state
+on the same `Cell`. Subsequent runtime inspection, reset, recording, and
+continued runs use that initialized object.
 
 ### 7.4 Compare two morphologies visually
 
@@ -1304,7 +1259,7 @@ braincell.vis.compare2d(morpho_a, morpho_b, layout="frustum")
 | `python` | 3.11 | language; classifiers claim 3.11–3.14 (see note) |
 | `jax` | recent | autodiff, vmap, jit, GPU/TPU — deliberately unpinned |
 | `brainunit` | >= 0.0.8 | units (mandatory at every API boundary) |
-| `brainstate` | >= 0.2.9 | stateful simulation framework |
+| `brainstate` | >= 0.5.4 | stateful simulation framework |
 | `brainevent` | >= 0.0.7 | sparse event / CSR ops |
 | `braintools` | >= 0.1.0 | brain modeling utilities |
 | `brainpy` | >= 2.7.5 | brain dynamics library |
@@ -1318,14 +1273,10 @@ This table and `[project].dependencies` in `pyproject.toml` are kept in
 sync; `pyproject.toml` is the machine-readable source of truth, and the
 `requirements*.txt` files are thin pointers to its extras.
 
-Two floors were reconciled when the table and the packaging metadata were
-merged. `brainstate` moved from `>= 0.2.0` to `>= 0.2.9`, the stricter of
-the two values that were previously in conflict, because that is what CI
-has actually been installing and testing. `numpy` moved from `>= 1.15` to
-`>= 2.0`; note that this is a support-policy decision rather than a
-technical requirement — no numpy-1.x-removed API is used anywhere in the
-package, so the floor reflects what is tested, not what is strictly
-needed.
+`pyproject.toml` is the source of truth for dependency floors. In particular,
+`brainstate>=0.5.4` is required for current JAX compatibility and
+`numpy>=2.0` reflects the tested support policy. Experimental dependencies in
+an uncommitted worktree are not part of this table.
 
 Optional dependencies must be **lazily imported** so the base install
 stays small — use `importlib.util.find_spec` plus PEP 562

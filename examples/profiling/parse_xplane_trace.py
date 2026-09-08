@@ -64,6 +64,27 @@ class ScopeSummary:
 
 
 @dataclass(frozen=True)
+class KernelSummary:
+    """Aggregated GPU events for one kernel/HLO/launch-geometry tuple."""
+
+    name: str
+    hlo_op: str | None
+    calls: int
+    total_ps: int
+    grid: str | None = None
+    block: str | None = None
+    occ_pct_sum: float = 0.0
+    occ_pct_count: int = 0
+
+    @property
+    def mean_occ_pct(self) -> float | None:
+        """Return mean occupancy percentage parsed from kernel metadata."""
+        if self.occ_pct_count == 0:
+            return None
+        return self.occ_pct_sum / self.occ_pct_count
+
+
+@dataclass(frozen=True)
 class TraceSummary:
     """Aggregated BrainCell GPU trace attribution."""
 
@@ -75,6 +96,7 @@ class TraceSummary:
     matched_gpu_events: int
     matched_gpu_time_ps: int
     scopes: tuple[ScopeSummary, ...]
+    kernels: tuple[KernelSummary, ...]
 
 
 @dataclass(frozen=True)
@@ -142,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
         device_filter=args.device_filter,
     )
     _print_summary(summary, limit=args.limit)
+    if args.kernel_table:
+        _print_kernel_table(summary, limit=args.limit)
     dhs_levels = None
     if args.dhs_level_table:
         dhs_levels = summarize_dhs_level_scopes(
@@ -152,9 +176,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.out:
         out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(
-            json.dumps(_summary_to_json(summary, dhs_levels=dhs_levels), indent=2) + "\n"
-        )
+        out_path.write_text(json.dumps(_summary_to_json(summary, dhs_levels=dhs_levels), indent=2) + "\n")
         print(f"\nWrote {out_path}")
     return 0
 
@@ -208,10 +230,10 @@ def summarize_xplane(
     scope_block: dict[str, str] = {}
     scope_occ_sum: dict[str, float] = defaultdict(float)
     scope_occ_count: dict[str, int] = defaultdict(int)
-    scope_grid: dict[str, str] = {}
-    scope_block: dict[str, str] = {}
-    scope_occ_sum: dict[str, float] = defaultdict(float)
-    scope_occ_count: dict[str, int] = defaultdict(int)
+    kernel_calls: dict[tuple[str, str | None, str | None, str | None], int] = defaultdict(int)
+    kernel_time: dict[tuple[str, str | None, str | None, str | None], int] = defaultdict(int)
+    kernel_occ_sum: dict[tuple[str, str | None, str | None, str | None], float] = defaultdict(float)
+    kernel_occ_count: dict[tuple[str, str | None, str | None, str | None], int] = defaultdict(int)
     matched_events = 0
     matched_time = 0
     total_events = 0
@@ -226,13 +248,26 @@ def summarize_xplane(
         device_planes.append(plane.name)
         stat_names = {key: value.name for key, value in plane.stat_metadata.items()}
         ref_names = {key: value.name for key, value in plane.stat_metadata.items()}
-        name_stat_ids = {
-            key for key, name in stat_names.items() if name in {"name", "hlo_op"}
-        }
+        event_names = {key: value.name for key, value in plane.event_metadata.items()}
+        name_stat_ids = {key for key, name in stat_names.items() if name in {"name", "hlo_op"}}
         for line in plane.lines:
             for event in line.events:
                 total_events += 1
                 total_time += int(event.duration_ps)
+                details = _parse_kernel_details(_event_kernel_details(event))
+                kernel_name = event_names.get(event.metadata_id, f"metadata:{event.metadata_id}")
+                hlo_op = _protobuf_event_hlo_op(event, stat_names=stat_names, ref_names=ref_names)
+                kernel_key = (
+                    kernel_name,
+                    hlo_op,
+                    _optional_string(details.get("grid")),
+                    _optional_string(details.get("block")),
+                )
+                kernel_calls[kernel_key] += 1
+                kernel_time[kernel_key] += int(event.duration_ps)
+                if details.get("occ_pct") is not None:
+                    kernel_occ_sum[kernel_key] += float(details["occ_pct"])
+                    kernel_occ_count[kernel_key] += 1
                 scopes = _event_scopes(
                     event,
                     name_stat_ids=name_stat_ids,
@@ -245,7 +280,6 @@ def summarize_xplane(
                 duration_ps = int(event.duration_ps)
                 matched_events += 1
                 matched_time += duration_ps
-                details = _parse_kernel_details(_event_kernel_details(event))
                 for scope in attributed:
                     scope_calls[scope] += 1
                     scope_time[scope] += duration_ps
@@ -281,6 +315,12 @@ def summarize_xplane(
         matched_gpu_events=matched_events,
         matched_gpu_time_ps=matched_time,
         scopes=scopes,
+        kernels=_kernel_summaries(
+            kernel_calls,
+            kernel_time,
+            kernel_occ_sum,
+            kernel_occ_count,
+        ),
     )
 
 
@@ -418,8 +458,7 @@ def _summarize_xplane_trace_viewer_json(
         from xprof.convert import raw_to_tool_data
     except Exception as exc:  # pragma: no cover - depends on local install
         raise RuntimeError(
-            "Parsing XPlane traces requires either TensorFlow's XPlane "
-            "protobuf module or xprof."
+            "Parsing XPlane traces requires either TensorFlow's XPlane protobuf module or xprof."
         ) from exc
 
     data, _content_type = raw_to_tool_data.xspace_to_tool_data(
@@ -460,6 +499,10 @@ def _summarize_trace_viewer_events(
     scope_block: dict[str, str] = {}
     scope_occ_sum: dict[str, float] = defaultdict(float)
     scope_occ_count: dict[str, int] = defaultdict(int)
+    kernel_calls: dict[tuple[str, str | None, str | None, str | None], int] = defaultdict(int)
+    kernel_time: dict[tuple[str, str | None, str | None, str | None], int] = defaultdict(int)
+    kernel_occ_sum: dict[tuple[str, str | None, str | None, str | None], float] = defaultdict(float)
+    kernel_occ_count: dict[tuple[str, str | None, str | None, str | None], int] = defaultdict(int)
     matched_events = 0
     matched_time = 0
     total_events = 0
@@ -479,6 +522,19 @@ def _summarize_trace_viewer_events(
         duration_ps = int(round(float(event.get("dur", 0.0)) * PS_PER_US))
         total_events += 1
         total_time += duration_ps
+        details = _parse_kernel_details(_event_kernel_details(event))
+        event_args = event.get("args", {})
+        kernel_key = (
+            str(event.get("name", "<unknown>")),
+            _optional_string(event_args.get("hlo_op") or event_args.get("name")),
+            _optional_string(details.get("grid")),
+            _optional_string(details.get("block")),
+        )
+        kernel_calls[kernel_key] += 1
+        kernel_time[kernel_key] += duration_ps
+        if details.get("occ_pct") is not None:
+            kernel_occ_sum[kernel_key] += float(details["occ_pct"])
+            kernel_occ_count[kernel_key] += 1
         scopes = _trace_viewer_event_scopes(
             event,
             scope_prefix=scope_prefix,
@@ -491,7 +547,6 @@ def _summarize_trace_viewer_events(
         attributed = scopes[-1:] if mode == "leaf" else scopes
         matched_events += 1
         matched_time += duration_ps
-        details = _parse_kernel_details(_event_kernel_details(event))
         for scope in attributed:
             scope_calls[scope] += 1
             scope_time[scope] += duration_ps
@@ -527,7 +582,51 @@ def _summarize_trace_viewer_events(
         matched_gpu_events=matched_events,
         matched_gpu_time_ps=matched_time,
         scopes=scopes,
+        kernels=_kernel_summaries(
+            kernel_calls,
+            kernel_time,
+            kernel_occ_sum,
+            kernel_occ_count,
+        ),
     )
+
+
+def _kernel_summaries(calls, total_time, occ_sum, occ_count) -> tuple[KernelSummary, ...]:
+    rows = []
+    for (name, hlo_op, grid, block), count in calls.items():
+        key = (name, hlo_op, grid, block)
+        rows.append(
+            KernelSummary(
+                name=name,
+                hlo_op=hlo_op,
+                calls=count,
+                total_ps=total_time[key],
+                grid=grid,
+                block=block,
+                occ_pct_sum=occ_sum[key],
+                occ_pct_count=occ_count[key],
+            )
+        )
+    return tuple(sorted(rows, key=lambda row: (-row.total_ps, row.name, row.hlo_op or "")))
+
+
+def _protobuf_event_hlo_op(event, *, stat_names: dict[int, str], ref_names: dict[int, str]) -> str | None:
+    fallback = None
+    for stat in event.stats:
+        name = stat_names.get(stat.metadata_id)
+        if name not in {"hlo_op", "name"}:
+            continue
+        value = _stat_string(stat, ref_names)
+        if not value:
+            continue
+        if name == "hlo_op":
+            return value
+        fallback = value
+    return fallback
+
+
+def _optional_string(value) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 def _trace_viewer_event_scopes(
@@ -598,24 +697,33 @@ def _print_summary(summary: TraceSummary, *, limit: int) -> None:
     print(f"total_gpu_time_ms: {summary.total_gpu_time_ps / PS_PER_MS:.6f}")
     print(f"matched_gpu_events: {summary.matched_gpu_events}")
     print(f"matched_gpu_time_ms: {summary.matched_gpu_time_ps / PS_PER_MS:.6f}")
-    print(
-        "\n"
-        f"{'scope':<64} {'calls':>10} {'total_ms':>12} "
-        f"{'mean_us':>12} {'percent':>9}"
-    )
+    print(f"\n{'scope':<64} {'calls':>10} {'total_ms':>12} {'mean_us':>12} {'percent':>9}")
     print("-" * 112)
     rows = summary.scopes if limit <= 0 else summary.scopes[:limit]
     for row in rows:
         total_ms = row.total_ps / PS_PER_MS
         mean_us = row.total_ps / row.calls / PS_PER_US if row.calls else 0.0
-        percent = (
-            row.total_ps / summary.matched_gpu_time_ps * 100.0
-            if summary.matched_gpu_time_ps
-            else 0.0
-        )
+        percent = row.total_ps / summary.matched_gpu_time_ps * 100.0 if summary.matched_gpu_time_ps else 0.0
+        print(f"{row.scope:<64} {row.calls:>10} {total_ms:>12.6f} {mean_us:>12.3f} {percent:>8.2f}%")
+
+
+def _print_kernel_table(summary: TraceSummary, *, limit: int) -> None:
+    print(
+        "\n"
+        f"{'kernel':<36} {'calls':>8} {'total_ms':>12} {'mean_us':>12} "
+        f"{'pct':>8} {'occ%':>8} {'grid':>12} {'block':>12} {'hlo_op':<48}"
+    )
+    print("-" * 168)
+    rows = summary.kernels if limit <= 0 else summary.kernels[:limit]
+    for row in rows:
+        mean_us = row.total_ps / row.calls / PS_PER_US if row.calls else 0.0
+        percent = row.total_ps / summary.total_gpu_time_ps * 100.0 if summary.total_gpu_time_ps else 0.0
+        occ_text = f"{row.mean_occ_pct:.2f}" if row.mean_occ_pct is not None else "<none>"
         print(
-            f"{row.scope:<64} {row.calls:>10} {total_ms:>12.6f} "
-            f"{mean_us:>12.3f} {percent:>8.2f}%"
+            f"{row.name[:36]:<36} {row.calls:>8} {row.total_ps / PS_PER_MS:>12.6f} "
+            f"{mean_us:>12.3f} {percent:>7.2f}% {occ_text:>8} "
+            f"{(row.grid or '<none>'):>12} {(row.block or '<none>'):>12} "
+            f"{(row.hlo_op or '<none>')[:48]:<48}"
         )
 
 
@@ -635,17 +743,9 @@ def _print_dhs_level_table(
     print("-" * 120)
     for row in rows:
         total_ms = row.total_ps / PS_PER_MS
-        percent = (
-            row.total_ps / summary.matched_gpu_time_ps * 100.0
-            if summary.matched_gpu_time_ps
-            else 0.0
-        )
+        percent = row.total_ps / summary.matched_gpu_time_ps * 100.0 if summary.matched_gpu_time_ps else 0.0
         work_items = row.work_items
-        us_per_work = (
-            row.total_ps / PS_PER_US / work_items
-            if work_items
-            else 0.0
-        )
+        us_per_work = row.total_ps / PS_PER_US / work_items if work_items else 0.0
         work_text = str(work_items) if work_items is not None else "<unknown>"
         occ_text = f"{row.occ_pct:.2f}" if row.occ_pct is not None else "<none>"
         print(
@@ -668,15 +768,8 @@ def _print_dhs_phase_summary(
     for phase in phases:
         phase_rows = [row for row in rows if row.phase == phase]
         total_ps = sum(row.total_ps for row in phase_rows)
-        percent = (
-            total_ps / summary.matched_gpu_time_ps * 100.0
-            if summary.matched_gpu_time_ps
-            else 0.0
-        )
-        print(
-            f"{phase:<10} {len(phase_rows):>8} "
-            f"{total_ps / PS_PER_MS:>12.6f} {percent:>7.2f}%"
-        )
+        percent = total_ps / summary.matched_gpu_time_ps * 100.0 if summary.matched_gpu_time_ps else 0.0
+        print(f"{phase:<10} {len(phase_rows):>8} {total_ps / PS_PER_MS:>12.6f} {percent:>7.2f}%")
 
 
 def _summary_to_json(
@@ -697,19 +790,31 @@ def _summary_to_json(
                 "scope": row.scope,
                 "calls": row.calls,
                 "total_ms": row.total_ps / PS_PER_MS,
-                "mean_us": row.total_ps / row.calls / PS_PER_US
-                if row.calls
-                else 0.0,
+                "mean_us": row.total_ps / row.calls / PS_PER_US if row.calls else 0.0,
                 "grid": row.grid,
                 "block": row.block,
                 "occ_pct": row.mean_occ_pct,
                 "percent_of_matched": (
-                    row.total_ps / summary.matched_gpu_time_ps * 100.0
-                    if summary.matched_gpu_time_ps
-                    else 0.0
+                    row.total_ps / summary.matched_gpu_time_ps * 100.0 if summary.matched_gpu_time_ps else 0.0
                 ),
             }
             for row in summary.scopes
+        ],
+        "kernels": [
+            {
+                "name": row.name,
+                "hlo_op": row.hlo_op,
+                "calls": row.calls,
+                "total_ms": row.total_ps / PS_PER_MS,
+                "mean_us": row.total_ps / row.calls / PS_PER_US if row.calls else 0.0,
+                "grid": row.grid,
+                "block": row.block,
+                "occ_pct": row.mean_occ_pct,
+                "percent_of_gpu_time": (
+                    row.total_ps / summary.total_gpu_time_ps * 100.0 if summary.total_gpu_time_ps else 0.0
+                ),
+            }
+            for row in summary.kernels
         ],
         "dhs_levels": [
             {
@@ -724,15 +829,9 @@ def _summary_to_json(
                 "block": row.block,
                 "occ_pct": row.occ_pct,
                 "percent_of_matched": (
-                    row.total_ps / summary.matched_gpu_time_ps * 100.0
-                    if summary.matched_gpu_time_ps
-                    else 0.0
+                    row.total_ps / summary.matched_gpu_time_ps * 100.0 if summary.matched_gpu_time_ps else 0.0
                 ),
-                "us_per_work_item": (
-                    row.total_ps / PS_PER_US / row.work_items
-                    if row.work_items
-                    else None
-                ),
+                "us_per_work_item": (row.total_ps / PS_PER_US / row.work_items if row.work_items else None),
             }
             for row in (dhs_levels or ())
         ],
@@ -752,6 +851,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--device-filter", default="/device:GPU:")
     parser.add_argument("--limit", type=int, default=40)
     parser.add_argument(
+        "--kernel-table",
+        action="store_true",
+        help="Print GPU kernels grouped by HLO operation and launch geometry.",
+    )
+    parser.add_argument(
         "--dhs-level-table",
         action="store_true",
         help="Print a level-wise table for braincell:dhs_toy scopes.",
@@ -770,7 +874,7 @@ def _import_xplane_pb2():
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
     try:
         from tensorflow.tsl.profiler.protobuf import xplane_pb2
-    except Exception as exc:  # pragma: no cover - depends on local install
+    except Exception:  # pragma: no cover - depends on local install
         return None
     return xplane_pb2
 

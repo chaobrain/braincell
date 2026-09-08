@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Field declarations for vectorized runtime synapse models."""
+"""Field declarations shared by vectorized runtime mechanisms."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ import numpy as np
 __all__ = ["ParameterSpec", "StateSpec", "positive"]
 
 Validator = Callable[[object, str], None]
+_OWNER_MANAGED = object()
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,7 @@ class ParameterSpec:
     validator: Validator | None = None
 
     def validate(self, value: object, name: str) -> None:
+        """Validate one resolved parameter value against this declaration."""
         _validate_like_default(value, self.default, name=name)
         if self.validator is not None:
             self.validator(value, name)
@@ -43,37 +45,52 @@ class ParameterSpec:
 
 @dataclass(frozen=True)
 class StateSpec:
-    """Declare one vectorized differential state and its reset value."""
+    """Declare one differential state and its optional generic initial value."""
 
-    initial: object
+    initial: object = _OWNER_MANAGED
+
+    @property
+    def owner_managed(self) -> bool:
+        """Whether the mechanism implements initialization itself."""
+        return self.initial is _OWNER_MANAGED
 
     def validate(self, value: object, name: str) -> None:
+        """Validate a state value when this declaration owns initialization."""
+        if self.owner_managed:
+            return
         _validate_like_default(value, self.initial, name=name)
 
 
 def positive(value: object, name: str) -> None:
     """Require every canonical value to be finite and strictly positive."""
-    if np.any(np.asarray(u.get_mantissa(value)) <= 0.0):
-        raise ValueError(f"Synapse parameter {name!r} must be > 0.")
+    decimal = _decimal(value)
+    if np.any(decimal <= 0.0):
+        raise ValueError(f"Mechanism parameter {name!r} must be > 0.")
 
 
 def _validate_like_default(value: object, default: object, *, name: str) -> None:
     if isinstance(default, u.Quantity):
         if not isinstance(value, u.Quantity):
-            raise TypeError(f"Synapse field {name!r} requires a quantity compatible with {default.unit}.")
+            raise TypeError(f"Mechanism field {name!r} requires a quantity compatible with {default.unit}.")
         try:
             decimal = np.asarray(value.to_decimal(default.unit))
         except Exception as exc:
-            raise ValueError(f"Synapse field {name!r} has units incompatible with {default.unit}.") from exc
+            raise ValueError(f"Mechanism field {name!r} has units incompatible with {default.unit}.") from exc
     else:
         if isinstance(value, u.Quantity):
-            raise TypeError(f"Synapse field {name!r} must be dimensionless.")
+            raise TypeError(f"Mechanism field {name!r} must be dimensionless.")
         decimal = np.asarray(value)
     if decimal.size == 0:
-        raise ValueError(f"Synapse field {name!r} cannot be empty.")
+        raise ValueError(f"Mechanism field {name!r} cannot be empty.")
     try:
         finite = np.isfinite(decimal)
     except TypeError as exc:
-        raise TypeError(f"Synapse field {name!r} must be numeric.") from exc
+        raise TypeError(f"Mechanism field {name!r} must be numeric.") from exc
     if not np.all(finite):
-        raise ValueError(f"Synapse field {name!r} must contain only finite values.")
+        raise ValueError(f"Mechanism field {name!r} must contain only finite values.")
+
+
+def _decimal(value: object) -> np.ndarray:
+    if isinstance(value, u.Quantity):
+        return np.asarray(value.to_decimal(value.unit))
+    return np.asarray(value)

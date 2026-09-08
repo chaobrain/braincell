@@ -43,16 +43,16 @@ on a 3-point soma with HH channels:
 
 ```
 Cell(pop_size=4) varshape=(4, 1)
-  V                          (4, 1)     <- CV space   (n_cv)
-  ion_channels/na/…/na/p     (4, 3)     <- point space (n_point)
-  ion_channels/na/…/na/q     (4, 3)
-  ion_channels/k/…/k/p       (4, 3)
+  V                          (4, 1)     <- CV space (n_cv)
+  ion_channels/na/…/na/p     (4, 1)     <- density CV space (n_cv)
+  ion_channels/na/…/na/q     (4, 1)
+  ion_channels/k/…/k/p       (4, 1)
 ```
 
-`V` lives in **CV space** (`n_cv`) while gates live in **point space**
-(`n_point`). Both trailing axes are spatial, so both are correct group
-axes — they just have different lengths, which is fine because each state
-groups independently.
+`V` and painted density gates now both live in **CV space** (`n_cv`). Placed
+synapse state uses its sparse point-layout row count. Every trailing axis is
+still a group axis, but DHS boundary/junction rows are algebraic workspace and
+do not become hidden channel state.
 
 `spike` and `_current_time_state` are `ShortTermState` and stay unchanged;
 the requirement is about hidden states.

@@ -297,10 +297,8 @@ def attach_runtime_ion_geometry(
     *,
     ions: dict[str, object],
     cvs: tuple[object, ...],
-    point_ids: np.ndarray,
-    n_point: int,
 ) -> None:
-    """Attach point-space geometry arrays to runtime ion containers.
+    """Attach CV-space geometry arrays to runtime ion containers.
 
     Parameters
     ----------
@@ -308,36 +306,25 @@ def attach_runtime_ion_geometry(
         Runtime ion containers.
     cvs : tuple
         Control-volume declarations.
-    point_ids : ndarray
-        Midpoint point ids for each CV.
-    n_point : int
-        Total number of point-space rows.
-
     Notes
     -----
-    Geometry is first assembled in one-cell point space, then broadcast
-    to ``ion.varshape[:-1] + (n_point,)`` so homogeneous population
+    Geometry is assembled in CV order, then broadcast to
+    ``ion.varshape[:-1] + (n_cv,)`` so homogeneous population
     ions receive the same geometry at every population index.
     """
-    point_geometry = {
-        attr_name: scatter_cv_geometry(
-            cvs=cvs,
-            attr_name=attr_name,
-            point_ids=point_ids,
-            n_point=n_point,
-        )
-        for attr_name in _ION_GEOMETRY_ATTRS
+    cv_geometry = {
+        attr_name: quantity_vector([getattr(cv, attr_name) for cv in cvs]) for attr_name in _ION_GEOMETRY_ATTRS
     }
     for ion in ions.values():
         pop_size = tuple(getattr(ion, "varshape", ())[:-1])
-        point_shape = pop_size + (n_point,)
-        for attr_name, value in point_geometry.items():
+        cv_shape = pop_size + (len(cvs),)
+        for attr_name, value in cv_geometry.items():
             setattr(
                 ion,
                 attr_name,
                 broadcast_to_shape(
                     value,
-                    point_shape,
+                    cv_shape,
                     name=f"ion.{attr_name}",
                 ),
             )

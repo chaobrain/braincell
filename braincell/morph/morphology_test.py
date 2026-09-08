@@ -16,6 +16,7 @@
 
 from dataclasses import is_dataclass
 import unittest
+from unittest.mock import patch
 import warnings
 
 import brainunit as u
@@ -37,6 +38,16 @@ from braincell.morph._testing import (
 
 
 class MorphoTest(unittest.TestCase):
+    def test_to_swc_delegates_to_swc_writer(self) -> None:
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        tree = Morphology.from_root(soma, name="soma")
+
+        with patch("braincell.io.swc.writer.write_swc", return_value="written.swc") as writer:
+            result = tree.to_swc("cell.swc")
+
+        self.assertEqual(result, "written.swc")
+        writer.assert_called_once_with(tree, "cell.swc")
+
     def test_tree_topology_queries_and_branch_views(self) -> None:
         soma = make_soma()
         dend = Branch.from_lengths(

@@ -852,6 +852,8 @@ point mechanism，也不改变 runtime layout。
 | `observe.ion(species=None, type=None, name=None)` | `species`、`type`、`name` 或全部 Ion owners | 每个匹配 Ion owner 和 `(population, CV)` 一行。 |
 | `observe.synapse(type=None, name=None, ids=None)` | `type`、`name`、stable IDs 或全部 Synapse | 每个匹配 stable Synapse ID 一行。 |
 | `observe.membrane_current()` | 当前空间 scope | 每个 `(population, CV)` 的总膜电流密度一行。 |
+| `observe.clamp_current(reduce="sum")` | 当前空间 scope | 每个 `(population, CV)` 的外部 clamp 电流合计。 |
+| `observe.clamp_current(reduce="none")` | 当前空间 scope | 每个匹配 clamp placement 一行。 |
 
 Channel、Ion 和 Synapse builder 提供：
 
@@ -863,6 +865,21 @@ Channel、Ion 和 Synapse builder 提供：
 
 Connection 的 `weight` 和 `delay` 是静态 routing 参数，应通过 `ConnectionView` 查询，不属于 recording
 observable。
+
+### `ClampView`
+
+`cell.clamps` 返回所有逻辑电流 clamp 的稳定 view。Clamp 没有 semantic name，字符串下标按类型选择；
+类型筛选可继续使用普通位置索引：
+
+```python
+dc = cell.clamps["CurrentClamp"]
+second_dc = dc[1]
+cell.clamps.by_type(braincell.CurrentClamp).record("dc_inputs")
+```
+
+记录结果位于 `result.samples["dc_inputs"]`；每个 logical clamp 对应一列，不跨位置求和。该
+`SampleBlock.time` 是实际刺激求值时间 `step_start + 0.5 * dt`。Solver 在整个主步内消费与 recording
+相同的缓存值，包括 Runge-Kutta 的所有局部阶段。
 
 ```python
 cell[[0, 2]].dendrite.cv[1:].record(

@@ -27,7 +27,7 @@ from braincell.quad.protocol import (
     hidden_state,
     state_grouping,
 )
-from . import quad, mech, channel, synapse, ion, filter, morph
+from . import quad, mech, channel, synapse, ion, filter, morph, trainable
 from ._base_channel import (
     Channel,
     IonInfo,
@@ -58,6 +58,7 @@ from ._multi_compartment import (
     Cell,
     CellView,
     ChannelView,
+    ClampView,
     IonView,
     MultiCompartment,
     RunResult,
@@ -121,6 +122,7 @@ __all__ = [
     "CellView",
     "Channel",
     "ChannelView",
+    "ClampView",
     "CompositeByTypePolicy",
     "ConnectionView",
     "CurrentClamp",
@@ -181,5 +183,6 @@ __all__ = [
     "state",
     "state_grouping",
     "synapse",
+    "trainable",
     "vis",
 ]

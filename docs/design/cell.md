@@ -259,25 +259,26 @@
 - `braincell.mech.Channel("IL")` 与 `braincell.mech.Channel("Na_HH1952")` 已能创建真实 runtime channel，并绑定到默认 `na/k/ca`
 - `Cell` 已可直接查询 `layouts/get_state/get_point_state/get_cv_state/get_runtime_node/get_ion`
 - `Cell.V` 的公开尺寸现在固定为 `pop_size + (n_cv,)`；`pop_size` 默认 `(1,)` 且不允许为空
-- runtime channel / ion 仍按 `node_tree` 的 `n_point = n_cv + n_branch + 1` 创建，公开尺寸为 `pop_size + (n_point,)`
+- painted density channel / ion 按 CV dense axis 创建，公开尺寸为 `pop_size + (n_cv,)`；
+  `node_tree.n_point` 仅用于 DHS algebraic workspace 和 sparse point mechanisms
 - `Cell` 的全部 hidden state 都是 `brainstate.HiddenGroupState`（`V` 为 `braincell.DiffEqGroupState`），
-  尾轴即 compartment/point 轴；`SingleCompartment` 无空间轴，仍用普通 `DiffEqSingleState`。
+  尾轴即 CV 或 sparse point-layout row；`SingleCompartment` 无空间轴，仍用普通 `DiffEqSingleState`。
   参见 `docs/specs/2026-08-13-cell-hidden-group-state.md`
 - `braincell.quad._staggered.dhs_voltage_step()` 已改为从 `node_tree` 中的调度视图提取树结构
 - `Cell(solver="staggered")` 已可直接走新的 node-tree DHS 电压求解
 
 ### 当前约束
 
-- `density_mech` 当前仍先映射到 `cv_to_mid_node_id`
+- `density_mech` runtime 直接使用 CV domain；需要 node visualization 时才映射到 `cv_to_mid_node_id`
 - 默认离子先固定为全局 `na/k/ca`
 - `dense/sparse` 自动阈值切换接口已保留，但阈值策略尚未实装
-- solver 内部会把 `n_cv` 的 `V` scatter 到 `n_point`，只在 midpoint row 写入/读回
+- DHS solver 会把 CV coefficient/RHS 装配到 `n_point` tree rows，只在 midpoint row 写入/读回
 - 当前 buffer 以 bridge view 为主，参数/状态先用 object array 承载，不做真实数值积分
 
 ### 下一步
 
 - 已接入 `braincell.mech.Channel("IL", ...)` 这类简短 spec，`Cell.paint(...)` 可直接接受，旧 `DensityMechanism` 仍兼容
-- 已打通 `Channel("IL", ...) -> CellRuntimeState.runtime_nodes -> braincell.channel.IL(size=(n_point,))`
+- 已打通 `Channel("IL", ...) -> CellRuntimeState.runtime_nodes -> braincell.channel.IL(size=(n_cv,))`
 - 当前 `set_state(layout_id, var_name, value)` 会同步更新 bridge buffer 和已注册的 `IL` runtime node 参数
 - 已增加默认全局固定 ion 容器：`runtime.ions["na" | "k" | "ca"]`
 - 已打通 `Channel("Na_HH1952", ...) -> runtime.get_runtime_node(layout_id) -> runtime.get_ion("na").channels["Na"]`

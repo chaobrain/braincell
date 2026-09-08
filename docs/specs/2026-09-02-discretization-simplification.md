@@ -46,7 +46,7 @@ Every claim below was re-verified independently of the review that raised it.
 ### 1. `locate_node_on_branch` is a dead subsystem, and it is the only reason a per-branch array is built
 
 `git grep locate_node_on_branch` over **all tracked files** returns its own
-`def` (`node_build.py:288`), its `__all__` entry, `TODO.md:568`, and three lines
+`def` (`node_build.py:288`), its `__all__` entry, `docs/design/TODO.md`, and three lines
 of `docs/design/module-dependency-map.md`. No code caller, no test.
 
 It is also the only reader of `NodeTree.branch_endpoint_node_id`: that field is

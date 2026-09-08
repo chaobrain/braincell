@@ -17,8 +17,8 @@ common entry points are the ``Morphology.from_*`` constructors.
      - Loader
      - Notes
    * - :doc:`SWC <swc>`
-     - ``Morphology.from_swc``
-     - the de-facto standard; simple point + parent table
+     - ``Morphology.from_swc`` / ``Morphology.to_swc``
+     - the de-facto standard; read or write a point + parent table
    * - :doc:`Neurolucida ASC <asc>`
      - ``Morphology.from_asc``
      - MicroBrightField / Neurolucida ASCII

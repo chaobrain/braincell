@@ -210,6 +210,32 @@ python examples/profiling/profile_simulation.py \
 Host memory uses `tracemalloc` by default.  If `psutil` is installed, RSS is
 reported as well.  No extra dependency is required for basic timing.
 
+## Nsight Systems Capture Range
+
+Use `--cuda-profiler-range` with the Nsight Systems CUDA profiler API capture
+range when a full JAX trace is unnecessary or too large. The range brackets
+only steady runs, after workload creation and warmup:
+
+```bash
+nsys profile \
+  --trace=cuda,nvtx \
+  --sample=none \
+  --cpuctxsw=none \
+  --capture-range=cudaProfilerApi \
+  --capture-range-end=stop \
+  -o /tmp/braincell-neuron-compare \
+  python examples/profiling/profile_simulation.py \
+    --case neuron_compare_cell \
+    --platform cuda \
+    --cell pc_ma2024 \
+    --population-size 32 \
+    --duration-ms 10 \
+    --dt-ms 0.01 \
+    --warmup 1 \
+    --repeat 1 \
+    --cuda-profiler-range
+```
+
 ## Notes
 
 - The tool profiles the BrainCell/JAX path only; it does not run NEURON

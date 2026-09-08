@@ -31,7 +31,7 @@ You can help by:
 
 If you are planning a larger change, open an issue first so the scope and API impact can be discussed before implementation.
 
-`TODO.md` is the project design document. It tracks the architectural intent and the current implementation state of every subsystem, using `[x]` shipped / `[~]` partial / `[ ]` planned markers. Read the relevant section before starting substantial work, and update it when your change moves a subsystem forward.
+`docs/design/TODO.md` is the project design document. It tracks the architectural intent and the current implementation state of every subsystem, using `[x]` shipped / `[~]` partial / `[ ]` planned markers. Read the relevant section before starting substantial work, and update it when your change moves a subsystem forward.
 
 ## Development setup
 
@@ -176,7 +176,7 @@ Before opening a pull request:
 1. make sure your branch is based on the latest target branch state
 2. run `pre-commit run --all-files`
 3. run the relevant tests locally
-4. update documentation, examples, `TODO.md`, or `changelog.md` if your change is user-facing
+4. update documentation, examples, `docs/design/TODO.md`, or `changelog.md` if your change is user-facing
 5. review the pull request template in `.github/PULL_REQUEST_TEMPLATE.md`
 
 When opening a pull request, include:

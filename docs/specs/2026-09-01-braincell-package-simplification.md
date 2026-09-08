@@ -73,7 +73,7 @@ The registry drops from 25 canonical-plus-alias names to 19. Every
 place that listed them was updated: `docs/apis/integration.rst`,
 `docs/concepts/integration.ipynb`, `docs/integration/solvers.ipynb`,
 `docs/integration/overview.ipynb`, `examples/multi_compartment/quad.ipynb`,
-`docs/design/interface-map.md`, and `TODO.md`. The notebooks are
+`docs/design/interface-map.md`, and `docs/design/TODO.md`. The notebooks are
 published with `nb_execution_mode = "off"`, so their *stored outputs*
 are what readers see — the registry-listing cells were re-executed
 against this branch rather than left showing solvers that no longer

@@ -180,7 +180,7 @@ Stated here rather than left implicit:
 - **`docs/specs/` was not rewritten.** Earlier specs name files this change
   renamed, but a dated spec is a record of what was done at the time. Falsifying
   it to match today's tree would destroy the thing that makes the directory
-  useful. Only living documentation — `AGENTS.md`, `CONTRIBUTING.md`, `TODO.md`,
+  useful. Only living documentation — `AGENTS.md`, `CONTRIBUTING.md`, `docs/design/TODO.md`,
   `docs/design/`, `pyproject.toml` — was updated.
 
 ## Defects surfaced, not introduced
@@ -209,7 +209,7 @@ Stated here rather than left implicit:
 - `CONTRIBUTING.md` — both single-test example commands.
 - `docs/design/io-swc-reader-invariants.md` — the "tests to re-run" lists, which
   also still named `_discretization/lower_test.py` (long since `base_test.py`).
-- `TODO.md` — the `vis/` module inventory and the M6 Phase 4 status entries.
+- `docs/design/TODO.md` — the `vis/` module inventory and the M6 Phase 4 status entries.
 - `pyproject.toml` — the `python_files` comment.
 
 ## Verification

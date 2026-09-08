@@ -33,7 +33,7 @@ rasterization and matplotlib version. CI runs a Linux/macOS/Windows matrix; base
 generated on one machine at `tolerance=25` RMS would fail on the other two the moment
 `--mpl` was switched on. Reinstating real pixel regression needs committed baselines *plus*
 a Linux-only job pinned to a known matplotlib — a larger piece of work with ongoing
-regeneration cost. That option is recorded in `TODO.md` rather than half-done here.
+regeneration cost. That option is recorded in `docs/design/TODO.md` rather than half-done here.
 
 ### What was actually done
 
@@ -152,7 +152,7 @@ Skips in `braincell/vis/` drop from 15 to 3; the survivors are plotly and pyvist
 - **`vis/scene.py`'s dataclass field defaults remain partly unexecuted**, which is expected —
   they are data declarations, not logic.
 - **Pixel regression is gone, not replaced.** If it is wanted back, it needs committed
-  baselines and a `--mpl` CI job; see `TODO.md`.
+  baselines and a `--mpl` CI job; see `docs/design/TODO.md`.
 
 Per the convention this repository now follows, the previous spec is a dated record and was
 not edited.
@@ -167,7 +167,7 @@ Two things this document under-reported, added here rather than left to be redis
   hypothesis, pyvista, and plotly instead of pytest-mpl). Both follow from the pytest-mpl
   removal above and are correct; neither spec said so.
 - **The missing-baseline finding no longer has an in-code home.** It was originally written
-  into `image_comparison()`'s docstring, and that function was deleted here. `TODO.md` and
+  into `image_comparison()`'s docstring, and that function was deleted here. `docs/design/TODO.md` and
   these specs are now the only record that `braincell/vis/_baseline_images/` never existed.
 
 The follow-up work from that review is in `docs/specs/2026-08-19-code-review-followups.md`.

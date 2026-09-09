@@ -33,9 +33,9 @@ import numpy as np
 import brainunit as u
 
 from braincell._typing import ArrayLike, Size
-from braincell._parameter_schema import RuntimeParameterState
+from braincell._parameter_schema import RuntimeParameterState, constructor_parameters
 from ._misc import TreeNode
-from .mech import NoEventInput, ParameterSpec, StateSpec
+from .mech import NoEventInput, StateSpec
 from .quad.protocol import DiffEqModule, DiffEqSingleState, IndependentIntegration
 
 __all__ = ["IonChannel", "IonInfo", "Channel", "Synapse"]
@@ -337,7 +337,6 @@ class Channel(IonChannel):
 
     __module__ = 'braincell'
 
-    parameters: Mapping[str, ParameterSpec] = {}
     states: Mapping[str, StateSpec] = {}
 
     def __getattribute__(self, name: str):
@@ -355,8 +354,8 @@ class Channel(IonChannel):
 class Synapse(IonChannel):
     """Base class for vectorized runtime point-synapse mechanisms.
 
-    Subclasses declare physical parameters and differential states through
-    explicit schemas; any further public value is a plain property, resolved
+    Subclasses declare physical parameters in their constructors and states
+    through explicit schemas; any further public value is a property, resolved
     by name at the call site. ``current()`` always returns an inward-positive
     total point current. Discrete input is passed directly to
     :meth:`apply_events`; event buffers are owned by runtime routing.
@@ -364,25 +363,56 @@ class Synapse(IonChannel):
 
     __module__ = 'braincell'
 
-    parameters: Mapping[str, ParameterSpec] = {}
     states: Mapping[str, StateSpec] = {}
     event_input = NoEventInput()
 
-    def __init__(self, size: Size, name: Optional[str] = None, **parameters):
+    def __init__(self, size: Size, name: Optional[str] = None):
         super().__init__(size=size, name=name)
-        unknown = tuple(sorted(set(parameters).difference(self.parameters)))
-        if unknown:
-            raise TypeError(f"Unknown {type(self).__name__} parameters: {unknown!r}.")
-        for field, spec in self.parameters.items():
-            value = parameters.get(field, spec.default)
+        if getattr(type(self), "parameters", None):
+            raise TypeError("Synapse.parameters is retired; declare parameters in an explicit __init__ signature.")
+
+    def __getattribute__(self, name):
+        value = super().__getattribute__(name)
+        return value.dense_value() if isinstance(value, RuntimeParameterState) else value
+
+    def __setattr__(self, name, value):
+        current = vars(self).get(name)
+        if isinstance(current, RuntimeParameterState) and not isinstance(value, RuntimeParameterState):
+            current.value = value
+            return
+        super().__setattr__(name, value)
+
+    @classmethod
+    def parameter_info(cls):
+        """Return physical field metadata inferred from the constructor.
+
+        Returns
+        -------
+        dict
+            Parameter names mapped to default-value and unit metadata.
+        """
+        from braincell._parameter_schema import SignatureParameterSpec
+
+        return {
+            name: SignatureParameterSpec(param.default)
+            for name, param in constructor_parameters(cls).items()
+            if name not in {"size", "name"}
+        }
+
+    def _init_parameters(self, **parameters):
+        schema = self.parameter_info()
+        for field, value in parameters.items():
             value = braintools.init.param(value, self.varshape, allow_none=False)
-            spec.validate(value, field)
+            schema[field].validate(value, field)
             setattr(self, field, value)
-        self.validate_parameters()
+        # A parent constructor can initialize its fields before a subclass adds
+        # its own signature fields with another _init_parameters() call.
+        if all(hasattr(self, field) for field in schema):
+            self.validate_parameters()
 
     def validate_parameters(self) -> None:
         """Validate relations involving more than one parameter."""
-        self.validate_parameter_values({field: getattr(self, field) for field in self.parameters})
+        self.validate_parameter_values({field: getattr(self, field) for field in self.parameter_info()})
 
     @classmethod
     def validate_parameter_values(cls, parameters: Mapping[str, object]) -> None:

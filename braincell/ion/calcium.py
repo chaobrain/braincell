@@ -3779,7 +3779,7 @@ class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
     ):
         super().__init__(size, name=name, **channels)
         if Ci_initializer is None:
-            Ci_initializer = braintools.init.Constant(caiBase)
+            Ci_initializer = lambda shape: u.math.broadcast_to(self.caiBase, shape)
         self._init_dynamic_nernst_ion(
             Co=Co,
             temp=temp,
@@ -3948,7 +3948,7 @@ class CdpLVA_SU2015_DCN(Calcium, DynamicNernstIon):
     ):
         super().__init__(size, name=name, **channels)
         if Ci_initializer is None:
-            Ci_initializer = braintools.init.Constant(caliBase)
+            Ci_initializer = lambda shape: u.math.broadcast_to(self.caliBase, shape)
         self._init_dynamic_nernst_ion(
             Co=Co,
             temp=temp,

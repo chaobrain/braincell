@@ -50,6 +50,11 @@ class _CellStateObservable:
 
 
 @dataclass(frozen=True)
+class _OutputObservable:
+    name: str
+
+
+@dataclass(frozen=True)
 class _MechanismStateObservable:
     category: str
     selector: tuple[str, object] | None
@@ -102,6 +107,11 @@ class _ObserveNamespace:
         """Observe a Cell state field such as membrane voltage ``v``."""
         _require_name(field, "state field")
         return _CellStateObservable(field)
+
+    def output(self, name: str):
+        """Observe one selected model output after each model update."""
+        _require_name(name, "output name")
+        return _OutputObservable(name)
 
     def channel(self, *, type: str | None = None, name: str | None = None):
         """Select density channels by one explicit type or name."""
@@ -184,9 +194,9 @@ class RecordingRow:
     """Static metadata for one column in a SampleBlock."""
 
     population_index: int
-    cv_id: int
-    point_id: int
-    branch_id: int
+    cv_id: int | None
+    point_id: int | None
+    branch_id: int | None
     field: str
     unit: object | None
     mechanism_category: str | None = None
@@ -197,6 +207,8 @@ class RecordingRow:
     placement_id: int | None = None
     clamp_ids: tuple[int, ...] = ()
     contributor_ids: tuple[int, ...] = ()
+    output_name: str | None = None
+    output_index: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -316,7 +328,8 @@ def compile_recording(cell, spec: RecordingSpec, *, dt):
         schedule_start=spec.start,
         time_offset=(0.5 * dt if isinstance(spec.observable, _ClampCurrentObservable) else 0.0 * u.ms),
     )
-    return _CompiledRecording(spec=spec, schema=schema, sample=sampler)
+    phase = "post" if isinstance(spec.observable, _OutputObservable) else "pre"
+    return _CompiledRecording(spec=spec, schema=schema, sample=sampler, phase=phase)
 
 
 @dataclass(frozen=True)
@@ -324,10 +337,46 @@ class _CompiledRecording:
     spec: RecordingSpec
     schema: RecordingSchema
     sample: object = field(compare=False, repr=False)
+    phase: str = "pre"
+
+
+def recording_is_active(cell, spec: RecordingSpec) -> bool:
+    """Return whether a declaration belongs to the currently selected model."""
+    if isinstance(spec.observable, _OutputObservable):
+        return spec.observable.name in cell.outputs
+    return not cell._uses_reduction
 
 
 def _observable_rows_and_sampler(cell, spec: RecordingSpec):
     observable = spec.observable
+    if isinstance(observable, _OutputObservable):
+        if spec.scope.spatially_restricted:
+            raise ValueError("observe.output(...) only supports Cell or population-only CellView scopes.")
+        value = cell.outputs[observable.name]
+        runtime_prefix_rank = len(cell.pop_size) + (1 if cell._runtime_batch_size is not None else 0)
+        feature_shape = tuple(value.shape[runtime_prefix_rank:])
+        rows = tuple(
+            RecordingRow(
+                population_index=int(population_index),
+                cv_id=None,
+                point_id=None,
+                branch_id=None,
+                field=observable.name,
+                unit=None,
+                output_name=observable.name,
+                output_index=tuple(int(item) for item in feature_index),
+            )
+            for population_index in spec.scope.population_indices
+            for feature_index in np.ndindex(feature_shape)
+        )
+
+        def sample():
+            selected = cell._selected_outputs(spec.scope.population_indices)[observable.name]
+            batch_prefix = (selected.shape[0],) if cell._runtime_batch_size is not None else ()
+            return u.math.reshape(selected, batch_prefix + (len(rows),))
+
+        return rows, sample
+
     if isinstance(observable, _CellStateObservable):
         if observable.field != "v":
             raise KeyError(f"Cell state {observable.field!r} is not recordable in v1.")

@@ -27,7 +27,9 @@ extensions/cmake-build-debug
 BrainPyExamples/
 BrainModels/
 book/
-docs/examples
+# Maintained examples are source; only their generated outputs are ignored.
+/docs/examples/**/generated/
+/docs/examples/**/artifacts/
 docs/apis/jaxsetting.rst
 docs/quickstart/data
 examples/recurrent_neural_network/neurogym

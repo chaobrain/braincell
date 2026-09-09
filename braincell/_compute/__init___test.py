@@ -472,7 +472,7 @@ class AcyclicTest(unittest.TestCase):
             "__init__": set(),
             "bindings": {"ions", "layouts", "parameters"},
             "bridge": set(),
-            "ions": {"layouts"},
+            "ions": {"layouts", "parameters"},
             "layouts": {"parameters"},
             "parameters": set(),
             "scheduling": set(),

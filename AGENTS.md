@@ -11,12 +11,7 @@ Biologically detailed brain cell modeling in BrainX.
 5. Every correction: reflect on the mistake, plan to avoid repeating it.
 6. All updates must be happened on the worktree branch, not main.
 7. Use `brainstate.random` instead of `jax.random` directly for all random number generation.
-8. **All durable prose lives under `docs/`; never leave a stray `.md` inside `braincell/`.** Two homes, each with a filename rule:
-    - `docs/specs/YYYY-MM-DD-<slug>.md` — the spec and plan for one change, written *before* implementation. The date prefix is the creation date, so the directory reads chronologically.
-    - `docs/design/<topic>.md` — durable design notes, invariants, and architecture maps that outlive any single change. Group a multi-document topic in its own subdirectory (`docs/design/network/`).
-
-    Name a file for what it documents, not where the code happens to sit: `io-swc-reader-invariants.md`, never `README.md` or `notes.md`. Give it an `# H1` that matches.
-    - Explicit exception: an unstable experiment directory under `examples/experimental/` may contain one local `README.md` that maps the files, status, commands, and historical context for that directory. It must not define public API or duplicate durable design/results prose; link to `docs/` and generated artifacts for those.
+8. **Check design, implementation, and relevant examples before each commit.** Review only the scope of that commit across `docs/design/`, implementation and tests, and the actual related examples (including root `examples/`). Routine development does not require synchronizing these three after every edit or task. `docs/examples/` is not a mandatory parallel maintenance destination. `docs/specs/` is a chronological historical archive, not the current contract or a required pre-implementation deliverable. Follow [Design, code, and examples](#design-code-and-examples) below.
 9. Tests should >90% coverage, but focus on meaningful tests that cover edge cases and critical paths, not just trivial lines.
 10. Co-locate tests with the code under test: each module `foo.py` has its tests in a sibling `foo_test.py` (suffix style — never a separate `tests/` directory, never the `test_*.py` prefix). See [Testing](#testing) for the full rule.
 11. **Never drive a model with a bare Python `for`/`while` loop when it runs repeatedly.** Python loops execute op-by-op (dispatch overhead, no fusion) and trace fresh each step; the `brainstate.transform` primitives lower the whole loop into one compiled XLA program, tracing the body only once. Pick by shape of the work:
@@ -30,18 +25,53 @@ Biologically detailed brain cell modeling in BrainX.
 13. **Every tracked `.py` file opens with the Apache-2.0 license header — add it when you create the file.** It goes at the very top, above the module docstring, below only a shebang or PEP 263 encoding line. See [License header](#license-header) for the verbatim block.
 
 
+## Design, code, and examples
+
+All paths below are relative to the repository root (`/home/swl/braincell` in the current workspace).
+
+| Location | Maintained responsibility |
+| --- | --- |
+| `docs/design/` | Current design, interface contracts, module discussions, and implementation direction. |
+| `braincell/` | Implementation and co-located tests. |
+| Actual related examples, including root `examples/` | Usage examples relevant to the commit, kept at their existing locations. No duplicate or migration to `docs/examples/` is required. |
+
+Before each commit, review the relevant design, implementation and tests, and actual related examples once for the scope being committed. Routine development may leave these temporarily out of sync; no cross-document synchronization check is required after each edit or task. At the commit check, update affected interfaces, behavior descriptions, and example usage as needed. No-impact files need no edits. For behavior changes being committed, run the relevant code tests and affected examples; report what was checked and any unverified gaps. A discovered mismatch must be fixed within scope or recorded in the module document with a concrete follow-up; do not claim full consistency while a gap remains. This is a review requirement, not a new automatic Git hook.
+
+Design may lead implementation. Clearly distinguish implemented, partially implemented, planned, and research content. Executable examples must use implemented interfaces; proposed syntax belongs in explicitly marked design discussions. A documentation-only proposal does not require implementing the feature or adding an example of an unavailable API.
+
+### Module documents and project progress
+
+Human contributors start with [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Developer Guide](docs/developer/index.rst). Developer pages explain contribution
+steps and link to Design for module contracts, formulas, and architecture.
+
+See the [Repository organization guide](docs/repository.md) for directory responsibilities,
+content placement, and the proposed layout awaiting migration confirmation.
+
+Follow [Design documentation rules](docs/design/AGENTS.md) when writing or updating `docs/design/`.
+That directory-level guide owns writing style, module layout, document roles, and task status definitions.
+Keep durable design prose under `docs/design/`, with implementation references linking to the relevant document.
+
+### History and deferred documentation
+
+- `docs/specs/YYYY-MM-DD-<slug>.md` preserves historical decisions and change records in creation-date order. Add a record when the history is useful; no new spec is required before every implementation.
+- Current decisions and active plans live in `docs/design/`. Do not continually rewrite old specs to match new interfaces or use historical requirements to override current module documents. Old paths in historical records can remain historical references.
+- Other documentation trees under `docs/`, including `docs/examples/`, are not mandatory parallel maintenance destinations. Select examples by their relevance to the commit, not by a required directory. Do not create duplicate examples, migrate them into `docs/examples/`, or bulk-refresh unrelated documentation or examples unless requested. This does not claim that all existing files are already consistent.
+- Example-specific import progress, comparison settings, and validation work belong alongside the relevant examples (for example, `examples/neuron_compare/cerebellum-import-progress.md`). Reusable API and architecture contracts stay under `docs/design/` and are linked from the example record.
+- The existing exception for an unstable `examples/experimental/` directory remains: one local `README.md` may map files, commands, status, and history, but must link to durable design/results prose under `docs/` rather than define public API or duplicate it.
+
 ## Quick Reference
 
 ```bash
 # Install (dev)
-pip install -e ".[testing]"
+pip install -e ".[dev]"
 
 # Run tests (tests are co-located with source code)
 pytest braincell/
 
 # Pre-commit
 pre-commit install
-pre-commit run --all
+pre-commit run --all-files
 ```
 
 

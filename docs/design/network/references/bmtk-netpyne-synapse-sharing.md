@@ -1,9 +1,13 @@
 # BMTK / NetPyNE 的 Connection 与 Synapse 语义
 
+关联：[Network TODO](../TODO.md)、[当前决定](../../../specs/2026-09-07-network-decisions-snapshot.md)、[后续扩展](../proposals/runtime-extensions.md)。
+采用状态：Synapse dynamics 与 Connection routing 的 owner 区分已体现在当前架构；
+本文中的高层 recipe 和后续建议仅作为讨论依据，不表示都已实现。
+
 > **Historical, non-normative reference (2026-08).** 本文记录 BMTK 和 NetPyNE
 > 如何从 cell-pair connectivity 创建 Connection 与 Synapse，并提炼 BrainCell 需要覆盖的
-> 更一般语义。正式接口和内部数据结构仍以 [Network Builder API](../api.md) 与
-> [内部架构规范](../architecture.md) 为准。
+> 更一般语义。正式接口和内部数据结构仍以 [Network Builder API](../current/api.md) 与
+> [内部架构规范](../current/architecture.md) 为准。
 
 ## 1. 要区分的三个问题
 

@@ -456,11 +456,16 @@ class InitNernstIon(brainstate.mixin.Mixin):
             allow_none=False,
         )
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
-        self.E = None
+        self._E = brainstate.LongTermState(None)
+
+    @property
+    def E(self):
+        """Return the reversal stored at the last initialization or refresh."""
+        return self._E.value
 
     def _update_reversal(self):
         """Recompute and store ``E`` from the current ``Ci/Co/temp/valence``."""
-        self.E = _nernst_of(self)
+        self._E.value = _nernst_of(self)
 
     def _ion_init_state_hook(self, V, batch_size: int = None):
         """Refresh the stored Nernst reversal during ion initialization."""
@@ -852,8 +857,15 @@ class KineticIon(IndependentIntegration):
             raise ValueError(f"{type(self).__name__} only accepts differential-species overrides; got {invalid_names}.")
 
         defaults = self._default_species_initializers(Ci_initializer)
-        defaults.update(overrides)
-        return {name: self._as_initializer(value) for name, value in defaults.items()}
+        if Ci_initializer is not None:
+            overrides.setdefault("Ci", Ci_initializer)
+        # Keep the recipe, not construction-time equilibrium concentrations.
+        return {
+            name: self._as_initializer(overrides[name])
+            if name in overrides
+            else (lambda shape, name=name: u.math.broadcast_to(self._default_species_initializers(None)[name], shape))
+            for name in defaults
+        }
 
     def _default_species_initializers(self, Ci_initializer) -> dict[str, Any]:
         """Return this ion's resting species initializers, before overrides.
@@ -966,11 +978,9 @@ class _RadialShellGeometry(brainstate.mixin.Mixin):
     def _seed_geometry(self):
         """Derive and cache the diameter-dependent shell factors.
 
-        ``dsq``, ``dsqvol``, and ``parea`` are fixed once the
-        compartment layer has written ``diam_arc_mean``, but the
-        reaction networks above them read ``dsqvol`` 39 to 97 times
-        within a single ``compute_derivative`` -- each read previously
-        re-deriving the same eight array operations.
+        ``dsq`` and ``parea`` depend only on fixed compartment geometry.
+        ``dsqvol`` additionally reads the live ``Nannuli`` parameter and
+        is deliberately not stored in this cache.
 
         The cache records the diameter it was built from, so rebinding
         ``diam_arc_mean`` reseeds on the next read rather than serving a
@@ -979,7 +989,6 @@ class _RadialShellGeometry(brainstate.mixin.Mixin):
         """
         diam_arc_mean = self._require_diam_arc_mean()
         self._dsq = diam_arc_mean * diam_arc_mean
-        self._dsqvol = self._dsq * self.vrat
         self._parea = u.math.pi * diam_arc_mean
         self._geometry_source = diam_arc_mean
 
@@ -993,16 +1002,11 @@ class _RadialShellGeometry(brainstate.mixin.Mixin):
     def vrat(self):
         """Outermost-shell volume ratio implied by ``Nannuli``.
 
-        Depends only on ``Nannuli``, which is fixed at construction, so
-        unlike the other three factors this one is available before the
+        Recomputed from the current ``Nannuli``; available before the
         compartment layer attaches ``diam_arc_mean``.
         """
-        cached = getattr(self, "_vrat", None)
-        if cached is None:
-            dr2 = 0.25 / (self.Nannuli - 1.0)
-            cached = u.math.pi * (0.5 - (dr2 / 2.0)) * 2.0 * dr2
-            self._vrat = cached
-        return cached
+        dr2 = 0.25 / (self.Nannuli - 1.0)
+        return u.math.pi * (0.5 - (dr2 / 2.0)) * 2.0 * dr2
 
     @property
     def dsq(self):
@@ -1012,7 +1016,7 @@ class _RadialShellGeometry(brainstate.mixin.Mixin):
     @property
     def dsqvol(self):
         """Combined ``dsq * vrat`` volume factor for the outermost shell."""
-        return self._geometry("_dsqvol")
+        return self.dsq * self.vrat
 
     @property
     def parea(self):
@@ -1149,7 +1153,7 @@ class _Species:
         :class:`braincell.Cell`, the grouped hidden-state rank contract.
         Broadcasting here keeps one species set homogeneous from the start.
         """
-        init = self.owner.species_initializers.get(spec.name, spec.init)
+        init = _unwrap(self.owner.species_initializers.get(spec.name, spec.init))
         value = braintools.init.param(init, self.owner.varshape, batch_size)
         target = tuple(self.owner.varshape)
         if batch_size is not None:

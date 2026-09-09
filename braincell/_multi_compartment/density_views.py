@@ -21,6 +21,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 import brainstate
+import braintools
 import brainunit as u
 import jax.numpy as jnp
 import numpy as np
@@ -147,7 +148,7 @@ class _DensityView:
         return self
 
     def parameter_info(self):
-        """Return the declared physical parameter schema for this owner."""
+        """Return parameter metadata inferred from Channel/Ion constructors."""
         self._require_one_owner("inspect parameters")
         if not self._rows:
             return {}
@@ -167,13 +168,22 @@ class _DensityView:
             schema = density_parameter_schema(row.mechanism)
             if field not in row.mechanism.params and field not in schema:
                 raise KeyError(f"{row.category.title()} {row.name!r} has no declared parameter {field!r}.")
+            if row.category == "ion" and field.endswith("_initializer") and row.mechanism.params.get(field) is None:
+                return self._initial_default(row, field)
             value = density_parameter_value(row.mechanism, field)
             return value(self._cell.cv_contexts[row.cv_id]) if callable(value) else value
 
         layout = _runtime_layout(self._cell, row)
         runtime = self._cell.runtime
         point_value = None
-        if runtime.has_layout_value(layout.id, field):
+        if row.category == "ion" and field.endswith("_initializer"):
+            from braincell._compute.ions import _ion_runtime_attr_name
+
+            node = runtime.get_runtime_node(layout.id)
+            value = getattr(node, _ion_runtime_attr_name(type(node), field))
+            value = value(node.varshape) if callable(value) else value
+            point_value = _take_point(value, row.cv_id, self._cell.n_cv)
+        elif runtime.has_layout_value(layout.id, field):
             point_value = _take_point(runtime.get_state(layout.id, field), row.cv_id, self._cell.n_cv)
         else:
             node = runtime.get_runtime_node(layout.id)
@@ -184,6 +194,25 @@ class _DensityView:
                 point_value = point_value.value
             point_value = _take_point(point_value, row.cv_id, self._cell.n_cv)
         return _take_population(point_value, row.population_index, self._cell._population_size)
+
+    def _initial_default(self, row, field):
+        """Resolve a default initializer against this row's current parameters."""
+        from braincell._compute.ions import _ion_runtime_attr_name
+
+        params = dict(row.mechanism.params)
+        for (category, owner, population, cv, name), value in self._cell._density_parameter_overrides.items():
+            if (category, owner, population, cv) == (row.category, row.name, row.population_index, row.cv_id):
+                params[name] = value
+        for name, value in params.items():
+            if callable(value) and not isinstance(value, braintools.init.Initialization):
+                value = value(self._cell.cv_contexts[row.cv_id])
+            value = _take_point(value, row.cv_id, self._cell.n_cv)
+            params[name] = _take_population(value, row.population_index, self._cell._population_size)
+        cls = get_registry().get("ion", row.mechanism.class_name)
+        node = cls(size=(1,), **params)
+        value = getattr(node, _ion_runtime_attr_name(cls, field))
+        value = braintools.init.param(value, (1,))
+        return value[0] if tuple(getattr(value, "shape", ())) == (1,) else value
 
     def _set_row_value(self, row: _DensityRow, field: str, value) -> None:
         if self._cell.trainables.owns(
@@ -221,6 +250,10 @@ class _DensityView:
             point_size=self._cell.n_cv,
             value=value,
         )
+        if row.category == "ion" and field.endswith("_initializer"):
+            node = runtime.get_runtime_node(layout.id)
+            mask = node._runtime_ion_initial_masks[field]
+            mask.value = mask.value.at[row.population_index, row.cv_id].set(True)
         runtime.set_state(layout.id, field, updated)
         self._cell._run_loop_cache.clear()
 
@@ -342,6 +375,7 @@ def _set_population_point(buffer, *, population_index, point_id, population_size
         mantissa = jnp.asarray(buffer)
     if mantissa.shape[-1] != point_size:
         raise ValueError("Density parameter buffer does not expose the point axis.")
+    mantissa = mantissa.astype(jnp.result_type(mantissa, decimal))
     if mantissa.ndim >= 2 and mantissa.shape[0] == population_size:
         mantissa = mantissa.at[population_index, point_id].set(decimal)
     else:

@@ -29,6 +29,7 @@ from typing import Any
 import brainstate
 import brainunit as u
 import numpy as np
+from braincell._parameter_schema import RuntimeParameterState
 
 __all__ = [
     "EventSource",
@@ -84,6 +85,22 @@ class EventSource(ABC):
     def __getitem__(self, selector) -> "EventSourceView":
         return self.view[selector]
 
+    def trainable(self, **fields):
+        """Bind threshold parameter sources to all detector endpoints.
+
+        Parameters
+        ----------
+        **fields
+            ``threshold`` mapped to a trainable source.
+
+        Returns
+        -------
+        EventSource
+            This detector.
+        """
+        self.view.trainable(**fields)
+        return self
+
     def event_count(self, source_index, *, t, delay, dt):
         """Read live event counts; scheduled sources override this method."""
         _ = t, dt
@@ -134,6 +151,24 @@ class EventSourceView:
 
     def __len__(self) -> int:
         return int(self._source_ids.size)
+
+    def trainable(self, **fields):
+        """Bind threshold parameter sources to selected detector endpoints.
+
+        Parameters
+        ----------
+        **fields
+            ``threshold`` mapped to a trainable source.
+
+        Returns
+        -------
+        EventSourceView
+            This selection.
+        """
+        from braincell.trainable._targets import register_detector
+
+        register_detector(self, fields)
+        return self
 
     def __getitem__(self, selector) -> "EventSourceView":
         selected = self._source_ids[selector]
@@ -408,6 +443,23 @@ class VoltageCrossingSource(EventSource):
     Omitting ``location`` selects the root branch midpoint. Endpoint rows are
     ordered population-major, preserving the evaluated location order and any
     duplicate locations.
+
+    Parameters
+    ----------
+    cells : Cell or CellView
+        Cell endpoints whose voltages are observed.
+    location : location expression, optional
+        Morphology locations; defaults to the root midpoint.
+    threshold : brainunit.Quantity, optional
+        Explicit voltage threshold, or the owning Cell's V_th when omitted.
+    direction : str, optional
+        ``rising`` uses last < threshold <= next; ``falling`` reverses both
+        comparisons. Staying at equality never repeats an event.
+    spk_fun : callable or None, optional
+        Hard Heaviside forward function (one at zero) with surrogate derivative.
+        Defaults to the Cell's spk_fun. Direction only changes its input sign.
+    name : str or None, optional
+        Source name.
     """
 
     __slots__ = (
@@ -420,6 +472,8 @@ class VoltageCrossingSource(EventSource):
         "_population_indices",
         "_location_indices",
         "_cv_ids",
+        "spk_fun",
+        "_training_id",
     )
 
     def __init__(
@@ -429,6 +483,7 @@ class VoltageCrossingSource(EventSource):
         location=None,
         threshold=_CELL_VOLTAGE_THRESHOLD,
         direction: str = "rising",
+        spk_fun=None,
         name: str | None = None,
     ) -> None:
         from braincell.filter import RootLocation
@@ -481,8 +536,13 @@ class VoltageCrossingSource(EventSource):
         self.cells = root
         self.location = location
         self.direction = direction
+        if spk_fun is not None and not callable(spk_fun):
+            raise TypeError("VoltageCrossingSource.spk_fun must be callable or None.")
+        self.spk_fun = spk_fun
         self.name = name
-        self._threshold = normalized_threshold
+        self._threshold = None if uses_cell_threshold else RuntimeParameterState(normalized_threshold)
+        self._training_id = root._next_detector_id
+        root._next_detector_id += 1
         self._uses_cell_threshold = uses_cell_threshold
         self._population_indices = np.repeat(population_indices, n_location)
         self._location_indices = np.tile(np.arange(n_location, dtype=np.int64), n_population)
@@ -504,7 +564,7 @@ class VoltageCrossingSource(EventSource):
     @property
     def threshold(self):
         """Return the explicit threshold, or the Cell threshold when omitted."""
-        return self.cells.V_th if self._uses_cell_threshold else self._threshold
+        return self.cells.V_th if self._uses_cell_threshold else self._threshold.value
 
     @property
     def instance_name(self) -> str:
@@ -523,12 +583,14 @@ class VoltageCrossingSource(EventSource):
     def current_event_count(self, source_index):
         """Return current-boundary crossing values for selected detector rows."""
         self.cells._raise_if_not_initialized("read VoltageCrossingSource")
+        if self.cells._uses_reduction:
+            raise RuntimeError("VoltageCrossingSource is unavailable while its Cell uses a reduction model.")
         if not hasattr(self.cells, "_event_previous_V"):
             raise RuntimeError("Cell runtime does not expose previous voltage for threshold detection.")
         source_index = np.asarray(source_index, dtype=np.int64)
         population_index = self._population_indices[source_index]
         cv_id = self._cv_ids[source_index]
-        if self._uses_cell_threshold and self.direction == "rising":
+        if self._uses_cell_threshold and self.direction == "rising" and self.spk_fun is None:
             spike = self.cells.spike.value
             if len(self.cells.pop_size) == 0:
                 return spike[cv_id]
@@ -539,16 +601,24 @@ class VoltageCrossingSource(EventSource):
         if len(self.cells.pop_size) == 0:
             last = last_v[cv_id]
             next_value = next_v[cv_id]
-            threshold = self.cells.V_th[cv_id] if self._uses_cell_threshold else self._threshold[source_index]
+            threshold = self.cells.V_th[cv_id] if self._uses_cell_threshold else self._threshold.value[source_index]
         else:
             last = last_v[population_index, cv_id]
             next_value = next_v[population_index, cv_id]
             threshold = (
-                self.cells.V_th[population_index, cv_id] if self._uses_cell_threshold else self._threshold[source_index]
+                self.cells.V_th[population_index, cv_id]
+                if self._uses_cell_threshold
+                else self._threshold.value[source_index]
             )
-        if self.direction == "rising":
-            return (last < threshold) & (next_value >= threshold)
-        return (last > threshold) & (next_value <= threshold)
+        from braincell._base_neuron import _threshold_crossing
+
+        return _threshold_crossing(
+            last,
+            next_value,
+            threshold,
+            self.cells.spk_fun if self.spk_fun is None else self.spk_fun,
+            direction=self.direction,
+        )
 
 
 class _CellSpikeSource(EventSource):
@@ -591,9 +661,9 @@ class _CellSpikeSource(EventSource):
         self.cell._raise_if_not_initialized("read cell.event_outputs['spike']")
         source_index = np.asarray(source_index, dtype=np.int64)
         spike = self.cell.spike.value
-        if len(self.cell.pop_size) == 0:
-            return u.math.broadcast_to(spike[self.cv_id], source_index.shape)
-        return spike[source_index, self.cv_id]
+        if self.cell._uses_reduction:
+            return spike[..., source_index]
+        return spike[..., source_index, self.cv_id]
 
 
 class EventOutputCollection:

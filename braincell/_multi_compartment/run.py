@@ -128,7 +128,7 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     rcell.connections.prepare_runtime(dt)
 
     compiled_recordings = rcell._compiled_recordings(dt)
-    ordered_probe_names = tuple(sorted(probes.probe_names(rcell)))
+    ordered_probe_names = () if rcell._uses_reduction else tuple(sorted(probes.probe_names(rcell)))
     schedule_issues = _differentiable_schedule_issues(compiled_recordings, dt=dt, n_steps=n_steps)
 
     with brainstate.environ.context(dt=dt):
@@ -252,7 +252,11 @@ def _make_run_loop(rcell: "Cell", *, dt, compiled_recordings: tuple, ordered_pro
                     with jax.named_scope("braincell:cell_run:prepare_clamps"):
                         rcell._prepare_step_clamps(t=t, dt=brainstate.environ.get_dt())
                     with jax.named_scope("braincell:cell_run:sample_recordings"):
-                        recording_snapshot = tuple(item.sample() for item in compiled_recordings)
+                        pre_recording_snapshot = {
+                            index: item.sample()
+                            for index, item in enumerate(compiled_recordings)
+                            if item.phase == "pre"
+                        }
                     with jax.named_scope("braincell:cell_run:begin_step"):
                         rcell._begin_step()
                     with jax.named_scope("braincell:cell_run:update_dynamics"):
@@ -262,6 +266,11 @@ def _make_run_loop(rcell: "Cell", *, dt, compiled_recordings: tuple, ordered_pro
                         rcell._apply_direct_live_connection_events()
                     with jax.named_scope("braincell:cell_run:prepare_next_synapse_inputs"):
                         rcell._prepare_next_synapse_inputs(t=t + brainstate.environ.get_dt())
+                    with jax.named_scope("braincell:cell_run:sample_outputs"):
+                        recording_snapshot = tuple(
+                            pre_recording_snapshot[index] if item.phase == "pre" else item.sample()
+                            for index, item in enumerate(compiled_recordings)
+                        )
                     # Placed Probe objects keep their legacy post-step sampling
                     # contract during the transition to layout-free recordings.
                     with jax.named_scope("braincell:cell_run:sample_legacy_probes"):

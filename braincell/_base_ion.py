@@ -34,6 +34,7 @@ import jax
 from brainstate.mixin import _JointGenericAlias
 
 from braincell._typing import Size
+from braincell._parameter_schema import RuntimeParameterState
 from ._base_channel import Channel, IonChannel, IonInfo
 from ._base_neuron import HHTypedNeuron
 from ._misc import (
@@ -260,6 +261,17 @@ class Ion(IonChannel, Container):
     __module__ = 'braincell'
     _container_name = 'channels'
     root_type = HHTypedNeuron
+
+    def __getattribute__(self, name: str):
+        value = super().__getattribute__(name)
+        return value.dense_value() if isinstance(value, RuntimeParameterState) else value
+
+    def __setattr__(self, name: str, value) -> None:
+        current = vars(self).get(name)
+        if isinstance(current, RuntimeParameterState) and not isinstance(value, RuntimeParameterState):
+            current.value = value
+            return
+        super().__setattr__(name, value)
 
     def __init__(self, size: Size, name: Optional[str] = None, **channels) -> None:
         super().__init__(size, name=name)

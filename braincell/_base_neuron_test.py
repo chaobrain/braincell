@@ -58,6 +58,14 @@ class BaseNeuronExportTest(unittest.TestCase):
 class HHTypedNeuronGetSpikeTest(unittest.TestCase):
     """ARCH-04: get_spike lives on the shared base, not on each subclass."""
 
+    def test_arrival_boundary_does_not_repeat_at_threshold(self):
+        from braincell._single_compartment.base import SingleCompartment
+
+        sc = SingleCompartment(size=1, V_th=0.0 * u.mV)
+        old, new = np.meshgrid([-1.0, 0.0, 1.0], [-1.0, 0.0, 1.0])
+        actual = sc.get_spike(jnp.asarray(old) * u.mV, jnp.asarray(new) * u.mV)
+        np.testing.assert_array_equal(actual, (old < 0) & (new >= 0))
+
     def test_get_spike_is_method_on_base(self) -> None:
         self.assertTrue(hasattr(HHTypedNeuron, "get_spike"))
         self.assertTrue(callable(HHTypedNeuron.get_spike))

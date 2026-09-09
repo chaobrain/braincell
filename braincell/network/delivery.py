@@ -34,6 +34,7 @@ from dataclasses import dataclass
 
 import brainstate
 import brainunit as u
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -71,6 +72,16 @@ class DeliveryBlock:
     pre_index: np.ndarray
     flat_target_index: np.ndarray
     weight: object
+    weight_indices: object = None
+
+    def __getattribute__(self, name):
+        if name == "weight":
+            source = object.__getattribute__(self, "source")
+            if getattr(source, "weight_getter", None) is not None:
+                indices = object.__getattribute__(self, "weight_indices")
+                value = source.weight
+                return value if indices is None else value[indices]
+        return object.__getattribute__(self, name)
 
 
 @dataclass(frozen=True)
@@ -170,6 +181,7 @@ def delivery_blocks(
                     pre_index=block.pre_index[contact_indices],
                     flat_target_index=block.synapse_index[contact_indices].astype(np.int32, copy=False),
                     weight=slice_weight(block.weight, contact_indices),
+                    weight_indices=contact_indices,
                 )
             )
     return tuple(delivery)
@@ -350,7 +362,7 @@ def write_arrivals(
         )
         post_population, layout_id = key
         cell = populations[post_population].cell
-        cell.runtime.event_buffers[layout_id].value = arrival
+        cell._write_event_arrival(layout_id, arrival)
 
 
 def enqueue_future_events(
@@ -535,7 +547,9 @@ def make_delivery_op(
     The returned callable captures static sparse indices as JAX arrays. The
     scatter path computes ``pre_spike[pre_index] * weight`` and accumulates it
     into ``flat_target_index``. The ``brainevent`` path uses ``brainevent.coomv``
-    with the same sparse topology.
+    with the same sparse topology. Its exact bilinear derivative uses scatter
+    operations so batching weight and event tangents does not depend on the
+    backend's sparse-primitive batching rules.
     """
     target_size = int(block.source.n_active)
     pre_index = jnp.asarray(block.pre_index, dtype=jnp.int32)
@@ -546,11 +560,11 @@ def make_delivery_op(
         except Exception:  # pragma: no cover
             backend = "scatter"
     if backend == "brainevent" and hasattr(brainevent, "coomv"):
-        data = block.weight
 
-        def _op(pre_spike):
+        @jax.custom_jvp
+        def _coomv(weight, pre_spike):
             return brainevent.coomv(
-                data,
+                weight,
                 pre_index,
                 flat_target_index,
                 pre_spike,
@@ -558,6 +572,24 @@ def make_delivery_op(
                 transpose=True,
                 backend=brainevent_backend,
             )
+
+        def _scatter(weight, pre_spike):
+            contact_event = pre_spike[pre_index] * weight
+            return jnp.zeros((target_size,), dtype=contact_event.dtype).at[flat_target_index].add(contact_event)
+
+        @_coomv.defjvp
+        def _coomv_jvp(primals, tangents):
+            weight, event = primals
+            dweight, devent = tangents
+            # d(W z) = dW z + W dz, including repeated sparse destinations.
+            return _coomv(weight, event), _scatter(dweight, event) + _scatter(weight, devent)
+
+        def _op(pre_spike):
+            weight, weight_unit = u.split_mantissa_unit(block.weight)
+            event, event_unit = u.split_mantissa_unit(pre_spike)
+            dtype = jnp.result_type(weight, event, float)
+            result = _coomv(jnp.asarray(weight, dtype=dtype), jnp.asarray(event, dtype=dtype))
+            return u.maybe_decimal(result * weight_unit * event_unit)
 
         return _op
 

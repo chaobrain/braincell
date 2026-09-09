@@ -61,6 +61,16 @@ def _zero_spike_like(V):
     return u.math.zeros_like(u.get_magnitude(V))
 
 
+def _threshold_crossing(last_V, next_V, threshold, spk_fun, *, direction="rising"):
+    """Detect arrival at a threshold with matching forward/JVP/VJP rules."""
+    sign = 1.0 if direction == "rising" else -1.0
+    denom = _cast_like(20.0 * u.mV, next_V)
+    threshold = _cast_like(threshold, next_V)
+    old = sign * (last_V - threshold) / denom
+    new = sign * (next_V - threshold) / denom
+    return spk_fun(new) * (1.0 - spk_fun(old))
+
+
 class HHTypedNeuron(brainpy.state.Dynamics, Container, DiffEqModule):
     """Base class for Hodgkin-Huxley typed neuronal membrane dynamics.
 
@@ -262,6 +272,4 @@ class HHTypedNeuron(brainpy.state.Dynamics, Container, DiffEqModule):
         product of rising- and falling-crossing terms produces a
         non-zero value only when ``last_V < V_th <= next_V``.
         """
-        denom = _cast_like(20.0 * u.mV, next_V)
-        V_th = _cast_like(self.V_th, next_V)
-        return self.spk_fun((next_V - V_th) / denom) * self.spk_fun((V_th - last_V) / denom)
+        return _threshold_crossing(last_V, next_V, self.V_th, self.spk_fun)

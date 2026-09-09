@@ -196,6 +196,10 @@ def cached_q10_factor(owner, slot: str, q10, temp, temp_ref):
     ``_on_param_updated``, so a runtime temperature change replaces
     ``owner.temp`` with a new object and invalidates the memo automatically.
 
+    Traced inputs bypass the memo, and traced outputs are never retained on
+    the owner. This also applies when concrete inputs produce a traced result
+    inside JIT, so a later trace cannot accidentally reuse an escaped tracer.
+
     Parameters
     ----------
     owner : object
@@ -212,11 +216,15 @@ def cached_q10_factor(owner, slot: str, q10, temp, temp_ref):
         The dimensionless Q10 factor.
     """
     key = (q10, temp, temp_ref)
+    if any(isinstance(leaf, jax.core.Tracer) for leaf in jax.tree.leaves(key)):
+        return q10_factor(q10, temp, temp_ref)
     cached = getattr(owner, slot, None)
     if cached is not None and all(a is b for a, b in zip(cached[0], key)):
         return cached[1]
     value = q10_factor(q10, temp, temp_ref)
-    setattr(owner, slot, (key, value))
+    # Even concrete inputs can produce a tracer when called inside a JIT trace.
+    if not any(isinstance(leaf, jax.core.Tracer) for leaf in jax.tree.leaves(value)):
+        setattr(owner, slot, (key, value))
     return value
 
 

@@ -19,6 +19,7 @@ import unittest
 
 import braintools
 import brainunit as u
+import brainstate
 import numpy as np
 
 import braincell
@@ -29,6 +30,53 @@ from ._testing import _build_tree, _quantity_set_at
 
 class RuntimeIonTest(unittest.TestCase):
     """Default, named, dynamic, and kinetic ion behaviour in the cell runtime."""
+
+    def setUp(self):
+        # These legacy reference assertions require twelve decimal places.
+        # Trainable-manager tests separately exercise the default float32 path.
+        self.enterContext(brainstate.environ.context(precision=64))
+
+    def test_explicit_species_dictionary_is_preserved(self):
+        cell = Cell(_build_tree())
+        cell.paint(
+            BranchSlice(branch_index=[0, 1], prox=0, dist=1),
+            braincell.mech.Ion("CdpStC_NoCAM_MA2020_GoC", name="pool", species_initializers={"Buff2": 7 * u.mM}),
+        )
+        cell.init_state()
+        self.assertTrue(u.math.allclose(cell.get_ion("pool").Buff2.value, 7 * u.mM))
+        cell.ions["pool"].set(Buffnull2=100 * u.mM)
+        cell.reset_state()
+        self.assertTrue(u.math.allclose(cell.get_ion("pool").Buff2.value, 7 * u.mM))
+
+    def test_conflicting_pool_configuration_is_rejected(self):
+        cell = Cell(_build_tree())
+        for branch, value in ((0, 7), (1, 8)):
+            cell.paint(
+                BranchSlice(branch_index=branch, prox=0, dist=1),
+                braincell.mech.Ion(
+                    "CdpStC_NoCAM_MA2020_GoC", name="pool", species_initializers={"Buff2": value * u.mM}
+                ),
+            )
+        with self.assertRaisesRegex(ValueError, "uniform constructor configuration"):
+            cell.init_state()
+
+    def test_equivalent_initializer_dictionaries_ignore_key_order(self):
+        cell = Cell(_build_tree())
+        for branch, initializers in (
+            (0, {"Buff2": 7 * u.mM, "PV": 0.08 * u.mM}),
+            (1, {"PV": 0.08 * u.mM, "Buff2": 7 * u.mM}),
+        ):
+            cell.paint(
+                BranchSlice(branch_index=branch, prox=0, dist=1),
+                braincell.mech.Ion(
+                    "CdpStC_NoCAM_MA2020_GoC",
+                    name="pool",
+                    Nannuli=10.0 + branch,
+                    species_initializers=initializers,
+                ),
+            )
+        cell.init_state()
+        self.assertTrue(u.math.allclose(cell.get_ion("pool").Buff2.value, 7 * u.mM))
 
     def test_default_ions_are_available_with_global_shape(self) -> None:
         import braincell

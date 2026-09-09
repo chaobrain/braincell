@@ -188,7 +188,7 @@ class CellRuntimeStateTest(unittest.TestCase):
                 "K_Kv_test",
                 g_max=0.1 * (u.mS / u.cm**2),
                 v12=25.0 * u.mV,
-                q=9.0,
+                q=9.0 * u.mV,
             ),
         )
         cell.place(

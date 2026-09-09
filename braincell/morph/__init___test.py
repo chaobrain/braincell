@@ -33,7 +33,7 @@ touched: hoisting ``from braincell.vis.plot3d import plot3d`` reports
 ``cannot import name 'RegionMask' from partially initialized module
 'braincell.filter'``, because ``vis`` imports ``filter`` on the way up.
 
-``docs/design/morph-layering-invariants.md`` records why each edge exists
+``docs/design/morph/current/layering-invariants.md`` records why each edge exists
 and the measured failure for each one. The two checks below turn the
 invariant into a targeted failure so a future editor learns *why* rather
 than bisecting a traceback that does not mention their edit.
@@ -150,7 +150,7 @@ class UpwardImportsAreDeferredTest(unittest.TestCase):
             "braincell.morph is imported before braincell.io / .vis / .filter exist, so a "
             "module-scope import of one of them makes `import braincell` raise ImportError -- "
             "often from a package you did not touch. Move it into the method body. See "
-            "docs/design/morph-layering-invariants.md.",
+            "docs/design/morph/current/layering-invariants.md.",
         )
 
 

@@ -92,6 +92,10 @@ class Network:
         self._cell_lifecycle_active = False
         self._initialized = False
         self._source_current_time = 0.0 * u.ms
+        from braincell.trainable._network import NetworkTrainables
+
+        self.trainables = NetworkTrainables(self)
+        self._prepared_run = None
 
     def _raise_if_initialized(self, action: str) -> None:
         if self._initialized:
@@ -184,10 +188,6 @@ class Network:
         if any(existing.model is model for existing in self.populations.values()):
             raise ValueError("The same model object cannot be registered as more than one Network population.")
         if population.kind == "cell":
-            if model.trainables.bindings():
-                raise NotImplementedError(
-                    "Network aggregation of trainable Cell parameters is deferred; add an unbound Cell."
-                )
             model._bind_network_owner(self)
         elif population.kind == "netstim":
             model._bind_network_seed(self.seed, population.name)
@@ -383,6 +383,7 @@ class Network:
         self.init_state()
         if not self._cell_populations():
             return self._run_scheduled_sources_only(dt=dt, duration=duration)
+        self.trainables.materialize()
         setup_key = self._run_setup_cache_key(
             dt=dt,
             delay_quantization=delay_quantization,
@@ -473,6 +474,78 @@ class Network:
             dt=dt,
         )
 
+    def prepare_run(self, *, dt, delay_quantization="nearest", event_backend="auto", brainevent_backend="jax_raw"):
+        """Prepare static routing and queues outside a differentiated rollout.
+
+        Parameters
+        ----------
+        dt : brainunit.Quantity
+            Fixed integration step.
+        delay_quantization : str, optional
+            Existing delay quantization policy; delays are never trainable.
+        event_backend : str, optional
+            Event delivery backend, as in :meth:`run`.
+        brainevent_backend : str or None, optional
+            Backend for the sparse event operator.
+
+        Returns
+        -------
+        Network
+            This initialized and prepared network.
+        """
+        validate_time_quantity(dt, name="dt", prefix="Network.prepare_run")
+        event_backend = normalize_event_backend(event_backend)
+        self.init_state()
+        if not self._cell_populations():
+            raise ValueError("Network.prepare_run requires at least one Cell population.")
+        key = self._run_setup_cache_key(
+            dt=dt,
+            delay_quantization=delay_quantization,
+            event_backend=event_backend,
+            brainevent_backend=brainevent_backend,
+        )
+        if self._runtime_config is not None and self._runtime_config != key[2:]:
+            raise RuntimeError("Network runtime configuration is fixed after the first run.")
+        self._runtime_config = key[2:]
+        setup = self._run_setup(
+            dt=dt,
+            delay_quantization=delay_quantization,
+            event_backend=event_backend,
+            brainevent_backend=brainevent_backend,
+        )
+        self._common_start_time(setup.ordered_population_names)
+        cached = self._network_run_loop(setup=setup, setup_key=key, dt=dt, n_steps=1)
+        self.trainables.materialize()
+        self._prepared_run = (setup, cached, dt)
+        return self
+
+    def update(self):
+        """Advance a prepared network by one differentiable time step.
+
+        Returns
+        -------
+        dict
+            Floating spike arrays keyed by Cell population name. Continuous
+            observations remain available on each Cell's runtime states.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`prepare_run` has not been called outside tracing.
+
+        Notes
+        -----
+        Compose with ``brainstate.transform.for_loop`` or ``scan``. No event
+        tables or host-side recording conversions are built here.
+        """
+        if self._prepared_run is None:
+            raise RuntimeError("Call Network.prepare_run() before update().")
+        setup, cached, dt = self._prepared_run
+        self.trainables.materialize()
+        first = self.populations[setup.ordered_population_names[0]].cell
+        cached.runner(first.current_time, u.math.zeros((1,)) * dt)
+        return {name: self.populations[name].cell.spike.value for name in setup.ordered_population_names}
+
     def _run_setup(
         self,
         *,
@@ -524,7 +597,7 @@ class Network:
         # runs real gathers outside jit just to discard everything but the
         # names. probe_names() reads the same ordering off the layouts.
         probe_names = {
-            name: tuple(sorted(_probes.probe_names(population.cell)))
+            name: (() if population.cell._uses_reduction else tuple(sorted(_probes.probe_names(population.cell))))
             for name, population in self._cell_populations().items()
         }
         compiled_recordings = {
@@ -557,7 +630,7 @@ class Network:
     ) -> tuple:
         dt_ms = scalar_decimal(dt, u.ms)
         runtime_ids = tuple(
-            (name, id(population.cell.runtime), population.size)
+            (name, id(population.cell._event_runtime()), population.size)
             for name, population in self._cell_populations().items()
         )
         return (
@@ -626,11 +699,14 @@ class Network:
                             for name in ordered_population_names:
                                 self.populations[name].cell._prepare_step_clamps(t=t, dt=dt)
                         with jax.named_scope("braincell:network_run:sample_recordings"):
-                            recording_snapshots = tuple(
-                                compiled.sample()
-                                for name in ordered_population_names
-                                for compiled in compiled_recordings[name]
+                            flat_recordings = tuple(
+                                compiled for name in ordered_population_names for compiled in compiled_recordings[name]
                             )
+                            pre_recording_snapshots = {
+                                index: compiled.sample()
+                                for index, compiled in enumerate(flat_recordings)
+                                if compiled.phase == "pre"
+                            }
                         with jax.named_scope("braincell:network_run:write_arrivals"):
                             write_arrivals(delivery_state, populations=self.populations)
                         with jax.named_scope("braincell:network_run:prepare_inputs"):
@@ -654,6 +730,11 @@ class Network:
                             snapshots = {
                                 name: self.populations[name].cell.sample_probes() for name in ordered_population_names
                             }
+                        with jax.named_scope("braincell:network_run:sample_outputs"):
+                            recording_snapshots = tuple(
+                                pre_recording_snapshots[index] if compiled.phase == "pre" else compiled.sample()
+                                for index, compiled in enumerate(flat_recordings)
+                            )
                         with jax.named_scope("braincell:network_run:record_events"):
                             events = tuple(
                                 view.owner.current_event_count(view.source_id)

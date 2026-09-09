@@ -1,14 +1,17 @@
-:orphan:
+贡献者指南
+==========
 
-Developer Guide
-===============
+从配置开发环境、定位代码到验证修改和提交 PR，本指南按贡献任务组织阅读入口。
+模块的完整接口、方程和架构由 Design 维护，各主题链接到对应说明。
 
-This section is for people who want to **work on** ``braincell`` — fix a bug,
-add a channel, write a solver, or contribute documentation. If you only want to
-*use* the library, the :doc:`../concepts/architecture` and modeling guides are
-what you want.
+首次贡献从 :doc:`contributing` 开始；已有明确任务时，直接进入相应主题。
+仓库目录职责及规划见 :doc:`../repository`。
 
-- :doc:`contributing` — dev setup, workflow, and conventions.
-- :doc:`project_layout` — how the package maps onto the architecture layers.
-- :doc:`testing` — test conventions and the bug-fix workflow.
-- :doc:`extending` — adding custom channels, ions, synapses, and integrators.
+.. toctree::
+   :maxdepth: 1
+
+   contributing
+   project_layout
+   testing
+   extending
+   troubleshooting

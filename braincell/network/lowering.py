@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import brainunit as u
 import numpy as np
@@ -43,6 +43,14 @@ class ConnectionBlock:
     weight: object
     delay_steps: np.ndarray
     event_source: object
+    weight_getter: object = field(default=None, repr=False, compare=False)
+
+    def __getattribute__(self, name):
+        if name == "weight":
+            getter = object.__getattribute__(self, "weight_getter")
+            if getter is not None:
+                return getter()
+        return object.__getattribute__(self, name)
 
 
 def lower_direct_connections(
@@ -73,7 +81,7 @@ def lower_direct_connections(
                 raise TypeError("One direct Connection block must target exactly one synapse type.")
             synapse_type = str(synapse_types[0])
             layout_id = post.cell._get_synapse_store().layout_id(synapse_type)
-            layout = post.cell.runtime.layouts[layout_id]
+            layout = post.cell._event_layout(layout_id)
             synapse_index = post.cell._get_synapse_store().runtime_rows(connection.synapse_id).astype(np.int32)
             delay_steps = _expand_delay_steps(
                 connection.delay,
@@ -94,6 +102,7 @@ def lower_direct_connections(
                     weight=connection.weight,
                     delay_steps=delay_steps,
                     event_source=source,
+                    weight_getter=lambda connection=connection: connection.weight,
                 )
             )
     return tuple(blocks)

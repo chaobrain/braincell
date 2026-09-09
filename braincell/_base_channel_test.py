@@ -23,6 +23,40 @@ import unittest
 
 
 class BaseChannelExportTest(unittest.TestCase):
+    def test_synapse_legacy_schema_requires_migration(self):
+        from braincell import Synapse
+        from braincell.mech import ParameterSpec
+
+        class Legacy(Synapse):
+            parameters = {"gain": ParameterSpec(1.0)}
+
+        with self.assertRaisesRegex(TypeError, "explicit __init__"):
+            Legacy(1)
+
+    def test_synapse_signatures_forward_inheritance_and_required_fields(self):
+        import brainunit as u
+        import numpy as np
+        from braincell import Synapse
+        from braincell.synapse import ExpSyn
+
+        class Extended(ExpSyn):
+            def __init__(self, size, gain=1.0, **kwargs):
+                super().__init__(size, **kwargs)
+                self._init_parameters(gain=gain)
+
+        self.assertEqual(set(Extended.parameter_info()), {"tau", "e", "gain"})
+        self.assertEqual(float(Extended(1).gain), 1.0)
+
+        class Required(Synapse):
+            def __init__(self, size, reversal):
+                super().__init__(size)
+                self._init_parameters(reversal=reversal)
+
+        node = Required(2, -70.0 * u.mV)
+        np.testing.assert_allclose(node.reversal.to_decimal(u.mV), [-70.0, -70.0])
+        node = ExpSyn(2, tau=lambda shape: np.full(shape, 3.0) * u.ms)
+        np.testing.assert_allclose(node.tau.to_decimal(u.ms), [3.0, 3.0])
+
     def test_public_namespace_reexports_this_module(self) -> None:
         import braincell
         import braincell._base_channel as channel_mod

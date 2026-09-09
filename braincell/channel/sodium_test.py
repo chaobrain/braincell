@@ -19,6 +19,7 @@ import unittest
 
 import brainstate
 import brainunit as u
+import jax
 import jax.numpy as jnp
 import pytest
 
@@ -45,6 +46,35 @@ from braincell.channel._testing import (
     na_info,
     voltage,
 )
+
+
+class TemperatureDerivedPhiTest(unittest.TestCase):
+    def test_all_derived_phi_variants_follow_temperature_and_gradient(self):
+        variants = (
+            (Nav1p6_MA2020_GoC, 3.0, 22.0),
+            (Nav1p6_MA2024_PC, 3.0, 22.0),
+            (Nav1p6_MA2025_BC, 3.0, 22.0),
+            (Nav1p6_RI2021_SC, 3.0, 22.0),
+            (Nav1p1_MA2025_BC, 2.7, 22.0),
+            (Nav1p1_RI2021_SC, 2.7, 22.0),
+            (Nav_MA2020_GrC, 3.0, 20.0),
+            (NaFHF_MA2020_GrC, 3.0, 20.0),
+        )
+        for cls, q10, ref in variants:
+            with self.subTest(channel=cls.__name__):
+                ch = cls(1, temp=u.celsius2kelvin(ref))
+                ch.temp = u.celsius2kelvin(ref + 10.0)
+                self.assertTrue(u.math.allclose(ch.phi, q10))
+
+                def evaluate(offset):
+                    ch.temp = u.celsius2kelvin(ref) + offset * u.kelvin
+                    return u.math.sum(ch.phi)
+
+                derivative = jax.grad(evaluate)(10.0)
+                self.assertTrue(u.math.allclose(derivative, q10 * jnp.log(q10) / 10.0))
+                epsilon = 1e-3
+                finite_difference = (evaluate(10.0 + epsilon) - evaluate(10.0 - epsilon)) / (2 * epsilon)
+                self.assertTrue(u.math.allclose(derivative, finite_difference, rtol=1e-7))
 
 
 @pytest.fixture(autouse=True)

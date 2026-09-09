@@ -26,6 +26,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._misc import require_name as _require_name, scalar_decimal
+from braincell._parameter_schema import RuntimeParameterState
 from braincell._multi_compartment.synapses import SynapseView, _cell_label
 from .pairing import (
     PairingContext,
@@ -87,6 +88,21 @@ class _ConnectionCall:
     live_history: object = None
     live_delay_steps: np.ndarray | None = None
     live_dt_ms: float | None = None
+
+    def __post_init__(self):
+        if self.weight is not None:
+            object.__setattr__(self, "weight", RuntimeParameterState(self.weight))
+
+    def __getattribute__(self, name):
+        value = object.__getattribute__(self, name)
+        return value.value if name == "weight" and isinstance(value, RuntimeParameterState) else value
+
+    def __setattr__(self, name, value):
+        state = vars(self).get(name)
+        if name == "weight" and isinstance(state, RuntimeParameterState):
+            state.value = value
+        else:
+            object.__setattr__(self, name, value)
 
 
 class _ConnectionStore:
@@ -405,10 +421,31 @@ class ConnectionView:
         selected = np.asarray(tuple(int(index) for index in population_indices), dtype=np.int64)
         return ConnectionView(self._store, self._active_ids[np.isin(self.synapse.population_index, selected)])
 
+    def trainable(self, **fields):
+        """Bind weight sources to selected contacts; delay remains static.
+
+        Parameters
+        ----------
+        **fields
+            ``weight`` mapped to a trainable parameter source.
+
+        Returns
+        -------
+        ConnectionView
+            This selection.
+        """
+        from braincell.trainable._targets import register_connection
+
+        register_connection(self, fields)
+        return self
+
     def set(self, *, weight=_UNSET, delay=_UNSET) -> "ConnectionView":
         """Update selected routing rows before Cell initialization."""
         self.cell._raise_if_initialized("modify Connection")
         if weight is not _UNSET:
+            from braincell.trainable._targets import require_unbound
+
+            require_unbound(self.cell, "connection", "weight", self.id, "weight")
             self._require_homogeneous_synapse_type("modify weight")
             normalized = _normalize_weight(self.synapse, weight, count=len(self), omitted=False)
             current = self._store.weight_for(self._active_ids)
@@ -837,8 +874,8 @@ def _stack_values(values):
     first = values[0]
     if isinstance(first, u.Quantity):
         unit = first.unit
-        return u.Quantity(np.asarray([value.to_decimal(unit) for value in values]), unit)
-    return np.asarray(values)
+        return u.Quantity(jnp.stack([jnp.asarray(value.to_decimal(unit)) for value in values]), unit)
+    return jnp.stack([jnp.asarray(value) for value in values])
 
 
 def _split_values(value, count: int):

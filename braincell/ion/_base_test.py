@@ -697,5 +697,31 @@ class NernstHelperTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(init_nernst.E, expected, atol=1e-9 * u.mV))
 
 
+class DerivedInitialValueTest(unittest.TestCase):
+    def test_shell_volume_tracks_annulus_parameter(self):
+        from braincell.ion import CdpStC_NoCAM_MA2020_GoC
+
+        ion = CdpStC_NoCAM_MA2020_GoC(size=1)
+        ion.diam_arc_mean = 2 * u.um
+        first = ion.dsqvol
+        ion.Nannuli = 20.0
+        dr2 = 0.25 / 19.0
+        expected = 4 * u.um**2 * u.math.pi * (0.5 - dr2 / 2) * 2 * dr2
+        self.assertFalse(u.math.allclose(first, expected))
+        self.assertTrue(u.math.allclose(ion.dsqvol, expected))
+
+    def test_buffer_default_recomputed_but_explicit_override_preserved(self):
+        from braincell.ion import CdpStC_NoCAM_MA2020_GoC
+
+        for explicit in (False, True):
+            ion = CdpStC_NoCAM_MA2020_GoC(size=1, species_initializers={"Buff2": 7 * u.mM} if explicit else None)
+            ion.diam_arc_mean = 2 * u.um
+            ion.init_state(-65 * u.mV)
+            first = ion.Buff2.value
+            ion.Buffnull2 = 2 * ion.Buffnull2
+            ion.reset_state(-65 * u.mV)
+            self.assertTrue(u.math.allclose(ion.Buff2.value, first if explicit else 2 * first))
+
+
 if __name__ == "__main__":
     unittest.main()

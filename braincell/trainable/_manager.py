@@ -44,6 +44,7 @@ class _TargetRow:
     population_index: int
     cv_id: int
     point_id: int
+    logical_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,7 @@ class ParameterBinding:
     baseline: object | None = None
     _rows: tuple[_TargetRow, ...] = field(default=(), repr=False)
     _evaluate: object = field(default=None, repr=False, compare=False)
+    _prepare_write: object = field(default=None, repr=False, compare=False)
 
 
 class TrainableManager(brainstate.nn.Module):
@@ -91,10 +93,6 @@ class TrainableManager(brainstate.nn.Module):
         cell = self._cell()
         if cell._initialized:
             raise RuntimeError("trainable() must be called before Cell.init_state().")
-        if cell.network_owner is not None:
-            raise NotImplementedError(
-                "Trainable density parameters are Cell-local in P0 and cannot target a Network Cell."
-            )
         if not view.rows:
             raise ValueError("trainable() requires a non-empty View.")
         owners = tuple(dict.fromkeys((row.mechanism_type, row.name) for row in view.rows))
@@ -110,6 +108,8 @@ class TrainableManager(brainstate.nn.Module):
         try:
             for target_field, source in fields.items():
                 self._register_one(view, target_field, source)
+            if hasattr(view, "_validate_bindings"):
+                view._validate_bindings(self._binding_list)
         except Exception:
             self.roots.clear()
             self.roots.update(roots_before)
@@ -129,8 +129,15 @@ class TrainableManager(brainstate.nn.Module):
 
         evaluated = [(binding, binding._evaluate()) for binding in self._binding_list]
         pending: dict[tuple[int, str], tuple[RuntimeParameterState, object, str]] = {}
+        point_commits = []
         for binding, values in evaluated:
+            if binding._prepare_write is not None:
+                if tuple(getattr(values, "shape", ())) != (len(binding._rows),):
+                    raise ValueError(f"Binding {binding.name!r} must produce one value per logical row.")
+                point_commits.extend(binding._prepare_write(values))
+                continue
             required_axis = _binding_axis(binding)
+            selection_axes = {}
             if tuple(getattr(values, "shape", ())) != (len(binding._rows),):
                 raise ValueError(
                     f"Binding {binding.name!r} returned shape {getattr(values, 'shape', ())!r}; "
@@ -147,10 +154,17 @@ class TrainableManager(brainstate.nn.Module):
                         )
                     pending[key] = (state, state.dense_value(), required_axis)
                 state, full, pending_axis = pending[key]
+                # Equal initial values do not imply shared trainable ownership.
+                if layout.id not in selection_axes:
+                    selected = np.zeros(state.full_shape, dtype=bool)
+                    for selected_row in binding._rows:
+                        if selected_row.cv_id in layout.source_cv_ids:
+                            selected[selected_row.population_index, selected_row.cv_id] = True
+                    selection_axes[layout.id] = _compact_axis(selected, state.point_mask)
                 pending[key] = (
                     state,
                     _set_row(full, row.population_index, row.cv_id, values[index]),
-                    _join_axes(pending_axis, required_axis),
+                    _join_axes(_join_axes(pending_axis, required_axis), selection_axes[layout.id]),
                 )
 
         commits = []
@@ -161,10 +175,18 @@ class TrainableManager(brainstate.nn.Module):
             else:
                 axis = _join_axes(axis, required_axis)
             commits.append((key, state, axis, _project_axis(full, axis, state.point_mask)))
+        # Merge selections before committing so a later unit/shape error cannot
+        # leave a partially updated physical parameter vector.
+        point_pending = {}
+        for state, indices, values in point_commits:
+            current = point_pending.get(id(state), (state, state.value))[1]
+            point_pending[id(state)] = (state, _set_items(current, indices, values))
         for key, state, axis, value in commits:
             state.value = value
             state.axis = axis
             self._target_axes[key] = axis
+        for state, value in point_pending.values():
+            state.value = value
         if commits:
             from braincell._compute.bindings import _sync_runtime_node_param
 
@@ -180,14 +202,11 @@ class TrainableManager(brainstate.nn.Module):
             raise ValueError("Trainable target field must be a non-empty string.")
         if not isinstance(source, (DirectSource, ScaleSource, ParameterizedSource)):
             raise TypeError(f"Field {target_field!r} expects a braincell.trainable parameter source.")
-        mechanism = view.rows[0].mechanism
-        schema = density_parameter_schema(mechanism)
-        if not schema:
-            raise NotImplementedError(
-                f"Channel {mechanism.class_name!r} has no trainable parameter schema in this release."
-            )
+        point_target = hasattr(view, "_trainable_schema")
+        mechanism = None if point_target else view.rows[0].mechanism
+        schema = view._trainable_schema() if point_target else density_parameter_schema(mechanism)
         if target_field not in schema:
-            raise KeyError(f"Channel {mechanism.class_name!r} has no trainable parameter {target_field!r}.")
+            raise KeyError(f"{view.rows[0].mechanism_type!r} has no trainable parameter {target_field!r}.")
 
         rows = tuple(
             _TargetRow(
@@ -197,15 +216,26 @@ class TrainableManager(brainstate.nn.Module):
                 int(row.population_index),
                 int(row.cv_id),
                 int(row.point_id),
+                getattr(row, "logical_id", None),
             )
             for row in view.rows
         )
-        target_keys = {(row.category, row.owner, row.population_index, row.cv_id, target_field) for row in rows}
+        target_keys = {
+            (
+                row.category,
+                row.owner,
+                row.population_index,
+                row.cv_id if row.logical_id is None else row.logical_id,
+                target_field,
+            )
+            for row in rows
+        }
         overlap = target_keys.intersection(self._owned_targets)
         if overlap:
             raise ValueError(f"Trainable target rows are already bound: {tuple(sorted(overlap))!r}.")
 
-        current = tuple(view._row_value(source_row, target_field) for source_row in view.rows)
+        needs_current = isinstance(source, ScaleSource) or (isinstance(source, DirectSource) and source.initial is None)
+        current = tuple(view._row_value(source_row, target_field) for source_row in view.rows) if needs_current else ()
         base_name = _base_name(rows, target_field, source)
         if isinstance(source, DirectSource):
             evaluate, root_names = self._prepare_direct(source, rows, current, base_name)
@@ -227,18 +257,21 @@ class TrainableManager(brainstate.nn.Module):
             )
         for index in range(len(rows)):
             schema[target_field].validate(sample[index], target_field)
-        unit = schema[target_field].default.unit if isinstance(schema[target_field].default, u.Quantity) else None
+        unit = sample.unit if isinstance(sample, u.Quantity) else None
         binding = ParameterBinding(
             name=base_name,
             target_owner=rows[0].owner,
             target_field=target_field,
-            row_keys=tuple((row.population_index, row.cv_id) for row in rows),
+            row_keys=tuple(
+                (row.population_index, row.cv_id if row.logical_id is None else row.logical_id) for row in rows
+            ),
             group_by=group_by,
             root_names=root_names,
             unit=unit,
             baseline=baseline,
             _rows=rows,
             _evaluate=evaluate,
+            _prepare_write=(lambda values: view._prepare_write(target_field, values)) if point_target else None,
         )
         self._binding_list.append(binding)
         self._owned_targets.update(target_keys)
@@ -350,18 +383,20 @@ class TrainableManager(brainstate.nn.Module):
 
 
 def _base_name(rows, field: str, source: ParameterSource) -> str:
-    fingerprint = hashlib.sha256(repr(tuple((row.population_index, row.cv_id) for row in rows)).encode()).hexdigest()[
-        :8
-    ]
+    fingerprint = hashlib.sha256(
+        repr(
+            tuple((row.population_index, row.cv_id if row.logical_id is None else row.logical_id) for row in rows)
+        ).encode()
+    ).hexdigest()[:8]
     role = "direct" if isinstance(source, DirectSource) else "scale" if isinstance(source, ScaleSource) else "function"
-    return f"channel.{rows[0].owner}.{field}.{role}.{fingerprint}"
+    return f"{rows[0].category}.{rows[0].owner}.{field}.{role}.{fingerprint}"
 
 
 def _group_indices(rows, group_by: str) -> tuple[np.ndarray, int]:
     keys = []
     for row in rows:
         if group_by == "row":
-            key = (row.population_index, row.cv_id)
+            key = (row.population_index, row.cv_id if row.logical_id is None else row.logical_id)
         elif group_by == "population":
             key = row.population_index
         elif group_by == "cv":
@@ -426,6 +461,16 @@ def _stack(values: tuple[object, ...]):
     return u.math.stack(values)
 
 
+def _set_items(current, indices, values):
+    if isinstance(current, u.Quantity):
+        raw = values.to_decimal(current.unit)
+        return u.Quantity(
+            jnp.asarray(current.mantissa, dtype=jnp.result_type(current.mantissa, raw)).at[indices].set(raw),
+            current.unit,
+        )
+    return jnp.asarray(current, dtype=jnp.result_type(current, values)).at[indices].set(values)
+
+
 def _equal_value(left: object, right: object) -> bool:
     if isinstance(left, u.Quantity):
         if not isinstance(right, u.Quantity):
@@ -461,13 +506,13 @@ def _set_row(full: object, population_index: int, point_id: int, value: object):
     if isinstance(full, u.Quantity):
         if not isinstance(value, u.Quantity):
             raise TypeError(f"Materialized value requires a Quantity compatible with {full.unit}.")
-        mantissa = (
-            jnp.asarray(full.to_decimal(full.unit)).at[population_index, point_id].set(value.to_decimal(full.unit))
-        )
+        replacement = value.to_decimal(full.unit)
+        dtype = jnp.result_type(full.mantissa, replacement)
+        mantissa = jnp.asarray(full.to_decimal(full.unit), dtype=dtype).at[population_index, point_id].set(replacement)
         return u.Quantity(mantissa, full.unit)
     if isinstance(value, u.Quantity):
         raise TypeError("Materialized value must be dimensionless.")
-    return jnp.asarray(full).at[population_index, point_id].set(value)
+    return jnp.asarray(full, dtype=jnp.result_type(full, value)).at[population_index, point_id].set(value)
 
 
 def _compact_axis(value: object, point_mask: object | None) -> str:

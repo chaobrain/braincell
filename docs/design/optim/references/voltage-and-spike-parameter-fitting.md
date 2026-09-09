@@ -7,10 +7,10 @@ optimizer controller。相关主文档为：
 
 | 主题 | 主文档 |
 | --- | --- |
-| 参数选择、映射与单位 | [API](../api.md) 与 [Architecture](../architecture.md) |
+| 参数选择、映射与单位 | [API](../current/api.md) 与 [Architecture](../current/architecture.md) |
 | 训练诊断、archive、spike region 与恢复 | [模块化训练诊断](modular-training-diagnostics.md) |
 | BPTT/RTRL | [通用理论](bptt-to-rtrl-neuron-derivation.md) |
-| batch 与 GPU | [Batch Size 与 GPU 吞吐](batch-size-and-gpu-throughput.md) |
+| batch 与 GPU | [Batch Size 与 GPU 吞吐](../current/results/batch-size-and-throughput.md) |
 
 本文区分 subthreshold trace、包含动作电位的 spiking trace，以及由阈值检测得到的 event
 trace。三者不能使用同一条未经归一化的 raw MSE 作为唯一目标。

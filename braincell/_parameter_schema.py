@@ -17,12 +17,40 @@
 
 from __future__ import annotations
 
+import inspect
+
 import brainstate
 import brainunit as u
 
 from braincell.mech._synapse_schema import ParameterSpec, StateSpec, positive
 
 __all__ = ["ParameterSpec", "RuntimeParameterState", "StateSpec", "positive"]
+
+
+def constructor_parameters(runtime_cls):
+    """Inspect explicit constructor fields, including forwarded inheritance."""
+    parameters = tuple(inspect.signature(runtime_cls.__init__).parameters.values())[1:]
+    result = {}
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters):
+        parent = next((cls for cls in runtime_cls.__mro__[1:] if "__init__" in vars(cls)), None)
+        if parent is not None and parent is not object:
+            result.update(constructor_parameters(parent))
+    result.update(
+        (p.name, p)
+        for p in parameters
+        if p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+    )
+    return result
+
+
+class SignatureParameterSpec(ParameterSpec):
+    """Infer a missing unit prototype from the supplied constructor value."""
+
+    def validate(self, value: object, name: str) -> None:
+        default = self.default
+        if default is inspect.Parameter.empty or default is None or callable(default):
+            default = value
+        ParameterSpec(default).validate(value, name)
 
 
 class RuntimeParameterState(brainstate.LongTermState):
@@ -83,3 +111,18 @@ class RuntimeParameterState(brainstate.LongTermState):
 
     def __getitem__(self, index):
         return self.dense_value()[index]
+
+    def to_decimal(self, unit):
+        """Return the current physical mantissa in the requested unit.
+
+        Parameters
+        ----------
+        unit : brainunit.Unit
+            Unit compatible with the stored physical quantity.
+
+        Returns
+        -------
+        array
+            Converted mantissa without copying the optimizer parameter.
+        """
+        return self.dense_value().to_decimal(unit)

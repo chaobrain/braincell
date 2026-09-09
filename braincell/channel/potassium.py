@@ -26,7 +26,7 @@ from braincell._base_channel import IonInfo
 from braincell._typing import ArrayLike, Initializer, Size
 from braincell.channel._base import Gate, HH, OhmicHH, cached_q10_factor, is_disabled
 from braincell.ion import Potassium
-from braincell.mech import ParameterSpec, StateSpec, register_channel
+from braincell.mech import StateSpec, register_channel
 
 #: Hoisted so the identity-keyed memo in ``cached_q10_factor`` can hit:
 #: a freshly built ``celsius2kelvin`` result would miss on every call.
@@ -463,13 +463,6 @@ class K_HH1952(OhmicHH):
     __module__ = "braincell.channel"
     root_type = Potassium
     gates = (Gate("p", power=4, q10="q10", temp_ref="temp_ref"),)
-    parameters = {
-        "g_max": ParameterSpec(_K_HH1952_G_MAX_DEFAULT),
-        "temp": ParameterSpec(_K_HH1952_TEMP_DEFAULT),
-        "q10": ParameterSpec(_K_HH1952_Q10_DEFAULT),
-        "temp_ref": ParameterSpec(_K_HH1952_TEMP_REF_DEFAULT),
-        "V_sh": ParameterSpec(_K_HH1952_V_SH_DEFAULT),
-    }
     states = {"p": StateSpec()}
 
     def __init__(

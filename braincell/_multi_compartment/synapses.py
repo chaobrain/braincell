@@ -126,7 +126,7 @@ class _SynapseStore:
         for raw_type in dict.fromkeys(self.synapse_type.tolist()):
             synapse_type = str(raw_type)
             runtime_cls = get_registry().get("synapse", synapse_type)
-            schema = dict(runtime_cls.parameters)
+            schema = runtime_cls.parameter_info()
             rows = np.flatnonzero(self.synapse_type == synapse_type).astype(np.int64)
             self._type_rows[synapse_type] = rows
             for local_row, store_row in enumerate(rows.tolist()):
@@ -256,7 +256,7 @@ class _SynapseStore:
         local_rows = np.asarray([self._type_local_by_id[int(item)] for item in ids.tolist()], dtype=np.int64)
         columns = dict(self.parameter_columns[synapse_type])
         for parameter, values in updates.items():
-            spec = runtime_cls.parameters[parameter]
+            spec = runtime_cls.parameter_info()[parameter]
             spec.validate(values, parameter)
             columns[parameter] = _set_vector_items(columns[parameter], local_rows, values)
         runtime_cls.validate_parameter_values(columns)
@@ -514,6 +514,34 @@ class SynapseView:
             value = value.value
         return _take_last_axis(value, self._store.runtime_rows(self._logical_ids))
 
+    def trainable(self, **fields):
+        """Bind parameter sources to selected logical synapses.
+
+        Parameters
+        ----------
+        **fields
+            Constructor parameter names mapped to trainable sources.
+
+        Returns
+        -------
+        SynapseView
+            This selection.
+        """
+        from braincell.trainable._targets import register_synapse
+
+        register_synapse(self, fields)
+        return self
+
+    def parameter_info(self):
+        """Return signature-derived parameter metadata for this synapse type.
+
+        Returns
+        -------
+        dict
+            Parameter metadata keyed by constructor field.
+        """
+        return get_registry().get("synapse", self._require_homogeneous_type()).parameter_info()
+
     def set(self, **parameters: object) -> "SynapseView":
         """Set model parameters before or after runtime materialization.
 
@@ -535,6 +563,10 @@ class SynapseView:
             If a value has an incompatible shape or unit.
         """
         synapse_type = self._require_homogeneous_type()
+        from braincell.trainable._targets import require_unbound
+
+        for field in parameters:
+            require_unbound(self._cell, "synapse", synapse_type, self.id, field)
         valid = self._parameter_names(synapse_type)
         normalized_updates = {}
         for parameter, value in parameters.items():
@@ -573,7 +605,7 @@ class SynapseView:
         for parameter, normalized in normalized_updates.items():
             proposed[parameter] = _set_last_axis(proposed[parameter], rows, normalized)
         for parameter in normalized_updates:
-            type(node).parameters[parameter].validate(proposed[parameter], parameter)
+            type(node).parameter_info()[parameter].validate(proposed[parameter], parameter)
         type(node).validate_parameter_values(proposed)
 
         for parameter, updated in proposed.items():
@@ -627,7 +659,7 @@ class SynapseView:
 
     def _parameter_names(self, synapse_type: str) -> set[str]:
         runtime_cls = get_registry().get("synapse", str(synapse_type))
-        return set(runtime_cls.parameters)
+        return set(runtime_cls.parameter_info())
 
     def _require_homogeneous_type(self) -> str:
         types = tuple(dict.fromkeys(str(item) for item in self.synapse_type.tolist()))

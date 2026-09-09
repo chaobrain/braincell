@@ -463,7 +463,7 @@ spike basin；Nesterov没有稳定优于普通Momentum。这进一步说明Rprop
 
 - [模块化训练诊断与优化恢复](../../../docs/design/optim/references/modular-training-diagnostics.md)：当前 `diagnostics.py` 的角色、history alignment、双 archive、spike-region 和恢复策略。
 - [电压轨迹与 Spike-Aware 参数训练](../../../docs/design/optim/references/voltage-and-spike-parameter-fitting.md)：subthreshold/spike loss、mask、curriculum 和历史实验索引。
-- [Optimization Design Overview](../../../docs/design/optim/design-overview.md)：公共 `braincell.trainable` 与实验训练代码的边界。
+- [Optimization Design Overview](../../../docs/design/optim/TODO.md)：公共 `braincell.trainable` 与实验训练代码的边界。
 - [Experimental Optimization Work](../README.md)：exact forward sensitivity、RTRL/BPTT、正确性与 scaling 实验导航。
 
 ## 最小使用方式

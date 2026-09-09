@@ -30,7 +30,7 @@
 # Bulk numeric data ----------------------------------------------------------
 #
 # All six tracked CSVs are multi-megabyte NEURON trace dumps
-# (data/neuron_traces/, examples/neuron_compare/). A textual diff of one is
+# (data/reference_traces/, validation/neuron/). A textual diff of one is
 # never the thing a reviewer wants to read.
 
 *.csv -diff
@@ -47,6 +47,8 @@
 
 data/**       linguist-vendored
 examples/**   linguist-documentation
+validation/** linguist-documentation
+benchmarks/** linguist-documentation
 docs/**       linguist-documentation
 *.ipynb       linguist-documentation
 
@@ -70,3 +72,7 @@ braincell/**  -linguist-vendored -linguist-documentation
 dev/**            export-ignore
 .gitattributes    export-ignore
 .gitignore        export-ignore
+
+# Preserve reference-source bytes for provenance hashes and variant comparisons.
+data/cerebellum/** -text whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
+data/mechanisms/testing/** -text whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab

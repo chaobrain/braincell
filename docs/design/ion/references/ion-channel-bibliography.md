@@ -5,7 +5,7 @@
 This is the shared citation record for [Ion](../TODO.md) and [Channel](../../channel/TODO.md),
 kept in one canonical location. It supports [KineticIon](../current/kinetic-ion.md),
 [channel templates](../../channel/current/template-invariants.md), and the
-[Cerebellum comparison work](../../../../examples/neuron_compare/cerebellum-import-progress.md).
+[Cerebellum comparison work](../../../../validation/neuron/cerebellum-import-progress.md).
 The inventory counts and verification steps below describe the original citation audit,
 not a fresh scan performed during documentation relocation. Each attribution retains its
 own verification status; a listed model or citation does not imply completed numerical validation.
@@ -44,14 +44,14 @@ verification steps (Tasks 2 and 3).
   to `__init__.py` should add it deliberately and restate the count;
   until then, nobody should read 155 versus 156 as a missing record.
 - **Step 2 (provenance harvest).** Every `.mod` file under
-  `examples/neuron_compare/Cerebellum_mod/*/{channel,ion}/` was scanned for
+  `validation/neuron/Cerebellum_mod/*/{channel,ion}/` was scanned for
   its `TITLE`/`COMMENT`/`Author`/`Ref`/`revis`/4-digit-year lines (first 25
   lines only). This is the NEURON source BrainCell's cerebellar channel
   suite was ported from. The mod-file "year code" in filenames
   (`MA20`, `MA24`, `MA25`, `RI21`, `SU15`, `ZH19`) is a 2-digit form of the
   same key used in the BrainCell class name.
 - **Cell-type suffixes** (fixed by
-  `examples/neuron_compare/Cerebellum_mod/README.md` and confirmed against
+  `data/cerebellum/mechanism-catalog.md` and confirmed against
   directory layout): `BC` = basket cell, `DCN` = deep cerebellar nuclei,
   `GoC` = Golgi cell, `GrC` = granule cell, `IO` = inferior olive, `PC` =
   Purkinje cell, `SC` = stellate cell.
@@ -129,7 +129,7 @@ name alone; read the harvested header text.
   `### Verified record` blocks.
 - Task 3 added one structural block per key, `### Import deviations`,
   carrying the NEURON-to-BrainCell port deviations transcribed from
-  `examples/neuron_compare/Cerebellum_mod/README.md`. This is not a
+  `data/cerebellum/mechanism-catalog.md`. This is not a
   second citation format -- it holds no citations. It exists so a
   module task can write a docstring `Notes` section without
   re-reading that file.
@@ -1486,7 +1486,7 @@ Mod-file year code: `MA20`. Cell types: `GoC` (Golgi cell), `GrC` (granule
 cell). Every symbol above maps 1:1 onto a `<mechanism>_MA20_<GoC|GrC>.mod`
 file **except** `CdpStC_NoCAM_MA2020_GoC`, for which no matching `.mod`
 file (`CdpStC_NoCAM_MA20_GoC.mod`) exists anywhere under
-`examples/neuron_compare/Cerebellum_mod` — see "no provenance evidence"
+`validation/neuron/Cerebellum_mod` — see "no provenance evidence"
 note below. There is also an unclaimed mod file with no BrainCell symbol:
 `GoC/ion/CdpStC_CAMOnly_MA20_GoC.mod` *is* claimed
 (`CdpStC_CAMOnly_MA2020_GoC`); no extra unclaimed files were found in this
@@ -1703,7 +1703,7 @@ ENDCOMMENT
 
 **No `.mod` file found** for `CdpStC_NoCAM_MA2020_GoC` (expected filename
 `CdpStC_NoCAM_MA20_GoC.mod` does not exist under
-`examples/neuron_compare/Cerebellum_mod/GoC/ion/`; only
+`data/cerebellum/goc_ma2020/mechanisms/ion/`; only
 `CdpStC_CAMOnly_MA20_GoC.mod` and `CdpStC_MA20_GoC.mod` exist there). This
 symbol's provenance is unresolved by this harvest — see "Unresolved
 attributions" below.
@@ -1918,7 +1918,7 @@ literal set matches `BC/ion/CdpStC_MA25_BC.mod` and
 `SC/ion/CdpStC_RI21_SC.mod` (21 of 26 literals; the five unmatched are
 unit conversions and NMODL range annotations), which are exactly the
 GoC `CdpStC` mechanism with the CAM subnetwork commented out -- as
-`examples/neuron_compare/Cerebellum_mod/README.md` states in its
+`data/cerebellum/mechanism-catalog.md` states in its
 "Ion_dyn inherited variants" table. Its citation is therefore
 O-AN2012 / O-SC2003 / O-MD1999 plus the `MA2020` GoC paper, the same
 as `CdpStC_MA2020_GoC`, and a docstring should say the CAM reactions
@@ -1933,7 +1933,7 @@ tuned values, not values from the origin paper.
 
 ### Import deviations
 
-Transcribed from `examples/neuron_compare/Cerebellum_mod/README.md`
+Transcribed from `data/cerebellum/mechanism-catalog.md`
 (tables "TABLE status summary", "Integration method status", "Rate
 update placement status", "NMODL numeric default precision"). Put
 these in the docstring `Notes` section; do not re-read that file.
@@ -2240,7 +2240,7 @@ that key is already verified in this file and must be cited from the
 
 ### Import deviations
 
-Transcribed from `examples/neuron_compare/Cerebellum_mod/README.md`.
+Transcribed from `data/cerebellum/mechanism-catalog.md`.
 
 **These deviations are already applied to the `.mod` files in this
 repository.** The README's status column reads `已连续化` ("now
@@ -2583,7 +2583,7 @@ attributions` item 9.
 
 ### Import deviations
 
-Transcribed from `examples/neuron_compare/Cerebellum_mod/README.md`.
+Transcribed from `data/cerebellum/mechanism-catalog.md`.
 
 **These deviations are already applied to the `.mod` files in this
 repository.** The README's status column reads `已连续化` ("now
@@ -2849,7 +2849,7 @@ the same non-CAM pump/PV network as `CdpStC_RI2021_SC`.
 
 ### Import deviations
 
-Transcribed from `examples/neuron_compare/Cerebellum_mod/README.md`.
+Transcribed from `data/cerebellum/mechanism-catalog.md`.
 
 **These deviations are already applied to the `.mod` files in this
 repository.** The README's status column reads `已连续化` ("now
@@ -3113,7 +3113,7 @@ that `SC` has no `Kca3p1` mechanism, unlike `BC`, `GoC` and `PC`.
 
 ### Import deviations
 
-Transcribed from `examples/neuron_compare/Cerebellum_mod/README.md`.
+Transcribed from `data/cerebellum/mechanism-catalog.md`.
 
 **These deviations are already applied to the `.mod` files in this
 repository.** The README's status column reads `已连续化` ("now
@@ -3154,7 +3154,7 @@ four parameters and values as in the `MA2020` table.
 
 ### Provenance evidence
 
-No `.mod` file under `examples/neuron_compare/Cerebellum_mod` carries an
+No `.mod` file under `validation/neuron/Cerebellum_mod` carries an
 `HM1992`/`HM19` filename fragment. This is a classical/thalamic-literature
 key (per the project plan, verified in Task 2, not the cerebellar NEURON
 port harvested in Step 2). No repository-local provenance text exists for
@@ -3454,7 +3454,7 @@ imply the mod file's branch was reproduced.
 
 ### Import deviations
 
-Transcribed from `examples/neuron_compare/Cerebellum_mod/README.md`.
+Transcribed from `data/cerebellum/mechanism-catalog.md`.
 
 **These deviations are already applied to the `.mod` files in this
 repository.** The README's status column reads `已连续化` ("now
@@ -3497,7 +3497,7 @@ See the singularity-guard caveat above for what BrainCell did instead.
 
 ### Provenance evidence
 
-No `.mod` file under `examples/neuron_compare/Cerebellum_mod` carries an
+No `.mod` file under `validation/neuron/Cerebellum_mod` carries an
 `IS2008`/`IS20` filename fragment. Classical/thalamic-literature key
 (Task 2). No repository-local provenance text exists for this key.
 
@@ -3528,7 +3528,7 @@ published here. Do not copy a reference for ``CaN_IS2008`` or
 
 ### Provenance evidence
 
-No `.mod` file under `examples/neuron_compare/Cerebellum_mod` carries a
+No `.mod` file under `validation/neuron/Cerebellum_mod` carries a
 `Ba2002`/`Ba20` filename fragment. Classical/thalamic-literature key
 (Task 2). No repository-local provenance text exists for this key.
 
@@ -3598,7 +3598,7 @@ these alpha/beta expressions.
 
 ### Provenance evidence
 
-No `.mod` file under `examples/neuron_compare/Cerebellum_mod` carries a
+No `.mod` file under `validation/neuron/Cerebellum_mod` carries a
 `TM1991`/`TM19` filename fragment. Classical/thalamic-literature key
 (Task 2). No repository-local provenance text exists for this key.
 
@@ -3689,7 +3689,7 @@ gnabar = 0.1 mho/cm^2 (100 mS/cm^2) and gkbar = 0.01 mho/cm^2
 
 ### Provenance evidence
 
-No `.mod` file under `examples/neuron_compare/Cerebellum_mod` carries an
+No `.mod` file under `validation/neuron/Cerebellum_mod` carries an
 `HH1952`/`HH19` filename fragment. Classical/thalamic-literature key
 (Task 2) — this is expected to resolve to the original Hodgkin & Huxley
 (1952) squid giant axon paper, but that resolution is Task 2's job, not
@@ -3753,7 +3753,7 @@ singularity at the Boltzmann midpoint; it does not change the function.
 
 ### Provenance evidence
 
-No `.mod` file under `examples/neuron_compare/Cerebellum_mod` carries an
+No `.mod` file under `validation/neuron/Cerebellum_mod` carries an
 `HP1992`/`HP19` filename fragment. Classical/thalamic-literature key
 (Task 2). No repository-local provenance text exists for this key.
 
@@ -3814,7 +3814,7 @@ citation error. ``g_max = 1.75 mS/cm^2`` matches ``IT2.mod``'s
 
 ### Provenance evidence
 
-No `.mod` file under `examples/neuron_compare/Cerebellum_mod` carries a
+No `.mod` file under `validation/neuron/Cerebellum_mod` carries a
 `Re1993`/`Re19` filename fragment. Classical/thalamic-literature key
 (Task 2). No repository-local provenance text exists for this key.
 
@@ -3877,7 +3877,7 @@ other buckets do). However, the symbol's own docstring in
 
 > "Template-based import of ``Cav3_1_test.mod``."
 
-Two matching files exist: `examples/neuron_compare/Cerebellum_mod/PC/channel/Cav3_1_test.mod`
+Two matching files exist: `data/cerebellum/pc_ma2024/mechanisms/channel/Cav3_1_test.mod`
 and `.../PC/channel/Cav3_1_test2.mod`. Both were harvested by the Step 2
 scan (they appear in the file list) but **produced zero matching header
 lines** — neither file contains a `TITLE`, `COMMENT`, `Author`, `Ref`, or
@@ -3979,7 +3979,7 @@ produce any published result.
 ### Import deviations
 
 None recorded. `Cav3_1_test.mod` does not appear in any table of
-`examples/neuron_compare/Cerebellum_mod/README.md` -- that file covers
+`data/cerebellum/mechanism-catalog.md` -- that file covers
 only the shipped `channel/ion` mechanisms, and this is a test variant.
 It carries no `TABLE`, no `derivimplicit`, and no rate-refresh
 relocation, confirmed by reading the file. For the deviations that
@@ -3997,7 +3997,7 @@ the `MA2024` deviations affect `Kv4p3`, `Kir2p3` and `Kca3p1` only).
 
 ### Provenance evidence
 
-No `.mod` file under `examples/neuron_compare/Cerebellum_mod` carries a
+No `.mod` file under `validation/neuron/Cerebellum_mod` carries a
 `Ya1989`/`Ya19` filename fragment. Classical/thalamic-literature key
 (Task 2). No repository-local provenance text exists for this key.
 
@@ -4071,7 +4071,7 @@ defaults to ``q10 = 1.0`` (no temperature correction).
 
 ### Provenance evidence
 
-No `.mod` file under `examples/neuron_compare/Cerebellum_mod` carries a
+No `.mod` file under `validation/neuron/Cerebellum_mod` carries a
 `De1994`/`De19` filename fragment. Classical/thalamic-literature key
 (Task 2). No repository-local provenance text exists for this key.
 

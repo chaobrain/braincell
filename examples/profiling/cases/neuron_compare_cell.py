@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Profiling adapter for ``examples/neuron_compare/cell`` BrainCell models."""
+"""Profiling adapter for ``validation/neuron/cell`` BrainCell models."""
 
 from __future__ import annotations
 
@@ -41,9 +41,9 @@ class CellExampleSpec:
 
 CELL_SPECS: dict[str, CellExampleSpec] = {
     "bc_ma2025": CellExampleSpec(
-        module="examples.neuron_compare.cell.bc_ma2025.bc_braincell",
+        module="validation.neuron.cell.bc_ma2025.bc_braincell",
         class_name="BC",
-        params_module="examples.neuron_compare.cell.bc_ma2025.parameters",
+        params_module="validation.neuron.cell.bc_ma2025.parameters",
         params_loader="load_bc25_params",
         morph_attr="DEFAULT_MORPH_PATH",
         temperature_celsius=36.0,
@@ -55,9 +55,9 @@ CELL_SPECS: dict[str, CellExampleSpec] = {
         amp_nA=0.05,
     ),
     "dcn_su2015": CellExampleSpec(
-        module="examples.neuron_compare.cell.dcn_su2015.dcn_braincell",
+        module="validation.neuron.cell.dcn_su2015.dcn_braincell",
         class_name="DCN",
-        params_module="examples.neuron_compare.cell.dcn_su2015.parameters",
+        params_module="validation.neuron.cell.dcn_su2015.parameters",
         params_loader="load_dcn15_params",
         morph_attr=None,
         temperature_celsius=32.0,
@@ -70,9 +70,9 @@ CELL_SPECS: dict[str, CellExampleSpec] = {
         params_need_temperature=True,
     ),
     "goc_ma2020": CellExampleSpec(
-        module="examples.neuron_compare.cell.goc_ma2020.goc_braincell",
+        module="validation.neuron.cell.goc_ma2020.goc_braincell",
         class_name="GoC",
-        params_module="examples.neuron_compare.cell.goc_ma2020.parameters",
+        params_module="validation.neuron.cell.goc_ma2020.parameters",
         params_loader="load_goc20_params",
         morph_attr="DEFAULT_MORPH_PATH",
         temperature_celsius=34.0,
@@ -84,9 +84,9 @@ CELL_SPECS: dict[str, CellExampleSpec] = {
         amp_nA=0.2,
     ),
     "grc_ma2020": CellExampleSpec(
-        module="examples.neuron_compare.cell.grc_ma2020.grc_braincell",
+        module="validation.neuron.cell.grc_ma2020.grc_braincell",
         class_name="GrC",
-        params_module="examples.neuron_compare.cell.grc_ma2020.parameters",
+        params_module="validation.neuron.cell.grc_ma2020.parameters",
         params_loader="load_grc20_params",
         morph_attr="DEFAULT_MORPH_PATH",
         temperature_celsius=25.0,
@@ -98,9 +98,9 @@ CELL_SPECS: dict[str, CellExampleSpec] = {
         amp_nA=0.01,
     ),
     "grc_ma2020_full": CellExampleSpec(
-        module="examples.neuron_compare.cell.grc_ma2020.grc_full_braincell",
+        module="validation.neuron.cell.grc_ma2020.grc_full_braincell",
         class_name="GrCFull",
-        params_module="examples.neuron_compare.cell.grc_ma2020.grc_full_parameters",
+        params_module="validation.neuron.cell.grc_ma2020.grc_full_parameters",
         params_loader="load_grc20_full_params",
         morph_attr="DEFAULT_MORPH_PATH",
         temperature_celsius=25.0,
@@ -112,9 +112,9 @@ CELL_SPECS: dict[str, CellExampleSpec] = {
         amp_nA=0.01,
     ),
     "io_zh2019": CellExampleSpec(
-        module="examples.neuron_compare.cell.io_zh2019.io_braincell",
+        module="validation.neuron.cell.io_zh2019.io_braincell",
         class_name="IO",
-        params_module="examples.neuron_compare.cell.io_zh2019.parameters",
+        params_module="validation.neuron.cell.io_zh2019.parameters",
         params_loader="load_io19_params",
         morph_attr=None,
         temperature_celsius=36.0,
@@ -126,9 +126,9 @@ CELL_SPECS: dict[str, CellExampleSpec] = {
         amp_nA=0.05,
     ),
     "pc_ma2024": CellExampleSpec(
-        module="examples.neuron_compare.cell.pc_ma2024.pc_braincell",
+        module="validation.neuron.cell.pc_ma2024.pc_braincell",
         class_name="PC",
-        params_module="examples.neuron_compare.cell.pc_ma2024.parameters",
+        params_module="validation.neuron.cell.pc_ma2024.parameters",
         params_loader="load_pc24_params",
         morph_attr="DEFAULT_MORPH_PATH",
         temperature_celsius=36.0,
@@ -140,9 +140,9 @@ CELL_SPECS: dict[str, CellExampleSpec] = {
         amp_nA=0.5,
     ),
     "sc_ma2021": CellExampleSpec(
-        module="examples.neuron_compare.cell.sc_ma2021.sc_braincell",
+        module="validation.neuron.cell.sc_ma2021.sc_braincell",
         class_name="SC",
-        params_module="examples.neuron_compare.cell.sc_ma2021.parameters",
+        params_module="validation.neuron.cell.sc_ma2021.parameters",
         params_loader="load_sc21_params",
         morph_attr="DEFAULT_MORPH_PATH",
         temperature_celsius=32.0,

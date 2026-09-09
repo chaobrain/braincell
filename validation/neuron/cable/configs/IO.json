@@ -1,0 +1,16 @@
+{
+  "meta": {
+    "label": "Inferior olive cable sweeps"
+  },
+  "defaults": {
+    "morphology": {
+      "path": "../../../../data/cerebellum/io_zh2019/morphology/IO.swc"
+    }
+  },
+  "templates": [
+    "../templates/ac.json",
+    "../templates/dc.json",
+    "../templates/vinit.json",
+    "../templates/cv.json"
+  ]
+}

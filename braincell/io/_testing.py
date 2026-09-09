@@ -30,7 +30,7 @@ from pathlib import Path
 
 from braincell.morph.branch import BRANCH_TYPES
 
-__all__ = ["ALLOWED_TYPES", "FIXTURE_DIR", "VALID_SWC_FIXTURES"]
+__all__ = ["ALLOWED_TYPES", "CEREBELLUM_FIXTURES", "FIXTURE_DIR", "VALID_SWC_FIXTURES"]
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "data" / "morphology"
 """SWC and ASC fixtures shipped in the repository checkout.
@@ -51,3 +51,13 @@ Taken from the :mod:`braincell.morph.branch` registry rather than copied, so a
 newly registered branch type cannot leave the assertion silently checking a
 stale set.
 """
+
+
+CEREBELLUM_FIXTURES = {
+    "BC": FIXTURE_DIR.parent / "cerebellum/bc_ma2025/morphology/BC.asc",
+    "GoC": FIXTURE_DIR.parent / "cerebellum/goc_ma2020/morphology/io_fixture/GoC.asc",
+    "GrC": FIXTURE_DIR.parent / "cerebellum/grc_ma2020/morphology/io_fixture/GrC.asc",
+    "IO": FIXTURE_DIR.parent / "cerebellum/io_zh2019/morphology/io_fixture/IO.swc",
+    "PC": FIXTURE_DIR.parent / "cerebellum/pc_ma2024/morphology/PC.asc",
+    "SC": FIXTURE_DIR.parent / "cerebellum/sc_ma2021/morphology/io_fixture/SC.asc",
+}

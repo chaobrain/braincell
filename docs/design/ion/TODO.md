@@ -13,7 +13,7 @@
 | 外部电流一致性 | 待讨论 | 审计各动态模型是否纳入 include_external 及缓存电流 | [电流契约](current/api.md#生命周期和电流) |
 | CalciumFirstOrder 单位错误 | 待讨论 | 确定 alpha/beta 的物理单位，修复电流密度到浓度导数的转换并补对照 | [具体失败条件](current/api.md#动态钙浓度) |
 
-小脑机制导入、PC 数值比较及剩余 MOD 覆盖由 [示例进度](../../../examples/neuron_compare/cerebellum-import-progress.md) 管理，
+小脑机制导入、PC 数值比较及剩余 MOD 覆盖由 [示例进度](../../../validation/neuron/cerebellum-import-progress.md) 管理，
 不在这里复制逐模型任务表。Single 兼容范围由 [Cell 统一提案](../cell/proposals/single-multi-compartment-unification.md) 讨论。
 
 ## 已实现内容索引

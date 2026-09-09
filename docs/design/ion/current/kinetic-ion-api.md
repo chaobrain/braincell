@@ -103,4 +103,4 @@ assert u.math.allclose(result.samples["bound"].values + result.samples["free"].v
 
 模板实现和边界用例见 [_base.py](../../../../braincell/ion/_base.py)、
 [_base_test.py](../../../../braincell/ion/_base_test.py)。真实的多壳层模型与 MOD 对照由
-[小脑示例进度](../../../../examples/neuron_compare/cerebellum-import-progress.md) 管理。
+[小脑示例进度](../../../../validation/neuron/cerebellum-import-progress.md) 管理。

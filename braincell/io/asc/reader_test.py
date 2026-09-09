@@ -23,7 +23,7 @@ import brainunit as u
 import numpy as np
 
 from braincell import Morphology
-from braincell.io._testing import ALLOWED_TYPES, FIXTURE_DIR
+from braincell.io._testing import CEREBELLUM_FIXTURES, ALLOWED_TYPES, FIXTURE_DIR
 from braincell.io.asc import AscReader, AscSpineRecord
 
 try:
@@ -430,14 +430,14 @@ class AscReaderTest(_AscTestMixin, unittest.TestCase):
         self.assertEqual(len(report.metadata.spines), 0)
 
     def test_sc_fixture_drops_point_after_children_warning_after_spine_support(self) -> None:
-        path = FIXTURE_DIR / "Cerebellum_morph" / "SC.asc"
+        path = CEREBELLUM_FIXTURES["SC"]
 
         _, report = AscReader().read(path, return_report=True)
 
         self.assertNotIn("syntax.point_after_children", self._issue_codes(report))
 
     def test_bc_fixture_reports_root_outside_soma_bbox_warnings(self) -> None:
-        path = FIXTURE_DIR / "Cerebellum_morph" / "BC.asc"
+        path = CEREBELLUM_FIXTURES["BC"]
 
         _, report = AscReader().read(path, return_report=True)
 
@@ -575,7 +575,7 @@ class AscNeuronParityTest(_AscTestMixin, unittest.TestCase):
         self.assertTrue(np.allclose(braincell_pt3d, neuron_pt3d, atol=1e-5, rtol=0.0))
 
     def test_real_fixture_grc_soma_matches_neuron_pt3d(self) -> None:
-        path = FIXTURE_DIR / "Cerebellum_morph" / "GrC.asc"
+        path = CEREBELLUM_FIXTURES["GrC"]
         tree = Morphology.from_asc(path)
         neuron_pt3d = self._neuron_root_soma_pt3d(path)
         braincell_pt3d = self._braincell_root_soma_pt3d(tree)

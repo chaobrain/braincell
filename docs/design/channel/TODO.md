@@ -26,4 +26,4 @@
 ## 参考与示例
 
 - [Ion/Channel 文献表](../ion/references/ion-channel-bibliography.md)：共享来源记录，仅保留这一份；缺失归因不视为已核实。
-- [小脑导入与比较进度](../../../examples/neuron_compare/cerebellum-import-progress.md)：具体模型的验证工作由示例维护。
+- [小脑导入与比较进度](../../../validation/neuron/cerebellum-import-progress.md)：具体模型的验证工作由示例维护。

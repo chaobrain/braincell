@@ -1,0 +1,41 @@
+{
+  "meta": {
+    "label": "DCN HCN SU15"
+  },
+  "identity": {
+    "mod_dir": "../../../artifacts/mechanisms/dcn_su2015/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 1e-05,
+      "E_mV": -45.0
+    }
+  },
+  "mapping": {
+    "current": "ih",
+    "impl_name": {
+      "neuron": "HCN_SU15_DCN",
+      "braincell": "HCN_SU2015_DCN"
+    },
+    "gate_names": {
+      "common": [
+        "m"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      },
+      "E_mV": {
+        "neuron": "eh",
+        "braincell": "E"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

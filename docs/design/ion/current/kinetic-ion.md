@@ -32,4 +32,4 @@
 - [模板实现](../../../../braincell/ion/_base.py)、[模板测试](../../../../braincell/ion/_base_test.py)。
 - [具体钙池](../../../../braincell/ion/calcium.py)、[离子运行时测试](../../../../braincell/_compute/ions_test.py)。
 - [共享文献表](../references/ion-channel-bibliography.md)：来源与模型归因，不代表全部导入模型已完成比较。
-- [小脑导入与比较进度](../../../../examples/neuron_compare/cerebellum-import-progress.md)：具体模型、复现入口和验证限制。
+- [小脑导入与比较进度](../../../../validation/neuron/cerebellum-import-progress.md)：具体模型、复现入口和验证限制。

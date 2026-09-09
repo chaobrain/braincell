@@ -11,8 +11,8 @@ If you change the behavior described here, at minimum re-run:
 - `braincell/io/swc/reader_test.py`
 - `braincell/io/swc/soma_test.py`
 - `braincell/_discretization/base_test.py`
-- `examples/neuron_compare/cable/tests/test_mapping.py`
-- `examples/neuron_compare/cable/tests/test_runner.py`
+- `validation/neuron/cable/tests/test_mapping.py`
+- `validation/neuron/cable/tests/test_runner.py`
 
 ## Pipeline Overview
 
@@ -202,7 +202,7 @@ When a jump lies on a shared CV boundary, the current ownership rule is:
 
 ### Compare Mapping
 
-`examples/neuron_compare/cable/templates/mapping.py` is a compare compatibility
+`validation/neuron/cable/templates/mapping.py` is a compare compatibility
 layer, not morphology truth.
 
 BrainCell currently collapses unknown SWC type codes to `custom`. NEURON
@@ -218,5 +218,5 @@ normalization must be revised too.
 - `braincell/io/swc/reader_test.py`
 - `braincell/io/swc/soma_test.py`
 - `braincell/_discretization/base_test.py`
-- `examples/neuron_compare/cable/tests/test_mapping.py`
-- `examples/neuron_compare/cable/tests/test_runner.py`
+- `validation/neuron/cable/tests/test_mapping.py`
+- `validation/neuron/cable/tests/test_runner.py`

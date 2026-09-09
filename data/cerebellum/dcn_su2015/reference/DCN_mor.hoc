@@ -1,0 +1,2335 @@
+/* Johannes Luthman's translation of Volker Steuber's and Dieter Jaeger's
+GENESIS DCN morphology. The file was produced with help of neuroConstruct.
+
+The cell is made up of:
+1 soma
+1 axHillock
+10 axIniSeg
+20 axNode
+83 proxDend
+402 distDend
+Sum: 517 compartments
+*/
+
+//SectionList pointers to reference the groups of sections:
+objref axHillock
+objref axIniSeg
+objref axNode
+objref proxDend
+objref distDend
+objref excSynapseComps //the dendritic compartments (x50 for the soma, 100 non-somatic) that
+        //receive excitatory input.
+objref inhSynapseComps //the dendritic compartments (x50 for the soma, 400 non-somatic) that
+        //receive inhibitory input.
+
+//Create the compartments
+create soma
+create axHill
+create axIS[10]
+create axIN[20]
+create p1b2b1b1b1b2b2b2[2]
+create p1b2b1b1b1b2b2b1[6]
+create p3b1b2b2[8]
+create p3b1b2b1[6]
+create p3b2b1b1b1b2[2]
+create p3b2b1b1b1b1[3]
+create p3b1b1b2[4]
+create p1b2b2[3]
+create p3b1b1b1[3]
+create p1b2b1[2]
+create p3b1b1b1b2[2]
+create p1b1b2[3]
+create p3b1b1b1b1[2]
+create p1b1b1[3]
+create p0b1b2b2b1b1b2b2[7]
+create p0b1b2b2b1b1b2b1[2]
+create p0b1b2b2b1b2[3]
+create p0b1b2b2b1b1[2]
+create p3b2b1b1b1b2b2[10]
+create p3b2b1b1b1b2b1[3]
+create p3b2[1]
+create p3b1[2]
+create p2b2[5]
+create p2b1[2]
+create p1b2b2b2[2]
+create p1b2[2]
+create p1b2b2b1[10]
+create p1b1[4]
+create p1b2b1b2[8]
+create p0b2[1]
+create p0b2b2[4]
+create p0b1[5]
+create p1b2b1b1[2]
+create p0b2b1[1]
+create p0b1b2b1b2b2[5]
+create p2b1b2b2[6]
+create p0b1b2b1b2b1[2]
+create p2b1b2b1[1]
+create p0b1b2[1]
+create p0b1b1[5]
+create p1b2b1b1b2b2[15]
+create p2b1b1b2[16]
+create p1b2b1b1b2b1[1]
+create p2b1b1b1[2]
+create p0b2b2b1b2[2]
+create p0b2b2b1b1[1]
+create p1b2b1b1b1b2b2[9]
+create p1b2b1b1b1b2b1[2]
+create p1b2b1b1b1b2[3]
+create p1b2b1b1b1b1[1]
+create p0b2b2b2[12]
+create p0b2b2b1[2]
+create p0b2b1b2[13]
+create p0b2b1b1[5]
+create p1b1b2b2[4]
+create p1b1b2b1[7]
+create p0b1b2b2b2[6]
+create p2b1b2b1b2[3]
+create p0b1b2b2b1[1]
+create p2b1b2b1b1[1]
+create p1b1b1b2[2]
+create p0b1b2b1b2[2]
+create p1b1b1b1[4]
+create p0b1b2b1b1[2]
+create p0b1b2b1b2b1b3b2[2]
+create p0b1b2b1b2b1b3b1[2]
+create p0b2b1b2b2[7]
+create p0b2b1b2b1[4]
+create p0b2b1b1b2[5]
+create p0b2b1b1b2b1b1b2[6]
+create p0b2b1b1b1[3]
+create p0b2b1b1b2b1b1b1[4]
+create p0b1b2b2[1]
+create p0b1b2b1[5]
+create p3[2]
+create p2[2]
+create p1[4]
+create p0[1]
+create p0b2b2b1b2b2[26]
+create p0b2b2b1b2b1[3]
+create p1b2b2b2b2[3]
+create p1b2b2b2b1[1]
+create p0b2b1b1b2b1b2[11]
+create p1b2b1b1b1b2b2b2b2[2]
+create p0b2b1b1b2b1b1[4]
+create p1b2b1b1b1b2b2b2b1[3]
+create p3b2b2[7]
+create p3b2b1[1]
+create p1b2b1b1b1b2b2b1b2[3]
+create p1b2b1b1b1b2b2b1b1[1]
+create p3b1b2[4]
+create p3b1b1[2]
+create p0b1b2b1b2b1b3[2]
+create p0b1b2b1b2b1b2[1]
+create p0b1b2b1b2b1b1[1]
+create p0b1b2b2b1b2b2[3]
+create p0b1b2b2b1b2b1[2]
+create p0b1b2b2b1b1b2[7]
+create p0b1b2b2b1b1b1[2]
+create p3b2b1b2b2[7]
+create p3b2b1b2b1[3]
+create p3b2b1b1b2[3]
+create p3b2b1b1b1[6]
+create p3b2b1b2[6]
+create p3b1b2b2b2[4]
+create p1b2b1b1b2[3]
+create p3b2b1b1[5]
+create p3b1b2b2b1[1]
+create p1b2b1b1b1[2]
+create p0b2b1b1b2b2[2]
+create p0b2b1b1b2b1[1]
+create p1b1b2b2b2[8]
+create p3b1b2b1b2[3]
+create p2b1b2[6]
+create p1b1b2b2b1[9]
+create p3b1b2b1b1[8]
+create p2b1b1[1]
+create p0b1b2b2b1b2b2b2[4]
+create p0b1b2b2b1b2b2b1[3]
+create p0b1b2b2b1b2b1b2[1]
+create p0b1b2b2b1b2b1b1[1]
+
+//Connect the compartments
+connect axHill(0), soma(0.5)
+connect axIS[0](0), axHill(1.0)
+connect axIS[1](0), axIS[0](1.0)
+connect axIS[2](0), axIS[1](1.0)
+connect axIS[3](0), axIS[2](1.0)
+connect axIS[4](0), axIS[3](1.0)
+connect axIS[5](0), axIS[4](1.0)
+connect axIS[6](0), axIS[5](1.0)
+connect axIS[7](0), axIS[6](1.0)
+connect axIS[8](0), axIS[7](1.0)
+connect axIS[9](0), axIS[8](1.0)
+connect axIN[0](0), axIS[9](1.0)
+connect axIN[1](0), axIN[0](1.0)
+connect axIN[2](0), axIN[1](1.0)
+connect axIN[3](0), axIN[2](1.0)
+connect axIN[4](0), axIN[3](1.0)
+connect axIN[5](0), axIN[4](1.0)
+connect axIN[6](0), axIN[5](1.0)
+connect axIN[7](0), axIN[6](1.0)
+connect axIN[8](0), axIN[7](1.0)
+connect axIN[9](0), axIN[8](1.0)
+connect axIN[10](0), axIN[9](1.0)
+connect axIN[11](0), axIN[10](1.0)
+connect axIN[12](0), axIN[11](1.0)
+connect axIN[13](0), axIN[12](1.0)
+connect axIN[14](0), axIN[13](1.0)
+connect axIN[15](0), axIN[14](1.0)
+connect axIN[16](0), axIN[15](1.0)
+connect axIN[17](0), axIN[16](1.0)
+connect axIN[18](0), axIN[17](1.0)
+connect axIN[19](0), axIN[18](1.0)
+connect p0[0](0), soma(0.5)
+connect p0b1[0](0), p0[0](1.0)
+connect p0b1[1](0), p0b1[0](1.0)
+connect p0b1[2](0), p0b1[1](1.0)
+connect p0b1[3](0), p0b1[2](1.0)
+connect p0b1[4](0), p0b1[3](1.0)
+connect p0b1b1[0](0), p0b1[4](1.0)
+connect p0b1b1[1](0), p0b1b1[0](1.0)
+connect p0b1b1[2](0), p0b1b1[1](1.0)
+connect p0b1b1[3](0), p0b1b1[2](1.0)
+connect p0b1b1[4](0), p0b1b1[3](1.0)
+connect p0b1b2[0](0), p0b1[4](1.0)
+connect p0b1b2b1[0](0), p0b1b2[0](1.0)
+connect p0b1b2b1[1](0), p0b1b2b1[0](1.0)
+connect p0b1b2b1[2](0), p0b1b2b1[1](1.0)
+connect p0b1b2b1[3](0), p0b1b2b1[2](1.0)
+connect p0b1b2b1[4](0), p0b1b2b1[3](1.0)
+connect p0b1b2b1b1[0](0), p0b1b2b1[4](1.0)
+connect p0b1b2b1b1[1](0), p0b1b2b1b1[0](1.0)
+connect p0b1b2b1b2[0](0), p0b1b2b1[4](1.0)
+connect p0b1b2b1b2[1](0), p0b1b2b1b2[0](1.0)
+connect p0b1b2b1b2b1[0](0), p0b1b2b1b2[1](1.0)
+connect p0b1b2b1b2b1[1](0), p0b1b2b1b2b1[0](1.0)
+connect p0b1b2b1b2b1b1[0](0), p0b1b2b1b2b1[1](1.0)
+connect p0b1b2b1b2b1b2[0](0), p0b1b2b1b2b1[1](1.0)
+connect p0b1b2b1b2b1b3[0](0), p0b1b2b1b2b1[1](1.0)
+connect p0b1b2b1b2b1b3[1](0), p0b1b2b1b2b1b3[0](1.0)
+connect p0b1b2b1b2b1b3b1[0](0), p0b1b2b1b2b1b3[1](1.0)
+connect p0b1b2b1b2b1b3b1[1](0), p0b1b2b1b2b1b3b1[0](1.0)
+connect p0b1b2b1b2b1b3b2[0](0), p0b1b2b1b2b1b3[1](1.0)
+connect p0b1b2b1b2b1b3b2[1](0), p0b1b2b1b2b1b3b2[0](1.0)
+connect p0b1b2b1b2b2[0](0), p0b1b2b1b2[1](1.0)
+connect p0b1b2b1b2b2[1](0), p0b1b2b1b2b2[0](1.0)
+connect p0b1b2b1b2b2[2](0), p0b1b2b1b2b2[1](1.0)
+connect p0b1b2b1b2b2[3](0), p0b1b2b1b2b2[2](1.0)
+connect p0b1b2b1b2b2[4](0), p0b1b2b1b2b2[3](1.0)
+connect p0b1b2b2[0](0), p0b1b2[0](1.0)
+connect p0b1b2b2b1[0](0), p0b1b2b2[0](1.0)
+connect p0b1b2b2b1b1[0](0), p0b1b2b2b1[0](1.0)
+connect p0b1b2b2b1b1[1](0), p0b1b2b2b1b1[0](1.0)
+connect p0b1b2b2b1b1b1[0](0), p0b1b2b2b1b1[1](1.0)
+connect p0b1b2b2b1b1b1[1](0), p0b1b2b2b1b1b1[0](1.0)
+connect p0b1b2b2b1b1b2[0](0), p0b1b2b2b1b1[1](1.0)
+connect p0b1b2b2b1b1b2[1](0), p0b1b2b2b1b1b2[0](1.0)
+connect p0b1b2b2b1b1b2[2](0), p0b1b2b2b1b1b2[1](1.0)
+connect p0b1b2b2b1b1b2[3](0), p0b1b2b2b1b1b2[2](1.0)
+connect p0b1b2b2b1b1b2[4](0), p0b1b2b2b1b1b2[3](1.0)
+connect p0b1b2b2b1b1b2[5](0), p0b1b2b2b1b1b2[4](1.0)
+connect p0b1b2b2b1b1b2[6](0), p0b1b2b2b1b1b2[5](1.0)
+connect p0b1b2b2b1b1b2b1[0](0), p0b1b2b2b1b1b2[6](1.0)
+connect p0b1b2b2b1b1b2b1[1](0), p0b1b2b2b1b1b2b1[0](1.0)
+connect p0b1b2b2b1b1b2b2[0](0), p0b1b2b2b1b1b2[6](1.0)
+connect p0b1b2b2b1b1b2b2[1](0), p0b1b2b2b1b1b2b2[0](1.0)
+connect p0b1b2b2b1b1b2b2[2](0), p0b1b2b2b1b1b2b2[1](1.0)
+connect p0b1b2b2b1b1b2b2[3](0), p0b1b2b2b1b1b2b2[2](1.0)
+connect p0b1b2b2b1b1b2b2[4](0), p0b1b2b2b1b1b2b2[3](1.0)
+connect p0b1b2b2b1b1b2b2[5](0), p0b1b2b2b1b1b2b2[4](1.0)
+connect p0b1b2b2b1b1b2b2[6](0), p0b1b2b2b1b1b2b2[5](1.0)
+connect p0b1b2b2b1b2[0](0), p0b1b2b2b1[0](1.0)
+connect p0b1b2b2b1b2[1](0), p0b1b2b2b1b2[0](1.0)
+connect p0b1b2b2b1b2[2](0), p0b1b2b2b1b2[1](1.0)
+connect p0b1b2b2b1b2b1[0](0), p0b1b2b2b1b2[2](1.0)
+connect p0b1b2b2b1b2b1[1](0), p0b1b2b2b1b2b1[0](1.0)
+connect p0b1b2b2b1b2b1b1[0](0), p0b1b2b2b1b2b1[1](1.0)
+connect p0b1b2b2b1b2b1b2[0](0), p0b1b2b2b1b2b1[1](1.0)
+connect p0b1b2b2b1b2b2[0](0), p0b1b2b2b1b2[2](1.0)
+connect p0b1b2b2b1b2b2[1](0), p0b1b2b2b1b2b2[0](1.0)
+connect p0b1b2b2b1b2b2[2](0), p0b1b2b2b1b2b2[1](1.0)
+connect p0b1b2b2b1b2b2b1[0](0), p0b1b2b2b1b2b2[2](1.0)
+connect p0b1b2b2b1b2b2b1[1](0), p0b1b2b2b1b2b2b1[0](1.0)
+connect p0b1b2b2b1b2b2b1[2](0), p0b1b2b2b1b2b2b1[1](1.0)
+connect p0b1b2b2b1b2b2b2[0](0), p0b1b2b2b1b2b2[2](1.0)
+connect p0b1b2b2b1b2b2b2[1](0), p0b1b2b2b1b2b2b2[0](1.0)
+connect p0b1b2b2b1b2b2b2[2](0), p0b1b2b2b1b2b2b2[1](1.0)
+connect p0b1b2b2b1b2b2b2[3](0), p0b1b2b2b1b2b2b2[2](1.0)
+connect p0b1b2b2b2[0](0), p0b1b2b2[0](1.0)
+connect p0b1b2b2b2[1](0), p0b1b2b2b2[0](1.0)
+connect p0b1b2b2b2[2](0), p0b1b2b2b2[1](1.0)
+connect p0b1b2b2b2[3](0), p0b1b2b2b2[2](1.0)
+connect p0b1b2b2b2[4](0), p0b1b2b2b2[3](1.0)
+connect p0b1b2b2b2[5](0), p0b1b2b2b2[4](1.0)
+connect p0b2[0](0), p0[0](1.0)
+connect p0b2b1[0](0), p0b2[0](1.0)
+connect p0b2b1b1[0](0), p0b2b1[0](1.0)
+connect p0b2b1b1[1](0), p0b2b1b1[0](1.0)
+connect p0b2b1b1[2](0), p0b2b1b1[1](1.0)
+connect p0b2b1b1[3](0), p0b2b1b1[2](1.0)
+connect p0b2b1b1[4](0), p0b2b1b1[3](1.0)
+connect p0b2b1b1b1[0](0), p0b2b1b1[4](1.0)
+connect p0b2b1b1b1[1](0), p0b2b1b1b1[0](1.0)
+connect p0b2b1b1b1[2](0), p0b2b1b1b1[1](1.0)
+connect p0b2b1b1b2[0](0), p0b2b1b1[4](1.0)
+connect p0b2b1b1b2[1](0), p0b2b1b1b2[0](1.0)
+connect p0b2b1b1b2[2](0), p0b2b1b1b2[1](1.0)
+connect p0b2b1b1b2[3](0), p0b2b1b1b2[2](1.0)
+connect p0b2b1b1b2[4](0), p0b2b1b1b2[3](1.0)
+connect p0b2b1b1b2b1[0](0), p0b2b1b1b2[4](1.0)
+connect p0b2b1b1b2b1b1[0](0), p0b2b1b1b2b1[0](1.0)
+connect p0b2b1b1b2b1b1[1](0), p0b2b1b1b2b1b1[0](1.0)
+connect p0b2b1b1b2b1b1[2](0), p0b2b1b1b2b1b1[1](1.0)
+connect p0b2b1b1b2b1b1[3](0), p0b2b1b1b2b1b1[2](1.0)
+connect p0b2b1b1b2b1b1b1[0](0), p0b2b1b1b2b1b1[3](1.0)
+connect p0b2b1b1b2b1b1b1[1](0), p0b2b1b1b2b1b1b1[0](1.0)
+connect p0b2b1b1b2b1b1b1[2](0), p0b2b1b1b2b1b1b1[1](1.0)
+connect p0b2b1b1b2b1b1b1[3](0), p0b2b1b1b2b1b1b1[2](1.0)
+connect p0b2b1b1b2b1b1b2[0](0), p0b2b1b1b2b1b1[3](1.0)
+connect p0b2b1b1b2b1b1b2[1](0), p0b2b1b1b2b1b1b2[0](1.0)
+connect p0b2b1b1b2b1b1b2[2](0), p0b2b1b1b2b1b1b2[1](1.0)
+connect p0b2b1b1b2b1b1b2[3](0), p0b2b1b1b2b1b1b2[2](1.0)
+connect p0b2b1b1b2b1b1b2[4](0), p0b2b1b1b2b1b1b2[3](1.0)
+connect p0b2b1b1b2b1b1b2[5](0), p0b2b1b1b2b1b1b2[4](1.0)
+connect p0b2b1b1b2b1b2[0](0), p0b2b1b1b2b1[0](1.0)
+connect p0b2b1b1b2b1b2[1](0), p0b2b1b1b2b1b2[0](1.0)
+connect p0b2b1b1b2b1b2[2](0), p0b2b1b1b2b1b2[1](1.0)
+connect p0b2b1b1b2b1b2[3](0), p0b2b1b1b2b1b2[2](1.0)
+connect p0b2b1b1b2b1b2[4](0), p0b2b1b1b2b1b2[3](1.0)
+connect p0b2b1b1b2b1b2[5](0), p0b2b1b1b2b1b2[4](1.0)
+connect p0b2b1b1b2b1b2[6](0), p0b2b1b1b2b1b2[5](1.0)
+connect p0b2b1b1b2b1b2[7](0), p0b2b1b1b2b1b2[6](1.0)
+connect p0b2b1b1b2b1b2[8](0), p0b2b1b1b2b1b2[7](1.0)
+connect p0b2b1b1b2b1b2[9](0), p0b2b1b1b2b1b2[8](1.0)
+connect p0b2b1b1b2b1b2[10](0), p0b2b1b1b2b1b2[9](1.0)
+connect p0b2b1b1b2b2[0](0), p0b2b1b1b2[4](1.0)
+connect p0b2b1b1b2b2[1](0), p0b2b1b1b2b2[0](1.0)
+connect p0b2b1b2[0](0), p0b2b1[0](1.0)
+connect p0b2b1b2[1](0), p0b2b1b2[0](1.0)
+connect p0b2b1b2[2](0), p0b2b1b2[1](1.0)
+connect p0b2b1b2[3](0), p0b2b1b2[2](1.0)
+connect p0b2b1b2[4](0), p0b2b1b2[3](1.0)
+connect p0b2b1b2[5](0), p0b2b1b2[4](1.0)
+connect p0b2b1b2[6](0), p0b2b1b2[5](1.0)
+connect p0b2b1b2[7](0), p0b2b1b2[6](1.0)
+connect p0b2b1b2[8](0), p0b2b1b2[7](1.0)
+connect p0b2b1b2[9](0), p0b2b1b2[8](1.0)
+connect p0b2b1b2[10](0), p0b2b1b2[9](1.0)
+connect p0b2b1b2[11](0), p0b2b1b2[10](1.0)
+connect p0b2b1b2[12](0), p0b2b1b2[11](1.0)
+connect p0b2b1b2b1[0](0), p0b2b1b2[12](1.0)
+connect p0b2b1b2b1[1](0), p0b2b1b2b1[0](1.0)
+connect p0b2b1b2b1[2](0), p0b2b1b2b1[1](1.0)
+connect p0b2b1b2b1[3](0), p0b2b1b2b1[2](1.0)
+connect p0b2b1b2b2[0](0), p0b2b1b2[12](1.0)
+connect p0b2b1b2b2[1](0), p0b2b1b2b2[0](1.0)
+connect p0b2b1b2b2[2](0), p0b2b1b2b2[1](1.0)
+connect p0b2b1b2b2[3](0), p0b2b1b2b2[2](1.0)
+connect p0b2b1b2b2[4](0), p0b2b1b2b2[3](1.0)
+connect p0b2b1b2b2[5](0), p0b2b1b2b2[4](1.0)
+connect p0b2b1b2b2[6](0), p0b2b1b2b2[5](1.0)
+connect p0b2b2[0](0), p0b2[0](1.0)
+connect p0b2b2[1](0), p0b2b2[0](1.0)
+connect p0b2b2[2](0), p0b2b2[1](1.0)
+connect p0b2b2[3](0), p0b2b2[2](1.0)
+connect p0b2b2b1[0](0), p0b2b2[3](1.0)
+connect p0b2b2b1[1](0), p0b2b2b1[0](1.0)
+connect p0b2b2b1b1[0](0), p0b2b2b1[1](1.0)
+connect p0b2b2b1b2[0](0), p0b2b2b1[1](1.0)
+connect p0b2b2b1b2[1](0), p0b2b2b1b2[0](1.0)
+connect p0b2b2b1b2b1[0](0), p0b2b2b1b2[1](1.0)
+connect p0b2b2b1b2b1[1](0), p0b2b2b1b2b1[0](1.0)
+connect p0b2b2b1b2b1[2](0), p0b2b2b1b2b1[1](1.0)
+connect p0b2b2b1b2b2[0](0), p0b2b2b1b2[1](1.0)
+connect p0b2b2b1b2b2[1](0), p0b2b2b1b2b2[0](1.0)
+connect p0b2b2b1b2b2[2](0), p0b2b2b1b2b2[1](1.0)
+connect p0b2b2b1b2b2[3](0), p0b2b2b1b2b2[2](1.0)
+connect p0b2b2b1b2b2[4](0), p0b2b2b1b2b2[3](1.0)
+connect p0b2b2b1b2b2[5](0), p0b2b2b1b2b2[4](1.0)
+connect p0b2b2b1b2b2[6](0), p0b2b2b1b2b2[5](1.0)
+connect p0b2b2b1b2b2[7](0), p0b2b2b1b2b2[6](1.0)
+connect p0b2b2b1b2b2[8](0), p0b2b2b1b2b2[7](1.0)
+connect p0b2b2b1b2b2[9](0), p0b2b2b1b2b2[8](1.0)
+connect p0b2b2b1b2b2[10](0), p0b2b2b1b2b2[9](1.0)
+connect p0b2b2b1b2b2[11](0), p0b2b2b1b2b2[10](1.0)
+connect p0b2b2b1b2b2[12](0), p0b2b2b1b2b2[11](1.0)
+connect p0b2b2b1b2b2[13](0), p0b2b2b1b2b2[12](1.0)
+connect p0b2b2b1b2b2[14](0), p0b2b2b1b2b2[13](1.0)
+connect p0b2b2b1b2b2[15](0), p0b2b2b1b2b2[14](1.0)
+connect p0b2b2b1b2b2[16](0), p0b2b2b1b2b2[15](1.0)
+connect p0b2b2b1b2b2[17](0), p0b2b2b1b2b2[16](1.0)
+connect p0b2b2b1b2b2[18](0), p0b2b2b1b2b2[17](1.0)
+connect p0b2b2b1b2b2[19](0), p0b2b2b1b2b2[18](1.0)
+connect p0b2b2b1b2b2[20](0), p0b2b2b1b2b2[19](1.0)
+connect p0b2b2b1b2b2[21](0), p0b2b2b1b2b2[20](1.0)
+connect p0b2b2b1b2b2[22](0), p0b2b2b1b2b2[21](1.0)
+connect p0b2b2b1b2b2[23](0), p0b2b2b1b2b2[22](1.0)
+connect p0b2b2b1b2b2[24](0), p0b2b2b1b2b2[23](1.0)
+connect p0b2b2b1b2b2[25](0), p0b2b2b1b2b2[24](1.0)
+connect p0b2b2b2[0](0), p0b2b2[3](1.0)
+connect p0b2b2b2[1](0), p0b2b2b2[0](1.0)
+connect p0b2b2b2[2](0), p0b2b2b2[1](1.0)
+connect p0b2b2b2[3](0), p0b2b2b2[2](1.0)
+connect p0b2b2b2[4](0), p0b2b2b2[3](1.0)
+connect p0b2b2b2[5](0), p0b2b2b2[4](1.0)
+connect p0b2b2b2[6](0), p0b2b2b2[5](1.0)
+connect p0b2b2b2[7](0), p0b2b2b2[6](1.0)
+connect p0b2b2b2[8](0), p0b2b2b2[7](1.0)
+connect p0b2b2b2[9](0), p0b2b2b2[8](1.0)
+connect p0b2b2b2[10](0), p0b2b2b2[9](1.0)
+connect p0b2b2b2[11](0), p0b2b2b2[10](1.0)
+connect p1[0](0), soma(0.5)
+connect p1[1](0), p1[0](1.0)
+connect p1[2](0), p1[1](1.0)
+connect p1[3](0), p1[2](1.0)
+connect p1b1[0](0), p1[3](1.0)
+connect p1b1[1](0), p1b1[0](1.0)
+connect p1b1[2](0), p1b1[1](1.0)
+connect p1b1[3](0), p1b1[2](1.0)
+connect p1b1b1[0](0), p1b1[3](1.0)
+connect p1b1b1[1](0), p1b1b1[0](1.0)
+connect p1b1b1[2](0), p1b1b1[1](1.0)
+connect p1b1b1b1[0](0), p1b1b1[2](1.0)
+connect p1b1b1b1[1](0), p1b1b1b1[0](1.0)
+connect p1b1b1b1[2](0), p1b1b1b1[1](1.0)
+connect p1b1b1b1[3](0), p1b1b1b1[2](1.0)
+connect p1b1b1b2[0](0), p1b1b1[2](1.0)
+connect p1b1b1b2[1](0), p1b1b1b2[0](1.0)
+connect p1b1b2[0](0), p1b1[3](1.0)
+connect p1b1b2[1](0), p1b1b2[0](1.0)
+connect p1b1b2[2](0), p1b1b2[1](1.0)
+connect p1b1b2b1[0](0), p1b1b2[2](1.0)
+connect p1b1b2b1[1](0), p1b1b2b1[0](1.0)
+connect p1b1b2b1[2](0), p1b1b2b1[1](1.0)
+connect p1b1b2b1[3](0), p1b1b2b1[2](1.0)
+connect p1b1b2b1[4](0), p1b1b2b1[3](1.0)
+connect p1b1b2b1[5](0), p1b1b2b1[4](1.0)
+connect p1b1b2b1[6](0), p1b1b2b1[5](1.0)
+connect p1b1b2b2[0](0), p1b1b2[2](1.0)
+connect p1b1b2b2[1](0), p1b1b2b2[0](1.0)
+connect p1b1b2b2[2](0), p1b1b2b2[1](1.0)
+connect p1b1b2b2[3](0), p1b1b2b2[2](1.0)
+connect p1b1b2b2b1[0](0), p1b1b2b2[3](1.0)
+connect p1b1b2b2b1[1](0), p1b1b2b2b1[0](1.0)
+connect p1b1b2b2b1[2](0), p1b1b2b2b1[1](1.0)
+connect p1b1b2b2b1[3](0), p1b1b2b2b1[2](1.0)
+connect p1b1b2b2b1[4](0), p1b1b2b2b1[3](1.0)
+connect p1b1b2b2b1[5](0), p1b1b2b2b1[4](1.0)
+connect p1b1b2b2b1[6](0), p1b1b2b2b1[5](1.0)
+connect p1b1b2b2b1[7](0), p1b1b2b2b1[6](1.0)
+connect p1b1b2b2b1[8](0), p1b1b2b2b1[7](1.0)
+connect p1b1b2b2b2[0](0), p1b1b2b2[3](1.0)
+connect p1b1b2b2b2[1](0), p1b1b2b2b2[0](1.0)
+connect p1b1b2b2b2[2](0), p1b1b2b2b2[1](1.0)
+connect p1b1b2b2b2[3](0), p1b1b2b2b2[2](1.0)
+connect p1b1b2b2b2[4](0), p1b1b2b2b2[3](1.0)
+connect p1b1b2b2b2[5](0), p1b1b2b2b2[4](1.0)
+connect p1b1b2b2b2[6](0), p1b1b2b2b2[5](1.0)
+connect p1b1b2b2b2[7](0), p1b1b2b2b2[6](1.0)
+connect p1b2[0](0), p1[3](1.0)
+connect p1b2[1](0), p1b2[0](1.0)
+connect p1b2b1[0](0), p1b2[1](1.0)
+connect p1b2b1[1](0), p1b2b1[0](1.0)
+connect p1b2b1b1[0](0), p1b2b1[1](1.0)
+connect p1b2b1b1[1](0), p1b2b1b1[0](1.0)
+connect p1b2b1b1b1[0](0), p1b2b1b1[1](1.0)
+connect p1b2b1b1b1[1](0), p1b2b1b1b1[0](1.0)
+connect p1b2b1b1b1b1[0](0), p1b2b1b1b1[1](1.0)
+connect p1b2b1b1b1b2[0](0), p1b2b1b1b1[1](1.0)
+connect p1b2b1b1b1b2[1](0), p1b2b1b1b1b2[0](1.0)
+connect p1b2b1b1b1b2[2](0), p1b2b1b1b1b2[1](1.0)
+connect p1b2b1b1b1b2b1[0](0), p1b2b1b1b1b2[2](1.0)
+connect p1b2b1b1b1b2b1[1](0), p1b2b1b1b1b2b1[0](1.0)
+connect p1b2b1b1b1b2b2[0](0), p1b2b1b1b1b2[2](1.0)
+connect p1b2b1b1b1b2b2[1](0), p1b2b1b1b1b2b2[0](1.0)
+connect p1b2b1b1b1b2b2[2](0), p1b2b1b1b1b2b2[1](1.0)
+connect p1b2b1b1b1b2b2[3](0), p1b2b1b1b1b2b2[2](1.0)
+connect p1b2b1b1b1b2b2[4](0), p1b2b1b1b1b2b2[3](1.0)
+connect p1b2b1b1b1b2b2[5](0), p1b2b1b1b1b2b2[4](1.0)
+connect p1b2b1b1b1b2b2[6](0), p1b2b1b1b1b2b2[5](1.0)
+connect p1b2b1b1b1b2b2[7](0), p1b2b1b1b1b2b2[6](1.0)
+connect p1b2b1b1b1b2b2[8](0), p1b2b1b1b1b2b2[7](1.0)
+connect p1b2b1b1b1b2b2b1[0](0), p1b2b1b1b1b2b2[8](1.0)
+connect p1b2b1b1b1b2b2b1[1](0), p1b2b1b1b1b2b2b1[0](1.0)
+connect p1b2b1b1b1b2b2b1[2](0), p1b2b1b1b1b2b2b1[1](1.0)
+connect p1b2b1b1b1b2b2b1[3](0), p1b2b1b1b1b2b2b1[2](1.0)
+connect p1b2b1b1b1b2b2b1[4](0), p1b2b1b1b1b2b2b1[3](1.0)
+connect p1b2b1b1b1b2b2b1[5](0), p1b2b1b1b1b2b2b1[4](1.0)
+connect p1b2b1b1b1b2b2b1b1[0](0), p1b2b1b1b1b2b2b1[5](1.0)
+connect p1b2b1b1b1b2b2b1b2[0](0), p1b2b1b1b1b2b2b1[5](1.0)
+connect p1b2b1b1b1b2b2b1b2[1](0), p1b2b1b1b1b2b2b1b2[0](1.0)
+connect p1b2b1b1b1b2b2b1b2[2](0), p1b2b1b1b1b2b2b1b2[1](1.0)
+connect p1b2b1b1b1b2b2b2[0](0), p1b2b1b1b1b2b2[8](1.0)
+connect p1b2b1b1b1b2b2b2[1](0), p1b2b1b1b1b2b2b2[0](1.0)
+connect p1b2b1b1b1b2b2b2b1[0](0), p1b2b1b1b1b2b2b2[1](1.0)
+connect p1b2b1b1b1b2b2b2b1[1](0), p1b2b1b1b1b2b2b2b1[0](1.0)
+connect p1b2b1b1b1b2b2b2b1[2](0), p1b2b1b1b1b2b2b2b1[1](1.0)
+connect p1b2b1b1b1b2b2b2b2[0](0), p1b2b1b1b1b2b2b2[1](1.0)
+connect p1b2b1b1b1b2b2b2b2[1](0), p1b2b1b1b1b2b2b2b2[0](1.0)
+connect p1b2b1b1b2[0](0), p1b2b1b1[1](1.0)
+connect p1b2b1b1b2[1](0), p1b2b1b1b2[0](1.0)
+connect p1b2b1b1b2[2](0), p1b2b1b1b2[1](1.0)
+connect p1b2b1b1b2b1[0](0), p1b2b1b1b2[2](1.0)
+connect p1b2b1b1b2b2[0](0), p1b2b1b1b2[2](1.0)
+connect p1b2b1b1b2b2[1](0), p1b2b1b1b2b2[0](1.0)
+connect p1b2b1b1b2b2[2](0), p1b2b1b1b2b2[1](1.0)
+connect p1b2b1b1b2b2[3](0), p1b2b1b1b2b2[2](1.0)
+connect p1b2b1b1b2b2[4](0), p1b2b1b1b2b2[3](1.0)
+connect p1b2b1b1b2b2[5](0), p1b2b1b1b2b2[4](1.0)
+connect p1b2b1b1b2b2[6](0), p1b2b1b1b2b2[5](1.0)
+connect p1b2b1b1b2b2[7](0), p1b2b1b1b2b2[6](1.0)
+connect p1b2b1b1b2b2[8](0), p1b2b1b1b2b2[7](1.0)
+connect p1b2b1b1b2b2[9](0), p1b2b1b1b2b2[8](1.0)
+connect p1b2b1b1b2b2[10](0), p1b2b1b1b2b2[9](1.0)
+connect p1b2b1b1b2b2[11](0), p1b2b1b1b2b2[10](1.0)
+connect p1b2b1b1b2b2[12](0), p1b2b1b1b2b2[11](1.0)
+connect p1b2b1b1b2b2[13](0), p1b2b1b1b2b2[12](1.0)
+connect p1b2b1b1b2b2[14](0), p1b2b1b1b2b2[13](1.0)
+connect p1b2b1b2[0](0), p1b2b1[1](1.0)
+connect p1b2b1b2[1](0), p1b2b1b2[0](1.0)
+connect p1b2b1b2[2](0), p1b2b1b2[1](1.0)
+connect p1b2b1b2[3](0), p1b2b1b2[2](1.0)
+connect p1b2b1b2[4](0), p1b2b1b2[3](1.0)
+connect p1b2b1b2[5](0), p1b2b1b2[4](1.0)
+connect p1b2b1b2[6](0), p1b2b1b2[5](1.0)
+connect p1b2b1b2[7](0), p1b2b1b2[6](1.0)
+connect p1b2b2[0](0), p1b2[1](1.0)
+connect p1b2b2[1](0), p1b2b2[0](1.0)
+connect p1b2b2[2](0), p1b2b2[1](1.0)
+connect p1b2b2b1[0](0), p1b2b2[2](1.0)
+connect p1b2b2b1[1](0), p1b2b2b1[0](1.0)
+connect p1b2b2b1[2](0), p1b2b2b1[1](1.0)
+connect p1b2b2b1[3](0), p1b2b2b1[2](1.0)
+connect p1b2b2b1[4](0), p1b2b2b1[3](1.0)
+connect p1b2b2b1[5](0), p1b2b2b1[4](1.0)
+connect p1b2b2b1[6](0), p1b2b2b1[5](1.0)
+connect p1b2b2b1[7](0), p1b2b2b1[6](1.0)
+connect p1b2b2b1[8](0), p1b2b2b1[7](1.0)
+connect p1b2b2b1[9](0), p1b2b2b1[8](1.0)
+connect p1b2b2b2[0](0), p1b2b2[2](1.0)
+connect p1b2b2b2[1](0), p1b2b2b2[0](1.0)
+connect p1b2b2b2b1[0](0), p1b2b2b2[1](1.0)
+connect p1b2b2b2b2[0](0), p1b2b2b2[1](1.0)
+connect p1b2b2b2b2[1](0), p1b2b2b2b2[0](1.0)
+connect p1b2b2b2b2[2](0), p1b2b2b2b2[1](1.0)
+connect p2[0](0), soma(0.5)
+connect p2[1](0), p2[0](1.0)
+connect p2b1[0](0), p2[1](1.0)
+connect p2b1[1](0), p2b1[0](1.0)
+connect p2b1b1[0](0), p2b1[1](1.0)
+connect p2b1b1b1[0](0), p2b1b1[0](1.0)
+connect p2b1b1b1[1](0), p2b1b1b1[0](1.0)
+connect p2b1b1b2[0](0), p2b1b1[0](1.0)
+connect p2b1b1b2[1](0), p2b1b1b2[0](1.0)
+connect p2b1b1b2[2](0), p2b1b1b2[1](1.0)
+connect p2b1b1b2[3](0), p2b1b1b2[2](1.0)
+connect p2b1b1b2[4](0), p2b1b1b2[3](1.0)
+connect p2b1b1b2[5](0), p2b1b1b2[4](1.0)
+connect p2b1b1b2[6](0), p2b1b1b2[5](1.0)
+connect p2b1b1b2[7](0), p2b1b1b2[6](1.0)
+connect p2b1b1b2[8](0), p2b1b1b2[7](1.0)
+connect p2b1b1b2[9](0), p2b1b1b2[8](1.0)
+connect p2b1b1b2[10](0), p2b1b1b2[9](1.0)
+connect p2b1b1b2[11](0), p2b1b1b2[10](1.0)
+connect p2b1b1b2[12](0), p2b1b1b2[11](1.0)
+connect p2b1b1b2[13](0), p2b1b1b2[12](1.0)
+connect p2b1b1b2[14](0), p2b1b1b2[13](1.0)
+connect p2b1b1b2[15](0), p2b1b1b2[14](1.0)
+connect p2b1b2[0](0), p2b1[1](1.0)
+connect p2b1b2[1](0), p2b1b2[0](1.0)
+connect p2b1b2[2](0), p2b1b2[1](1.0)
+connect p2b1b2[3](0), p2b1b2[2](1.0)
+connect p2b1b2[4](0), p2b1b2[3](1.0)
+connect p2b1b2[5](0), p2b1b2[4](1.0)
+connect p2b1b2b1[0](0), p2b1b2[5](1.0)
+connect p2b1b2b1b1[0](0), p2b1b2b1[0](1.0)
+connect p2b1b2b1b2[0](0), p2b1b2b1[0](1.0)
+connect p2b1b2b1b2[1](0), p2b1b2b1b2[0](1.0)
+connect p2b1b2b1b2[2](0), p2b1b2b1b2[1](1.0)
+connect p2b1b2b2[0](0), p2b1b2[5](1.0)
+connect p2b1b2b2[1](0), p2b1b2b2[0](1.0)
+connect p2b1b2b2[2](0), p2b1b2b2[1](1.0)
+connect p2b1b2b2[3](0), p2b1b2b2[2](1.0)
+connect p2b1b2b2[4](0), p2b1b2b2[3](1.0)
+connect p2b1b2b2[5](0), p2b1b2b2[4](1.0)
+connect p2b2[0](0), p2[1](1.0)
+connect p2b2[1](0), p2b2[0](1.0)
+connect p2b2[2](0), p2b2[1](1.0)
+connect p2b2[3](0), p2b2[2](1.0)
+connect p2b2[4](0), p2b2[3](1.0)
+connect p3[0](0), soma(0.5)
+connect p3[1](0), p3[0](1.0)
+connect p3b1[0](0), p3[1](1.0)
+connect p3b1[1](0), p3b1[0](1.0)
+connect p3b1b1[0](0), p3b1[1](1.0)
+connect p3b1b1[1](0), p3b1b1[0](1.0)
+connect p3b1b1b1[0](0), p3b1b1[1](1.0)
+connect p3b1b1b1[1](0), p3b1b1b1[0](1.0)
+connect p3b1b1b1[2](0), p3b1b1b1[1](1.0)
+connect p3b1b1b1b1[0](0), p3b1b1b1[2](1.0)
+connect p3b1b1b1b1[1](0), p3b1b1b1b1[0](1.0)
+connect p3b1b1b1b2[0](0), p3b1b1b1[2](1.0)
+connect p3b1b1b1b2[1](0), p3b1b1b1b2[0](1.0)
+connect p3b1b1b2[0](0), p3b1b1[1](1.0)
+connect p3b1b1b2[1](0), p3b1b1b2[0](1.0)
+connect p3b1b1b2[2](0), p3b1b1b2[1](1.0)
+connect p3b1b1b2[3](0), p3b1b1b2[2](1.0)
+connect p3b1b2[0](0), p3b1[1](1.0)
+connect p3b1b2[1](0), p3b1b2[0](1.0)
+connect p3b1b2[2](0), p3b1b2[1](1.0)
+connect p3b1b2[3](0), p3b1b2[2](1.0)
+connect p3b1b2b1[0](0), p3b1b2[3](1.0)
+connect p3b1b2b1[1](0), p3b1b2b1[0](1.0)
+connect p3b1b2b1[2](0), p3b1b2b1[1](1.0)
+connect p3b1b2b1[3](0), p3b1b2b1[2](1.0)
+connect p3b1b2b1[4](0), p3b1b2b1[3](1.0)
+connect p3b1b2b1[5](0), p3b1b2b1[4](1.0)
+connect p3b1b2b1b1[0](0), p3b1b2b1[5](1.0)
+connect p3b1b2b1b1[1](0), p3b1b2b1b1[0](1.0)
+connect p3b1b2b1b1[2](0), p3b1b2b1b1[1](1.0)
+connect p3b1b2b1b1[3](0), p3b1b2b1b1[2](1.0)
+connect p3b1b2b1b1[4](0), p3b1b2b1b1[3](1.0)
+connect p3b1b2b1b1[5](0), p3b1b2b1b1[4](1.0)
+connect p3b1b2b1b1[6](0), p3b1b2b1b1[5](1.0)
+connect p3b1b2b1b1[7](0), p3b1b2b1b1[6](1.0)
+connect p3b1b2b1b2[0](0), p3b1b2b1[5](1.0)
+connect p3b1b2b1b2[1](0), p3b1b2b1b2[0](1.0)
+connect p3b1b2b1b2[2](0), p3b1b2b1b2[1](1.0)
+connect p3b1b2b2[0](0), p3b1b2[3](1.0)
+connect p3b1b2b2[1](0), p3b1b2b2[0](1.0)
+connect p3b1b2b2[2](0), p3b1b2b2[1](1.0)
+connect p3b1b2b2[3](0), p3b1b2b2[2](1.0)
+connect p3b1b2b2[4](0), p3b1b2b2[3](1.0)
+connect p3b1b2b2[5](0), p3b1b2b2[4](1.0)
+connect p3b1b2b2[6](0), p3b1b2b2[5](1.0)
+connect p3b1b2b2[7](0), p3b1b2b2[6](1.0)
+connect p3b1b2b2b1[0](0), p3b1b2b2[7](1.0)
+connect p3b1b2b2b2[0](0), p3b1b2b2[7](1.0)
+connect p3b1b2b2b2[1](0), p3b1b2b2b2[0](1.0)
+connect p3b1b2b2b2[2](0), p3b1b2b2b2[1](1.0)
+connect p3b1b2b2b2[3](0), p3b1b2b2b2[2](1.0)
+connect p3b2[0](0), p3[1](1.0)
+connect p3b2b1[0](0), p3b2[0](1.0)
+connect p3b2b1b1[0](0), p3b2b1[0](1.0)
+connect p3b2b1b1[1](0), p3b2b1b1[0](1.0)
+connect p3b2b1b1[2](0), p3b2b1b1[1](1.0)
+connect p3b2b1b1[3](0), p3b2b1b1[2](1.0)
+connect p3b2b1b1[4](0), p3b2b1b1[3](1.0)
+connect p3b2b1b1b1[0](0), p3b2b1b1[4](1.0)
+connect p3b2b1b1b1[1](0), p3b2b1b1b1[0](1.0)
+connect p3b2b1b1b1[2](0), p3b2b1b1b1[1](1.0)
+connect p3b2b1b1b1[3](0), p3b2b1b1b1[2](1.0)
+connect p3b2b1b1b1[4](0), p3b2b1b1b1[3](1.0)
+connect p3b2b1b1b1[5](0), p3b2b1b1b1[4](1.0)
+connect p3b2b1b1b1b1[0](0), p3b2b1b1b1[5](1.0)
+connect p3b2b1b1b1b1[1](0), p3b2b1b1b1b1[0](1.0)
+connect p3b2b1b1b1b1[2](0), p3b2b1b1b1b1[1](1.0)
+connect p3b2b1b1b1b2[0](0), p3b2b1b1b1[5](1.0)
+connect p3b2b1b1b1b2[1](0), p3b2b1b1b1b2[0](1.0)
+connect p3b2b1b1b1b2b1[0](0), p3b2b1b1b1b2[1](1.0)
+connect p3b2b1b1b1b2b1[1](0), p3b2b1b1b1b2b1[0](1.0)
+connect p3b2b1b1b1b2b1[2](0), p3b2b1b1b1b2b1[1](1.0)
+connect p3b2b1b1b1b2b2[0](0), p3b2b1b1b1b2[1](1.0)
+connect p3b2b1b1b1b2b2[1](0), p3b2b1b1b1b2b2[0](1.0)
+connect p3b2b1b1b1b2b2[2](0), p3b2b1b1b1b2b2[1](1.0)
+connect p3b2b1b1b1b2b2[3](0), p3b2b1b1b1b2b2[2](1.0)
+connect p3b2b1b1b1b2b2[4](0), p3b2b1b1b1b2b2[3](1.0)
+connect p3b2b1b1b1b2b2[5](0), p3b2b1b1b1b2b2[4](1.0)
+connect p3b2b1b1b1b2b2[6](0), p3b2b1b1b1b2b2[5](1.0)
+connect p3b2b1b1b1b2b2[7](0), p3b2b1b1b1b2b2[6](1.0)
+connect p3b2b1b1b1b2b2[8](0), p3b2b1b1b1b2b2[7](1.0)
+connect p3b2b1b1b1b2b2[9](0), p3b2b1b1b1b2b2[8](1.0)
+connect p3b2b1b1b2[0](0), p3b2b1b1[4](1.0)
+connect p3b2b1b1b2[1](0), p3b2b1b1b2[0](1.0)
+connect p3b2b1b1b2[2](0), p3b2b1b1b2[1](1.0)
+connect p3b2b1b2[0](0), p3b2b1[0](1.0)
+connect p3b2b1b2[1](0), p3b2b1b2[0](1.0)
+connect p3b2b1b2[2](0), p3b2b1b2[1](1.0)
+connect p3b2b1b2[3](0), p3b2b1b2[2](1.0)
+connect p3b2b1b2[4](0), p3b2b1b2[3](1.0)
+connect p3b2b1b2[5](0), p3b2b1b2[4](1.0)
+connect p3b2b1b2b1[0](0), p3b2b1b2[5](1.0)
+connect p3b2b1b2b1[1](0), p3b2b1b2b1[0](1.0)
+connect p3b2b1b2b1[2](0), p3b2b1b2b1[1](1.0)
+connect p3b2b1b2b2[0](0), p3b2b1b2[5](1.0)
+connect p3b2b1b2b2[1](0), p3b2b1b2b2[0](1.0)
+connect p3b2b1b2b2[2](0), p3b2b1b2b2[1](1.0)
+connect p3b2b1b2b2[3](0), p3b2b1b2b2[2](1.0)
+connect p3b2b1b2b2[4](0), p3b2b1b2b2[3](1.0)
+connect p3b2b1b2b2[5](0), p3b2b1b2b2[4](1.0)
+connect p3b2b1b2b2[6](0), p3b2b1b2b2[5](1.0)
+connect p3b2b2[0](0), p3b2[0](1.0)
+connect p3b2b2[1](0), p3b2b2[0](1.0)
+connect p3b2b2[2](0), p3b2b2[1](1.0)
+connect p3b2b2[3](0), p3b2b2[2](1.0)
+connect p3b2b2[4](0), p3b2b2[3](1.0)
+connect p3b2b2[5](0), p3b2b2[4](1.0)
+connect p3b2b2[6](0), p3b2b2[5](1.0)
+
+
+//Position the compartments
+
+soma {pt3dclear() pt3dadd(0, 0, 0, 14.398) pt3dadd(32.3955, 0, 0, 14.398)}
+axHill {pt3dclear() pt3dadd(0,0,0,4.75) pt3dadd(5.0,0.0,0.0, 4.75)}
+axIS[0] {pt3dclear() pt3dadd(5.0,0.0,0.0, 1.5) pt3dadd(7.0,0.0,0.0, 1.5)}
+axIS[1] {pt3dclear() pt3dadd(7.0,0.0,0.0, 1.5) pt3dadd(9.0,0.0,0.0, 1.5)}
+axIS[2] {pt3dclear() pt3dadd(9.0,0.0,0.0, 1.5) pt3dadd(11.0,0.0,0.0, 1.5)}
+axIS[3] {pt3dclear() pt3dadd(11.0,0.0,0.0, 1.5) pt3dadd(13.0,0.0,0.0, 1.5)}
+axIS[4] {pt3dclear() pt3dadd(13.0,0.0,0.0, 1.5) pt3dadd(15.0,0.0,0.0, 1.5)}
+axIS[5] {pt3dclear() pt3dadd(15.0,0.0,0.0, 1.5) pt3dadd(17.0,0.0,0.0, 1.5)}
+axIS[6] {pt3dclear() pt3dadd(17.0,0.0,0.0, 1.5) pt3dadd(19.0,0.0,0.0, 1.5)}
+axIS[7] {pt3dclear() pt3dadd(19.0,0.0,0.0, 1.5) pt3dadd(21.0,0.0,0.0, 1.5)}
+axIS[8] {pt3dclear() pt3dadd(21.0,0.0,0.0, 1.5) pt3dadd(23.0,0.0,0.0, 1.5)}
+axIS[9] {pt3dclear() pt3dadd(23.0,0.0,0.0, 1.5) pt3dadd(25.0,0.0,0.0, 1.5)}
+axIN[0] {pt3dclear() pt3dadd(25.0,0.0,0.0, 1.5) pt3dadd(0.0,75.0,0.0, 1.5)}
+axIN[1] {pt3dclear() pt3dadd(0.0,75.0,0.0, 1.5) pt3dadd(0.0,125.0,0.0, 1.5)}
+axIN[2] {pt3dclear() pt3dadd(0.0,125.0,0.0, 1.5) pt3dadd(0.0,175.0,0.0, 1.5)}
+axIN[3] {pt3dclear() pt3dadd(0.0,175.0,0.0, 1.5) pt3dadd(0.0,225.0,0.0, 1.5)}
+axIN[4] {pt3dclear() pt3dadd(0.0,225.0,0.0, 1.5) pt3dadd(0.0,275.0,0.0, 1.5)}
+axIN[5] {pt3dclear() pt3dadd(0.0,275.0,0.0, 1.5) pt3dadd(0.0,325.0,0.0, 1.5)}
+axIN[6] {pt3dclear() pt3dadd(0.0,325.0,0.0, 1.5) pt3dadd(0.0,375.0,0.0, 1.5)}
+axIN[7] {pt3dclear() pt3dadd(0.0,375.0,0.0, 1.5) pt3dadd(0.0,425.0,0.0, 1.5)}
+axIN[8] {pt3dclear() pt3dadd(0.0,425.0,0.0, 1.5) pt3dadd(0.0,475.0,0.0, 1.5)}
+axIN[9] {pt3dclear() pt3dadd(0.0,475.0,0.0, 1.5) pt3dadd(0.0,525.0,0.0, 1.5)}
+axIN[10] {pt3dclear() pt3dadd(0.0,525.0,0.0, 1.5) pt3dadd(0.0,575.0,0.0, 1.5)}
+axIN[11] {pt3dclear() pt3dadd(0.0,575.0,0.0, 1.5) pt3dadd(0.0,625.0,0.0, 1.5)}
+axIN[12] {pt3dclear() pt3dadd(0.0,625.0,0.0, 1.5) pt3dadd(0.0,675.0,0.0, 1.5)}
+axIN[13] {pt3dclear() pt3dadd(0.0,675.0,0.0, 1.5) pt3dadd(0.0,725.0,0.0, 1.5)}
+axIN[14] {pt3dclear() pt3dadd(0.0,725.0,0.0, 1.5) pt3dadd(0.0,775.0,0.0, 1.5)}
+axIN[15] {pt3dclear() pt3dadd(0.0,775.0,0.0, 1.5) pt3dadd(0.0,825.0,0.0, 1.5)}
+axIN[16] {pt3dclear() pt3dadd(0.0,825.0,0.0, 1.5) pt3dadd(0.0,875.0,0.0, 1.5)}
+axIN[17] {pt3dclear() pt3dadd(0.0,875.0,0.0, 1.5) pt3dadd(0.0,925.0,0.0, 1.5)}
+axIN[18] {pt3dclear() pt3dadd(0.0,925.0,0.0, 1.5) pt3dadd(0.0,975.0,0.0, 1.5)}
+axIN[19] {pt3dclear() pt3dadd(0.0,975.0,0.0, 1.5) pt3dadd(0.0,1025.0,0.0, 1.5)}
+p0[0] {pt3dclear() pt3dadd(0,0,0,3.84) pt3dadd(0.11,10.37,13.275, 3.84)}
+p0b1[0] {pt3dclear() pt3dadd(0.11,10.37,13.275, 2.328) pt3dadd(4.36,23.612,16.431, 2.328)}
+p0b1[1] {pt3dclear() pt3dadd(4.36,23.612,16.431, 1.952) pt3dadd(5.037,36.554,22.445, 1.952)}
+p0b1[2] {pt3dclear() pt3dadd(5.037,36.554,22.445, 2.098) pt3dadd(8.383,46.695,31.313, 2.098)}
+p0b1[3] {pt3dclear() pt3dadd(8.383,46.695,31.313, 2.11) pt3dadd(10.208,57.55,36.75, 2.11)}
+p0b1[4] {pt3dclear() pt3dadd(10.208,57.55,36.75, 1.74) pt3dadd(12.9,67.97,33.0, 1.74)}
+p0b1b1[0] {pt3dclear() pt3dadd(12.9,67.97,33.0, 1.431) pt3dadd(21.045,68.362,36.855, 1.431)}
+p0b1b1[1] {pt3dclear() pt3dadd(21.045,68.362,36.855, 1.169) pt3dadd(26.943,65.671,44.745, 1.169)}
+p0b1b1[2] {pt3dclear() pt3dadd(26.943,65.671,44.745, 1.236) pt3dadd(29.804,59.304,42.171, 1.236)}
+p0b1b1[3] {pt3dclear() pt3dadd(29.804,59.304,42.171, 1.108) pt3dadd(30.633,51.361,41.02, 1.108)}
+p0b1b1[4] {pt3dclear() pt3dadd(30.633,51.361,41.02, 0.58) pt3dadd(35.93,48.5,34.365, 0.58)}
+p0b1b2[0] {pt3dclear() pt3dadd(12.9,67.97,33.0, 1.63) pt3dadd(14.3,71.54,37.77, 1.63)}
+p0b1b2b1[0] {pt3dclear() pt3dadd(14.3,71.54,37.77, 1.408) pt3dadd(15.664,81.758,40.995, 1.408)}
+p0b1b2b1[1] {pt3dclear() pt3dadd(15.664,81.758,40.995, 1.506) pt3dadd(11.361,87.651,47.763, 1.506)}
+p0b1b2b1[2] {pt3dclear() pt3dadd(11.361,87.651,47.763, 1.14) pt3dadd(12.223,95.92,48.825, 1.14)}
+p0b1b2b1[3] {pt3dclear() pt3dadd(12.223,95.92,48.825, 1.009) pt3dadd(5.924,99.73,45.992, 1.009)}
+p0b1b2b1[4] {pt3dclear() pt3dadd(5.924,99.73,45.992, 0.81) pt3dadd(4.76,106.44,51.54, 0.81)}
+p0b1b2b1b1[0] {pt3dclear() pt3dadd(4.76,106.44,51.54, 0.955) pt3dadd(9.071,105.96,56.073, 0.955)}
+p0b1b2b1b1[1] {pt3dclear() pt3dadd(9.071,105.96,56.073, 0.7) pt3dadd(10.35,109.55,61.92, 0.7)}
+p0b1b2b1b2[0] {pt3dclear() pt3dadd(4.76,106.44,51.54, 0.958) pt3dadd(1.216,113.62,54.27, 0.958)}
+p0b1b2b1b2[1] {pt3dclear() pt3dadd(1.216,113.62,54.27, 0.7) pt3dadd(-0.35,121.99,54.6, 0.7)}
+p0b1b2b1b2b1[0] {pt3dclear() pt3dadd(-0.35,121.99,54.6, 0.805) pt3dadd(-6.285,127.03,57.953, 0.805)}
+p0b1b2b1b2b1[1] {pt3dclear() pt3dadd(-6.285,127.03,57.953, 0.7) pt3dadd(-12.91,125.33,52.395, 0.7)}
+p0b1b2b1b2b1b1[0] {pt3dclear() pt3dadd(-12.91,125.33,52.395, 0.7) pt3dadd(-11.63,127.87,52.905, 0.7)}
+p0b1b2b1b2b1b2[0] {pt3dclear() pt3dadd(-12.91,125.33,52.395, 0.7) pt3dadd(-8.26,123.72,57.675, 0.7)}
+p0b1b2b1b2b1b3[0] {pt3dclear() pt3dadd(-12.91,125.33,52.395, 0.765) pt3dadd(-16.458,121.1,51.54, 0.765)}
+p0b1b2b1b2b1b3[1] {pt3dclear() pt3dadd(-16.458,121.1,51.54, 0.7) pt3dadd(-20.93,117.79,51.54, 0.7)}
+p0b1b2b1b2b1b3b1[0] {pt3dclear() pt3dadd(-20.93,117.79,51.54, 0.947) pt3dadd(-24.316,118.66,49.804, 0.947)}
+p0b1b2b1b2b1b3b1[1] {pt3dclear() pt3dadd(-24.316,118.66,49.804, 0.58) pt3dadd(-25.35,122.45,52.56, 0.58)}
+p0b1b2b1b2b1b3b2[0] {pt3dclear() pt3dadd(-20.93,117.79,51.54, 0.818) pt3dadd(-21.484,113.67,50.31, 0.818)}
+p0b1b2b1b2b1b3b2[1] {pt3dclear() pt3dadd(-21.484,113.67,50.31, 0.47) pt3dadd(-23.84,110.88,51.165, 0.47)}
+p0b1b2b1b2b2[0] {pt3dclear() pt3dadd(-0.35,121.99,54.6, 0.691) pt3dadd(-2.077,127.64,52.83, 0.691)}
+p0b1b2b1b2b2[1] {pt3dclear() pt3dadd(-2.077,127.64,52.83, 0.543) pt3dadd(-2.711,133.78,51.03, 0.543)}
+p0b1b2b1b2b2[2] {pt3dclear() pt3dadd(-2.711,133.78,51.03, 0.79) pt3dadd(-3.751,137.97,50.7, 0.79)}
+p0b1b2b1b2b2[3] {pt3dclear() pt3dadd(-3.751,137.97,50.7, 0.59) pt3dadd(-4.126,143.01,46.438, 0.59)}
+p0b1b2b1b2b2[4] {pt3dclear() pt3dadd(-4.126,143.01,46.438, 0.47) pt3dadd(-1.98,148.37,43.38, 0.47)}
+p0b1b2b2[0] {pt3dclear() pt3dadd(14.3,71.54,37.77, 1.28) pt3dadd(18.14,76.38,37.935, 1.28)}
+p0b1b2b2b1[0] {pt3dclear() pt3dadd(18.14,76.38,37.935, 1.16) pt3dadd(18.83,78.34,41.34, 1.16)}
+p0b1b2b2b1b1[0] {pt3dclear() pt3dadd(18.83,78.34,41.34, 1.246) pt3dadd(24.832,83.216,47.076, 1.246)}
+p0b1b2b2b1b1[1] {pt3dclear() pt3dadd(24.832,83.216,47.076, 0.81) pt3dadd(29.65,85.48,52.05, 0.81)}
+p0b1b2b2b1b1b1[0] {pt3dclear() pt3dadd(29.65,85.48,52.05, 1.884) pt3dadd(28.14,86.13,56.642, 1.884)}
+p0b1b2b2b1b1b1[1] {pt3dclear() pt3dadd(28.14,86.13,56.642, 0.47) pt3dadd(28.72,79.72,57.495, 0.47)}
+p0b1b2b2b1b1b2[0] {pt3dclear() pt3dadd(29.65,85.48,52.05, 1.278) pt3dadd(34.135,87.229,54.198, 1.278)}
+p0b1b2b2b1b1b2[1] {pt3dclear() pt3dadd(34.135,87.229,54.198, 0.745) pt3dadd(36.332,93.407,58.766, 0.745)}
+p0b1b2b2b1b1b2[2] {pt3dclear() pt3dadd(36.332,93.407,58.766, 0.735) pt3dadd(40.057,98.452,61.791, 0.735)}
+p0b1b2b2b1b1b2[3] {pt3dclear() pt3dadd(40.057,98.452,61.791, 0.524) pt3dadd(45.167,102.77,65.433, 0.524)}
+p0b1b2b2b1b1b2[4] {pt3dclear() pt3dadd(45.167,102.77,65.433, 0.452) pt3dadd(48.845,103.37,70.838, 0.452)}
+p0b1b2b2b1b1b2[5] {pt3dclear() pt3dadd(48.845,103.37,70.838, 0.468) pt3dadd(52.514,107.1,76.089, 0.468)}
+p0b1b2b2b1b1b2[6] {pt3dclear() pt3dadd(52.514,107.1,76.089, 0.47) pt3dadd(55.58,108.63,86.07, 0.47)}
+p0b1b2b2b1b1b2b1[0] {pt3dclear() pt3dadd(55.58,108.63,86.07, 0.35) pt3dadd(56.627,106.97,80.547, 0.35)}
+p0b1b2b2b1b1b2b1[1] {pt3dclear() pt3dadd(56.627,106.97,80.547, 0.35) pt3dadd(59.41,106.21,79.95, 0.35)}
+p0b1b2b2b1b1b2b2[0] {pt3dclear() pt3dadd(55.58,108.63,86.07, 0.591) pt3dadd(57.406,112.6,80.262, 0.591)}
+p0b1b2b2b1b1b2b2[1] {pt3dclear() pt3dadd(57.406,112.6,80.262, 0.522) pt3dadd(59.429,118.88,80.115, 0.522)}
+p0b1b2b2b1b1b2b2[2] {pt3dclear() pt3dadd(59.429,118.88,80.115, 0.525) pt3dadd(59.925,124.6,84.885, 0.525)}
+p0b1b2b2b1b1b2b2[3] {pt3dclear() pt3dadd(59.925,124.6,84.885, 0.646) pt3dadd(60.401,129.91,85.503, 0.646)}
+p0b1b2b2b1b1b2b2[4] {pt3dclear() pt3dadd(60.401,129.91,85.503, 0.557) pt3dadd(59.692,136.03,86.304, 0.557)}
+p0b1b2b2b1b1b2b2[5] {pt3dclear() pt3dadd(59.692,136.03,86.304, 0.487) pt3dadd(56.544,141.26,86.76, 0.487)}
+p0b1b2b2b1b1b2b2[6] {pt3dclear() pt3dadd(56.544,141.26,86.76, 0.35) pt3dadd(57.9,145.84,88.455, 0.35)}
+p0b1b2b2b1b2[0] {pt3dclear() pt3dadd(18.83,78.34,41.34, 1.038) pt3dadd(22.09,85.803,39.81, 1.038)}
+p0b1b2b2b1b2[1] {pt3dclear() pt3dadd(22.09,85.803,39.81, 1.022) pt3dadd(21.019,94.066,39.465, 1.022)}
+p0b1b2b2b1b2[2] {pt3dclear() pt3dadd(21.019,94.066,39.465, 0.93) pt3dadd(24.65,101.37,39.975, 0.93)}
+p0b1b2b2b1b2b1[0] {pt3dclear() pt3dadd(24.65,101.37,39.975, 1.189) pt3dadd(25.393,109.84,38.991, 1.189)}
+p0b1b2b2b1b2b1[1] {pt3dclear() pt3dadd(25.393,109.84,38.991, 0.93) pt3dadd(19.65,115.08,35.22, 0.93)}
+p0b1b2b2b1b2b1b1[0] {pt3dclear() pt3dadd(19.65,115.08,35.22, 0.7) pt3dadd(19.18,117.96,28.245, 0.7)}
+p0b1b2b2b1b2b1b2[0] {pt3dclear() pt3dadd(19.65,115.08,35.22, 0.7) pt3dadd(20.58,110.59,28.92, 0.7)}
+p0b1b2b2b1b2b2[0] {pt3dclear() pt3dadd(24.65,101.37,39.975, 1.018) pt3dadd(30.889,101.01,40.923, 1.018)}
+p0b1b2b2b1b2b2[1] {pt3dclear() pt3dadd(30.889,101.01,40.923, 1.011) pt3dadd(35.177,98.26,46.547, 1.011)}
+p0b1b2b2b1b2b2[2] {pt3dclear() pt3dadd(35.177,98.26,46.547, 0.81) pt3dadd(40.34,98.96,47.625, 0.81)}
+p0b1b2b2b1b2b2b1[0] {pt3dclear() pt3dadd(40.34,98.96,47.625, 0.905) pt3dadd(45.813,96.353,51.201, 0.905)}
+p0b1b2b2b1b2b2b1[1] {pt3dclear() pt3dadd(45.813,96.353,51.201, 0.919) pt3dadd(50.645,94.986,53.428, 0.919)}
+p0b1b2b2b1b2b2b1[2] {pt3dclear() pt3dadd(50.645,94.986,53.428, 0.7) pt3dadd(55.11,95.84,60.555, 0.7)}
+p0b1b2b2b1b2b2b2[0] {pt3dclear() pt3dadd(40.34,98.96,47.625, 1.07) pt3dadd(45.217,102.22,44.565, 1.07)}
+p0b1b2b2b1b2b2b2[1] {pt3dclear() pt3dadd(45.217,102.22,44.565, 0.891) pt3dadd(48.828,105.84,50.654, 0.891)}
+p0b1b2b2b1b2b2b2[2] {pt3dclear() pt3dadd(48.828,105.84,50.654, 0.869) pt3dadd(53.357,109.88,49.185, 0.869)}
+p0b1b2b2b1b2b2b2[3] {pt3dclear() pt3dadd(53.357,109.88,49.185, 0.7) pt3dadd(59.53,111.05,52.74, 0.7)}
+p0b1b2b2b2[0] {pt3dclear() pt3dadd(18.14,76.38,37.935, 1.269) pt3dadd(12.183,81.457,33.0, 1.269)}
+p0b1b2b2b2[1] {pt3dclear() pt3dadd(12.183,81.457,33.0, 0.876) pt3dadd(8.111,88.392,30.024, 0.876)}
+p0b1b2b2b2[2] {pt3dclear() pt3dadd(8.111,88.392,30.024, 0.808) pt3dadd(5.0,94.956,31.65, 0.808)}
+p0b1b2b2b2[3] {pt3dclear() pt3dadd(5.0,94.956,31.65, 0.532) pt3dadd(2.581,101.75,30.795, 0.532)}
+p0b1b2b2b2[4] {pt3dclear() pt3dadd(2.581,101.75,30.795, 0.538) pt3dadd(2.161,108.49,30.795, 0.538)}
+p0b1b2b2b2[5] {pt3dclear() pt3dadd(2.161,108.49,30.795, 0.47) pt3dadd(2.67,114.74,30.795, 0.47)}
+p0b2[0] {pt3dclear() pt3dadd(0.11,10.37,13.275, 2.56) pt3dadd(-2.68,16.3,13.785, 2.56)}
+p0b2b1[0] {pt3dclear() pt3dadd(-2.68,16.3,13.785, 2.21) pt3dadd(-4.42,24.48,20.925, 2.21)}
+p0b2b1b1[0] {pt3dclear() pt3dadd(-4.42,24.48,20.925, 2.211) pt3dadd(-14.574,28.63,21.27, 2.211)}
+p0b2b1b1[1] {pt3dclear() pt3dadd(-14.574,28.63,21.27, 2.084) pt3dadd(-24.157,27.871,24.798, 2.084)}
+p0b2b1b1[2] {pt3dclear() pt3dadd(-24.157,27.871,24.798, 1.798) pt3dadd(-34.056,28.393,27.736, 1.798)}
+p0b2b1b1[3] {pt3dclear() pt3dadd(-34.056,28.393,27.736, 1.778) pt3dadd(-40.34,37.195,27.225, 1.778)}
+p0b2b1b1[4] {pt3dclear() pt3dadd(-40.34,37.195,27.225, 1.51) pt3dadd(-50.12,40.03,30.615, 1.51)}
+p0b2b1b1b1[0] {pt3dclear() pt3dadd(-50.12,40.03,30.615, 1.659) pt3dadd(-53.07,35.616,25.86, 1.659)}
+p0b2b1b1b1[1] {pt3dclear() pt3dadd(-53.07,35.616,25.86, 1.06) pt3dadd(-48.49,28.235,23.31, 1.06)}
+p0b2b1b1b1[2] {pt3dclear() pt3dadd(-48.49,28.235,23.31, 0.81) pt3dadd(-45.0,19.76,23.31, 0.81)}
+p0b2b1b1b2[0] {pt3dclear() pt3dadd(-50.12,40.03,30.615, 1.336) pt3dadd(-57.702,46.882,31.111, 1.336)}
+p0b2b1b1b2[1] {pt3dclear() pt3dadd(-57.702,46.882,31.111, 1.714) pt3dadd(-62.929,51.078,34.71, 1.714)}
+p0b2b1b1b2[2] {pt3dclear() pt3dadd(-62.929,51.078,34.71, 1.301) pt3dadd(-67.91,58.314,35.895, 1.301)}
+p0b2b1b1b2[3] {pt3dclear() pt3dadd(-67.91,58.314,35.895, 1.368) pt3dadd(-75.571,59.977,38.1, 1.368)}
+p0b2b1b1b2[4] {pt3dclear() pt3dadd(-75.571,59.977,38.1, 1.05) pt3dadd(-79.36,63.02,44.91, 1.05)}
+p0b2b1b1b2b1[0] {pt3dclear() pt3dadd(-79.36,63.02,44.91, 1.05) pt3dadd(-82.09,63.65,45.075, 1.05)}
+p0b2b1b1b2b1b1[0] {pt3dclear() pt3dadd(-82.09,63.65,45.075, 1.237) pt3dadd(-87.381,64.945,48.99, 1.237)}
+p0b2b1b1b2b1b1[1] {pt3dclear() pt3dadd(-87.381,64.945,48.99, 1.048) pt3dadd(-92.526,61.399,50.19, 1.048)}
+p0b2b1b1b2b1b1[2] {pt3dclear() pt3dadd(-92.526,61.399,50.19, 1.001) pt3dadd(-98.327,59.811,54.264, 1.001)}
+p0b2b1b1b2b1b1[3] {pt3dclear() pt3dadd(-98.327,59.811,54.264, 0.58) pt3dadd(-103.49,59.39,57.495, 0.58)}
+p0b2b1b1b2b1b1b1[0] {pt3dclear() pt3dadd(-103.49,59.39,57.495, 0.672) pt3dadd(-109.07,55.994,56.475, 0.672)}
+p0b2b1b1b2b1b1b1[1] {pt3dclear() pt3dadd(-109.07,55.994,56.475, 0.603) pt3dadd(-112.89,50.869,53.773, 0.603)}
+p0b2b1b1b2b1b1b1[2] {pt3dclear() pt3dadd(-112.89,50.869,53.773, 0.534) pt3dadd(-114.06,44.954,53.415, 0.534)}
+p0b2b1b1b2b1b1b1[3] {pt3dclear() pt3dadd(-114.06,44.954,53.415, 0.47) pt3dadd(-115.35,39.8,55.11, 0.47)}
+p0b2b1b1b2b1b1b2[0] {pt3dclear() pt3dadd(-103.49,59.39,57.495, 0.824) pt3dadd(-108.41,65.527,57.151, 0.824)}
+p0b2b1b1b2b1b1b2[1] {pt3dclear() pt3dadd(-108.41,65.527,57.151, 0.931) pt3dadd(-111.63,70.677,62.265, 0.931)}
+p0b2b1b1b2b1b1b2[2] {pt3dclear() pt3dadd(-111.63,70.677,62.265, 0.839) pt3dadd(-112.75,77.974,65.673, 0.839)}
+p0b2b1b1b2b1b1b2[3] {pt3dclear() pt3dadd(-112.75,77.974,65.673, 0.73) pt3dadd(-117.52,80.93,69.915, 0.73)}
+p0b2b1b1b2b1b1b2[4] {pt3dclear() pt3dadd(-117.52,80.93,69.915, 0.552) pt3dadd(-123.98,80.9,70.191, 0.552)}
+p0b2b1b1b2b1b1b2[5] {pt3dclear() pt3dadd(-123.98,80.9,70.191, 0.47) pt3dadd(-128.95,78.28,72.63, 0.47)}
+p0b2b1b1b2b1b2[0] {pt3dclear() pt3dadd(-82.09,63.65,45.075, 1.051) pt3dadd(-87.64,65.504,39.975, 1.051)}
+p0b2b1b1b2b1b2[1] {pt3dclear() pt3dadd(-87.64,65.504,39.975, 0.824) pt3dadd(-95.466,66.986,41.505, 0.824)}
+p0b2b1b1b2b1b2[2] {pt3dclear() pt3dadd(-95.466,66.986,41.505, 0.854) pt3dadd(-102.93,68.727,43.24, 0.854)}
+p0b2b1b1b2b1b2[3] {pt3dclear() pt3dadd(-102.93,68.727,43.24, 0.858) pt3dadd(-110.08,68.096,47.46, 0.858)}
+p0b2b1b1b2b1b2[4] {pt3dclear() pt3dadd(-110.08,68.096,47.46, 0.984) pt3dadd(-115.58,71.37,50.52, 0.984)}
+p0b2b1b1b2b1b2[5] {pt3dclear() pt3dadd(-115.58,71.37,50.52, 0.795) pt3dadd(-123.52,73.809,51.375, 0.795)}
+p0b2b1b1b2b1b2[6] {pt3dclear() pt3dadd(-123.52,73.809,51.375, 0.917) pt3dadd(-129.09,75.661,57.675, 0.917)}
+p0b2b1b1b2b1b2[7] {pt3dclear() pt3dadd(-129.09,75.661,57.675, 0.836) pt3dadd(-135.58,80.19,57.675, 0.836)}
+p0b2b1b1b2b1b2[8] {pt3dclear() pt3dadd(-135.58,80.19,57.675, 0.969) pt3dadd(-138.59,85.918,60.283, 0.969)}
+p0b2b1b1b2b1b2[9] {pt3dclear() pt3dadd(-138.59,85.918,60.283, 0.609) pt3dadd(-144.2,90.399,60.615, 0.609)}
+p0b2b1b1b2b1b2[10] {pt3dclear() pt3dadd(-144.2,90.399,60.615, 0.47) pt3dadd(-147.9,95.79,60.9, 0.47)}
+p0b2b1b1b2b2[0] {pt3dclear() pt3dadd(-79.36,63.02,44.91, 0.728) pt3dadd(-82.123,59.551,38.1, 0.728)}
+p0b2b1b1b2b2[1] {pt3dclear() pt3dadd(-82.123,59.551,38.1, 0.47) pt3dadd(-82.15,56.1,34.2, 0.47)}
+p0b2b1b2[0] {pt3dclear() pt3dadd(-4.42,24.48,20.925, 1.778) pt3dadd(-2.365,32.88,17.355, 1.778)}
+p0b2b1b2[1] {pt3dclear() pt3dadd(-2.365,32.88,17.355, 1.355) pt3dadd(-3.608,43.655,20.07, 1.355)}
+p0b2b1b2[2] {pt3dclear() pt3dadd(-3.608,43.655,20.07, 1.373) pt3dadd(-5.554,53.414,21.78, 1.373)}
+p0b2b1b2[3] {pt3dclear() pt3dadd(-5.554,53.414,21.78, 1.219) pt3dadd(-7.205,64.539,23.229, 1.219)}
+p0b2b1b2[4] {pt3dclear() pt3dadd(-7.205,64.539,23.229, 1.207) pt3dadd(-6.685,75.921,23.31, 1.207)}
+p0b2b1b2[5] {pt3dclear() pt3dadd(-6.685,75.921,23.31, 1.292) pt3dadd(-1.219,85.062,23.404, 1.292)}
+p0b2b1b2[6] {pt3dclear() pt3dadd(-1.219,85.062,23.404, 1.288) pt3dadd(1.985,93.655,27.129, 1.288)}
+p0b2b1b2[7] {pt3dclear() pt3dadd(1.985,93.655,27.129, 1.271) pt3dadd(8.226,98.281,34.846, 1.271)}
+p0b2b1b2[8] {pt3dclear() pt3dadd(8.226,98.281,34.846, 1.022) pt3dadd(11.039,105.62,39.002, 1.022)}
+p0b2b1b2[9] {pt3dclear() pt3dadd(11.039,105.62,39.002, 1.02) pt3dadd(12.286,113.38,40.995, 1.02)}
+p0b2b1b2[10] {pt3dclear() pt3dadd(12.286,113.38,40.995, 1.034) pt3dadd(14.064,122.34,45.163, 1.034)}
+p0b2b1b2[11] {pt3dclear() pt3dadd(14.064,122.34,45.163, 1.107) pt3dadd(17.525,130.55,44.565, 1.107)}
+p0b2b1b2[12] {pt3dclear() pt3dadd(17.525,130.55,44.565, 1.16) pt3dadd(22.79,137.83,47.97, 1.16)}
+p0b2b1b2b1[0] {pt3dclear() pt3dadd(22.79,137.83,47.97, 0.882) pt3dadd(30.767,141.26,51.03, 0.882)}
+p0b2b1b2b1[1] {pt3dclear() pt3dadd(30.767,141.26,51.03, 1.308) pt3dadd(29.773,144.43,49.322, 1.308)}
+p0b2b1b2b1[2] {pt3dclear() pt3dadd(29.773,144.43,49.322, 0.491) pt3dadd(30.284,151.92,47.115, 0.491)}
+p0b2b1b2b1[3] {pt3dclear() pt3dadd(30.284,151.92,47.115, 0.47) pt3dadd(31.16,158.68,49.68, 0.47)}
+p0b2b1b2b2[0] {pt3dclear() pt3dadd(22.79,137.83,47.97, 0.811) pt3dadd(23.95,143.59,53.044, 0.811)}
+p0b2b1b2b2[1] {pt3dclear() pt3dadd(23.95,143.59,53.044, 0.742) pt3dadd(23.11,147.58,60.0, 0.742)}
+p0b2b1b2b2[2] {pt3dclear() pt3dadd(23.11,147.58,60.0, 0.592) pt3dadd(23.6,153.84,62.085, 0.592)}
+p0b2b1b2b2[3] {pt3dclear() pt3dadd(23.6,153.84,62.085, 0.621) pt3dadd(25.152,158.79,64.305, 0.621)}
+p0b2b1b2b2[4] {pt3dclear() pt3dadd(25.152,158.79,64.305, 0.534) pt3dadd(27.789,163.83,68.228, 0.534)}
+p0b2b1b2b2[5] {pt3dclear() pt3dadd(27.789,163.83,68.228, 0.557) pt3dadd(31.644,168.42,67.73, 0.557)}
+p0b2b1b2b2[6] {pt3dclear() pt3dadd(31.644,168.42,67.73, 0.47) pt3dadd(29.76,174.58,69.915, 0.47)}
+p0b2b2[0] {pt3dclear() pt3dadd(-2.68,16.3,13.785, 1.803) pt3dadd(-1.694,27.053,16.66, 1.803)}
+p0b2b2[1] {pt3dclear() pt3dadd(-1.694,27.053,16.66, 1.848) pt3dadd(-3.598,30.808,28.398, 1.848)}
+p0b2b2[2] {pt3dclear() pt3dadd(-3.598,30.808,28.398, 2.172) pt3dadd(-7.938,32.613,32.325, 2.172)}
+p0b2b2[3] {pt3dclear() pt3dadd(-7.938,32.613,32.325, 1.05) pt3dadd(-10.58,36.92,38.955, 1.05)}
+p0b2b2b1[0] {pt3dclear() pt3dadd(-10.58,36.92,38.955, 1.021) pt3dadd(-7.532,37.28,45.423, 1.021)}
+p0b2b2b1[1] {pt3dclear() pt3dadd(-7.532,37.28,45.423, 0.93) pt3dadd(-6.86,41.88,47.115, 0.93)}
+p0b2b2b1b1[0] {pt3dclear() pt3dadd(-6.86,41.88,47.115, 0.93) pt3dadd(-4.65,40.26,51.375, 0.93)}
+p0b2b2b1b2[0] {pt3dclear() pt3dadd(-6.86,41.88,47.115, 0.917) pt3dadd(-5.914,46.97,57.071, 0.917)}
+p0b2b2b1b2[1] {pt3dclear() pt3dadd(-5.914,46.97,57.071, 0.81) pt3dadd(-7.91,50.98,62.085, 0.81)}
+p0b2b2b1b2b1[0] {pt3dclear() pt3dadd(-7.91,50.98,62.085, 0.868) pt3dadd(-3.405,53.201,69.288, 0.868)}
+p0b2b2b1b2b1[1] {pt3dclear() pt3dadd(-3.405,53.201,69.288, 0.889) pt3dadd(1.705,52.377,75.87, 0.889)}
+p0b2b2b1b2b1[2] {pt3dclear() pt3dadd(1.705,52.377,75.87, 0.7) pt3dadd(4.07,53.97,82.5, 0.7)}
+p0b2b2b1b2b2[0] {pt3dclear() pt3dadd(-7.91,50.98,62.085, 0.959) pt3dadd(-10.422,57.43,70.101, 0.959)}
+p0b2b2b1b2b2[1] {pt3dclear() pt3dadd(-10.422,57.43,70.101, 1.932) pt3dadd(-10.673,59.987,75.348, 1.932)}
+p0b2b2b1b2b2[2] {pt3dclear() pt3dadd(-10.673,59.987,75.348, 1.363) pt3dadd(-12.416,63.626,82.314, 1.363)}
+p0b2b2b1b2b2[3] {pt3dclear() pt3dadd(-12.416,63.626,82.314, 1.078) pt3dadd(-13.767,66.833,90.807, 1.078)}
+p0b2b2b1b2b2[4] {pt3dclear() pt3dadd(-13.767,66.833,90.807, 1.008) pt3dadd(-14.241,71.71,97.635, 1.008)}
+p0b2b2b1b2b2[5] {pt3dclear() pt3dadd(-14.241,71.71,97.635, 0.76) pt3dadd(-16.75,77.24,104.7, 0.76)}
+p0b2b2b1b2b2[6] {pt3dclear() pt3dadd(-16.75,77.24,104.7, 0.554) pt3dadd(-18.353,83.909,107.85, 0.554)}
+p0b2b2b1b2b2[7] {pt3dclear() pt3dadd(-18.353,83.909,107.85, 0.592) pt3dadd(-22.634,88.33,109.6, 0.592)}
+p0b2b2b1b2b2[8] {pt3dclear() pt3dadd(-22.634,88.33,109.6, 0.494) pt3dadd(-23.274,92.242,115.28, 0.494)}
+p0b2b2b1b2b2[9] {pt3dclear() pt3dadd(-23.274,92.242,115.28, 0.443) pt3dadd(-23.826,97.065,118.74, 0.443)}
+p0b2b2b1b2b2[10] {pt3dclear() pt3dadd(-23.826,97.065,118.74, 0.384) pt3dadd(-24.871,103.08,120.44, 0.384)}
+p0b2b2b1b2b2[11] {pt3dclear() pt3dadd(-24.871,103.08,120.44, 0.384) pt3dadd(-27.389,109.19,120.78, 0.384)}
+p0b2b2b1b2b2[12] {pt3dclear() pt3dadd(-27.389,109.19,120.78, 0.616) pt3dadd(-30.141,113.8,124.86, 0.616)}
+p0b2b2b1b2b2[13] {pt3dclear() pt3dadd(-30.141,113.8,124.86, 0.478) pt3dadd(-32.944,121.03,124.86, 0.478)}
+p0b2b2b1b2b2[14] {pt3dclear() pt3dadd(-32.944,121.03,124.86, 0.548) pt3dadd(-36.234,126.39,128.59, 0.548)}
+p0b2b2b1b2b2[15] {pt3dclear() pt3dadd(-36.234,126.39,128.59, 0.526) pt3dadd(-39.303,132.33,125.23, 0.526)}
+p0b2b2b1b2b2[16] {pt3dclear() pt3dadd(-39.303,132.33,125.23, 0.518) pt3dadd(-41.866,138.95,123.84, 0.518)}
+p0b2b2b1b2b2[17] {pt3dclear() pt3dadd(-41.866,138.95,123.84, 0.513) pt3dadd(-42.465,143.07,114.99, 0.513)}
+p0b2b2b1b2b2[18] {pt3dclear() pt3dadd(-42.465,143.07,114.99, 0.48) pt3dadd(-43.72,150.64,116.36, 0.48)}
+p0b2b2b1b2b2[19] {pt3dclear() pt3dadd(-43.72,150.64,116.36, 0.48) pt3dadd(-45.47,158.17,116.36, 0.48)}
+p0b2b2b1b2b2[20] {pt3dclear() pt3dadd(-45.47,158.17,116.36, 0.503) pt3dadd(-46.4,165.48,116.7, 0.503)}
+p0b2b2b1b2b2[21] {pt3dclear() pt3dadd(-46.4,165.48,116.7, 0.509) pt3dadd(-46.4,172.66,114.83, 0.509)}
+p0b2b2b1b2b2[22] {pt3dclear() pt3dadd(-46.4,172.66,114.83, 0.573) pt3dadd(-47.603,179.0,114.51, 0.573)}
+p0b2b2b1b2b2[23] {pt3dclear() pt3dadd(-47.603,179.0,114.51, 0.597) pt3dadd(-47.91,184.25,109.55, 0.597)}
+p0b2b2b1b2b2[24] {pt3dclear() pt3dadd(-47.91,184.25,109.55, 0.636) pt3dadd(-50.529,189.42,108.63, 0.636)}
+p0b2b2b1b2b2[25] {pt3dclear() pt3dadd(-50.529,189.42,108.63, 0.47) pt3dadd(-50.93,192.89,101.73, 0.47)}
+p0b2b2b2[0] {pt3dclear() pt3dadd(-10.58,36.92,38.955, 1.403) pt3dadd(-9.248,44.294,44.4, 1.403)}
+p0b2b2b2[1] {pt3dclear() pt3dadd(-9.248,44.294,44.4, 1.368) pt3dadd(-10.526,49.714,49.943, 1.368)}
+p0b2b2b2[2] {pt3dclear() pt3dadd(-10.526,49.714,49.943, 0.98) pt3dadd(-11.214,56.558,52.395, 0.98)}
+p0b2b2b2[3] {pt3dclear() pt3dadd(-11.214,56.558,52.395, 0.929) pt3dadd(-12.028,62.855,56.31, 0.929)}
+p0b2b2b2[4] {pt3dclear() pt3dadd(-12.028,62.855,56.31, 0.772) pt3dadd(-13.19,70.862,58.86, 0.772)}
+p0b2b2b2[5] {pt3dclear() pt3dadd(-13.19,70.862,58.86, 0.871) pt3dadd(-18.283,75.766,55.965, 0.871)}
+p0b2b2b2[6] {pt3dclear() pt3dadd(-18.283,75.766,55.965, 0.733) pt3dadd(-25.147,81.111,55.965, 0.733)}
+p0b2b2b2[7] {pt3dclear() pt3dadd(-25.147,81.111,55.965, 0.769) pt3dadd(-28.961,88.419,54.6, 0.769)}
+p0b2b2b2[8] {pt3dclear() pt3dadd(-28.961,88.419,54.6, 0.838) pt3dadd(-34.508,93.422,52.398, 0.838)}
+p0b2b2b2[9] {pt3dclear() pt3dadd(-34.508,93.422,52.398, 0.848) pt3dadd(-41.685,95.67,52.56, 0.848)}
+p0b2b2b2[10] {pt3dclear() pt3dadd(-41.685,95.67,52.56, 0.847) pt3dadd(-45.742,100.75,50.264, 0.847)}
+p0b2b2b2[11] {pt3dclear() pt3dadd(-45.742,100.75,50.264, 0.47) pt3dadd(-46.63,106.85,51.21, 0.47)}
+p1[0] {pt3dclear() pt3dadd(0,0,0,2.52) pt3dadd(-1.708,15.872,6.12, 2.52)}
+p1[1] {pt3dclear() pt3dadd(-1.708,15.872,6.12, 2.283) pt3dadd(-4.443,23.322,17.865, 2.283)}
+p1[2] {pt3dclear() pt3dadd(-4.443,23.322,17.865, 1.943) pt3dadd(-11.604,33.552,22.628, 1.943)}
+p1[3] {pt3dclear() pt3dadd(-11.604,33.552,22.628, 1.86) pt3dadd(-8.14,45.5,26.37, 1.86)}
+p1b1[0] {pt3dclear() pt3dadd(-8.14,45.5,26.37, 1.598) pt3dadd(-15.795,51.463,32.992, 1.598)}
+p1b1[1] {pt3dclear() pt3dadd(-15.795,51.463,32.992, 1.415) pt3dadd(-21.246,56.736,34.119, 1.415)}
+p1b1[2] {pt3dclear() pt3dadd(-21.246,56.736,34.119, 1.54) pt3dadd(-20.502,63.164,36.75, 1.54)}
+p1b1[3] {pt3dclear() pt3dadd(-20.502,63.164,36.75, 1.16) pt3dadd(-18.84,68.88,48.135, 1.16)}
+p1b1b1[0] {pt3dclear() pt3dadd(-18.84,68.88,48.135, 1.39) pt3dadd(-25.011,68.245,53.595, 1.39)}
+p1b1b1[1] {pt3dclear() pt3dadd(-25.011,68.245,53.595, 1.187) pt3dadd(-31.477,68.592,54.945, 1.187)}
+p1b1b1[2] {pt3dclear() pt3dadd(-31.477,68.592,54.945, 0.81) pt3dadd(-36.63,65.54,54.6, 0.81)}
+p1b1b1b1[0] {pt3dclear() pt3dadd(-36.63,65.54,54.6, 0.865) pt3dadd(-42.803,63.001,52.074, 0.865)}
+p1b1b1b1[1] {pt3dclear() pt3dadd(-42.803,63.001,52.074, 0.895) pt3dadd(-48.95,64.083,49.611, 0.895)}
+p1b1b1b1[2] {pt3dclear() pt3dadd(-48.95,64.083,49.611, 0.999) pt3dadd(-51.963,68.036,45.175, 0.999)}
+p1b1b1b1[3] {pt3dclear() pt3dadd(-51.963,68.036,45.175, 0.47) pt3dadd(-52.32,73.26,41.67, 0.47)}
+p1b1b1b2[0] {pt3dclear() pt3dadd(-36.63,65.54,54.6, 0.583) pt3dadd(-38.91,63.6,64.421, 0.583)}
+p1b1b1b2[1] {pt3dclear() pt3dadd(-38.91,63.6,64.421, 0.58) pt3dadd(-40.93,59.44,72.3, 0.58)}
+p1b1b2[0] {pt3dclear() pt3dadd(-18.84,68.88,48.135, 1.173) pt3dadd(-23.682,74.76,47.816, 1.173)}
+p1b1b2[1] {pt3dclear() pt3dadd(-23.682,74.76,47.816, 1.092) pt3dadd(-30.718,79.954,49.5, 1.092)}
+p1b1b2[2] {pt3dclear() pt3dadd(-30.718,79.954,49.5, 0.81) pt3dadd(-36.74,85.24,49.335, 0.81)}
+p1b1b2b1[0] {pt3dclear() pt3dadd(-36.74,85.24,49.335, 1.122) pt3dadd(-42.805,83.561,44.235, 1.122)}
+p1b1b2b1[1] {pt3dclear() pt3dadd(-42.805,83.561,44.235, 0.976) pt3dadd(-50.47,80.734,42.87, 0.976)}
+p1b1b2b1[2] {pt3dclear() pt3dadd(-50.47,80.734,42.87, 1.017) pt3dadd(-52.505,86.652,37.935, 1.017)}
+p1b1b2b1[3] {pt3dclear() pt3dadd(-52.505,86.652,37.935, 0.916) pt3dadd(-55.298,92.683,41.401, 0.916)}
+p1b1b2b1[4] {pt3dclear() pt3dadd(-55.298,92.683,41.401, 0.779) pt3dadd(-56.576,99.403,40.65, 0.779)}
+p1b1b2b1[5] {pt3dclear() pt3dadd(-56.576,99.403,40.65, 0.734) pt3dadd(-59.888,105.12,41.34, 0.734)}
+p1b1b2b1[6] {pt3dclear() pt3dadd(-59.888,105.12,41.34, 0.58) pt3dadd(-62.44,111.27,42.36, 0.58)}
+p1b1b2b2[0] {pt3dclear() pt3dadd(-36.74,85.24,49.335, 1.1) pt3dadd(-38.449,91.923,48.246, 1.1)}
+p1b1b2b2[1] {pt3dclear() pt3dadd(-38.449,91.923,48.246, 0.939) pt3dadd(-41.195,98.342,50.175, 0.939)}
+p1b1b2b2[2] {pt3dclear() pt3dadd(-41.195,98.342,50.175, 0.627) pt3dadd(-45.678,104.16,51.005, 0.627)}
+p1b1b2b2[3] {pt3dclear() pt3dadd(-45.678,104.16,51.005, 0.81) pt3dadd(-48.84,110.81,53.58, 0.81)}
+p1b1b2b2b1[0] {pt3dclear() pt3dadd(-48.84,110.81,53.58, 0.942) pt3dadd(-54.025,115.28,51.529, 0.942)}
+p1b1b2b2b1[1] {pt3dclear() pt3dadd(-54.025,115.28,51.529, 0.694) pt3dadd(-58.641,120.93,52.23, 0.694)}
+p1b1b2b2b1[2] {pt3dclear() pt3dadd(-58.641,120.93,52.23, 0.684) pt3dadd(-62.356,127.28,53.58, 0.684)}
+p1b1b2b2b1[3] {pt3dclear() pt3dadd(-62.356,127.28,53.58, 0.653) pt3dadd(-68.427,132.08,54.278, 0.653)}
+p1b1b2b2b1[4] {pt3dclear() pt3dadd(-68.427,132.08,54.278, 0.683) pt3dadd(-73.021,136.89,49.335, 0.683)}
+p1b1b2b2b1[5] {pt3dclear() pt3dadd(-73.021,136.89,49.335, 0.632) pt3dadd(-77.724,140.17,47.46, 0.632)}
+p1b1b2b2b1[6] {pt3dclear() pt3dadd(-77.724,140.17,47.46, 0.597) pt3dadd(-78.051,146.29,48.825, 0.597)}
+p1b1b2b2b1[7] {pt3dclear() pt3dadd(-78.051,146.29,48.825, 0.764) pt3dadd(-76.747,150.19,45.015, 0.764)}
+p1b1b2b2b1[8] {pt3dclear() pt3dadd(-76.747,150.19,45.015, 0.35) pt3dadd(-73.01,146.65,42.36, 0.35)}
+p1b1b2b2b2[0] {pt3dclear() pt3dadd(-48.84,110.81,53.58, 1.111) pt3dadd(-48.166,116.58,59.078, 1.111)}
+p1b1b2b2b2[1] {pt3dclear() pt3dadd(-48.166,116.58,59.078, 0.856) pt3dadd(-51.128,120.93,62.832, 0.856)}
+p1b1b2b2b2[2] {pt3dclear() pt3dadd(-51.128,120.93,62.832, 0.708) pt3dadd(-50.058,126.77,67.392, 0.708)}
+p1b1b2b2b2[3] {pt3dclear() pt3dadd(-50.058,126.77,67.392, 0.578) pt3dadd(-49.303,132.24,74.331, 0.578)}
+p1b1b2b2b2[4] {pt3dclear() pt3dadd(-49.303,132.24,74.331, 0.634) pt3dadd(-50.72,137.69,78.93, 0.634)}
+p1b1b2b2b2[5] {pt3dclear() pt3dadd(-50.72,137.69,78.93, 0.645) pt3dadd(-53.935,141.04,83.247, 0.645)}
+p1b1b2b2b2[6] {pt3dclear() pt3dadd(-53.935,141.04,83.247, 0.503) pt3dadd(-52.817,145.87,90.354, 0.503)}
+p1b1b2b2b2[7] {pt3dclear() pt3dadd(-52.817,145.87,90.354, 0.47) pt3dadd(-48.37,148.37,91.86, 0.47)}
+p1b2[0] {pt3dclear() pt3dadd(-8.14,45.5,26.37, 1.28) pt3dadd(-7.324,47.018,39.65, 1.28)}
+p1b2[1] {pt3dclear() pt3dadd(-7.324,47.018,39.65, 1.4) pt3dadd(-7.91,54.02,46.095, 1.4)}
+p1b2b1[0] {pt3dclear() pt3dadd(-7.91,54.02,46.095, 1.569) pt3dadd(-10.35,62.312,47.625, 1.569)}
+p1b2b1[1] {pt3dclear() pt3dadd(-10.35,62.312,47.625, 1.51) pt3dadd(-7.44,70.96,50.52, 1.51)}
+p1b2b1b1[0] {pt3dclear() pt3dadd(-7.44,70.96,50.52, 1.747) pt3dadd(-12.55,73.681,57.15, 1.747)}
+p1b2b1b1[1] {pt3dclear() pt3dadd(-12.55,73.681,57.15, 1.16) pt3dadd(-10.12,81.09,60.045, 1.16)}
+p1b2b1b1b1[0] {pt3dclear() pt3dadd(-10.12,81.09,60.045, 1.266) pt3dadd(-11.76,86.164,59.431, 1.266)}
+p1b2b1b1b1[1] {pt3dclear() pt3dadd(-11.76,86.164,59.431, 1.05) pt3dadd(-9.53,91.69,63.96, 1.05)}
+p1b2b1b1b1b1[0] {pt3dclear() pt3dadd(-9.53,91.69,63.96, 0.47) pt3dadd(-5.12,93.3,66.855, 0.47)}
+p1b2b1b1b1b2[0] {pt3dclear() pt3dadd(-9.53,91.69,63.96, 1.148) pt3dadd(-6.895,98.815,71.011, 1.148)}
+p1b2b1b1b1b2[1] {pt3dclear() pt3dadd(-6.895,98.815,71.011, 1.365) pt3dadd(-9.605,105.06,73.485, 1.365)}
+p1b2b1b1b1b2[2] {pt3dclear() pt3dadd(-9.605,105.06,73.485, 1.05) pt3dadd(-10.12,111.62,78.075, 1.05)}
+p1b2b1b1b1b2b1[0] {pt3dclear() pt3dadd(-10.12,111.62,78.075, 0.855) pt3dadd(-10.546,115.0,67.246, 0.855)}
+p1b2b1b1b1b2b1[1] {pt3dclear() pt3dadd(-10.546,115.0,67.246, 0.47) pt3dadd(-13.95,120.14,62.595, 0.47)}
+p1b2b1b1b1b2b2[0] {pt3dclear() pt3dadd(-10.12,111.62,78.075, 0.887) pt3dadd(-6.177,118.26,86.063, 0.887)}
+p1b2b1b1b1b2b2[1] {pt3dclear() pt3dadd(-6.177,118.26,86.063, 1.236) pt3dadd(-1.226,122.87,89.507, 1.236)}
+p1b2b1b1b1b2b2[2] {pt3dclear() pt3dadd(-1.226,122.87,89.507, 0.88) pt3dadd(0.865,128.2,95.859, 0.88)}
+p1b2b1b1b1b2b2[3] {pt3dclear() pt3dadd(0.865,128.2,95.859, 0.626) pt3dadd(-2.081,132.73,99.329, 0.626)}
+p1b2b1b1b1b2b2[4] {pt3dclear() pt3dadd(-2.081,132.73,99.329, 0.636) pt3dadd(-4.793,137.05,103.42, 0.636)}
+p1b2b1b1b1b2b2[5] {pt3dclear() pt3dadd(-4.793,137.05,103.42, 0.562) pt3dadd(-3.658,143.49,103.04, 0.562)}
+p1b2b1b1b1b2b2[6] {pt3dclear() pt3dadd(-3.658,143.49,103.04, 0.581) pt3dadd(-4.524,149.58,105.3, 0.581)}
+p1b2b1b1b1b2b2[7] {pt3dclear() pt3dadd(-4.524,149.58,105.3, 0.514) pt3dadd(-5.744,154.88,112.26, 0.514)}
+p1b2b1b1b1b2b2[8] {pt3dclear() pt3dadd(-5.744,154.88,112.26, 0.47) pt3dadd(-5.27,161.23,115.5, 0.47)}
+p1b2b1b1b1b2b2b1[0] {pt3dclear() pt3dadd(-5.27,161.23,115.5, 0.5) pt3dadd(-10.741,164.9,117.71, 0.5)}
+p1b2b1b1b1b2b2b1[1] {pt3dclear() pt3dadd(-10.741,164.9,117.71, 0.498) pt3dadd(-15.123,170.05,118.56, 0.498)}
+p1b2b1b1b1b2b2b1[2] {pt3dclear() pt3dadd(-15.123,170.05,118.56, 0.557) pt3dadd(-19.604,175.48,120.09, 0.557)}
+p1b2b1b1b1b2b2b1[3] {pt3dclear() pt3dadd(-19.604,175.48,120.09, 0.501) pt3dadd(-25.448,178.82,120.78, 0.501)}
+p1b2b1b1b1b2b2b1[4] {pt3dclear() pt3dadd(-25.448,178.82,120.78, 0.52) pt3dadd(-29.826,182.82,124.78, 0.52)}
+p1b2b1b1b1b2b2b1[5] {pt3dclear() pt3dadd(-29.826,182.82,124.78, 0.47) pt3dadd(-36.55,184.73,124.68, 0.47)}
+p1b2b1b1b1b2b2b1b1[0] {pt3dclear() pt3dadd(-36.55,184.73,124.68, 0.47) pt3dadd(-41.44,185.42,122.98, 0.47)}
+p1b2b1b1b1b2b2b1b2[0] {pt3dclear() pt3dadd(-36.55,184.73,124.68, 0.558) pt3dadd(-39.368,190.25,127.92, 0.558)}
+p1b2b1b1b1b2b2b1b2[1] {pt3dclear() pt3dadd(-39.368,190.25,127.92, 0.539) pt3dadd(-43.001,194.98,132.83, 0.539)}
+p1b2b1b1b1b2b2b1b2[2] {pt3dclear() pt3dadd(-43.001,194.98,132.83, 0.47) pt3dadd(-46.32,200.28,137.96, 0.47)}
+p1b2b1b1b1b2b2b2[0] {pt3dclear() pt3dadd(-5.27,161.23,115.5, 0.706) pt3dadd(-4.883,167.19,117.26, 0.706)}
+p1b2b1b1b1b2b2b2[1] {pt3dclear() pt3dadd(-4.883,167.19,117.26, 0.58) pt3dadd(-2.72,172.86,119.42, 0.58)}
+p1b2b1b1b1b2b2b2b1[0] {pt3dclear() pt3dadd(-2.72,172.86,119.42, 0.632) pt3dadd(1.223,179.06,117.54, 0.632)}
+p1b2b1b1b1b2b2b2b1[1] {pt3dclear() pt3dadd(1.223,179.06,117.54, 0.609) pt3dadd(4.887,185.13,119.36, 0.609)}
+p1b2b1b1b1b2b2b2b1[2] {pt3dclear() pt3dadd(4.887,185.13,119.36, 0.47) pt3dadd(10.19,187.95,120.44, 0.47)}
+p1b2b1b1b1b2b2b2b2[0] {pt3dclear() pt3dadd(-2.72,172.86,119.42, 0.621) pt3dadd(-2.99,177.62,124.15, 0.621)}
+p1b2b1b1b1b2b2b2b2[1] {pt3dclear() pt3dadd(-2.99,177.62,124.15, 0.58) pt3dadd(-0.62,181.5,127.06, 0.58)}
+p1b2b1b1b2[0] {pt3dclear() pt3dadd(-10.12,81.09,60.045, 0.814) pt3dadd(-5.973,85.163,62.943, 0.814)}
+p1b2b1b1b2[1] {pt3dclear() pt3dadd(-5.973,85.163,62.943, 0.831) pt3dadd(-4.4,87.938,70.56, 0.831)}
+p1b2b1b1b2[2] {pt3dclear() pt3dadd(-4.4,87.938,70.56, 0.81) pt3dadd(-3.72,92.61,78.075, 0.81)}
+p1b2b1b1b2b1[0] {pt3dclear() pt3dadd(-3.72,92.61,78.075, 0.7) pt3dadd(-1.86,96.07,84.03, 0.7)}
+p1b2b1b1b2b2[0] {pt3dclear() pt3dadd(-3.72,92.61,78.075, 0.838) pt3dadd(2.09,98.984,82.155, 0.838)}
+p1b2b1b1b2b2[1] {pt3dclear() pt3dadd(2.09,98.984,82.155, 0.764) pt3dadd(6.854,105.0,85.521, 0.764)}
+p1b2b1b1b2b2[2] {pt3dclear() pt3dadd(6.854,105.0,85.521, 0.556) pt3dadd(10.81,108.48,91.35, 0.556)}
+p1b2b1b1b2b2[3] {pt3dclear() pt3dadd(10.81,108.48,91.35, 0.555) pt3dadd(13.841,114.14,93.429, 0.555)}
+p1b2b1b1b2b2[4] {pt3dclear() pt3dadd(13.841,114.14,93.429, 0.637) pt3dadd(16.61,117.37,99.165, 0.637)}
+p1b2b1b1b2b2[5] {pt3dclear() pt3dadd(16.61,117.37,99.165, 0.549) pt3dadd(21.2,122.11,100.36, 0.549)}
+p1b2b1b1b2b2[6] {pt3dclear() pt3dadd(21.2,122.11,100.36, 0.527) pt3dadd(26.138,125.45,105.61, 0.527)}
+p1b2b1b1b2b2[7] {pt3dclear() pt3dadd(26.138,125.45,105.61, 0.706) pt3dadd(28.984,129.59,103.85, 0.706)}
+p1b2b1b1b2b2[8] {pt3dclear() pt3dadd(28.984,129.59,103.85, 0.541) pt3dadd(30.143,136.0,101.24, 0.541)}
+p1b2b1b1b2b2[9] {pt3dclear() pt3dadd(30.143,136.0,101.24, 0.567) pt3dadd(31.574,142.08,98.919, 0.567)}
+p1b2b1b1b2b2[10] {pt3dclear() pt3dadd(31.574,142.08,98.919, 0.609) pt3dadd(29.18,147.02,95.37, 0.609)}
+p1b2b1b1b2b2[11] {pt3dclear() pt3dadd(29.18,147.02,95.37, 0.559) pt3dadd(30.358,153.06,92.111, 0.559)}
+p1b2b1b1b2b2[12] {pt3dclear() pt3dadd(30.358,153.06,92.111, 0.646) pt3dadd(29.861,157.49,86.925, 0.646)}
+p1b2b1b1b2b2[13] {pt3dclear() pt3dadd(29.861,157.49,86.925, 0.557) pt3dadd(30.537,163.93,85.497, 0.557)}
+p1b2b1b1b2b2[14] {pt3dclear() pt3dadd(30.537,163.93,85.497, 0.47) pt3dadd(30.93,166.57,78.075, 0.47)}
+p1b2b1b2[0] {pt3dclear() pt3dadd(-7.44,70.96,50.52, 1.1) pt3dadd(-1.447,73.296,57.15, 1.1)}
+p1b2b1b2[1] {pt3dclear() pt3dadd(-1.447,73.296,57.15, 0.929) pt3dadd(6.612,68.803,56.496, 0.929)}
+p1b2b1b2[2] {pt3dclear() pt3dadd(6.612,68.803,56.496, 0.866) pt3dadd(15.674,68.454,55.142, 0.866)}
+p1b2b1b2[3] {pt3dclear() pt3dadd(15.674,68.454,55.142, 1.095) pt3dadd(19.88,67.5,60.735, 1.095)}
+p1b2b1b2[4] {pt3dclear() pt3dadd(19.88,67.5,60.735, 0.876) pt3dadd(25.203,69.013,63.965, 0.876)}
+p1b2b1b2[5] {pt3dclear() pt3dadd(25.203,69.013,63.965, 0.523) pt3dadd(30.049,72.62,71.644, 0.523)}
+p1b2b1b2[6] {pt3dclear() pt3dadd(30.049,72.62,71.644, 0.575) pt3dadd(36.039,74.732,74.34, 0.575)}
+p1b2b1b2[7] {pt3dclear() pt3dadd(36.039,74.732,74.34, 0.47) pt3dadd(41.86,78.56,79.095, 0.47)}
+p1b2b2[0] {pt3dclear() pt3dadd(-7.91,54.02,46.095, 1.318) pt3dadd(-4.281,57.838,49.176, 1.318)}
+p1b2b2[1] {pt3dclear() pt3dadd(-4.281,57.838,49.176, 1.647) pt3dadd(-4.573,60.373,54.779, 1.647)}
+p1b2b2[2] {pt3dclear() pt3dadd(-4.573,60.373,54.779, 0.81) pt3dadd(-1.4,56.56,61.575, 0.81)}
+p1b2b2b1[0] {pt3dclear() pt3dadd(-1.4,56.56,61.575, 0.9) pt3dadd(-6.202,52.312,65.751, 0.9)}
+p1b2b2b1[1] {pt3dclear() pt3dadd(-6.202,52.312,65.751, 0.72) pt3dadd(-12.974,54.229,69.915, 0.72)}
+p1b2b2b1[2] {pt3dclear() pt3dadd(-12.974,54.229,69.915, 0.731) pt3dadd(-18.694,53.126,74.208, 0.731)}
+p1b2b2b1[3] {pt3dclear() pt3dadd(-18.694,53.126,74.208, 0.611) pt3dadd(-22.154,51.147,81.933, 0.611)}
+p1b2b2b1[4] {pt3dclear() pt3dadd(-22.154,51.147,81.933, 0.546) pt3dadd(-24.278,45.236,80.667, 0.546)}
+p1b2b2b1[5] {pt3dclear() pt3dadd(-24.278,45.236,80.667, 0.519) pt3dadd(-27.273,40.076,76.2, 0.519)}
+p1b2b2b1[6] {pt3dclear() pt3dadd(-27.273,40.076,76.2, 0.622) pt3dadd(-32.626,38.56,76.04, 0.622)}
+p1b2b2b1[7] {pt3dclear() pt3dadd(-32.626,38.56,76.04, 0.694) pt3dadd(-35.679,37.87,70.206, 0.694)}
+p1b2b2b1[8] {pt3dclear() pt3dadd(-35.679,37.87,70.206, 0.53) pt3dadd(-40.846,37.368,66.345, 0.53)}
+p1b2b2b1[9] {pt3dclear() pt3dadd(-40.846,37.368,66.345, 0.35) pt3dadd(-46.16,34.9,64.47, 0.35)}
+p1b2b2b2[0] {pt3dclear() pt3dadd(-1.4,56.56,61.575, 0.98) pt3dadd(-0.758,51.935,61.099, 0.98)}
+p1b2b2b2[1] {pt3dclear() pt3dadd(-0.758,51.935,61.099, 0.81) pt3dadd(2.44,49.88,62.775, 0.81)}
+p1b2b2b2b1[0] {pt3dclear() pt3dadd(2.44,49.88,62.775, 0.7) pt3dadd(6.74,49.42,62.595, 0.7)}
+p1b2b2b2b2[0] {pt3dclear() pt3dadd(2.44,49.88,62.775, 0.812) pt3dadd(6.431,45.827,65.939, 0.812)}
+p1b2b2b2b2[1] {pt3dclear() pt3dadd(6.431,45.827,65.939, 0.543) pt3dadd(8.049,42.177,71.037, 0.543)}
+p1b2b2b2b2[2] {pt3dclear() pt3dadd(8.049,42.177,71.037, 0.47) pt3dadd(10.35,36.86,72.3, 0.47)}
+p2[0] {pt3dclear() pt3dadd(0,0,0,2.669) pt3dadd(-7.168,-2.696,-1.5135, 2.669)}
+p2[1] {pt3dclear() pt3dadd(-7.168,-2.696,-1.5135, 1.74) pt3dadd(-6.28,-14.98,-1.53, 1.74)}
+p2b1[0] {pt3dclear() pt3dadd(-6.28,-14.98,-1.53, 1.802) pt3dadd(-16.843,-17.286,1.53, 1.802)}
+p2b1[1] {pt3dclear() pt3dadd(-16.843,-17.286,1.53, 1.16) pt3dadd(-24.42,-23.85,3.735, 1.16)}
+p2b1b1[0] {pt3dclear() pt3dadd(-24.42,-23.85,3.735, 1.16) pt3dadd(-21.63,-19.18,10.41, 1.16)}
+p2b1b1b1[0] {pt3dclear() pt3dadd(-21.63,-19.18,10.41, 1.469) pt3dadd(-21.829,-24.66,11.73, 1.469)}
+p2b1b1b1[1] {pt3dclear() pt3dadd(-21.829,-24.66,11.73, 0.81) pt3dadd(-23.84,-29.61,11.22, 0.81)}
+p2b1b1b2[0] {pt3dclear() pt3dadd(-21.63,-19.18,10.41, 0.936) pt3dadd(-27.184,-22.038,19.458, 0.936)}
+p2b1b1b2[1] {pt3dclear() pt3dadd(-27.184,-22.038,19.458, 1.404) pt3dadd(-25.23,-25.484,25.781, 1.404)}
+p2b1b1b2[2] {pt3dclear() pt3dadd(-25.23,-25.484,25.781, 1.34) pt3dadd(-22.214,-30.134,29.46, 1.34)}
+p2b1b1b2[3] {pt3dclear() pt3dadd(-22.214,-30.134,29.46, 1.009) pt3dadd(-24.731,-38.028,33.885, 1.009)}
+p2b1b1b2[4] {pt3dclear() pt3dadd(-24.731,-38.028,33.885, 1.224) pt3dadd(-24.42,-45.68,38.13, 1.224)}
+p2b1b1b2[5] {pt3dclear() pt3dadd(-24.42,-45.68,38.13, 1.464) pt3dadd(-24.689,-52.188,41.19, 1.464)}
+p2b1b1b2[6] {pt3dclear() pt3dadd(-24.689,-52.188,41.19, 1.152) pt3dadd(-27.601,-59.635,46.251, 1.152)}
+p2b1b1b2[7] {pt3dclear() pt3dadd(-27.601,-59.635,46.251, 1.087) pt3dadd(-25.602,-66.031,53.265, 1.087)}
+p2b1b1b2[8] {pt3dclear() pt3dadd(-25.602,-66.031,53.265, 0.943) pt3dadd(-28.84,-73.55,57.288, 0.943)}
+p2b1b1b2[9] {pt3dclear() pt3dadd(-28.84,-73.55,57.288, 0.976) pt3dadd(-28.95,-81.62,60.363, 0.976)}
+p2b1b1b2[10] {pt3dclear() pt3dadd(-28.95,-81.62,60.363, 0.965) pt3dadd(-31.569,-87.851,63.501, 0.965)}
+p2b1b1b2[11] {pt3dclear() pt3dadd(-31.569,-87.851,63.501, 0.88) pt3dadd(-33.604,-94.18,68.415, 0.88)}
+p2b1b1b2[12] {pt3dclear() pt3dadd(-33.604,-94.18,68.415, 0.753) pt3dadd(-36.44,-98.99,73.515, 0.753)}
+p2b1b1b2[13] {pt3dclear() pt3dadd(-36.44,-98.99,73.515, 0.886) pt3dadd(-37.633,-103.67,77.655, 0.886)}
+p2b1b1b2[14] {pt3dclear() pt3dadd(-37.633,-103.67,77.655, 0.661) pt3dadd(-36.526,-110.37,82.21, 0.661)}
+p2b1b1b2[15] {pt3dclear() pt3dadd(-36.526,-110.37,82.21, 0.47) pt3dadd(-36.74,-116.29,87.12, 0.47)}
+p2b1b2[0] {pt3dclear() pt3dadd(-24.42,-23.85,3.735, 1.753) pt3dadd(-29.88,-19.706,5.7735, 1.753)}
+p2b1b2[1] {pt3dclear() pt3dadd(-29.88,-19.706,5.7735, 1.449) pt3dadd(-34.947,-22.47,6.63, 1.449)}
+p2b1b2[2] {pt3dclear() pt3dadd(-34.947,-22.47,6.63, 1.054) pt3dadd(-42.638,-20.758,12.333, 1.054)}
+p2b1b2[3] {pt3dclear() pt3dadd(-42.638,-20.758,12.333, 3.638) pt3dadd(-43.836,-18.436,11.055, 3.638)}
+p2b1b2[4] {pt3dclear() pt3dadd(-43.836,-18.436,11.055, 1.407) pt3dadd(-50.195,-18.226,15.81, 1.407)}
+p2b1b2[5] {pt3dclear() pt3dadd(-50.195,-18.226,15.81, 0.93) pt3dadd(-55.93,-23.5,17.52, 0.93)}
+p2b1b2b1[0] {pt3dclear() pt3dadd(-55.93,-23.5,17.52, 0.81) pt3dadd(-55.11,-30.18,15.3, 0.81)}
+p2b1b2b1b1[0] {pt3dclear() pt3dadd(-55.11,-30.18,15.3, 0.81) pt3dadd(-55.93,-33.29,14.28, 0.81)}
+p2b1b2b1b2[0] {pt3dclear() pt3dadd(-55.11,-30.18,15.3, 0.929) pt3dadd(-54.886,-36.318,13.605, 0.929)}
+p2b1b2b1b2[1] {pt3dclear() pt3dadd(-54.886,-36.318,13.605, 0.899) pt3dadd(-55.128,-42.739,14.467, 0.899)}
+p2b1b2b1b2[2] {pt3dclear() pt3dadd(-55.128,-42.739,14.467, 0.7) pt3dadd(-56.86,-48.38,18.195, 0.7)}
+p2b1b2b2[0] {pt3dclear() pt3dadd(-55.93,-23.5,17.52, 1.019) pt3dadd(-63.133,-24.187,19.05, 1.019)}
+p2b1b2b2[1] {pt3dclear() pt3dadd(-63.133,-24.187,19.05, 1.093) pt3dadd(-68.14,-27.443,19.395, 1.093)}
+p2b1b2b2[2] {pt3dclear() pt3dadd(-68.14,-27.443,19.395, 0.935) pt3dadd(-74.158,-29.892,17.544, 0.935)}
+p2b1b2b2[3] {pt3dclear() pt3dadd(-74.158,-29.892,17.544, 1.041) pt3dadd(-79.866,-25.943,17.01, 1.041)}
+p2b1b2b2[4] {pt3dclear() pt3dadd(-79.866,-25.943,17.01, 0.988) pt3dadd(-85.868,-21.744,19.905, 0.988)}
+p2b1b2b2[5] {pt3dclear() pt3dadd(-85.868,-21.744,19.905, 0.7) pt3dadd(-91.62,-17.17,19.725, 0.7)}
+p2b2[0] {pt3dclear() pt3dadd(-6.28,-14.98,-1.53, 1.264) pt3dadd(-11.037,-20.603,2.895, 1.264)}
+p2b2[1] {pt3dclear() pt3dadd(-11.037,-20.603,2.895, 1.224) pt3dadd(-11.059,-30.613,1.53, 1.224)}
+p2b2[2] {pt3dclear() pt3dadd(-11.059,-30.613,1.53, 1.189) pt3dadd(-11.944,-41.032,3.735, 1.189)}
+p2b2[3] {pt3dclear() pt3dadd(-11.944,-41.032,3.735, 1.033) pt3dadd(-8.991,-50.833,3.735, 1.033)}
+p2b2[4] {pt3dclear() pt3dadd(-8.991,-50.833,3.735, 0.81) pt3dadd(-6.86,-59.67,4.755, 0.81)}
+p3[0] {pt3dclear() pt3dadd(0,0,0,2.978) pt3dadd(1.177,-10.178,-0.714, 2.978)}
+p3[1] {pt3dclear() pt3dadd(1.177,-10.178,-0.714, 2.33) pt3dadd(-3.37,-21.31,3.57, 2.33)}
+p3b1[0] {pt3dclear() pt3dadd(-3.37,-21.31,3.57, 2.457) pt3dadd(-6.549,-31.33,8.505, 2.457)}
+p3b1[1] {pt3dclear() pt3dadd(-6.549,-31.33,8.505, 1.4) pt3dadd(-10.35,-38.93,12.75, 1.4)}
+p3b1b1[0] {pt3dclear() pt3dadd(-10.35,-38.93,12.75, 1.394) pt3dadd(-17.57,-33.831,15.315, 1.394)}
+p3b1b1[1] {pt3dclear() pt3dadd(-17.57,-33.831,15.315, 1.16) pt3dadd(-26.28,-32.94,12.75, 1.16)}
+p3b1b1b1[0] {pt3dclear() pt3dadd(-26.28,-32.94,12.75, 1.25) pt3dadd(-30.611,-30.863,8.85, 1.25)}
+p3b1b1b1[1] {pt3dclear() pt3dadd(-30.611,-30.863,8.85, 1.008) pt3dadd(-35.407,-33.999,7.644, 1.008)}
+p3b1b1b1[2] {pt3dclear() pt3dadd(-35.407,-33.999,7.644, 0.7) pt3dadd(-36.39,-38.24,2.385, 0.7)}
+p3b1b1b1b1[0] {pt3dclear() pt3dadd(-36.39,-38.24,2.385, 0.748) pt3dadd(-40.159,-42.144,-0.855, 0.748)}
+p3b1b1b1b1[1] {pt3dclear() pt3dadd(-40.159,-42.144,-0.855, 0.58) pt3dadd(-46.16,-43.77,-0.855, 0.58)}
+p3b1b1b1b2[0] {pt3dclear() pt3dadd(-36.39,-38.24,2.385, 0.839) pt3dadd(-40.053,-33.917,-1.02, 0.839)}
+p3b1b1b1b2[1] {pt3dclear() pt3dadd(-40.053,-33.917,-1.02, 0.47) pt3dadd(-45.93,-29.72,-2.895, 0.47)}
+p3b1b1b2[0] {pt3dclear() pt3dadd(-26.28,-32.94,12.75, 0.776) pt3dadd(-33.167,-33.256,11.73, 0.776)}
+p3b1b1b2[1] {pt3dclear() pt3dadd(-33.167,-33.256,11.73, 0.736) pt3dadd(-38.954,-32.828,8.505, 0.736)}
+p3b1b1b2[2] {pt3dclear() pt3dadd(-38.954,-32.828,8.505, 0.623) pt3dadd(-42.879,-38.022,8.34, 0.623)}
+p3b1b1b2[3] {pt3dclear() pt3dadd(-42.879,-38.022,8.34, 0.58) pt3dadd(-45.35,-42.73,5.61, 0.58)}
+p3b1b2[0] {pt3dclear() pt3dadd(-10.35,-38.93,12.75, 1.582) pt3dadd(-4.518,-45.356,14.97, 1.582)}
+p3b1b2[1] {pt3dclear() pt3dadd(-4.518,-45.356,14.97, 1.565) pt3dadd(-6.472,-53.603,19.05, 1.565)}
+p3b1b2[2] {pt3dclear() pt3dadd(-6.472,-53.603,19.05, 1.456) pt3dadd(-8.257,-61.827,22.59, 1.456)}
+p3b1b2[3] {pt3dclear() pt3dadd(-8.257,-61.827,22.59, 1.16) pt3dadd(-6.63,-68.77,28.575, 1.16)}
+p3b1b2b1[0] {pt3dclear() pt3dadd(-6.63,-68.77,28.575, 1.248) pt3dadd(-11.402,-75.451,31.038, 1.248)}
+p3b1b2b1[1] {pt3dclear() pt3dadd(-11.402,-75.451,31.038, 1.138) pt3dadd(-14.197,-80.852,37.589, 1.138)}
+p3b1b2b1[2] {pt3dclear() pt3dadd(-14.197,-80.852,37.589, 0.95) pt3dadd(-15.942,-87.299,45.075, 0.95)}
+p3b1b2b1[3] {pt3dclear() pt3dadd(-15.942,-87.299,45.075, 0.762) pt3dadd(-20.078,-91.695,49.674, 0.762)}
+p3b1b2b1[4] {pt3dclear() pt3dadd(-20.078,-91.695,49.674, 0.748) pt3dadd(-20.902,-98.022,52.612, 0.748)}
+p3b1b2b1[5] {pt3dclear() pt3dadd(-20.902,-98.022,52.612, 0.47) pt3dadd(-19.65,-100.33,63.105, 0.47)}
+p3b1b2b1b1[0] {pt3dclear() pt3dadd(-19.65,-100.33,63.105, 0.437) pt3dadd(-20.084,-106.29,61.92, 0.437)}
+p3b1b2b1b1[1] {pt3dclear() pt3dadd(-20.084,-106.29,61.92, 0.404) pt3dadd(-19.243,-111.41,64.551, 0.404)}
+p3b1b2b1b1[2] {pt3dclear() pt3dadd(-19.243,-111.41,64.551, 0.43) pt3dadd(-20.578,-115.08,69.57, 0.43)}
+p3b1b2b1b1[3] {pt3dclear() pt3dadd(-20.578,-115.08,69.57, 0.492) pt3dadd(-20.157,-118.14,74.445, 0.492)}
+p3b1b2b1b1[4] {pt3dclear() pt3dadd(-20.157,-118.14,74.445, 0.389) pt3dadd(-22.92,-119.35,81.662, 0.389)}
+p3b1b2b1b1[5] {pt3dclear() pt3dadd(-22.92,-119.35,81.662, 0.361) pt3dadd(-25.104,-121.71,89.475, 0.361)}
+p3b1b2b1b1[6] {pt3dclear() pt3dadd(-25.104,-121.71,89.475, 0.418) pt3dadd(-28.59,-125.55,90.977, 0.418)}
+p3b1b2b1b1[7] {pt3dclear() pt3dadd(-28.59,-125.55,90.977, 0.35) pt3dadd(-27.79,-128.55,96.78, 0.35)}
+p3b1b2b1b2[0] {pt3dclear() pt3dadd(-19.65,-100.33,63.105, 0.488) pt3dadd(-23.479,-104.28,62.76, 0.488)}
+p3b1b2b1b2[1] {pt3dclear() pt3dadd(-23.479,-104.28,62.76, 0.516) pt3dadd(-25.252,-107.83,67.829, 0.516)}
+p3b1b2b1b2[2] {pt3dclear() pt3dadd(-25.252,-107.83,67.829, 0.35) pt3dadd(-27.79,-108.97,72.465, 0.35)}
+p3b1b2b2[0] {pt3dclear() pt3dadd(-6.63,-68.77,28.575, 1.011) pt3dadd(-1.624,-74.008,24.66, 1.011)}
+p3b1b2b2[1] {pt3dclear() pt3dadd(-1.624,-74.008,24.66, 0.76) pt3dadd(1.18,-82.445,24.66, 0.76)}
+p3b1b2b2[2] {pt3dclear() pt3dadd(1.18,-82.445,24.66, 0.832) pt3dadd(5.82,-89.027,23.13, 0.832)}
+p3b1b2b2[3] {pt3dclear() pt3dadd(5.82,-89.027,23.13, 0.833) pt3dadd(11.134,-94.879,25.86, 0.833)}
+p3b1b2b2[4] {pt3dclear() pt3dadd(11.134,-94.879,25.86, 0.755) pt3dadd(14.906,-99.618,31.47, 0.755)}
+p3b1b2b2[5] {pt3dclear() pt3dadd(14.906,-99.618,31.47, 0.682) pt3dadd(20.6,-103.7,35.385, 0.682)}
+p3b1b2b2[6] {pt3dclear() pt3dadd(20.6,-103.7,35.385, 0.691) pt3dadd(23.93,-107.56,43.388, 0.691)}
+p3b1b2b2[7] {pt3dclear() pt3dadd(23.93,-107.56,43.388, 0.58) pt3dadd(29.42,-110.81,49.665, 0.58)}
+p3b1b2b2b1[0] {pt3dclear() pt3dadd(29.42,-110.81,49.665, 0.47) pt3dadd(30.93,-116.57,50.01, 0.47)}
+p3b1b2b2b2[0] {pt3dclear() pt3dadd(29.42,-110.81,49.665, 0.69) pt3dadd(34.745,-109.13,51.54, 0.69)}
+p3b1b2b2b2[1] {pt3dclear() pt3dadd(34.745,-109.13,51.54, 0.708) pt3dadd(40.316,-108.98,51.54, 0.708)}
+p3b1b2b2b2[2] {pt3dclear() pt3dadd(40.316,-108.98,51.54, 0.66) pt3dadd(45.022,-109.35,46.022, 0.66)}
+p3b1b2b2b2[3] {pt3dclear() pt3dadd(45.022,-109.35,46.022, 0.58) pt3dadd(47.09,-107.36,42.18, 0.58)}
+p3b2[0] {pt3dclear() pt3dadd(-3.37,-21.31,3.57, 2.09) pt3dadd(-1.16,-24.88,4.755, 2.09)}
+p3b2b1[0] {pt3dclear() pt3dadd(-1.16,-24.88,4.755, 1.63) pt3dadd(3.84,-32.14,17.355, 1.63)}
+p3b2b1b1[0] {pt3dclear() pt3dadd(3.84,-32.14,17.355, 1.691) pt3dadd(3.046,-40.397,12.075, 1.691)}
+p3b2b1b1[1] {pt3dclear() pt3dadd(3.046,-40.397,12.075, 1.579) pt3dadd(5.981,-45.739,19.599, 1.579)}
+p3b2b1b1[2] {pt3dclear() pt3dadd(5.981,-45.739,19.599, 1.457) pt3dadd(6.646,-52.399,27.599, 1.457)}
+p3b2b1b1[3] {pt3dclear() pt3dadd(6.646,-52.399,27.599, 1.872) pt3dadd(5.796,-57.13,34.512, 1.872)}
+p3b2b1b1[4] {pt3dclear() pt3dadd(5.796,-57.13,34.512, 1.05) pt3dadd(7.33,-62.43,41.34, 1.05)}
+p3b2b1b1b1[0] {pt3dclear() pt3dadd(7.33,-62.43,41.34, 1.151) pt3dadd(4.429,-68.449,45.541, 1.151)}
+p3b2b1b1b1[1] {pt3dclear() pt3dadd(4.429,-68.449,45.541, 0.98) pt3dadd(6.124,-70.562,55.477, 0.98)}
+p3b2b1b1b1[2] {pt3dclear() pt3dadd(6.124,-70.562,55.477, 0.841) pt3dadd(5.776,-74.677,63.27, 0.841)}
+p3b2b1b1b1[3] {pt3dclear() pt3dadd(5.776,-74.677,63.27, 0.734) pt3dadd(6.195,-79.596,68.864, 0.734)}
+p3b2b1b1b1[4] {pt3dclear() pt3dadd(6.195,-79.596,68.864, 0.665) pt3dadd(7.36,-85.04,72.829, 0.665)}
+p3b2b1b1b1[5] {pt3dclear() pt3dadd(7.36,-85.04,72.829, 0.47) pt3dadd(9.07,-89.62,77.565, 0.47)}
+p3b2b1b1b1b1[0] {pt3dclear() pt3dadd(9.07,-89.62,77.565, 0.477) pt3dadd(12.442,-89.49,84.148, 0.477)}
+p3b2b1b1b1b1[1] {pt3dclear() pt3dadd(12.442,-89.49,84.148, 0.488) pt3dadd(17.076,-91.21,87.435, 0.488)}
+p3b2b1b1b1b1[2] {pt3dclear() pt3dadd(17.076,-91.21,87.435, 0.47) pt3dadd(20.81,-94.8,90.33, 0.47)}
+p3b2b1b1b1b2[0] {pt3dclear() pt3dadd(9.07,-89.62,77.565, 0.55) pt3dadd(7.778,-92.129,86.001, 0.55)}
+p3b2b1b1b1b2[1] {pt3dclear() pt3dadd(7.778,-92.129,86.001, 0.47) pt3dadd(7.44,-97.57,91.68, 0.47)}
+p3b2b1b1b1b2b1[0] {pt3dclear() pt3dadd(7.44,-97.57,91.68, 0.634) pt3dadd(10.906,-98.482,96.45, 0.634)}
+p3b2b1b1b1b2b1[1] {pt3dclear() pt3dadd(10.906,-98.482,96.45, 0.493) pt3dadd(13.968,-98.693,104.48, 0.493)}
+p3b2b1b1b1b2b1[2] {pt3dclear() pt3dadd(13.968,-98.693,104.48, 0.47) pt3dadd(17.56,-99.52,111.58, 0.47)}
+p3b2b1b1b1b2b2[0] {pt3dclear() pt3dadd(7.44,-97.57,91.68, 0.601) pt3dadd(6.25,-101.27,98.468, 0.601)}
+p3b2b1b1b1b2b2[1] {pt3dclear() pt3dadd(6.25,-101.27,98.468, 0.588) pt3dadd(8.115,-104.86,105.31, 0.588)}
+p3b2b1b1b1b2b2[2] {pt3dclear() pt3dadd(8.115,-104.86,105.31, 0.544) pt3dadd(11.18,-109.84,109.84, 0.544)}
+p3b2b1b1b1b2b2[3] {pt3dclear() pt3dadd(11.18,-109.84,109.84, 0.606) pt3dadd(15.12,-113.23,114.09, 0.606)}
+p3b2b1b1b1b2b2[4] {pt3dclear() pt3dadd(15.12,-113.23,114.09, 0.615) pt3dadd(17.653,-116.28,117.38, 0.615)}
+p3b2b1b1b1b2b2[5] {pt3dclear() pt3dadd(17.653,-116.28,117.38, 0.423) pt3dadd(18.359,-120.85,121.72, 0.423)}
+p3b2b1b1b1b2b2[6] {pt3dclear() pt3dadd(18.359,-120.85,121.72, 0.589) pt3dadd(17.743,-124.61,122.98, 0.589)}
+p3b2b1b1b1b2b2[7] {pt3dclear() pt3dadd(17.743,-124.61,122.98, 0.59) pt3dadd(16.51,-127.36,126.72, 0.59)}
+p3b2b1b1b1b2b2[8] {pt3dclear() pt3dadd(16.51,-127.36,126.72, 0.457) pt3dadd(18.935,-129.94,132.1, 0.457)}
+p3b2b1b1b1b2b2[9] {pt3dclear() pt3dadd(18.935,-129.94,132.1, 0.35) pt3dadd(20.7,-130.86,136.25, 0.35)}
+p3b2b1b1b2[0] {pt3dclear() pt3dadd(7.33,-62.43,41.34, 0.86) pt3dadd(13.297,-67.227,40.32, 0.86)}
+p3b2b1b1b2[1] {pt3dclear() pt3dadd(13.297,-67.227,40.32, 0.814) pt3dadd(18.496,-72.062,36.915, 0.814)}
+p3b2b1b1b2[2] {pt3dclear() pt3dadd(18.496,-72.062,36.915, 0.58) pt3dadd(22.21,-77.41,36.735, 0.58)}
+p3b2b1b2[0] {pt3dclear() pt3dadd(3.84,-32.14,17.355, 2.322) pt3dadd(6.461,-34.814,24.015, 2.322)}
+p3b2b1b2[1] {pt3dclear() pt3dadd(6.461,-34.814,24.015, 2.434) pt3dadd(9.546,-36.895,29.25, 2.434)}
+p3b2b1b2[2] {pt3dclear() pt3dadd(9.546,-36.895,29.25, 1.219) pt3dadd(13.84,-42.548,38.529, 1.219)}
+p3b2b1b2[3] {pt3dclear() pt3dadd(13.84,-42.548,38.529, 1.155) pt3dadd(15.72,-46.257,49.443, 1.155)}
+p3b2b1b2[4] {pt3dclear() pt3dadd(15.72,-46.257,49.443, 1.292) pt3dadd(20.172,-50.478,53.539, 1.292)}
+p3b2b1b2[5] {pt3dclear() pt3dadd(20.172,-50.478,53.539, 0.81) pt3dadd(24.77,-54.54,59.37, 0.81)}
+p3b2b1b2b1[0] {pt3dclear() pt3dadd(24.77,-54.54,59.37, 1.17) pt3dadd(26.499,-52.043,68.272, 1.17)}
+p3b2b1b2b1[1] {pt3dclear() pt3dadd(26.499,-52.043,68.272, 0.938) pt3dadd(31.749,-50.28,77.565, 0.938)}
+p3b2b1b2b1[2] {pt3dclear() pt3dadd(31.749,-50.28,77.565, 0.7) pt3dadd(33.95,-44.86,83.685, 0.7)}
+p3b2b1b2b2[0] {pt3dclear() pt3dadd(24.77,-54.54,59.37, 0.856) pt3dadd(29.221,-60.42,63.78, 0.856)}
+p3b2b1b2b2[1] {pt3dclear() pt3dadd(29.221,-60.42,63.78, 0.798) pt3dadd(34.919,-64.003,71.61, 0.798)}
+p3b2b1b2b2[2] {pt3dclear() pt3dadd(34.919,-64.003,71.61, 0.815) pt3dadd(40.987,-67.629,78.24, 0.815)}
+p3b2b1b2b2[3] {pt3dclear() pt3dadd(40.987,-67.629,78.24, 0.692) pt3dadd(45.437,-73.072,82.906, 0.692)}
+p3b2b1b2b2[4] {pt3dclear() pt3dadd(45.437,-73.072,82.906, 0.559) pt3dadd(50.904,-76.171,87.169, 0.559)}
+p3b2b1b2b2[5] {pt3dclear() pt3dadd(50.904,-76.171,87.169, 0.552) pt3dadd(52.147,-80.942,94.132, 0.552)}
+p3b2b1b2b2[6] {pt3dclear() pt3dadd(52.147,-80.942,94.132, 0.47) pt3dadd(53.72,-85.3,103.42, 0.47)}
+p3b2b2[0] {pt3dclear() pt3dadd(-1.16,-24.88,4.755, 2.587) pt3dadd(-2.283,-26.725,1.767, 2.587)}
+p3b2b2[1] {pt3dclear() pt3dadd(-2.283,-26.725,1.767, 0.908) pt3dadd(-0.576,-34.852,3.405, 0.908)}
+p3b2b2[2] {pt3dclear() pt3dadd(-0.576,-34.852,3.405, 0.853) pt3dadd(-1.653,-42.843,1.0305, 0.853)}
+p3b2b2[3] {pt3dclear() pt3dadd(-1.653,-42.843,1.0305, 0.786) pt3dadd(-2.447,-50.551,0.267, 0.786)}
+p3b2b2[4] {pt3dclear() pt3dadd(-2.447,-50.551,0.267, 0.798) pt3dadd(-1.32,-57.871,-2.5995, 0.798)}
+p3b2b2[5] {pt3dclear() pt3dadd(-1.32,-57.871,-2.5995, 0.775) pt3dadd(2.026,-64.995,-3.225, 0.775)}
+p3b2b2[6] {pt3dclear() pt3dadd(2.026,-64.995,-3.225, 0.7) pt3dadd(3.72,-71.93,0.0, 0.7)}
+
+
+//Add all sections to their respective SectionLists
+
+axHillock = new SectionList()
+axHill axHillock.append()
+
+
+axIniSeg = new SectionList()
+
+axIS[0] axIniSeg.append()
+axIS[1] axIniSeg.append()
+axIS[2] axIniSeg.append()
+axIS[3] axIniSeg.append()
+axIS[4] axIniSeg.append()
+axIS[5] axIniSeg.append()
+axIS[6] axIniSeg.append()
+axIS[7] axIniSeg.append()
+axIS[8] axIniSeg.append()
+axIS[9] axIniSeg.append()
+
+
+axNode = new SectionList()
+
+axIN[0] axNode.append()
+axIN[1] axNode.append()
+axIN[2] axNode.append()
+axIN[3] axNode.append()
+axIN[4] axNode.append()
+axIN[5] axNode.append()
+axIN[6] axNode.append()
+axIN[7] axNode.append()
+axIN[8] axNode.append()
+axIN[9] axNode.append()
+axIN[10] axNode.append()
+axIN[11] axNode.append()
+axIN[12] axNode.append()
+axIN[13] axNode.append()
+axIN[14] axNode.append()
+axIN[15] axNode.append()
+axIN[16] axNode.append()
+axIN[17] axNode.append()
+axIN[18] axNode.append()
+axIN[19] axNode.append()
+
+
+proxDend = new SectionList()
+
+p0[0] proxDend.append()
+p0b1[0] proxDend.append()
+p0b1[1] proxDend.append()
+p0b1[2] proxDend.append()
+p0b1[3] proxDend.append()
+p0b1[4] proxDend.append()
+p0b1b2[0] proxDend.append()
+p0b2[0] proxDend.append()
+p0b2b1[0] proxDend.append()
+p0b2b1b1[0] proxDend.append()
+p0b2b1b1[1] proxDend.append()
+p0b2b1b1[2] proxDend.append()
+p0b2b1b1[3] proxDend.append()
+p0b2b1b1[4] proxDend.append()
+p0b2b1b2[0] proxDend.append()
+p0b2b1b2[1] proxDend.append()
+p0b2b1b2[2] proxDend.append()
+p0b2b1b2[3] proxDend.append()
+p0b2b2[0] proxDend.append()
+p0b2b2[1] proxDend.append()
+p0b2b2[2] proxDend.append()
+p0b2b2[3] proxDend.append()
+p0b2b2b1[0] proxDend.append()
+p0b2b2b1[1] proxDend.append()
+p0b2b2b1b1[0] proxDend.append()
+p0b2b2b2[0] proxDend.append()
+p0b2b2b2[1] proxDend.append()
+p1[0] proxDend.append()
+p1[1] proxDend.append()
+p1[2] proxDend.append()
+p1[3] proxDend.append()
+p1b1[0] proxDend.append()
+p1b1[1] proxDend.append()
+p1b1[2] proxDend.append()
+p1b2[0] proxDend.append()
+p1b2[1] proxDend.append()
+p2[0] proxDend.append()
+p2[1] proxDend.append()
+p2b1[0] proxDend.append()
+p2b1[1] proxDend.append()
+p2b1b1[0] proxDend.append()
+p2b1b1b1[0] proxDend.append()
+p2b1b1b1[1] proxDend.append()
+p2b1b1b2[0] proxDend.append()
+p2b1b1b2[1] proxDend.append()
+p2b1b2[0] proxDend.append()
+p2b1b2[1] proxDend.append()
+p2b1b2[2] proxDend.append()
+p2b1b2[3] proxDend.append()
+p2b1b2[4] proxDend.append()
+p2b2[0] proxDend.append()
+p2b2[1] proxDend.append()
+p2b2[2] proxDend.append()
+p2b2[3] proxDend.append()
+p2b2[4] proxDend.append()
+p3[0] proxDend.append()
+p3[1] proxDend.append()
+p3b1[0] proxDend.append()
+p3b1[1] proxDend.append()
+p3b1b1[0] proxDend.append()
+p3b1b1[1] proxDend.append()
+p3b1b1b1[0] proxDend.append()
+p3b1b1b1[1] proxDend.append()
+p3b1b1b2[0] proxDend.append()
+p3b1b2[0] proxDend.append()
+p3b1b2[1] proxDend.append()
+p3b1b2[2] proxDend.append()
+p3b1b2[3] proxDend.append()
+p3b2[0] proxDend.append()
+p3b2b1[0] proxDend.append()
+p3b2b1b1[0] proxDend.append()
+p3b2b1b1[1] proxDend.append()
+p3b2b1b1[2] proxDend.append()
+p3b2b1b1[3] proxDend.append()
+p3b2b1b2[0] proxDend.append()
+p3b2b1b2[1] proxDend.append()
+p3b2b1b2[2] proxDend.append()
+p3b2b1b2[3] proxDend.append()
+p3b2b2[0] proxDend.append()
+p3b2b2[1] proxDend.append()
+p3b2b2[2] proxDend.append()
+p3b2b2[3] proxDend.append()
+p3b2b2[4] proxDend.append()
+
+
+distDend = new SectionList()
+
+p0b1b1[0] distDend.append()
+p0b1b1[1] distDend.append()
+p0b1b1[2] distDend.append()
+p0b1b1[3] distDend.append()
+p0b1b1[4] distDend.append()
+p0b1b2b1[0] distDend.append()
+p0b1b2b1[1] distDend.append()
+p0b1b2b1[2] distDend.append()
+p0b1b2b1[3] distDend.append()
+p0b1b2b1[4] distDend.append()
+p0b1b2b1b1[0] distDend.append()
+p0b1b2b1b1[1] distDend.append()
+p0b1b2b1b2[0] distDend.append()
+p0b1b2b1b2[1] distDend.append()
+p0b1b2b1b2b1[0] distDend.append()
+p0b1b2b1b2b1[1] distDend.append()
+p0b1b2b1b2b1b1[0] distDend.append()
+p0b1b2b1b2b1b2[0] distDend.append()
+p0b1b2b1b2b1b3[0] distDend.append()
+p0b1b2b1b2b1b3[1] distDend.append()
+p0b1b2b1b2b1b3b1[0] distDend.append()
+p0b1b2b1b2b1b3b1[1] distDend.append()
+p0b1b2b1b2b1b3b2[0] distDend.append()
+p0b1b2b1b2b1b3b2[1] distDend.append()
+p0b1b2b1b2b2[0] distDend.append()
+p0b1b2b1b2b2[1] distDend.append()
+p0b1b2b1b2b2[2] distDend.append()
+p0b1b2b1b2b2[3] distDend.append()
+p0b1b2b1b2b2[4] distDend.append()
+p0b1b2b2[0] distDend.append()
+p0b1b2b2b1[0] distDend.append()
+p0b1b2b2b1b1[0] distDend.append()
+p0b1b2b2b1b1[1] distDend.append()
+p0b1b2b2b1b1b1[0] distDend.append()
+p0b1b2b2b1b1b1[1] distDend.append()
+p0b1b2b2b1b1b2[0] distDend.append()
+p0b1b2b2b1b1b2[1] distDend.append()
+p0b1b2b2b1b1b2[2] distDend.append()
+p0b1b2b2b1b1b2[3] distDend.append()
+p0b1b2b2b1b1b2[4] distDend.append()
+p0b1b2b2b1b1b2[5] distDend.append()
+p0b1b2b2b1b1b2[6] distDend.append()
+p0b1b2b2b1b1b2b1[0] distDend.append()
+p0b1b2b2b1b1b2b1[1] distDend.append()
+p0b1b2b2b1b1b2b2[0] distDend.append()
+p0b1b2b2b1b1b2b2[1] distDend.append()
+p0b1b2b2b1b1b2b2[2] distDend.append()
+p0b1b2b2b1b1b2b2[3] distDend.append()
+p0b1b2b2b1b1b2b2[4] distDend.append()
+p0b1b2b2b1b1b2b2[5] distDend.append()
+p0b1b2b2b1b1b2b2[6] distDend.append()
+p0b1b2b2b1b2[0] distDend.append()
+p0b1b2b2b1b2[1] distDend.append()
+p0b1b2b2b1b2[2] distDend.append()
+p0b1b2b2b1b2b1[0] distDend.append()
+p0b1b2b2b1b2b1[1] distDend.append()
+p0b1b2b2b1b2b1b1[0] distDend.append()
+p0b1b2b2b1b2b1b2[0] distDend.append()
+p0b1b2b2b1b2b2[0] distDend.append()
+p0b1b2b2b1b2b2[1] distDend.append()
+p0b1b2b2b1b2b2[2] distDend.append()
+p0b1b2b2b1b2b2b1[0] distDend.append()
+p0b1b2b2b1b2b2b1[1] distDend.append()
+p0b1b2b2b1b2b2b1[2] distDend.append()
+p0b1b2b2b1b2b2b2[0] distDend.append()
+p0b1b2b2b1b2b2b2[1] distDend.append()
+p0b1b2b2b1b2b2b2[2] distDend.append()
+p0b1b2b2b1b2b2b2[3] distDend.append()
+p0b1b2b2b2[0] distDend.append()
+p0b1b2b2b2[1] distDend.append()
+p0b1b2b2b2[2] distDend.append()
+p0b1b2b2b2[3] distDend.append()
+p0b1b2b2b2[4] distDend.append()
+p0b1b2b2b2[5] distDend.append()
+p0b2b1b1b1[0] distDend.append()
+p0b2b1b1b1[1] distDend.append()
+p0b2b1b1b1[2] distDend.append()
+p0b2b1b1b2[0] distDend.append()
+p0b2b1b1b2[1] distDend.append()
+p0b2b1b1b2[2] distDend.append()
+p0b2b1b1b2[3] distDend.append()
+p0b2b1b1b2[4] distDend.append()
+p0b2b1b1b2b1[0] distDend.append()
+p0b2b1b1b2b1b1[0] distDend.append()
+p0b2b1b1b2b1b1[1] distDend.append()
+p0b2b1b1b2b1b1[2] distDend.append()
+p0b2b1b1b2b1b1[3] distDend.append()
+p0b2b1b1b2b1b1b1[0] distDend.append()
+p0b2b1b1b2b1b1b1[1] distDend.append()
+p0b2b1b1b2b1b1b1[2] distDend.append()
+p0b2b1b1b2b1b1b1[3] distDend.append()
+p0b2b1b1b2b1b1b2[0] distDend.append()
+p0b2b1b1b2b1b1b2[1] distDend.append()
+p0b2b1b1b2b1b1b2[2] distDend.append()
+p0b2b1b1b2b1b1b2[3] distDend.append()
+p0b2b1b1b2b1b1b2[4] distDend.append()
+p0b2b1b1b2b1b1b2[5] distDend.append()
+p0b2b1b1b2b1b2[0] distDend.append()
+p0b2b1b1b2b1b2[1] distDend.append()
+p0b2b1b1b2b1b2[2] distDend.append()
+p0b2b1b1b2b1b2[3] distDend.append()
+p0b2b1b1b2b1b2[4] distDend.append()
+p0b2b1b1b2b1b2[5] distDend.append()
+p0b2b1b1b2b1b2[6] distDend.append()
+p0b2b1b1b2b1b2[7] distDend.append()
+p0b2b1b1b2b1b2[8] distDend.append()
+p0b2b1b1b2b1b2[9] distDend.append()
+p0b2b1b1b2b1b2[10] distDend.append()
+p0b2b1b1b2b2[0] distDend.append()
+p0b2b1b1b2b2[1] distDend.append()
+p0b2b1b2[4] distDend.append()
+p0b2b1b2[5] distDend.append()
+p0b2b1b2[6] distDend.append()
+p0b2b1b2[7] distDend.append()
+p0b2b1b2[8] distDend.append()
+p0b2b1b2[9] distDend.append()
+p0b2b1b2[10] distDend.append()
+p0b2b1b2[11] distDend.append()
+p0b2b1b2[12] distDend.append()
+p0b2b1b2b1[0] distDend.append()
+p0b2b1b2b1[1] distDend.append()
+p0b2b1b2b1[2] distDend.append()
+p0b2b1b2b1[3] distDend.append()
+p0b2b1b2b2[0] distDend.append()
+p0b2b1b2b2[1] distDend.append()
+p0b2b1b2b2[2] distDend.append()
+p0b2b1b2b2[3] distDend.append()
+p0b2b1b2b2[4] distDend.append()
+p0b2b1b2b2[5] distDend.append()
+p0b2b1b2b2[6] distDend.append()
+p0b2b2b1b2[0] distDend.append()
+p0b2b2b1b2[1] distDend.append()
+p0b2b2b1b2b1[0] distDend.append()
+p0b2b2b1b2b1[1] distDend.append()
+p0b2b2b1b2b1[2] distDend.append()
+p0b2b2b1b2b2[0] distDend.append()
+p0b2b2b1b2b2[1] distDend.append()
+p0b2b2b1b2b2[2] distDend.append()
+p0b2b2b1b2b2[3] distDend.append()
+p0b2b2b1b2b2[4] distDend.append()
+p0b2b2b1b2b2[5] distDend.append()
+p0b2b2b1b2b2[6] distDend.append()
+p0b2b2b1b2b2[7] distDend.append()
+p0b2b2b1b2b2[8] distDend.append()
+p0b2b2b1b2b2[9] distDend.append()
+p0b2b2b1b2b2[10] distDend.append()
+p0b2b2b1b2b2[11] distDend.append()
+p0b2b2b1b2b2[12] distDend.append()
+p0b2b2b1b2b2[13] distDend.append()
+p0b2b2b1b2b2[14] distDend.append()
+p0b2b2b1b2b2[15] distDend.append()
+p0b2b2b1b2b2[16] distDend.append()
+p0b2b2b1b2b2[17] distDend.append()
+p0b2b2b1b2b2[18] distDend.append()
+p0b2b2b1b2b2[19] distDend.append()
+p0b2b2b1b2b2[20] distDend.append()
+p0b2b2b1b2b2[21] distDend.append()
+p0b2b2b1b2b2[22] distDend.append()
+p0b2b2b1b2b2[23] distDend.append()
+p0b2b2b1b2b2[24] distDend.append()
+p0b2b2b1b2b2[25] distDend.append()
+p0b2b2b2[2] distDend.append()
+p0b2b2b2[3] distDend.append()
+p0b2b2b2[4] distDend.append()
+p0b2b2b2[5] distDend.append()
+p0b2b2b2[6] distDend.append()
+p0b2b2b2[7] distDend.append()
+p0b2b2b2[8] distDend.append()
+p0b2b2b2[9] distDend.append()
+p0b2b2b2[10] distDend.append()
+p0b2b2b2[11] distDend.append()
+p1b1[3] distDend.append()
+p1b1b1[0] distDend.append()
+p1b1b1[1] distDend.append()
+p1b1b1[2] distDend.append()
+p1b1b1b1[0] distDend.append()
+p1b1b1b1[1] distDend.append()
+p1b1b1b1[2] distDend.append()
+p1b1b1b1[3] distDend.append()
+p1b1b1b2[0] distDend.append()
+p1b1b1b2[1] distDend.append()
+p1b1b2[0] distDend.append()
+p1b1b2[1] distDend.append()
+p1b1b2[2] distDend.append()
+p1b1b2b1[0] distDend.append()
+p1b1b2b1[1] distDend.append()
+p1b1b2b1[2] distDend.append()
+p1b1b2b1[3] distDend.append()
+p1b1b2b1[4] distDend.append()
+p1b1b2b1[5] distDend.append()
+p1b1b2b1[6] distDend.append()
+p1b1b2b2[0] distDend.append()
+p1b1b2b2[1] distDend.append()
+p1b1b2b2[2] distDend.append()
+p1b1b2b2[3] distDend.append()
+p1b1b2b2b1[0] distDend.append()
+p1b1b2b2b1[1] distDend.append()
+p1b1b2b2b1[2] distDend.append()
+p1b1b2b2b1[3] distDend.append()
+p1b1b2b2b1[4] distDend.append()
+p1b1b2b2b1[5] distDend.append()
+p1b1b2b2b1[6] distDend.append()
+p1b1b2b2b1[7] distDend.append()
+p1b1b2b2b1[8] distDend.append()
+p1b1b2b2b2[0] distDend.append()
+p1b1b2b2b2[1] distDend.append()
+p1b1b2b2b2[2] distDend.append()
+p1b1b2b2b2[3] distDend.append()
+p1b1b2b2b2[4] distDend.append()
+p1b1b2b2b2[5] distDend.append()
+p1b1b2b2b2[6] distDend.append()
+p1b1b2b2b2[7] distDend.append()
+p1b2b1[0] distDend.append()
+p1b2b1[1] distDend.append()
+p1b2b1b1[0] distDend.append()
+p1b2b1b1[1] distDend.append()
+p1b2b1b1b1[0] distDend.append()
+p1b2b1b1b1[1] distDend.append()
+p1b2b1b1b1b1[0] distDend.append()
+p1b2b1b1b1b2[0] distDend.append()
+p1b2b1b1b1b2[1] distDend.append()
+p1b2b1b1b1b2[2] distDend.append()
+p1b2b1b1b1b2b1[0] distDend.append()
+p1b2b1b1b1b2b1[1] distDend.append()
+p1b2b1b1b1b2b2[0] distDend.append()
+p1b2b1b1b1b2b2[1] distDend.append()
+p1b2b1b1b1b2b2[2] distDend.append()
+p1b2b1b1b1b2b2[3] distDend.append()
+p1b2b1b1b1b2b2[4] distDend.append()
+p1b2b1b1b1b2b2[5] distDend.append()
+p1b2b1b1b1b2b2[6] distDend.append()
+p1b2b1b1b1b2b2[7] distDend.append()
+p1b2b1b1b1b2b2[8] distDend.append()
+p1b2b1b1b1b2b2b1[0] distDend.append()
+p1b2b1b1b1b2b2b1[1] distDend.append()
+p1b2b1b1b1b2b2b1[2] distDend.append()
+p1b2b1b1b1b2b2b1[3] distDend.append()
+p1b2b1b1b1b2b2b1[4] distDend.append()
+p1b2b1b1b1b2b2b1[5] distDend.append()
+p1b2b1b1b1b2b2b1b1[0] distDend.append()
+p1b2b1b1b1b2b2b1b2[0] distDend.append()
+p1b2b1b1b1b2b2b1b2[1] distDend.append()
+p1b2b1b1b1b2b2b1b2[2] distDend.append()
+p1b2b1b1b1b2b2b2[0] distDend.append()
+p1b2b1b1b1b2b2b2[1] distDend.append()
+p1b2b1b1b1b2b2b2b1[0] distDend.append()
+p1b2b1b1b1b2b2b2b1[1] distDend.append()
+p1b2b1b1b1b2b2b2b1[2] distDend.append()
+p1b2b1b1b1b2b2b2b2[0] distDend.append()
+p1b2b1b1b1b2b2b2b2[1] distDend.append()
+p1b2b1b1b2[0] distDend.append()
+p1b2b1b1b2[1] distDend.append()
+p1b2b1b1b2[2] distDend.append()
+p1b2b1b1b2b1[0] distDend.append()
+p1b2b1b1b2b2[0] distDend.append()
+p1b2b1b1b2b2[1] distDend.append()
+p1b2b1b1b2b2[2] distDend.append()
+p1b2b1b1b2b2[3] distDend.append()
+p1b2b1b1b2b2[4] distDend.append()
+p1b2b1b1b2b2[5] distDend.append()
+p1b2b1b1b2b2[6] distDend.append()
+p1b2b1b1b2b2[7] distDend.append()
+p1b2b1b1b2b2[8] distDend.append()
+p1b2b1b1b2b2[9] distDend.append()
+p1b2b1b1b2b2[10] distDend.append()
+p1b2b1b1b2b2[11] distDend.append()
+p1b2b1b1b2b2[12] distDend.append()
+p1b2b1b1b2b2[13] distDend.append()
+p1b2b1b1b2b2[14] distDend.append()
+p1b2b1b2[0] distDend.append()
+p1b2b1b2[1] distDend.append()
+p1b2b1b2[2] distDend.append()
+p1b2b1b2[3] distDend.append()
+p1b2b1b2[4] distDend.append()
+p1b2b1b2[5] distDend.append()
+p1b2b1b2[6] distDend.append()
+p1b2b1b2[7] distDend.append()
+p1b2b2[0] distDend.append()
+p1b2b2[1] distDend.append()
+p1b2b2[2] distDend.append()
+p1b2b2b1[0] distDend.append()
+p1b2b2b1[1] distDend.append()
+p1b2b2b1[2] distDend.append()
+p1b2b2b1[3] distDend.append()
+p1b2b2b1[4] distDend.append()
+p1b2b2b1[5] distDend.append()
+p1b2b2b1[6] distDend.append()
+p1b2b2b1[7] distDend.append()
+p1b2b2b1[8] distDend.append()
+p1b2b2b1[9] distDend.append()
+p1b2b2b2[0] distDend.append()
+p1b2b2b2[1] distDend.append()
+p1b2b2b2b1[0] distDend.append()
+p1b2b2b2b2[0] distDend.append()
+p1b2b2b2b2[1] distDend.append()
+p1b2b2b2b2[2] distDend.append()
+p2b1b1b2[2] distDend.append()
+p2b1b1b2[3] distDend.append()
+p2b1b1b2[4] distDend.append()
+p2b1b1b2[5] distDend.append()
+p2b1b1b2[6] distDend.append()
+p2b1b1b2[7] distDend.append()
+p2b1b1b2[8] distDend.append()
+p2b1b1b2[9] distDend.append()
+p2b1b1b2[10] distDend.append()
+p2b1b1b2[11] distDend.append()
+p2b1b1b2[12] distDend.append()
+p2b1b1b2[13] distDend.append()
+p2b1b1b2[14] distDend.append()
+p2b1b1b2[15] distDend.append()
+p2b1b2[5] distDend.append()
+p2b1b2b1[0] distDend.append()
+p2b1b2b1b1[0] distDend.append()
+p2b1b2b1b2[0] distDend.append()
+p2b1b2b1b2[1] distDend.append()
+p2b1b2b1b2[2] distDend.append()
+p2b1b2b2[0] distDend.append()
+p2b1b2b2[1] distDend.append()
+p2b1b2b2[2] distDend.append()
+p2b1b2b2[3] distDend.append()
+p2b1b2b2[4] distDend.append()
+p2b1b2b2[5] distDend.append()
+p3b1b1b1[2] distDend.append()
+p3b1b1b1b1[0] distDend.append()
+p3b1b1b1b1[1] distDend.append()
+p3b1b1b1b2[0] distDend.append()
+p3b1b1b1b2[1] distDend.append()
+p3b1b1b2[1] distDend.append()
+p3b1b1b2[2] distDend.append()
+p3b1b1b2[3] distDend.append()
+p3b1b2b1[0] distDend.append()
+p3b1b2b1[1] distDend.append()
+p3b1b2b1[2] distDend.append()
+p3b1b2b1[3] distDend.append()
+p3b1b2b1[4] distDend.append()
+p3b1b2b1[5] distDend.append()
+p3b1b2b1b1[0] distDend.append()
+p3b1b2b1b1[1] distDend.append()
+p3b1b2b1b1[2] distDend.append()
+p3b1b2b1b1[3] distDend.append()
+p3b1b2b1b1[4] distDend.append()
+p3b1b2b1b1[5] distDend.append()
+p3b1b2b1b1[6] distDend.append()
+p3b1b2b1b1[7] distDend.append()
+p3b1b2b1b2[0] distDend.append()
+p3b1b2b1b2[1] distDend.append()
+p3b1b2b1b2[2] distDend.append()
+p3b1b2b2[0] distDend.append()
+p3b1b2b2[1] distDend.append()
+p3b1b2b2[2] distDend.append()
+p3b1b2b2[3] distDend.append()
+p3b1b2b2[4] distDend.append()
+p3b1b2b2[5] distDend.append()
+p3b1b2b2[6] distDend.append()
+p3b1b2b2[7] distDend.append()
+p3b1b2b2b1[0] distDend.append()
+p3b1b2b2b2[0] distDend.append()
+p3b1b2b2b2[1] distDend.append()
+p3b1b2b2b2[2] distDend.append()
+p3b1b2b2b2[3] distDend.append()
+p3b2b1b1[4] distDend.append()
+p3b2b1b1b1[0] distDend.append()
+p3b2b1b1b1[1] distDend.append()
+p3b2b1b1b1[2] distDend.append()
+p3b2b1b1b1[3] distDend.append()
+p3b2b1b1b1[4] distDend.append()
+p3b2b1b1b1[5] distDend.append()
+p3b2b1b1b1b1[0] distDend.append()
+p3b2b1b1b1b1[1] distDend.append()
+p3b2b1b1b1b1[2] distDend.append()
+p3b2b1b1b1b2[0] distDend.append()
+p3b2b1b1b1b2[1] distDend.append()
+p3b2b1b1b1b2b1[0] distDend.append()
+p3b2b1b1b1b2b1[1] distDend.append()
+p3b2b1b1b1b2b1[2] distDend.append()
+p3b2b1b1b1b2b2[0] distDend.append()
+p3b2b1b1b1b2b2[1] distDend.append()
+p3b2b1b1b1b2b2[2] distDend.append()
+p3b2b1b1b1b2b2[3] distDend.append()
+p3b2b1b1b1b2b2[4] distDend.append()
+p3b2b1b1b1b2b2[5] distDend.append()
+p3b2b1b1b1b2b2[6] distDend.append()
+p3b2b1b1b1b2b2[7] distDend.append()
+p3b2b1b1b1b2b2[8] distDend.append()
+p3b2b1b1b1b2b2[9] distDend.append()
+p3b2b1b1b2[0] distDend.append()
+p3b2b1b1b2[1] distDend.append()
+p3b2b1b1b2[2] distDend.append()
+p3b2b1b2[4] distDend.append()
+p3b2b1b2[5] distDend.append()
+p3b2b1b2b1[0] distDend.append()
+p3b2b1b2b1[1] distDend.append()
+p3b2b1b2b1[2] distDend.append()
+p3b2b1b2b2[0] distDend.append()
+p3b2b1b2b2[1] distDend.append()
+p3b2b1b2b2[2] distDend.append()
+p3b2b1b2b2[3] distDend.append()
+p3b2b1b2b2[4] distDend.append()
+p3b2b1b2b2[5] distDend.append()
+p3b2b1b2b2[6] distDend.append()
+p3b2b2[5] distDend.append()
+p3b2b2[6] distDend.append()
+
+
+
+excSynapseComps = new SectionList()
+
+soma excSynapseComps.append()
+p1b2b1b1b1b2b2[3] excSynapseComps.append()
+p1b2[1] excSynapseComps.append()
+soma excSynapseComps.append()
+p1b1b1b1[2] excSynapseComps.append()
+p0b1b2b1b2b1b3b2[0] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b1[4] excSynapseComps.append()
+p0b1b2b2b1b2b2b2[2] excSynapseComps.append()
+soma excSynapseComps.append()
+p3b1b1b1b1[1] excSynapseComps.append()
+p3b2b1b1b1b2[1] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b2b1b1b2b1b1b2[5] excSynapseComps.append()
+p0b1b2b2b1b1b2b2[5] excSynapseComps.append()
+soma excSynapseComps.append()
+p1b2b1b1b2b2[13] excSynapseComps.append()
+p1b2b1b1b1b2[1] excSynapseComps.append()
+soma excSynapseComps.append()
+p3b2b1b2b2[5] excSynapseComps.append()
+p0b2b2b1b2b2[16] excSynapseComps.append()
+soma excSynapseComps.append()
+p1b1b2b2b2[7] excSynapseComps.append()
+p0b1b2b2b1[0] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b1b2b2b2[3] excSynapseComps.append()
+p2b1b2[1] excSynapseComps.append()
+soma excSynapseComps.append()
+p3b2b1b2[1] excSynapseComps.append()
+p1b2b1b1b1b2b2b2b2[0] excSynapseComps.append()
+soma excSynapseComps.append()
+p2b1b1b2[10] excSynapseComps.append()
+p1b1b2b2b2[6] excSynapseComps.append()
+soma excSynapseComps.append()
+p3b1b2b2[0] excSynapseComps.append()
+p1b1[1] excSynapseComps.append()
+soma excSynapseComps.append()
+p1b2b1b1b2b2[6] excSynapseComps.append()
+p2b1b1b2[5] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b1b2b2[0] excSynapseComps.append()
+p0b1b2b2b2[1] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b2b1b1b2b1b1[2] excSynapseComps.append()
+p3b2b1b1b1b2[0] excSynapseComps.append()
+soma excSynapseComps.append()
+p1b2b1b1b1b2b2b1b2[0] excSynapseComps.append()
+p0b1b2b1[1] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b2b1b2[1] excSynapseComps.append()
+p0b2b1b1b2b1b2[2] excSynapseComps.append()
+soma excSynapseComps.append()
+p1b2b1b1b1b2b1[1] excSynapseComps.append()
+p3b1b2[2] excSynapseComps.append()
+soma excSynapseComps.append()
+p1b2b2b1[7] excSynapseComps.append()
+p3b2b1b1b1b2b2[5] excSynapseComps.append()
+soma excSynapseComps.append()
+p1b2b1b1b2b2[9] excSynapseComps.append()
+p3b2b1b1b1b1[1] excSynapseComps.append()
+soma excSynapseComps.append()
+p3b1b1b1b1[0] excSynapseComps.append()
+p1b2b2[1] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b1[2] excSynapseComps.append()
+p3b1b2b1[4] excSynapseComps.append()
+soma excSynapseComps.append()
+p2b2[0] excSynapseComps.append()
+p2b1b1b2[3] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b2b1b1b2b1b1b2[4] excSynapseComps.append()
+p0b2b1b1b2b1b1b2[2] excSynapseComps.append()
+soma excSynapseComps.append()
+p3b2[0] excSynapseComps.append()
+p2b1b1b2[1] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b1b2b1b1[0] excSynapseComps.append()
+p3b1b1b2[3] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b2b2b1[0] excSynapseComps.append()
+p2b1b2[2] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b2b1[0] excSynapseComps.append()
+p1b1b1b1[0] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b2b1b2b2[0] excSynapseComps.append()
+p3b2b2[6] excSynapseComps.append()
+soma excSynapseComps.append()
+p1b2b2b1[2] excSynapseComps.append()
+p3b2b2[4] excSynapseComps.append()
+soma excSynapseComps.append()
+p3b1b2b1b1[5] excSynapseComps.append()
+p3[0] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b2b1b2[0] excSynapseComps.append()
+p1b1b2b2b1[8] excSynapseComps.append()
+soma excSynapseComps.append()
+p2b1b1b2[14] excSynapseComps.append()
+p0b2b2b1b2b2[1] excSynapseComps.append()
+soma excSynapseComps.append()
+p3b2b1b1b1b2b1[2] excSynapseComps.append()
+p0b1b2b2b1b2b2[0] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b1b2b2b1b2b2b2[3] excSynapseComps.append()
+p1b2b1b1b1b2b2[6] excSynapseComps.append()
+soma excSynapseComps.append()
+p2b1b2b1[0] excSynapseComps.append()
+p1b1b2b2[1] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b2b2b1b2b2[9] excSynapseComps.append()
+p0b1b2b1b2b1b2[0] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b2b1b1b2b1b2[1] excSynapseComps.append()
+p2b1b1b2[7] excSynapseComps.append()
+soma excSynapseComps.append()
+p3b2b1b2b2[4] excSynapseComps.append()
+p0b2b1b2b2[2] excSynapseComps.append()
+soma excSynapseComps.append()
+p1b2b1b1b2b2[1] excSynapseComps.append()
+p0b2b1b2[5] excSynapseComps.append()
+soma excSynapseComps.append()
+p3b2b1b1b1b2b2[4] excSynapseComps.append()
+p1b1b2b2b2[5] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b2b2b1b2b2[3] excSynapseComps.append()
+p0b1b2b1b2b1b3[1] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b2b1b2[11] excSynapseComps.append()
+p3b1b2b1b2[2] excSynapseComps.append()
+soma excSynapseComps.append()
+p1b2b1b1b1b2b2b2b1[2] excSynapseComps.append()
+p1b2b2b1[5] excSynapseComps.append()
+soma excSynapseComps.append()
+p3b2b1b1b1b2b2[7] excSynapseComps.append()
+p2b1b2b1b1[0] excSynapseComps.append()
+soma excSynapseComps.append()
+p1b2b2b2[1] excSynapseComps.append()
+p1b2b1b1b2b2[5] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b2b1b1b2b1b1[3] excSynapseComps.append()
+p1b2b1b1b1b2b2b1[2] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b1b2b1b2b1[1] excSynapseComps.append()
+p1b2b1b1b1b2b2b2[1] excSynapseComps.append()
+soma excSynapseComps.append()
+p0b2b2b1[1] excSynapseComps.append()
+p0b2b1b1b2b1b2[5] excSynapseComps.append()
+soma excSynapseComps.append()
+p3b1b2b1[5] excSynapseComps.append()
+p0b2b1b1b2[0] excSynapseComps.append()
+
+
+inhSynapseComps = new SectionList()
+
+soma inhSynapseComps.append()
+p3[1] inhSynapseComps.append()
+p1b1b2b2b2[3] inhSynapseComps.append()
+p0b1b2b2b1b1b2b2[2] inhSynapseComps.append()
+p3b2b1b2[1] inhSynapseComps.append()
+p1b2b1b2[0] inhSynapseComps.append()
+p0b2b1b1b2b1b1b1[3] inhSynapseComps.append()
+p1b2b1b1b1b2b2b2b1[0] inhSynapseComps.append()
+p1b2b2b2[1] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p3b2b1b1[2] inhSynapseComps.append()
+p0b2b2b1b2b2[5] inhSynapseComps.append()
+p0b2b1b1b2b2[0] inhSynapseComps.append()
+p0b2b1b1b2b1b2[3] inhSynapseComps.append()
+p2[0] inhSynapseComps.append()
+p1b2b1b1b1[1] inhSynapseComps.append()
+p3b1b2b1[4] inhSynapseComps.append()
+p0b2b1b1b2b1b1b2[1] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p1b2b2[2] inhSynapseComps.append()
+p0b2b1b2b1[1] inhSynapseComps.append()
+p1b1b2b1[1] inhSynapseComps.append()
+p0b1b2b1[4] inhSynapseComps.append()
+p0b1b2b1b2b2[3] inhSynapseComps.append()
+p3b1b1b1[2] inhSynapseComps.append()
+p2b1b2b2[1] inhSynapseComps.append()
+p0b2b1b1b2b1b1b2[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p3b2b1b1b2[0] inhSynapseComps.append()
+p2b1b2b1b2[2] inhSynapseComps.append()
+p3b2b1b2b1[1] inhSynapseComps.append()
+p0b2b1b1b2b2[1] inhSynapseComps.append()
+p0b1b2b2b1b1b2b1[0] inhSynapseComps.append()
+p1b2b2b1[4] inhSynapseComps.append()
+p1b1b2b1[6] inhSynapseComps.append()
+p1b1b1b1[3] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p2b1b2[3] inhSynapseComps.append()
+p1b2b1b1b1b2b2b2[1] inhSynapseComps.append()
+p3b2b1b1b1b2b2[3] inhSynapseComps.append()
+p1b2b2b1[7] inhSynapseComps.append()
+p0b2b2b1b2b2[7] inhSynapseComps.append()
+p2b1b2b1[0] inhSynapseComps.append()
+p3b1b2[0] inhSynapseComps.append()
+p0b1b2b1b2b2[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p1b2b2b1[0] inhSynapseComps.append()
+p0b1b2b2b1b2b2b1[2] inhSynapseComps.append()
+p1b2b1b1b1b2b2[6] inhSynapseComps.append()
+p0b2b2b1b2b2[12] inhSynapseComps.append()
+p1b1b1b1[1] inhSynapseComps.append()
+p0b2b2b2[0] inhSynapseComps.append()
+p0b1b2b2b1b2[0] inhSynapseComps.append()
+p1b2b1b1b2[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p2b1b1b2[7] inhSynapseComps.append()
+p0b2b1b1b2b1b2[1] inhSynapseComps.append()
+p1b2b1b2[2] inhSynapseComps.append()
+p1b2b1b2[3] inhSynapseComps.append()
+p3b1b2[3] inhSynapseComps.append()
+p0b2b1b1b1[0] inhSynapseComps.append()
+p1b1b1b1[0] inhSynapseComps.append()
+p2[1] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p3b1b1b2[3] inhSynapseComps.append()
+p0b2b2b2[4] inhSynapseComps.append()
+p0b1b2b2b1b1b2[2] inhSynapseComps.append()
+p0b1b2b2b1b1b2[1] inhSynapseComps.append()
+p2b1b1b2[9] inhSynapseComps.append()
+p2b1b1b2[10] inhSynapseComps.append()
+p0b2b2[1] inhSynapseComps.append()
+p3b1[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p3b2b1b2[0] inhSynapseComps.append()
+p3b1[1] inhSynapseComps.append()
+p1b1b2b1[2] inhSynapseComps.append()
+p2b1[0] inhSynapseComps.append()
+p3b1b2[2] inhSynapseComps.append()
+p3b2b2[2] inhSynapseComps.append()
+p2b1b2b2[2] inhSynapseComps.append()
+p0b2b1[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p3b1b2b1b1[6] inhSynapseComps.append()
+p3b1b1[0] inhSynapseComps.append()
+p0b1[0] inhSynapseComps.append()
+p2b1b2b2[5] inhSynapseComps.append()
+p1b2b1b1b2b2[10] inhSynapseComps.append()
+p1b2b1b1b1b2b2[2] inhSynapseComps.append()
+p1b2b1b2[5] inhSynapseComps.append()
+p1b1b1[2] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p1b1b2b2b1[0] inhSynapseComps.append()
+p2b1b2b2[0] inhSynapseComps.append()
+p0b2b1b1b2b1b2[7] inhSynapseComps.append()
+p3b1b2b2b2[3] inhSynapseComps.append()
+p0b1b2b2b1b2b2[0] inhSynapseComps.append()
+p0b1b2b1[3] inhSynapseComps.append()
+p2b1b1b2[2] inhSynapseComps.append()
+p0b2b1b1b2b1b1b2[2] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p1b1b1b2[1] inhSynapseComps.append()
+p1b2b2b1[6] inhSynapseComps.append()
+p3b2b1b2b2[2] inhSynapseComps.append()
+p0b2b1b1b1[2] inhSynapseComps.append()
+p0b2b1b2[1] inhSynapseComps.append()
+p1b2b1b1b1b2b2b1[2] inhSynapseComps.append()
+p2b1b1b2[14] inhSynapseComps.append()
+p3b2b1b1b1b2b2[4] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p1b2b1b1b2[2] inhSynapseComps.append()
+p3b1b1b2[2] inhSynapseComps.append()
+p0b2b2b2[8] inhSynapseComps.append()
+p0b1b2b1b2b1b3[1] inhSynapseComps.append()
+p1b2b2b1[3] inhSynapseComps.append()
+p0b2b1b2[6] inhSynapseComps.append()
+p3b2b1b1b2[1] inhSynapseComps.append()
+p0b1b2b2b1b1b2[3] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p3b1b1b1b2[1] inhSynapseComps.append()
+p3b1b2b2b2[2] inhSynapseComps.append()
+p0b1b2b1b2b1b3b1[1] inhSynapseComps.append()
+p3b1b2b2[6] inhSynapseComps.append()
+p0b2b1b1b2b1b1[3] inhSynapseComps.append()
+p3b2b1b1b1[0] inhSynapseComps.append()
+p0b1b2b1b2[0] inhSynapseComps.append()
+p0b1b2b2b1b2b2b1[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b1b2b2b1b1[1] inhSynapseComps.append()
+p1b2b2b2b2[0] inhSynapseComps.append()
+p0b2b1b2[4] inhSynapseComps.append()
+p1b2b2b1[8] inhSynapseComps.append()
+p0b2b1b2b2[5] inhSynapseComps.append()
+p0b2b2b2[6] inhSynapseComps.append()
+p3b2b1b2b1[2] inhSynapseComps.append()
+p0b2b1b2b2[1] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b2b1b2[0] inhSynapseComps.append()
+p3b2b1b1b1b2[0] inhSynapseComps.append()
+p3b2b1b1[1] inhSynapseComps.append()
+p1b2[0] inhSynapseComps.append()
+p0b2b1b2[10] inhSynapseComps.append()
+p0b2b1b1[1] inhSynapseComps.append()
+p1b2b1b1b1b2b2b1b2[1] inhSynapseComps.append()
+p1b1[3] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b2b2b1b2b2[20] inhSynapseComps.append()
+p0b2b1b2[5] inhSynapseComps.append()
+p3b1b2b2[4] inhSynapseComps.append()
+p3b2b1b1b1[3] inhSynapseComps.append()
+p0b1b2b1b2b1b1[0] inhSynapseComps.append()
+p1b1[0] inhSynapseComps.append()
+p0b2b1b1b2[3] inhSynapseComps.append()
+p0b2b1b1b2b1b2[5] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b2b2[2] inhSynapseComps.append()
+p1b1b2[2] inhSynapseComps.append()
+p3b2b1b1b1b2b2[9] inhSynapseComps.append()
+p0b2b1b1b2b1b2[4] inhSynapseComps.append()
+p0b2b1b2b1[0] inhSynapseComps.append()
+p1b2b1b1b1b2b2[0] inhSynapseComps.append()
+p0b2b2b1b2b2[2] inhSynapseComps.append()
+p0b1b2b1[1] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p3b1b2b1[2] inhSynapseComps.append()
+p1b2b2b2b2[1] inhSynapseComps.append()
+p1[3] inhSynapseComps.append()
+p0b2b1b1b2b1b2[10] inhSynapseComps.append()
+p3b2b1b1b1b2b2[5] inhSynapseComps.append()
+p3b2b1b1b1b2b1[1] inhSynapseComps.append()
+p0b2b1b2[8] inhSynapseComps.append()
+p0b2b2b1b2b2[23] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p3b2b1b1b1b2[1] inhSynapseComps.append()
+p0b2b2b1b2b2[15] inhSynapseComps.append()
+p0b2b2b2[7] inhSynapseComps.append()
+p3b1b1b1b1[1] inhSynapseComps.append()
+p0b2b1b1[2] inhSynapseComps.append()
+p1b2b1b1b1b2b2b1b2[2] inhSynapseComps.append()
+p1b1b2b2b2[1] inhSynapseComps.append()
+p1b2b1b1b1b2b1[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b1b2b2b1b2b2b2[2] inhSynapseComps.append()
+p0b1b1[2] inhSynapseComps.append()
+p1b2b1b1b2b2[11] inhSynapseComps.append()
+p1b2b1b1[1] inhSynapseComps.append()
+p0b1b2b1b2[1] inhSynapseComps.append()
+p1b2b1b1b2b2[12] inhSynapseComps.append()
+p2b1b1b2[12] inhSynapseComps.append()
+p1b2b2[1] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b2b1b1b2[1] inhSynapseComps.append()
+p3b1b1b2[0] inhSynapseComps.append()
+p3[0] inhSynapseComps.append()
+p0b2b2b1b2b2[6] inhSynapseComps.append()
+p1b2b1b1b1b2b2[7] inhSynapseComps.append()
+p1b2b1b1[0] inhSynapseComps.append()
+p0b1b2b2b1b1b2b2[5] inhSynapseComps.append()
+p0b2b1b1[4] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b2b2b1b2b2[11] inhSynapseComps.append()
+p3b2b1b2b2[0] inhSynapseComps.append()
+p1b2b1b1b2b2[2] inhSynapseComps.append()
+p1b2b1b1b1b2b2b1[0] inhSynapseComps.append()
+p1b2b2[0] inhSynapseComps.append()
+p3b1b2b2b2[0] inhSynapseComps.append()
+p1b2b1b1b1b2b2b1[5] inhSynapseComps.append()
+p0b1b1[3] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p1b1b1b1[2] inhSynapseComps.append()
+p3b1b2b2[1] inhSynapseComps.append()
+p0b2b1b1b2b1b1b2[3] inhSynapseComps.append()
+p3b2b1b1b2[2] inhSynapseComps.append()
+p1b1b2b1[5] inhSynapseComps.append()
+p3b1b2b1[0] inhSynapseComps.append()
+p0b1b2b2b1b1b2b2[3] inhSynapseComps.append()
+p1b1b2b1[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p1b2b1b1b1b2b2b1b1[0] inhSynapseComps.append()
+p1b2b1b1b1b2b2b2b1[1] inhSynapseComps.append()
+p0b2b1b1b1[1] inhSynapseComps.append()
+p1b2b1b2[6] inhSynapseComps.append()
+p3b2b1b1b1[4] inhSynapseComps.append()
+p1b2b2b1[5] inhSynapseComps.append()
+p0b2b2b2[2] inhSynapseComps.append()
+p1b2b1b1b1b2b2[4] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b2b2b2[1] inhSynapseComps.append()
+p1b1b2b2b1[2] inhSynapseComps.append()
+p0b1b2b1b2b2[2] inhSynapseComps.append()
+p1b1b2b2b2[6] inhSynapseComps.append()
+p3b1b1b1b1[0] inhSynapseComps.append()
+p0b2b2b2[9] inhSynapseComps.append()
+p0b1b2b2b1b2b2[1] inhSynapseComps.append()
+p0b2b1b1b2[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b2b1b2[2] inhSynapseComps.append()
+p0b1b2b1b2b1b3b2[1] inhSynapseComps.append()
+p0b1b2b2b2[0] inhSynapseComps.append()
+p0b1b2b2b1b1b2b1[1] inhSynapseComps.append()
+p3b1b2b1b1[4] inhSynapseComps.append()
+p0b1b2b2b1b1b2[5] inhSynapseComps.append()
+p0b2b2b1b1[0] inhSynapseComps.append()
+p3b1b2b2b1[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b1b2b1b2b1b3b1[0] inhSynapseComps.append()
+p0b1[3] inhSynapseComps.append()
+p1b1b2b2[3] inhSynapseComps.append()
+p0b1b2b2b1b2b1b2[0] inhSynapseComps.append()
+p0b2b1b1b2b1b2[0] inhSynapseComps.append()
+p1b2b1b1b1b2b2b1[1] inhSynapseComps.append()
+p0b1b2b1[0] inhSynapseComps.append()
+p1b1b2b2[1] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p3b2b1[0] inhSynapseComps.append()
+p1b1[2] inhSynapseComps.append()
+p0b1b2b2b1b1b2b2[4] inhSynapseComps.append()
+p3b2b2[4] inhSynapseComps.append()
+p0b2b1b1b2b1[0] inhSynapseComps.append()
+p1b2b1b1b2b2[1] inhSynapseComps.append()
+p0b2b2b1b2b1[1] inhSynapseComps.append()
+p0b2[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b1b2b2b1b1b2[0] inhSynapseComps.append()
+p1b2b1b1b1[0] inhSynapseComps.append()
+p2b1b2[0] inhSynapseComps.append()
+p3b1b2b1[3] inhSynapseComps.append()
+p0b2b1b1b2b1b1b2[5] inhSynapseComps.append()
+p3b1b2b1b1[7] inhSynapseComps.append()
+p2b1b1b2[13] inhSynapseComps.append()
+p1b1b2b2[2] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b2b2b1b2b2[25] inhSynapseComps.append()
+p0b2b1b2[7] inhSynapseComps.append()
+p1b1b2b2b2[2] inhSynapseComps.append()
+p0b1b2b1b2b1b3[0] inhSynapseComps.append()
+p2b1b1b2[1] inhSynapseComps.append()
+p1b1b2[0] inhSynapseComps.append()
+p0b1b2b2b1b1b2b2[0] inhSynapseComps.append()
+p0b2b2b1b2b2[4] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b2b1b2[11] inhSynapseComps.append()
+p1b2b1b1b1b2b1[1] inhSynapseComps.append()
+p3b1b2b2[2] inhSynapseComps.append()
+p0b1b2b2b1b2b1b1[0] inhSynapseComps.append()
+p0b2b1b1b2b1b1[2] inhSynapseComps.append()
+p0b2b1b1b2b1b1b1[2] inhSynapseComps.append()
+p1b2b1b1b1b2b2b1[3] inhSynapseComps.append()
+p2b1b2[1] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p1b1[1] inhSynapseComps.append()
+p2b1b2b1b2[0] inhSynapseComps.append()
+p0b1b1[1] inhSynapseComps.append()
+p0b1[4] inhSynapseComps.append()
+p0b2b2b1b2b2[18] inhSynapseComps.append()
+p1b2b1b1b2b2[8] inhSynapseComps.append()
+p0b1b2b2b1[0] inhSynapseComps.append()
+p1b2b1b1b1b1[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b1b2b1b2b1[0] inhSynapseComps.append()
+p0b2b2b1[1] inhSynapseComps.append()
+p1b2b1b1b2b2[3] inhSynapseComps.append()
+p1b2b1b1b1b2b2b1b2[0] inhSynapseComps.append()
+p1b2b1b1b2b2[4] inhSynapseComps.append()
+p3b1b2b2[5] inhSynapseComps.append()
+p3b2b1b1b1b2b2[0] inhSynapseComps.append()
+p3b1b2b1[5] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b2b1b2b1[2] inhSynapseComps.append()
+p0b1b2b2b1b1b2b2[1] inhSynapseComps.append()
+p3b2b2[1] inhSynapseComps.append()
+p2b2[0] inhSynapseComps.append()
+p0b2b1b1[3] inhSynapseComps.append()
+p1b2b1b1b2b2[13] inhSynapseComps.append()
+p0b1b2b2b2[1] inhSynapseComps.append()
+p1b1b2b1[4] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b2b2b2[5] inhSynapseComps.append()
+p3b2b1b1b1[5] inhSynapseComps.append()
+p3b2b1b2b2[3] inhSynapseComps.append()
+p0b2b1b1b2b1b2[6] inhSynapseComps.append()
+p3b1b1b1[0] inhSynapseComps.append()
+p1b2b1b1b1b2[0] inhSynapseComps.append()
+p3b1b2b2b2[1] inhSynapseComps.append()
+p1b2b1b2[4] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b2b2b1b2b2[10] inhSynapseComps.append()
+p0b1[2] inhSynapseComps.append()
+p0b2b1b1b2b1b2[8] inhSynapseComps.append()
+p0b1b2b1b2b2[4] inhSynapseComps.append()
+p2b1b1[0] inhSynapseComps.append()
+p0b1b2b2b2[2] inhSynapseComps.append()
+p0b2b2b2[11] inhSynapseComps.append()
+p0b2b1b1b2b1b1[1] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0[0] inhSynapseComps.append()
+p2b1b2[5] inhSynapseComps.append()
+p0b2b2b2[10] inhSynapseComps.append()
+p3b1b2b2[7] inhSynapseComps.append()
+p0b2b2b1b2b2[21] inhSynapseComps.append()
+p2b1b2[2] inhSynapseComps.append()
+p3b2b1b2b2[6] inhSynapseComps.append()
+p2b1b1b1[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p1b2b1b1b1b2b2b2[0] inhSynapseComps.append()
+p0b1b2b1b2b1[1] inhSynapseComps.append()
+p1b2b1b1b2b2[6] inhSynapseComps.append()
+p0b1b2b2b1b1b2[6] inhSynapseComps.append()
+p1b2b1b1b2b2[7] inhSynapseComps.append()
+p0b2b1b2[12] inhSynapseComps.append()
+p3b1b2b1[1] inhSynapseComps.append()
+p1b1b1[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p2b2[1] inhSynapseComps.append()
+p0b2b1b2[3] inhSynapseComps.append()
+p0b1b2b2b1b2b2b2[3] inhSynapseComps.append()
+p0b2b1b1[0] inhSynapseComps.append()
+p1b2b1b1b1b2b2[8] inhSynapseComps.append()
+p3b1b2b1b1[2] inhSynapseComps.append()
+p2b1b1b2[15] inhSynapseComps.append()
+p0b2b1b2[9] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p3b1b2b1b2[0] inhSynapseComps.append()
+p1b1b2b2b2[7] inhSynapseComps.append()
+p3b1b2b1b2[1] inhSynapseComps.append()
+p0b2b2b1[0] inhSynapseComps.append()
+p2b1b1b2[3] inhSynapseComps.append()
+p0b1b1[0] inhSynapseComps.append()
+p3b2b1b2b2[4] inhSynapseComps.append()
+p3b2b1b2[5] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p1b1b2b2b2[0] inhSynapseComps.append()
+p1b2b1b1b1b2b2b1[4] inhSynapseComps.append()
+p1b2b1b1b2b2[9] inhSynapseComps.append()
+p3b1b2b1b1[1] inhSynapseComps.append()
+p3b1b1b1[1] inhSynapseComps.append()
+p0b1b2b2b1b1b1[0] inhSynapseComps.append()
+p1b1b2b2b1[7] inhSynapseComps.append()
+p1b2b1b1b1b2b2b2b1[2] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p3b2b1b1b1b2b2[8] inhSynapseComps.append()
+p0b2b1b2b2[3] inhSynapseComps.append()
+p1b2b1[1] inhSynapseComps.append()
+p3b2b2[3] inhSynapseComps.append()
+p1b2b1b1b1b2[2] inhSynapseComps.append()
+p0b1b2b2b1b2[1] inhSynapseComps.append()
+p0b1b2b2b2[5] inhSynapseComps.append()
+p0b2b2b1b2b2[14] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p1b1b2[1] inhSynapseComps.append()
+p2b2[4] inhSynapseComps.append()
+p0b2b1b1b2b1b1[0] inhSynapseComps.append()
+p0b2b2b1b2b2[1] inhSynapseComps.append()
+p1b2b1b1b2b1[0] inhSynapseComps.append()
+p0b2b2b1b2[0] inhSynapseComps.append()
+p0b1b2b2[0] inhSynapseComps.append()
+p3b2b1b1b1b2b1[2] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p3b1b2b2[3] inhSynapseComps.append()
+p3b1b1[1] inhSynapseComps.append()
+p0b1b2[0] inhSynapseComps.append()
+p3b1b2b1b1[5] inhSynapseComps.append()
+p3b2b1b2[3] inhSynapseComps.append()
+p1b2b1[0] inhSynapseComps.append()
+p3b2b1b1b1b2b2[2] inhSynapseComps.append()
+p0b1b2b2b1b1[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p3b2b1b1b1b2b2[6] inhSynapseComps.append()
+p3b2b1b2b1[0] inhSynapseComps.append()
+p3b1b1b1b2[0] inhSynapseComps.append()
+p0b2b2b1b2b1[2] inhSynapseComps.append()
+p0b2b1b1b2[2] inhSynapseComps.append()
+p0b2b2b2[3] inhSynapseComps.append()
+p0b1b2b1b1[0] inhSynapseComps.append()
+p2b1b1b2[11] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p1[0] inhSynapseComps.append()
+p0b2b2b1b2[1] inhSynapseComps.append()
+p0b2b1b2b2[2] inhSynapseComps.append()
+p2b1b1b2[6] inhSynapseComps.append()
+p0b2b2b1b2b2[16] inhSynapseComps.append()
+p1b2b2b1[9] inhSynapseComps.append()
+p0b1b2b1b1[1] inhSynapseComps.append()
+p0b1b2b1[2] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b2b1b2b1[3] inhSynapseComps.append()
+p0b1[1] inhSynapseComps.append()
+p1b2b1b1b1b2b2[3] inhSynapseComps.append()
+p0b2b1b2b2[4] inhSynapseComps.append()
+p3b2b2[6] inhSynapseComps.append()
+p1[2] inhSynapseComps.append()
+p1b1b2b2b1[6] inhSynapseComps.append()
+p0b2b1b1b2b1b1b1[0] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p0b1b2b1b2b1b3b2[0] inhSynapseComps.append()
+p3b1b2b1b1[3] inhSynapseComps.append()
+p0b2b2b1b2b2[22] inhSynapseComps.append()
+p3b2b1b1b1[1] inhSynapseComps.append()
+p2b1b1b2[4] inhSynapseComps.append()
+p0b2b1b2b2[0] inhSynapseComps.append()
+p1b2b1b1b1b2[1] inhSynapseComps.append()
+p0b1b2b2b1b1b2[4] inhSynapseComps.append()
+soma inhSynapseComps.append()
+p1[1] inhSynapseComps.append()
+p0b1b2b2b1b2b2b2[0] inhSynapseComps.append()
+p0b2b2b1b2b2[3] inhSynapseComps.append()
+p2b2[2] inhSynapseComps.append()
+p3b1b2b1b1[0] inhSynapseComps.append()
+p0b1b2b2b1b2b2[2] inhSynapseComps.append()
+p0b2b2b1b2b2[9] inhSynapseComps.append()
+p3b2b1b2[2] inhSynapseComps.append()

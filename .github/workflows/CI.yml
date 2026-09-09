@@ -93,7 +93,7 @@ jobs:
           pip install . --no-cache-dir
       - name: Test Linux-only cable neuron_compare suite
         run: |
-          pytest examples/neuron_compare/cable/tests
+          pytest validation/neuron/cable/tests
 
   test_macos:
     runs-on: macos-latest

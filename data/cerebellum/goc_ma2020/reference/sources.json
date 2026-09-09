@@ -1,0 +1,12 @@
+[
+  {
+    "source": "Cerebellum_circuit/GoC/GoC/pair-140514-C2-1_split_1.asc",
+    "file": "pair-140514-C2-1_split_1.asc",
+    "sha256": "49eece64387f7e46c46d496866a10242d6de3e6fe8460ef4bbe36b2537aa60b2"
+  },
+  {
+    "source": "Cerebellum_circuit/GoC/GoC/Optimization_result.txt",
+    "file": "Optimization_result.txt",
+    "sha256": "d30be210e4f2e386688719712c9dbb95b6442bc7110652856c3377586f17a878"
+  }
+]

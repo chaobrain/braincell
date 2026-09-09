@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 HERE = Path(__file__).resolve().parent
-MORPHOLOGY_PATH = HERE / "n144.swc"
+MORPHOLOGY_PATH = HERE.parents[2] / "data" / "morphology" / "n144.swc"
 MORPHOLOGY_SHA256 = "68af99cf829e22005b2177b3d2ff4316bdaec2fcf0f1e4b85f81cdd2a8c01069"
 
 DT_MS = 0.025

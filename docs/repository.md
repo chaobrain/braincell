@@ -174,8 +174,8 @@ NEURON 对比若主要评价电压或机制状态的一致性，归 validation�
 | `examples/profiling/` | 诊断工具进入 `benchmarks/profiling/`，性能与规模评测进入 `benchmarks/performance/` |
 | `examples/profiling/simulator_compare/` | `benchmarks/performance/simulator_compare/` |
 | `examples/experimental/` | `experiments/`，按研究主题保持原型与实验的关联 |
-| `examples/neuron_compare/` | 对照工作流进入 `validation/neuron/`，公共参考资产进入 `data/` |
-| `examples/neuron_compare/Cerebellum_mod/` | 按来源和模型家族整理到 `data/mechanisms/`、`data/morphology/`，编译产物移入 artifacts |
+| `validation/neuron/` | 对照工作流进入 `validation/neuron/`，公共参考资产进入 `data/` |
+| `validation/neuron/Cerebellum_mod/` | 按来源和模型家族整理到 `data/mechanisms/`、`data/morphology/`，编译产物移入 artifacts |
 | `docs/developer/` | 保留为贡献者指南，维护贡献步骤和阅读导航；完整接口、公式与架构由 Design 维护 |
 
 后续目录迁移需要同步处理 Python 导入、notebook 路径、数据定位、运行命令、CI、

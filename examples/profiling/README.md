@@ -7,7 +7,7 @@ for local performance diagnosis.
 ## Supported Workloads
 
 - `neuron_compare_cell`: BrainCell-only runs for
-  `examples/neuron_compare/cell/*`.
+  `validation/neuron/cell/*`.
 - `cerebellar_probability_network`: script form of
   `examples/multi_compartment/cerebellar_probability_network_demo.ipynb`.
 

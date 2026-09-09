@@ -3,7 +3,7 @@
 # Without this file the sdist is whatever the build environment's file finders
 # decide to sweep up. braincell 0.1.0 shipped a 25 MB sdist because
 # build-system.requires still listed setuptools-scm, whose git file-finder pulls
-# in every tracked file -- examples/neuron_compare alone is 15 MB of benchmark
+# in every tracked file -- validation/neuron alone is 15 MB of benchmark
 # CSVs and notebooks. setuptools-scm is gone (#112), but nothing stops a future
 # build dependency from re-enabling VCS discovery, so state the intent here.
 #

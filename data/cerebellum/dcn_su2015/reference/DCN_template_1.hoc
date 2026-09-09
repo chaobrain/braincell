@@ -1,0 +1,500 @@
+begintemplate DCNCell
+
+// Public variables for external access
+public soma, axHillock, axIniSeg, axNode, proxDend, distDend, excSynapseComps, inhSynapseComps
+
+//SectionList pointers to reference the groups of sections:
+objref axHillock
+objref axIniSeg
+objref axNode
+objref proxDend
+objref distDend
+objref excSynapseComps //the dendritic compartments (x50 for the soma, 100 non-somatic) that
+        //receive excitatory input.
+objref inhSynapseComps //the dendritic compartments (x50 for the soma, 400 non-somatic) that
+        //receive inhibitory input.
+
+
+//Create the compartments
+create soma
+create axHill
+create axIS[10]
+create axIN[20]
+create p1b2b1b1b1b2b2b2[2]
+create p1b2b1b1b1b2b2b1[6]
+create p3b1b2b2[8]
+create p3b1b2b1[6]
+create p3b2b1b1b1b2[2]
+create p3b2b1b1b1b1[3]
+create p3b1b1b2[4]
+create p1b2b2[3]
+create p3b1b1b1[3]
+create p1b2b1[2]
+create p3b1b1b1b2[2]
+create p1b1b2[3]
+create p3b1b1b1b1[2]
+create p1b1b1[3]
+create p0b1b2b2b1b1b2b2[7]
+create p0b1b2b2b1b1b2b1[2]
+create p0b1b2b2b1b2[3]
+create p0b1b2b2b1b1[2]
+create p3b2b1b1b1b2b2[10]
+create p3b2b1b1b1b2b1[3]
+create p3b2[1]
+create p3b1[2]
+create p2b2[5]
+create p2b1[2]
+create p1b2b2b2[2]
+create p1b2[2]
+create p1b2b2b1[10]
+create p1b1[4]
+create p1b2b1b2[8]
+create p0b2[1]
+create p0b2b2[4]
+create p0b1[5]
+create p1b2b1b1[2]
+create p0b2b1[1]
+create p0b1b2b1b2b2[5]
+create p2b1b2b2[6]
+create p0b1b2b1b2b1[2]
+create p2b1b2b1[1]
+create p0b1b2[1]
+create p0b1b1[5]
+create p1b2b1b1b2b2[15]
+create p2b1b1b2[16]
+create p1b2b1b1b2b1[1]
+create p2b1b1b1[2]
+create p0b2b2b1b2[2]
+create p0b2b2b1b1[1]
+create p1b2b1b1b1b2b2[9]
+create p1b2b1b1b1b2b1[2]
+create p1b2b1b1b1b2[3]
+create p1b2b1b1b1b1[1]
+create p0b2b2b2[12]
+create p0b2b2b1[2]
+create p0b2b1b2[13]
+create p0b2b1b1[5]
+create p1b1b2b2[4]
+create p1b1b2b1[7]
+create p0b1b2b2b2[6]
+create p2b1b2b1b2[3]
+create p0b1b2b2b1[1]
+create p2b1b2b1b1[1]
+create p1b1b1b2[2]
+create p0b1b2b1b2[2]
+create p1b1b1b1[4]
+create p0b1b2b1b1[2]
+create p0b1b2b1b2b1b3b2[2]
+create p0b1b2b1b2b1b3b1[2]
+create p0b2b1b2b2[7]
+create p0b2b1b2b1[4]
+create p0b2b1b1b2[5]
+create p0b2b1b1b2b1b1b2[6]
+create p0b2b1b1b1[3]
+create p0b2b1b1b2b1b1b1[4]
+create p0b1b2b2[1]
+create p0b1b2b1[5]
+create p3[2]
+create p2[2]
+create p1[4]
+create p0[1]
+create p0b2b2b1b2b2[26]
+create p0b2b2b1b2b1[3]
+create p1b2b2b2b2[3]
+create p1b2b2b2b1[1]
+create p0b2b1b1b2b1b2[11]
+create p1b2b1b1b1b2b2b2b2[2]
+create p0b2b1b1b2b1b1[4]
+create p1b2b1b1b1b2b2b2b1[3]
+create p3b2b2[7]
+create p3b2b1[1]
+create p1b2b1b1b1b2b2b1b2[3]
+create p1b2b1b1b1b2b2b1b1[1]
+create p3b1b2[4]
+create p3b1b1[2]
+create p0b1b2b1b2b1b3[2]
+create p0b1b2b1b2b1b2[1]
+create p0b1b2b1b2b1b1[1]
+create p0b1b2b2b1b2b2[3]
+create p0b1b2b2b1b2b1[2]
+create p0b1b2b2b1b1b2[7]
+create p0b1b2b2b1b1b1[2]
+create p3b2b1b2b2[7]
+create p3b2b1b2b1[3]
+create p3b2b1b1b2[3]
+create p3b2b1b1b1[6]
+create p3b2b1b2[6]
+create p3b1b2b2b2[4]
+create p1b2b1b1b2[3]
+create p3b2b1b1[5]
+create p3b1b2b2b1[1]
+create p1b2b1b1b1[2]
+create p0b2b1b1b2b2[2]
+create p0b2b1b1b2b1[1]
+create p1b1b2b2b2[8]
+create p3b1b2b1b2[3]
+create p2b1b2[6]
+create p1b1b2b2b1[9]
+create p3b1b2b1b1[8]
+create p2b1b1[1]
+create p0b1b2b2b1b2b2b2[4]
+create p0b1b2b2b1b2b2b1[3]
+create p0b1b2b2b1b2b1b2[1]
+create p0b1b2b2b1b2b1b1[1]
+
+proc init() {
+
+load_file("nrngui.hoc")
+if (name_declared("DCN_mor_path") == 0) {
+    strdef DCN_mor_path
+}
+if (strcmp(DCN_mor_path, "") == 0) {
+    DCN_mor_path = "DCN/DCN_mor.hoc"
+}
+xopen(DCN_mor_path)
+
+
+Kdrblock = 1
+
+
+// Set the temperature of the simulation. The model has been titrated to reproduce
+// in vivo like firing at celsius = 37.0 (default), while the original GENESIS
+// DCN model was constructed with temp = 32 deg celsius.
+celsius = 32.0//37.0
+TempOrigDCN = 32.0
+
+// Temperature adjustments
+
+// TempAnchisi = the temperature in the middle of the given range of room temperature
+// recording in Anchisi D, Scelfo B, Tempia F (2001) Postsynaptic currents in deep
+// cerebellar nuclei. J Neurophysiol 85:323-331.
+TempAnchisi = 24.0
+
+Q10channelGating = 3.0 // Middle of experimentally shown range (2-4) of ion channel gating, 
+        // see Hille 3rd ed (2001), p.51.
+Q10synapseGating = 2.0 // (Silver et al., 1996; Otis and Mody, 1992) Synaptic Q10s are given
+        // for GABA and excitatory synapses in Otis and Mody (1992), and Silver et al. (1996),
+        // respectively (full references below), with both giving Q10s in the region of 2.
+Q10conductances = 1.4 // The middle of the range (1.2-1.5) given in Hille 3rd ed (2001) 
+        // for ion channel conductances (p.51). Also, eg Milburn et al (1995) 
+        // Receptors Channels 3:201-211: The conductance increases steeply with temperature,
+        // with Q10 ranging from 1.4 to 1.5. However, also note Cao XJ, Oertel D (2005) 
+        // J Neurophysiol 94:821-832. They get the results that some conductances have a 
+        // Q10 of 2 while other channel conductances dont change at all by changing 
+        // temp (Q10=1).
+Q10CaConc = 2.0 // Guesswork: I assume that calcium concentration changes due to a
+        // combination of diffusion (Q10 of ca 1.4) and pumping action (Q10 of enzymatic
+        // reactions = ca 3)
+
+QdTsynapseTausAnchisi = Q10synapseGating^((celsius - TempAnchisi) / 10.0)
+QdTconductanceAnchisi = Q10conductances^((celsius - TempAnchisi) / 10.0)
+QdTchannelGating = Q10channelGating^((celsius - TempOrigDCN) / 10.0)
+QdTsynapseTaus = Q10synapseGating^((celsius - TempOrigDCN) / 10.0)
+QdTconductances = Q10conductances^((celsius - TempOrigDCN) / 10.0)
+QdTCaConc = Q10CaConc^((celsius - TempOrigDCN) / 10.0)
+
+
+// Synaptic conductances
+
+gGABA = 0.1*11700e-6*QdTconductances
+tauRiseGABA = 0.25 / QdTsynapseTaus // From Dieter Jaeger's code cn6c_const_dj4.g
+tauFallGABA = 2.1 / QdTsynapseTaus // Telgkamp P, Padgett DE, Ledoux VA, Woolley CS, Raman IM (2004)
+        // Maintenance of high-frequency transmission at purkinje to cerebellar nuclear 
+        // synapses by spillover from boutons with multiple release sites. Neuron 41:113-126.
+
+// For the following excitatory synaptic conductances, I'm using the high input gain
+// level of Steuber, V., N. W. Schultheiss, et al. (2010). "Determinants of synaptic 
+// integration and heterogeneity in rebound firing explored with data-driven models of 
+// deep cerebellar nucleus cells." J Comput Neurosci.
+// [= AMPA 200 pS, NMDA peak conductance (fast + slow) 172 pS (114+57)]
+// The time constants are from Anchisi D, Scelfo B, Tempia F (2001) Postsynaptic currents
+// in deep cerebellar nuclei. J Neurophysiol 85:323-331.
+
+gAMPA = 0.07*3250e-6 //*QdTconductanceAnchisi
+tauRiseAMPA = 0.5 / QdTsynapseTausAnchisi
+tauFallAMPA = 7.1 / QdTsynapseTausAnchisi
+
+
+gfNMDA = 0.07*6000e-6 //*QdTconductanceAnchisi
+tauRisefNMDA = 5 / QdTsynapseTausAnchisi
+tauFallfNMDA = 20.2 / QdTsynapseTausAnchisi
+MgFactorfNMDA = 0.002
+gammafNMDA = 0.109
+
+
+gsNMDA = 0.07*6000e-6 //*QdTconductanceAnchisi
+tauRisesNMDA = 5 / QdTsynapseTausAnchisi
+tauFallsNMDA = 136.4 / QdTsynapseTausAnchisi
+MgFactorsNMDA = 0.25
+gammasNMDA = 0.057
+
+// Passive electrical parameters.
+RA = 235.3 // ohm * cm
+CM = 1.57 // microfarad / cm2
+CMMYEL = CM/100
+PASSCOND = 2.81e-5*QdTconductances // S/cm2  passive conductance
+PASSCONDMYEL = PASSCOND / 2.81 // passive conductance of the axon
+SHELLTHICK = 0.2 // micrometers, the thickness of the calcium-containing shell 
+        // defined by CaConc.mod.
+
+// Reversal potentials in mV
+SodiumRevPot = 71
+PotassiumRevPot = -90
+GABARevPot = -75
+ExcitSynRevPot = 0
+hRevPot = -45
+TNCrevPot = -35
+
+
+CCaO = 2.0 // mM
+CCaI = 50e-6 // mM (= 50nM)
+TempK = celsius + 273.15
+RbyF = 8.6154e-5
+carev = 139 //RbyF/2.0 * TempK * (log (CCaO/CCaI))
+//GCaLVAs = 1.5e-4*QdTconductances//4.5//3.5
+GCaLVAs = 3.5e-4*QdTconductances//4.5//3.5
+
+GCaLVApd = 2*GCaLVAs
+GCaLVAdd = 2*GCaLVAs
+// Non-synaptic channel conductances
+
+gNaFsoma = 2.5e-2*QdTconductances
+gNaFaxHill = 2*gNaFsoma
+gNaFaxIniSeg = 2*gNaFsoma
+gNaFpDend = 0.4*gNaFsoma
+//gNaPsoma = 8e-4*QdTconductances
+gNaPsoma = 2e-4*QdTconductances
+
+
+gfKdrsoma = 1.5e-2*QdTconductances*Kdrblock
+gfKdraxHill = 2*gfKdrsoma*Kdrblock
+gfKdraxIniSeg = 2*gfKdrsoma*Kdrblock
+gfKdrpDend = 0.6*gfKdrsoma*Kdrblock
+
+gsKdrsoma = 1.25e-2*QdTconductances*Kdrblock
+gsKdraxHill = 2*gsKdrsoma*Kdrblock
+gsKdraxIniSeg = 2*gsKdrsoma*Kdrblock
+gsKdrpDend = 0.6*gsKdrsoma*Kdrblock
+
+gSKsoma = 2.2e-4*QdTconductances
+gSKpDend = 0.3*gSKsoma
+gSKdDend = 0.3*gSKsoma
+
+permCaLVAsoma = 2.33*1.77e-5*QdTconductances
+permCaLVAdend = 2*permCaLVAsoma
+
+permCaHVAsoma = 7.5e-6*QdTconductances
+permCaHVAdend = permCaHVAsoma / 1.5
+
+tauCaConcSoma = 70/QdTCaConc
+kCaCaConcSoma = 3.45e-7
+kCaCaConcDend = 1.04e-6
+
+//gHsoma = 2e-4*QdTconductances
+gHsoma = .5e-4*QdTconductances
+
+gHpDend = 2*gHsoma
+gHdDend = 3*gHsoma
+
+gTNCsoma = 3e-5*QdTconductances  //3e-5 6e-4 6e-4
+//gTNCsoma = 3e-4*QdTconductances
+
+gTNCaxHill = 3.5e-5*QdTconductances
+gTNCaxIniSeg = 3.5e-5*QdTconductances
+gTNCpDend = 0.2*gTNCsoma
+
+
+soma {
+
+        insert NaF
+        gbar_NaF = gNaFsoma
+        qdeltat_NaF = QdTchannelGating
+
+        insert NaP
+        gbar_NaP = gNaPsoma
+        qdeltat_NaP = QdTchannelGating
+
+        ena = SodiumRevPot
+
+        insert fKdr
+        gbar_fKdr = gfKdrsoma
+        qdeltat_fKdr = QdTchannelGating
+
+        insert sKdr
+        gbar_sKdr = gsKdrsoma
+        qdeltat_sKdr = QdTchannelGating
+
+        insert SK
+        gbar_SK = gSKsoma
+        qdeltat_SK = QdTchannelGating
+
+        ek = PotassiumRevPot
+
+
+        insert h
+        gbar_h = gHsoma
+        qdeltat_h = QdTchannelGating
+        eh_h = hRevPot
+
+
+        insert TNC
+        gbar_TNC = gTNCsoma
+        eTNC_TNC = TNCrevPot
+
+
+        // calcium channels - they use the Goldman-Hodgkin-Katz (GHK) current equation
+        // and so don't have a set reversal potential.
+        insert CaLVA
+        perm_CaLVA = permCaLVAsoma
+        qdeltat_CaLVA = QdTchannelGating
+        
+          /*insert CaL
+          gbar_CaL = GCaLVAs
+          qdeltat_CaL = QdTchannelGating*/
+
+
+        insert CaHVA
+        perm_CaHVA = permCaHVAsoma
+        qdeltat_CaHVA = QdTchannelGating
+
+
+        // insert a hypothetical shell below the membrane of the cell to keep track of the
+        // calcium entering the cell through the CaHVA and CaLVA channels, respectively.
+        // The resulting calcium concentration is used to calculate the current flow through
+        // through those channels.
+
+        // For the CaHVA channel:
+
+        insert CaConc
+        tauCa_CaConc = tauCaConcSoma
+        kCa_CaConc = kCaCaConcSoma
+
+        // For the soma, the calculation of shell thickness is different from
+        // the dendrites since it is a sphere in GENESIS and a cylinder
+        // in NEURON. See how it's done in GENESIS file cn_comp_dj10.g and
+        // divide that expression by the surface area of the NEURON soma to get
+        // the following expression:
+        depth_CaConc = SHELLTHICK - 2*SHELLTHICK^2/diam + \
+                4*SHELLTHICK^3/(3*diam^2) // =0.196215
+
+
+        // For the CaLVA channel:
+
+        insert CalConc
+        tauCal_CalConc = tauCaConcSoma
+        kCal_CalConc = kCaCaConcSoma
+        depth_CalConc = SHELLTHICK - 2*SHELLTHICK^2/diam + \
+                4*SHELLTHICK^3/(3*diam^2) // =0.196215 
+    }
+
+
+
+forsec axHillock {
+        insert NaF
+        gbar_NaF = gNaFaxHill
+        ena = SodiumRevPot
+
+        insert fKdr
+        gbar_fKdr = gfKdraxHill
+        insert sKdr
+        gbar_sKdr = gsKdraxHill
+        ek = PotassiumRevPot
+
+        insert TNC
+        gbar_TNC = gTNCaxHill
+        eTNC_TNC = TNCrevPot
+    }
+
+    forsec axIniSeg {
+        insert NaF
+        gbar_NaF = gNaFaxIniSeg
+        ena = SodiumRevPot
+
+        insert fKdr
+        gbar_fKdr = gfKdraxIniSeg
+        insert sKdr
+        gbar_sKdr = gsKdraxIniSeg
+        ek = PotassiumRevPot
+
+        insert TNC
+        gbar_TNC = gTNCaxIniSeg
+        eTNC_TNC = TNCrevPot
+    }
+
+    // No channels in the axon.
+    // forsec axNode {
+    // }
+
+    forsec proxDend {
+        insert NaF
+        gbar_NaF = gNaFpDend
+        ena = SodiumRevPot
+
+        insert fKdr
+        gbar_fKdr = gfKdrpDend
+        insert sKdr
+        gbar_sKdr = gsKdrpDend
+        insert SK
+        gbar_SK = gSKpDend
+        ek = PotassiumRevPot
+
+        insert h
+        gbar_h = gHpDend
+        eh_h = hRevPot
+
+        insert TNC
+        gbar_TNC = gTNCpDend
+        eTNC_TNC = TNCrevPot
+
+         insert CaLVA
+         perm_CaLVA = permCaLVAdend
+
+        insert CaHVA
+        perm_CaHVA = permCaHVAdend
+
+        insert CaConc
+        kCa_CaConc = kCaCaConcDend
+        depth_CaConc = SHELLTHICK - (SHELLTHICK*SHELLTHICK/diam)
+
+        insert CalConc
+        kCal_CalConc = kCaCaConcDend
+        depth_CalConc = SHELLTHICK - (SHELLTHICK*SHELLTHICK/diam)
+        
+       //insert CaL
+       //gbar_CaL = GCaLVApd
+    }
+
+    forsec distDend {
+        insert SK
+        gbar_SK = gSKdDend
+        ek = PotassiumRevPot
+
+        insert h
+        gbar_h = gHdDend
+        eh_h = hRevPot
+
+        insert CaLVA
+        perm_CaLVA = permCaLVAdend
+        
+       //insert CaL
+       // gbar_CaL = GCaLVAdd
+
+        insert CaHVA
+        perm_CaHVA = permCaHVAdend
+
+        insert CaConc
+        kCa_CaConc = kCaCaConcDend
+        depth_CaConc = SHELLTHICK - (SHELLTHICK*SHELLTHICK/diam)
+
+        insert CalConc
+        kCal_CalConc = kCaCaConcDend
+        depth_CalConc = SHELLTHICK - (SHELLTHICK*SHELLTHICK/diam)
+    }
+
+
+
+
+
+}
+
+endtemplate DCNCell

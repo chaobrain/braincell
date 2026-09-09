@@ -498,7 +498,7 @@ class Kca3p1_MA2025_BC(Kca3p1_MA2020_GoC):
     No import deviation is recorded for this mechanism beyond the
     ``TABLE`` removal already documented on
     :class:`Kca3p1_MA2020_GoC`, which applies identically here
-    (``examples/neuron_compare/Cerebellum_mod/README.md``'s
+    (``data/cerebellum/mechanism-catalog.md``'s
     ``MA2025`` import-deviations table lists the same ``V``/``cai``
     range and tabulated quantities).
 

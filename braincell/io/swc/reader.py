@@ -30,7 +30,7 @@ break during refactors:
 If this behavior changes, re-check:
 - ``braincell/io/swc/swc_test.py``
 - ``braincell/_discretization/lower_test.py``
-- ``examples/neuron_compare/cable/tests/``
+- ``validation/neuron/cable/tests/``
 - ``docs/design/io/current/swc-reader-invariants.md``
 """
 

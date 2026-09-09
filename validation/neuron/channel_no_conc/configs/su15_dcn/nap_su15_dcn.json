@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "label": "DCN NaP SU15"
+  },
+  "identity": {
+    "mod_dir": "../../../artifacts/mechanisms/dcn_su2015/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 1e-05
+    }
+  },
+  "mapping": {
+    "current": "ina",
+    "impl_name": {
+      "neuron": "NaP_SU15_DCN",
+      "braincell": "NaP_SU2015_DCN"
+    },
+    "gate_names": {
+      "common": [
+        "m",
+        "h"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

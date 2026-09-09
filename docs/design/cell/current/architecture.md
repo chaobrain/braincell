@@ -198,4 +198,4 @@ $A_{\mathrm{CV}}$ 是含电容归一化的约化轴向算子，单位为时间�
 [Cell](../../../../braincell/_multi_compartment/cell.py)、
 [staggered](../../../../braincell/quad/_staggered.py)、
 [Cell 测试](../../../../braincell/_multi_compartment/cell_test.py)；NEURON 比较配置见
-[小脑比较进度](../../../../examples/neuron_compare/cerebellum-import-progress.md)。
+[小脑比较进度](../../../../validation/neuron/cerebellum-import-progress.md)。

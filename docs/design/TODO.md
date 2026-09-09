@@ -185,6 +185,6 @@ Current 描述工作区行为，条目状态按其所列范围判断。详细规
 
 ## 专题与维护入口
 
-- [小脑示例进度](../../examples/neuron_compare/cerebellum-import-progress.md)：具体模型导入、PC 装配与数值比较。
+- [小脑示例进度](../../validation/neuron/cerebellum-import-progress.md)：具体模型导入、PC 装配与数值比较。
 - [共享 Ion/Channel 文献表](ion/references/ion-channel-bibliography.md)：模型来源、版本和归因证据。
 - [Design 规范](AGENTS.md)：文档职责及进度维护；提交前检查遵循 [仓库约定](../../AGENTS.md#design-code-and-examples)。

@@ -1,0 +1,36 @@
+{
+  "meta": {
+    "label": "SC Kir2p3 RI21"
+  },
+  "identity": {
+    "mod_dir": "../../../artifacts/mechanisms/sc_ma2021/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.0009
+    }
+  },
+  "mapping": {
+    "current": "ik",
+    "impl_name": {
+      "neuron": "Kir2p3_RI21_SC",
+      "braincell": "Kir2p3_RI2021_SC"
+    },
+    "gate_names": {
+      "common": [
+        "d"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gkbar",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "meta": {
+    "label": "Golgi cell cable sweeps"
+  },
+  "defaults": {
+    "morphology": {
+      "path": "../../../../data/cerebellum/goc_ma2020/morphology/GoC.asc"
+    }
+  },
+  "templates": [
+    "../templates/ac.json",
+    "../templates/dc.json",
+    "../templates/vinit.json",
+    "../templates/cv.json"
+  ]
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "source": "Cerebellum_circuit/SC2021/morphology/stellate.ASC",
+    "file": "morphology/stellate.ASC",
+    "sha256": "f6f838f35f0182e6e784ced7c74443916a955f4d60d64fddb1db7268c84beb9f"
+  },
+  {
+    "source": "Cerebellum_circuit/SC2021/SC_param.py",
+    "file": "SC_param.py.txt",
+    "sha256": "90c4406a672536ea44626082db4fcf5171112d4908cfcd2cdc3f93a5c29de79f"
+  }
+]

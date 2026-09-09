@@ -23,7 +23,11 @@ import brainunit as u
 import numpy as np
 
 from examples.optim.parameter_fitting.diagnostics import plot_diagnostics
+<<<<<<<< HEAD:examples/optim/parameter_learning/trainable_hh_multistart_test.py
 from examples.optim.parameter_learning.trainable_hh_multistart import (
+========
+from examples.multi_compartment.trainable_hh_multistart import (
+>>>>>>>> a7a6e94 (refactor: separate optimization APIs, workflows and performance evidence):examples/multi_compartment/trainable_hh_multistart_test.py
     SCALE_BOUNDS,
     plot_result,
     run_experiment,

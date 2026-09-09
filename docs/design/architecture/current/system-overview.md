@@ -187,7 +187,7 @@ assert bool(jnp.isfinite(value))
 Network 的参数集合聚合各 Cell 的原始 `Param`，按对象身份去重，保留原对象引用。
 优化器更新这些参数；初始化、运行入口和单步 `update` 中的 materialize 根据绑定关系计算物理量，
 写入机制或连接的参数缓冲。动力学状态、原始参数和物理参数缓冲因此有不同的生命周期。
-更完整的目标轨迹拟合见 [突触学习示例](../../../../examples/multi_compartment/synapse_learning.py)。
+更完整的目标轨迹拟合见 [突触学习示例](../../../../examples/optim/parameter_learning/synapse_learning.py)。
 
 ## 数据归属与生命周期
 

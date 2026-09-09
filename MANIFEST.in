@@ -22,6 +22,8 @@ prune data
 prune dev
 prune docs
 prune examples
+prune benchmarks
+prune validation
 
 # Repository administration, not package content.
 exclude AGENTS.md

@@ -99,4 +99,4 @@ Morphology.load_checkpoint(path) -> Morphology
 [checkpoint.py](../../../../braincell/io/checkpoint.py)。格式错误抛出 CheckpointError，
 不支持的版本抛出其子类 CheckpointVersionError；文件系统异常保留原异常类型。
 
-完整示例见 [morphology-checkpoint.ipynb](../../../../examples/multi_compartment/morphology-checkpoint.ipynb)。
+完整示例见 [morphology-checkpoint.ipynb](../../../../examples/io/morphology-checkpoint.ipynb)。

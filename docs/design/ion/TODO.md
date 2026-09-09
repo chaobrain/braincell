@@ -26,3 +26,5 @@
 ## 参考入口
 
 - [Ion/Channel 文献表](references/ion-channel-bibliography.md)：Ion 与 Channel 共用的来源记录。
+
+当前 NEURON 对照的具体数值缺口及复现入口见 [验证记录](../../../validation/neuron/known-differences.md)。

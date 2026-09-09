@@ -29,6 +29,21 @@ python -m pytest braincell/ -q
 测试会使用根 conftest 配置的 CPU JAX 和无窗口 Matplotlib 环境。
 GPU 性能或大型数值对照需要按对应工作流另外运行，不能由这些单元测试推断结果。
 
+## 验证与性能工作流
+
+```bash
+python -m pytest braincell/experimental/optim -q
+python -m pytest validation/optim -q
+python -m pytest benchmarks/performance/optim_gradient_scaling/report_test.py -q
+python -m pytest validation/neuron/cable/tests -q
+```
+
+NEURON 机制对照需要先编译对应模型，入口和依赖见
+[验证指南](https://github.com/chaobrain/braincell/blob/main/validation/neuron/README.md)。
+上面的报告测试只使用合成记录。Benchmark 目录的其他测试可能调用真实测量或 profiling，
+不能把全目录 pytest 当成普通回归检查。执行前按
+[Benchmark 规范](../../benchmarks/AGENTS.md) 明确并确认轮数、预热、计时重复和额外执行。
+
 ## 编写复现与回归测试
 
 错误修复先增加一个会失败的最小复现，修复后保留它作为回归测试。
@@ -53,7 +68,7 @@ assert morpho.n_branches > 0
 assert not report.has_errors
 ```
 
-同一辅助模块还提供 `VALID_SWC_FIXTURES`、`ALLOWED_TYPES`。HTTP 等外部服务使用已有测试替身，
+同一辅助模块还提供 `VALID_SWC_FIXTURES`、`ALLOWED_TYPES`，以及指向 `data/cerebellum/` 中原测试版本的 `CEREBELLUM_FIXTURES`。HTTP 等外部服务使用已有测试替身，
 例如 `braincell/io/neuromorpho/_testing.py`；这样普通回归测试可以离线运行。
 
 ## 数值结果如何验收

@@ -31,7 +31,7 @@ assert result.samples["p"].values.shape == (4, 1)
 ```
 
 现成通道通过具体构造器声明参数，默认值随模型而异，完整模型签名和出处分别见
-[源码目录](../../../../braincell/channel/) 和 [共享文献表](../../ion/references/ion-channel-bibliography.md)。
+[源码目录](../../../../braincell/channel) 和 [共享文献表](../../ion/references/ion-channel-bibliography.md)。
 参数的空间 callable 和 CV 上的求值规则见 [Filter](../../filter/current/spatial-callable-parameters.md)。
 
 ## HH 与 Gate

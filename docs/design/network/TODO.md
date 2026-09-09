@@ -7,6 +7,7 @@ Network 的协作入口。[全局 TODO](../TODO.md) 管理宏观目标与跨模�
 
 | 事项 | 状态 | 下一步或待决定问题 | 文档 |
 | --- | --- | --- | --- |
+| 预定事件查询生产接入 | 讨论中 | Synapse 两轮及代表性真实 Cell/Network 已验证、待提交验收；明确生产窗口、时钟、缓存失效、续跑与跨窗口训练合同 | [方案](../synapse/proposals/event-delivery-optimization.md) |
 | 随机上下文替代 Network seed | 讨论中 | 确定默认流、局部子流、生命周期与兼容迁移边界 | [随机上下文](proposals/random-context.md) |
 | Synapse 动力学与 Connection 权重可塑性 | 讨论中 | 细化共用的挂载、信号绑定、事件输入与生命周期合同，核对状态共享及调度语义 | [可塑性](proposals/connection-plasticity.md) |
 | I-09 稀疏 delay slots | 待讨论 | 比较表示、选择规则、静态 shape 与性能基准 | [运行时扩展](proposals/runtime-extensions.md#i-09-sparse-delay-slots) |

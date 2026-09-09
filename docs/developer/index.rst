@@ -5,7 +5,7 @@
 模块的完整接口、方程和架构由 Design 维护，各主题链接到对应说明。
 
 首次贡献从 :doc:`contributing` 开始；已有明确任务时，直接进入相应主题。
-仓库目录职责及规划见 :doc:`../repository`。
+仓库目录职责与运行入口见 :doc:`../repository`。
 
 .. toctree::
    :maxdepth: 1

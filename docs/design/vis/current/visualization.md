@@ -2,7 +2,7 @@
 
 `braincell.vis` 面向脚本和 Notebook，提供形态展示、数据着色、拓扑分析和结果导出。
 公共入口见[包导出](../../../../braincell/vis/__init__.py)，完整用法见
-[可视化教程](../../../../examples/multi_compartment/vis.ipynb)和 [API 文档](../../../apis/vis.rst)。
+[可视化教程](../../../../examples/vis/vis.ipynb)和 [API 文档](../../../apis/vis.rst)。
 完整签名、参数、返回值和调用条件见 [Vis API](api.md)。
 
 ## 当前支持什么
@@ -47,7 +47,7 @@ vis.plot_cell_topology(cell, level="node", value="V")
 
 ## 验证现状
 
-[vis 源码目录](../../../../braincell/vis/)已有与模块相邻的布局、场景、后端、着色、
+[vis 源码目录](../../../../braincell/vis)已有与模块相邻的布局、场景、后端、着色、
 交互、导出和动画测试；布局、场景及 2D 渲染另有可选的 `pytest-benchmark` 用例。
 当前缺少实际运行的像素回归基线。已有 Matplotlib artist 断言可检查图元和属性，
 完整视觉回归还需要提交代表性基线图，并配置执行图像比较的 CI。

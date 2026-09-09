@@ -44,7 +44,7 @@ verification steps (Tasks 2 and 3).
   to `__init__.py` should add it deliberately and restate the count;
   until then, nobody should read 155 versus 156 as a missing record.
 - **Step 2 (provenance harvest).** Every `.mod` file under
-  `validation/neuron/Cerebellum_mod/*/{channel,ion}/` was scanned for
+  `data/cerebellum/*/mechanisms/{channel,ion}/` was scanned for
   its `TITLE`/`COMMENT`/`Author`/`Ref`/`revis`/4-digit-year lines (first 25
   lines only). This is the NEURON source BrainCell's cerebellar channel
   suite was ported from. The mod-file "year code" in filenames
@@ -1486,7 +1486,7 @@ Mod-file year code: `MA20`. Cell types: `GoC` (Golgi cell), `GrC` (granule
 cell). Every symbol above maps 1:1 onto a `<mechanism>_MA20_<GoC|GrC>.mod`
 file **except** `CdpStC_NoCAM_MA2020_GoC`, for which no matching `.mod`
 file (`CdpStC_NoCAM_MA20_GoC.mod`) exists anywhere under
-`validation/neuron/Cerebellum_mod` — see "no provenance evidence"
+`data/cerebellum` — see "no provenance evidence"
 note below. There is also an unclaimed mod file with no BrainCell symbol:
 `GoC/ion/CdpStC_CAMOnly_MA20_GoC.mod` *is* claimed
 (`CdpStC_CAMOnly_MA2020_GoC`); no extra unclaimed files were found in this
@@ -3154,7 +3154,7 @@ four parameters and values as in the `MA2020` table.
 
 ### Provenance evidence
 
-No `.mod` file under `validation/neuron/Cerebellum_mod` carries an
+No `.mod` file under `data/cerebellum` carries an
 `HM1992`/`HM19` filename fragment. This is a classical/thalamic-literature
 key (per the project plan, verified in Task 2, not the cerebellar NEURON
 port harvested in Step 2). No repository-local provenance text exists for
@@ -3497,7 +3497,7 @@ See the singularity-guard caveat above for what BrainCell did instead.
 
 ### Provenance evidence
 
-No `.mod` file under `validation/neuron/Cerebellum_mod` carries an
+No `.mod` file under `data/cerebellum` carries an
 `IS2008`/`IS20` filename fragment. Classical/thalamic-literature key
 (Task 2). No repository-local provenance text exists for this key.
 
@@ -3528,7 +3528,7 @@ published here. Do not copy a reference for ``CaN_IS2008`` or
 
 ### Provenance evidence
 
-No `.mod` file under `validation/neuron/Cerebellum_mod` carries a
+No `.mod` file under `data/cerebellum` carries a
 `Ba2002`/`Ba20` filename fragment. Classical/thalamic-literature key
 (Task 2). No repository-local provenance text exists for this key.
 
@@ -3598,7 +3598,7 @@ these alpha/beta expressions.
 
 ### Provenance evidence
 
-No `.mod` file under `validation/neuron/Cerebellum_mod` carries a
+No `.mod` file under `data/cerebellum` carries a
 `TM1991`/`TM19` filename fragment. Classical/thalamic-literature key
 (Task 2). No repository-local provenance text exists for this key.
 
@@ -3689,7 +3689,7 @@ gnabar = 0.1 mho/cm^2 (100 mS/cm^2) and gkbar = 0.01 mho/cm^2
 
 ### Provenance evidence
 
-No `.mod` file under `validation/neuron/Cerebellum_mod` carries an
+No `.mod` file under `data/cerebellum` carries an
 `HH1952`/`HH19` filename fragment. Classical/thalamic-literature key
 (Task 2) — this is expected to resolve to the original Hodgkin & Huxley
 (1952) squid giant axon paper, but that resolution is Task 2's job, not
@@ -3753,7 +3753,7 @@ singularity at the Boltzmann midpoint; it does not change the function.
 
 ### Provenance evidence
 
-No `.mod` file under `validation/neuron/Cerebellum_mod` carries an
+No `.mod` file under `data/cerebellum` carries an
 `HP1992`/`HP19` filename fragment. Classical/thalamic-literature key
 (Task 2). No repository-local provenance text exists for this key.
 
@@ -3814,7 +3814,7 @@ citation error. ``g_max = 1.75 mS/cm^2`` matches ``IT2.mod``'s
 
 ### Provenance evidence
 
-No `.mod` file under `validation/neuron/Cerebellum_mod` carries a
+No `.mod` file under `data/cerebellum` carries a
 `Re1993`/`Re19` filename fragment. Classical/thalamic-literature key
 (Task 2). No repository-local provenance text exists for this key.
 
@@ -3997,7 +3997,7 @@ the `MA2024` deviations affect `Kv4p3`, `Kir2p3` and `Kca3p1` only).
 
 ### Provenance evidence
 
-No `.mod` file under `validation/neuron/Cerebellum_mod` carries a
+No `.mod` file under `data/cerebellum` carries a
 `Ya1989`/`Ya19` filename fragment. Classical/thalamic-literature key
 (Task 2). No repository-local provenance text exists for this key.
 
@@ -4071,7 +4071,7 @@ defaults to ``q10 = 1.0`` (no temperature correction).
 
 ### Provenance evidence
 
-No `.mod` file under `validation/neuron/Cerebellum_mod` carries a
+No `.mod` file under `data/cerebellum` carries a
 `De1994`/`De19` filename fragment. Classical/thalamic-literature key
 (Task 2). No repository-local provenance text exists for this key.
 
@@ -4760,3 +4760,9 @@ resolve them cleanly:
     check passes, this becomes a verified record and the symbol leaves
     the no-source list; if it fails, strike this lead so nobody
     re-derives it.
+
+## Source archive location
+
+Reference MOD files now live in `data/cerebellum/<model>/mechanisms/`. The original
+classification overview is retained as [mechanism catalog](../../../../data/cerebellum/mechanism-catalog.md);
+model READMEs preserve individual source descriptions.

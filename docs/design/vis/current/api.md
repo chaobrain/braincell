@@ -668,6 +668,6 @@ save_figure(figure, path, *, dpi=None, transparent=False, format=None) -> pathli
 ## 验证入口与迁移讨论
 
 接口边界和空间映射的测试位于 [cell_topology_test.py](../../../../braincell/vis/cell_topology_test.py)，
-各绘图模块有同目录测试；完整使用流程见[可视化教程](../../../../examples/multi_compartment/vis.ipynb)。
+各绘图模块有同目录测试；完整使用流程见[可视化教程](../../../../examples/vis/vis.ipynb)。
 [Visualization](visualization.md) 汇总后端能力和视觉回归缺口。
 下一步接口调整和两个入口的候选设计见[迁移提案](../proposals/braintools-migration.md)。

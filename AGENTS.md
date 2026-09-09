@@ -46,7 +46,7 @@ Human contributors start with [CONTRIBUTING.md](CONTRIBUTING.md) and the
 steps and link to Design for module contracts, formulas, and architecture.
 
 See the [Repository organization guide](docs/repository.md) for directory responsibilities,
-content placement, and the proposed layout awaiting migration confirmation.
+content placement, shared data, and the current repository layout.
 
 Follow [Design documentation rules](docs/design/AGENTS.md) when writing or updating `docs/design/`.
 That directory-level guide owns writing style, module layout, document roles, and task status definitions.
@@ -58,7 +58,7 @@ Keep durable design prose under `docs/design/`, with implementation references l
 - Current decisions and active plans live in `docs/design/`. Do not continually rewrite old specs to match new interfaces or use historical requirements to override current module documents. Old paths in historical records can remain historical references.
 - Other documentation trees under `docs/`, including `docs/examples/`, are not mandatory parallel maintenance destinations. Select examples by their relevance to the commit, not by a required directory. Do not create duplicate examples, migrate them into `docs/examples/`, or bulk-refresh unrelated documentation or examples unless requested. This does not claim that all existing files are already consistent.
 - Example-specific import progress, comparison settings, and validation work belong alongside the relevant examples (for example, `validation/neuron/cerebellum-import-progress.md`). Reusable API and architecture contracts stay under `docs/design/` and are linked from the example record.
-- The existing exception for an unstable `examples/experimental/` directory remains: one local `README.md` may map files, commands, status, and history, but must link to durable design/results prose under `docs/` rather than define public API or duplicate it.
+- Workflow READMEs under `examples/`, `validation/` and `benchmarks/` map files, commands, dependencies and outputs. Benchmark READMEs are environment-neutral public entry points; follow [Benchmark documentation and execution rules](benchmarks/AGENTS.md). Keep full performance findings and measured environments in Git-tracked `results/` beside the experiment; Design cites those findings within the relevant proposal or current architecture document, according to the design lifecycle; no separate Design results index is required. Other durable design and numerical-validation prose keeps its existing responsibility under `docs/design/`. Import reusable experimental algorithms from `braincell.experimental`; keep numerical validation in `validation/`, performance measurements in `benchmarks/`, and shared sources in `data/`. Raw generated outputs belong to ignored workflow `artifacts/` directories.
 
 ## Quick Reference
 
@@ -85,6 +85,8 @@ supported public API — all public re-exports flow through
 `braincell/__init__.py`. Inner modules inside those packages (`base.py`,
 `cell.py`, `runtime.py`, `geometry.py`, …) are unprefixed because they
 are import targets for sibling internal code within the same package.
+Experimental reusable interfaces live in `braincell.experimental`; usage workflows, numerical validation and performance drivers stay outside the installed package.
+
 Domain packages that are part of the public surface (`channel`, `filter`,
 `io`, `ion`, `mech`, `morph`, `network`, `quad`, `synapse`, `vis`) carry
 no underscore. This is deliberate and matches the rest of the codebase.
@@ -253,14 +255,14 @@ All public classes, methods, functions must use [NumPy-style docstrings](https:/
 - Config: `pyproject.toml` → `[tool.pytest]` (`ini_options.testpaths = ["braincell"]`, `ini_options.python_files = ["*_test.py", "test_*.py"]`). There is no `pytest.ini`.
 - **Test file naming — mandatory.** Every test module **must** be named `*_test.py` and **co-located** with source it covers (e.g. `braincell/io/neuromorpho/client.py` → `braincell/io/neuromorpho/client_test.py`). Do **not** use bare `test.py`, `test_*.py`, or `tests/` subdirectories. When splitting large module across several files, give each file its own sibling `*_test.py`.
   - A bare `test.py` matches neither collection pattern and is silently never collected — this already cost the repo 72 uncollected SWC/ASC tests.
-  - `test_*.py` is enabled in `python_files` **only** for the out-of-package NEURON comparison suite at `validation/neuron/cable/tests/`, which predates this rule and is run directly by CI. That exception is documented at the `python_files` entry in `pyproject.toml`; it is not licence to use the prefix, or a `tests/` directory, anywhere new.
+  - `test_*.py` is enabled in `python_files` **only** for the existing out-of-package NEURON comparison suites at `validation/neuron/cable/tests/` and `validation/neuron/channel_no_conc/tests/`; the cable suite is run directly by CI. That exception is documented at the `python_files` entry in `pyproject.toml`; it is not licence to use the prefix, or a `tests/` directory, anywhere new.
   - **The `*` in `*_test.py` must name a real sibling.** A file called `filter_region_test.py` in a package with no `filter_region.py` is a violation, however descriptive the name reads. When a test file grows to cover several modules, split it — one destination per module whose API the tests call. A test that drives a higher-level entry point (`SwcReader`, `Cell`, `Network.run`) belongs with *that* entry point's module, even when the behaviour under test originates deeper.
   - **Package-scope guard tests go in `<package>/__init___test.py`.** Some tests have no module counterpart by design: an AST scan over a package's whole import graph, or a docstring-conformance guard whose single `_COVERED_MODULES` allowlist is the point. One such file per package; `braincell/channel/__init___test.py` and `braincell/_compute/__init___test.py` are the examples. This is the *only* sanctioned name without a sibling `.py`; do not reach for it when a real module target exists.
 - **Shared test helpers** not themselves tests go into private `_testing.py` (or similar leading-underscore name) inside same package, so pytest does not discover them as test modules. Example: `braincell/io/neuromorpho/_testing.py` provides `FakeResponse` / `FakeSession` doubles consumed by every `*_test.py` in that package.
 - **Optional-dependency skip guards travel with the tests they protect.** When splitting a file whose whole module is guarded by a `pytestmark = pytest.mark.skipif(...)`, the destinations already contain unguarded tests — a module-level mark would skip them too. Re-express the guard per class (`@unittest.skipUnless`) or per function, and move any autouse fixture the guarded tests relied on to an explicitly requested one. `braincell/vis/_testing.py` exports `PYTEST_BENCHMARK_AVAILABLE` and the ready-made `needs_benchmark` mark for this; the `clean_layout_cache` fixture the benchmarks pair with lives in `braincell/vis/conftest.py`, because a fixture is resolved by name and so cannot be imported from `_testing.py`.
 - JAX forced to CPU via `conftest.py` at project root (`JAX_PLATFORMS=cpu`)
 - Matplotlib headless via `MPLBACKEND=Agg` in `conftest.py`
-- Test morphology fixtures (SWC + ASC) live in `data/morphology/` at the repository root. **Import the path; never recompute it.** `braincell/io/_testing.py` owns `FIXTURE_DIR`, `VALID_SWC_FIXTURES`, and `ALLOWED_TYPES`, and `braincell/vis/_testing.py` re-exports all three so the visualization tests keep a single import site:
+- Generic test morphology fixtures (SWC + ASC) live in `data/morphology/`; cerebellar variants live in `data/cerebellum/` and are selected through `CEREBELLUM_FIXTURES` in the same helper at the repository root. **Import the path; never recompute it.** `braincell/io/_testing.py` owns `FIXTURE_DIR`, `VALID_SWC_FIXTURES`, and `ALLOWED_TYPES`, and `braincell/vis/_testing.py` re-exports all three so the visualization tests keep a single import site:
 
     ```python
     from braincell.io._testing import ALLOWED_TYPES, FIXTURE_DIR

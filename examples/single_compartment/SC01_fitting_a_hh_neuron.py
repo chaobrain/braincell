@@ -30,7 +30,7 @@ import braincell
 brainstate.environ.set(dt=0.01 * u.ms)
 
 # Load Input and Output Data
-DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "neuron_traces"
+DATA_DIR = Path(__file__).resolve().parents[2] / 'data' / 'reference_traces'
 df_inp_traces = pd.read_csv(DATA_DIR / 'input_traces_hh.csv')
 df_out_traces = pd.read_csv(DATA_DIR / 'output_traces_hh.csv')
 

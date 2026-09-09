@@ -125,4 +125,4 @@ raw_q/raw_fq 为原始查询子句元组。转换返回新的查询字符串/参
 服务和下载失败使用 NeuroMorphoError 家族；HTTP 错误为 NeuroMorphoHTTPError，404 为 NeuroMorphoNotFoundError。
 服务可用性和数据变化与本地 reader 验证是两个环节，离线测试入口为
 [client_test.py](../../../../braincell/io/neuromorpho/client_test.py)。完整交互教程见
-[neuromorpho.ipynb](../../../../examples/multi_compartment/neuromorpho.ipynb)。
+[neuromorpho.ipynb](../../../../examples/io/neuromorpho.ipynb)。

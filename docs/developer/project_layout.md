@@ -1,7 +1,7 @@
 # 代码与设计导航
 
 先按要修改的功能找到源码，再阅读该模块的 TODO 和 Current。
-目录职责及规划中的调整见 [仓库组织指南](../repository.md)，跨模块数据流见
+目录职责与运行入口见 [仓库组织指南](../repository.md)，跨模块数据流见
 [系统总览](https://github.com/chaobrain/braincell/blob/main/docs/design/architecture/current/system-overview.md)。
 
 ## 按任务定位
@@ -25,6 +25,13 @@
 
 内部源码路径与公共导入名不同。例如 Branch、Morphology 从 `braincell` 顶层导入，
 机制声明从 `braincell.mech` 导入；实际调用以对应模块 Current 的公开入口为准。
+
+## 实验、验证和性能工作流
+
+通用实验梯度接口在 `braincell.experimental.optim`，使用流程在 `examples/optim/`。
+数值精度对照在 `validation/`，性能与规模测试在 `benchmarks/`，共享参考资料在 `data/`。
+小脑模型按 `data/cerebellum/<model>/` 管理形态、MOD 和参数；编译输出写入 validation 的 artifacts。
+具体命令见 [仓库组织指南](../repository.md)。
 
 ## 阅读与更新顺序
 

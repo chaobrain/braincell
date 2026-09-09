@@ -57,7 +57,7 @@ They fall into three groups, and each group is deliberate:
   the equivalent `Cell.vis_*` methods in favour of
   `braincell.vis.plot_cell_topology`, so the obvious symmetry argument is
   to remove these too and delete four edges. That was considered and
-  declined: `examples/multi_compartment/vis.ipynb` documents them as an
+  declined: `examples/vis/vis.ipynb` documents them as an
   intentional "Convenience subset" in a comparison table against
   `braincell.vis`, and 86 references across five notebooks and the docs
   depend on them. `Cell` is a simulation object whose visualization is a

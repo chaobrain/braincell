@@ -62,7 +62,7 @@ jobs:
         run: |
           python -m pip install dist/*.whl
           cd "${RUNNER_TEMP}"
-          python -c "import braincell; print(braincell.__file__, braincell.__version__)"
+          python -c "import braincell; from braincell.experimental import optim; print(braincell.__file__, braincell.__version__, optim.__all__)"
 
   test_linux_neuron_compare_cable:
     runs-on: ubuntu-latest

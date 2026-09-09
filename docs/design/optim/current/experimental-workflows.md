@@ -2,21 +2,25 @@
 
 ## 边界与入口
 
-以下代码已存在于 root examples/experimental，但不是 braincell 公共训练 API。
+实验梯度核心位于 `braincell.experimental.optim`；拟合、初始化和刺激设计工作流位于 `examples/optim/`。
 公共参数声明见 [API](api.md)。本页定义实验工具的能力与调用入口；数值结果见
 [结果导航](../TODO.md#实验结果)，未实现的恢复动作见 [proposal](../proposals/training-recovery.md)。
 
 | 工具 | 当前实现入口 | 已有能力 |
 | --- | --- | --- |
-| 梯度引擎 | [optim/gradients.py](../../../../examples/experimental/optim/gradients.py) | additive rollout、trajectory objective、BPTT/full RTRL、诊断 |
-| 参数拟合 | [training.py](../../../../examples/experimental/optim_parameter_fitting/training.py) | 模型/数据/loss 组合、gradient stage、候选交接 |
-| 梯度外搜索 | [search.py](../../../../examples/experimental/optim_parameter_fitting/search.py) | 有界候选搜索，与 physical CandidateSet 交接 |
-| 优化器适配 | [optimizers.py](../../../../examples/experimental/optim_parameter_fitting/optimizers.py) | Adam、Rprop、Optax Rprop、SGD/momentum/Nesterov stage |
-| 诊断与归档 | [diagnostics.py](../../../../examples/experimental/optim_parameter_fitting/diagnostics.py) | 状态/更新观测、历史总结、训练后 best archive |
-| OED | [robust_oed.py](../../../../examples/experimental/optim_stimulus_design/robust_oed.py) | observation sensitivity、sampled-prior FIM、候选刺激排序 |
-| 全局可辨识性探查 | [global_ensemble.py](../../../../examples/experimental/optim_stimulus_design/global_ensemble.py) | forward-only 候选池，不等于完整 posterior |
+| 梯度引擎 | [optim/gradients.py](../../../../braincell/experimental/optim/gradients.py) | additive rollout、trajectory objective、BPTT/full RTRL、诊断 |
+| 参数拟合 | [training.py](../../../../examples/optim/parameter_fitting/training.py) | 模型/数据/loss 组合、gradient stage、候选交接 |
+| 梯度外搜索 | [search.py](../../../../examples/optim/parameter_fitting/search.py) | 有界候选搜索，与 physical CandidateSet 交接 |
+| 优化器适配 | [optimizers.py](../../../../examples/optim/parameter_fitting/optimizers.py) | Adam、Rprop、Optax Rprop、SGD/momentum/Nesterov stage |
+| 诊断与归档 | [diagnostics.py](../../../../examples/optim/parameter_fitting/diagnostics.py) | 状态/更新观测、历史总结、训练后 best archive |
+| OED | [robust_oed.py](../../../../examples/optim/stimulus_design/robust_oed.py) | observation sensitivity、sampled-prior FIM、候选刺激排序 |
+| 全局可辨识性探查 | [global_ensemble.py](../../../../examples/optim/stimulus_design/global_ensemble.py) | forward-only 候选池，不等于完整 posterior |
 
 ## 梯度与 Network
+
+```python
+from braincell.experimental.optim import build_rollout_value_and_grad
+```
 
 build_rollout_value_and_grad(target, step=..., method="bptt" 或 "rtrl") 返回实验引擎。
 step 接收一个时间片、推进一次模型并返回 scalar additive loss；prepare 追踪参数相关
@@ -41,7 +45,7 @@ parameter-major sensitivities；跨 CV/Cell 或 queue 的依赖不能省略。
 训练协议、validation 和 final-only test 分开。固定目标预处理、mask、normalizer 和 split，
 不要让评价修改训练目标或把观察过的 holdout 继续称为未使用的 test。
 这些实验类型不是公共 Dataset、Trainer、Search 或 Checkpoint API。
-具体配置入口见 [参数拟合目录](../../../../examples/experimental/optim_parameter_fitting/README.md)。
+具体配置入口见 [参数拟合目录](../../../../examples/optim/parameter_fitting/README.md)。
 
 ## 诊断与历史
 
@@ -66,8 +70,8 @@ rank、condition 或候选排序改善不保证实际训练成功率提高，更
 
 ## 验证入口
 
-梯度 core 的共置测试在 [optim](../../../../examples/experimental/optim/README.md)，
-跨 Cell 事件验证在 [gradient correctness](../../../../examples/experimental/optim_gradient_correctness/README.md)。
-拟合、诊断和 OED 模块均有对应的 *_test.py；本次文档整理不重新执行这些实验。
+梯度 core 的共置测试在 [optim](../../../../braincell/experimental/optim/README.md)，
+跨 Cell 事件验证在 [gradient correctness](../../../../validation/optim/gradient_correctness/README.md)。
+拟合、诊断和 OED 模块均有对应的 `*_test.py`。
 上述实际相关示例仅在 commit 前纳入本次提交的一致性检查，日常开发不要求同步维护
 docs/examples 或增加教程副本；检查范围见 [文档对齐](../TODO.md#文档对齐)。

@@ -30,14 +30,14 @@ optim 是参数学习的问题域；公共参数映射位于 `braincell.trainabl
 
 ## 状态口径
 
-Current 描述工作区实现，实验代码位于 examples/experimental。
+Current 描述工作区实现：实验核心在 `braincell.experimental`，使用流程在 `examples/optim/`，精度验证和性能测试分别在 `validation/optim/` 与 `benchmarks/`。
 提交进度沿用 [项目进度](../TODO.md#进度口径)；Synapse/Network 扩展已随 `5f90f69` 提交，
 CPU 回归及示例验收见 [验证记录](current/results/synapse-network-learning.md#提交验收)。
 
 | 标记 | 含义 |
 | --- | --- |
 | 公共接口已实现 | 当前 braincell 代码存在接口；支持边界和测试证据另列 |
-| 实验代码已实现 | root examples/experimental 中可调用，不是 BrainCell 公共 API 承诺 |
+| 实验代码已实现 | 实验命名空间或工作流中的可调用实现；以对应 Current 描述的入口为准 |
 | 待设计 | 尚需决定的候选方向 |
 | 暂不支持 | 当前接口拒绝或尚未接入 |
 
@@ -57,13 +57,14 @@ CPU 回归及示例验收见 [验证记录](current/results/synapse-network-lear
 
 ## 实验结果
 
-结果按实验主题保存，同一实验的精度、训练和性能不拆到不同指标文件。实验条件不同的
-数字不能直接比较；每页分别记录来源、测量口径、复现入口和未验证范围。
+性能实验及解释它所需的正确性证据在对应 benchmark 的 results 维护；独立数值与训练验证保留验证职责。
+实验条件不同的数字不能直接比较；每页记录来源、口径、复查入口和未验证范围。
 
 - [参数学习示例](current/results/parameter-learning.md)：Channel、Ion、单突触单参数教学拟合。
-- [突触与网络](current/results/synapse-network-learning.md)：事件、自连接、双向 population、近期 CPU 计时。
-- [BPTT/RTRL scaling](current/results/bptt-rtrl-scaling.md)：历史多 CV、CPU、A100 和 Adam 一致性。
-- [Batch 与吞吐](current/results/batch-size-and-throughput.md)：batch、candidate lanes、GPU 容量和训练质量。
+- [突触与网络](current/results/synapse-network-learning.md)：事件、自连接、双向 population 的正确性及训练验证。
+- [独立网络 CPU 计时](../../../benchmarks/performance/optim_gradient_scaling/results/synapse-network-cpu.md)：不同参数数与轨迹长度的梯度耗时和内存。
+- [BPTT/RTRL scaling](../../../benchmarks/performance/optim_gradient_scaling/results/bptt-rtrl-scaling.md)：历史多 CV、CPU、A100 和 Adam 一致性。
+- [Batch 与吞吐](../../../benchmarks/performance/parameter_fitting/results/batch-size-and-throughput.md)：batch、candidate lanes、GPU 容量和训练质量。
 - [拟合与可辨识性](current/results/fitting-and-identifiability.md)：multi-start、优化器对照、诊断、FIM 和 ensemble。
 
 “接口可调用”“梯度存在”“拟合成功”“参数唯一可辨识”“性能占优”是不同结论。
@@ -81,9 +82,9 @@ CPU 回归及示例验收见 [验证记录](current/results/synapse-network-lear
 ## 文档对齐
 
 相关教程：
-[Channel](../../../examples/multi_compartment/channel_learning.ipynb)、
-[Ion](../../../examples/multi_compartment/ion_learning.ipynb)、
-[Synapse／Network](../../../examples/multi_compartment/synapse_learning.ipynb)。
+[Channel](../../../examples/optim/parameter_learning/channel_learning.ipynb)、
+[Ion](../../../examples/optim/parameter_learning/ion_learning.ipynb)、
+[Synapse／Network](../../../examples/optim/parameter_learning/synapse_learning.ipynb)。
 提交前检查遵循 [仓库约定](../../../AGENTS.md#design-code-and-examples)。
 
 已知 JAX 0.10.1 Ion 精度切换/执行上下文问题，以及覆盖率 C tracer 的原生崩溃记录，

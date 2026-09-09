@@ -5,7 +5,7 @@
 本文说明 BrainCell 当前 `Cell(solver="staggered")` 的离散一步程序，以及该程序如何产生局部
 state Jacobian $J_t$ 和 parameter injection $G_t$。它只讨论 solver-specific program
 derivative，不重复 BPTT、RTRL、online update 或多步 loss 理论。通用链式法则见
-[BPTT/RTRL 理论](./bptt-to-rtrl-neuron-derivation.md)。
+[BPTT/RTRL 理论](bptt-to-rtrl-neuron-derivation.md)。
 
 本文是非规范性技术分析，不定义 Trainable Parameter API。规范性参数合同见
 [API](../current/api.md) 和 [Architecture](../current/architecture.md)。

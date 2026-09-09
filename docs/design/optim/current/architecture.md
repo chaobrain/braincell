@@ -12,7 +12,7 @@
 - BrainState graph 自动发现 roots；
 - gradient-based 和 gradient-free 方法写入同一个 ParameterSet。
 
-参数映射属于公共接口；完整 RTRL 等梯度引擎属于 examples/experimental 中的实验实现。
+参数映射由 `braincell.trainable` 提供；完整 RTRL 等实验梯度引擎可从 `braincell.experimental.optim` 导入。
 公共调用合同见 [API](api.md)，落地顺序见 [Roadmap](../proposals/roadmap.md)。
 
 ## 三层参数模型
@@ -339,3 +339,12 @@ online-learning algorithm are outside this change.
 - reset dynamic state 不得回滚 roots。
 - 任意 callable 不作为 checkpoint 数据序列化。
 - 不在 BrainCell 内实现 optimizer 或通用局部最优证明。
+
+## 梯度方法的实测依据
+
+[多 CV scaling](../../../../benchmarks/performance/optim_gradient_scaling/results/bptt-rtrl-scaling.md) 与
+[独立网络计时](../../../../benchmarks/performance/optim_gradient_scaling/results/synapse-network-cpu.md)
+显示方法取舍依赖全网状态、独立参数数和轨迹长度：RTRL 的工作内存可以较小，但参数数增加后运行可能更慢。
+这些证据支持保留显式方法选择，不能导出任意模型的自动选择阈值。
+[参数拟合吞吐实验](../../../../benchmarks/performance/parameter_fitting/results/batch-size-and-throughput.md)
+还表明更宽的 batch 提高设备吞吐时，训练质量不一定同步改善；容量和拟合效果需要分别评估。

@@ -29,7 +29,7 @@ Python 3.11、JAX 0.8.0、CPU；一 CV、一目标 spike、20 ms waveform、100 
 gateCurrent 的固定电压探查前向会变但开关梯度为零；既有 enabled current 幅值未校准，
 没有用来生成教学训练目标。GPU 未测。
 
-示例：[channel_learning.ipynb](../../../../../examples/multi_compartment/channel_learning.ipynb)。
+示例：[channel_learning.ipynb](../../../../../examples/optim/parameter_learning/channel_learning.ipynb)。
 
 ## Ion
 
@@ -52,7 +52,7 @@ Python 3.11、JAX 0.8.0、CPU；原记录说明教学与集成检查亦使用默
 CalciumFirstOrder 原有 alpha/beta 默认单位问题未修复，不包含在成功教学例子中。
 原 Ion 记录未测 GPU/其他 JAX；后续 JAX 0.10.1 上下文敏感问题另见网络结果页，不能混成全绿。
 
-示例：[ion_learning.ipynb](../../../../../examples/multi_compartment/ion_learning.ipynb)。
+示例：[ion_learning.ipynb](../../../../../examples/optim/parameter_learning/ion_learning.ipynb)。
 
 ## Synapse 与 Connection
 
@@ -68,8 +68,8 @@ lr=0.5。三项都是 voltage MSE（mV squared），但前两项用固定 NetSti
 | Connection weight | 3.11666 | 9.70201e-7 | 独立乘权路径 |
 | Detector threshold | 2.5993e-5 | 0 | 离散事件网格等价，不是唯一阈值恢复 |
 
-示例：[synapse_learning.ipynb](../../../../../examples/multi_compartment/synapse_learning.ipynb)，
-实现：[synapse_learning.py](../../../../../examples/multi_compartment/synapse_learning.py)。
+示例：[synapse_learning.ipynb](../../../../../examples/optim/parameter_learning/synapse_learning.ipynb)，
+实现：[synapse_learning.py](../../../../../examples/optim/parameter_learning/synapse_learning.py)。
 网络梯度、双向联合训练及环境限制见 [网络结果](synapse-network-learning.md)。
 
 ## 复查方式

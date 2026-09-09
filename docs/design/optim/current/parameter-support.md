@@ -31,7 +31,7 @@ row/population/cv/all 分组、共享根，以及 parameter/scale/parameterized�
 
 已验证省略默认值、区域隔离、共享根、dtype 提升、重复 JIT/reset、温度依赖、
 有限差分及自然错误。教学拟合覆盖 g_max、V_sh、temp；不是所有 Channel 的训练穷举。
-示例：[channel_learning.ipynb](../../../../examples/multi_compartment/channel_learning.ipynb)。
+示例：[channel_learning.ipynb](../../../../examples/optim/parameter_learning/channel_learning.ipynb)。
 测试：[manager](../../../../braincell/trainable/_manager_test.py)、
 [base Channel](../../../../braincell/_base_channel_test.py)。
 实测：[参数学习结果](results/parameter-learning.md#channel)。
@@ -50,7 +50,7 @@ species_initializers 字典的覆盖功能保留，但不增加内部字典键�
 
 已验证初值依赖、区域覆盖、共享 Channel/Ion 根、Nernst、shell 因子、重复编译和梯度。
 CalciumFirstOrder 既有 alpha/beta 默认单位不一致，不能作为已通过的训练例子。
-示例：[ion_learning.ipynb](../../../../examples/multi_compartment/ion_learning.ipynb)。
+示例：[ion_learning.ipynb](../../../../examples/optim/parameter_learning/ion_learning.ipynb)。
 测试：[Ion 参数集成](../../../../braincell/trainable/_manager_test.py)、
 [Ion 基类](../../../../braincell/ion/_base_test.py)。
 结果与已知精度边界：[参数学习](results/parameter-learning.md#ion)、
@@ -67,7 +67,7 @@ Exp2Syn 的归一化因子读取当前时间常数；reset 清突触动态状态
 跨 presynaptic Cell 或 threshold 反传才需要代理梯度路径。没有输入或 loss 不敏感时，
 零梯度并非接口故障。同一 CV 上的多个逻辑突触仍是独立 row，除非显式按 cv 分组。
 
-示例：[synapse_learning.ipynb](../../../../examples/multi_compartment/synapse_learning.ipynb)。
+示例：[synapse_learning.ipynb](../../../../examples/optim/parameter_learning/synapse_learning.ipynb)。
 测试：[ExpSyn/Exp2Syn](../../../../braincell/synapse/exponential_test.py)、
 [点目标参数](../../../../braincell/trainable/_targets_test.py)。
 结果：[单参数拟合](results/parameter-learning.md#synapse-与-connection)。
@@ -99,7 +99,7 @@ run 的 host 记录转换不是可微 rollout 接口。BPTT/full RTRL 使用同�
 多 CV × 多 population 组合已经验证。rollout 内更新参数、GPU 上的新双向网络组合未测。
 
 测试：[Network roots](../../../../braincell/trainable/_network_test.py)、
-[双向网络](../../../../examples/experimental/optim_gradient_correctness/bidirectional_test.py)。
+[双向网络](../../../../validation/optim/gradient_correctness/bidirectional_test.py)。
 示例与计时：[网络结果](results/synapse-network-learning.md)。
 
 ## 暂不支持的 Owner

@@ -7,8 +7,8 @@ voltage observation 提供互补参数信息；不定义 Dataset、Trainer、los
 实验实现位于：
 
 ```text
-examples/experimental/optim_stimulus_design/dataset.py
-examples/experimental/optim_stimulus_design/robust_oed.py
+examples/optim/stimulus_design/dataset.py
+examples/optim/stimulus_design/robust_oed.py
 ```
 
 ## 问题模型

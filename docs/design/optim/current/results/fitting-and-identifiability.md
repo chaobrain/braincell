@@ -8,8 +8,8 @@
 原始解释和数字保留；方法原理见 [刺激设计](../../references/stimulus-design-and-identifiability.md)
 与 [诊断参考](../../references/modular-training-diagnostics.md)。
 
-复查入口：[参数拟合](../../../../../examples/experimental/optim_parameter_fitting/README.md)、
-[刺激设计](../../../../../examples/experimental/optim_stimulus_design/README.md)、
+复查入口：[参数拟合](../../../../../examples/optim/parameter_fitting/README.md)、
+[刺激设计](../../../../../examples/optim/stimulus_design/README.md)、
 [训练恢复提案](../../proposals/training-recovery.md)。旧配置不一定能由当前默认命令原样重现，
 应先核对历史配置；本次未新建原始测量 artifact。
 

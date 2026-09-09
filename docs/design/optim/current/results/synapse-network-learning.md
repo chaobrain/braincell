@@ -8,8 +8,9 @@
 历史来源：[Synapse/Network](../../../../specs/2026-09-07-synapse-network-learning.md)、
 [双向 population](../../../../specs/2026-09-07-bidirectional-population-learning.md)。
 
-结果分为三类：单/双 Cell 与自连接验证、A(2)/B(3) 双向 population 验证、独立 CPU 计时。
-不能把它们与 [历史多 CV/A100 scaling](bptt-rtrl-scaling.md) 合成同一配置。
+本页保留单/双 Cell 与自连接、A(2)/B(3) 双向 population 的正确性及训练验证。
+独立 CPU 计时见 [benchmark 实测](../../../../../benchmarks/performance/optim_gradient_scaling/results/synapse-network-cpu.md)。
+不能把它们与 [历史多 CV/A100 scaling](../../../../../benchmarks/performance/optim_gradient_scaling/results/bptt-rtrl-scaling.md) 合成同一配置。
 各组都在 rollout 内固定参数；不验证每个 timestep 更新优化器的语义。
 
 ## 事件与自连接
@@ -18,7 +19,7 @@
 固定 delay、two-Cell sensitivity 和 carry shape。Notebook 的 float64 比较中，
 最大绝对梯度差不超过 5.24e-10；spike loss 的差不超过 3.33e-15。
 这是同一 surrogate 图上的 forward/reverse 一致性，不是硬事件时间的有限差分导数。
-其完整模型、步长和长度见 [autapse.py](../../../../../examples/experimental/optim_gradient_correctness/autapse.py)；
+其完整模型、步长和长度见 [autapse.py](../../../../../validation/optim/gradient_correctness/autapse.py)；
 单参数 tau/weight/threshold 教学结果单列于 [参数学习](parameter-learning.md#synapse-与-connection)。
 
 ## 双向 Population
@@ -53,58 +54,8 @@ B.weight 指 A 到 B。scale 根是无量纲因子，shift/reversal/threshold �
 使用同一个 synthetic spiking target、相同扰动初值、Adam lr=0.01，MSE 单位 mV squared。
 全部 15 根变化；这不证明唯一恢复生成参数。自动化测试允许 200 次更新，要求至少十倍下降，
 两个 JAX 环境均通过。实现与测试见
-[bidirectional.py](../../../../../examples/experimental/optim_gradient_correctness/bidirectional.py)、
-[bidirectional_test.py](../../../../../examples/experimental/optim_gradient_correctness/bidirectional_test.py)。
-
-## 独立 CPU 计时
-
-来源为本次整理之前、2026-09-07 会话中的只读独立进程测量；未保存独立原始 artifact，
-也没有可引用的 benchmark commit。下表是会话记录，不伪装成现有 scaling CLI 输出。
-
-- Intel Xeon Platinum 8358P，affinity 为逻辑 CPU 0/1/2/3；没有声明独占机器。
-- Python 3.11、JAX 0.8.0、CPU、float64、scatter、固定异质 delay，dt=0.025 ms。
-- 模型来自同一 bidirectional.build，grouped=True/False 分别为 15/45 个标量坐标。
-- 每种方法和配置独立进程、串行测量；OMP/OPENBLAS/MKL_NUM_THREADS=1。
-- engine.prepare 后，把当前 roots 与形状 (T,5)、值为 -60 mV 数值的 target 作为动态参数，
-  分别编译引擎 _bptt/_rtrl；它们是本次测量使用的实验私有方法，不是公共 API。
-- 首次执行同步完成后，再同步计时 7 次，取中位数；每次含 reset 与整段 loss/gradient，
-  不含构建/trace、编译、Adam、目标生成和进程启动。
-- 800/8000 步对应 20/200 ms，长轨迹不追加 clamp，后段没有新增刺激；不是持续放电负载。
-- BPTT 未使用 checkpoint；RTRL 返回逐步 losses，但不输出 sensitivity history。
-
-| 参数数 | 步数 | BPTT median | RTRL median | BPTT 工作内存 | RTRL 工作内存 |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 15 | 800 | 58.000 ms | 52.999 ms | 4.49 MiB | 0.078 MiB |
-| 15 | 8000 | 516.739 ms | 357.917 ms | 44.70 MiB | 0.408 MiB |
-| 45 | 800 | 54.897 ms | 93.528 ms | 4.49 MiB | 0.146 MiB |
-| 45 | 8000 | 544.125 ms | 636.154 ms | 44.70 MiB | 0.475 MiB |
-
-工作内存为 XLA memory_analysis 的 argument + output + temporary - alias；本次 alias 均为 0。
-它不是 RSS、GPU 峰值、纯 sensitivity carry 或分配器保留总量。以下保存字节口径与编译结果，
-避免后续将 MiB 舍入值当成新的原始数据：
-
-| P/T | 方法 | Compile (s) | Temporary bytes | Argument bytes | Output bytes | Host peak RSS (MiB) |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| 15/800 | BPTT | 8.071531 | 4667656 | 32120 | 6664 | 1211.44 |
-| 15/800 | RTRL | 6.164166 | 43160 | 32120 | 6664 | 1196.21 |
-| 15/8000 | BPTT | 8.053768 | 46485256 | 320120 | 64264 | 1254.66 |
-| 15/8000 | RTRL | 5.946149 | 43160 | 320120 | 64264 | 1184.76 |
-| 45/800 | BPTT | 8.686402 | 4669176 | 32360 | 6904 | 1246.57 |
-| 45/800 | RTRL | 6.244573 | 113384 | 32360 | 6904 | 1219.29 |
-| 45/8000 | BPTT | 8.425463 | 46486776 | 320360 | 64504 | 1291.93 |
-| 45/8000 | RTRL | 6.078932 | 113384 | 320360 | 64504 | 1219.36 |
-
-Host peak RSS 用 Linux ru_maxrss，包含导入和编译。导入后 baseline RSS 约 472 MiB；
-构建/prepare 另外约 9.55-12.12 s。两种方法整个进程都约 1.2 GiB，不能说进程 RAM 小了百倍。
-四组配对最大绝对梯度差依次为 9.313e-10、2.736e-9、2.983e-10、6.112e-10。
-
-在这些配置内，15 根时 RTRL 速度接近或更快，45 根时慢约 17%-70%；工作内存约小
-31-110 倍。15 根/800 步的计时范围有重叠，不能据此宣传稳定加速。
-延长时间时 RTRL temporary 不变，而总工作内存仍因输入和逐步 loss 增长。
-优势取决于全网状态 H 与独立参数 P，不是每 Cell 的局部 hidden 数；不能外推到任意
-多 CV、多 population、其他后端或 checkpoint BPTT。
-
-复测需按上述协议建立新的独立测量，保存新环境与原始结果；本页不提供不存在的 CLI。
+[bidirectional.py](../../../../../validation/optim/gradient_correctness/bidirectional.py)、
+[bidirectional_test.py](../../../../../validation/optim/gradient_correctness/bidirectional_test.py)。
 
 ## 提交验收
 
@@ -153,12 +104,12 @@ GPU 上的新事件网络、多 CV × 多 population、自定义机制以及 rol
 
 ## 复查入口
 
-[已执行 Notebook](../../../../../examples/multi_compartment/synapse_learning.ipynb) 保存表格和图。
+[已执行 Notebook](../../../../../examples/optim/parameter_learning/synapse_learning.ipynb) 保存表格和图。
 在选定依赖环境后，功能检查的已有命令为：
 
 ```bash
-python -m pytest -q braincell/network/delivery_test.py examples/experimental/optim_gradient_correctness/bidirectional_test.py
-python -m pytest -q examples/experimental/optim_gradient_correctness/autapse_test.py examples/multi_compartment/synapse_learning_test.py
+python -m pytest -q braincell/network/delivery_test.py validation/optim/gradient_correctness/bidirectional_test.py
+python -m pytest -q validation/optim/gradient_correctness/autapse_test.py examples/optim/parameter_learning/synapse_learning_test.py
 ```
 
 这些命令验证功能而不是生成上述独立计时表；构造耗时、整轮测试耗时不能替代梯度内核时间。

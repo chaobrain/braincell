@@ -7,7 +7,7 @@ forward sensitivity 的唯一通用理论稿。它只假设神经元可写成可
 Staggered、DHS、Euler 或其他具体 solver。
 
 当前 Staggered 离散程序如何产生一步 Jacobian，见
-[Staggered Solver 梯度分析](./staggered-solver-gradient-analysis.md)。
+[Staggered Solver 梯度分析](staggered-solver-gradient-analysis.md)。
 
 为避免与 Hodgkin-Huxley 的失活门变量 $h_t$ 冲突，完整神经元状态记为 $s_t$。全文采用
 行导数约定：scalar 对向量的导数是行向量，链式法则按阅读顺序从左向右相乘，不额外使用

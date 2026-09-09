@@ -162,7 +162,7 @@ reset 读取当前训练初值，不重置 optimizer root。固定 Ion 的 `Ci` 
 DynamicNernst/KineticIon 在读取时计算电位。`species_initializers` 的既有覆盖功能保留，
 但不新增该字典内部字段的训练路径；已有具名 `BC_initializer` 等参数可直接选择。
 
-示例见 [Ion learning](../../../../examples/multi_compartment/ion_learning.ipynb)。
+示例见 [Ion learning](../../../../examples/optim/parameter_learning/ion_learning.ipynb)。
 
 ## `parameter()`
 

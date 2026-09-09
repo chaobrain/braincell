@@ -5,7 +5,7 @@
 本文解释观测、归档与 spike-region 的方法，不定义 BrainCell 公共 API，也不引入 Trainer。
 方法建议不代表每项均已实现；当前实验能力以 [实验工作流](../current/experimental-workflows.md) 为准。
 当前实验实现位于
-[`diagnostics.py`](../../../../examples/experimental/optim_parameter_fitting/diagnostics.py)。
+[`diagnostics.py`](../../../../examples/optim/parameter_fitting/diagnostics.py)。
 参数选择与 runtime 映射仍由 `braincell.trainable` 负责，优化器由 BrainTools 或用户代码
 负责。
 

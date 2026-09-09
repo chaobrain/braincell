@@ -161,7 +161,7 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
-examples/neuron_compare/channel_no_conc/artifacts/
+validation/neuron/channel_no_conc/artifacts/
 examples/experimental/**/artifacts/
 
 # IPython
@@ -238,19 +238,14 @@ cython_debug/
 /docs/apis/deprecated/generated/
 /docs/_static/braincell.psd
 /docs/_static/single_cell_frontend/
-/examples/multi_compartment/plot/
-/examples/neuron_compare/cell/pc_ma2024/debug/results/
+/validation/neuron/cell/pc_ma2024/debug/results/
 
 x86_64/
 /.claude/
 /dev/replace_init.py
 /dev/replace_all.py
-/examples/multi_compartment/checkpoint/
 /dev/
 /.claudegitignore
-
-# Regenerated braincell.vis renders, not source
-/data/vis_outputs/
 
 # brainx-sphinx-header build artifacts
 docs/_brand/
@@ -258,3 +253,8 @@ docs/_static/css/brainx-header.css
 docs/_static/js/brainx-header.js
 /docs/_static/css/brainx-footer.css
 /docs/_static/js/brainx-footer.js
+
+# Repository workflows: generated outputs remain local.
+/examples/**/artifacts/
+/validation/**/artifacts/
+/benchmarks/**/artifacts/

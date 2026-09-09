@@ -16,7 +16,7 @@ for local performance diagnosis.
 Profile a single cell example:
 
 ```bash
-python examples/profiling/profile_simulation.py \
+python benchmarks/profiling/profile_simulation.py \
   --case neuron_compare_cell \
   --cell pc_ma2024 \
   --duration-ms 10 \
@@ -29,7 +29,7 @@ python examples/profiling/profile_simulation.py \
 Profile the cerebellar probability network at a small scale:
 
 ```bash
-python examples/profiling/profile_simulation.py \
+python benchmarks/profiling/profile_simulation.py \
   --case cerebellar_probability_network \
   --scale tiny \
   --populations GrC,GoC \
@@ -46,7 +46,7 @@ JAX dispatch is asynchronous, so the harness blocks on simulation results before
 stopping each run timer.  Use `--trace-dir` to collect a JAX profiler trace:
 
 ```bash
-python examples/profiling/profile_simulation.py \
+python benchmarks/profiling/profile_simulation.py \
   --case neuron_compare_cell \
   --cell grc_ma2020 \
   --trace-dir /tmp/braincell-trace
@@ -62,7 +62,7 @@ For a command-line summary of GPU events attributed to BrainCell scopes, parse
 the generated XPlane file:
 
 ```bash
-python examples/profiling/parse_xplane_trace.py \
+python benchmarks/profiling/parse_xplane_trace.py \
   --trace-dir /tmp/braincell-trace \
   --mode leaf
 ```
@@ -75,7 +75,7 @@ streams can make the sum larger than the outer `steady_run` wall time.
 GPU run trace for a Purkinje cell population:
 
 ```bash
-python examples/profiling/profile_simulation.py \
+python benchmarks/profiling/profile_simulation.py \
   --platform cuda \
   --case neuron_compare_cell \
   --cell pc_ma2024 \
@@ -93,7 +93,7 @@ For finer attribution while diagnosing kernel placement, disable GPU command
 buffers in the profiling process:
 
 ```bash
-XLA_FLAGS='--xla_gpu_enable_command_buffer=' python examples/profiling/profile_simulation.py \
+XLA_FLAGS='--xla_gpu_enable_command_buffer=' python benchmarks/profiling/profile_simulation.py \
   --platform cuda \
   --case neuron_compare_cell \
   --cell pc_ma2024 \
@@ -135,7 +135,7 @@ python examples/profiling/bench_dhs_levels.py \
 Then print the per-level GPU table:
 
 ```bash
-python examples/profiling/parse_xplane_trace.py \
+python benchmarks/profiling/parse_xplane_trace.py \
   --trace-dir /tmp/dhs-level-pop32 \
   --scope-prefix braincell:dhs_toy \
   --mode leaf \
@@ -154,7 +154,7 @@ profiling-only real-level scopes:
 BRAINCELL_PROFILE_DHS_LEVELS=1 \
 XLA_PYTHON_CLIENT_PREALLOCATE=false \
 XLA_FLAGS='--xla_gpu_enable_command_buffer=' \
-python examples/profiling/profile_simulation.py \
+python benchmarks/profiling/profile_simulation.py \
   --platform cuda \
   --case neuron_compare_cell \
   --cell pc_ma2024 \
@@ -171,7 +171,7 @@ python examples/profiling/profile_simulation.py \
 Parse the real levels with:
 
 ```bash
-python examples/profiling/parse_xplane_trace.py \
+python benchmarks/profiling/parse_xplane_trace.py \
   --trace-dir /tmp/pc-real-dhs-levels \
   --scope-prefix braincell:dhs \
   --mode leaf \
@@ -185,7 +185,7 @@ XLA `kernel_details`.
 GPU run trace for a small network subset:
 
 ```bash
-JAX_PLATFORMS=gpu python examples/profiling/profile_simulation.py \
+JAX_PLATFORMS=gpu python benchmarks/profiling/profile_simulation.py \
   --case cerebellar_probability_network \
   --scale tiny \
   --populations GrC,GoC,PC \
@@ -201,7 +201,7 @@ Use `--device-memory-profile` to save device memory snapshots after warmup and
 the final steady run:
 
 ```bash
-python examples/profiling/profile_simulation.py \
+python benchmarks/profiling/profile_simulation.py \
   --case neuron_compare_cell \
   --cell grc_ma2020 \
   --device-memory-profile /tmp/braincell-memory
@@ -224,7 +224,7 @@ nsys profile \
   --capture-range=cudaProfilerApi \
   --capture-range-end=stop \
   -o /tmp/braincell-neuron-compare \
-  python examples/profiling/profile_simulation.py \
+  python benchmarks/profiling/profile_simulation.py \
     --case neuron_compare_cell \
     --platform cuda \
     --cell pc_ma2024 \

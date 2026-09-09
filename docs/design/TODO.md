@@ -124,6 +124,7 @@ Current 描述工作区行为，条目状态按其所列范围判断。详细规
 
 - [x] **指数突触模型**：ExpSyn 和 Exp2Syn 提供事件驱动的电导动力学、电流计算及状态重置。 [模型 API](synapse/current/api.md)
 - [x] **Cell-owned 突触状态**：突触状态由目标 Cell 持有，连接投递事件并乘权，空间布局与生命周期由 Cell 管理。 [状态与事件](synapse/current/architecture.md)
+- [~] **预定事件执行优化**：两轮算法实验与完整模型四层对照已验证 CPU/GPU 查询、直接投递、基线开销及代表性真实 Cell/Network 与权重/tau 梯度；生产窗口生命周期和自动选型仍缺合同。 [算法实测](../../benchmarks/performance/synapse_events/results/scheduled-event-delivery.md)、[四层对照](../../benchmarks/performance/synapse_events/results/scheduled-event-controls.md)、[方案](synapse/proposals/event-delivery-optimization.md)
 - [ ] **内部动力学可塑性**：通过新的 Synapse 模型表达释放或内部状态的可塑变化，与只更新 Connection weight 的规则区分。状态：**讨论中**。 [可塑性方案](network/proposals/connection-plasticity.md)
 - [ ] **模型验证覆盖**：在已有初始化、衰减和事件测试之外，扩展事件序列、时间常数及电压驱动力的参照对照。状态：**待讨论**。 [验证事项](synapse/TODO.md)
 
@@ -134,6 +135,7 @@ Current 描述工作区行为，条目状态按其所列范围判断。详细规
 - [x] **Population 与网络生命周期**：注册 Cell population 和事件源，协调初始化、重置与连续运行。 [Network API](network/current/api.md)
 - [x] **端点配对与连接**：通过显式索引或采样配对建立具名连接，管理连接权重及异构延迟。 [配对](network/current/pairing.md)、[连接](network/current/connections.md)
 - [x] **事件路由与记录**：调度延迟投递，聚合规则采样和稀疏事件，保持目标 Cell 的状态归属。 [事件架构](network/current/architecture.md)、[Recording](network/current/recording.md)
+- [ ] **预定事件执行计划接入**：依据 Synapse 的 CPU/GPU 查询实验选型，定义 Network 准备、续跑和参数失效合同。状态：**讨论中**。 [实验与阶段](synapse/proposals/event-delivery-optimization.md)
 - [ ] **统一随机上下文**：用 BrainState 随机区域管理网络、source 和 pairing 的默认随机流，确定局部子流与迁移语义。状态：**讨论中**。 [随机方案](network/proposals/random-context.md)
 - [ ] **Connection 权重可塑性**：根据上下游 spike 或电压维护规则状态并更新 weight，确定信号绑定及更新顺序。状态：**讨论中**。 [可塑性方案](network/proposals/connection-plasticity.md)
 - [ ] **大规模事件与配对**：研究稀疏 delay slots 和分块 endpoint generators，控制静态 shape、调度开销及内存。状态：**待讨论**。 [运行时扩展](network/proposals/runtime-extensions.md)
@@ -146,7 +148,7 @@ Current 描述工作区行为，条目状态按其所列范围判断。详细规
 
 - [x] **参数 source 与映射**：提供 direct、共享 scale、parameterized 映射及分组，保留物理单位、共享关系和 reset/materialization 语义。 [参数 API](optim/current/api.md)
 - [x] **Channel 与 Ion 参数训练**：按构造签名发现候选参数，支持 Cell 内通道和离子参数绑定；已有单参数教学拟合及相关回归。 [支持度](optim/current/parameter-support.md)、[结果](optim/current/results/parameter-learning.md)
-- [x] **训练与诊断实验**：已有固定参数 rollout 的 BPTT/RTRL、分阶段拟合、搜索、敏感度诊断及刺激设计实验，入口位于 examples/experimental。 [实验工作流](optim/current/experimental-workflows.md)
+- [x] **训练与诊断实验**：已有固定参数 rollout 的 BPTT/RTRL、分阶段拟合、搜索、敏感度诊断及刺激设计实验，梯度核心位于 `braincell.experimental.optim`，使用流程在 `examples/optim/`。 [实验工作流](optim/current/experimental-workflows.md)
 - [x] **Synapse 与 Network 参数训练**：支持突触参数、静态连接 weight、检测阈值和网络 roots 聚合，已通过 CPU 梯度及拟合验收并提交。 [接口范围](optim/current/api.md#synapse-connection-network)、[验证记录](optim/current/results/synapse-network-learning.md#提交验收)
 - [~] **组合精度与性能验证**：已有多 CV、population、CPU/GPU 等单项结果；新事件网络的 GPU、多 CV 与多 population 组合及 checkpoint 比较仍缺证据。 [验证缺口](optim/proposals/roadmap.md#验证缺口)
 - [ ] **可塑性参数训练**：明确动态 weight 初值、规则参数与运行中状态的关系，连接可塑性调度和梯度验收。状态：**讨论中**。 [训练提案](optim/proposals/connection-plasticity.md)

@@ -55,7 +55,7 @@ from common import (
 from run_benchmark import parse_csv_ints
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_PYTHON = Path("/home/swl/anaconda3/envs/braincell_311/bin/python")
+DEFAULT_PYTHON = Path(sys.executable)
 BATCH_MODES = ("population", "vmap")
 SPIKE_MODES = ("tracked", "off")
 AMPLITUDE_NA = 0.70
@@ -682,7 +682,7 @@ def _parser() -> argparse.ArgumentParser:
 
     suite = subparsers.add_parser("run")
     suite.add_argument("--batch-sizes", type=parse_csv_ints, default=(10, 100, 1000))
-    suite.add_argument("--gpu", type=int, default=7)
+    suite.add_argument("--gpu", type=int, required=True, help="Physical GPU index")
     suite.add_argument("--warmup", type=int, default=2)
     suite.add_argument("--repeat", type=int, default=7)
     suite.add_argument("--transfer-repeat", type=int, default=3)
@@ -712,6 +712,8 @@ def main() -> None:
             ),
         )
     else:
+        if args.gpu < 0:
+            parser.error("GPU index must be nonnegative")
         if not args.python.exists():
             parser.error(f"Python interpreter does not exist: {args.python}")
         if args.idle_timeout <= 0.0:

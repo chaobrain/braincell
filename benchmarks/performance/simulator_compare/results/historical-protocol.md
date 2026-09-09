@@ -1,4 +1,10 @@
-# BrainCell / Jaxley / NEURON simulator comparison
+# Historical Simulator Comparison Protocol
+
+以下保存旧公共入口中的来源、环境与命令示例。实际运行日期、测量提交及完整执行清单未记录；
+这些示例不能证明每条命令已经执行，也不构成运行授权。本页没有新增性能结论。
+原始 artifacts 不随 Git 提供；当前通用入口见 [README](../README.md)。
+
+## Original setup notes
 
 This benchmark reproduces the workload behind the Jaxley/NEURON timing panel and
 adds BrainCell under an explicit fairness contract. The historical figure is assembled
@@ -42,12 +48,12 @@ Verify the shared stack:
 Full comparison:
 
 ```bash
-cd /home/swl/braincell/examples/profiling/simulator_compare
+cd /home/swl/braincell/benchmarks/performance/simulator_compare
 /home/swl/anaconda3/envs/braincell_311/bin/python run_benchmark.py \
   --batch-sizes 10,100,1000,10000 \
   --gpu-candidates 2,3 \
   --braincell-linearizer point \
-  --output results/benchmark_10000.json
+  --output artifacts/benchmark_10000.json
 ```
 
 BrainCell defaults to the point-local membrane linearizer. Use
@@ -59,7 +65,7 @@ Fast smoke run (still only GPU 2 or 3, and no NEURON above N=10):
 /home/swl/anaconda3/envs/braincell_311/bin/python run_benchmark.py \
   --batch-sizes 10 --warmup 0 --repeat 1 \
   --neuron-warmup 0 --neuron-repeat 1 \
-  --output results/smoke.json
+  --output artifacts/smoke.json
 ```
 
 BrainCell runtime ablation compares native population batching with an outer
@@ -71,7 +77,7 @@ baseline, and records compilation, steady-state, transfer, and GPU-memory data:
 /home/swl/anaconda3/envs/braincell_311/bin/python braincell_ablation.py run \
   --batch-sizes 10,100,1000 \
   --gpu 7 \
-  --output results/braincell_ablation.json
+  --output artifacts/braincell_ablation.json
 ```
 
 The resulting JSON and CSV contain all four `population|vmap` by
@@ -91,8 +97,8 @@ Generate diagnostic plots from an existing result without rerunning any simulato
 
 ```bash
 /home/swl/anaconda3/envs/braincell_311/bin/python plot_diagnostics.py \
-  results/benchmark_10000_gpu2.json \
-  --output-prefix results/benchmark_10000_gpu2
+  artifacts/benchmark_10000_gpu2.json \
+  --output-prefix artifacts/benchmark_10000_gpu2
 ```
 
 This writes separate cold-start, peak-memory, throughput, full-output-transfer,
@@ -105,6 +111,6 @@ high-water mark per isolated process, so no memory error bar is reported.
 Run implementation tests without starting a full benchmark:
 
 ```bash
-/home/swl/anaconda3/envs/braincell_311/bin/python -m pytest -q test_simulator_compare.py
-/home/swl/anaconda3/envs/braincell_311/bin/python -m pytest -q braincell_ablation_test.py
+python -m pytest -q common_test.py run_benchmark_test.py plot_diagnostics_test.py plot_results_test.py
+python -m pytest -q braincell_ablation_test.py
 ```

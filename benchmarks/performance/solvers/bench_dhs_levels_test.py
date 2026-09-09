@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import unittest
 
-from examples.profiling.bench_dhs_levels import (
+from benchmarks.performance.solvers.bench_dhs_levels import (
     _complete_binary_widths,
     make_problem,
     make_solver,

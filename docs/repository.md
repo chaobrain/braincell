@@ -171,8 +171,8 @@ NEURON 对比若主要评价电压或机制状态的一致性，归 validation�
 | 当前内容 | 目标归属 |
 | --- | --- |
 | `examples/single_compartment/` 与 `examples/multi_compartment/` | 按教学主题分入 `examples/cell/`、`network/`、`optim/`、`vis/` 等 |
-| `examples/profiling/` | 诊断工具进入 `benchmarks/profiling/`，性能与规模评测进入 `benchmarks/performance/` |
-| `examples/profiling/simulator_compare/` | `benchmarks/performance/simulator_compare/` |
+| `benchmarks/profiling/` | 诊断工具进入 `benchmarks/profiling/`，性能与规模评测进入 `benchmarks/performance/` |
+| `benchmarks/performance/simulator_compare/` | `benchmarks/performance/simulator_compare/` |
 | `examples/experimental/` | `experiments/`，按研究主题保持原型与实验的关联 |
 | `validation/neuron/` | 对照工作流进入 `validation/neuron/`，公共参考资产进入 `data/` |
 | `validation/neuron/Cerebellum_mod/` | 按来源和模型家族整理到 `data/mechanisms/`、`data/morphology/`，编译产物移入 artifacts |

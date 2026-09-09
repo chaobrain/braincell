@@ -36,8 +36,8 @@ from common import (
     write_json,
 )
 
-DEFAULT_JAX_PYTHON = Path("/home/swl/anaconda3/envs/braincell_311/bin/python")
-DEFAULT_NEURON_PYTHON = Path("/home/swl/anaconda3/envs/neuron/bin/python")
+DEFAULT_JAX_PYTHON = Path(sys.executable)
+DEFAULT_NEURON_PYTHON = Path(sys.executable)
 GPU_BACKENDS = ("braincell", "jaxley")
 
 
@@ -49,6 +49,16 @@ def parse_csv_ints(value: str) -> tuple[int, ...]:
     if not parsed or any(item <= 0 for item in parsed):
         raise argparse.ArgumentTypeError("values must be positive integers")
     return parsed
+
+
+def _parse_gpu_indices(value: str) -> tuple[int, ...]:
+    try:
+        indices = tuple(dict.fromkeys(int(item.strip()) for item in value.split(",") if item.strip()))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("expected comma-separated GPU indices") from exc
+    if not indices or any(index < 0 for index in indices):
+        raise argparse.ArgumentTypeError("GPU indices must be nonnegative integers")
+    return indices
 
 
 def run_child(
@@ -192,7 +202,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--backend", action="append", choices=(*GPU_BACKENDS, "neuron"), dest="backends")
     parser.add_argument("--batch-sizes", type=parse_csv_ints, default=(10, 100, 1000, 10000))
-    parser.add_argument("--gpu-candidates", type=parse_csv_ints, default=(2, 3))
+    parser.add_argument("--gpu-candidates", type=_parse_gpu_indices, help="Comma-separated physical GPU indices; required for GPU backends")
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--repeat", type=int, default=7)
     parser.add_argument("--neuron-warmup", type=int, default=1)
@@ -201,7 +211,7 @@ def main() -> None:
     parser.add_argument("--braincell-linearizer", choices=("point", "generic"), default="point")
     parser.add_argument("--jax-python", type=Path, default=DEFAULT_JAX_PYTHON)
     parser.add_argument("--neuron-python", type=Path, default=DEFAULT_NEURON_PYTHON)
-    parser.add_argument("--output", type=Path, default=HERE / "results" / "benchmark.json")
+    parser.add_argument("--output", type=Path, default=HERE / "artifacts" / "benchmark.json")
     parser.add_argument("--skip-accuracy", action="store_true")
     parser.add_argument("--no-plot", action="store_true")
     args = parser.parse_args()
@@ -217,8 +227,8 @@ def main() -> None:
         or args.transfer_repeat < 0
     ):
         parser.error("repeat values must be positive and warmup/transfer-repeat values non-negative")
-    if any(gpu not in (2, 3) for gpu in args.gpu_candidates):
-        parser.error("GPU candidates are restricted to physical devices 2 and 3")
+    if any(backend in GPU_BACKENDS for backend in backends) and args.gpu_candidates is None:
+        parser.error("--gpu-candidates is required for GPU backends")
     for backend, python in (("JAX", args.jax_python), ("NEURON", args.neuron_python)):
         if not python.exists():
             parser.error(f"{backend} interpreter does not exist: {python}")

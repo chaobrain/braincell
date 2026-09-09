@@ -297,6 +297,8 @@ class BrainCellAblationTest(unittest.TestCase):
                 "run",
                 "--batch-sizes",
                 "10,100,1000",
+                "--gpu",
+                "7",
                 "--python",
                 sys.executable,
                 "--output",

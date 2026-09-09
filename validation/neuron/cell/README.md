@@ -125,7 +125,7 @@ pytest -q validation/neuron/cell/pc_ma2024
 ```
 
 Run model-specific NEURON tests in a separate process per model. The
-[profiling workflow](../../../examples/profiling/README.md) still imports the
+[profiling workflow](../../../benchmarks/profiling/README.md) still imports the
 same BrainCell builders; its timing protocols are maintained independently.
 [Import progress](../cerebellum-import-progress.md) tracks model accuracy work.
 Each model's `history/` retains its earlier comparison notebooks and saved outputs.

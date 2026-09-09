@@ -216,7 +216,7 @@ def query_gpus(
         if row["median_utilization_percent"] <= 20.0 and row["median_memory_used_mib"] <= 10240.0
     ]
     if not eligible:
-        raise RuntimeError("neither GPU 2 nor GPU 3 is idle enough for a reliable benchmark")
+        raise RuntimeError(f"No candidate GPU {candidates} is idle enough for a reliable benchmark")
     selected = min(eligible, key=lambda row: (row["median_utilization_percent"], row["median_memory_used_mib"]))
     return {"selected": selected, "candidates": summaries}
 

@@ -15,13 +15,16 @@
 
 """Guards on ``braincell``'s own public surface.
 
-``braincell/__init__.py`` is the whole supported API: every other module
-path carries a leading underscore or is reached through one of the domain
-packages listed here. A name that drops out of ``__all__`` is a silent
+``braincell/__init__.py`` exports the stable top-level API and domain packages.
+Experimental namespaces are imported explicitly and have separate stability
+contracts. Both kinds of non-underscored package are registered here so a new
+directory cannot silently bypass the guard.
+A name that drops out of ``__all__`` is a silent
 break for ``import *`` users, and a name that stays in it after its module
 is deleted is an ``AttributeError`` at import time.
 """
 
+import importlib
 import pathlib
 import pickle
 import unittest
@@ -29,9 +32,8 @@ import unittest
 import braincell
 from braincell._testing import ReExportTests
 
-#: Every public domain package. AGENTS.md names these as the ones without a
-#: leading underscore, so each must be reachable from a bare ``import
-#: braincell`` and each must be advertised in ``__all__``.
+#: Stable domain packages must be reachable from a bare ``import braincell``
+#: and advertised in its ``__all__``.
 _DOMAIN_PACKAGES = (
     "channel",
     "filter",
@@ -47,6 +49,9 @@ _DOMAIN_PACKAGES = (
     "vis",
 )
 
+#: Explicitly imported namespaces outside the stable top-level export contract.
+_EXPERIMENTAL_PACKAGES = ("experimental",)
+
 
 class PublicSurfaceTest(ReExportTests, unittest.TestCase):
     """``braincell.__all__`` is the package's contract."""
@@ -56,7 +61,7 @@ class PublicSurfaceTest(ReExportTests, unittest.TestCase):
 
 
 class DomainPackageTest(unittest.TestCase):
-    """Every non-underscored package is public, and uniformly so."""
+    """Register every non-underscored package and check stable domain exports."""
 
     def test_every_domain_package_resolves_after_a_bare_import(self) -> None:
         # ``braincell.io`` used to fail here: nothing in the import graph
@@ -77,7 +82,21 @@ class DomainPackageTest(unittest.TestCase):
             for path in package_dir.iterdir()
             if path.is_dir() and not path.name.startswith(("_", ".")) and (path / "__init__.py").exists()
         )
-        self.assertEqual(on_disk, sorted(_DOMAIN_PACKAGES))
+        self.assertEqual(on_disk, sorted(_DOMAIN_PACKAGES + _EXPERIMENTAL_PACKAGES))
+
+
+class ExperimentalPackageTest(unittest.TestCase):
+    """Experimental namespaces support explicit imports without stable exports."""
+
+    def test_every_experimental_package_can_be_imported_explicitly(self) -> None:
+        for name in _EXPERIMENTAL_PACKAGES:
+            with self.subTest(package=name):
+                module = importlib.import_module(f"braincell.{name}")
+                self.assertEqual(module.__name__, f"braincell.{name}")
+                self.assertIs(getattr(braincell, name), module)
+
+    def test_experimental_packages_are_not_top_level_exports(self) -> None:
+        self.assertTrue(set(_EXPERIMENTAL_PACKAGES).isdisjoint(braincell.__all__))
 
 
 class ModuleAttributeTest(unittest.TestCase):

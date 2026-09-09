@@ -280,6 +280,11 @@ Vis 迁移到 BrainTools、提供简单绘图与 GUI 的方案见 [Vis TODO](../
 实现放在 `_discretization` 等内部路径，不改变其顶层重导出对象的公开身份；
 例如使用 `bc.CVPerBranch`，实现位置则供开发者查阅。
 
+实验接口通过 `braincell.experimental` 显式导入，例如
+`from braincell.experimental import optim`。该命名空间不列入顶层 `braincell.__all__`，
+裸 `import braincell` 不保证提前加载它；实验接口可以独立于稳定接口演进。
+具体使用方式见 [实验工作流](../../optim/current/experimental-workflows.md)。
+
 当前 `bc.mech.Channel` / `bc.mech.Ion` 是声明，`bc.Channel` / `bc.Ion` 是运行时基类。
 跨模块命名与公共导出约定见 [接口一致性讨论](../proposals/interface-consistency.md)；
 模块内部接口问题进入对应 TODO，系统级进度见 [Architecture TODO](../TODO.md)。

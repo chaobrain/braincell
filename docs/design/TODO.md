@@ -105,7 +105,7 @@ Current 描述工作区行为，条目状态按其所列范围判断。详细规
 - [x] **离子电流快照与调度**：staggered 可读取步首总离子电流，并选择 family 或 integration 的机制更新顺序。 [调度契约](cell/current/architecture.md#离子电流快照与调度)
 - [~] **显式 solver 的边界输入**：显式路径已推进 CV 电压，消元时仍遗漏端点刺激和突触的等效贡献；修复方案正在讨论。 [边界输入](cell/proposals/explicit-solver-boundary-inputs.md)
 - [ ] **Single 与多室统一**：从单 branch、特殊单 CV policy 和位点语义开始，使单方程 ODE 模型兼容 Cell；形态等效与积分路径仍需比较。状态：**讨论中**。 [统一提案](cell/proposals/single-multi-compartment-unification.md)
-- [ ] **生命周期与查询风格**：明确 reset/reset_state 的命名，并统一缓存查询与触发构建操作的表达。状态：**待讨论**。 [接口事项](cell/TODO.md#当前需要推进的事项)
+- [~] **生命周期迁移**：统一 `discretize()`，init 后固定网格、开放已有参数写入和训练注册；完整 reset 恢复声明并清除训练根。工作区验证完成，待提交验收。 [生命周期](cell/current/api.md#生命周期)
 
 ### Quad：积分方法与电压求解
 
@@ -153,7 +153,8 @@ Current 描述工作区行为，条目状态按其所列范围判断。详细规
 - [~] **组合精度与性能验证**：已有多 CV、population、CPU/GPU 等单项结果；新事件网络的 GPU、多 CV 与多 population 组合及 checkpoint 比较仍缺证据。 [验证缺口](optim/proposals/roadmap.md#验证缺口)
 - [ ] **可塑性参数训练**：明确动态 weight 初值、规则参数与运行中状态的关系，连接可塑性调度和梯度验收。状态：**讨论中**。 [训练提案](optim/proposals/connection-plasticity.md)
 - [ ] **训练自动恢复**：在已有历史 archive 和诊断基础上，设计 plateau、SGDR、perturb 控制器及恢复协议。状态：**讨论中**。 [恢复方案](optim/proposals/training-recovery.md)
-- [ ] **参数范围与公共训练协议**：确定 Cell 初值和 cable 参数的 owner，以及可复用训练协议、稳定 grouping 和持久化边界。状态：**待讨论**。 [后续方向](optim/proposals/roadmap.md)
+- [~] **几何与 cable 参数训练**：已接入运行时电缆数组与可微节点系数原型，CPU/GPU 前后初始化对照已完成；长度/半径派生映射、参数更新同步及公共 View 尚未完成。首版采用 policy 仅负责初始离散化的自由几何模式。 [当前数值层](optim/current/runtime-cable-arrays.md)、[分阶段方案](optim/proposals/nonlinear-pattern-separation.md)
+- [ ] **参数范围与公共训练协议**：确定 Cell 初值 owner，以及可复用训练协议、稳定 grouping 和持久化边界。状态：**待讨论**。 [后续方向](optim/proposals/roadmap.md)
 - [ ] **Rollout 内参数更新**：定义逐步更新参数时的参数历史、状态演化及梯度含义。状态：**待讨论**。 [研究方向](optim/proposals/roadmap.md#rollout-内更新参数)
 
 ### Reduction：约化模型接入

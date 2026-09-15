@@ -113,7 +113,7 @@ Population-major，再按 locset 原始顺序排列。以下只读数组把 sour
 
 同时省略 threshold 和 spk_fun 的 rising detector 复用 `cell.spike`。其余情况根据前后两步
 电压计算事件；省略 threshold 时使用 Cell.V_th。到达阈值计一次，在阈值停留不重复发放。
-检测器支持初始化前调用 `trainable(threshold=source)`，规则见
+检测器在初始化后调用 `trainable(threshold=source)`，规则见
 [训练接口](../../optim/current/api.md#synapse-connection-network)。
 
 ```text
@@ -157,6 +157,11 @@ braincell.connect(
 ```
 
 低层入口，用于单 Cell 或 Network 组装前，将 EventSource endpoints 绑定到已经存在的 Synapse rows。
+
+`connect()` 的配置在 init 前提供。init 后重新选择 `cell.connections[name]`，
+可调用 `set(weight=...)` 修改已有接触的数值；`set(delay=...)`、添加/删除连接、
+修改路由或目标均不允许。完整 Cell `reset()` 恢复连接创建时的 weight 声明；
+`reset_state()` 保留当前 weight。
 
 #### Parameters
 

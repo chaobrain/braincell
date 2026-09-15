@@ -89,6 +89,7 @@ Clamp 选择与逐刺激记录见 [ClampView](../../cell/current/views.md#clampv
 下面是已有多 population、soma/dendrite、nav 通道和所选突触 ID 的模型中的调用形式：
 
 ```text
+cell.init_state()
 cell[[0, 2]].dendrite.cv[1:].record("dend_v", braincell.observe.state("v"), period=0.1*u.ms)
 cell.soma.record("nav_p", braincell.observe.channel(name="nav").state("p"), frequency=10*u.kHz)
 cell.soma.record("sodium_current", braincell.observe.ion(species="na").current())

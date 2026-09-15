@@ -84,6 +84,12 @@ def build_experiment(field, *, train=False):
     connection = braincell.connect(
         "input", source=source, synapse=cell.synapses["syn"], weight=0.001 * u.uS, delay=0.1 * u.ms
     )
+    net = braincell.Network("fit")
+    net.add_population("cell", cell)
+    if field != "threshold":
+        net.add_population("input", source)
+    net.init_state()
+    connection = cell.connections["input"]
     if train:
         if field == "tau":
             cell.synapses["syn"].trainable(tau=braincell.trainable.scale(brainstate.nn.Param(0.8), name="factor"))
@@ -97,10 +103,6 @@ def build_experiment(field, *, train=False):
             )
         else:
             raise ValueError(field)
-    net = braincell.Network("fit")
-    net.add_population("cell", cell)
-    if field != "threshold":
-        net.add_population("input", source)
     net.prepare_run(dt=DT, event_backend="scatter")
     return net, cell
 

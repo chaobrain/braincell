@@ -144,6 +144,7 @@ def run_experiment(
 
     candidate_cell = build_hh_cell(num_starts, (1.0, 1.0, 1.0))
     random = brainstate.random.RandomState(seed)
+    candidate_cell.init_state()
     for channel_name in CHANNEL_NAMES:
         initial = random.uniform(*INITIAL_SCALE_RANGE, size=(num_starts,))
         factor = brainstate.nn.Param(
@@ -158,7 +159,7 @@ def run_experiment(
             )
         )
 
-    candidate_cell.init_state()
+    candidate_cell.reset_state()
     parameters = candidate_cell.trainables.parameters()
     parameter_states = parameters.states()
     optimizer = braintools.optim.Adam(lr=LEARNING_RATE)

@@ -127,13 +127,12 @@ def register_detector(view, fields):
     if set(fields).difference({"threshold"}):
         raise KeyError("Only the detector threshold is trainable.")
     cell = source.execution_owner
-    if cell._initialized:
-        raise RuntimeError("trainable() must be called before Cell.init_state().")
+    cell._raise_if_not_initialized("trainable(); call init_state() first")
     ids = view.source_id
     own_threshold = isinstance(source, VoltageCrossingSource) and not source._uses_cell_threshold
     if isinstance(source, VoltageCrossingSource):
         populations = source._population_indices[ids]
-        cvs = source._cv_ids[ids]
+        cvs = source.cv_id[ids]
     else:
         populations = ids
         cvs = np.full(len(ids), source.cv_id, dtype=np.int64)
@@ -160,7 +159,14 @@ def register_detector(view, fields):
     target = _PointTarget(
         rows, {"threshold": ParameterSpec(0.0 * u.mV)}, read, lambda field, values: [(state, indices, values)]
     )
-    cell.trainables.register(target, fields)
+    previous = state.value
+    try:
+        cell.trainables.register(target, fields)
+    except Exception:
+        state.value = previous
+        raise
+    if own_threshold:
+        cell.trainables._declaration_states.setdefault(id(state), (state, previous))
 
 
 def require_unbound(cell, category, owner, ids, field):

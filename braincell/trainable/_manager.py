@@ -75,6 +75,9 @@ class TrainableManager(brainstate.nn.Module):
         self._owned_targets: set[tuple[str, str, int, int, str]] = set()
         self._root_names_by_id: dict[int, str] = {}
         self._target_axes: dict[tuple[int, str], str] = {}
+        self._sealed = False
+        self._generation = 0
+        self._declaration_states = {}
 
     def parameters(self) -> ParameterSet:
         """Return a live optimizer-facing view over the original roots."""
@@ -91,8 +94,11 @@ class TrainableManager(brainstate.nn.Module):
     def register(self, view, fields: dict[str, ParameterSource]) -> None:
         """Validate and atomically register trainable fields for one density View."""
         cell = self._cell()
-        if cell._initialized:
-            raise RuntimeError("trainable() must be called before Cell.init_state().")
+        cell._raise_if_not_initialized("trainable(); provide declaration values and call init_state() first")
+        if self._sealed:
+            raise RuntimeError(
+                "Trainable registration is frozen by a gradient engine; rebuild the training setup after reset()."
+            )
         if not view.rows:
             raise ValueError("trainable() requires a non-empty View.")
         owners = tuple(dict.fromkeys((row.mechanism_type, row.name) for row in view.rows))
@@ -105,11 +111,16 @@ class TrainableManager(brainstate.nn.Module):
         names_before = dict(self._root_names_by_id)
         bindings_before = len(self._binding_list)
         owned_before = set(self._owned_targets)
+        axes_before = dict(self._target_axes)
+        states_before = [
+            (state, state.value, getattr(state, "axis", None)) for state in brainstate.graph.states(cell).values()
+        ]
         try:
             for target_field, source in fields.items():
                 self._register_one(view, target_field, source)
             if hasattr(view, "_validate_bindings"):
                 view._validate_bindings(self._binding_list)
+            self.materialize()
         except Exception:
             self.roots.clear()
             self.roots.update(roots_before)
@@ -118,7 +129,40 @@ class TrainableManager(brainstate.nn.Module):
             del self._binding_list[bindings_before:]
             self._owned_targets.clear()
             self._owned_targets.update(owned_before)
+            self._target_axes = axes_before
+            for state, value, axis in states_before:
+                state.value = value
+                if axis is not None:
+                    state.axis = axis
             raise
+        self._generation += 1
+        cell._run_loop_cache.clear()
+
+    def clear(self) -> None:
+        """Detach all training registrations when the Cell is deinitialized."""
+        self.roots.clear()
+        self.roots = {}
+        for state, value in self._declaration_states.values():
+            state.value = value
+        self._declaration_states.clear()
+        self._binding_list.clear()
+        self._owned_targets.clear()
+        self._root_names_by_id.clear()
+        self._target_axes.clear()
+        self._sealed = False
+        self._generation += 1
+
+    def seal(self):
+        """Freeze registration and return the runtime/registry identity."""
+        cell = self._cell()
+        cell._raise_if_not_initialized("build a gradient engine")
+        self._sealed = True
+        return (cell._runtime_generation, self._generation)
+
+    def check_token(self, token) -> None:
+        cell = self._cell()
+        if not cell._initialized or token != (cell._runtime_generation, self._generation):
+            raise RuntimeError("Gradient engine is stale after reset(); initialize, register and build a new engine.")
 
     def materialize(self) -> None:
         """Evaluate every binding and atomically update runtime physical states."""
@@ -154,6 +198,10 @@ class TrainableManager(brainstate.nn.Module):
                         )
                     pending[key] = (state, state.dense_value(), required_axis)
                 state, full, pending_axis = pending[key]
+                if row.category == "ion" and binding.target_field.endswith("_initializer"):
+                    node = runtime.get_runtime_node(layout.id)
+                    mask = node._runtime_ion_initial_masks[binding.target_field]
+                    point_commits.append((mask, (row.population_index, row.cv_id), True))
                 # Equal initial values do not imply shared trainable ownership.
                 if layout.id not in selection_axes:
                     selected = np.zeros(state.full_shape, dtype=bool)
@@ -187,15 +235,15 @@ class TrainableManager(brainstate.nn.Module):
             self._target_axes[key] = axis
         for state, value in point_pending.values():
             state.value = value
+        if point_pending and hasattr(cell, "_refresh_geometry_runtime") and any(
+            binding.target_owner == "geometry" for binding in self._binding_list
+        ):
+            cell._refresh_geometry_runtime()
         if commits:
             from braincell._compute.bindings import _sync_runtime_node_param
 
             for (layout_id, field), _state, _axis, _value in commits:
                 _sync_runtime_node_param(runtime, layout_id=layout_id, var_name=field)
-
-    def runtime_reset(self) -> None:
-        """Forget runtime layout identities while retaining roots and bindings."""
-        self._target_axes.clear()
 
     def _register_one(self, view, target_field: str, source: ParameterSource) -> None:
         if not isinstance(target_field, str) or not target_field:

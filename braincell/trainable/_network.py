@@ -90,3 +90,13 @@ class NetworkTrainables:
         for _, cell in self._cells():
             if cell.trainables.bindings():
                 cell.trainables.materialize()
+
+    def seal(self):
+        return tuple((name, cell.trainables.seal()) for name, cell in self._cells())
+
+    def check_token(self, token):
+        cells = self._cells()
+        if tuple(name for name, _ in cells) != tuple(name for name, _ in token):
+            raise RuntimeError("Gradient engine is stale; Network population membership changed.")
+        for (_, cell), (_, stamp) in zip(cells, token):
+            cell.trainables.check_token(stamp)

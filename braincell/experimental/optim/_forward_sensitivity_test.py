@@ -49,8 +49,9 @@ def _leak_cell():
             E=-54.3 * u.mV,
         ),
     )
-    cell.channels["leak"].trainable(g_max=braincell.trainable.scale(group_by="all", name="leak.factor"))
     cell.init_state()
+    cell.channels["leak"].trainable(g_max=braincell.trainable.scale(group_by="all", name="leak.factor"))
+    cell.reset_state()
     return cell
 
 
@@ -81,9 +82,10 @@ def _hh_cell():
             E=-54.3 * u.mV,
         ),
     )
+    cell.init_state()
     cell.channels["na"].trainable(g_max=braincell.trainable.scale(group_by="all", name="na.factor"))
     cell.channels["k"].trainable(g_max=braincell.trainable.scale(group_by="all", name="k.factor"))
-    cell.init_state()
+    cell.reset_state()
     return cell
 
 
@@ -125,15 +127,15 @@ class ForwardSensitivityCoreTest(unittest.TestCase):
             step_data = (targets, jnp.ones((8,), dtype=jnp.float64))
 
             forward = forward_sensitivity_rollout(step, initial_values, initial_tangents, step_data)
-            reverse_state_gradient = jax.grad(lambda values: bptt_reference_loss(step, values, step_data))(
-                initial_values
-            )
+            reverse_state_gradient = jax.grad(
+                lambda values: bptt_reference_loss(step, values, step_data), allow_int=True
+            )(initial_values)
             reverse = select_parameter_derivatives(step, reverse_state_gradient)["leak.factor"]
 
             def reverse_prefix(loss_weights):
-                derivative = jax.grad(lambda values: bptt_reference_loss(step, values, (targets, loss_weights)))(
-                    initial_values
-                )
+                derivative = jax.grad(
+                    lambda values: bptt_reference_loss(step, values, (targets, loss_weights)), allow_int=True
+                )(initial_values)
                 return select_parameter_derivatives(step, derivative)["leak.factor"]
 
             reverse_prefixes = jax.vmap(reverse_prefix)(jnp.tril(jnp.ones((8, 8), dtype=jnp.float64)))
@@ -176,7 +178,9 @@ class ForwardSensitivityCoreTest(unittest.TestCase):
             targets = jnp.full((4,), target)
 
             forward = forward_sensitivity_rollout(step, initial_values, initial_tangents, targets)
-            reverse_state_gradient = jax.grad(lambda values: bptt_reference_loss(step, values, targets))(initial_values)
+            reverse_state_gradient = jax.grad(
+                lambda values: bptt_reference_loss(step, values, targets), allow_int=True
+            )(initial_values)
             selected = select_parameter_derivatives(step, reverse_state_gradient)
             reverse = jnp.stack([selected[name] for name in step.parameter_names])
 
@@ -200,8 +204,9 @@ class ForwardSensitivityCoreTest(unittest.TestCase):
                     E=-54.3 * u.mV,
                 ),
             )
-            cell.channels["na"].trainable(V_sh=braincell.trainable.scale(group_by="all", name="na.vsh.factor"))
             cell.init_state()
+            cell.channels["na"].trainable(V_sh=braincell.trainable.scale(group_by="all", name="na.vsh.factor"))
+            cell.reset_state()
             parameters = cell.trainables.parameters().states()
 
             def reset_and_zero(_):
@@ -223,7 +228,8 @@ class ForwardSensitivityCoreTest(unittest.TestCase):
                     values,
                     None,
                     targets,
-                )
+                ),
+                allow_int=True,
             )(initializer_values)
             reverse = select_parameter_derivatives(initializer, reverse_initializer_gradient)["na.vsh.factor"]
 
@@ -262,8 +268,9 @@ class ForwardSensitivityCoreTest(unittest.TestCase):
                     amplitudes=0.1 * u.nA,
                 ),
             )
-            cell.channels["leak"].trainable(g_max=braincell.trainable.scale(group_by="all", name="leak.factor"))
             cell.init_state()
+            cell.channels["leak"].trainable(g_max=braincell.trainable.scale(group_by="all", name="leak.factor"))
+            cell.reset_state()
             target = jnp.asarray(-60.0, dtype=jnp.float64)
 
             def local_loss(data):
@@ -287,9 +294,9 @@ class ForwardSensitivityCoreTest(unittest.TestCase):
                 jnp.full((6,), target),
             )
             forward = forward_sensitivity_rollout(step, initial_values, initial_tangents, step_data)
-            reverse_state_gradient = jax.grad(lambda values: bptt_reference_loss(step, values, step_data))(
-                initial_values
-            )
+            reverse_state_gradient = jax.grad(
+                lambda values: bptt_reference_loss(step, values, step_data), allow_int=True
+            )(initial_values)
             reverse = select_parameter_derivatives(step, reverse_state_gradient)["leak.factor"]
 
             clamp_delays = sorted(
@@ -325,10 +332,11 @@ class ForwardSensitivityCoreTest(unittest.TestCase):
                     E=-54.3 * u.mV,
                 ),
             )
+            vector_cell.init_state()
             vector_cell.channels["leak"].trainable(
                 g_max=braincell.trainable.scale(group_by="population", name="leak.population.factor")
             )
-            vector_cell.init_state()
+            vector_cell.reset_state()
             vector_step = _functional_voltage_loss(vector_cell, example_target=jnp.asarray(-60.0))
             with self.assertRaisesRegex(ValueError, "not scalar"):
                 seed_scalar_parameter_directions(vector_step, vector_step.state_values())

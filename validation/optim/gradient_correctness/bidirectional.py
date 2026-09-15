@@ -58,7 +58,7 @@ def _scale(group, name, shared=None):
     return braincell.trainable.scale(group_by=group, name=name, transform=brainstate.nn.TanhT(0.5, 1.5))
 
 
-def _population(size, *, label, grouped, shared, detached):
+def _population(size, *, label, detached):
     soma = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
     cell = braincell.Cell(
         braincell.Morphology.from_root(soma, name="soma"), pop_size=(size,), V_init=-65.0 * u.mV, V_th=-20.0 * u.mV
@@ -76,8 +76,6 @@ def _population(size, *, label, grouped, shared, detached):
         braincell.mech.Channel("Na_HH1952", name="na"),
         braincell.mech.Channel("K_HH1952", name="k"),
     )
-    for member in range(size):
-        cell[member].channels["na"].set(g_max=(108.0 + 4.0 * member + (3.0 if label == "B" else 0.0)) * u.mS / u.cm**2)
     offset = 0.25 if label == "A" else 2.25
     for pulse in (0.0, 10.0):
         cell.place(
@@ -90,15 +88,21 @@ def _population(size, *, label, grouped, shared, detached):
     kinetics = {"tau": 2.0 * u.ms} if label == "A" else {"tau1": 0.2 * u.ms, "tau2": 3.0 * u.ms}
     reversal = 0.0 * u.mV if label == "A" else -5.0 * u.mV
     cell.place(RootLocation(0.5), braincell.mech.Synapse(kind, name="syn", e=reversal, **kinetics))
+    return cell, _ProbeSource(cell, detached=detached)
+
+
+def _register_population(cell, source, *, label, grouped, shared):
+    for member in range(cell.pop_size[0]):
+        cell[member].channels["na"].set(g_max=(108.0 + 4.0 * member + (3.0 if label == "B" else 0.0)) * u.mS / u.cm**2)
+    kinetics = ("tau",) if label == "A" else ("tau1", "tau2")
+    reversal = 0.0 * u.mV if label == "A" else -5.0 * u.mV
     group = "all" if grouped else "population"
     cell.channels["na"].trainable(g_max=_scale(group, "gmax", shared), V_sh=_shift(-45.0 * u.mV, group, "shift"))
     cell.ions["sodium"].trainable(E=_scale(group, "ion"))
     cell.synapses["syn"].trainable(
         **{key: _scale(group, key) for key in kinetics}, e=_shift(reversal, group, "reversal")
     )
-    source = _ProbeSource(cell, detached=detached)
     source.trainable(threshold=_shift(-20.0 * u.mV, group, "threshold"))
-    return cell, source
 
 
 @dataclass
@@ -157,7 +161,7 @@ def build(*, grouped=False, delay="heterogeneous", backend="scatter", shared=Fal
     net = braincell.Network("bidirectional")
     for label, size in (("A", 2), ("B", 3)):
         cells[label], sources[label] = _population(
-            size, label=label, grouped=grouped, shared=shared_root, detached=detached
+            size, label=label, detached=detached
         )
         net.add_population(label, cells[label])
     delay_values = {
@@ -171,15 +175,20 @@ def build(*, grouped=False, delay="heterogeneous", backend="scatter", shared=Fal
         pre_ids = np.repeat(np.arange(n_pre), n_post)
         post_ids = np.tile(np.arange(n_post), n_pre)
         name = f"{pre}_to_{post}"
-        connection = net.connect(
+        net.connect(
             name,
             source=sources[pre][pre_ids],
             synapse=cells[post].synapses["syn"][post_ids],
             weight=np.linspace(0.0003, 0.0005, 6) * u.uS,
             delay=delay_values[delay] * u.ms,
         )
-        connection.trainable(weight=_scale("all" if grouped else "row", "weight"))
-        connections[name] = connection
+    net.init_state()
+    for label, cell in cells.items():
+        _register_population(cell, sources[label], label=label, grouped=grouped, shared=shared_root)
+    for pre, post in (("A", "B"), ("B", "A")):
+        name = f"{pre}_to_{post}"
+        connections[name] = cells[post].connections[name]
+        connections[name].trainable(weight=_scale("all" if grouped else "row", "weight"))
     net.prepare_run(dt=DT, event_backend=backend)
     nodes = {
         label: cell.runtime.get_runtime_node(

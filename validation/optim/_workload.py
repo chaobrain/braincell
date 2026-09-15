@@ -283,12 +283,13 @@ def build_cell(
             amplitudes=current_amplitudes(config.batch_size),
         ),
     )
+    cell.init_state()
     if trainable:
         for name in selected_trainables:
             cell.channels[name].trainable(
                 g_max=braincell.trainable.scale(group_by=trainable_group_by, name=f"{name}.scale")
             )
-    cell.init_state()
+    cell.reset_state()
     if cell.n_cv != config.n_cv:
         raise RuntimeError(f"Requested {config.n_cv} CVs but built {cell.n_cv}.")
     return cell

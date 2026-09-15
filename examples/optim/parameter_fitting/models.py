@@ -158,6 +158,7 @@ class ModelDefinition:
             braincell.mech.Channel("Na_HH1952", name="na", g_max=target[1] * CONDUCTANCE_UNIT),
             braincell.mech.Channel("K_HH1952", name="k", g_max=target[2] * CONDUCTANCE_UNIT),
         )
+        cell.init_state()
         if trainable:
             for index, channel_name in enumerate(("leak", "na", "k")):
                 transform = brainstate.nn.SigmoidT(
@@ -171,7 +172,7 @@ class ModelDefinition:
                         name=self.parameter_space.names[index],
                     )
                 )
-        cell.init_state()
+        cell.reset_state()
         if cell.n_cv != 1:
             raise RuntimeError(f"Expected one CV, got {cell.n_cv}.")
         target_point = int(cell.node_tree.cv_to_mid_node_id[0])

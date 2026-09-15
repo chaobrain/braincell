@@ -28,6 +28,7 @@ import numpy as np
 from braincell._misc import require_name as _require_name, scalar_decimal
 from braincell._parameter_schema import RuntimeParameterState
 from braincell._multi_compartment.synapses import SynapseView, _cell_label
+from braincell._multi_compartment.lifecycle import DiscreteView
 from .pairing import (
     PairingContext,
     PairingSpec,
@@ -248,7 +249,7 @@ class _ConnectionStore:
             )
 
 
-class ConnectionView:
+class ConnectionView(DiscreteView):
     """View an ordered selection of concrete event-routing rows."""
 
     __slots__ = ("_store", "_ids")
@@ -256,6 +257,7 @@ class ConnectionView:
     def __init__(self, store: _ConnectionStore, ids=None) -> None:
         self._store = store
         self._ids = None if ids is None else np.asarray(ids, dtype=np.int64).reshape(-1)
+        self._bind_view(store.cell)
 
     @property
     def cell(self):
@@ -374,9 +376,11 @@ class ConnectionView:
         return np.array(np.asarray(getattr(self._store, name))[self._rows], copy=True)
 
     def __len__(self) -> int:
+        self._check_view()
         return int(self._active_ids.size)
 
     def __getitem__(self, selector) -> "ConnectionView":
+        self._check_view()
         if isinstance(selector, str):
             return self.by_connect_name(selector)
         selected = self._active_ids[selector]
@@ -440,8 +444,10 @@ class ConnectionView:
         return self
 
     def set(self, *, weight=_UNSET, delay=_UNSET) -> "ConnectionView":
-        """Update selected routing rows before Cell initialization."""
-        self.cell._raise_if_initialized("modify Connection")
+        """Update existing runtime weights without modifying routing or delay."""
+        self.cell._raise_if_not_initialized("ConnectionView.set(); configure connect() before init_state()")
+        if delay is not _UNSET:
+            raise RuntimeError("Connection delay is structural; configure it in connect() before init_state().")
         if weight is not _UNSET:
             from braincell.trainable._targets import require_unbound
 
@@ -453,9 +459,6 @@ class ConnectionView:
                 raise TypeError("Connection weight cannot change the target event-input payload kind.")
             if normalized is not None:
                 self._store.set_weight(self._active_ids, normalized)
-        if delay is not _UNSET:
-            normalized = _normalize_delay(delay, count=len(self))
-            self._store.delay = _set_quantity_or_array(self._store.delay, self._rows, normalized)
         return self
 
     def remove(self) -> None:

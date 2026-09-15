@@ -31,6 +31,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._compute.layouts import _stack_synapse_values
+from braincell._multi_compartment.lifecycle import DiscreteView
 from braincell.mech import Synapse, get_registry
 
 __all__ = ["SynapseView"]
@@ -140,14 +141,7 @@ class _SynapseStore:
                 for store_row in rows.tolist():
                     logical_id = int(self.id[store_row])
                     mechanism = self.mechanism[store_row]
-                    key = (
-                        int(self.placement_id[store_row]),
-                        int(self.population_index[store_row]),
-                        str(parameter),
-                    )
-                    if key in self.cell._synapse_parameter_overrides:
-                        value = self.cell._synapse_parameter_overrides[key]
-                    elif parameter in mechanism.params:
+                    if parameter in mechanism.params:
                         value = _select_declared_parameter_value(
                             mechanism.params[parameter],
                             logical_id=logical_id,
@@ -293,7 +287,7 @@ class _SynapseStore:
         return np.asarray([self.row_index(int(item)) for item in np.asarray(logical_ids).tolist()], dtype=np.int64)
 
 
-class SynapseView:
+class SynapseView(DiscreteView):
     """View a stable ordered selection of logical synapse instances.
 
     A view owns no parameter or state arrays. Before initialization it gathers
@@ -315,6 +309,7 @@ class SynapseView:
         if logical_ids is None:
             logical_ids = cell._get_synapse_store().id
         self._logical_ids = np.asarray(logical_ids, dtype=np.int64).reshape(-1)
+        self._bind_view(cell)
 
     @property
     def cell(self):
@@ -396,9 +391,11 @@ class SynapseView:
         return np.asarray(getattr(self._store, name))[self._store.row_indices(self._logical_ids)]
 
     def __len__(self) -> int:
+        self._check_view()
         return int(self._logical_ids.size)
 
     def __getitem__(self, selector: object) -> "SynapseView":
+        self._check_view()
         if isinstance(selector, Synapse):
             selected = [
                 logical_id
@@ -543,7 +540,7 @@ class SynapseView:
         return get_registry().get("synapse", self._require_homogeneous_type()).parameter_info()
 
     def set(self, **parameters: object) -> "SynapseView":
-        """Set model parameters before or after runtime materialization.
+        """Set existing model parameters after runtime initialization.
 
         Parameters
         ----------
@@ -562,6 +559,7 @@ class SynapseView:
         ValueError
             If a value has an incompatible shape or unit.
         """
+        self._cell._raise_if_not_initialized("SynapseView.set(); use place() declarations before init_state()")
         synapse_type = self._require_homogeneous_type()
         from braincell.trainable._targets import require_unbound
 
@@ -580,20 +578,6 @@ class SynapseView:
             normalized_updates[parameter] = _normalize_selected_value(
                 value, template=self.get(parameter), count=len(self)
             )
-
-        if not self._cell._initialized:
-            self._store.set_parameters(self._logical_ids, normalized_updates)
-            for parameter, normalized in normalized_updates.items():
-                for logical_id, item in zip(self._logical_ids.tolist(), _split_values(normalized)):
-                    index = self._store.row_index(int(logical_id))
-                    self._cell._synapse_parameter_overrides[
-                        (
-                            int(self._store.placement_id[index]),
-                            int(self._store.population_index[index]),
-                            str(parameter),
-                        )
-                    ] = item
-            return self
 
         layout_id = self._store.layout_id(synapse_type)
         node = self._cell.runtime.get_runtime_node(layout_id)

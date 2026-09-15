@@ -24,6 +24,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._compute.layouts import CLAMP_KINDS, _evaluate_clamp_layout
+from braincell._multi_compartment.lifecycle import DiscreteView
 from braincell.mech import CurrentClamp, FunctionClamp, SineClamp
 
 __all__ = ["ClampView"]
@@ -133,7 +134,7 @@ class _ClampStore:
         return u.Quantity(point_current.reshape(pop_size + (int(n_point),)), u.nA)
 
 
-class ClampView:
+class ClampView(DiscreteView):
     """View an ordered selection of logical current-clamp instances."""
 
     __slots__ = ("_cell", "_logical_ids")
@@ -143,6 +144,7 @@ class ClampView:
         if logical_ids is None:
             logical_ids = cell._get_clamp_store().id
         self._logical_ids = np.asarray(logical_ids, dtype=np.int64).reshape(-1)
+        self._bind_view(cell)
 
     @property
     def _store(self) -> _ClampStore:
@@ -201,9 +203,11 @@ class ClampView:
         return tuple(self._store.declaration[index] for index in rows.tolist())
 
     def __len__(self) -> int:
+        self._check_view()
         return int(self._logical_ids.size)
 
     def __getitem__(self, selector) -> "ClampView":
+        self._check_view()
         if isinstance(selector, _CLAMP_TYPES):
             selected = [
                 logical_id

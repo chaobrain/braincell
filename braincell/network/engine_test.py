@@ -39,9 +39,10 @@ class NetworkRuntimeTest(unittest.TestCase):
     def test_cell_with_trainable_bindings_is_aggregated_without_copying(self) -> None:
         cell = make_threshold_cell()
         cell.paint(AllRegion(), braincell.mech.Channel("IL", name="leak"))
-        cell.channels["leak"].trainable(g_max=braincell.trainable.scale(name="factor"))
         network = Network("network")
         network.add_population("cell", cell)
+        network.init_state()
+        cell.channels["leak"].trainable(g_max=braincell.trainable.scale(name="factor"))
         self.assertIs(
             network.trainables.parameters().states()["cell.factor"], cell.trainables.parameters().states()["factor"]
         )
@@ -60,6 +61,7 @@ class NetworkRuntimeTest(unittest.TestCase):
 
     def _check_prepared_network_gradients(self, backend):
         network = make_runtime_network(delay=0.2 * u.ms)
+        network.init_state()
         post = network.populations["post"].cell
         pre = network.populations["pre"].cell
         post.connections["drive"].trainable(weight=braincell.trainable.scale(name="w"))

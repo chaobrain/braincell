@@ -242,6 +242,41 @@ materialization 必须位于 differentiated trace 内。若参数影响 reset �
 `reset_state()` 不改变 roots 或 frozen baseline。完整 `Cell.reset()` 清除 runtime；重新
 初始化必须从仍有效的声明和 manager metadata 重建 binding target，旧 runtime 引用不可复用。
 
+### 实验梯度引擎的自动物化调度
+
+`braincell.experimental.optim` 的 `RolloutGradientEngine` 和 `TrajectoryGradientEngine`
+在 `prepare()` 时检查映射与单步的 State 读写关系。普通 density channel 的参数由
+`RuntimeParameterState` 支撑，且映射只读取已注册 roots、没有 State 写副作用，单步
+也不修改 roots 或这些物理参数时，通用物化移到 rollout 入口。`parameter()`、`scale()`
+及满足这些条件的 `parameterized()` 都适用；不根据参数当前值是否相等判断共享关系。
+嵌套 stateful channel 调用可能将原始参数叶子原样写回；检查允许同一 tracer 的原样
+转发，不把数值相等的新计算结果视为不变。
+
+直接参数若使用 `IdentityT`，完整覆盖一个 layout，坐标顺序、单位、dtype 和紧凑存储轴
+匹配，则单步直接转发 optimizer root 的值，只做必要的 reshape。此路径不经过通用
+materialize、gather 或 scatter。其余静态映射使用入口生成的物理参数。Runtime State
+与 optimizer State 仍保留各自对象身份；这里优化的是函数化计算，不是替换公开存储对象。
+
+入口先物化再 reset，并在 reset 后刷新物理参数，以保持旧路径首步前刷新语义。所有
+入口运算仍在求导图内；BPTT 沿参数映射反传，RTRL 将 reset 后物理参数与初始动态状态
+对 roots 的敏感度带入扫描。每次调用读取最新 roots，入口结果不跨 optimizer 更新缓存。
+通用物化不再出现在满足条件的时间循环中，但入口可能因 reset 协议多次物化。
+
+映射读取动态 State、单步改写参数、存在非 State 支撑的合并布局、ion 刷新、point target
+或自定义参数更新 hook 时，整个 manager 保留逐步物化。该检查不分析任意 Python
+副作用；回调仍须满足 JAX tracing 对纯计算的要求。`engine.materialization_mode` 在准备前
+为 `None`，准备后为 `"rollout"` 或 `"step"`，两种梯度方法使用同一判定。
+
+RTRL 的公开 `gradients` 与 BPTT 一样重建 optimizer root 的 PyTree，包括直接物理参数的
+Quantity metadata。数组叶子的导数是对 optimizer 数值坐标求导；保留 metadata 是 JAX
+反向模式的树结构约定，不表示自动换算为 loss/电导等物理导数单位。诊断中的扁平坐标矩阵
+继续使用数值数组。
+
+[全 HH scale 复测](../../../../benchmarks/performance/optim_gradient_scaling/results/hh-crossover-optimized-h200-20260912.md)
+覆盖 C=1/21/41 的三条参数切片，记录入口调度与批量物化的累计编译、稳态及内存变化，
+并复用保存的输出验证新旧数值一致性。该性能证据限于报告中的 workload；直接物理参数
+读取路径仍只有正确性测试，尚未由该测量量化。
+
 ## Ownership and Initialization
 
 Synapse constructors declare their physical parameters. `parameter_info()` derives
@@ -318,6 +353,41 @@ with BPTT use the identical surrogate and parameters fixed throughout a rollout.
 The sensitivity carry has fixed shape as duration grows, but cost still scales
 with state size times parameter count. Per-time-step optimizer updates and a new
 online-learning algorithm are outside this change.
+
+The current speed screening keeps full-state RTRL as the execution path:
+compact RTRL reduces logical carry but is slower at C=1, 5, and 21 in the
+1600-step HH baseline. The measured comparison is recorded in the
+[RTRL speed baseline](../../../../benchmarks/performance/optim_gradient_scaling/results/rtrl-speed-baseline-20260912.md);
+compact remains an experimental memory-oriented path until its active
+transition avoids full tangent embedding.
+
+The RTRL engineering screening also tested direction-axis layout, dense
+tangent packing, local-gradient fusion, and an active-state transition. None
+met the two-point 3% steady-time criterion; full RTRL remains the speed path
+and compact RTRL remains the memory path. A short Nsight trace showed the
+visible GPU kernel hotspot in time-history dynamic-slice output, while tangent
+gather/scatter kernels were minor, so no specialized tangent kernel was added.
+
+The experimental optimizer exposes `inspect_state_sensitivity()` to report the
+logical bytes and dtypes of every traced state tangent. This inspection separates
+optimizer roots, runtime materializations, dynamic states, and discrete
+`float0` leaves; it does not claim that every traced leaf is safe to remove.
+Compact RTRL must preserve every state that the next transition reads, while
+static DHS topology and recursive-doubling indices are cached metadata rather
+than sensitivity carry.
+
+DHS retains optional explicit custom-JVP rules in `comp_triang_raw()` and
+`comp_backsub_raw()`. Their reference kernels propagate a leading
+parameter-direction axis while reusing the primal tree schedule and index
+tables, including parameter-dependent diagonal and off-diagonal coefficients.
+They are validated against `jax.jvp` for the array kernels and complete
+short HH rollouts. The production primal solver and state update order are
+unchanged. `BRAINCELL_DHS_CUSTOM_JVP=0` selects the generic AD rule for
+controlled comparisons; it is a diagnostic switch and does not change the
+primal solver. The environment variable defaults to `0`, so ordinary library
+use and benchmarks use generic AD. Fixed C=1/5/21 profiling found generic DHS
+AD faster for full RTRL at C=5 and C=21; explicit JVP remains available for
+correctness diagnostics and future structured-kernel work.
 
 ## 与 Jaxley 的对比
 

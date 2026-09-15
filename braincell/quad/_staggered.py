@@ -687,7 +687,7 @@ def _check_comp_triang(diags, solves, lowers, uppers, edges):
         raise ValueError(f"edges must have shape (_, 2), got {edges.shape}")
 
 
-def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
+def _comp_triang_raw_impl(diags, solves, lowers, uppers, edges, level_offsets):
     """DHS forward elimination on quantity-aware JAX inputs."""
     _check_comp_triang(diags, solves, lowers, uppers, edges)
     if _profile_dhs_levels_enabled():
@@ -696,6 +696,101 @@ def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
         level_edges = edges[level_offsets[i] : level_offsets[i + 1]]
         diags, solves = _comp_triang_level(diags, solves, lowers, uppers, level_edges)
     return diags, solves
+
+
+@functools.partial(jax.custom_jvp, nondiff_argnums=(4, 5))
+def comp_triang_raw(diags, solves, lowers, uppers, edges, level_offsets):
+    """DHS elimination with an explicit forward JVP rule."""
+    return _comp_triang_raw_impl(diags, solves, lowers, uppers, edges, level_offsets)
+
+
+@comp_triang_raw.defjvp
+def _comp_triang_raw_jvp(*jvp_args):
+    # ``nondiff_argnums`` places static topology arguments before the usual
+    # ``(primals, tangents)`` pair in the custom-JVP callback.
+    if len(jvp_args) == 4:
+        _edges, _level_offsets, primals, tangents = jvp_args
+    else:
+        primals, tangents = jvp_args
+        _edges, _level_offsets = primals[4:6]
+    if len(primals) == 4:
+        primals = (*primals, _edges, _level_offsets)
+    diags, solves, lowers, uppers, edges, level_offsets = primals
+    d_diags, d_solves, d_lowers, d_uppers = tangents[:4]
+    primal_out = _comp_triang_raw_impl(diags, solves, lowers, uppers, edges, level_offsets)
+
+    if not _dhs_custom_jvp_enabled():
+        _, tangent_out = jax.jvp(
+            lambda d, s, l, u: _comp_triang_raw_impl(d, s, l, u, edges, level_offsets),
+            (diags, solves, lowers, uppers),
+            (d_diags, d_solves, d_lowers, d_uppers),
+        )
+        return primal_out, tangent_out
+
+    def direction_axis(tangent, primal):
+        if getattr(tangent, "dtype", None) == jax.dtypes.float0:
+            tangent = jnp.zeros_like(primal)
+        if tangent.ndim == primal.ndim:
+            tangent = tangent[None]
+        return tangent
+
+    tangent_out = comp_triang_jvp(
+        diags, solves, lowers, uppers, edges, level_offsets,
+        direction_axis(d_diags, diags), direction_axis(d_solves, solves),
+        direction_axis(d_lowers, lowers), direction_axis(d_uppers, uppers),
+    )
+    return primal_out, (tangent_out[2][0], tangent_out[3][0])
+
+
+def comp_triang_jvp(
+    diags, solves, lowers, uppers, edges, level_offsets,
+    d_diags, d_solves, d_lowers, d_uppers,
+):
+    """Apply the exact forward JVP of :func:`comp_triang_raw`.
+
+    Primal arrays have the normal solver batch axis. Tangent arrays add a
+    leading direction axis. Static topology is shared by all directions.
+    This reference kernel is kept separate from the production solver until
+    its integration is validated against ``jax.jvp`` on complete DHS steps.
+    """
+    diags, solves, d_diags, d_solves = _check_and_run_triang_jvp(
+        diags, solves, lowers, uppers, edges, level_offsets,
+        d_diags, d_solves, d_lowers, d_uppers,
+    )
+    return diags, solves, d_diags, d_solves
+
+
+def _check_and_run_triang_jvp(
+    diags, solves, lowers, uppers, edges, level_offsets,
+    d_diags, d_solves, d_lowers, d_uppers,
+):
+    _check_comp_triang(diags, solves, lowers, uppers, edges)
+    for i in range(level_offsets.shape[0] - 1):
+        level_edges = edges[level_offsets[i] : level_offsets[i + 1]]
+        children = level_edges[:, 0]
+        parent = level_edges[:, 1]
+        child_diag = diags[:, children]
+        child_solve = solves[:, children]
+        child_d_diag = d_diags[:, :, children]
+        child_d_solve = d_solves[:, :, children]
+        lower_val = lowers[children]
+        upper_val = uppers[children]
+        d_lower_val = d_lowers[:, children]
+        d_upper_val = d_uppers[:, children]
+        if d_lower_val.ndim == 2 and child_diag.ndim == 2:
+            d_lower_val = d_lower_val[:, None, :]
+            d_upper_val = d_upper_val[:, None, :]
+        multiplier = upper_val / child_diag
+        d_multiplier = d_upper_val / child_diag - upper_val * child_d_diag / child_diag**2
+        diags = diags.at[:, parent].add(-lower_val * multiplier)
+        solves = solves.at[:, parent].add(-child_solve * multiplier)
+        d_diags = d_diags.at[:, :, parent].add(
+            -d_lower_val * multiplier - lower_val * d_multiplier
+        )
+        d_solves = d_solves.at[:, :, parent].add(
+            -child_d_solve * multiplier - child_solve * d_multiplier
+        )
+    return diags, solves, d_diags, d_solves
 
 
 def _profile_dhs_levels_enabled() -> bool:
@@ -779,7 +874,7 @@ def _build_backsub_indices(parent_lookup: np.ndarray, *, n_nodes: int) -> np.nda
     return np.asarray(indices, dtype=np.int32)
 
 
-def comp_backsub_raw(
+def _comp_backsub_raw_impl(
     diags,
     solves,
     lowers,
@@ -800,6 +895,74 @@ def comp_backsub_raw(
     return solve_effect
 
 
+@functools.partial(jax.custom_jvp, nondiff_argnums=(3,))
+def comp_backsub_raw(diags, solves, lowers, backsub_indices):
+    """Recursive back substitution with an explicit forward JVP rule."""
+    return _comp_backsub_raw_impl(diags, solves, lowers, backsub_indices)
+
+
+@comp_backsub_raw.defjvp
+def _comp_backsub_raw_jvp(*jvp_args):
+    if len(jvp_args) == 3:
+        _backsub_indices, primals, tangents = jvp_args
+    else:
+        primals, tangents = jvp_args
+        _backsub_indices = primals[3]
+    if len(primals) == 3:
+        primals = (*primals, _backsub_indices)
+    diags, solves, lowers, backsub_indices = primals
+    d_diags, d_solves, d_lowers = tangents[:3]
+    primal_out = _comp_backsub_raw_impl(diags, solves, lowers, backsub_indices)
+
+    if not _dhs_custom_jvp_enabled():
+        _, tangent_out = jax.jvp(
+            lambda d, s, l: _comp_backsub_raw_impl(d, s, l, backsub_indices),
+            (diags, solves, lowers),
+            (d_diags, d_solves, d_lowers),
+        )
+        return primal_out, tangent_out
+
+    def direction_axis(tangent, primal):
+        if getattr(tangent, "dtype", None) == jax.dtypes.float0:
+            tangent = jnp.zeros_like(primal)
+        if tangent.ndim == primal.ndim:
+            tangent = tangent[None]
+        return tangent
+
+    tangent_out = comp_backsub_jvp(
+        diags, solves, lowers, backsub_indices,
+        direction_axis(d_diags, diags), direction_axis(d_solves, solves),
+        direction_axis(d_lowers, lowers),
+    )
+    return primal_out, tangent_out[1][0]
+
+
+def comp_backsub_jvp(diags, solves, lowers, backsub_indices, d_diags, d_solves, d_lowers):
+    """Apply the exact forward JVP of recursive-doubling back substitution."""
+    _check_comp_backsub(diags, solves, lowers, backsub_indices)
+    zero = 0.0 * u.UNITLESS if isinstance(lowers, u.Quantity) else 0.0
+    lowers = lowers.at[0].set(zero)
+    d_lowers = d_lowers.at[:, 0].set(0.0)
+    if d_lowers.ndim == 2 and diags.ndim == 2:
+        d_lowers = d_lowers[:, None, :]
+    lower_effect = -lowers / diags
+    solve_effect = solves / diags
+    d_lower_effect = -d_lowers / diags + lowers * d_diags / diags**2
+    d_solve_effect = d_solves / diags - solves * d_diags / diags**2
+
+    for i in range(backsub_indices.shape[0]):
+        k_step_parent = backsub_indices[i]
+        parent_lower = lower_effect[:, k_step_parent]
+        parent_solve = solve_effect[:, k_step_parent]
+        parent_d_lower = d_lower_effect[:, :, k_step_parent]
+        parent_d_solve = d_solve_effect[:, :, k_step_parent]
+        d_solve_effect = d_solve_effect + d_lower_effect * parent_solve + lower_effect * parent_d_solve
+        d_lower_effect = d_lower_effect * parent_lower + lower_effect * parent_d_lower
+        solve_effect = solve_effect + lower_effect * parent_solve
+        lower_effect = lower_effect * parent_lower
+    return solve_effect, d_solve_effect
+
+
 def comp_backsub_hines_raw(diags, solves, lowers, edges, level_offsets):
     """Hines root-to-leaf back substitution with linear total work."""
     _check_comp_triang(diags, solves, lowers, lowers, edges)
@@ -817,6 +980,11 @@ def _dhs_backsub_mode() -> str:
     if value not in {"recursive", "ordinary"}:
         raise ValueError(f"BRAINCELL_DHS_BACKSUB must be 'recursive' or 'ordinary', got {value!r}.")
     return value
+
+
+def _dhs_custom_jvp_enabled() -> bool:
+    """Return whether the experimental explicit DHS JVP is enabled."""
+    return os.environ.get("BRAINCELL_DHS_CUSTOM_JVP", "0") == "1"
 
 
 def _point_linear_and_const_term(target, point_V_n, *, point_capacitance, t):

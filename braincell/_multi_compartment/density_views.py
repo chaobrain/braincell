@@ -30,6 +30,7 @@ from braincell._compute.ions import _runtime_ion_species_key
 from braincell._compute.parameters import density_parameter_schema, density_parameter_value
 from braincell._misc import require_name as _require_name
 from braincell.mech import Density, get_registry
+from .lifecycle import DiscreteView
 
 __all__ = ["ChannelView", "IonView"]
 
@@ -46,7 +47,7 @@ class _DensityRow:
     mechanism: Density
 
 
-class _DensityView:
+class _DensityView(DiscreteView):
     """Base view aligned to logical owner/population/CV rows."""
 
     category = ""
@@ -55,6 +56,7 @@ class _DensityView:
     def __init__(self, cell, scope, rows=None) -> None:
         self._cell = cell
         self._rows = tuple(_density_rows(cell, scope, self.category) if rows is None else rows)
+        self._bind_view(cell)
 
     @property
     def cell(self):
@@ -93,9 +95,11 @@ class _DensityView:
         return tuple(dict.fromkeys(row.mechanism_type for row in self._rows))
 
     def __len__(self) -> int:
+        self._check_view()
         return len(self._rows)
 
     def __getitem__(self, selector):
+        self._check_view()
         if not isinstance(selector, str):
             raise TypeError(
                 f"{type(self).__name__} does not support numeric row indexing; "
@@ -132,6 +136,7 @@ class _DensityView:
 
     def set(self, **fields):
         """Set shape-preserving fields for the selected logical owner rows."""
+        self._cell._raise_if_not_initialized("View.set(); use paint() declarations before init_state()")
         self._require_one_owner("set fields")
         if not fields:
             return self
@@ -155,15 +160,6 @@ class _DensityView:
         return dict(density_parameter_schema(self._rows[0].mechanism))
 
     def _row_value(self, row: _DensityRow, field: str):
-        override_key = (
-            row.category,
-            row.name,
-            row.population_index,
-            row.cv_id,
-            field,
-        )
-        if not self._cell._initialized and override_key in self._cell._density_parameter_overrides:
-            return self._cell._density_parameter_overrides[override_key]
         if not self._cell._initialized:
             schema = density_parameter_schema(row.mechanism)
             if field not in row.mechanism.params and field not in schema:
@@ -200,9 +196,6 @@ class _DensityView:
         from braincell._compute.ions import _ion_runtime_attr_name
 
         params = dict(row.mechanism.params)
-        for (category, owner, population, cv, name), value in self._cell._density_parameter_overrides.items():
-            if (category, owner, population, cv) == (row.category, row.name, row.population_index, row.cv_id):
-                params[name] = value
         for name, value in params.items():
             if callable(value) and not isinstance(value, braintools.init.Initialization):
                 value = value(self._cell.cv_contexts[row.cv_id])
@@ -223,17 +216,6 @@ class _DensityView:
             field=field,
         ):
             raise RuntimeError(f"{row.category.title()} {row.name!r} field {field!r} is owned by a trainable binding.")
-        if not self._cell._initialized:
-            schema = density_parameter_schema(row.mechanism)
-            if field not in row.mechanism.params and field not in schema:
-                raise KeyError(f"{row.category.title()} {row.name!r} has no declared parameter {field!r}.")
-            spec = schema.get(field)
-            if spec is not None:
-                spec.validate(value, field)
-            self._cell._density_parameter_overrides[
-                (row.category, row.name, row.population_index, row.cv_id, field)
-            ] = value
-            return
 
         layout = _runtime_layout(self._cell, row)
         runtime = self._cell.runtime

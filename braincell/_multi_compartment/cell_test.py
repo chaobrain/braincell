@@ -259,11 +259,12 @@ class TestCellDeclaration(unittest.TestCase):
         cell.place(at("soma", 0.5), exp)
         cell[1].place(at("soma", 0.25), exp)
 
+        cell.init_state()
         view = cell[[1, 3]].synapses["exp"]
         view.set(tau=np.asarray([1.0, 2.0, 3.0]) * u.ms)
 
         self.assertEqual(view.population_index.tolist(), [1, 1, 3])
-        cell.init_state()
+        cell.reset_state()
         layouts = [item for item in cell.layouts if item.kind == "synapse:ExpSyn"]
         self.assertEqual(len(layouts), 1)
         tau = cell.get_state(layouts[0].id, "tau")
@@ -288,6 +289,7 @@ class TestCellDeclaration(unittest.TestCase):
             V_th=-20.0 * u.mV,
         )
 
+        cell.init_state()
         result = cell[[1, 3]].set(
             V_init=np.asarray([-60.0, -55.0]) * u.mV,
             V_th=np.asarray([-10.0, 0.0]) * u.mV,
@@ -296,7 +298,7 @@ class TestCellDeclaration(unittest.TestCase):
         self.assertIs(result.root, cell)
         np.testing.assert_allclose(result.V_init.to_decimal(u.mV)[:, 0], [-60.0, -55.0])
         np.testing.assert_allclose(result.V_th.to_decimal(u.mV)[:, 0], [-10.0, 0.0])
-        cell.init_state()
+        cell.reset_state()
         np.testing.assert_allclose(cell.V.value.to_decimal(u.mV)[:, 0], [-65.0, -60.0, -65.0, -55.0])
         np.testing.assert_allclose(cell.V_th.to_decimal(u.mV)[:, 0], [-20.0, -10.0, -20.0, 0.0])
         np.testing.assert_allclose(cell[[3, 0]].V.to_decimal(u.mV)[:, 0], [-55.0, -65.0])
@@ -304,15 +306,18 @@ class TestCellDeclaration(unittest.TestCase):
 
     def test_root_voltage_assignment_clears_selected_overrides(self):
         cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(3,), V_init=-65.0 * u.mV)
+        cell.init_state()
         cell[1].V_init = -55.0 * u.mV
+        cell.reset()
         cell.V_init = -70.0 * u.mV
 
         cell.init_state()
 
         np.testing.assert_allclose(cell.V.value.to_decimal(u.mV), -70.0)
 
-    def test_cell_view_voltage_overrides_validate_and_survive_reinitialization(self):
+    def test_cell_view_voltage_overrides_validate_and_clear_on_deinit(self):
         cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(3,), V_init=-65.0 * u.mV)
+        cell.init_state()
         view = cell[1]
         with self.assertRaisesRegex(TypeError, "voltage quantity"):
             view.set(V_init=-55.0)
@@ -326,12 +331,12 @@ class TestCellDeclaration(unittest.TestCase):
             view.set(resting_potential=-70.0 * u.mV)
 
         view.set(V_init=-55.0 * u.mV)
-        cell.init_state()
+        cell.reset_state()
         cell.reset_state()
         np.testing.assert_allclose(cell.V.value.to_decimal(u.mV)[:, 0], [-65.0, -55.0, -65.0])
         cell.reset()
         cell.init_state()
-        np.testing.assert_allclose(cell.V.value.to_decimal(u.mV)[:, 0], [-65.0, -55.0, -65.0])
+        np.testing.assert_allclose(cell.V.value.to_decimal(u.mV)[:, 0], [-65.0, -65.0, -65.0])
 
     def test_cell_view_accepts_per_cv_values_without_changing_shape(self):
         soma = Branch.from_lengths(
@@ -349,8 +354,9 @@ class TestCellDeclaration(unittest.TestCase):
         cell = Cell(morpho, cv_policy=CVPerBranch(), pop_size=(3,), V_init=-65.0 * u.mV)
         values = np.asarray([[-60.0, -61.0], [-50.0, -51.0]]) * u.mV
 
-        cell[[0, 2]].V_init = values
         cell.init_state()
+        cell[[0, 2]].V_init = values
+        cell.reset_state()
 
         self.assertEqual(cell.V.value.shape, (3, 2))
         np.testing.assert_allclose(cell.V.value.to_decimal(u.mV)[0], [-60.0, -61.0])
@@ -410,7 +416,7 @@ class TestCellDeclaration(unittest.TestCase):
             view.init_state()
         cell.init_state()
         with self.assertRaisesRegex(RuntimeError, "read-only"):
-            view.reset_state()
+            cell[0].reset_state()
 
     def test_unselected_place_retains_broadcast_semantics(self):
         cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(4,))
@@ -475,11 +481,12 @@ class TestCellDeclaration(unittest.TestCase):
         exp = mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
         cell.place(at("soma", 0.5), exp)
 
+        cell.init_state()
         cell.synapses[exp].set(
             tau=np.asarray([1.0, 2.0, 3.0]) * u.ms,
             e=np.asarray([-70.0, -60.0, -50.0]) * u.mV,
         )
-        cell.init_state()
+        cell.reset_state()
 
         synapse_layout = next(layout for layout in cell._runtime.layouts if layout.kind == "synapse:ExpSyn")
         tau = cell._runtime.state_buffers[(synapse_layout.id, "tau")]
@@ -494,9 +501,10 @@ class TestCellDeclaration(unittest.TestCase):
         locations = cell.cv_midpoints[np.asarray([[0, 0], [0, 0], [0, 0]])]
         cell.place(locations, exp)
 
+        cell.init_state()
         view = cell.synapses[exp]
         view.set(tau=np.arange(1.0, 7.0) * u.ms)
-        cell.init_state()
+        cell.reset_state()
 
         synapse_layout = next(layout for layout in cell._runtime.layouts if layout.kind == "synapse:ExpSyn")
         tau = cell._runtime.state_buffers[(synapse_layout.id, "tau")]
@@ -700,7 +708,7 @@ class TestCellLifecycle(unittest.TestCase):
         cell = _simple_cell()
         with brainstate.environ.context(precision=32):
             cell.init_state()
-            self.assertIsNone(cell.runtime.axial_operator_np)
+            self.assertIsNone(cell.runtime.axial_operator_source)
             self.assertIsNone(cell.runtime.axial_operator_cache)
 
             operator32 = cell._get_axial_operator()
@@ -708,7 +716,7 @@ class TestCellLifecycle(unittest.TestCase):
             self.assertEqual(operator32.dtype, jnp.dtype(jnp.float32))
             self.assertIsNotNone(cache32)
             self.assertEqual(cache32.operator.dtype, jnp.dtype(jnp.float32))
-            self.assertEqual(cell.runtime.axial_operator_np.dtype, np.float64)
+            self.assertEqual(cell.runtime.axial_operator_source.dtype, jnp.float32)
 
         with brainstate.environ.context(precision=64):
             operator64 = cell._get_axial_operator()
@@ -722,9 +730,11 @@ class TestCellLifecycle(unittest.TestCase):
 
         cell.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
 
-        self.assertIsNone(cell.runtime.axial_operator_np)
+        self.assertIsNone(cell.runtime.axial_operator_source)
         self.assertIsNone(cell.runtime.axial_operator_cache)
-        self.assertIsNotNone(cell.runtime.dhs_static_source_np)
+        # JIT-built numeric coefficients must not leak tracers into a host cache.
+        if cell.runtime.dhs_source is not None:
+            self.assertFalse(isinstance(cell.runtime.dhs_source.diag_ms_inv, jax.core.Tracer))
 
     def test_scalar_v_init_broadcasts_to_voltage_shape(self):
         cell = _simple_cell()

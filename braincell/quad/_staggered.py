@@ -19,8 +19,8 @@ Type responsibilities in this file:
 
 - ``u.Quantity`` is retained in the numerical hot path when the value carries
   physical meaning, such as membrane voltage or ``dt * conductance`` factors.
-- ``np.ndarray`` is used for static topology metadata and static float64 source
-  coefficients that are assembled once from the node tree.
+- ``np.ndarray`` is used for static topology metadata. Continuous cable
+  coefficients are computed from device arrays without scalar host extraction.
 - ``jnp.ndarray`` mantissas are produced through ``brainstate.environ`` so the
   JAX runtime follows the current precision without hard-coded ``float32`` /
   ``float64`` annotations.
@@ -37,8 +37,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._misc import is_traced_value, scalar_decimal as _scalar_decimal, set_module_as
+from braincell._misc import is_traced_value, set_module_as
 from braincell._typing import DT, T
+from braincell._compute.cable import CableArrays, CableTopology, axial_matrix
 from ._registry import register_integrator
 from ._util import environ_time
 from .protocol import DiffEqModule
@@ -59,7 +60,7 @@ def _with_sentinel(base, fill: float):
     thing that varies between the three call sites — visible.
     """
     mantissa = u.get_mantissa(base)
-    return jnp.concatenate([mantissa, jnp.full_like(mantissa[:1], fill)], axis=0) * u.UNITLESS
+    return jnp.concatenate([mantissa, jnp.full_like(mantissa[..., :1], fill)], axis=-1) * u.UNITLESS
 
 
 @register_integrator(
@@ -179,11 +180,11 @@ class DHSStaticSource:
     dynamic_rows_np: np.ndarray
     row_to_point_id_np: np.ndarray
     point_id_to_row_np: np.ndarray
-    row_capacitance_uF_np: np.ndarray
-    point_capacitance_uF_np: np.ndarray
-    diag_ms_inv_np: np.ndarray
-    lowers_ms_inv_np: np.ndarray
-    uppers_ms_inv_np: np.ndarray
+    row_capacitance_uF: object
+    point_capacitance_uF: object
+    diag_ms_inv: object
+    lowers_ms_inv: object
+    uppers_ms_inv: object
     edges_np: np.ndarray
     level_offsets_np: np.ndarray
     backsub_indices_np: np.ndarray
@@ -285,9 +286,9 @@ def dhs_voltage_step(target, *args, t: T = None, dt: DT = None):
 
     The static topology metadata produced by ``_build_dhs_static_source``
     (row lookup tables, edge ordering, recursive-doubling jump table) is
-    assembled as NumPy ``float64`` / ``int32`` data and cached on the
-    runtime. Per-step numerical operands are then materialized into the
-    current JAX precision while keeping physical units on values such as
+    assembled as NumPy integer data. Continuous coefficients are assembled
+    from runtime cable arrays, and cached only outside tracing. Per-step
+    numerical operands follow the current JAX precision, retaining units on
     voltage and ``dt * conductance`` factors.
     """
     if not hasattr(target, "node_tree") or not hasattr(target, "node_scheduling"):
@@ -357,21 +358,20 @@ def dhs_voltage_step(target, *args, t: T = None, dt: DT = None):
 
 
 def _build_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSource:
-    """Build the static NumPy DHS source data from the node tree."""
+    """Build host topology and differentiable array coefficients."""
     point_id_to_row = np.asarray(scheduling.point_id_to_row, dtype=np.int32)
     n_point, dynamic_rows, axial_matrix, row_capacitance = _build_node_tree_axial_matrix(
         target,
         node_tree=node_tree,
         point_id_to_row=point_id_to_row,
     )
-    diag_ms_inv = np.asarray(np.diag(axial_matrix), dtype=np.float64)
-    lowers_ms_inv = np.zeros((n_point,), dtype=np.float64)
-    uppers_ms_inv = np.zeros((n_point,), dtype=np.float64)
-    for row, parent_row in enumerate(scheduling.parent_rows.tolist()):
-        if parent_row < 0:
-            continue
-        lowers_ms_inv[row] = axial_matrix[row, parent_row]
-        uppers_ms_inv[row] = axial_matrix[parent_row, row]
+    diag_ms_inv = jnp.diagonal(axial_matrix, axis1=-2, axis2=-1)
+    valid_rows = np.flatnonzero(scheduling.parent_rows >= 0)
+    parent_rows = scheduling.parent_rows[valid_rows]
+    lowers_ms_inv = jnp.zeros_like(diag_ms_inv)
+    uppers_ms_inv = jnp.zeros_like(diag_ms_inv)
+    lowers_ms_inv = lowers_ms_inv.at[..., valid_rows].set(axial_matrix[..., valid_rows, parent_rows])
+    uppers_ms_inv = uppers_ms_inv.at[..., valid_rows].set(axial_matrix[..., parent_rows, valid_rows])
 
     parent_lookup = np.empty((n_point + 1,), dtype=np.int32)
     spurious_row = n_point
@@ -389,11 +389,11 @@ def _build_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSourc
         dynamic_rows_np=dynamic_rows,
         row_to_point_id_np=np.asarray(scheduling.row_to_point_id, dtype=np.int32),
         point_id_to_row_np=point_id_to_row,
-        row_capacitance_uF_np=row_capacitance,
-        point_capacitance_uF_np=row_capacitance[point_id_to_row],
-        diag_ms_inv_np=diag_ms_inv,
-        lowers_ms_inv_np=lowers_ms_inv,
-        uppers_ms_inv_np=uppers_ms_inv,
+        row_capacitance_uF=row_capacitance,
+        point_capacitance_uF=row_capacitance[..., point_id_to_row],
+        diag_ms_inv=diag_ms_inv,
+        lowers_ms_inv=lowers_ms_inv,
+        uppers_ms_inv=uppers_ms_inv,
         edges_np=edges,
         level_offsets_np=level_offsets_np,
         backsub_indices_np=backsub_indices,
@@ -402,40 +402,18 @@ def _build_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSourc
     )
 
 
-def _build_node_tree_axial_matrix(
-    target, *, node_tree, point_id_to_row
-) -> tuple[int, np.ndarray, np.ndarray, np.ndarray]:
+def _build_node_tree_axial_matrix(target, *, node_tree, point_id_to_row) -> tuple[int, np.ndarray, object, object]:
     """Assemble the mixed node-tree axial operator in ``ms^-1``."""
-    n_point = len(node_tree.nodes)
-    point_id_to_row = np.asarray(point_id_to_row, dtype=np.int32)
-    cv_row_by_cv = point_id_to_row[node_tree.cv_to_mid_node_id]
-    dynamic_rows = np.asarray([int(cv_row_by_cv[cv_id]) for cv_id in range(len(target.cvs))], dtype=np.int32)
-    row_capacitance = _row_capacitance_scale(target, dynamic_rows=dynamic_rows, n_point=n_point)
-    row_capacitance_uF = np.asarray(
-        [_scalar_decimal(value, u.uF) for value in row_capacitance],
-        dtype=np.float64,
-    )
-    axial_matrix = np.zeros((n_point, n_point), dtype=np.float64)
-
-    for edge in node_tree.edges:
-        parent_row = int(point_id_to_row[edge.parent_node_id])
-        child_row = int(point_id_to_row[edge.child_node_id])
-        conductance = _edge_conductance(edge=edge, cvs=target.cvs)
-
-        # Dynamic rows use physical membrane capacitance. Algebraic boundary rows
-        # use an arbitrary nonzero scale because the row is only used as a
-        # constraint during static reduction.
-        parent_coeff = _scalar_decimal(conductance / row_capacitance[parent_row], u.ms**-1)
-        child_coeff = _scalar_decimal(conductance / row_capacitance[child_row], u.ms**-1)
-
-        axial_matrix[parent_row, parent_row] += parent_coeff
-        axial_matrix[parent_row, child_row] -= parent_coeff
-        axial_matrix[child_row, child_row] += child_coeff
-        axial_matrix[child_row, parent_row] -= child_coeff
-    return n_point, dynamic_rows, axial_matrix, row_capacitance_uF
+    topology = CableTopology.build(cvs=target.cvs, node_tree=node_tree, point_id_to_row=point_id_to_row)
+    runtime = getattr(target, "_runtime", None)
+    cable = runtime.current_cable() if runtime is not None else None
+    if cable is None:
+        cable = CableArrays.from_cvs(target.cvs)
+    matrix, row_c = axial_matrix(cable, topology)
+    return topology.n_point, topology.cv_rows, matrix.to_decimal(u.ms**-1), row_c.to_decimal(u.uF)
 
 
-def build_cv_axial_operator(target, *, node_tree, scheduling) -> np.ndarray:
+def build_cv_axial_operator(target, *, node_tree, scheduling):
     """Reduce the mixed node-tree axial system to a CV-midpoint operator."""
     _, dynamic_rows, axial_matrix, _row_capacitance = _build_node_tree_axial_matrix(
         target,
@@ -445,28 +423,32 @@ def build_cv_axial_operator(target, *, node_tree, scheduling) -> np.ndarray:
     dynamic_rows = np.asarray(dynamic_rows, dtype=np.int32)
     dynamic_row_set = set(dynamic_rows.tolist())
     algebraic_rows = np.asarray(
-        [row for row in range(axial_matrix.shape[0]) if row not in dynamic_row_set],
+        [row for row in range(axial_matrix.shape[-1]) if row not in dynamic_row_set],
         dtype=np.int32,
     )
     if algebraic_rows.size == 0:
-        reduced = axial_matrix[np.ix_(dynamic_rows, dynamic_rows)]
+        reduced = axial_matrix[..., dynamic_rows[:, None], dynamic_rows]
     else:
-        dynamic_dynamic = axial_matrix[np.ix_(dynamic_rows, dynamic_rows)]
-        dynamic_algebraic = axial_matrix[np.ix_(dynamic_rows, algebraic_rows)]
-        algebraic_dynamic = axial_matrix[np.ix_(algebraic_rows, dynamic_rows)]
-        algebraic_algebraic = axial_matrix[np.ix_(algebraic_rows, algebraic_rows)]
-        reduced = dynamic_dynamic - dynamic_algebraic @ np.linalg.solve(algebraic_algebraic, algebraic_dynamic)
-    return np.asarray(reduced, dtype=np.float64)
+        dynamic_dynamic = axial_matrix[..., dynamic_rows[:, None], dynamic_rows]
+        dynamic_algebraic = axial_matrix[..., dynamic_rows[:, None], algebraic_rows]
+        algebraic_dynamic = axial_matrix[..., algebraic_rows[:, None], dynamic_rows]
+        algebraic_algebraic = axial_matrix[..., algebraic_rows[:, None], algebraic_rows]
+        reduced = dynamic_dynamic - dynamic_algebraic @ jnp.linalg.solve(algebraic_algebraic, algebraic_dynamic)
+    return reduced
 
 
 def _get_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSource:
     runtime = target._runtime
-    source = getattr(runtime, "dhs_static_source_np", None)
+    if getattr(runtime, "geometry", None) is not None and any(
+        is_traced_value(state.value) for state in runtime.geometry.values()
+    ):
+        return _build_dhs_static_source(target, node_tree=node_tree, scheduling=scheduling)
+    source = getattr(runtime, "dhs_source", None)
     if source is not None:
         return source
     source = _build_dhs_static_source(target, node_tree=node_tree, scheduling=scheduling)
-    if runtime is not None:
-        runtime.dhs_static_source_np = source
+    if runtime is not None and not is_traced_value(source.diag_ms_inv):
+        runtime.dhs_source = source
     return source
 
 
@@ -477,14 +459,16 @@ def _build_dhs_static_cache(source: DHSStaticSource) -> DHSStaticCache:
     float_dtype = jnp.dtype(brainstate.environ.dftype())
     return DHSStaticCache(
         float_dtype=float_dtype,
-        diag_ms_inv=jnp.asarray(source.diag_ms_inv_np, dtype=float_dtype) * (u.ms**-1),
-        lowers_ms_inv=jnp.asarray(source.lowers_ms_inv_np, dtype=float_dtype) * (u.ms**-1),
-        uppers_ms_inv=jnp.asarray(source.uppers_ms_inv_np, dtype=float_dtype) * (u.ms**-1),
+        diag_ms_inv=jnp.asarray(source.diag_ms_inv, dtype=float_dtype) * (u.ms**-1),
+        lowers_ms_inv=jnp.asarray(source.lowers_ms_inv, dtype=float_dtype) * (u.ms**-1),
+        uppers_ms_inv=jnp.asarray(source.uppers_ms_inv, dtype=float_dtype) * (u.ms**-1),
     )
 
 
 def _get_dhs_static_cache(target, source: DHSStaticSource) -> DHSStaticCache:
     runtime = target._runtime
+    if is_traced_value(source.diag_ms_inv):
+        return _build_dhs_static_cache(source)
     cache = getattr(runtime, "dhs_static_cache", None)
     float_dtype = jnp.dtype(brainstate.environ.dftype())
     if cache is not None and getattr(cache, "float_dtype", None) == float_dtype:
@@ -533,7 +517,7 @@ def _build_dhs_numeric_state(
     diag_base = static_cache.diag_ms_inv.astype(numeric_dtype) * dt_ms
     lower_base = static_cache.lowers_ms_inv.astype(numeric_dtype) * dt_ms
     upper_base = static_cache.uppers_ms_inv.astype(numeric_dtype) * dt_ms
-    diags = u.math.broadcast_to(_with_sentinel(diag_base, 1.0)[None, :], (batch_size, n_point + 1))
+    diags = u.math.broadcast_to(_with_sentinel(diag_base, 1.0).reshape((-1, n_point + 1)), (batch_size, n_point + 1))
     diags = diags.at[:, :n_point].add(-dt_ms * linear_ms_inv)
     diags = diags.at[:, static_source.dynamic_rows_np].add(
         jnp.ones((batch_size, len(static_source.dynamic_rows_np)), dtype=diags.dtype) * u.UNITLESS
@@ -547,15 +531,15 @@ def _build_dhs_numeric_state(
     return DHSNumericState(
         diags=diags,
         solves=solves,
-        lowers=_with_sentinel(lower_base, 0.0),
-        uppers=_with_sentinel(upper_base, 0.0),
+        lowers=_with_sentinel(lower_base, 0.0).reshape((-1, n_point + 1)) if lower_base.ndim > 1 else _with_sentinel(lower_base, 0.0),
+        uppers=_with_sentinel(upper_base, 0.0).reshape((-1, n_point + 1)) if upper_base.ndim > 1 else _with_sentinel(upper_base, 0.0),
     )
 
 
 def _point_capacitance(static_source: DHSStaticSource, *, dtype):
     return (
         jnp.asarray(
-            static_source.point_capacitance_uF_np,
+            static_source.point_capacitance_uF,
             dtype=dtype,
         )
         * u.uF
@@ -662,15 +646,18 @@ def _require_plain_array(name, value):
 
 def _require_row_length(name, value, diags):
     """Raise unless ``value`` has one entry per column of ``diags``."""
-    if value.shape[0] != diags.shape[1]:
-        raise ValueError(f"{name}.shape[0]={value.shape[0]} must equal diags.shape[1]={diags.shape[1]}")
+    if value.shape[-1] != diags.shape[1]:
+        raise ValueError(f"{name} last dimension must equal diags.shape[1]={diags.shape[1]}")
+    if value.ndim == 2 and value.shape[0] not in (1, diags.shape[0]):
+        raise ValueError(f"{name} batch dimension must broadcast to diags.shape[0]={diags.shape[0]}")
 
 
 def _check_dhs_operands(diags, solves, lowers):
     """Check the operand contract shared by both DHS kernels."""
     _require_ndim("diags", diags, 2)
     _require_ndim("solves", solves, 2)
-    _require_ndim("lowers", lowers, 1)
+    if lowers.ndim not in (1, 2):
+        raise ValueError("lowers must be 1D or 2D")
     _require_unitless("diags", diags)
     _require_unitless("lowers", lowers)
     _require_row_length("lowers", lowers, diags)
@@ -680,7 +667,8 @@ def _check_comp_triang(diags, solves, lowers, uppers, edges):
     """Kernel contract check for the quantity-aware DHS forward pass."""
     _require_plain_array("edges", edges)
     _check_dhs_operands(diags, solves, lowers)
-    _require_ndim("uppers", uppers, 1)
+    if uppers.ndim not in (1, 2):
+        raise ValueError("uppers must be 1D or 2D")
     _require_unitless("uppers", uppers)
     _require_row_length("uppers", uppers, diags)
     if edges.ndim != 2 or edges.shape[1] != 2:
@@ -721,8 +709,8 @@ def _comp_triang_level(diags, solves, lowers, uppers, level_edges):
     """Apply one DHS forward elimination level."""
     children = level_edges[:, 0]
     parent = level_edges[:, 1]
-    lower_val = lowers[children]
-    upper_val = uppers[children]
+    lower_val = lowers[..., children]
+    upper_val = uppers[..., children]
     child_diag = diags[:, children]
     child_solve = solves[:, children]
 
@@ -788,7 +776,7 @@ def comp_backsub_raw(
     """DHS recursive-doubling back substitution on quantity-aware inputs."""
     _check_comp_backsub(diags, solves, lowers, backsub_indices)
     zero = 0.0 * u.UNITLESS if isinstance(lowers, u.Quantity) else 0.0
-    lowers = lowers.at[0].set(zero)
+    lowers = lowers.at[..., 0].set(zero)
     lower_effect = -lowers / diags
     solve_effect = solves / diags
 
@@ -807,7 +795,7 @@ def comp_backsub_hines_raw(diags, solves, lowers, edges, level_offsets):
     for i in range(level_offsets.shape[0] - 1):
         children = edges[level_offsets[i] : level_offsets[i + 1], 0]
         parents = edges[level_offsets[i] : level_offsets[i + 1], 1]
-        child_solution = solution[:, children] - (lowers[children] / diags[:, children]) * solution[:, parents]
+        child_solution = solution[:, children] - (lowers[..., children] / diags[:, children]) * solution[:, parents]
         solution = solution.at[:, children].set(child_solution)
     return solution
 

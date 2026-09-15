@@ -63,7 +63,7 @@ class StaggeredReadsRuntimeAttrDirectlyTest(unittest.TestCase):
 
         class _TrapRuntime:
             # If the fallback branch runs, this getattr trap fires.
-            dhs_static_source_np = None
+            dhs_source = None
 
             def __getattribute__(self, name):
                 raise AssertionError(f"_compiled_runtime must not be read (got getattr {name!r})")
@@ -423,19 +423,19 @@ class DhsRuntimeCacheTest(unittest.TestCase):
 
         with brainstate.environ.context(dt=0.1 * u.ms, precision=32):
             dhs_voltage_step(cell, t=0.0 * u.ms, dt=0.1 * u.ms)
-            source32 = cell.runtime.dhs_static_source_np
+            source32 = cell.runtime.dhs_source
             cache32 = cell.runtime.dhs_static_cache
-            self.assertEqual(source32.diag_ms_inv_np.dtype, np.float64)
+            self.assertEqual(source32.diag_ms_inv.dtype, jnp.float32)
             self.assertEqual(source32.dynamic_rows_np.dtype, np.int32)
             self.assertEqual(cache32.float_dtype, jnp.dtype(jnp.float32))
 
             dhs_voltage_step(cell, t=0.0 * u.ms, dt=0.1 * u.ms)
-            self.assertIs(source32, cell.runtime.dhs_static_source_np)
+            self.assertIs(source32, cell.runtime.dhs_source)
             self.assertIs(cache32, cell.runtime.dhs_static_cache)
 
         with brainstate.environ.context(dt=0.1 * u.ms, precision=64):
             dhs_voltage_step(cell, t=0.0 * u.ms, dt=0.1 * u.ms)
-            source64 = cell.runtime.dhs_static_source_np
+            source64 = cell.runtime.dhs_source
             cache64 = cell.runtime.dhs_static_cache
             self.assertIs(source32, source64)
             self.assertEqual(cache64.float_dtype, jnp.dtype(jnp.float64))

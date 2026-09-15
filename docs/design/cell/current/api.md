@@ -172,6 +172,7 @@ placement 保留原始连续位置，分别解析所属 CV 和电气 point：
 ## 生命周期
 
 ```text
+Cell.discretize() -> Cell
 Cell.init_state(batch_size=None) -> None
 Cell.reset_state(batch_size=None) -> None
 Cell.reset() -> None
@@ -182,9 +183,31 @@ Cell.reset() -> None
 
 | 方法 | 前置状态 | 状态与结构变化 |
 | --- | --- | --- |
-| `init_state` | 声明阶段 | 复制形态、构建运行时、创建电压和机制状态；时间归零，声明冻结 |
-| `reset_state` | 已初始化 | 按当前参数与初态重新设置动态状态，时间归零并清空本地待处理输入；保留声明和运行时结构 |
-| `reset` | 已初始化 | 丢弃运行时与动态状态，恢复声明期形态引用；保留 paint/place 声明，返回可编辑阶段 |
+| `discretize` | 内部声明阶段 | 声明变化时自动从当前声明构建离散快照；用户无需显式调用，旧离散 View 失效 |
+| `init_state` | 声明阶段 | 消费最新离散快照、映射机制并初始化状态；固定 CV、连接、机制附着及逻辑状态形状 |
+| `reset_state` | 已初始化 | 先同步当前训练参数，再重置动态初态、时间和事件状态；保留参数覆盖、训练根和网格 |
+| `reset` | 已初始化 | deinit：清除 runtime、参数覆盖、训练根及绑定；恢复声明期形态和参数，保留 paint/place/连接声明 |
+
+构造 Cell、赋值 `cv_policy` 或修改其他影响离散的声明时，系统自动刷新离散结果。
+`init_state()` 只使用当前离散快照，不再次执行 `cv_policy`；用户不需要显式调用
+`cell.discretize()`。
+init 前声明或形态 revision 改变后，首次读取 `cvs/n_cv/cv_tree` 等预览自动刷新；
+声明不变时复用缓存。policy 赋值失败保留原配置与原预览。
+init 后拒绝 policy 修改和 `discretize()`，读取接口不再重新划分。
+
+init 前 View 只读。init 后重新选择 `cell.channels[...]`、`cell.on(region)`、
+`cell.loc(location)` 保存连续位置声明；`cell.cv[...]` 只在 init 后作为固定网格的
+runtime View 使用，可修改已有独立数值参数并注册 trainable。init 前的 CV 结果仅可读。
+这些写入作用于同一份 runtime 参数，不重做 paint/place，也不写回原始声明。
+CellView 的 `V_init/V_th` 是 runtime 覆盖；`V_init` 在下次 `reset_state()` 生效。
+根 Cell 的 `V_init/V_th` 仍只用于 init 前声明配置。
+
+重划分、init 或完整 reset 后必须重新选择离散 View；旧 View 抛出 `RuntimeError`。
+完整 reset 使旧梯度引擎失效，外部保留的参数及优化器不属于新 runtime。
+训练注册与优化器顺序见 [Trainable 生命周期](../../optim/current/api.md#lifecycle)。
+固定网格几何的 `length`、`radius_scale`、`Ra`、`cm` 已可在 init 后通过
+`cell.geometry` 读取、修改和注册训练；population-specific cable operator、严格 policy
+一致性和复杂 coverage 更新仍在 [几何训练](../../optim/proposals/nonlinear-pattern-separation.md) 中。
 
 `init_state()` 重复调用、初始化前调用两种 reset，以及 Network 管理的 Cell 独立调用
 这些生命周期方法，均抛出 `RuntimeError`。由 Network 管理时使用其生命周期入口。
@@ -274,7 +297,7 @@ assert spike.shape == cell.V.value.shape
 
 ## 静态查询
 
-下面的属性在初始化前后均可读取。离散结果按需构建，声明或形态 revision 改变后重建。
+下面的属性在初始化前后均可读取。init 前声明或形态 revision 改变后按需重建；init 后固定网格。
 
 | 只读属性 | 返回内容 |
 | --- | --- |

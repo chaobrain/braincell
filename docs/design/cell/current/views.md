@@ -1,6 +1,6 @@
 # Cell Spatial and Mechanism Views
 
-View 保存对同一 Cell 的选择，读写共享声明或运行时数组。Cell 构造及根对象 paint/place 见 [Cell API](api.md)，观测声明见 [Recording](../../network/current/recording.md)。下方 `text` 块表示依赖已有 Cell 的查询和调用形式。
+View 保存对同一 Cell 的选择。init 前只读离散预览，init 后读写已有运行时参数，写入不反映到原始声明。Cell 构造及根对象 paint/place 见 [Cell API](api.md)，观测声明见 [Recording](../../network/current/recording.md)。下方 `text` 块表示依赖已有 Cell 的查询和调用形式。
 
 ## 最小用法
 
@@ -12,9 +12,10 @@ from braincell.filter import AllRegion, RootLocation
 branch = bc.Branch.from_lengths(lengths=[20.0] * u.um, radii=[3.0, 3.0] * u.um)
 cell = bc.Cell(bc.Morphology.from_root(branch), pop_size=2, cv_policy=bc.CVPerBranch(1))
 cell.paint(AllRegion(), bc.mech.Channel("IL", name="leak", g_max=0.1*u.mS/u.cm**2, E=-65*u.mV))
+cell[1:2].loc(RootLocation(0.5)).record("selected_v", bc.observe.state("v"))
+cell.init_state()
 selected = cell[1:2].channels["leak"]
 selected.set(g_max=0.2*u.mS/u.cm**2)
-cell[1:2].loc(RootLocation(0.5)).record("selected_v", bc.observe.state("v"))
 result = cell.run(dt=0.025*u.ms, duration=0.1*u.ms)
 assert result.samples["selected_v"].values.shape == (4, 1)
 assert u.math.allclose(selected.get("g_max"), 0.2*u.mS/u.cm**2)
@@ -71,6 +72,17 @@ cell.synapses["fast_ampa"][[0, 2]]
 Channel/Ion 的 `get(field)` 和 `set(**fields)` 要求最终 View 只包含一个 `(type, name)` owner。Synapse
 `get/set` 要求同一 type，但可以跨同 type 的多个 name。View 在初始化前读取声明参数；初始化后通过
 logical-to-runtime mapping 读取 runtime parameter/state，不保存第二份数组。
+
+`set()` 和 `trainable()` 只允许在 init 后使用；init 前通过机制构造参数提供初值。
+`on/loc/cv` 只是选择已有对象，数值写入不增加机制或改变附着关系。
+`CellView.set(V_init=..., V_th=...)` 写入独立 runtime 参数层；初始电压在下次
+`reset_state()` 生效。单纯 population 选择接受 scalar、每 population 一值或
+`(selected_population, n_cv)`；空间选择接受 scalar 或按所选 `(population, cv)` 行对齐的值，
+读取也返回这些行。完整 `reset()` 清除覆盖，`reset_state()` 保留覆盖。
+
+离散 View 绑定网格版本，成功重新离散、init 或完整 reset 后旧 View 抛出 `RuntimeError`，
+需从 Cell 重新选择。直接取出的不可变 CV 声明记录是快照，不是 live View。
+连续 detector/paint/place 声明保留连续位置，最终 init 按新网格解析。
 
 ### `CellView.place`
 

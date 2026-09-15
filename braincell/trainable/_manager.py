@@ -289,10 +289,15 @@ class TrainableManager(brainstate.nn.Module):
                         )
                     pending[key] = (state, state.dense_value(), required_axis)
                 state, full, pending_axis = pending[key]
-                if row.category == "ion" and binding.target_field.endswith("_initializer"):
+                if binding.target_field.endswith("_initializer"):
                     node = runtime.get_runtime_node(layout.id)
-                    mask = node._runtime_ion_initial_masks[binding.target_field]
-                    point_commits.append((mask, (row.population_index, row.cv_id), True))
+                    if any(selected_row.category == "ion" for _, selected_row in selected_rows):
+                        mask = node._runtime_ion_initial_masks[binding.target_field]
+                        point_commits.extend(
+                            (mask, (selected_row.population_index, selected_row.cv_id), True)
+                            for _, selected_row in selected_rows
+                            if selected_row.category == "ion"
+                        )
                 # Equal initial values do not imply shared trainable ownership.
                 indices = np.asarray([index for index, _ in selected_rows], dtype=np.int32)
                 populations = np.asarray([row.population_index for _, row in selected_rows], dtype=np.int32)

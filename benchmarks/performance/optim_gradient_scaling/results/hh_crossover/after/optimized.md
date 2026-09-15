@@ -14,21 +14,15 @@
 
 ### 三条参数切片
 
-![H200 优化后完整 HH 参数切片](../figures/after/hh_slices_nx_ntheta.png)
 
-[SVG](../figures/after/hh_slices_nx_ntheta.svg) · [PDF](../figures/after/hh_slices_nx_ntheta.pdf)
 
 ### Runtime ratio
 
-![H200 优化后 RTRL/BPTT runtime ratio](../figures/after/hh_runtime_ratio.png)
 
-[SVG](../figures/after/hh_runtime_ratio.svg) · [PDF](../figures/after/hh_runtime_ratio.pdf)
 
 ### Memory 与 compile
 
-![H200 优化后 XLA temporary memory 与 gradient compile](../figures/after/hh_memory_compile.png)
 
-[SVG](../figures/after/hh_memory_compile.svg) · [PDF](../figures/after/hh_memory_compile.pdf)
 
 内存为 XLA temporary MiB，未采集进程峰值显存。Compile 为外层 gradient kernel 的 tracing/lowering/compile 总和，不包含 target 和准备；未额外拆分编译阶段或导出 IR。
 
@@ -198,6 +192,8 @@ C=1/21/41 的 18 个 worker：历史 compile 合计 39.73 min，优化后 1.04 m
 
 </details>
 
+图表由本地 artifact 的 `analysis/figures/` 保存，结果页不提交生成图片。
+
 ## 文件组织与离线重绘
 
 统一 artifact 为本地 ignored `artifacts/hh_crossover_optimized_h200_20260912/`（相对本实验目录），不随 Git 提供。结果页及展示图供仓库读者直接阅读。
@@ -222,7 +218,7 @@ artifacts/hh_crossover_optimized_h200_20260912/
     figures/                      # 从合并 raw 重绘的 PNG/SVG/PDF 与来源 hash
 results/hh_crossover/
   after/optimized.md              # 本页：优化后唯一结果入口
-  figures/after/              # 对应三类展示图与 plot_sources.json
+  analysis/figures/             # 三类 PNG/SVG/PDF 与 plot_sources.json
 ```
 
 原目录文件逐个迁移并验证 SHA-256；原始命令、路径、源码 hash 与分批分析保持原样，历史路径只作为 provenance。历史分析脚本不是当前执行入口。合并清单不支持 runner resume，也不应作为新测量的输出目录。日期 2026-09-12 指测量日；本次合并与重绘日期为 2026-09-15，新增模型执行为 **0**。
@@ -235,7 +231,7 @@ python -m benchmarks.performance.optim_gradient_scaling.analysis.hh_crossover.pl
   --context 'H200 NVL | optimized HH | B=S=16, T=1600 | float64 | four batches, one worker per method/config'
 ```
 
-默认输出到输入目录的 `analysis/figures/`；展示副本位于 `results/hh_crossover/figures/after/`，脚本默认不覆盖它。输入 CSV 与 36 个 trial JSON 的 SHA-256 见 [plot_sources.json](../figures/after/plot_sources.json)。
+默认输出到输入目录的 `analysis/figures/`；图片与 `plot_sources.json` 保存在 artifact 的 `analysis/figures/`，不随 Git 提供。
 
 ## 详细记录
 

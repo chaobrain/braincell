@@ -53,9 +53,8 @@ def _cell(*, population=1, source=None):
     )
     if source is None:
         source = braincell.trainable.scale(group_by="all", name="leak.factor")
-    cell.channels["leak"].trainable(g_max=source)
     cell.init_state()
-    cell.channels["leak"].trainable(g_max=braincell.trainable.scale(group_by="all", name="leak.factor"))
+    cell.channels["leak"].trainable(g_max=source)
     cell.reset_state()
     return cell
 
@@ -78,6 +77,8 @@ class _MappedRecurrence:
         self.g = RuntimeParameterState(jnp.zeros((1, 2)), axis="row", full_shape=(1, 2))
         self.mapping = mapping
         self.mutation = mutation
+        self._initialized = True
+        self._runtime_generation = 0
         node = IonChannel(size=(2,))
         node.g_max = self.g
         layout = SimpleNamespace(id=0, source_cv_ids=(0, 1), kind="channel:IL")
@@ -97,6 +98,9 @@ class _MappedRecurrence:
         ))
         self.trainables._target_axes[(0, "g_max")] = "row"
         self.trainables.materialize()
+
+    def _raise_if_not_initialized(self, action):
+        return None
 
     def evaluate(self):
         value = self.root.value()
@@ -131,8 +135,9 @@ class MaterializationScheduleTest(unittest.TestCase):
                 cell.paint(AllRegion(), braincell.mech.Channel(
                     mechanism, name=name, g_max=conductance * u.mS / u.cm**2,
                 ))
-                cell.channels[name].trainable(g_max=braincell.trainable.scale(group_by="cv", name=name))
             cell.init_state()
+            for name in ("leak", "k", "na"):
+                cell.channels[name].trainable(g_max=braincell.trainable.scale(group_by="cv", name=name))
             data = jnp.full((3,), -60.0)
             reference = _engine(cell, "bptt")
             with patch.object(cell.trainables, "_rollout_materialization_states", return_value=None):

@@ -8,17 +8,13 @@
 
 每个标记对应实测配置，数字 r 为 RTRL/BPTT 稳态时间比。C=1 的三个点在左上局部放大。连线只显示切片方向，不代表已测出连续性能边界。
 
-![Nx–Ntheta 三条切片](../figures/before/hh_slices_nx_ntheta.png)
 
-[SVG](../figures/before/hh_slices_nx_ntheta.svg) · [PDF](../figures/before/hh_slices_nx_ntheta.pdf)
 
 ## 稳态时间与速度比
 
 横坐标仍为 Nx，三种颜色沿用上述切片；左图实线 BPTT、虚线 RTRL，纵坐标为对数时间。误差棒为每个 worker 的 5 个正式样本的 Q25–Q75，较小的波动被点标记遮住，不代表波动为零。右图灰带为 r=0.9–1.1 的接近候选区。
 
-![稳态时间与速度比](../figures/before/hh_runtime_ratio.png)
 
-[SVG](../figures/before/hh_runtime_ratio.svg) · [PDF](../figures/before/hh_runtime_ratio.pdf)
 
 全部已测点 r=0.2054–0.4762，RTRL 更快；速度比不随 Nx 单调变化，目前没有可二分的胜负变化区间。
 
@@ -26,13 +22,13 @@
 
 左图为 XLA temporary 分析值，非实测进程峰值显存；右图为梯度 kernel tracing/lowering/compile 总时间，不含 target 准备。两者纵坐标均采用对数刻度。内存的 argument/output/alias 和 RTRL logical carry 完整数值保留在补测报告与 CSV 中。
 
-![内存与编译](../figures/before/hh_memory_compile.png)
 
-[SVG](../figures/before/hh_memory_compile.svg) · [PDF](../figures/before/hh_memory_compile.pdf)
+
+图表由本地 artifact 的 `analysis/figures/` 保存，结果页不提交生成图片。
 
 ## 生成方式
 
-使用 [plot_hh_crossover.py](../../../analysis/hh_crossover/plot.py) 读取本地 ignored `artifacts/hh_crossover_20260910_completed/raw/paired_results.csv` 及 `raw/trials/*.json`，没有导入或执行模型。生成后检查图形布局，再将 PNG/SVG/PDF 复制至`results/hh_crossover/figures/before/` 目录；原始生成目录的 `plot_sources.json` 保留输入数据和绘图脚本 SHA-256。
+使用 [plot_hh_crossover.py](../../../analysis/hh_crossover/plot.py) 读取本地 ignored `artifacts/hh_crossover_20260910_completed/raw/paired_results.csv` 及 `raw/trials/*.json`，没有导入或执行模型。生成后检查图形布局；PNG/SVG/PDF 与 `plot_sources.json` 保存在 artifact 的 `analysis/figures/`，不随 Git 提供。
 
 从仓库根目录执行：
 

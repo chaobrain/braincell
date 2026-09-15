@@ -9,8 +9,8 @@
 [双向 population](../../../../specs/2026-09-07-bidirectional-population-learning.md)。
 
 本页保留单/双 Cell 与自连接、A(2)/B(3) 双向 population 的正确性及训练验证。
-独立 CPU 计时见 [benchmark 实测](../../../../../benchmarks/performance/optim_gradient_scaling/results/synapse-network-cpu.md)。
-不能把它们与 [历史多 CV/A100 scaling](../../../../../benchmarks/performance/optim_gradient_scaling/results/bptt-rtrl-scaling.md) 合成同一配置。
+独立 CPU 计时见 [benchmark 实测](../../../../../benchmarks/performance/optim_gradient_scaling/results/historical/synapse-network-cpu.md)。
+不能把它们与 [历史多 CV/A100 scaling](../../../../../benchmarks/performance/optim_gradient_scaling/results/hh_crossover/a100/scaling.md) 合成同一配置。
 各组都在 rollout 内固定参数；不验证每个 timestep 更新优化器的语义。
 
 ## 事件与自连接

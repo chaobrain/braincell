@@ -272,7 +272,7 @@ Quantity metadata。数组叶子的导数是对 optimizer 数值坐标求导；�
 反向模式的树结构约定，不表示自动换算为 loss/电导等物理导数单位。诊断中的扁平坐标矩阵
 继续使用数值数组。
 
-[全 HH scale 复测](../../../../benchmarks/performance/optim_gradient_scaling/results/hh-crossover-optimized-h200-20260912.md)
+[全 HH scale 复测](../../../../benchmarks/performance/optim_gradient_scaling/results/hh_crossover/after/optimized.md)
 覆盖 C=1/21/41 的三条参数切片，记录入口调度与批量物化的累计编译、稳态及内存变化，
 并复用保存的输出验证新旧数值一致性。该性能证据限于报告中的 workload；直接物理参数
 读取路径仍只有正确性测试，尚未由该测量量化。
@@ -357,7 +357,7 @@ online-learning algorithm are outside this change.
 The current speed screening keeps full-state RTRL as the execution path:
 compact RTRL reduces logical carry but is slower at C=1, 5, and 21 in the
 1600-step HH baseline. The measured comparison is recorded in the
-[RTRL speed baseline](../../../../benchmarks/performance/optim_gradient_scaling/results/rtrl-speed-baseline-20260912.md);
+[RTRL speed baseline](../../../../benchmarks/performance/optim_gradient_scaling/results/diagnostics/rtrl-speed-baseline-20260912.md);
 compact remains an experimental memory-oriented path until its active
 transition avoids full tangent embedding.
 
@@ -412,8 +412,8 @@ correctness diagnostics and future structured-kernel work.
 
 ## 梯度方法的实测依据
 
-[多 CV scaling](../../../../benchmarks/performance/optim_gradient_scaling/results/bptt-rtrl-scaling.md) 与
-[独立网络计时](../../../../benchmarks/performance/optim_gradient_scaling/results/synapse-network-cpu.md)
+[多 CV scaling](../../../../benchmarks/performance/optim_gradient_scaling/results/hh_crossover/a100/scaling.md) 与
+[独立网络计时](../../../../benchmarks/performance/optim_gradient_scaling/results/historical/synapse-network-cpu.md)
 显示方法取舍依赖全网状态、独立参数数和轨迹长度：RTRL 的工作内存可以较小，但参数数增加后运行可能更慢。
 这些证据支持保留显式方法选择，不能导出任意模型的自动选择阈值。
 [参数拟合吞吐实验](../../../../benchmarks/performance/parameter_fitting/results/batch-size-and-throughput.md)

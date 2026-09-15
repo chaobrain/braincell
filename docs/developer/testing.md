@@ -34,7 +34,7 @@ GPU 性能或大型数值对照需要按对应工作流另外运行，不能由�
 ```bash
 python -m pytest braincell/experimental/optim -q
 python -m pytest validation/optim -q
-python -m pytest benchmarks/performance/optim_gradient_scaling/report_test.py -q
+python -m pytest benchmarks/performance/optim_gradient_scaling/analysis/common/report_test.py -q
 python -m pytest validation/neuron/cable/tests -q
 ```
 

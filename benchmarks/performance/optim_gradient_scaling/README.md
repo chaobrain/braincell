@@ -4,30 +4,35 @@ Measure BPTT and exact RTRL across CV count, recurrent state, parameter directio
 protocol batch and independent seed lanes. Requires BrainCell and its JAX/BrainState
 stack; GPU suites require a GPU-enabled JAX installation.
 
+实验按数据流组织：`runner/` 只生成 benchmark 数据和原始 `artifacts/`，
+`analysis/` 只读取已有数据并生成 report 或 figures，`results/` 保存审阅后的
+Git 结果总结。每个 `artifacts/<run>/raw/` 保存原始 trial、日志和 provenance，
+`artifacts/<run>/analysis/` 保存派生分析、报告和图表。
+
 | Script | Purpose |
 | --- | --- |
-| `benchmark.py` | Isolated HH scaling suites |
-| `controlled_complexity.py` | Separate state, parameter and time complexity |
-| `report.py` | Aggregate stored CSV/JSON without running simulations |
-| `plot_hh_crossover.py` | Plot the three HH parameter slices, runtime ratios, memory and compilation from saved pairs |
-| `analysis.ipynb` | Detailed analysis and figures from stored results |
-| `profile_case.py` | Adapt gradient workloads to the shared profiling harness |
+| `runner/hh_crossover/runner.py` | Isolated HH scaling suites |
+| `runner/complexity/runner.py` | Separate state, parameter and time complexity |
+| `analysis/common/report.py` | Aggregate stored CSV/JSON without running simulations |
+| `analysis/hh_crossover/plot.py` | Plot the three HH parameter slices, runtime ratios, memory and compilation from saved pairs |
+| `analysis/notebooks/analysis.ipynb` | Detailed analysis and figures from stored results |
+| `runner/diagnostics/profiling.py` | Adapt gradient workloads to the shared profiling harness |
 
 ```bash
-python -m benchmarks.performance.optim_gradient_scaling.benchmark run \
+python -m benchmarks.performance.optim_gradient_scaling.runner.hh_crossover.runner run \
   --suite <suite> --gpu <physical-index> --repeats <count> \
   --output-dir benchmarks/performance/optim_gradient_scaling/artifacts/run
-python -m benchmarks.performance.optim_gradient_scaling.controlled_complexity run \
+python -m benchmarks.performance.optim_gradient_scaling.runner.complexity.runner run \
   --suite <suite> --gpu <physical-index> --repeats <count> --replicates <count> \
   --output-dir benchmarks/performance/optim_gradient_scaling/artifacts/controlled
-python -m benchmarks.performance.optim_gradient_scaling.report --help
+python -m benchmarks.performance.optim_gradient_scaling.analysis.common.report --help
 ```
 
 Workers use the current Python interpreter unless `--python` selects another.
 `--dry-run` prepares the execution commands without starting workers; it writes a local
 manifest. `--resume` reuses successful stored trials, so verify their protocol first.
 Report output defaults to the input artifacts directory; explicit output paths are supported.
-See [RESULTS](RESULTS.md) for reviewed historical evidence. The report currently recognizes
+See [results index](results/README.md) for reviewed historical evidence. The report currently recognizes
 the named historical suite directories; arbitrary output directories need that documented
 layout under the selected artifact root. Test modules include numerical model execution;
 do not treat the entire directory as a report-only test command.
@@ -47,7 +52,7 @@ It uses 12 configurations, two isolated method workers each, and one independent
 round. Workers are serial, with method order alternating between configurations.
 
 ```bash
-python -m benchmarks.performance.optim_gradient_scaling.benchmark run \
+python -m benchmarks.performance.optim_gradient_scaling.runner.hh_crossover.runner run \
   --suite hh_crossover --gpu <physical-index> \
   --repeats <timed-count> --warmups <extra-warmup-count> --no-gpu-monitor \
   --worker-timeout-seconds <worker-limit> --budget-seconds <total-limit> \
@@ -85,8 +90,8 @@ retain the existing combined compilation path unless diagnostics are explicitly 
 Core measurements are saved before optional graph export; an export failure is recorded
 under `diagnostics_status` and does not discard completed timing or output data.
 
-`paired_results.csv` and `summary.md` are regenerated beside raw trials after each
-worker; they include all 12 pairs, including pending or failed ones. A valid pair
+`raw/paired_results.csv` and `analysis/summary.md` are regenerated after each
+worker; they include all configured pairs (12 by default), including pending or failed ones. A valid pair
 requires finite outputs, total and local losses agreeing within rtol=1e-7,
 atol=1e-8, and gradient relative-L2 error <=1e-6 or max absolute error <=1e-8.
 A runtime ratio within [0.9, 1.1] is only a proximity candidate. IQR describes
@@ -102,20 +107,26 @@ also writes a manifest, so use a separate directory for it.
 Plot a completed HH scan using NumPy and Matplotlib, with no model execution:
 
 ```bash
-python -m benchmarks.performance.optim_gradient_scaling.plot_hh_crossover \
+python -m benchmarks.performance.optim_gradient_scaling.analysis.hh_crossover.plot \
   <completed-artifact-directory> --context '<measured environment and protocol>'
 ```
 
-The input must contain validated `paired_results.csv` and matching `trials/*.json`
+The input must contain validated `raw/paired_results.csv` and matching `raw/trials/*.json`
 with saved timing samples. The three slices are `Ntheta=Nx/4`, `Nx/2`, and `3Nx/4`.
-Figures default to the input directory's `figures/`; `--output-dir` overrides it.
+Figures default to the input directory's `analysis/figures/`; `--output-dir` overrides it.
 PNG, SVG and PDF versions and source hashes are saved. Error bars use actual Q25–Q75;
 connecting lines do not establish an unmeasured crossover boundary. Incomplete or
 invalid pairs and duplicate slice points are rejected.
 
+The same plot function handles separate implementation stages and consolidated scans.
+For a consolidated scan, preserve each batch's protocol and source snapshot, keep unique
+configuration/method pairs, and record the batch on each merged row. A consolidated
+measurement archive is an analysis input, not a runner resume directory. Reviewed
+figures are copied to the corresponding `results/` directory after inspection.
+
 Orchestration tests that do not execute a neuron model:
 
 ```bash
-python -m pytest benchmarks/performance/optim_gradient_scaling/benchmark_test.py \
+python -m pytest benchmarks/performance/optim_gradient_scaling/runner/benchmark_test.py \
   -k CrossoverProtocolTest
 ```

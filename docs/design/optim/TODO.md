@@ -62,8 +62,8 @@ CPU 回归及示例验收见 [验证记录](current/results/synapse-network-lear
 
 - [参数学习示例](current/results/parameter-learning.md)：Channel、Ion、单突触单参数教学拟合。
 - [突触与网络](current/results/synapse-network-learning.md)：事件、自连接、双向 population 的正确性及训练验证。
-- [独立网络 CPU 计时](../../../benchmarks/performance/optim_gradient_scaling/results/synapse-network-cpu.md)：不同参数数与轨迹长度的梯度耗时和内存。
-- [BPTT/RTRL scaling](../../../benchmarks/performance/optim_gradient_scaling/results/bptt-rtrl-scaling.md)：历史多 CV、CPU、A100 和 Adam 一致性。
+- [独立网络 CPU 计时](../../../benchmarks/performance/optim_gradient_scaling/results/historical/synapse-network-cpu.md)：不同参数数与轨迹长度的梯度耗时和内存。
+- [BPTT/RTRL scaling](../../../benchmarks/performance/optim_gradient_scaling/results/hh_crossover/a100/scaling.md)：历史多 CV、CPU、A100 和 Adam 一致性。
 - [Batch 与吞吐](../../../benchmarks/performance/parameter_fitting/results/batch-size-and-throughput.md)：batch、candidate lanes、GPU 容量和训练质量。
 - [拟合与可辨识性](current/results/fitting-and-identifiability.md)：multi-start、优化器对照、诊断、FIM 和 ensemble。
 

@@ -173,8 +173,8 @@ class ReportProvenanceTest(unittest.TestCase):
             for name, device, repeats in (("full_block_exact", "Test CPU", 1),
                                           ("backsub_ordinary_block_exact", "Test GPU", 4)):
                 self._write_run(root, name, backsub=None)
-                (root / name / "manifest.json").write_text(json.dumps({"repeats": repeats}))
-                trials = root / name / "trials"
+                (root / name / "raw" / "manifest.json").write_text(json.dumps({"repeats": repeats}))
+                trials = root / name / "raw" / "trials"
                 trials.mkdir()
                 (trials / "trial.json").write_text(json.dumps({
                     "status": "ok", "device": device, "jax_version": "test-version",

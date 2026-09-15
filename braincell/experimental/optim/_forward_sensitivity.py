@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+import os
 from typing import Any, NamedTuple
 
 import brainstate
@@ -59,6 +60,60 @@ class ForwardSensitivityResult(NamedTuple):
     losses: Any
     local_gradients: Any
     prefix_gradients: Any
+
+
+@dataclass(frozen=True)
+class StateSensitivityEntry:
+    """Static description of one traced state and its tangent storage."""
+
+    index: int
+    state_type: str
+    value_shapes: tuple[tuple[int, ...], ...]
+    value_dtypes: tuple[str, ...]
+    tangent_shapes: tuple[tuple[int, ...], ...]
+    tangent_dtypes: tuple[str, ...]
+    value_bytes: int
+    tangent_bytes: int
+    has_float0_tangent: bool
+    is_parameter: bool
+
+
+def inspect_state_sensitivity(functional_step: FunctionalStep, state_values=None, state_tangents=None):
+    """Describe traced state and tangent leaves without executing a rollout.
+
+    The returned entries distinguish optimizer roots from runtime and
+    auxiliary states. ``tangent_bytes`` includes the leading parameter
+    direction axis and therefore reports logical carry storage, not peak
+    device memory. This is an inspection helper for exact and compact RTRL.
+    """
+    values = functional_step.state_values() if state_values is None else state_values
+    tangents = None if state_tangents is None else state_tangents
+    parameter_indices = set(functional_step.parameter_indices)
+    entries = []
+    for index, value in enumerate(values):
+        value_leaves = tuple(jax.tree.leaves(value))
+        tangent_leaves = () if tangents is None else tuple(jax.tree.leaves(tangents[index]))
+        value_shapes = tuple(tuple(getattr(leaf, "shape", ())) for leaf in value_leaves)
+        value_dtypes = tuple(str(getattr(leaf, "dtype", None)) for leaf in value_leaves)
+        tangent_shapes = tuple(tuple(getattr(leaf, "shape", ())) for leaf in tangent_leaves)
+        tangent_dtypes = tuple(str(getattr(leaf, "dtype", None)) for leaf in tangent_leaves)
+        value_bytes = sum(int(getattr(leaf, "nbytes", 0)) for leaf in value_leaves)
+        tangent_bytes = sum(int(getattr(leaf, "nbytes", 0)) for leaf in tangent_leaves)
+        entries.append(
+            StateSensitivityEntry(
+                index=index,
+                state_type=type(functional_step.state_trace.states[index]).__name__,
+                value_shapes=value_shapes,
+                value_dtypes=value_dtypes,
+                tangent_shapes=tangent_shapes,
+                tangent_dtypes=tangent_dtypes,
+                value_bytes=value_bytes,
+                tangent_bytes=tangent_bytes,
+                has_float0_tangent=any("float0" in dtype for dtype in tangent_dtypes),
+                is_parameter=index in parameter_indices,
+            )
+        )
+    return tuple(entries)
 
 
 @dataclass(frozen=True)
@@ -429,8 +484,17 @@ def forward_sensitivity_step(
     def transition(values):
         return functional_step.call(values, step_data)
 
-    (next_state_values, local_loss), linear_map = jax.linearize(transition, state_values)
-    next_state_tangents, local_gradient = jax.vmap(linear_map)(state_tangents)
+    if os.environ.get("BRAINCELL_RTRL_JVP_MODE", "linearize") == "direct":
+        def one_direction(tangent):
+            return jax.jvp(transition, (state_values,), (tangent,))
+
+        (next_state_values, local_loss), (next_state_tangents, local_gradient) = jax.vmap(
+            one_direction,
+            out_axes=((None, None), (0, 0)),
+        )(state_tangents)
+    else:
+        (next_state_values, local_loss), linear_map = jax.linearize(transition, state_values)
+        next_state_tangents, local_gradient = jax.vmap(linear_map)(state_tangents)
     return next_state_values, next_state_tangents, local_loss, local_gradient
 
 

@@ -32,6 +32,7 @@ from braincell.experimental.optim._forward_sensitivity import (
     build_stateful_step,
     forward_sensitivity_rollout,
     initialize_forward_sensitivity,
+    inspect_state_sensitivity,
     initialized_bptt_reference_loss,
     seed_scalar_parameter_directions,
     select_parameter_derivatives,
@@ -102,6 +103,19 @@ def _functional_voltage_loss(cell, *, example_target):
 
 
 class ForwardSensitivityCoreTest(unittest.TestCase):
+    def test_state_sensitivity_inventory_marks_parameter_and_float0_leaves(self) -> None:
+        with brainstate.environ.context(dt=0.025 * u.ms):
+            cell = _leak_cell()
+            target = jnp.asarray(-60.0)
+            step = _functional_voltage_loss(cell, example_target=target)
+            values = step.state_values()
+            tangents = seed_scalar_parameter_directions(step, values)
+            entries = inspect_state_sensitivity(step, values, tangents)
+        self.assertEqual(len(entries), len(values))
+        self.assertTrue(all(entry.tangent_bytes >= 0 for entry in entries))
+        self.assertTrue(all(entries[index].is_parameter for index in step.parameter_indices))
+        self.assertIn(False, {entry.has_float0_tangent for entry in entries})
+
     def test_leak_prefix_gradients_match_reverse_mode_and_finite_difference(self) -> None:
         with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
             cell = _leak_cell()

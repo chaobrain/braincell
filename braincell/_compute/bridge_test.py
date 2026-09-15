@@ -49,8 +49,7 @@ class _StubCV:
     area: object
     diam_mid: object
     diam_arc_mean: object
-    radius_prox: object
-    radius_dist: object
+    radius_mid: object
 
 
 def _runtime(point_ids: list[int], n_point: int) -> _StubRuntime:
@@ -100,16 +99,14 @@ class TestBridge(unittest.TestCase):
                 area=100.0 * u.um**2,
                 diam_mid=6.0 * u.um,
                 diam_arc_mean=5.5 * u.um,
-                radius_prox=3.5 * u.um,
-                radius_dist=2.5 * u.um,
+                radius_mid=3.0 * u.um,
             ),
             _StubCV(
                 length=20.0 * u.um,
                 area=200.0 * u.um**2,
                 diam_mid=8.0 * u.um,
                 diam_arc_mean=7.0 * u.um,
-                radius_prox=4.5 * u.um,
-                radius_dist=3.5 * u.um,
+                radius_mid=4.0 * u.um,
             ),
         )
 

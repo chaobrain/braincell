@@ -16,15 +16,134 @@
 """Integration tests for Cell-local trainable parameter bindings."""
 
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import brainstate
 import brainunit as u
 import jax
+import jax.numpy as jnp
 import numpy as np
 
 import braincell
 from braincell._compute._testing import _build_tree
 from braincell.filter import AllRegion, BranchSlice
+from braincell.trainable._manager import ParameterBinding, TrainableManager, _TargetRow, _set_rows, _gather
+from braincell._compute.parameters import RuntimeParameterState
+
+
+class _MaterializationCell:
+    """Minimal allocation fixture; never constructs or advances a neuron."""
+
+
+class MaterializationGraphTest(unittest.TestCase):
+    def test_identity_gather_preserves_units_and_omits_index_operations(self):
+        value = jnp.asarray([0.2, 0.3, 0.4]) * u.mS / u.cm**2
+        self.assertIs(_gather(value, np.arange(3)), value)
+        identity = jax.make_jaxpr(lambda x: _gather(x, np.arange(3)))(value)
+        self.assertEqual(len(identity.jaxpr.eqns), 0)
+        for indices in (np.asarray([2, 0, 1]), np.asarray([0, 0, 2]), np.asarray([1])):
+            np.testing.assert_array_equal(_gather(value, indices).mantissa, value.mantissa[indices])
+
+    def _fixture(self, n_cv=5, selections=None, *, unit=None, split=False):
+        cell = _MaterializationCell()
+        layouts = [SimpleNamespace(id=0, source_cv_ids=tuple(range(n_cv)))]
+        if split:
+            layouts = [SimpleNamespace(id=0, source_cv_ids=(0,)),
+                       SimpleNamespace(id=1, source_cv_ids=tuple(range(1, n_cv)))]
+        states = {}
+        for layout in layouts:
+            value = jnp.full((2, n_cv), -1.0)
+            if unit is not None:
+                value = value * unit
+            states[(layout.id, "g_max")] = RuntimeParameterState(
+                value, axis="row", full_shape=(2, n_cv),
+                point_mask=np.isin(np.arange(n_cv), layout.source_cv_ids),
+            )
+        cell._runtime = SimpleNamespace(
+            layouts=layouts, state_buffers=states,
+            layout_mechanisms={layout.id: braincell.mech.Channel("IL", name="leak") for layout in layouts},
+        )
+        manager = TrainableManager(cell)
+        manager._target_axes.update({key: "row" for key in states})
+        selections = selections or [[(pop, cv) for pop in range(2) for cv in range(n_cv)]]
+        roots = []
+        for i, selection in enumerate(selections):
+            root = brainstate.ParamState(jnp.arange(len(selection), dtype=float) + 1 + i * 20)
+            roots.append(root)
+            rows = tuple(_TargetRow("channel", "leak", "IL", pop, cv, cv) for pop, cv in selection)
+            manager._binding_list.append(ParameterBinding(
+                name=f"root{i}", target_owner="leak", target_field="g_max",
+                row_keys=tuple(selection), group_by="row", root_names=(f"root{i}",), unit=unit,
+                _rows=rows, _evaluate=lambda root=root: root.value if unit is None else root.value * unit,
+            ))
+        return cell, manager, states, roots
+
+    def test_materialization_scatter_count_is_bounded_per_layout(self):
+        # This catches graph expansion before compiler optimizations hide it.
+        for n_cv in (1, 5):
+            with self.subTest(n_cv=n_cv):
+                cell, manager, states, roots = self._fixture(n_cv)
+                function = brainstate.transform.StatefulFunction(manager.materialize, return_only_write=False)
+                with patch("braincell._compute.bindings._sync_runtime_node_param"):
+                    function.make_jaxpr()
+                jaxpr = function.get_jaxpr().jaxpr
+                scatters = sum(eqn.primitive.name == "scatter" for eqn in jaxpr.eqns)
+                self.assertLessEqual(scatters, 1)
+
+    def test_partial_disjoint_bindings_and_split_layouts_preserve_rows(self):
+        selections = [[(0, 0), (1, 2)], [(1, 0), (0, 1)]]
+        for split in (False, True):
+            with self.subTest(split=split):
+                cell, manager, states, roots = self._fixture(3, selections, unit=u.mS, split=split)
+                with patch("braincell._compute.bindings._sync_runtime_node_param"):
+                    manager.materialize()
+                expected = np.array([[1, 22, -1], [21, -1, 2]], dtype=float)
+                for layout in cell._runtime.layouts:
+                    actual = np.asarray(states[(layout.id, "g_max")].dense_value().to_decimal(u.mS))
+                    np.testing.assert_array_equal(actual[:, layout.source_cv_ids], expected[:, layout.source_cv_ids])
+
+    def test_reverse_and_forward_derivatives_follow_selected_rows(self):
+        cell, manager, states, roots = self._fixture(3, [[(1, 2), (0, 0)]], unit=u.mS)
+        weights = jnp.arange(6, dtype=float).reshape(2, 3) + 1
+
+        def objective():
+            manager.materialize()
+            return jnp.sum(states[(0, "g_max")].dense_value().to_decimal(u.mS) * weights)
+
+        function = brainstate.transform.StatefulFunction(objective, return_only_write=False)
+        with patch("braincell._compute.bindings._sync_runtime_node_param"):
+            function.make_jaxpr()
+        trace = function.get_state_trace()
+        initial = trace.get_state_values()
+        root_index = next(i for i, state in enumerate(trace.states) if state is roots[0])
+
+        def pure(root):
+            values = list(initial)
+            values[root_index] = root
+            return function.jaxpr_call(tuple(values))[1]
+
+        np.testing.assert_array_equal(jax.grad(pure)(roots[0].value), [6, 1])
+        _, tangent = jax.jvp(pure, (roots[0].value,), (jnp.array([2.0, 3.0]),))
+        self.assertEqual(float(tangent), 15)
+
+    def test_full_reordered_and_repeated_rows_keep_last_write_and_units(self):
+        full = jnp.zeros((2, 2), dtype=jnp.int32) * u.mS
+        # Arbitrary order covers the rectangle; the last repeated entry wins.
+        populations = np.array([1, 0, 1, 0, 1])
+        cvs = np.array([0, 1, 1, 0, 0])
+        values = jnp.array([1., 2., 3., 4., 5.]) * u.siemens
+        actual = _set_rows(full, populations, cvs, values).to_decimal(u.mS)
+        np.testing.assert_allclose(actual, [[4000, 2000], [5000, 3000]])
+        self.assertTrue(jnp.issubdtype(actual.dtype, jnp.floating))
+
+    def test_invalid_later_binding_does_not_commit_earlier_values(self):
+        from dataclasses import replace
+        cell, manager, states, roots = self._fixture(3, [[(0, 0)], [(1, 2)]], unit=u.mS)
+        manager._binding_list[1] = replace(manager._binding_list[1], _evaluate=lambda: jnp.array([1.]))
+        with patch("braincell._compute.bindings._sync_runtime_node_param"), self.assertRaises(TypeError):
+            manager.materialize()
+        np.testing.assert_array_equal(states[(0, "g_max")].dense_value().to_decimal(u.mS), -np.ones((2, 3)))
 
 
 @braincell.mech.register_channel("_SignatureRequiredLeak")

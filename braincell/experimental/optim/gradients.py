@@ -26,6 +26,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import NamedTuple
 
 import brainstate
+import brainunit as u
 import jax
 import jax.numpy as jnp
 
@@ -150,11 +151,17 @@ class RolloutGradientEngine:
         self._initializer_coordinates: ParameterCoordinates | None = None
         self._parameter_coordinates: ParameterCoordinates | None = None
         self._initializer_values: object | None = None
+        self._materialization_mode: str | None = None
 
     @property
     def prepared(self) -> bool:
         """Whether the stateful transition has been traced."""
         return self._functional_step is not None
+
+    @property
+    def materialization_mode(self) -> str | None:
+        """Selected mapping schedule: ``rollout``, ``step``, or unprepared ``None``."""
+        return self._materialization_mode
 
     @property
     def parameter_names(self) -> tuple[str, ...]:
@@ -170,27 +177,8 @@ class RolloutGradientEngine:
         if self.prepared:
             return self
 
-        def initialize_and_zero(_):
-            self.target.trainables.materialize()
-            if self.initializer is None:
-                self.target.reset_state()
-            else:
-                self.initializer()
-            return jnp.asarray(0.0)
-
-        def materialized_step(data):
-            self.target.trainables.materialize()
-            return self.step(data)
-
-        self._initializer_step = build_stateful_step(
-            initialize_and_zero,
-            None,
-            self.parameter_states,
-        )
-        self._functional_step = build_stateful_step(
-            materialized_step,
-            example_step_data,
-            self.parameter_states,
+        self._initializer_step, self._functional_step, self._materialization_mode = _prepare_steps(
+            self, example_step_data, require_scalar_output=True,
         )
         self._parameter_coordinates = build_parameter_coordinates(self._functional_step)
         initializer_coordinates = build_parameter_coordinates(self._initializer_step)
@@ -303,7 +291,6 @@ class RolloutGradientEngine:
         coordinates = self._parameter_coordinates
         values, tangents = self._initial_full_carry(roots)
         gradient = jnp.zeros((coordinates.size,), dtype=_coordinate_dtype(roots))
-
         def scan_step(carry, item):
             current_values, current_tangents, current_gradient = carry
             next_values, next_tangents, local_loss, local_gradient = forward_sensitivity_step(
@@ -326,7 +313,7 @@ class RolloutGradientEngine:
         return RolloutGradientResult(
             losses=losses,
             loss=jnp.sum(losses),
-            gradients=coordinates.unflatten(gradient),
+            gradients=_unflatten_parameter_gradients(coordinates, gradient, roots),
         )
 
     def _rtrl_diagnostic(self, roots, step_data, sample_indices) -> FullRTRLDiagnostic:
@@ -369,6 +356,7 @@ class RolloutGradientEngine:
             at=sample_indices,
             samples=stacked,
             final_carry=carry,
+            roots=roots,
         )
 
     def _rtrl_diagnostic_all(self, roots, step_data, *, length: int) -> FullRTRLDiagnostic:
@@ -388,6 +376,7 @@ class RolloutGradientEngine:
             at=tuple(range(length)),
             samples=samples,
             final_carry=final_carry,
+            roots=roots,
         )
 
     def _initial_diagnostic_carry(self, roots):
@@ -448,10 +437,16 @@ class TrajectoryGradientEngine:
         self._initializer_coordinates: ParameterCoordinates | None = None
         self._parameter_coordinates: ParameterCoordinates | None = None
         self._initializer_values: object | None = None
+        self._materialization_mode: str | None = None
 
     @property
     def prepared(self) -> bool:
         return self._functional_step is not None
+
+    @property
+    def materialization_mode(self) -> str | None:
+        """Selected mapping schedule: ``rollout``, ``step``, or unprepared ``None``."""
+        return self._materialization_mode
 
     @property
     def parameter_names(self) -> tuple[str, ...]:
@@ -462,24 +457,8 @@ class TrajectoryGradientEngine:
         if self.prepared:
             return self
 
-        def initialize_and_zero(_):
-            self.target.trainables.materialize()
-            if self.initializer is None:
-                self.target.reset_state()
-            else:
-                self.initializer()
-            return jnp.asarray(0.0)
-
-        def materialized_step(data):
-            self.target.trainables.materialize()
-            return self.step(data)
-
-        self._initializer_step = build_stateful_step(initialize_and_zero, None, self.parameter_states)
-        self._functional_step = build_stateful_step(
-            materialized_step,
-            example_step_data,
-            self.parameter_states,
-            require_scalar_output=False,
+        self._initializer_step, self._functional_step, self._materialization_mode = _prepare_steps(
+            self, example_step_data, require_scalar_output=False,
         )
         self._parameter_coordinates = build_parameter_coordinates(self._functional_step)
         initializer_coordinates = build_parameter_coordinates(self._initializer_step)
@@ -579,7 +558,90 @@ class TrajectoryGradientEngine:
             (values, tangents, gradient),
             (step_data, learning_signals),
         )
-        return TrajectoryGradientResult(loss, self._parameter_coordinates.unflatten(gradient))
+        return TrajectoryGradientResult(
+            loss, _unflatten_parameter_gradients(self._parameter_coordinates, gradient, roots),
+        )
+
+
+def _prepare_steps(engine, example_step_data, *, require_scalar_output):
+    """Hoist state-backed mappings only when their dependencies stay invariant.
+
+    Explicit root reads keep optimizer coordinates in the functional state
+    trace even when the transition now reads only physical parameter buffers.
+    The initializer's differentiated outputs carry those buffers and their
+    sensitivities into both BPTT and exact RTRL.
+    """
+    manager = engine.target.trainables
+    inspect_states = getattr(manager, "_rollout_materialization_states", None)
+    guarded_states = None if inspect_states is None else inspect_states()
+    functional_step = None
+    mode = "step"
+
+    def read_roots():
+        for state in engine.parameter_states.values():
+            _ = state.value
+
+    if guarded_states is not None:
+        direct_reads = manager._rollout_direct_reads()
+        step_writes = []
+        protected = {id(state) for state in guarded_states}
+
+        def unmapped_step(data):
+            read_roots()
+            for physical, root, shape in direct_reads:
+                physical.value = u.math.reshape(root.value, shape)
+            # Inspect writes made by the user's transition separately from the
+            # identity forwarding above. Forwarding is safe only if the user
+            # does not change these roots or physical buffers inside the step.
+            with brainstate.StateTraceStack() as trace:
+                result = engine.step(data)
+            written = {id(state) for state in trace.get_write_states()}
+            for state, before in zip(trace.states, trace.original_state_values):
+                if id(state) not in written or id(state) not in protected:
+                    continue
+                after = state.value
+                # Nested stateful channel calls can restore exactly the same
+                # parameter leaf while marking it written. Permit only exact
+                # tracer forwarding, never a numeric equality comparison.
+                unchanged = jax.tree.structure(before) == jax.tree.structure(after) and all(
+                    a is b for a, b in zip(jax.tree.leaves(before), jax.tree.leaves(after))
+                )
+                if not unchanged:
+                    step_writes.append(state)
+            return result
+
+        candidate = build_stateful_step(
+            unmapped_step, example_step_data, engine.parameter_states,
+            require_scalar_output=require_scalar_output,
+        )
+        if not any(id(state) in protected for state in step_writes):
+            functional_step = candidate
+            mode = "rollout"
+
+    def initialize_and_zero(_):
+        read_roots()
+        manager.materialize()
+        if engine.initializer is None:
+            engine.target.reset_state()
+        else:
+            engine.initializer()
+        if mode == "rollout":
+            # Match the old first-step refresh even if a custom reset changed
+            # roots or runtime parameters after using them to seed dynamics.
+            manager.materialize()
+        return jnp.asarray(0.0)
+
+    initializer_step = build_stateful_step(initialize_and_zero, None, engine.parameter_states)
+    if functional_step is None:
+        def materialized_step(data):
+            manager.materialize()
+            return engine.step(data)
+
+        functional_step = build_stateful_step(
+            materialized_step, example_step_data, engine.parameter_states,
+            require_scalar_output=require_scalar_output,
+        )
+    return initializer_step, functional_step, mode
 
 
 def build_rollout_value_and_grad(
@@ -746,7 +808,19 @@ def _diagnostic_step(functional_step, coordinates, carry, step_data):
     return next_carry, sample
 
 
-def _build_diagnostic_result(coordinates, *, at, samples, final_carry):
+def _unflatten_parameter_gradients(coordinates, gradient, roots):
+    """Match reverse-mode optimizer PyTrees, including Quantity metadata.
+
+    Coordinate derivatives are with respect to each optimizer array leaf.
+    Reattaching its PyTree metadata follows JAX's reverse-mode convention;
+    it is not a conversion to a physical derivative unit such as loss/S.
+    """
+    arrays = coordinates.unflatten(gradient)
+    return {name: jax.tree.structure(root).unflatten((arrays[name],))
+            for name, root in zip(coordinates.names, roots)}
+
+
+def _build_diagnostic_result(coordinates, *, at, samples, final_carry, roots):
     _values, _tangents, final_gradient, final_loss = final_carry
     return FullRTRLDiagnostic(
         at=jnp.asarray(at, dtype=jnp.int32),
@@ -759,7 +833,7 @@ def _build_diagnostic_result(coordinates, *, at, samples, final_carry):
         prefix_gradients=samples[6],
         decomposition_residual=samples[7],
         loss=final_loss,
-        gradients=coordinates.unflatten(final_gradient),
+        gradients=_unflatten_parameter_gradients(coordinates, final_gradient, roots),
     )
 
 

@@ -501,6 +501,12 @@ cell.trainables.materialize()
 `reset_state()` 不回滚 roots 或 scale baseline。完整 `Cell.reset()` 清除 runtime；旧 runtime
 buffer 引用随之失效。
 
+实验梯度引擎会自动选择物化时机，无需改变上述 source 声明：普通 channel 的静态映射
+可放在 rollout 入口，布局匹配的直接参数可在单步中直接读取 root。准备后的
+`engine.materialization_mode` 为 `"rollout"` 或 `"step"`，准备前为 `None`。
+适用条件、回退行为和梯度连接见
+[自动物化调度](architecture.md#实验梯度引擎的自动物化调度)。
+
 ## Synapse, Connection, Network
 
 这些 owner 复用同一 source 和 manager，不创建新 namespace：

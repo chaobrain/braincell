@@ -167,6 +167,7 @@ class PreparedBenchmark(NamedTuple):
     parameter_count_per_seed: int
     active_state_count_per_trajectory: int
     rtrl_carry_bytes: int | None
+    materialization_mode: str | None = None
 
 
 
@@ -381,6 +382,7 @@ def prepare_benchmark(
         parameter_count_per_seed=parameter_count,
         active_state_count_per_trajectory=mechanism.state_variables_per_cv * config.n_cv,
         rtrl_carry_bytes=carry_bytes,
+        materialization_mode=engine.materialization_mode,
     )
 
 

@@ -62,6 +62,7 @@ class ParameterBinding:
     _rows: tuple[_TargetRow, ...] = field(default=(), repr=False)
     _evaluate: object = field(default=None, repr=False, compare=False)
     _prepare_write: object = field(default=None, repr=False, compare=False)
+    _direct_root_name: str | None = field(default=None, repr=False)
 
 
 class TrainableManager(brainstate.nn.Module):
@@ -83,6 +84,91 @@ class TrainableManager(brainstate.nn.Module):
     def bindings(self) -> tuple[ParameterBinding, ...]:
         """Return immutable binding metadata in registration order."""
         return tuple(self._binding_list)
+
+    def _rollout_materialization_states(self):
+        """Return guarded states when mappings can be evaluated at rollout entry.
+
+        Only ordinary density channel nodes retain physical State references.
+        Merged layouts, ion refresh hooks and point targets can also publish
+        derived Python attributes, so they retain per-step materialization.
+        Source callbacks must read only registered roots and write no States.
+        The caller must additionally check that the step writes none of the
+        returned States. This is a tracing-time check, never a value cache.
+        """
+        from braincell._base_channel import IonChannel
+
+        runtime = self._cell()._runtime
+        if runtime is None or type(self).materialize is not TrainableManager.materialize:
+            return None
+        targets = {}
+        for binding in self._binding_list:
+            if binding._prepare_write is not None:
+                return None
+            for row in binding._rows:
+                layout = _runtime_layout(runtime, row)
+                state = runtime.state_buffers.get((int(layout.id), binding.target_field))
+                node = runtime.runtime_nodes.get(int(layout.id))
+                if (
+                    not layout.kind.startswith("channel:")
+                    or not isinstance(state, RuntimeParameterState)
+                    or not isinstance(node, IonChannel)
+                    # Channel.__getattribute__ expands State-backed parameters
+                    # to dense values; inspect storage identity without reading
+                    # through that public array adapter.
+                    or vars(node).get(binding.target_field) is not state
+                    or type(node)._on_param_updated is not IonChannel._on_param_updated
+                ):
+                    return None
+                targets[id(state)] = state
+
+        roots = {id(root.val): root.val for root in self.roots.values()
+                 if isinstance(root.val, brainstate.State)}
+        evaluate = brainstate.transform.StatefulFunction(
+            lambda: tuple(binding._evaluate() for binding in self._binding_list),
+            return_only_write=False,
+        )
+        evaluate.make_jaxpr()
+        trace = evaluate.get_state_trace()
+        if trace.get_write_states() or any(id(state) not in roots for state in trace.states):
+            return None
+        return tuple({**roots, **targets}.values())
+
+    def _rollout_direct_reads(self):
+        """Resolve identity bindings to root reads with only a shape view.
+
+        Called only after the state-backed materialization guard succeeds.
+        Eligibility uses ownership, coordinate order, units and dtype, never
+        equality of parameter values. Runtime State objects keep their identity;
+        the functional transition forwards the root value to their consumers.
+        """
+        runtime = self._cell()._runtime
+        reads = []
+        for binding in self._binding_list:
+            if binding._direct_root_name is None:
+                continue
+            root = self.roots[binding._direct_root_name]
+            if type(root.t) is not brainstate.nn.IdentityT or not isinstance(root.val, brainstate.ParamState):
+                continue
+            layouts = {_runtime_layout(runtime, row).id for row in binding._rows}
+            if len(layouts) != 1:
+                continue
+            state = runtime.state_buffers[(int(next(iter(layouts))), binding.target_field)]
+            if state.axis != _binding_axis(binding) or len(state.full_shape) != 2:
+                continue
+            population, n_cv = state.full_shape
+            expected_rows = tuple((pop, cv) for pop in range(population) for cv in range(n_cv))
+            if binding.row_keys != expected_rows:
+                continue
+            raw, physical = root.val.value, state.value
+            if getattr(raw, "unit", None) != getattr(physical, "unit", None):
+                continue
+            if getattr(raw, "dtype", None) != getattr(physical, "dtype", None):
+                continue
+            shape = tuple(getattr(physical, "shape", ()))
+            if np.prod(getattr(raw, "shape", ()), dtype=int) != np.prod(shape, dtype=int):
+                continue
+            reads.append((state, root.val, shape))
+        return tuple(reads)
 
     def owns(self, *, category: str, owner: str, population_index: int, cv_id: int, field: str) -> bool:
         """Return whether a logical density row/field is binding-owned."""
@@ -137,14 +223,19 @@ class TrainableManager(brainstate.nn.Module):
                 point_commits.extend(binding._prepare_write(values))
                 continue
             required_axis = _binding_axis(binding)
-            selection_axes = {}
             if tuple(getattr(values, "shape", ())) != (len(binding._rows),):
                 raise ValueError(
                     f"Binding {binding.name!r} returned shape {getattr(values, 'shape', ())!r}; "
                     f"expected ({len(binding._rows)},)."
                 )
+            # Group static row metadata before emitting array operations. A
+            # scalar scatter per population/CV row expands both AD graphs and
+            # compiler work even when every row belongs to one parameter field.
+            selections = {}
             for index, row in enumerate(binding._rows):
                 layout = _runtime_layout(runtime, row)
+                selections.setdefault(int(layout.id), (layout, []))[1].append((index, row))
+            for layout, selected_rows in selections.values():
                 key = (int(layout.id), binding.target_field)
                 if key not in pending:
                     state = runtime.state_buffers.get(key)
@@ -155,16 +246,16 @@ class TrainableManager(brainstate.nn.Module):
                     pending[key] = (state, state.dense_value(), required_axis)
                 state, full, pending_axis = pending[key]
                 # Equal initial values do not imply shared trainable ownership.
-                if layout.id not in selection_axes:
-                    selected = np.zeros(state.full_shape, dtype=bool)
-                    for selected_row in binding._rows:
-                        if selected_row.cv_id in layout.source_cv_ids:
-                            selected[selected_row.population_index, selected_row.cv_id] = True
-                    selection_axes[layout.id] = _compact_axis(selected, state.point_mask)
+                indices = np.asarray([index for index, _ in selected_rows], dtype=np.int32)
+                populations = np.asarray([row.population_index for _, row in selected_rows], dtype=np.int32)
+                cvs = np.asarray([row.cv_id for _, row in selected_rows], dtype=np.int32)
+                selected = np.zeros(state.full_shape, dtype=bool)
+                selected[populations, cvs] = True
+                replacements = values if len(selected_rows) == len(binding._rows) else values[indices]
                 pending[key] = (
                     state,
-                    _set_row(full, row.population_index, row.cv_id, values[index]),
-                    _join_axes(_join_axes(pending_axis, required_axis), selection_axes[layout.id]),
+                    _set_rows(full, populations, cvs, replacements),
+                    _join_axes(_join_axes(pending_axis, required_axis), _compact_axis(selected, state.point_mask)),
                 )
 
         commits = []
@@ -272,6 +363,7 @@ class TrainableManager(brainstate.nn.Module):
             _rows=rows,
             _evaluate=evaluate,
             _prepare_write=(lambda values: view._prepare_write(target_field, values)) if point_target else None,
+            _direct_root_name=root_names[0] if isinstance(source, DirectSource) else None,
         )
         self._binding_list.append(binding)
         self._owned_targets.update(target_keys)
@@ -446,6 +538,10 @@ def _require_root_shape(value: object, n_groups: int) -> None:
 def _gather(value: object, indices: np.ndarray):
     if tuple(getattr(value, "shape", ())) == ():
         return u.math.broadcast_to(value, (len(indices),))
+    # A direct per-row parameter already has the requested coordinates. Avoid
+    # creating gather (and its AD scatter) for an identity map.
+    if np.array_equal(indices, np.arange(value.shape[0])):
+        return value
     return value[jnp.asarray(indices)]
 
 
@@ -502,17 +598,34 @@ def _runtime_layout(runtime, row: _TargetRow):
     return matches[0]
 
 
-def _set_row(full: object, population_index: int, point_id: int, value: object):
+def _set_rows(full: object, populations: np.ndarray, cvs: np.ndarray, values: object):
+    """Write a static selection together, preserving units and dtype promotion."""
     if isinstance(full, u.Quantity):
-        if not isinstance(value, u.Quantity):
+        if not isinstance(values, u.Quantity):
             raise TypeError(f"Materialized value requires a Quantity compatible with {full.unit}.")
-        replacement = value.to_decimal(full.unit)
-        dtype = jnp.result_type(full.mantissa, replacement)
-        mantissa = jnp.asarray(full.to_decimal(full.unit), dtype=dtype).at[population_index, point_id].set(replacement)
-        return u.Quantity(mantissa, full.unit)
-    if isinstance(value, u.Quantity):
-        raise TypeError("Materialized value must be dimensionless.")
-    return jnp.asarray(full, dtype=jnp.result_type(full, value)).at[population_index, point_id].set(value)
+        current, replacement = full.mantissa, values.to_decimal(full.unit)
+    else:
+        if isinstance(values, u.Quantity):
+            raise TypeError("Materialized value must be dimensionless.")
+        current, replacement = full, values
+    dtype = jnp.result_type(current, replacement)
+    shape = tuple(current.shape)
+    flat_indices = np.ravel_multi_index((populations, cvs), shape)
+    # Preserve sequential last-write semantics even for repeated static rows.
+    _, reverse_positions = np.unique(flat_indices[::-1], return_index=True)
+    positions = len(flat_indices) - 1 - reverse_positions
+    if len(positions) != len(flat_indices):
+        populations, cvs = populations[positions], cvs[positions]
+        replacement = replacement[positions]
+        flat_indices = flat_indices[positions]
+    if len(flat_indices) == int(np.prod(shape)):
+        order = np.argsort(flat_indices)
+        if not np.array_equal(order, np.arange(len(order))):
+            replacement = replacement[order]
+        result = jnp.asarray(replacement, dtype=dtype).reshape(shape)
+    else:
+        result = jnp.asarray(current, dtype=dtype).at[populations, cvs].set(replacement)
+    return u.Quantity(result, full.unit) if isinstance(full, u.Quantity) else result
 
 
 def _compact_axis(value: object, point_mask: object | None) -> str:

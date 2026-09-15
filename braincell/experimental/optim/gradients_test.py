@@ -16,6 +16,9 @@
 """Tests for the experimental rollout gradient engines."""
 
 import unittest
+from dataclasses import replace
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import braincell
 import brainstate
@@ -26,6 +29,9 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._compute._testing import _build_tree
+from braincell._base_channel import IonChannel
+from braincell._parameter_schema import RuntimeParameterState
+from braincell.trainable._manager import ParameterBinding, TrainableManager, _TargetRow
 from braincell.filter import AllRegion
 from braincell.experimental.optim.gradients import (
     TrajectoryGradientResult,
@@ -34,7 +40,7 @@ from braincell.experimental.optim.gradients import (
 )
 
 
-def _cell(*, population=1):
+def _cell(*, population=1, source=None):
     cell = braincell.Cell(_build_tree(), pop_size=(population,))
     cell.paint(
         AllRegion(),
@@ -45,7 +51,9 @@ def _cell(*, population=1):
             E=-54.3 * u.mV,
         ),
     )
-    cell.channels["leak"].trainable(g_max=braincell.trainable.scale(group_by="all", name="leak.factor"))
+    if source is None:
+        source = braincell.trainable.scale(group_by="all", name="leak.factor")
+    cell.channels["leak"].trainable(g_max=source)
     cell.init_state()
     return cell
 
@@ -57,6 +65,272 @@ def _engine(cell, method):
         return jnp.mean(error * error)
 
     return build_rollout_value_and_grad(cell, step=rollout_step, method=method)
+
+
+class _MappedRecurrence:
+    """Two-coordinate recurrence with real bindings, without a neuron solver."""
+
+    def __init__(self, mapping="direct", *, mutation=None):
+        self.root = brainstate.nn.Param(jnp.asarray([0.4, 0.7]))
+        self.x = brainstate.ShortTermState(jnp.zeros((1, 2)))
+        self.g = RuntimeParameterState(jnp.zeros((1, 2)), axis="row", full_shape=(1, 2))
+        self.mapping = mapping
+        self.mutation = mutation
+        node = IonChannel(size=(2,))
+        node.g_max = self.g
+        layout = SimpleNamespace(id=0, source_cv_ids=(0, 1), kind="channel:IL")
+        self._runtime = SimpleNamespace(
+            layouts=(layout,), state_buffers={(0, "g_max"): self.g},
+            layout_mechanisms={0: braincell.mech.Channel("IL", name="leak")},
+            runtime_nodes={0: node}, merged_channel_layout_groups={},
+        )
+        self.trainables = TrainableManager(self)
+        self.trainables.roots["theta"] = self.root
+        rows = tuple(_TargetRow("channel", "leak", "IL", 0, cv, cv) for cv in range(2))
+        self.trainables._binding_list.append(ParameterBinding(
+            name="theta", target_owner="leak", target_field="g_max",
+            row_keys=((0, 0), (0, 1)), group_by="row", root_names=("theta",), unit=None,
+            _rows=rows, _evaluate=self.evaluate,
+            _direct_root_name="theta" if mapping == "direct" else None,
+        ))
+        self.trainables._target_axes[(0, "g_max")] = "row"
+        self.trainables.materialize()
+
+    def evaluate(self):
+        value = self.root.value()
+        if self.mapping == "scale":
+            value = value * jnp.asarray([2., 3.])
+        elif self.mapping == "distribution":
+            value = jnp.exp(value[0]) + value[1] * jnp.asarray([0., 2.])
+        elif self.mapping == "dynamic":
+            value = value + self.x.value.reshape(2)
+        return value
+
+    def reset_state(self):
+        self.x.value = self.g.value * 0.2
+
+    def step(self, data):
+        self.x.value = 0.8 * self.x.value + self.g.value * data
+        if self.mutation == "root":
+            self.root.val.value = self.root.val.value * 0.9
+        elif self.mutation == "physical":
+            self.g.value = self.g.value * 0.9
+        return jnp.sum(self.x.value ** 2) + 0.1 * jnp.sum(self.root.value() ** 2)
+
+
+class MaterializationScheduleTest(unittest.TestCase):
+    def test_full_hh_static_scales_match_per_step_bptt_and_rtrl(self):
+        # A short correctness check, without target generation or performance
+        # timing. Both population rows share the same per-CV optimizer roots.
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            cell = braincell.Cell(_build_tree(), pop_size=(2,))
+            for mechanism, name, conductance in (("IL", "leak", 0.3), ("K_HH1952", "k", 3.6),
+                                                ("Na_HH1952", "na", 12.0)):
+                cell.paint(AllRegion(), braincell.mech.Channel(
+                    mechanism, name=name, g_max=conductance * u.mS / u.cm**2,
+                ))
+                cell.channels[name].trainable(g_max=braincell.trainable.scale(group_by="cv", name=name))
+            cell.init_state()
+            data = jnp.full((3,), -60.0)
+            reference = _engine(cell, "bptt")
+            with patch.object(cell.trainables, "_rollout_materialization_states", return_value=None):
+                reference.prepare(data[0])
+            expected = reference(data)
+            for method in ("bptt", "rtrl"):
+                engine = _engine(cell, method)
+                actual = engine(data)
+                self.assertEqual(engine.materialization_mode, "rollout")
+                np.testing.assert_allclose(actual.loss, expected.loss, rtol=1e-11, atol=1e-11)
+                for name in ("leak", "k", "na"):
+                    np.testing.assert_allclose(actual.gradients[name], expected.gradients[name],
+                                               rtol=1e-8, atol=1e-10)
+
+    def test_physical_parameters_transforms_and_parameterized_api_use_rollout_schedule(self):
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            sources = (
+                braincell.trainable.parameter(group_by="cv", name="g"),
+                braincell.trainable.parameter(
+                    group_by="cv", name="g", transform=brainstate.nn.SoftplusT(0.0 * u.mS / u.cm**2),
+                ),
+                braincell.trainable.parameterized(
+                    lambda context, factor: factor * (0.3 * u.mS / u.cm**2),
+                    factor=braincell.trainable.parameter(1.0, group_by="all", name="g"),
+                ),
+            )
+            for source in sources:
+                for method in ("bptt", "rtrl"):
+                    with self.subTest(source=type(source).__name__, method=method):
+                        cell = _cell(population=2, source=source)
+                        actual = _engine(cell, method)
+                        actual.prepare(jnp.asarray(-60.0))
+                        self.assertEqual(actual.materialization_mode, "rollout")
+                        expected_direct = int(
+                            hasattr(source, "transform") and type(source.transform) is brainstate.nn.IdentityT
+                        )
+                        self.assertEqual(len(cell.trainables._rollout_direct_reads()), expected_direct)
+                        reference = _engine(cell, method)
+                        with patch.object(cell.trainables, "_rollout_materialization_states", return_value=None):
+                            reference.prepare(jnp.asarray(-60.0))
+                        data = jnp.full((3,), -60.0)
+                        a, b = actual(data), reference(data)
+                        np.testing.assert_allclose(a.loss, b.loss, rtol=1e-11, atol=1e-11)
+                        self.assertEqual(jax.tree.structure(a.gradients), jax.tree.structure(b.gradients))
+                        for ag, bg in zip(jax.tree.leaves(a.gradients), jax.tree.leaves(b.gradients)):
+                            np.testing.assert_allclose(ag, bg, rtol=1e-9, atol=1e-10)
+
+    def test_direct_physical_gradient_tree_matches_bptt_in_all_rtrl_outputs(self):
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            cell = _cell(source=braincell.trainable.parameter(group_by="cv", name="g"))
+            data = jnp.full((3,), -60.0)
+            bptt = _engine(cell, "bptt")(data)
+            rtrl = _engine(cell, "rtrl")
+            outputs = [rtrl(data), rtrl.diagnose(data, at=(1,)), rtrl.diagnose(data)]
+            trajectory = build_trajectory_value_and_grad(
+                cell, step=rtrl.step, loss=lambda observations, _: jnp.sum(observations), method="rtrl",
+            )
+            outputs.append(trajectory(data))
+            expected_tree = jax.tree.structure(bptt.gradients)
+            for result in outputs:
+                self.assertEqual(jax.tree.structure(result.gradients), expected_tree)
+                for actual, expected in zip(jax.tree.leaves(result.gradients), jax.tree.leaves(bptt.gradients)):
+                    np.testing.assert_allclose(actual, expected, rtol=1e-9, atol=1e-10)
+
+    def test_static_mappings_match_step_schedule_and_refresh_updated_roots(self):
+        data = jnp.asarray([0.1, 0.3, -0.2])
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for mapping in ("direct", "scale", "distribution"):
+                for method in ("bptt", "rtrl"):
+                    with self.subTest(mapping=mapping, method=method):
+                        target = _MappedRecurrence(mapping)
+                        engine = build_rollout_value_and_grad(target, step=target.step, method=method)
+                        self.assertIsNone(engine.materialization_mode)
+                        engine.prepare(data[0])
+                        self.assertEqual(engine.materialization_mode, "rollout")
+                        physical_written = id(target.g) in {
+                            id(state) for state in engine._functional_step.state_trace.get_write_states()
+                        }
+                        self.assertEqual(physical_written, mapping == "direct")
+                        reference = build_rollout_value_and_grad(target, step=target.step, method=method)
+                        with patch.object(target.trainables, "_rollout_materialization_states", return_value=None):
+                            reference.prepare(data[0])
+                        self.assertEqual(reference.materialization_mode, "step")
+                        if mapping == "distribution":
+                            optimized_graph = engine._functional_step.function.get_jaxpr(data[0]).jaxpr
+                            reference_graph = reference._functional_step.function.get_jaxpr(data[0]).jaxpr
+                            self.assertNotIn("exp", {eqn.primitive.name for eqn in optimized_graph.eqns})
+                            self.assertIn("exp", {eqn.primitive.name for eqn in reference_graph.eqns})
+                        actual = brainstate.transform.jit(lambda: engine(data))
+                        expected = brainstate.transform.jit(lambda: reference(data))
+                        for theta in ([0.4, 0.7], [0.8, 0.5]):
+                            target.root.val.value = jnp.asarray(theta)
+                            a, b = actual(), expected()
+                            np.testing.assert_allclose(a.loss, b.loss, rtol=1e-11, atol=1e-11)
+                            np.testing.assert_allclose(a.gradients["theta"], b.gradients["theta"],
+                                                       rtol=1e-10, atol=1e-11)
+
+    def test_mutations_and_state_dependent_mappings_retain_step_schedule(self):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for mapping, mutation in (("dynamic", None), ("direct", "root"), ("scale", "physical")):
+                with self.subTest(mapping=mapping, mutation=mutation):
+                    target = _MappedRecurrence(mapping, mutation=mutation)
+                    engine = build_rollout_value_and_grad(target, step=target.step)
+                    engine.prepare(jnp.asarray(0.1))
+                    self.assertEqual(engine.materialization_mode, "step")
+                    reference = build_rollout_value_and_grad(target, step=target.step, method="bptt")
+                    data = jnp.asarray([0.1, 0.3])
+                    a, b = engine(data), reference(data)
+                    np.testing.assert_allclose(a.loss, b.loss, rtol=1e-11, atol=1e-11)
+                    np.testing.assert_allclose(a.gradients["theta"], b.gradients["theta"],
+                                               rtol=1e-10, atol=1e-11)
+
+    def test_non_state_backed_nodes_and_source_side_effects_are_not_hoisted(self):
+        target = _MappedRecurrence()
+        node = target._runtime.runtime_nodes[0]
+        node.g_max = target.g.value
+        self.assertIsNone(target.trainables._rollout_materialization_states())
+        node.g_max = target.g
+
+        class RefreshingChannel(IonChannel):
+            def _on_param_updated(self, name, value):
+                self.cached = value * 2
+
+        custom = RefreshingChannel(size=(2,))
+        custom.g_max = target.g
+        target._runtime.runtime_nodes[0] = custom
+        self.assertIsNone(target.trainables._rollout_materialization_states())
+        target._runtime.runtime_nodes[0] = node
+
+        original = target.trainables._binding_list[0]
+        def evaluate():
+            target.x.value = target.x.value + 1
+            return target.root.value()
+
+        target.trainables._binding_list[0] = replace(original, _evaluate=evaluate)
+        before = target.x.value
+        self.assertIsNone(target.trainables._rollout_materialization_states())
+        np.testing.assert_array_equal(target.x.value, before)
+
+    def test_partial_and_reordered_coordinates_use_entry_mapping(self):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for partial in (True, False):
+                target = _MappedRecurrence()
+                binding = target.trainables._binding_list[0]
+                rows = binding._rows[:1] if partial else tuple(reversed(binding._rows))
+                target.trainables._binding_list[0] = replace(
+                    binding, _rows=rows, row_keys=tuple((row.population_index, row.cv_id) for row in rows),
+                    _evaluate=(lambda: target.root.value()[:1]) if partial else target.evaluate,
+                )
+                self.assertEqual(target.trainables._rollout_direct_reads(), ())
+                optimized = build_rollout_value_and_grad(target, step=target.step, method="rtrl")
+                optimized.prepare(jnp.asarray(0.1))
+                self.assertEqual(optimized.materialization_mode, "rollout")
+                reference = build_rollout_value_and_grad(target, step=target.step, method="bptt")
+                with patch.object(target.trainables, "_rollout_materialization_states", return_value=None):
+                    reference.prepare(jnp.asarray(0.1))
+                data = jnp.asarray([0.1, 0.3])
+                a, b = optimized(data), reference(data)
+                np.testing.assert_allclose(a.loss, b.loss, rtol=1e-11, atol=1e-11)
+                np.testing.assert_allclose(a.gradients["theta"], b.gradients["theta"], rtol=1e-10, atol=1e-11)
+
+    def test_custom_reset_parameter_changes_preserve_first_step_refresh(self):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for method in ("bptt", "rtrl"):
+                target = _MappedRecurrence("scale")
+
+                def initialize():
+                    target.reset_state()
+                    target.root.val.value = target.root.val.value * 1.5
+                    target.g.value = jnp.ones((1, 2)) * 9.
+
+                engine = build_rollout_value_and_grad(
+                    target, step=target.step, initializer=initialize, method=method,
+                )
+                engine.prepare(jnp.asarray(0.1))
+                reference = build_rollout_value_and_grad(
+                    target, step=target.step, initializer=initialize, method=method,
+                )
+                with patch.object(target.trainables, "_rollout_materialization_states", return_value=None):
+                    reference.prepare(jnp.asarray(0.1))
+                data = jnp.asarray([0.1, 0.3])
+                a, b = engine(data), reference(data)
+                np.testing.assert_allclose(a.loss, b.loss, rtol=1e-11, atol=1e-11)
+                np.testing.assert_allclose(a.gradients["theta"], b.gradients["theta"],
+                                           rtol=1e-10, atol=1e-11)
+
+    def test_trajectory_schedule_matches_additive_loss_and_rtrl(self):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            target = _MappedRecurrence("distribution")
+            data = jnp.asarray([0.1, -0.2, 0.4])
+            reference = build_rollout_value_and_grad(target, step=target.step, method="bptt")(data)
+            for method in ("bptt", "rtrl"):
+                engine = build_trajectory_value_and_grad(
+                    target, step=target.step, loss=lambda observations, _: jnp.sum(observations), method=method,
+                )
+                result = engine(data)
+                self.assertEqual(engine.materialization_mode, "rollout")
+                np.testing.assert_allclose(result.loss, reference.loss, rtol=1e-11, atol=1e-11)
+                np.testing.assert_allclose(result.gradients["theta"], reference.gradients["theta"],
+                                           rtol=1e-10, atol=1e-11)
 
 
 class RolloutGradientEngineTest(unittest.TestCase):

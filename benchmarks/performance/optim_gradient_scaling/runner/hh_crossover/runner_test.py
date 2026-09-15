@@ -228,15 +228,15 @@ class ScalingBenchmarkTest(unittest.TestCase):
                 dry_run=True,
                 python_executable=None,
             )
-            manifest = json.loads((output / "manifest.json").read_text())
+            manifest = json.loads((output / "raw" / "manifest.json").read_text())
             self.assertEqual(manifest["suite"], "pilot")
             self.assertEqual(len(manifest["configs"]), 9)
-            self.assertEqual((output / "results.csv").read_text(), "")
+            self.assertEqual((output / "raw" / "results.csv").read_text(), "")
 
     def test_aggregate_results_compares_gradient_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
-            trials = output / "trials"
+            trials = output / "raw" / "trials"
             trials.mkdir(parents=True)
             config = BenchmarkConfig(1, 0.1, 1, 1)
             for method, gradient in (("bptt", np.asarray([[1.0, 2.0]])), ("rtrl", np.asarray([[1.0, 2.0 + 1e-12]]))):
@@ -308,7 +308,7 @@ class CrossoverProtocolTest(unittest.TestCase):
             driver.run_suite("hh_crossover", output_dir=output, gpu=0, repeats=5, warmups=2,
                              gpu_monitor=False, resume=False, dry_run=True)
             launch.assert_not_called()
-            manifest = json.loads((output / "manifest.json").read_text())
+            manifest = json.loads((output / "raw" / "manifest.json").read_text())
             self.assertEqual(manifest["planned_counts"], {
                 "workers": 24, "target_rollouts": 24, "first_executions": 24,
                 "extra_warmups": 48, "timed_executions": 120,
@@ -322,7 +322,7 @@ class CrossoverProtocolTest(unittest.TestCase):
                 self.assertEqual(command[command.index("--warmups") + 1], "2")
                 self.assertEqual(command[command.index("--repeats") + 1], "5")
                 self.assertIn("--no-gpu-monitor", command)
-            self.assertEqual(len(list(__import__('csv').DictReader((output / 'paired_results.csv').open()))), 12)
+            self.assertEqual(len(list(__import__('csv').DictReader((output / 'raw' / 'paired_results.csv').open()))), 12)
             with self.assertRaises(FileExistsError):
                 driver.run_suite("hh_crossover", output_dir=output, gpu=0, repeats=5,
                                  resume=False, dry_run=True)
@@ -336,7 +336,7 @@ class CrossoverProtocolTest(unittest.TestCase):
             driver.run_suite("hh_crossover", output_dir=output, gpu=0, repeats=5, warmups=2,
                              gpu_monitor=False, resume=False, dry_run=False, cv_values=(1, 21, 41),
                              worker_timeout_seconds=0, budget_seconds=0)
-            manifest = json.loads((output / "manifest.json").read_text())
+            manifest = json.loads((output / "raw" / "manifest.json").read_text())
             self.assertEqual(len(manifest["configs"]), 9)
             self.assertEqual(manifest["planned_counts"]["workers"], 18)
             self.assertEqual(manifest["planned_counts"]["gradient_calls"], 144)
@@ -345,7 +345,7 @@ class CrossoverProtocolTest(unittest.TestCase):
             self.assertTrue(all(call.kwargs["timeout"] is None for call in launch.call_args_list))
             self.assertTrue(all(call.kwargs["env"]["JAX_ENABLE_COMPILATION_CACHE"] == "false"
                                 for call in launch.call_args_list))
-            self.assertEqual(len(list((output / "trials").glob("*.json"))), 18)
+            self.assertEqual(len(list((output / "raw" / "trials").glob("*.json"))), 18)
 
     def test_hh_intermediate_cv_point_is_explicitly_supported(self):
         from benchmarks.performance.optim_gradient_scaling.runner.hh_crossover import runner as driver
@@ -354,7 +354,7 @@ class CrossoverProtocolTest(unittest.TestCase):
             driver.run_suite("hh_crossover", output_dir=output, gpu=0, repeats=5, warmups=2,
                              gpu_monitor=False, resume=False, dry_run=True, cv_values=(61,),
                              worker_timeout_seconds=0, budget_seconds=0)
-            manifest = json.loads((output / "manifest.json").read_text())
+            manifest = json.loads((output / "raw" / "manifest.json").read_text())
             self.assertEqual(len(manifest["configs"]), 3)
             self.assertEqual({config["n_cv"] for config in manifest["configs"]}, {61})
             self.assertEqual(manifest["planned_counts"]["workers"], 6)
@@ -495,13 +495,13 @@ class CrossoverProtocolTest(unittest.TestCase):
             driver.run_suite("hh_crossover", output_dir=output, gpu=0, repeats=5, warmups=2,
                              resume=False, dry_run=False, worker_timeout_seconds=20, budget_seconds=60)
             self.assertEqual(launch.call_count, 2)
-            trials = list((output / "trials").glob("*.json"))
+            trials = list((output / "raw" / "trials").glob("*.json"))
             self.assertEqual(len(trials), 2)
             for path in trials:
                 row = json.loads(path.read_text())
                 self.assertEqual(row["status"], "timeout")
                 self.assertEqual(row["steady_seconds"], [1])
-            counts = json.loads((output / "actual_counts.json").read_text())
+            counts = json.loads((output / "raw" / "actual_counts.json").read_text())
             self.assertEqual(counts["gradient_calls_completed"], 8)
             self.assertTrue(counts["incomplete_counts_are_lower_bounds"])
 
@@ -514,7 +514,7 @@ class CrossoverProtocolTest(unittest.TestCase):
             driver.run_suite("hh_crossover", output_dir=output, gpu=0, repeats=5,
                              resume=False, dry_run=False, budget_seconds=10)
             launch.assert_not_called()
-            rows = [json.loads(path.read_text()) for path in (output / "trials").glob("*.json")]
+            rows = [json.loads(path.read_text()) for path in (output / "raw" / "trials").glob("*.json")]
             self.assertEqual(len(rows), 24)
             self.assertTrue(all(row["status"] == "not_run_budget" for row in rows))
 
@@ -523,8 +523,8 @@ class CrossoverProtocolTest(unittest.TestCase):
         for rtrl_gradient in (np.array([3.0]), np.array([np.nan])):
             with self.subTest(rtrl_gradient=rtrl_gradient), tempfile.TemporaryDirectory() as directory:
                 output = Path(directory)
-                trials = output / "trials"
-                trials.mkdir()
+                trials = output / "raw" / "trials"
+                trials.mkdir(parents=True)
                 for method, gradient in (("bptt", np.array([1.])), ("rtrl", rtrl_gradient)):
                     np.savez(trials/f"{method}.npz", gradient=gradient, loss=np.array([1.]), losses=np.array([1.]))
                     (trials/f"{method}.json").write_text(json.dumps({

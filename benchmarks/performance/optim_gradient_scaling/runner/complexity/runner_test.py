@@ -123,16 +123,16 @@ class ControlledComplexityBenchmarkTest(unittest.TestCase):
                 resume=False,
                 dry_run=True,
             )
-            manifest = json.loads((output / "manifest.json").read_text())
+            manifest = json.loads((output / "raw" / "manifest.json").read_text())
             self.assertEqual(len(manifest["configs"]), 22)
             self.assertEqual(manifest["replicates"], 3)
             self.assertEqual(manifest["schedule"], "replicate_major_balanced")
-            self.assertEqual((output / "results.csv").read_text(), "")
+            self.assertEqual((output / "raw" / "results.csv").read_text(), "")
 
     def test_aggregate_pairs_methods_within_each_replicate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
-            trials = output / "trials"
+            trials = output / "raw" / "trials"
             trials.mkdir(parents=True)
             case = ControlledCase("synthetic", n_x=8, n_theta=2, num_steps=3, batch_size=1, n_seed=1)
             for replicate in (1, 2):

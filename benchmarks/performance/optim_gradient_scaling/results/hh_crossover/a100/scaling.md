@@ -7,9 +7,9 @@
 ## Reference 状态
 
 本文是 BrainCell exact RTRL 与 full BPTT 的 tracked 实验结果快照，记录正确性、内存、性能和
-训练一致性。数学推导见 [BPTT/RTRL 通用理论](../../../../docs/design/optim/references/bptt-to-rtrl-neuron-derivation.md)，实验程序、
+训练一致性。数学推导见 [BPTT/RTRL 通用理论](../../../../../../docs/design/optim/references/bptt-to-rtrl-neuron-derivation.md)，实验程序、
 CLI 和 notebook 导航见
-[Optimization Experiments](../../../../examples/optim/README.md)。
+[Optimization Experiments](../../../../../../examples/optim/README.md)。
 
 本文记录的 A100 scaling 数据生成于 2026-08-29；CPU prototype 数据来自同一实现阶段的本机
 x64 测量。原始 CSV/NPZ、trial JSON、manifest 和 worker log 位于 Git ignored artifacts，可能仅在原运行者本地可用。本文只固定可复查的结果与保守结论，不把单台硬件的墙钟外推为一般
@@ -17,7 +17,7 @@ x64 测量。原始 CSV/NPZ、trial JSON、manifest 和 worker log 位于 Git ig
 
 本文于 2026-09-07 从 references 迁入 results，未重跑或修改历史数值。以下包含不同阶段的
 CPU 和 A100 配置；未明确记录的版本/日期不补造，历史 artifact 的存在性不等于新一次验收。
-近期事件网络的不同配置另见 [Synapse/Network](../../../../docs/design/optim/current/results/synapse-network-learning.md)。
+近期事件网络的不同配置另见 [Synapse/Network](../../../../../../docs/design/optim/current/results/synapse-network-learning.md)。
 
 ## 1. 实验对象与维度
 
@@ -254,13 +254,13 @@ validation/optim/training_comparison/artifacts/rtrl_bptt_training/
 重新聚合已有 scaling artifact，不运行 JAX：
 
 ```bash
-python benchmarks/performance/optim_gradient_scaling/report.py
+python benchmarks/performance/optim_gradient_scaling/analysis/common/report.py
 ```
 
 重新运行 A100 full suite：
 
 ```bash
-python benchmarks/performance/optim_gradient_scaling/benchmark.py run \
+python benchmarks/performance/optim_gradient_scaling/runner/hh_crossover/runner.py run \
   --suite full --gpu 7 --repeats 10 \
   --python /home/swl/anaconda3/envs/braincell_311/bin/python \
   --output-dir benchmarks/performance/optim_gradient_scaling/artifacts/rtrl_bptt_scaling/full_block_exact \
@@ -271,7 +271,7 @@ python benchmarks/performance/optim_gradient_scaling/benchmark.py run \
 
 1. `optim_gradient_correctness/gradient_diagnostics.ipynb`：同一 global loss 的总梯度；
 2. `optim_gradient_correctness/single_cv_sensitivity.ipynb`：单 CV sensitivity、learning signal 和 prefix gradient；
-3. `optim_gradient_scaling/analysis.ipynb`：性能、内存、GPU 和 backsub 数据。
+3. `optim_gradient_scaling/analysis/notebooks/analysis.ipynb`：性能、内存、GPU 和 backsub 数据。
 
 ## 7. 稳定结论
 

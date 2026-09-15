@@ -8,6 +8,8 @@ Before launching a benchmark or profiling run, follow the
 first executions, warmups, timed repeats, extra validation runs and time budgets,
 and obtain user confirmation. Script defaults and commands below are not run authorization.
 
+- [Geometry initialization](performance/geometry_initialization/README.md): initialization,
+  first JIT and fixed-geometry population execution timing.
 - [Gradient scaling](performance/optim_gradient_scaling/README.md): BPTT/RTRL
   state, parameter, time, batch and seed sweeps.
 - [Parameter fitting](performance/parameter_fitting/README.md): historical capacity and training-throughput evidence.

@@ -111,15 +111,16 @@ class RuntimeIonTest(unittest.TestCase):
         self.assertEqual(na.length.shape, (1, 2))
         self.assertEqual(na.area.shape, (1, 2))
         self.assertEqual(na.diam_mid.shape, (1, 2))
-        self.assertEqual(na.radius_prox.shape, (1, 2))
-        self.assertEqual(na.radius_dist.shape, (1, 2))
+        self.assertEqual(na.radius_mid.shape, (1, 2))
+        self.assertFalse(hasattr(na, "radius_prox"))
+        self.assertFalse(hasattr(na, "radius_dist"))
 
         self.assertAlmostEqual(float(na.length[0, 0].to_decimal(u.um)), 20.0, places=12)
         self.assertAlmostEqual(float(na.length[0, 1].to_decimal(u.um)), 100.0, places=12)
         self.assertAlmostEqual(float(na.diam_mid[0, 0].to_decimal(u.um)), 20.0, places=12)
         self.assertAlmostEqual(float(na.diam_mid[0, 1].to_decimal(u.um)), 3.0, places=12)
-        self.assertAlmostEqual(float(na.radius_prox[0, 0].to_decimal(u.um)), 10.0, places=12)
-        self.assertAlmostEqual(float(na.radius_dist[0, 1].to_decimal(u.um)), 1.0, places=12)
+        self.assertAlmostEqual(float(na.radius_mid[0, 0].to_decimal(u.um)), 10.0, places=12)
+        self.assertAlmostEqual(float(na.radius_mid[0, 1].to_decimal(u.um)), 1.5, places=12)
         self.assertAlmostEqual(
             float(na.area[0, 0].to_decimal(u.um**2)),
             float(cell.cvs[0].area.to_decimal(u.um**2)),
@@ -1228,14 +1229,9 @@ class RuntimeIonTest(unittest.TestCase):
             BranchSlice(branch_index=0, prox=0.0, dist=1.0),
             braincell.mech.Ion("SodiumFixed", name="na_main"),
         )
-        cell.paint(
-            BranchSlice(branch_index=1, prox=0.0, dist=1.0),
-            braincell.mech.Ion("SodiumInitNernst", name="na_main"),
-        )
-
         with self.assertRaises(ValueError) as ctx:
-            cell.init_state()
-            rcell = cell
-
-            _ = rcell.layouts
+            cell.paint(
+                BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+                braincell.mech.Ion("SodiumInitNernst", name="na_main"),
+            )
         self.assertIn("cannot denote both", str(ctx.exception))

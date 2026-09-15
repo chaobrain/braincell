@@ -10,6 +10,10 @@
 Cell 初值和 cable 参数目前没有 trainable owner 接入。先梳理构造转换、几何缓存、runtime buffer
 与初始化依赖，再确定注册和重置契约。构造时可以配置不等于运行时可以训练。
 
+几何与 cable 的分阶段实施见 [Nonlinear Pattern Separation validation design](geometry-training.md)：先测初始化并建立
+可微数值层，再开放不受初始 policy 限制的固定 CV 几何，随后统一 View，最后训练实验。
+保持 policy 重建一致性的约束模式作为后续扩展；Cell 初值仍是独立待讨论事项。
+
 ## 公共训练协议与分组
 
 数据、loss、result、resume 的公共协议需先验证实验组合接口能否通用，不提前占用公共类型名。

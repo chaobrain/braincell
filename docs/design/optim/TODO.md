@@ -6,9 +6,15 @@
 
 | 事项 | 状态 | 下一步或待决定问题 | 文档 |
 | --- | --- | --- | --- |
+| 声明与训练生命周期迁移 | 待提交验收 | 已实现统一 discretize、init 后写入与注册、reset 恢复声明、旧 View/引擎失效；CPU float64 梯度和相关示例检查通过 | [Cell 生命周期](../cell/current/api.md#生命周期)、[训练注册](current/api.md#lifecycle) |
 | 可塑性参数训练与 weight_initial | 讨论中 | 在 Network 运行时契约基础上确定参数绑定、状态初值与梯度验收 | [训练提案](proposals/connection-plasticity.md)、[Network 可塑性](../network/proposals/connection-plasticity.md) |
 | plateau、SGDR、perturb 自动恢复 | 讨论中 | 确定 effective-LR、恢复状态和比较协议 | [训练恢复](proposals/training-recovery.md) |
-| Cell 初值与 cable 参数 owner | 待讨论 | 明确构造转换、缓存及初始化依赖 | [后续方向](proposals/roadmap.md#cell-初值与-cable-参数) |
+| 几何阶段一：可微数值层与初始化成本 | 部分完成 | 已接入设备数组与可微节点系数，243 项回归通过；CPU/GPU 前后初始化对照已完成；下一步依据 first-use 成本决定数组准备方式，长度/半径派生映射与缓存刷新已接入，复杂 coverage 和动态训练成本仍需验收 | [当前数值层](current/runtime-cable-arrays.md)、[实测](../../../benchmarks/performance/geometry_initialization/results/arrays-cpu-gpu.md)、[阶段验收](proposals/geometry-training.md#阶段一可微数值层与初始化测量) |
+| Population 与稳态仿真成本 | 待提交验收 | 固定 128 CV 的 CPU/GPU、新旧版本、pop_size=1/10/100/1000 对照完成；未见一致稳态退化，独立几何与 RTRL 不在此范围 | [实测](../../../benchmarks/performance/geometry_initialization/results/population-128.md) |
+| 几何阶段二：固定 CV 的自由几何 | 部分完成 | 固定网格 runtime 字段已接入；policy 仅作初始离散化，MaxCVLen/DLambda 不限制之后的每 CV 训练；约束模式后续扩展 | [policy 语义](proposals/geometry-training.md#两种-policy-语义) |
+| 几何阶段三：Trainable View | 部分完成 | CV selection 与兼容 geometry View 已暴露 length/radius_scale/Ra/cm 和四类分组；复杂组合的完整验收待补 | [View](proposals/geometry-training.md#阶段三trainable-view) |
+| Nonlinear Pattern Separation validation | 已完成当前版本 | bounded geometry transforms、72 参数训练、10-seed 结果和 Jaxley raw comparison 已具备；历史 NaN 仅作为稳定性诊断保留 | [实验](proposals/geometry-training.md#阶段四可训练实验)、[结果](../../../validation/optim/nonlinear_pattern_separation/results/README.md) |
+| Cell 初值 owner | 待讨论 | 明确构造转换与初始化依赖；cable 随几何训练分阶段推进 | [后续方向](proposals/roadmap.md#cell-初值与-cable-参数) |
 | 公共训练协议与稳定 grouping | 待讨论 | 确定复用边界、持久化和 ownership | [后续方向](proposals/roadmap.md#公共训练协议与分组) |
 | 多 CV、多 population、GPU 与 checkpoint 验证 | 待讨论 | 确定组合矩阵和公平测量协议；已有单项结果不代替组合验证 | [验证缺口](proposals/roadmap.md#验证缺口) |
 | rollout 内更新参数 | 待讨论 | 定义梯度对应的参数历史 | [研究方向](proposals/roadmap.md#rollout-内更新参数) |

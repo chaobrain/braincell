@@ -26,7 +26,6 @@ runtime、temporary memory 和 correctness 数值见下方统一结果页中的�
 优化后新增的 `C=51/61` 只用于缩小 crossover 搜索范围，没有对应的优化前测量，
 因此不做伪造的前后配对。
 
-优化前后的图分别保存在 [legacy coarse scan](figures/before/) 与
-[optimized](figures/after/)，每套图展示对应阶段内的 BPTT/RTRL。
-优化后的完整扫描图、runtime ratio 与 memory/compile 图也直接展示在 [结果总结](after/optimized.md)。图表只连接实际测量点，
+优化前后的图分别保存在对应 artifact 的 `analysis/figures/`，每套图展示对应阶段内的 BPTT/RTRL。
+优化后的完整扫描、runtime ratio 与 memory/compile 数值见 [结果总结](after/optimized.md)。图表只连接实际测量点，
 不把线段解释为未测量位置的 crossover 证据。

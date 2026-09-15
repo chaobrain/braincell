@@ -258,3 +258,6 @@ docs/_static/js/brainx-header.js
 /examples/**/artifacts/
 /validation/**/artifacts/
 /benchmarks/**/artifacts/
+
+# Generated benchmark figures stay in ignored artifacts, not reviewed results.
+/benchmarks/performance/optim_gradient_scaling/results/**/figures/

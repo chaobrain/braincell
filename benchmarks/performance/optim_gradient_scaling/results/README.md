@@ -8,7 +8,7 @@
 - [H200 优化后](hh_crossover/after/optimized.md)
 - [H200 优化前后对比](hh_crossover/comparison.md)
 - [A100 scaling 历史结果](hh_crossover/a100/scaling.md)
-- [H200 figures](hh_crossover/figures/)
+图表保存在对应 artifact 的 `analysis/figures/`，由统一 plot 函数离线生成。
 
 ## Supporting experiment：complexity decomposition
 

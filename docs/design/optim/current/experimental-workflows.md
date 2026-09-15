@@ -27,14 +27,34 @@ step 接收一个时间片、推进一次模型并返回 scalar additive loss；
 初始化和完整一步。调用返回逐步 losses、总 loss 和按稳定 root 名组织的 gradients。
 非逐步相加目标使用同模块的 trajectory engine；不要把两者的 loss 合同混用。
 
+准备阶段自动选择参数物化时机。`engine.materialization_mode` 为 `"rollout"` 时，
+通用映射留在入口，满足布局条件的直接参数在单步直接读取 root；为 `"step"` 时保留
+逐步物化。准备前该属性为 `None`。判定条件及 BPTT/RTRL 梯度连接见
+[自动物化调度](architecture.md#实验梯度引擎的自动物化调度)。两种方法的公开梯度都保留
+optimizer root 的 PyTree，包含直接物理参数的 Quantity metadata。
+
 Network 在求导外 prepare_run 固定路由和队列，step 内 update。引擎在每轮开始物化当前
 root 并 reset，参数在该 rollout 内固定。完整 RTRL 的 carry 包括全网已捕获状态及其
 parameter-major sensitivities；跨 CV/Cell 或 queue 的依赖不能省略。
 常规路径不输出敏感度历史，diagnose(at=...) 是单独编译的诊断路径。
 初值、loss 直接依赖参数以及总/前缀梯度的区别见 [理论](../references/bptt-to-rtrl-neuron-derivation.md)。
 
+`inspect_state_sensitivity(functional_step, ...)` 可在 rollout 外列出 traced
+state 的 shape、dtype、参数根标记和逻辑 tangent bytes，用于决定 compact
+carry 的候选集合。该接口只提供证据，不自动删除状态。DHS 的
+`comp_triang_jvp` 与 `comp_backsub_jvp` 是可选的显式 JVP 诊断核，分别覆盖
+前向消元和 recursive backsub；`comp_triang_raw` 与 `comp_backsub_raw` 可通过
+`BRAINCELL_DHS_CUSTOM_JVP=1` 接入它们。该变量默认关闭，generic AD 是当前
+默认路径。primal solver 的数值路径和状态更新顺序保持不变，完整 HH 短
+rollout 已完成 loss/gradient 对照；固定性能比较显示 generic AD 更快，因此
+显式 JVP 不作为默认速度优化。
+
 正常 RTRL 仍返回逐步 loss，输入和输出可随 T 增长；不随 T 增长的是递归敏感度 carry，
 不是整个 Python 进程或所有输出。详细测量口径见 [网络结果](results/synapse-network-learning.md)。
+
+RTRL 默认使用 `jax.linearize` 后批量应用线性化函数。实验开关
+`BRAINCELL_RTRL_JVP_MODE=direct` 可切换为逐方向 `vmap(jax.jvp)`，仅用于同一
+workload 的工程对照；当前结果未显示 direct 路径更快，因此默认路径不变。
 
 ## 分阶段训练
 

@@ -110,9 +110,6 @@ cell.paint(
 )
 cell.place(RootLocation(0.5), bc.mech.Synapse("ExpSyn", name="syn", tau=2.0 * u.ms))
 cell.loc(RootLocation(0.5)).record("v_mid", bc.observe.state("v"))
-cell.channels["leak"].trainable(
-    g_max=bc.trainable.scale(brainstate.nn.Param(1.0), name="leak_factor"),
-)
 
 stim = bc.NetStim(start=0.25 * u.ms, number=1, interval=10.0 * u.ms)
 bc.connect("input", source=stim, synapse=cell.synapses["syn"],
@@ -120,6 +117,10 @@ bc.connect("input", source=stim, synapse=cell.synapses["syn"],
 net = bc.Network("example")
 net.add_population("post", cell)
 net.add_population("input", stim)
+net.init_state()
+cell.channels["leak"].trainable(
+    g_max=bc.trainable.scale(brainstate.nn.Param(1.0), name="leak_factor"),
+)
 ```
 
 `paint` 将密度机制应用到区域，`place` 将点机制放到位置；二者保存声明，
@@ -200,11 +201,11 @@ Network 的参数集合聚合各 Cell 的原始 `Param`，按对象身份去重�
 | 电压、spike、时间 | Cell；机制门控、浓度、突触状态由具体机制实例持有 | 积分推进或 reset_state 重置 |
 | population、事件路由和延迟队列 | Network；population 引用原 Cell 或事件源 | 注册后构建执行配置；每步投递、入队和推进 |
 | 记录 schema 与结果 | Cell 声明观测；执行器产出 SampleBlock / EventSeries | 每次运行生成对应时间段的结果 |
-| 原始 Param 与绑定 | Cell 的 TrainableManager；Network 提供聚合视图 | 初始化前注册绑定；优化器更新参数，materialize 写入运行时 |
+| 原始 Param 与绑定 | Cell 的 TrainableManager；Network 提供聚合视图 | 初始化后注册绑定；优化器更新参数，materialize 写入运行时 |
 | 图像和绘图布局缓存 | Vis 与返回的 Figure / Axes 等对象 | 绘图时读取当前数据；仿真推进不会自动刷新旧图 |
 
 `Cell.init_state()` 克隆形态、构建离散结构并绑定机制，然后初始化状态。
-`reset_state()` 保留布局和参数根，重置电压及机制等运行状态；`reset()` 丢弃运行时并恢复声明期形态引用。
+`reset_state()` 保留布局、参数覆盖和训练根，重置电压及机制等运行状态；`reset()` 丢弃运行时、覆盖和训练注册，恢复声明期形态及参数。
 两种 reset 的调用条件见 [Cell 生命周期](../../cell/current/api.md#生命周期)。
 
 独立 Cell 可以 `run`；加入 Network 后由 Network 统一推进和重置。

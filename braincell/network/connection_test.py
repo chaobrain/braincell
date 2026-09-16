@@ -220,14 +220,20 @@ class ConnectionTest(unittest.TestCase):
         cell, exp = _population(3)
         connections = connect("first", source=NetStim(size=3), synapse=cell.synapses[exp], delay=0.5 * u.ms)
         selected = connections[[2, 0]]
-        selected.set(weight=[0.2, -0.1] * u.uS, delay=[2.0, 1.0] * u.ms)
-
-        np.testing.assert_allclose(connections.weight.to_decimal(u.uS), [-0.1, 1.0, 0.2])
-        np.testing.assert_allclose(connections.delay.to_decimal(u.ms), [1.0, 0.5, 2.0])
+        with self.assertRaisesRegex(RuntimeError, "init_state"):
+            selected.set(weight=[0.2, -0.1] * u.uS)
         connections[1].remove()
         np.testing.assert_array_equal(connections.id, [0, 2])
         later = connect("later", source=NetStim(), synapse=cell.synapses[exp][0])
         np.testing.assert_array_equal(later.id, [3])
+        cell.init_state()
+        connections = cell.connections["first"]
+        selected = connections[[1, 0]]
+        selected.set(weight=[0.2, -0.1] * u.uS)
+        np.testing.assert_allclose(connections.weight.to_decimal(u.uS), [-0.1, 0.2])
+        with self.assertRaisesRegex(RuntimeError, "delay"):
+            selected.set(delay=1 * u.ms)
+        np.testing.assert_allclose(connections.delay.to_decimal(u.ms), [0.5, 0.5])
 
     def test_multi_call_view_groups_calls_and_round_trips_weights(self) -> None:
         # ``weight_for``/``set_weight`` index each call's weight vector by row
@@ -240,7 +246,7 @@ class ConnectionTest(unittest.TestCase):
         np.testing.assert_array_equal(first.id, [0, 1])
         np.testing.assert_array_equal(second.id, [2, 3])
         np.testing.assert_array_equal(third.id, [4, 5])
-
+        cell.init_state()
         shuffled = cell.connections[[5, 0, 3, 2, 4, 1]]
         np.testing.assert_allclose(shuffled.weight.to_decimal(u.uS), [0.6, 0.1, 0.4, 0.3, 0.5, 0.2])
 

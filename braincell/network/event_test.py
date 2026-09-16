@@ -235,10 +235,10 @@ class EventSourceTest(unittest.TestCase):
 
     def test_voltage_crossing_source_falling_uses_heterogeneous_cell_threshold(self) -> None:
         cell = _two_cv_population()
+        cell.init_state()
         cell[0].V_th = -40.0 * u.mV
         cell[1].V_th = -30.0 * u.mV
         source = VoltageCrossingSource(cell, location=at("dend", 0.5), direction="falling")
-        cell.init_state()
         cell._event_previous_V.value = np.asarray([[-65.0, -35.0], [-65.0, -25.0]]) * u.mV
         cell.V.value = np.asarray([[-65.0, -45.0], [-65.0, -35.0]]) * u.mV
 

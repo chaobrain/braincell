@@ -181,6 +181,7 @@ def _build_cell(population_size: int, *, trainable: bool) -> braincell.Cell:
     )
     _paint_channels(cell, BranchSlice(branch_index=0, prox=0.0, dist=1.0), "soma", SOMA_CONDUCTANCES)
     _paint_channels(cell, BranchSlice(branch_index=[1, 2], prox=0.0, dist=1.0), "dend", DEND_CONDUCTANCES)
+    cell.init_state()
     if trainable:
         for owner in ("soma", "dend"):
             for channel in ("leak", "na", "k"):
@@ -191,7 +192,7 @@ def _build_cell(population_size: int, *, trainable: bool) -> braincell.Cell:
                         name=f"{owner}.{channel}.scale",
                     )
                 )
-    cell.init_state()
+    cell.reset_state()
     if cell.n_cv != 7:
         raise RuntimeError(f"Expected seven CVs, got {cell.n_cv}.")
     return cell

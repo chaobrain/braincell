@@ -87,7 +87,6 @@ class ScheduledCellTest(unittest.TestCase):
             site = LocsetMask.from_columns(np.array([0]), np.array([0.5]))
             cell.place(site, bc.mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV))
             cell.place(site, bc.mech.Synapse("Exp2Syn", name="other", tau1=0.5 * u.ms, tau2=3.0 * u.ms, e=0.0 * u.mV))
-            cell.synapses["exp"].trainable(tau=bc.trainable.scale(name="tau_scale"))
             net = bc.Network("gradient_delivery")
             post = net.add_population("post", cell)
             stim = net.add_population("stim", bc.NetStim(size=1, start=0 * u.ms, interval=0.5 * u.ms, number=8))
@@ -98,6 +97,8 @@ class ScheduledCellTest(unittest.TestCase):
                 weight=0.001 * u.uS,
                 delay=0 * u.ms,
             )
+            net.init_state()
+            cell.synapses["exp"].trainable(tau=bc.trainable.scale(name="tau_scale"))
             cell.connections["drive"].trainable(weight=bc.trainable.scale(name="weight_scale"))
             net.prepare_run(dt=0.25 * u.ms, event_backend="scatter")
             if method != "production":

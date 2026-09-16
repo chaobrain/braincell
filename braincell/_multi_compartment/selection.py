@@ -22,6 +22,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 from braincell._discretization.base import locate_cv_on_branch
+from braincell._multi_compartment.lifecycle import DiscreteView
 from braincell.filter import LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask
 from . import field_resolution
 
@@ -162,13 +163,14 @@ class BranchSelector:
         return self._owner._with_scope(self._owner._scope.select_branches(self._owner.root, selected))
 
 
-class CVSelector:
+class CVSelector(DiscreteView):
     """Select control volumes from one Cell scope."""
 
     __slots__ = ("_owner",)
 
     def __init__(self, owner) -> None:
         self._owner = owner
+        self._bind_view(owner.root)
 
     @property
     def ids(self) -> np.ndarray:
@@ -184,9 +186,11 @@ class CVSelector:
         return tuple(self._owner.root.cvs[cv_id] for cv_id in self._owner._scope.cv_ids)
 
     def __len__(self) -> int:
+        self._check_view()
         return len(self._owner._scope.cv_ids)
 
     def __getitem__(self, selector):
+        self._check_view()
         return self._owner._with_scope(self._owner._scope.select_cv_local(selector))
 
     def by_id(self, ids):

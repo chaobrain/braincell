@@ -189,6 +189,7 @@ def _build_cell(protocols: tuple[DcProtocol, ...], *, trainable: bool) -> brainc
                 amplitudes=amplitudes * u.nA,
             ),
         )
+    cell.init_state()
     if trainable:
         for site in SITES:
             for channel in CHANNELS:
@@ -199,7 +200,7 @@ def _build_cell(protocols: tuple[DcProtocol, ...], *, trainable: bool) -> brainc
                         name=f"{site}.{channel}.scale",
                     )
                 )
-    cell.init_state()
+    cell.reset_state()
     if cell.n_cv != 3:
         raise RuntimeError(f"Expected exactly three CVs, got {cell.n_cv}.")
     return cell

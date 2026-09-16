@@ -117,7 +117,9 @@ class CellRuntimeStateTest(unittest.TestCase):
         midpoint_ids = np.asarray(cell.runtime.node_tree.cv_to_mid_node_id, dtype=np.int64)
         np.testing.assert_allclose(
             np.asarray(cell.runtime.point_area.to_decimal(u.cm**2))[midpoint_ids],
-            [float(np.asarray(cv.area.to_decimal(u.cm**2))) for cv in cell.cvs],
+            np.asarray(
+                [float(np.asarray(cv.area.to_decimal(u.cm**2))) for cv in cell.cvs], dtype=cell.runtime.point_area.dtype
+            ),
             rtol=0.0,
         )
         table = cell.runtime.clamp_routing_table

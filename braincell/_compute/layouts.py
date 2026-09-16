@@ -206,14 +206,14 @@ class ClampRoutingTable:
     ----------
     midpoint_ids : np.ndarray
         Sorted unique midpoint point ids that carry clamp layouts.
-    midpoint_area : np.ndarray
+    midpoint_area : object
         Membrane area in ``cm^2`` for ``midpoint_ids``.
     boundary_ids : np.ndarray
         Sorted unique non-midpoint point ids that carry clamp layouts.
     """
 
     midpoint_ids: np.ndarray
-    midpoint_area: np.ndarray
+    midpoint_area: object
     boundary_ids: np.ndarray
 
 
@@ -281,7 +281,7 @@ def build_clamp_routing_table(
     )
     return ClampRoutingTable(
         midpoint_ids=ids,
-        midpoint_area=area,
+        midpoint_area=u.math.asarray(area),
         boundary_ids=boundary_ids,
     )
 

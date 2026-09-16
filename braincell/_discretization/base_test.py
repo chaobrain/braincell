@@ -150,9 +150,9 @@ class CVShapeTest(unittest.TestCase):
             place_rules=(),
         ).cvs
         cv = cvs[0]
-        self.assertAlmostEqual(float(cv.radius_prox.to_decimal(u.um)), 2.0)
+        self.assertFalse(hasattr(cv, "radius_prox"))
         self.assertAlmostEqual(float(cv.radius_mid.to_decimal(u.um)), 3.0)
-        self.assertAlmostEqual(float(cv.radius_dist.to_decimal(u.um)), 4.0)
+        self.assertFalse(hasattr(cv, "radius_dist"))
 
     def test_diam_mid_is_twice_radius_mid(self) -> None:
         cvs = build_discretization(

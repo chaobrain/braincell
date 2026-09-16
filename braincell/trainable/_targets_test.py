@@ -37,9 +37,10 @@ class PointTargetsTest(unittest.TestCase):
     def test_exp2_factor_uses_current_tau_and_matches_finite_difference(self):
         cell = braincell.Cell(make_soma_tree(), pop_size=(1,))
         cell.place(at("soma", 0.5), braincell.mech.Synapse("Exp2Syn", name="syn"))
+        cell.init_state()
         syn = cell.synapses["syn"]
         syn.trainable(tau1=braincell.trainable.scale(name="factor"))
-        cell.init_state()
+        cell.reset_state()
         node = cell.runtime.get_runtime_node(syn._store.layout_id("Exp2Syn"))
         parameters = cell.trainables.parameters()
 
@@ -63,12 +64,13 @@ class PointTargetsTest(unittest.TestCase):
     def test_failed_materialization_does_not_partially_write(self):
         cell = _cell()
         invalid = [False]
+        cell.init_state()
         syn = cell.synapses["syn"]
         syn.trainable(
             tau=braincell.trainable.parameter(2.0 * u.ms, name="tau"),
             e=braincell.trainable.parameterized(lambda ctx: 1.0 * (u.ms if invalid[0] else u.mV)),
         )
-        cell.init_state()
+        cell.reset_state()
         cell.trainables.parameters().set_physical_values({"tau": 4.0 * u.ms})
         invalid[0] = True
         with self.assertRaises(u.UnitMismatchError):
@@ -81,16 +83,18 @@ class PointTargetsTest(unittest.TestCase):
                 cell = braincell.Cell(make_soma_tree(), pop_size=(2,))
                 for name in ("a", "b"):
                     cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name=name, tau=2.0 * u.ms))
+                cell.init_state()
                 cell.synapses.by_type("ExpSyn").trainable(tau=braincell.trainable.parameter(group_by=group, name="tau"))
                 self.assertEqual(cell.trainables.parameters().physical_values()["tau"].shape, shape)
-                cell.init_state()
+                cell.reset_state()
                 np.testing.assert_allclose(cell.synapses.by_type("ExpSyn").tau.to_decimal(u.ms), 2.0)
         cell = _cell()
         cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="other", tau=3.0 * u.ms))
+        cell.init_state()
         cell.synapses["syn"].trainable(
             tau=braincell.trainable.parameterized(lambda ctx, factor: factor * u.ms, factor=brainstate.nn.Param(4.0))
         )
-        cell.init_state()
+        cell.reset_state()
         np.testing.assert_allclose(cell.synapses["syn"].tau.to_decimal(u.ms), [4.0])
         np.testing.assert_allclose(cell.synapses["other"].tau.to_decimal(u.ms), [3.0])
 
@@ -98,31 +102,34 @@ class PointTargetsTest(unittest.TestCase):
         cell = _cell()
         first = braincell.connect("a", source=braincell.NetStim(), synapse=cell.synapses["syn"], weight=0.01 * u.uS)
         second = braincell.connect("b", source=braincell.NetStim(), synapse=cell.synapses["syn"], weight=0.02 * u.uS)
+        cell.init_state()
+        first, second = cell.connections["a"], cell.connections["b"]
         root = brainstate.nn.Param(2.0)
         for view in (first, second):
             view.trainable(weight=braincell.trainable.scale(root, name="factor"))
         self.assertEqual(len(cell.trainables.roots), 1)
         with self.assertRaisesRegex(RuntimeError, "trainable"):
             first.set(weight=0.03 * u.uS)
-        cell.init_state()
         np.testing.assert_allclose(first.weight.to_decimal(u.uS), [0.02])
         np.testing.assert_allclose(second.weight.to_decimal(u.uS), [0.04])
 
     def test_threshold_selection_and_alias_ownership(self):
         cell = braincell.Cell(make_soma_tree(), pop_size=(2,))
         source = VoltageCrossingSource(cell)
+        cell.init_state()
         source[0].trainable(threshold=braincell.trainable.parameter(-40.0 * u.mV, name="vth"))
         with self.assertRaisesRegex(ValueError, "already bound"):
             cell.event_outputs["spike"][0].trainable(threshold=braincell.trainable.parameter())
         cell[1].set(V_th=-15.0 * u.mV)
-        cell.init_state()
+        cell.reset_state()
         np.testing.assert_allclose(cell.V_th.to_decimal(u.mV), [[-40.0], [-15.0]])
-        with self.assertRaises(RuntimeError):
-            source[1].trainable(threshold=braincell.trainable.parameter())
+        source[1].trainable(threshold=braincell.trainable.parameter())
 
     def test_detector_and_connection_invalid_fields(self):
         cell = _cell()
         source = VoltageCrossingSource(cell, threshold=-30.0 * u.mV)
+        braincell.connect("a", source=braincell.NetStim(), synapse=cell.synapses["syn"], weight=0.01 * u.uS)
+        cell.init_state()
         for action, error in (
             (lambda: source.trainable(direction=braincell.trainable.parameter(1.0)), KeyError),
             (lambda: source[[0, 0]].trainable(threshold=braincell.trainable.parameter()), ValueError),
@@ -130,9 +137,7 @@ class PointTargetsTest(unittest.TestCase):
         ):
             with self.assertRaises(error):
                 action()
-        connection = braincell.connect(
-            "a", source=braincell.NetStim(), synapse=cell.synapses["syn"], weight=0.01 * u.uS
-        )
+        connection = cell.connections["a"]
         with self.assertRaises(KeyError):
             connection.trainable(threshold=braincell.trainable.parameter())
         with self.assertRaises((TypeError, ValueError)):
@@ -140,11 +145,13 @@ class PointTargetsTest(unittest.TestCase):
 
     def test_synapse_and_weight_survive_compiled_reset(self):
         cell = _cell()
+        braincell.connect("input", source=braincell.NetStim(), synapse=cell.synapses["syn"], weight=0.02 * u.uS)
+        cell.init_state()
         syn = cell.synapses["syn"]
-        connection = braincell.connect("input", source=braincell.NetStim(), synapse=syn, weight=0.02 * u.uS)
+        connection = cell.connections["input"]
         syn.trainable(tau=braincell.trainable.parameter(name="tau"))
         connection.trainable(weight=braincell.trainable.parameter(name="weight"))
-        cell.init_state()
+        cell.reset_state()
         node = cell.runtime.get_runtime_node(syn._store.layout_id("ExpSyn"))
 
         def observe():
@@ -166,8 +173,9 @@ class PointTargetsTest(unittest.TestCase):
     def test_colocated_synapses_have_independent_rows(self):
         cell = _cell()
         cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="other", tau=3.0 * u.ms))
-        cell.synapses.by_type("ExpSyn").trainable(tau=braincell.trainable.parameter(name="tau"))
         cell.init_state()
+        cell.synapses.by_type("ExpSyn").trainable(tau=braincell.trainable.parameter(name="tau"))
+        cell.reset_state()
         self.assertEqual(cell.trainables.parameters().physical_values()["tau"].shape, (2,))
         cell.trainables.parameters().set_physical_values({"tau": np.array([5.0, 7.0]) * u.ms})
         cell.trainables.materialize()
@@ -176,8 +184,8 @@ class PointTargetsTest(unittest.TestCase):
     def test_detector_threshold_binding_and_gradients(self):
         cell = _cell()
         detector = VoltageCrossingSource(cell, threshold=-40.0 * u.mV)
-        detector.trainable(threshold=braincell.trainable.parameter(name="threshold"))
         cell.init_state()
+        detector.trainable(threshold=braincell.trainable.parameter(name="threshold"))
 
         def event():
             cell.reset_state()
@@ -192,8 +200,9 @@ class PointTargetsTest(unittest.TestCase):
 
     def test_default_detector_binds_cell_threshold(self):
         cell = _cell()
-        cell.event_outputs["spike"].trainable(threshold=braincell.trainable.parameter(-40.0 * u.mV, name="threshold"))
         cell.init_state()
+        cell.event_outputs["spike"].trainable(threshold=braincell.trainable.parameter(-40.0 * u.mV, name="threshold"))
+        cell.reset_state()
         np.testing.assert_allclose(cell.V_th.to_decimal(u.mV), [[-40.0]])
         cell.trainables.parameters().set_physical_values({"threshold": -30.0 * u.mV})
         cell.reset_state()
@@ -203,6 +212,8 @@ class PointTargetsTest(unittest.TestCase):
         cell = _cell()
         syn = cell.synapses["syn"]
         connection = braincell.connect("input", source=braincell.NetStim(), synapse=syn, weight=0.02 * u.uS)
+        cell.init_state()
+        syn, connection = cell.synapses["syn"], cell.connections["input"]
         with self.assertRaisesRegex(NotImplementedError, "delay"):
             connection.trainable(delay=braincell.trainable.parameter())
         syn.trainable(tau=braincell.trainable.parameter())
@@ -211,10 +222,11 @@ class PointTargetsTest(unittest.TestCase):
 
     def test_invalid_synapse_registration_is_atomic(self):
         cell = _cell()
+        cell.place(at("soma", 0.5), braincell.mech.Synapse("Exp2Syn", name="double"))
+        cell.init_state()
         with self.assertRaisesRegex(ValueError, "> 0"):
             cell.synapses["syn"].trainable(tau=braincell.trainable.parameter(-1.0 * u.ms))
         self.assertEqual(len(cell.trainables.roots), 0)
-        cell.place(at("soma", 0.5), braincell.mech.Synapse("Exp2Syn", name="double"))
         syn = cell.synapses["double"]
         with self.assertRaisesRegex(ValueError, "tau1 < tau2"):
             syn.trainable(tau1=braincell.trainable.parameter(20.0 * u.ms))
@@ -223,8 +235,9 @@ class PointTargetsTest(unittest.TestCase):
 
     def test_owned_cell_threshold_cannot_be_overwritten(self):
         cell = _cell()
+        cell.init_state()
         cell.event_outputs["spike"].trainable(threshold=braincell.trainable.parameter())
-        with self.assertRaisesRegex(RuntimeError, "trainable"):
+        with self.assertRaisesRegex(RuntimeError, "init_state"):
             cell.V_th = -30.0 * u.mV
         with self.assertRaisesRegex(RuntimeError, "trainable"):
             cell[0].set(V_th=-30.0 * u.mV)

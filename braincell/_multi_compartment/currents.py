@@ -89,7 +89,7 @@ def total_membrane_rate_point(host: "Cell", *, point_V, point_capacitance, t):
     runtime = host.runtime
     V_cv = bridge.point_to_cv(point_V, runtime)
     with jax.named_scope("braincell:point_membrane_rate:density"):
-        rate_cv = _density_current_cv(host, V_cv=V_cv) / host.C
+        rate_cv = _density_current_cv(host, V_cv=V_cv) / host._current_capacitance()
 
     with jax.named_scope("braincell:point_membrane_rate:current_inputs"):
         zero_density = u.Quantity(
@@ -97,7 +97,7 @@ def total_membrane_rate_point(host: "Cell", *, point_V, point_capacitance, t):
             _CURRENT_DENSITY,
         )
         input_density = host.sum_current_inputs(zero_density, point_V)
-        rate_cv = rate_cv + bridge.point_to_cv(input_density, runtime) / host.C
+    rate_cv = rate_cv + bridge.point_to_cv(input_density, runtime) / host._current_capacitance()
 
     rate_point = bridge.cv_to_point(rate_cv, runtime)
     point_current = host._solver_clamp_point_current(t=t)
@@ -167,7 +167,7 @@ def _synapse_contrib_to_point(runtime: CellRuntimeState, layout, syn, point_V):
     contrib_point = _synapse_absolute_current_point(runtime, layout, syn, point_V)
     if contrib_point is None:
         return None
-    point_area = runtime.point_area
+    point_area = runtime.current_cable().area[..., runtime.point_to_representative_cv_np]
     return contrib_point / point_area
 
 
@@ -220,7 +220,8 @@ def _clamp_density(host: "Cell", *, t, dtype):
         return u.Quantity(jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=dtype), _CURRENT_DENSITY)
 
     currents_nA = host._solver_clamp_point_current(t=t).to_decimal(u.nA)
-    active_density = currents_nA[..., table.midpoint_ids] / table.midpoint_area
+    point_area = runtime.current_cable().area[..., runtime.point_to_representative_cv_np]
+    active_density = currents_nA[..., table.midpoint_ids] / point_area[..., table.midpoint_ids].to_decimal(u.cm**2)
     density = jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=dtype)
     density = density.at[..., table.midpoint_ids].set(active_density)
     return u.Quantity(density, _CURRENT_DENSITY)

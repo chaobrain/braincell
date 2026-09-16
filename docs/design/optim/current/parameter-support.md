@@ -8,7 +8,7 @@
 
 Channel、Ion、Synapse 通过构造签名发现候选参数，保留默认 get/set、单位、区域选择、
 row/population/cv/all 分组、共享根，以及 parameter/scale/parameterized。
-声明在初始化前完成。注册通过不保证非零梯度；实际类型转换、单位、shape、静态控制流
+机制声明在初始化前完成，训练注册在初始化后、建立梯度引擎前完成。注册通过不保证非零梯度；实际类型转换、单位、shape、静态控制流
 仍可能自然报错。训练发生在原 root 上，reset 清动态状态但不回滚 root。
 
 | 对象 | 当前入口与能力 | 关键边界 |
@@ -19,6 +19,7 @@ row/population/cv/all 分组、共享根，以及 parameter/scale/parameterized�
 | Connection | ConnectionView.trainable(weight=...) | delay 明确拒绝；可塑性未实现 |
 | 电压检测器 | event output/source trainable(threshold=...) | 硬事件前向，代理梯度反向 |
 | Network | trainables 聚合、prepare_run/update | 路由固定；共享根去重；全网状态一起求导 |
+| 固定网格 Geometry | CV/CellView 的 `length`、`radius_scale`、`Ra`、`cm` | init 后使用；字段可直接从 CV selection 访问（`cell.cvs.length`、`cell.cvs[2:5].Ra`），`cell.geometry` 仍为兼容入口；`length` 可用 `trainable.scale()` 注册，半径只支持整体 `radius_scale`；`radius_mid` 与 `diam_arc_mean` 只读；支持 row/population/cv/all |
 
 ## Channel
 
@@ -104,5 +105,5 @@ run 的 host 记录转换不是可微 rollout 接口。BPTT/full RTRL 使用同�
 
 ## 暂不支持的 Owner
 
-Cell.V_init、cable、morphology/topology 和初始化后改变 trainable ownership 尚未接入。
+Cell.V_init 的训练、自由 morphology/topology 和删除/替换 trainable ownership 尚未接入。
 构造时能够设置这些值不等于当前 View.trainable 支持它们。后续入口见 [路线图](../proposals/roadmap.md)。

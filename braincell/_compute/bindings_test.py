@@ -139,13 +139,11 @@ class RuntimeBindingTest(unittest.TestCase):
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel("Na_HH1952", g_max=12.0 * (u.mS / u.cm**2)),
         )
-        cell.paint(
-            BranchSlice(branch_index=0, prox=0.0, dist=1.0),
-            braincell.mech.Channel("Na_HH1952", g_max=8.0 * (u.mS / u.cm**2)),
-        )
-
         with self.assertRaisesRegex(ValueError, "overlap after discretization"):
-            cell.init_state()
+            cell.paint(
+                BranchSlice(branch_index=0, prox=0.0, dist=1.0),
+                braincell.mech.Channel("Na_HH1952", g_max=8.0 * (u.mS / u.cm**2)),
+            )
 
     def test_set_state_syncs_merged_channel_param(self) -> None:
         cell = Cell(_build_tree())

@@ -60,7 +60,7 @@ manager 只形成跨 Cell 聚合 view，不复制 roots。
 这使核心 Cell 的侵入保持在两个边界：
 
 1. 构造并暴露一个 `trainables` manager；
-2. 在 init/reset/run 的既定位置调用 manager materialization。
+2. 在注册、reset_state/run 的既定位置调用 manager materialization，完整 reset 清除注册。
 
 View 只把 target selection 和 source 交给目标 Cell manager，不保存 optimizer state。
 
@@ -231,7 +231,7 @@ scalar。
 现有 density callable 在 lowering 时求值一次，不能承载 optimizer 持续更新的 latent。
 TrainableManager 提供 JAX-traceable materialization 路径：
 
-1. `init_state()`：runtime buffer 建立后、mechanism state 初始化前；
+1. `init_state()` 分配最终 runtime 后，`trainable()` 注册并立即物化；
 2. `reset_state()`：先物化，再重置 gates 和 ion dynamic state；
 3. `Cell.run()`：rollout 入口保证当前 roots 已同步；
 4. 直接连续调用 `update()` 时不在每一步求值，用户在 root 更新后显式 materialize 一次。
@@ -239,8 +239,10 @@ TrainableManager 提供 JAX-traceable materialization 路径：
 materialization 必须位于 differentiated trace 内。若参数影响 reset 初值，仅在 run 开始后
 刷新已经太晚，因此 reset 入口也必须接入。
 
-`reset_state()` 不改变 roots 或 frozen baseline。完整 `Cell.reset()` 清除 runtime；重新
-初始化必须从仍有效的声明和 manager metadata 重建 binding target，旧 runtime 引用不可复用。
+`reset_state()` 不改变 roots 或 frozen baseline。完整 `Cell.reset()` 清除 runtime、参数覆盖、
+roots、bindings 和 ownership。重新初始化从原始声明重建，之后重新注册并创建优化器和梯度引擎。
+梯度引擎保存 runtime 与注册集合的版本，在完整 reset 后拒绝复用；注册时完成紧凑存储展开，
+引擎建立后禁止新增 binding，确保求导程序的参数集合稳定。
 
 ## Ownership and Initialization
 
@@ -263,8 +265,9 @@ are not Python checks inside the differentiated step: users must select paramete
 transforms that preserve valid domains during optimization. Exp2Syn's normalization
 factor is computed from the current time constants on every event application.
 
-Reset clears dynamic states and event queues, then uses the current trainable
-values. It does not restore the optimizer roots to their original values.
+`reset_state()` materializes current trainable values before resetting dynamic
+states and event queues. It preserves optimizer roots. Full `reset()` discards
+the roots and runtime overrides and returns to the original declarations.
 Ordinary setters reject binding-owned fields. Delay remains static and trainable
 delay raises `NotImplementedError`. Plasticity and `weight_initial` are not added.
 

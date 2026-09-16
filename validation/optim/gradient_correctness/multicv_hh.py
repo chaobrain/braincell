@@ -189,6 +189,7 @@ def build_multicv_hh_cell(
             amplitudes=0.05 * u.nA,
         ),
     )
+    cell.init_state()
     if trainable:
         for name in CHANNEL_NAMES:
             cell.channels[name].trainable(
@@ -241,14 +242,12 @@ def build_multicv_problem(
         trainable=False,
         row_scales=target_row_scales,
     )
-    target_cell.init_state()
     target_voltage_mv = simulate_voltage(target_cell, times_ms, dt=dt)
 
     cell = build_multicv_hh_cell(
         dendrite_segments=dendrite_segments,
         trainable=True,
     )
-    cell.init_state()
     parameter_states = cell.trainables.parameters().states()
 
     def reset_and_zero(_):

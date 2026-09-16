@@ -206,14 +206,10 @@ class CV:
         Axial resistance from the CV midpoint to the proximal side.
     r_axial_dist : brainunit.Quantity
         Axial resistance from the CV midpoint to the distal side.
-    radius_prox : brainunit.Quantity
-        Radius at the proximal CV boundary.
     radius_mid : brainunit.Quantity
         Radius at the CV midpoint.
     diam_arc_mean : brainunit.Quantity
         Arc-length-weighted mean diameter across the CV.
-    radius_dist : brainunit.Quantity
-        Radius at the distal CV boundary.
     density_mech : tuple of Density
         Density-like mechanism declarations active on this CV.
     point_mech : tuple of Point
@@ -246,10 +242,8 @@ class CV:
     r_axial: u.Quantity
     r_axial_prox: u.Quantity
     r_axial_dist: u.Quantity
-    radius_prox: u.Quantity
     radius_mid: u.Quantity
     diam_arc_mean: u.Quantity
-    radius_dist: u.Quantity
     density_mech: tuple[Density, ...]
     point_mech: tuple[Point, ...]
     point_mech_roles: tuple[CVPointMechanism, ...] = ()
@@ -745,10 +739,8 @@ def _assemble_cv(geo, bucket) -> CV:
         r_axial=u.Quantity(ra_ohm_cm * geo.axial_factor_total_per_cm, u.ohm),
         r_axial_prox=u.Quantity(ra_ohm_cm * geo.axial_factor_prox_per_cm, u.ohm),
         r_axial_dist=u.Quantity(ra_ohm_cm * geo.axial_factor_dist_per_cm, u.ohm),
-        radius_prox=u.Quantity(geo.r_prox_um, u.um),
         radius_mid=u.Quantity(geo.r_mid_um, u.um),
         diam_arc_mean=u.Quantity(geo.diam_arc_mean_um, u.um),
-        radius_dist=u.Quantity(geo.r_dist_um, u.um),
         density_mech=tuple(bucket.density_by_key.values()),
         point_mech=tuple(bucket.points),
         point_mech_roles=tuple(bucket.point_roles),

@@ -28,7 +28,8 @@ The lifecycle has two phases:
 1. **DECLARING** (default). ``paint`` / ``place`` / ``cv_policy`` /
    ``V_th`` / ``V_init`` / ``solver`` / ``spk_fun`` setters are all
    mutable. Runtime methods raise.
-2. **INITIALIZED**. After :meth:`init_state`, mutation is frozen and
+2. **INITIALIZED**. After :meth:`init_state`, structure is frozen, existing
+   numerical parameters can be updated through Views, and
    the runtime surface (:meth:`run`, :meth:`update`,
    :meth:`sample_probe`, inspection, ...) becomes available. Call
    :meth:`reset` to drop the runtime and re-enter DECLARING.
@@ -100,7 +101,9 @@ from braincell._compute import bridge
 from .synapses import SynapseView, _SynapseStore, raise_on_name_type_conflict
 from .clamps import ClampView, _ClampStore
 from .selection import BranchSelector, CVSelector, _CellScope
+from .lifecycle import DiscreteView
 from .density_views import ChannelView, IonView
+from .geometry import GeometryView
 
 __all__ = ["Cell", "CellView", "MultiCompartment"]
 
@@ -112,7 +115,7 @@ class AxialOperatorCache:
 
 
 @dataclass(frozen=True)
-class RuntimeIonBinding:
+class RuntimeIonBinding(DiscreteView):
     """One runtime ion seen through a CV or node inspection view."""
 
     name: str
@@ -120,6 +123,9 @@ class RuntimeIonBinding:
     cell: "Cell"
     cv_ids: tuple[int, ...] = ()
     point_ids: tuple[int, ...] = ()
+
+    def __post_init__(self):
+        self._bind_view(self.cell)
 
     def get(self, field: str):
         """Return one field projected into the local CV or node view."""
@@ -141,7 +147,7 @@ class RuntimeIonBinding:
 
 
 @dataclass(frozen=True)
-class RuntimeCVView:
+class RuntimeCVView(DiscreteView):
     """Readonly runtime inspection view anchored at one static CV."""
 
     id: int
@@ -149,10 +155,14 @@ class RuntimeCVView:
     layout_ids: tuple[int, ...]
     mid_node_id: int
     ions: Mapping[str, RuntimeIonBinding]
+    _cell: "Cell"
+
+    def __post_init__(self):
+        self._bind_view(self._cell)
 
 
 @dataclass(frozen=True)
-class RuntimeNodeView:
+class RuntimeNodeView(DiscreteView):
     """Readonly runtime inspection view anchored at one static node."""
 
     id: int
@@ -160,6 +170,10 @@ class RuntimeNodeView:
     layout_ids: tuple[int, ...]
     source_cv_ids: tuple[int, ...]
     ions: Mapping[str, RuntimeIonBinding]
+    _cell: "Cell"
+
+    def __post_init__(self):
+        self._bind_view(self._cell)
 
 
 class _CellFacade:
@@ -238,6 +252,45 @@ class _CellFacade:
         """Return Ion logical owners intersecting this scope."""
         return IonView(self._view_root, self._scope)
 
+    @property
+    def geometry(self) -> GeometryView:
+        """Return fixed-grid runtime geometry parameters for this scope."""
+        self._raise_if_not_initialized("geometry; call init_state() first")
+        return GeometryView(self._view_root, self._scope)
+
+    # CV selections expose geometry fields directly.  ``geometry`` remains a
+    # compatibility namespace, while these aliases make geometry a content
+    # view at the same level as ``channels`` and ``synapses``.
+    @property
+    def length(self):
+        self._raise_if_not_initialized("length; call init_state() first")
+        return self.geometry.length
+
+    @property
+    def radius_scale(self):
+        self._raise_if_not_initialized("radius_scale; call init_state() first")
+        return self.geometry.radius_scale
+
+    @property
+    def Ra(self):
+        self._raise_if_not_initialized("Ra; call init_state() first")
+        return self.geometry.Ra
+
+    @property
+    def cm(self):
+        self._raise_if_not_initialized("cm; call init_state() first")
+        return self.geometry.cm
+
+    @property
+    def radius_mid(self):
+        self._raise_if_not_initialized("radius_mid; call init_state() first")
+        return self.geometry.radius_mid
+
+    @property
+    def diam_arc_mean(self):
+        self._raise_if_not_initialized("diam_arc_mean; call init_state() first")
+        return self.geometry.diam_arc_mean
+
     def record(
         self,
         name: str,
@@ -277,7 +330,7 @@ class _CellFacade:
         )
 
 
-class PopulationRuntimeView:
+class PopulationRuntimeView(DiscreteView):
     """Provide read-only population selection over one runtime object."""
 
     __slots__ = ("_runtime", "_population_indices", "_population_size", "_packed_population_index")
@@ -288,12 +341,14 @@ class PopulationRuntimeView:
         population_indices: tuple[int, ...],
         population_size: int,
         *,
+        cell,
         packed_population_index: np.ndarray | None = None,
     ) -> None:
         self._runtime = runtime
         self._population_indices = population_indices
         self._population_size = population_size
         self._packed_population_index = packed_population_index
+        self._bind_view(cell)
 
     @property
     def root(self):
@@ -332,7 +387,7 @@ class PopulationRuntimeView:
         return self.get(field)
 
 
-class CellView(_CellFacade):
+class CellView(DiscreteView, _CellFacade):
     """View selected members of a homogeneous :class:`Cell` population.
 
     A view owns no morphology, discretization, or runtime state. It stores a
@@ -361,11 +416,13 @@ class CellView(_CellFacade):
         self._selection_scope = (
             cell._root_scope().select_population(tuple(population_indices)) if scope is None else scope
         )
+        self._bind_view(cell)
 
     @property
     def root(self) -> "Cell":
         """Return the root :class:`Cell` that owns all data."""
         return self._cell
+
 
     @property
     def cell(self) -> "Cell":
@@ -383,6 +440,7 @@ class CellView(_CellFacade):
 
     @property
     def _scope(self) -> _CellScope:
+        self._check_view()
         return self._selection_scope
 
     def _with_scope(self, scope: _CellScope) -> "CellView":
@@ -416,6 +474,7 @@ class CellView(_CellFacade):
         return (len(self._scope.pairs),)
 
     def __len__(self) -> int:
+        self._check_view()
         return len(self._population_indices)
 
     @property
@@ -495,7 +554,11 @@ class CellView(_CellFacade):
         """Return control-volume declarations selected by this scope."""
         if not self._scope.spatially_restricted:
             return self._cell.cvs
-        return tuple(self._cell.cvs[cv_id] for cv_id in self._scope.cv_ids)
+        return CVCollectionView(
+            self._cell,
+            tuple(self._cell.cvs[cv_id] for cv_id in self._scope.cv_ids),
+            self._scope,
+        )
 
     @property
     def cv_midpoints(self) -> LocsetMask:
@@ -622,7 +685,7 @@ class CellView(_CellFacade):
     @property
     def V_init(self):
         """Return effective initial voltages for selected cells."""
-        return self._cell._selected_population_parameter("V_init", self._population_indices)
+        return self._selected_voltage_parameter("V_init")
 
     @V_init.setter
     def V_init(self, value) -> None:
@@ -631,7 +694,17 @@ class CellView(_CellFacade):
     @property
     def V_th(self):
         """Return effective spike thresholds for selected cells."""
-        return self._cell._selected_population_parameter("V_th", self._population_indices)
+        return self._selected_voltage_parameter("V_th")
+
+    def _selected_voltage_parameter(self, name):
+        values = self._cell._selected_population_parameter(name, self._population_indices)
+        if not self._scope.spatially_restricted:
+            return values
+        if not self._cell.pop_size:
+            return values[self._scope.pair_cv_id]
+        local = {population: i for i, population in enumerate(self._population_indices)}
+        rows = np.asarray([local[p] for p, _ in self._scope.pairs], dtype=np.int32)
+        return values[rows, self._scope.pair_cv_id]
 
     @V_th.setter
     def V_th(self, value) -> None:
@@ -670,22 +743,22 @@ class CellView(_CellFacade):
         )
 
     def set(self, **parameters) -> "CellView":
-        """Set shape-preserving declaration parameters for selected cells.
+        """Set runtime initial-voltage/threshold parameters on selected CVs.
 
         Parameters
         ----------
         **parameters
             Supported keys are ``V_init`` and ``V_th``. Values must be
             concrete voltage quantities that broadcast within the selected
-            population-by-CV shape. Passing ``None`` for ``V_init`` removes
-            selected overrides and restores the root declaration.
+            population-by-CV shape. Spatial selections accept a scalar or
+            one value per selected logical row. Requires initialization.
 
         Returns
         -------
         CellView
             This view.
         """
-        self._cell._set_selected_population_parameters(self._population_indices, parameters)
+        self._cell._set_runtime_voltage_parameters(self._scope, parameters)
         return self
 
     def place(
@@ -743,7 +816,7 @@ class CellView(_CellFacade):
     def get_ion(self, name: str) -> PopulationRuntimeView:
         """Return read-only selected-population inspection for one runtime ion."""
         runtime = self._cell.get_ion(name)
-        return PopulationRuntimeView(runtime, self._population_indices, self._cell._population_size)
+        return PopulationRuntimeView(runtime, self._population_indices, self._cell._population_size, cell=self._cell)
 
     def get_runtime_node(self, layout_id: int) -> PopulationRuntimeView:
         """Return read-only selected-population inspection for a runtime node."""
@@ -753,6 +826,7 @@ class CellView(_CellFacade):
             runtime,
             self._population_indices,
             self._cell._population_size,
+            cell=self._cell,
             packed_population_index=layout.population_index,
         )
 
@@ -761,6 +835,98 @@ class CellView(_CellFacade):
             f"CellView(name={self.name!r}, population_indices={self._population_indices!r}, "
             f"cv_ids={self._scope.cv_ids!r})"
         )
+
+
+class CVCollectionView(tuple):
+    """Tuple-compatible CV position view with unified geometry fields."""
+
+    def __new__(cls, cell, records, scope=None):
+        obj = super().__new__(cls, records)
+        obj._cell = cell
+        obj._scope = scope
+        return obj
+
+    @property
+    def cell(self):
+        return self._cell
+
+    def __getitem__(self, selector):
+        result = super().__getitem__(selector)
+        if isinstance(selector, slice):
+            scope = self._scope
+            ids = tuple(cv.id for cv in result)
+            scope = (self._cell._root_scope() if scope is None else scope).select_cv_ids(ids)
+            return CVCollectionView(self._cell, result, scope)
+        return result
+
+    def _geometry(self):
+        self._cell._raise_if_not_initialized(
+            "CV geometry; call init_state() before reading runtime geometry"
+        )
+        scope = self._scope
+        if scope is None:
+            scope = self._cell._root_scope().select_cv_ids(tuple(cv.id for cv in self))
+        return GeometryView(self._cell, scope)
+
+    def _content_view(self):
+        scope = self._scope
+        if scope is None:
+            scope = self._cell._root_scope()
+        else:
+            scope = scope.select_cv_ids(tuple(cv.id for cv in self))
+        return CellView(self._cell, scope.population_indices, scope=scope)
+
+    @property
+    def channels(self):
+        return self._content_view().channels
+
+    @property
+    def ions(self):
+        return self._content_view().ions
+
+    @property
+    def synapses(self):
+        return self._content_view().synapses
+
+    @property
+    def connections(self):
+        return self._content_view().connections
+
+    @property
+    def length(self):
+        return self._geometry().length
+
+    @property
+    def radius_scale(self):
+        return self._geometry().radius_scale
+
+    @property
+    def Ra(self):
+        return self._geometry().Ra
+
+    @property
+    def cm(self):
+        return self._geometry().cm
+
+    @property
+    def radius_mid(self):
+        return self._geometry().radius_mid
+
+    @property
+    def diam_arc_mean(self):
+        return self._geometry().diam_arc_mean
+
+    @property
+    def area(self):
+        return self._geometry().area
+
+    @property
+    def resistance_prox(self):
+        return self._geometry().resistance_prox
+
+    @property
+    def resistance_dist(self):
+        return self._geometry().resistance_dist
 
 
 class Cell(_CellFacade, HHTypedNeuron):
@@ -848,10 +1014,6 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._next_detector_id = 0
         self._V_init = V_init
         self._V_init_materialized = None
-        self._population_parameter_overrides: dict[str, dict[int, object]] = {
-            "V_init": {},
-            "V_th": {},
-        }
         self._spk_fun = spk_fun
         self._name = name
         self._solver_name, self._solver_fn = _resolve_solver(solver)
@@ -865,7 +1027,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._membrane_linearizer = _validate_membrane_linearizer(membrane_linearizer)
 
         self._discretization_cache: Discretization | None = None
+        self._cv_collection_cache = None
         self._discretization_cache_key: object = None
+        self._view_generation = 0
+        self._runtime_generation = 0
+        self._runtime_V_init = None
+        self._runtime_V_init_mask = None
         self._root_scope_cache: _CellScope | None = None
 
         self._current_time_state = brainstate.ShortTermState(0.0 * u.ms)
@@ -885,10 +1052,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._clamp_store_cache: _ClampStore | None = None
         self._spike_event_source_cache: _CellSpikeSource | None = None
         self._synapse_input_bindings: dict[str, list[tuple[object, object, object]]] = {}
-        self._synapse_parameter_overrides: dict[tuple[int, int, str], object] = {}
-        self._density_parameter_overrides: dict[tuple[str, str, int, int, str], object] = {}
         self._synapse_origins: dict[int, SynapsePlacement] = {}
         self._connection_store_cache = None
+        self._connection_weight_declarations = ()
         self._network_owner_ref: weakref.ReferenceType | None = None
         self._recording_specs: dict[str, RecordingSpec] = {}
         self._compiled_recording_cache: dict[tuple, tuple] = {}
@@ -899,8 +1065,7 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         self.trainables = TrainableManager(self)
 
-        # Eager policy validation via the preview.
-        _ = self.cvs
+        self.discretize()
 
     # ------------------------------------------------------------------
     # Phase guards
@@ -945,6 +1110,30 @@ class Cell(_CellFacade, HHTypedNeuron):
     def morpho(self) -> Morphology:
         return self._morpho
 
+    @morpho.setter
+    def morpho(self, value: Morphology) -> None:
+        self.morphology = value
+
+    @property
+    def morphology(self) -> Morphology:
+        """Return the declaration morphology (``morpho`` compatibility alias)."""
+        return self._morpho
+
+    @morphology.setter
+    def morphology(self, value: Morphology) -> None:
+        """Replace the declaration morphology and refresh the fixed grid."""
+        self._raise_if_initialized("assign morphology")
+        if not isinstance(value, Morphology):
+            raise TypeError(f"morphology must be Morphology, got {type(value).__name__!s}.")
+        previous = self._morpho
+        self._morpho = value
+        try:
+            self.discretize()
+        except Exception:
+            self._morpho = previous
+            raise
+        self._declaration_morpho = value
+
     @property
     def cv_policy(self) -> CVPolicy:
         return self._discretization_policy
@@ -954,8 +1143,13 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._raise_if_initialized("assign cv_policy")
         if not isinstance(value, CVPolicy):
             raise TypeError(f"cv_policy must be CVPolicy, got {type(value).__name__!s}.")
+        previous = self._discretization_policy
         self._discretization_policy = value
-        self._invalidate_discretization_cache()
+        try:
+            self.discretize()
+        except Exception:
+            self._discretization_policy = previous
+            raise
 
     @property
     def paint_rules(self) -> tuple[PaintRule, ...]:
@@ -982,8 +1176,6 @@ class Cell(_CellFacade, HHTypedNeuron):
             require_unbound(self, "threshold", "V_th", range(self._population_size * self.n_compartment), "threshold")
             self._V_th_parameter.value = bridge.fill_like(self.varshape, value)
         self._V_th = value
-        if hasattr(self, "_population_parameter_overrides"):
-            self._population_parameter_overrides["V_th"].clear()
 
     @property
     def V_init(self):
@@ -994,8 +1186,6 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._raise_if_initialized("assign V_init")
         self._V_init = value
         self._V_init_materialized = None
-        if hasattr(self, "_population_parameter_overrides"):
-            self._population_parameter_overrides["V_init"].clear()
 
     @property
     def solver(self):
@@ -1076,7 +1266,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                 ),
             ),
         )
-        self._invalidate_discretization_cache()
+        self.discretize()
 
     def _place_per_cell(self, population_indices, locsets, mechanisms) -> None:
         """Append one independently sized locset row per selected cell."""
@@ -1105,42 +1295,60 @@ class Cell(_CellFacade, HHTypedNeuron):
                     aligned=False,
                 )
             )
-        self._place_rules = merge_place_rules(self._place_rules, tuple(incoming))
-        self._invalidate_discretization_cache()
+        previous_rules = self._place_rules
+        self._place_rules = merge_place_rules(previous_rules, tuple(incoming))
+        try:
+            self.discretize()
+        except Exception:
+            self._place_rules = previous_rules
+            raise
 
-    def _set_selected_population_parameters(self, population_indices, parameters) -> None:
-        """Store declaration-time overrides without changing population shape."""
-        self._raise_if_initialized("set CellView parameters")
+    def _set_runtime_voltage_parameters(self, scope, parameters) -> None:
+        self._raise_if_not_initialized("CellView.set(); use Cell constructor parameters before init_state()")
         unknown = set(parameters) - {"V_init", "V_th"}
         if unknown:
             raise KeyError(f"CellView.set() does not support parameters {sorted(unknown)!r}.")
-        indices = tuple(int(index) for index in population_indices)
-        if "V_th" in parameters and self._V_th_parameter is not None:
-            from braincell.trainable._targets import require_unbound
-
-            logical = {i * self.n_compartment + cv for i in indices for cv in range(self.n_compartment)}
-            require_unbound(self, "threshold", "V_th", logical, "threshold")
+        pairs = tuple(scope.pairs)
+        if not pairs:
+            return
+        pop = np.asarray([p for p, _ in pairs], dtype=np.int32)
+        cv = np.asarray([c for _, c in pairs], dtype=np.int32)
+        indices = (pop, cv) if self.pop_size else (cv,)
+        pending = {}
         for name, value in parameters.items():
-            overrides = self._population_parameter_overrides[name]
             if value is None:
-                if name != "V_init":
-                    raise TypeError("CellView V_th must be a voltage quantity, not None.")
-                for index in indices:
-                    overrides.pop(index, None)
-                self._V_init_materialized = None
-                continue
-            normalized = _normalize_selected_voltage_parameter(
-                value,
-                count=len(indices),
-                n_cv=self.n_cv,
-                name=name,
-            )
-            for index, item in zip(indices, normalized):
-                overrides[index] = item
+                raise TypeError(f"CellView {name} must be a voltage quantity, not None.")
+            if scope.spatially_restricted:
+                rows = _normalize_selected_voltage_parameter(value, count=1, n_cv=len(pairs), name=name)
+            else:
+                rows = _normalize_selected_voltage_parameter(
+                    value, count=len(scope.population_indices), n_cv=self.n_cv, name=name
+                )
+            values = jnp.asarray(u.math.stack(rows).to_decimal(u.mV)).reshape(-1)
+            if name == "V_th":
+                from braincell.trainable._targets import require_unbound
+
+                require_unbound(self, "threshold", "V_th", pop * self.n_cv + cv, "threshold")
+                current = bridge.fill_like(self.varshape, self.V_th)
+            else:
+                current = self._V_init_materialized.value
+            # Flatten the population axes for the logical selector's indices.
+            shape = current.shape
+            flat = current.reshape((self._population_size, self.n_cv)) if self.pop_size else current
+            updated = flat.at[indices].set(u.Quantity(values, u.mV))
+            pending[name] = updated.reshape(shape)
+        for name, value in pending.items():
             if name == "V_init":
-                self._V_init_materialized = None
+                self._runtime_V_init.value = value
+                mask = self._runtime_V_init_mask.value
+                flat_mask = mask.reshape((self._population_size, self.n_cv)) if self.pop_size else mask
+                self._runtime_V_init_mask.value = flat_mask.at[indices].set(True).reshape(mask.shape)
+                self._V_init_materialized.value = value
             elif self._V_th_parameter is not None:
-                self._V_th_parameter.value = self._materialize_population_parameter("V_th")
+                self._V_th_parameter.value = value
+            else:
+                self._V_th = value
+        self._run_loop_cache.clear()
 
     def _materialize_population_parameter(self, name: str):
         if name == "V_th":
@@ -1154,17 +1362,15 @@ class Cell(_CellFacade, HHTypedNeuron):
             value = braintools.init.param(initializer, self.varshape)
         else:  # pragma: no cover - internal invariant
             raise KeyError(name)
-        return _apply_population_parameter_overrides(
-            value,
-            overrides=self._population_parameter_overrides[name],
-            name=name,
-        )
+        if name == "V_init" and self._runtime_V_init is not None:
+            value = u.math.where(self._runtime_V_init_mask.value, self._runtime_V_init.value, value)
+        return value
 
     def _selected_population_parameter(self, name: str, population_indices):
         if name == "V_th" and self._initialized:
             values = self.V_th
         elif name == "V_init" and self._V_init_materialized is not None:
-            values = self._V_init_materialized
+            values = self._V_init_materialized.value
         else:
             if name == "V_init" and callable(self._V_init):
                 raise RuntimeError(
@@ -1181,11 +1387,15 @@ class Cell(_CellFacade, HHTypedNeuron):
     def paint(self, region: RegionExpr, *mechanisms) -> "Cell":
         """Paint mechanisms onto ``region``. Returns ``self`` for chaining."""
         self._raise_if_initialized("paint()")
-        self._paint_rules = merge_paint_rules(
-            self._paint_rules,
-            normalize_paint_rules(region, mechanisms),
-        )
-        self._invalidate_discretization_cache()
+        previous_rules = self._paint_rules
+        self._paint_rules = merge_paint_rules(previous_rules, normalize_paint_rules(region, mechanisms))
+        try:
+            # Paint is a declaration. Keep the derived grid current immediately
+            # so init_state() can consume it without a hidden policy pass.
+            self.discretize()
+        except Exception:
+            self._paint_rules = previous_rules
+            raise
         return self
 
     def place(
@@ -1226,8 +1436,9 @@ class Cell(_CellFacade, HHTypedNeuron):
                     "LocsetBatch batch rows must match the population size, "
                     f"got {len(locset)!r} rows for {len(population_indices)!r} cells."
                 )
+        previous_rules = self._place_rules
         self._place_rules = merge_place_rules(
-            self._place_rules,
+            previous_rules,
             (
                 normalize_place_rule(
                     locset,
@@ -1237,7 +1448,11 @@ class Cell(_CellFacade, HHTypedNeuron):
                 ),
             ),
         )
-        self._invalidate_discretization_cache()
+        try:
+            self.discretize()
+        except Exception:
+            self._place_rules = previous_rules
+            raise
         return self
 
     def bind_synapse_input(self, synapse: str, source, *, weight=1.0, transform=None) -> "Cell":
@@ -1273,6 +1488,7 @@ class Cell(_CellFacade, HHTypedNeuron):
     def _invalidate_discretization_cache(self) -> None:
         self._discretization_cache = None
         self._discretization_cache_key = None
+        self._cv_collection_cache = None
         self._synapse_store_cache = None
         self._clamp_store_cache = None
         self._runtime_cvs_cache = None
@@ -1302,22 +1518,53 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     @property
     def _discretization(self) -> Discretization:
+        if self._initialized:
+            if self._discretization_cache_key != self._discretization_key():
+                raise RuntimeError("Initialized morphology has changed; reset() before changing declarations.")
+            return self._discretization_cache
         key = self._discretization_key()
         if self._discretization_cache is not None and self._discretization_cache_key == key:
             return self._discretization_cache
+        self.discretize()
+        return self._discretization_cache
 
-        # Everything below hangs off the discretization, so a key miss has
-        # to drop those caches too -- not just the one being rebuilt.
-        self._invalidate_discretization_cache()
+    def discretize(self) -> "Cell":
+        """Atomically rebuild the declaration preview before initialization.
+
+        Creation, policy assignment, initialization and dirty preview reads
+        call this method automatically. Existing selections expire on success.
+        Runtime parameters never trigger rediscretization.
+
+        Returns
+        -------
+        Cell
+            This Cell with a refreshed discrete preview.
+
+        Raises
+        ------
+        RuntimeError
+            If already initialized. Call ``reset()`` before editing declarations.
+        """
+        self._raise_if_initialized("discretize()")
         discretization = build_discretization(
             self._morpho,
             policy=self._discretization_policy,
             paint_rules=self._paint_rules,
             place_rules=self._place_rules,
         )
+        self._invalidate_discretization_cache()
         self._discretization_cache = discretization
-        self._discretization_cache_key = key
-        return discretization
+        self._discretization_cache_key = self._discretization_key()
+        self._view_generation += 1
+        return self
+
+    def _check_view_generation(self, generation: int) -> None:
+        if not self._initialized:
+            _ = self._discretization
+        if generation != self._view_generation:
+            raise RuntimeError(
+                "This discrete View is stale; select it again after discretize(), init_state() or reset()."
+            )
 
     def _root_scope(self) -> _CellScope:
         """Return the cached unrestricted population/CV scope for this Cell.
@@ -1327,6 +1574,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         every ``cell.soma``, ``cell.channels``, or ``cell.record`` lookup. It
         depends only on the discretization and is invalidated alongside it.
         """
+        _ = self._discretization
         if self._root_scope_cache is None:
             self._root_scope_cache = _CellScope.root(self)
         return self._root_scope_cache
@@ -1337,7 +1585,10 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     @property
     def cvs(self) -> tuple[CV, ...]:
-        return self._discretization.cvs
+        records = self._discretization.cvs
+        if self._cv_collection_cache is None:
+            self._cv_collection_cache = CVCollectionView(self, records)
+        return self._cv_collection_cache
 
     @property
     def cv_midpoints(self) -> LocsetMask:
@@ -1597,23 +1848,26 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._raise_if_network_owned("init_state()")
         self._raise_if_initialized("init_state()")
 
-        morpho = clone_morpho(self._morpho)
-        self._morpho = morpho
-        self._invalidate_discretization_cache()
-        _ = self._discretization
         if batch_size is not None:
             if isinstance(batch_size, bool) or not isinstance(batch_size, (int, np.integer)):
                 raise TypeError("Cell init_state() batch_size must be an integer or None.")
             if int(batch_size) < 1:
                 raise ValueError("Cell init_state() batch_size must be >= 1.")
+        # Declaration mutations (morphology, policy and paint/place rules) keep
+        # the discretization cache current while the cell is uninitialized.
+        # Initialization consumes that snapshot; it must never silently rerun a
+        # policy or create a second grid generation.
+        _ = self._discretization
         self._runtime_batch_size = None if batch_size is None else int(batch_size)
+        store = self._get_connection_store()
+        self._connection_weight_declarations = tuple((call, call.weight) for call in store._calls)
+        self._V_th_declaration = self._V_th
         if self._uses_reduction:
             self._init_reduction_state(batch_size=batch_size)
+            self._runtime_generation += 1
             return
         self._runtime = CellRuntimeState.from_cell(self)
-
-        # Save scalar V_th declaration before the vector overwrite below.
-        self._V_th_declaration = self._V_th
+        self._runtime.refresh_geometry()
 
         self._in_size = self.varshape
         self._out_size = self.varshape
@@ -1627,13 +1881,16 @@ class Cell(_CellFacade, HHTypedNeuron):
                 root_nodes[f"layout_{layout.id}"] = node
 
         self.ion_channels = self._format_elements(IonChannel, **root_nodes)
-        if self.trainables.bindings():
-            self.trainables.materialize()
-        self.C = bridge.cv_value_vector(self, attr_name="cm")
+        self.C = bridge.broadcast_to_shape(self._runtime.cable.cm, self.pop_size + (self.n_cv,), name="Cell.C")
         self._V_th = self._materialize_population_parameter("V_th")
 
         v_value = self._materialize_population_parameter("V_init")
-        self._V_init_materialized = v_value
+        from braincell._parameter_schema import RuntimeParameterState
+
+        self._V_init_materialized = RuntimeParameterState(v_value)
+        self._V_th_parameter = RuntimeParameterState(self._V_th)
+        self._runtime_V_init = RuntimeParameterState(v_value)
+        self._runtime_V_init_mask = brainstate.LongTermState(jnp.zeros(self.pop_size + (self.n_cv,), dtype=bool))
         v_value = bridge.expand_with_batch_axis(v_value, batch_size, name="Cell.V")
         # A Cell is spatial: every hidden state's trailing axis enumerates
         # CVs (V and painted density state) or sparse point-layout rows, so all
@@ -1667,9 +1924,14 @@ class Cell(_CellFacade, HHTypedNeuron):
         # Dense CV axial operators are only needed by derivative-based voltage
         # solvers. The default DHS/staggered path builds its own static source,
         # so defer this matrix until ``_get_axial_operator()`` is actually used.
-        self._runtime.axial_operator_np = None
+        self._runtime.axial_operator_source = None
         self._runtime.axial_operator_cache = None
         self._initialized = True
+        # Selections created during declaration are not runtime Views.  A
+        # successful initialization creates the runtime generation and makes
+        # those pre-init selections stale; callers must select again.
+        self._view_generation += 1
+        self._runtime_generation += 1
         self._runtime_cvs_cache = self._build_runtime_cv_views()
         self._runtime_nodes_cache = self._build_runtime_node_views()
 
@@ -1705,6 +1967,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._raise_if_not_initialized("reset()")
 
         self.connections.clear_runtime()
+        for call, weight in self._connection_weight_declarations:
+            call.weight = weight
+        self._connection_weight_declarations = ()
 
         if self._uses_reduction:
             self._reduction_models[self._selected_model_name].reset()
@@ -1732,7 +1997,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._reduction_output_states = {}
         self._pending_reduction_inputs = None
         self._runtime_batch_size = None
-        self.trainables.runtime_reset()
+        self.trainables.clear()
+        self._runtime_V_init = None
+        self._runtime_V_init_mask = None
+        self._V_th_parameter = None
+        self._view_generation += 1
+        self._runtime_generation += 1
         self._runtime_cvs_cache = None
         self._runtime_nodes_cache = None
         self._node_scheduling_cache.clear()
@@ -1814,6 +2084,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         node_tree = self.node_tree
         return tuple(
             RuntimeCVView(
+                _cell=self,
                 id=int(cv.id),
                 declaration=cv,
                 layout_ids=tuple(int(layout.id) for layout in runtime.get_cv_layouts(int(cv.id))),
@@ -1827,6 +2098,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         runtime = self.runtime
         return tuple(
             RuntimeNodeView(
+                _cell=self,
                 id=int(node.id),
                 declaration=node,
                 layout_ids=tuple(int(layout.id) for layout in runtime.get_point_layouts(int(node.id))),
@@ -1966,7 +2238,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._raise_if_not_initialized("compute_membrane_derivative()")
         t = self._resolve_t()
         I_total = currents.total_membrane_current(self, V_cv=V, t=t)
-        return I_total / self.C
+        return I_total / self._current_capacitance()
+
+    def _current_capacitance(self):
+        """Return capacitance from current geometry states."""
+        cable = self._runtime.current_cable()
+        return bridge.broadcast_to_shape(cable.cm, self.pop_size + (self.n_cv,), name="Cell.C")
 
     def _voltage_linearizer(self):
         """Return the configured voltage-only membrane linearizer."""
@@ -1985,32 +2262,44 @@ class Cell(_CellFacade, HHTypedNeuron):
         runtime = self._runtime
         if runtime is None:
             raise RuntimeError("_get_axial_operator() requires init_state() first.")
+        if runtime.geometry is not None and any(is_traced_value(state.value) for state in runtime.geometry.values()):
+            return build_cv_axial_operator(
+                self, node_tree=self.node_tree,
+                scheduling=self._node_scheduling_unchecked(algorithm="dhs"),
+            ) * (u.ms**-1)
         float_dtype = jnp.asarray(0.0).dtype
         cache = runtime.axial_operator_cache
         if cache is not None and cache.float_dtype == float_dtype:
             return cache.operator
 
-        if runtime.axial_operator_np is None:
-            runtime.axial_operator_np = np.asarray(
-                build_cv_axial_operator(
-                    self,
-                    node_tree=self.node_tree,
-                    scheduling=self._node_scheduling_unchecked(algorithm="dhs"),
-                ),
-                dtype=np.float64,
+        source = runtime.axial_operator_source
+        if source is None:
+            source = build_cv_axial_operator(
+                self,
+                node_tree=self.node_tree,
+                scheduling=self._node_scheduling_unchecked(algorithm="dhs"),
             )
+            if not is_traced_value(source):
+                runtime.axial_operator_source = source
 
-        operator = jnp.asarray(runtime.axial_operator_np, dtype=brainstate.environ.dftype()) * (u.ms**-1)
+        operator = jnp.asarray(source, dtype=brainstate.environ.dftype()) * (u.ms**-1)
         cache = AxialOperatorCache(float_dtype=float_dtype, operator=operator)
         if not is_traced_value(operator):
             runtime.axial_operator_cache = cache
         return operator
 
+    def _refresh_geometry_runtime(self):
+        """Refresh cable-derived runtime values without rebuilding the grid."""
+        self._raise_if_not_initialized("refresh geometry")
+        self._runtime.refresh_geometry()
+        self.C = bridge.broadcast_to_shape(self._runtime.cable.cm, self.pop_size + (self.n_cv,), name="Cell.C")
+        self._run_loop_cache.clear()
+
     def compute_axial_derivative(self, V):
         self._raise_if_not_initialized("compute_axial_derivative()")
         V_mv = u.Quantity(u.math.asarray(V.to_decimal(u.mV)), u.mV)
         axial_operator = self._get_axial_operator()
-        return -u.math.matmul(V_mv, axial_operator.T)
+        return -u.math.matmul(axial_operator, V_mv[..., None])[..., 0]
 
     def compute_voltage_derivative(self, V):
         return self.compute_membrane_derivative(V) + self.compute_axial_derivative(V)
@@ -2650,13 +2939,15 @@ class Cell(_CellFacade, HHTypedNeuron):
         """
         self._raise_if_network_owned("reset_state()")
         self._raise_if_not_initialized("reset_state()")
+        if batch_size is not None and (isinstance(batch_size, bool) or not isinstance(batch_size, (int, np.integer))):
+            raise TypeError("Cell reset_state() batch_size must be an integer or None.")
+        requested_batch = None if batch_size is None else int(batch_size)
+        if requested_batch != self._runtime_batch_size:
+            raise ValueError(
+                "Cell reset_state() must preserve the init_state() batch size; "
+                f"expected {self._runtime_batch_size!r}, got {requested_batch!r}."
+            )
         if self._uses_reduction:
-            requested_batch = None if batch_size is None else int(batch_size)
-            if requested_batch != self._runtime_batch_size:
-                raise ValueError(
-                    "Reduced Cell reset_state() must preserve the init_state() batch size; "
-                    f"expected {self._runtime_batch_size!r}, got {requested_batch!r}."
-                )
             self.connections.reset_runtime()
             self._reduction_input_runtime.clear_event_buffers()
             output = self._reduction_models[self._selected_model_name].reset_state(batch_size=batch_size)
@@ -2668,7 +2959,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             self.trainables.materialize()
         self.connections.reset_runtime()
         v_value = self._materialize_population_parameter("V_init")
-        self._V_init_materialized = v_value
+        self._V_init_materialized.value = v_value
         self.V.value = bridge.expand_with_batch_axis(v_value, batch_size, name="Cell.V")
         self._point_V.value = self._initial_point_voltage(self.V.value)
         self.spike.value = _zero_spike_like(self.V.value)
@@ -2991,21 +3282,6 @@ def _normalize_selected_voltage_parameter(value, *, count: int, n_cv: int, name:
                 f"CellView {name} with shape {decimal.shape!r} cannot broadcast to {target_shape!r}."
             ) from exc
     return tuple(u.Quantity(np.array(row, copy=True), u.mV) for row in normalized)
-
-
-def _apply_population_parameter_overrides(value, *, overrides: Mapping[int, object], name: str):
-    """Scatter per-cell declaration overrides into an existing dense value."""
-    if not overrides:
-        return value
-    if not isinstance(value, u.Quantity):
-        raise TypeError(f"Cell {name} must materialize as a voltage quantity before applying CellView overrides.")
-    unit = value.unit
-    decimal = np.array(value.to_decimal(unit), copy=True)
-    if decimal.ndim != 2:
-        raise ValueError(f"Cell {name} must have population-by-CV shape, got {decimal.shape!r}.")
-    for population_index, row in overrides.items():
-        decimal[int(population_index)] = row.to_decimal(unit)
-    return u.Quantity(decimal, unit)
 
 
 def _coerce_drive_like(value, template):

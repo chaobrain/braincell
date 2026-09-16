@@ -59,9 +59,11 @@ from typing import TYPE_CHECKING
 import braintools
 import brainstate
 import brainunit as u
+import jax.numpy as jnp
 import numpy as np
 
 from braincell._base_channel import Synapse as RuntimeSynapse
+from braincell._misc import is_traced_value
 from braincell._discretization.base import NodeTree
 from braincell.mech import NoEventInput, ScalarEventInput, TriggerEventInput
 from braincell.mech import (
@@ -76,6 +78,7 @@ from .bindings import (
     _sync_runtime_node_param,
 )
 from .bridge import attach_runtime_ion_geometry
+from .cable import CableArrays
 from .layouts import (
     CLAMP_KINDS,
     MechanismLayout,
@@ -101,7 +104,6 @@ from .parameters import (
     density_parameter_spec,
     make_runtime_parameter_state,
     parameter_state_value,
-    set_parameter_row,
     set_runtime_parameter_value,
 )
 
@@ -163,14 +165,21 @@ class CellRuntimeState:
     midpoint_mask_np: np.ndarray
     point_to_representative_cv_np: np.ndarray
     merged_channel_layout_groups: dict[int, tuple[int, ...]] | None = None
-    dhs_static_source_np: object | None = None
+    dhs_source: object | None = None
     dhs_static_cache: object | None = None
-    axial_operator_np: np.ndarray | None = None
+    axial_operator_source: object | None = None
     axial_operator_cache: object | None = None
     clamp_routing_table: object | None = None
+    cable: CableArrays | None = None
     cv_area: object | None = None  # (n_cv,) brainunit Quantity, cm^2
     point_area: object | None = None  # (n_point,) brainunit Quantity, cm^2
     pop_size: tuple[int, ...] = ()
+    geometry: dict[str, RuntimeParameterState] | None = None
+    reference_cable: CableArrays | None = None
+    reference_ra: object | None = None
+    reference_length: object | None = None
+    reference_radius_mid: object | None = None
+    reference_diam_arc_mean: object | None = None
 
     @classmethod
     def from_cell(cls, cell: "Cell") -> "CellRuntimeState":
@@ -425,21 +434,10 @@ class CellRuntimeState:
                         shape=shape,
                     )
 
-        _allocate_extra_density_parameters(
-            cell=cell,
+        _mark_declared_ion_initializers(
             layouts=layouts,
             layout_mechanisms=layout_mechanisms,
             state_buffers=state_buffers,
-            state_shapes=state_shapes,
-            pop_size=pop_size,
-        )
-        _apply_density_parameter_overrides(
-            cell=cell,
-            layouts=tuple(layouts),
-            layout_mechanisms=layout_mechanisms,
-            state_buffers=state_buffers,
-            node_tree=node_tree,
-            pop_size=pop_size,
         )
 
         (
@@ -470,7 +468,35 @@ class CellRuntimeState:
             [float(np.asarray(cv.area.to_decimal(area_unit), dtype=float)) for cv in cell.cvs],
             dtype=float,
         )
-        cv_area = u.Quantity(cv_area_decimal, area_unit)
+        cable = CableArrays.from_cvs(cell.cvs)
+        reference_ra = u.Quantity(
+            np.asarray([float(np.asarray(cv.ra.to_decimal(u.ohm * u.cm), dtype=float)) for cv in cell.cvs]),
+            u.ohm * u.cm,
+        )
+        reference_length = u.Quantity(
+            jnp.asarray([cv.length.to_decimal(u.um) for cv in cell.cvs]), u.um
+        )
+        reference_radius_mid = u.Quantity(
+            jnp.asarray([cv.radius_mid.to_decimal(u.um) for cv in cell.cvs]), u.um
+        )
+        reference_diam_arc_mean = u.Quantity(
+            jnp.asarray([cv.diam_arc_mean.to_decimal(u.um) for cv in cell.cvs]), u.um
+        )
+        shape = pop_size + (n_cv,)
+        geometry = {
+            "radius_scale": RuntimeParameterState(jnp.ones(shape, dtype=brainstate.environ.dftype())),
+            "length": RuntimeParameterState(
+                u.Quantity(jnp.broadcast_to(
+                    jnp.asarray([cv.length.to_decimal(u.um) for cv in cell.cvs]), shape), u.um)
+            ),
+            "Ra": RuntimeParameterState(
+                u.Quantity(jnp.broadcast_to(reference_ra.to_decimal(u.ohm * u.cm), shape), u.ohm * u.cm)
+            ),
+            "cm": RuntimeParameterState(
+                u.Quantity(jnp.broadcast_to(cable.cm.to_decimal(u.uF / u.cm**2), shape), u.uF / u.cm**2)
+            ),
+        }
+        cv_area = cable.area
         point_area_decimal = np.zeros((n_point,), dtype=float)
         point_to_representative_cv_np = np.empty((n_point,), dtype=np.int32)
         for point in node_tree.nodes:
@@ -480,7 +506,7 @@ class CellRuntimeState:
             cv_id = int(roles[0].cv_id)
             point_to_representative_cv_np[int(point.id)] = cv_id
             point_area_decimal[int(point.id)] = cv_area_decimal[cv_id]
-        point_area = u.Quantity(point_area_decimal, area_unit)
+        point_area = cv_area[point_to_representative_cv_np]
         midpoint_ids = np.asarray(node_tree.cv_to_mid_node_id, dtype=np.int32)
         midpoint_mask_np = np.zeros((n_point,), dtype=bool)
         midpoint_mask_np[midpoint_ids] = True
@@ -514,9 +540,16 @@ class CellRuntimeState:
             point_to_representative_cv_np=point_to_representative_cv_np,
             merged_channel_layout_groups=merged_channel_layout_groups,
             clamp_routing_table=clamp_routing_table,
+            cable=cable,
             cv_area=cv_area,
             point_area=point_area,
             pop_size=pop_size,
+            geometry=geometry,
+            reference_cable=cable,
+            reference_ra=reference_ra,
+            reference_length=reference_length,
+            reference_radius_mid=reference_radius_mid,
+            reference_diam_arc_mean=reference_diam_arc_mean,
         )
         _configure_runtime_subsolvers(
             runtime,
@@ -530,6 +563,54 @@ class CellRuntimeState:
             raise IndexError(f"point_id out of range: {point_id!r}.")
         ids = self.point_to_layout_ids[int(point_id)]
         return tuple(self.layouts[layout_id] for layout_id in ids)
+
+    def refresh_geometry(self) -> None:
+        """Materialize fixed-grid cable arrays from current geometry states."""
+        if self.geometry is None or self.reference_cable is None:
+            return
+        rs = self.geometry["radius_scale"].value
+        length = self.geometry["length"].value
+        ra = self.geometry["Ra"].value
+        cm = self.geometry["cm"].value
+        if any(is_traced_value(value.mantissa if isinstance(value, u.Quantity) else value) for value in (length, rs, ra, cm)):
+            return
+        for name, value in self.geometry.items():
+            value = value.value
+            if tuple(getattr(value, "shape", ())) != self.pop_size + (self.n_cv,):
+                raise ValueError(f"Geometry field {name!r} has invalid shape {getattr(value, 'shape', ())!r}.")
+            raw = value.mantissa if isinstance(value, u.Quantity) else value
+            if not np.all(np.isfinite(np.asarray(raw))) or np.any(np.asarray(raw) <= 0):
+                raise ValueError(f"Geometry {name} must be finite and positive.")
+        self.cable = self.current_cable()
+        self.cv_area = self.cable.area
+        self.point_area = self.cv_area[..., self.point_to_representative_cv_np]
+        self.axial_operator_source = None
+        self.axial_operator_cache = None
+        self.dhs_source = None
+        self.dhs_static_cache = None
+
+    def current_cable(self):
+        """Return differentiable cable arrays from current runtime states."""
+        if self.geometry is None or self.reference_cable is None:
+            return self.cable
+        length = self.geometry["length"].value
+        ra = self.geometry["Ra"].value
+        cm = self.geometry["cm"].value
+        rs = self.geometry["radius_scale"].value
+        # Retain the shared-vector representation for a single cell; larger
+        # populations carry independent geometry through the solver batch.
+        if int(np.prod(self.pop_size)) == 1:
+            length, ra, cm, rs = (value.reshape((self.n_cv,)) for value in (length, ra, cm, rs))
+        dtype = u.get_mantissa(length).dtype
+        ls = u.get_mantissa(length.to_decimal(u.um)) / jnp.asarray(self.reference_length.to_decimal(u.um), dtype=dtype)
+        ratio = u.get_mantissa(ra.to_decimal(u.ohm * u.cm)) / jnp.asarray(self.reference_ra.to_decimal(u.ohm * u.cm), dtype=dtype)
+        rs = jnp.asarray(u.get_mantissa(rs), dtype=dtype)
+        return CableArrays(
+            area=self.reference_cable.area * (ls * rs),
+            cm=u.Quantity(cm, u.uF / u.cm**2),
+            resistance_prox=self.reference_cable.resistance_prox * (ls * ratio / (rs * rs)),
+            resistance_dist=self.reference_cable.resistance_dist * (ls * ratio / (rs * rs)),
+        )
 
     def get_cv_layouts(self, cv_id: int) -> tuple[MechanismLayout, ...]:
         if not (0 <= int(cv_id) < self.n_cv):
@@ -744,149 +825,15 @@ class CellRuntimeState:
         return u.Quantity(point_current_decimal, u.nA)
 
 
-def _allocate_extra_density_parameters(
-    *,
-    cell,
-    layouts,
-    layout_mechanisms,
-    state_buffers,
-    state_shapes,
-    pop_size,
-) -> None:
-    """Allocate explicitly supplied fields with no numeric signature default."""
-    supplied = {}
-    for (category, owner, population, cv, field), value in cell._density_parameter_overrides.items():
-        if category in {"channel", "ion"}:
-            supplied.setdefault((category, owner, field), {})[(population, cv)] = value
-    for binding in cell.trainables.bindings():
-        values = binding._evaluate()
-        rows = supplied.setdefault((binding._rows[0].category, binding.target_owner, binding.target_field), {})
-        for index, row in enumerate(binding._rows):
-            rows[(row.population_index, row.cv_id)] = values[index]
-
+def _mark_declared_ion_initializers(*, layouts, layout_mechanisms, state_buffers) -> None:
+    """Preserve explicit initializer declarations while leaving defaults live."""
     for layout in layouts:
         mechanism = layout_mechanisms[layout.id]
-        if not isinstance(mechanism, Density) or mechanism.category not in {"channel", "ion"}:
+        if not isinstance(mechanism, Density) or mechanism.category != "ion":
             continue
-        if mechanism.category == "ion":
-            for (layout_id, field), state in state_buffers.items():
-                if (
-                    layout_id == layout.id
-                    and field.endswith("_initializer")
-                    and isinstance(state, RuntimeParameterState)
-                ):
-                    mask = np.zeros(state.full_shape, dtype=bool)
-                    if mechanism.params.get(field) is not None:
-                        mask[..., list(layout.source_cv_ids)] = True
-                    for population, cv in supplied.get(("ion", mechanism.instance_name, field), {}):
-                        if cv in layout.source_cv_ids:
-                            mask[population, cv] = True
-                    state.initial_override_mask = mask
-        for (category, owner, field), rows in supplied.items():
-            key = (layout.id, field)
-            if category != mechanism.category or owner != mechanism.instance_name or key in state_buffers:
-                continue
-            expected = {(population, cv) for population in range(int(np.prod(pop_size))) for cv in layout.source_cv_ids}
-            if not expected.intersection(rows):
-                continue
-            if not expected.issubset(rows):
-                raise ValueError(
-                    f"Channel {owner!r}.{field} has no numeric default; supply a value for every active row."
-                )
-            full_shape = pop_size + (len(cell.cvs),)
-            first = rows[min(expected)]
-            state = make_runtime_parameter_state(
-                first,
-                full_shape=full_shape,
-                spec=density_parameter_spec(mechanism, field),
-                name=field,
-                point_mask=layout.cv_mask,
-            )
-            for population, cv in sorted(expected):
-                set_parameter_row(
-                    state,
-                    population_index=population,
-                    point_id=cv,
-                    population_size=int(np.prod(pop_size)),
-                    point_size=len(cell.cvs),
-                    value=rows[(population, cv)],
-                )
-            state_buffers[key] = state
-            state_shapes[key] = full_shape
-
-
-def _apply_density_parameter_overrides(
-    *,
-    cell: "Cell",
-    layouts: tuple[MechanismLayout, ...],
-    layout_mechanisms: dict[int, object],
-    state_buffers: dict[tuple[int, str], object],
-    node_tree: NodeTree,
-    pop_size: tuple[int, ...],
-) -> None:
-    """Scatter declaration-time channel and ion view parameter overrides."""
-    overrides = getattr(cell, "_density_parameter_overrides", {})
-    if not overrides:
-        return
-    if len(pop_size) != 1:
-        raise ValueError("Density parameter views currently require one-dimensional Cell.pop_size.")
-    population_size = int(pop_size[0])
-
-    # One pass over the layouts builds the (category, name, cv) -> layouts index that
-    # every override then resolves in constant time; scanning per override is quadratic
-    # in the number of selected rows, and an unrestricted view selects every CV.
-    layouts_by_owner: dict[tuple[str, str, int], list[MechanismLayout]] = {}
-    for layout in layouts:
-        mechanism = layout_mechanisms[layout.id]
-        if not isinstance(mechanism, Density):
-            continue
-        for source_cv_id in layout.source_cv_ids:
-            owner = (mechanism.category, mechanism.instance_name, int(source_cv_id))
-            layouts_by_owner.setdefault(owner, []).append(layout)
-
-    # Resolve and validate every override first, then apply each buffer's writes in one
-    # scatter -- writing them one at a time copies the whole buffer per override.
-    writes: dict[tuple[int, str], list[tuple[int, int, object]]] = {}
-    for (category, name, population_index, cv_id, var_name), value in overrides.items():
-        matches = layouts_by_owner.get((category, name, int(cv_id)), ())
-        if len(matches) != 1:
-            raise RuntimeError(
-                f"Expected one density layout for {category} {name!r} on CV {cv_id}, got {len(matches)!r}."
-            )
-        key = (int(matches[0].id), str(var_name))
-        if key not in state_buffers:
-            raise KeyError(f"{category.title()} {name!r} has no parameter {var_name!r}.")
-        buffer = state_buffers[key]
-        point_id = int(cv_id)
-        if isinstance(buffer, RuntimeParameterState):
-            set_parameter_row(
-                buffer,
-                population_index=int(population_index),
-                point_id=point_id,
-                population_size=population_size,
-                point_size=len(cell.cvs),
-                value=value,
-            )
-            continue
-        unit = buffer.unit if isinstance(buffer, u.Quantity) else None
-        if unit is not None:
-            if not isinstance(value, u.Quantity):
-                raise TypeError(f"Density parameter {var_name!r} requires a Quantity compatible with {unit}.")
-            decimal = value.to_decimal(unit)
-        else:
-            if isinstance(value, u.Quantity):
-                raise TypeError(f"Density parameter {var_name!r} is dimensionless.")
-            decimal = value
-        point_id = int(cv_id)
-        writes.setdefault(key, []).append((int(population_index), point_id, decimal))
-
-    for key, entries in writes.items():
-        buffer = state_buffers[key]
-        unit = buffer.unit if isinstance(buffer, u.Quantity) else None
-        mantissa = np.array(buffer.to_decimal(unit) if unit is not None else buffer, copy=True)
-        populations, points, values = zip(*entries)
-        if mantissa.ndim >= 2 and mantissa.shape[0] == population_size:
-            mantissa[np.asarray(populations), np.asarray(points)] = values
-        else:
-            mantissa[np.asarray(points)] = values
-        state_buffers[key] = u.Quantity(mantissa, unit) if unit is not None else mantissa
+        for (layout_id, field), state in state_buffers.items():
+            if layout_id == layout.id and field.endswith("_initializer") and isinstance(state, RuntimeParameterState):
+                mask = np.zeros(state.full_shape, dtype=bool)
+                if mechanism.params.get(field) is not None:
+                    mask[..., list(layout.source_cv_ids)] = True
+                state.initial_override_mask = mask

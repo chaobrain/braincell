@@ -472,6 +472,7 @@ class VoltageCrossingSource(EventSource):
         "_population_indices",
         "_location_indices",
         "_cv_ids",
+        "_grid_generation",
         "spk_fun",
         "_training_id",
     )
@@ -547,6 +548,7 @@ class VoltageCrossingSource(EventSource):
         self._population_indices = np.repeat(population_indices, n_location)
         self._location_indices = np.tile(np.arange(n_location, dtype=np.int64), n_population)
         self._cv_ids = np.tile(location_cv_ids, n_population)
+        self._grid_generation = root._view_generation
 
     @property
     def size(self) -> int:
@@ -578,6 +580,15 @@ class VoltageCrossingSource(EventSource):
     @property
     def cv_id(self) -> np.ndarray:
         """Return the containing CV for each source endpoint."""
+        # A detector is a continuous location declaration, not a saved CV View.
+        _ = self.cells._discretization
+        if self._grid_generation != self.cells._view_generation:
+            cv_ids = _resolve_cell_location_cvs(self.cells, self.location)
+            n_location = int(np.max(self._location_indices)) + 1
+            if len(cv_ids) != n_location:
+                raise RuntimeError("Detector location count changed; recreate the detector and its connections.")
+            self._cv_ids = cv_ids[self._location_indices]
+            self._grid_generation = self.cells._view_generation
         return np.array(self._cv_ids, copy=True)
 
     def current_event_count(self, source_index):
@@ -589,7 +600,7 @@ class VoltageCrossingSource(EventSource):
             raise RuntimeError("Cell runtime does not expose previous voltage for threshold detection.")
         source_index = np.asarray(source_index, dtype=np.int64)
         population_index = self._population_indices[source_index]
-        cv_id = self._cv_ids[source_index]
+        cv_id = self.cv_id[source_index]
         if self._uses_cell_threshold and self.direction == "rising" and self.spk_fun is None:
             spike = self.cells.spike.value
             if len(self.cells.pop_size) == 0:

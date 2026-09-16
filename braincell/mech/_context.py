@@ -46,8 +46,8 @@ class CVContext:
         Control-volume cable length.
     area : Quantity
         Control-volume lateral membrane area.
-    radius_prox, radius_mid, radius_dist : Quantity
-        Radius at the proximal boundary, midpoint, and distal boundary.
+    radius_mid : Quantity
+        Radius at the control-volume midpoint.
     diam_arc_mean : Quantity
         Arc-length-weighted mean diameter over the control volume.
     path_distance_to_root : Quantity
@@ -70,9 +70,7 @@ class CVContext:
     midpoint: float
     length: u.Quantity
     area: u.Quantity
-    radius_prox: u.Quantity
     radius_mid: u.Quantity
-    radius_dist: u.Quantity
     diam_arc_mean: u.Quantity
     path_distance_to_root: u.Quantity
     path_distance_from_soma: u.Quantity

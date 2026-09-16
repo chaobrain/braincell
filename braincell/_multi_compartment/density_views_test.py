@@ -39,13 +39,17 @@ def _cell():
 
 
 class DensityViewTest(unittest.TestCase):
-    def test_schema_default_is_visible_and_settable_before_init(self) -> None:
+    def test_schema_default_is_visible_before_init_and_settable_after(self) -> None:
         cell = _cell()
         cell.paint(BranchSlice([0, 1], 0.0, 1.0), braincell.mech.Channel("IL", name="leak"))
         leak = cell.dendrite.channels["leak"]
         expected = leak.get("g_max")
         self.assertTrue(u.math.allclose(leak.g_max, expected))
         self.assertEqual(expected.shape, (len(leak),))
+        with self.assertRaisesRegex(RuntimeError, "init_state"):
+            leak.set(E=-65.0 * u.mV)
+        cell.init_state()
+        leak = cell.dendrite.channels["leak"]
         leak.set(E=-65.0 * u.mV)
         self.assertTrue(u.math.allclose(leak.E, -65.0 * u.mV))
 
@@ -82,14 +86,15 @@ class DensityViewTest(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "does not support numeric"):
             _ = cell.channels[0]
 
-    def test_set_before_and_after_init_is_population_cv_specific(self) -> None:
+    def test_runtime_set_is_population_cv_specific(self) -> None:
         cell = _cell()
         cell.paint(
             BranchSlice([0, 1], 0.0, 1.0),
             braincell.mech.Channel("IL", name="leak", g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV),
         )
-        cell[1].dendrite.channels["leak"].set(g_max=0.3 * u.mS / u.cm**2)
         cell.init_state()
+        cell[1].dendrite.channels["leak"].set(g_max=0.3 * u.mS / u.cm**2)
+        cell.reset_state()
         np.testing.assert_allclose(
             cell[1].dendrite.channels["leak"].get("g_max").to_decimal(u.mS / u.cm**2),
             [0.3, 0.3, 0.3],
@@ -107,19 +112,17 @@ class DensityViewTest(unittest.TestCase):
             BranchSlice(1, 0.0, 0.6),
             braincell.mech.Channel("IL", name="leak", g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV),
         )
-        cell.paint(
-            BranchSlice(1, 0.6, 1.0),
-            braincell.mech.Channel("IL", name="leak", g_max=0.2 * u.mS / u.cm**2, E=-65.0 * u.mV),
-        )
         with self.assertRaisesRegex(ValueError, "overlap after discretization"):
-            _ = cell.cvs
+            cell.paint(
+                BranchSlice(1, 0.6, 1.0),
+                braincell.mech.Channel("IL", name="leak", g_max=0.2 * u.mS / u.cm**2, E=-65.0 * u.mV),
+            )
 
     def test_same_category_name_cannot_change_type(self) -> None:
         cell = _cell()
         cell.paint(BranchSlice(0, 0.0, 1.0), braincell.mech.Ion("SodiumFixed", name="main"))
-        cell.paint(BranchSlice(1, 0.0, 1.0), braincell.mech.Ion("PotassiumFixed", name="main"))
         with self.assertRaisesRegex(ValueError, "cannot denote both"):
-            _ = cell.cvs
+            cell.paint(BranchSlice(1, 0.0, 1.0), braincell.mech.Ion("PotassiumFixed", name="main"))
 
 
 if __name__ == "__main__":

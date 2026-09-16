@@ -65,14 +65,9 @@ def build_autapse(*, delay=0.1 * u.ms, network=False, paired=False):
         RootLocation(0.5), braincell.mech.CurrentClamp(delay=0.25 * u.ms, durations=1.0 * u.ms, amplitudes=0.1 * u.nA)
     )
     cell.place(RootLocation(0.5), braincell.mech.Synapse("ExpSyn", name="syn", tau=2.0 * u.ms))
-    connection = braincell.connect(
+    braincell.connect(
         "self", source=cell.event_outputs["spike"], synapse=cell.synapses["syn"], weight=0.001 * u.uS, delay=delay
     )
-    cell.synapses["syn"].trainable(tau=braincell.trainable.scale(name="tau"))
-    connection.trainable(weight=braincell.trainable.scale(name="weight"))
-    cell.event_outputs["spike"].trainable(threshold=braincell.trainable.parameter(group_by="all", name="threshold"))
-    cell.channels["na"].trainable(g_max=braincell.trainable.scale(name="na"))
-    cell.ions["sodium"].trainable(E=braincell.trainable.scale(name="sodium"))
     if network:
         target = braincell.Network("autapse")
         target.add_population("cell", cell)
@@ -88,13 +83,21 @@ def build_autapse(*, delay=0.1 * u.ms, network=False, paired=False):
                 delay=delay,
             )
             target.add_population("post", post)
+        target.init_state()
+    else:
+        cell.init_state()
+        target = cell
+    cell.synapses["syn"].trainable(tau=braincell.trainable.scale(name="tau"))
+    cell.connections["self"].trainable(weight=braincell.trainable.scale(name="weight"))
+    cell.event_outputs["spike"].trainable(threshold=braincell.trainable.parameter(group_by="all", name="threshold"))
+    cell.channels["na"].trainable(g_max=braincell.trainable.scale(name="na"))
+    cell.ions["sodium"].trainable(E=braincell.trainable.scale(name="sodium"))
+    if network:
         target.prepare_run(dt=DT, event_backend="scatter")
         if paired:
             cell = post
     else:
-        cell.init_state()
         cell.connections.prepare_runtime(DT)
-        target = cell
     return target, cell
 
 

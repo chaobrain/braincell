@@ -145,11 +145,12 @@ class RolloutGradientEngine:
         self.method = method
         self.initializer = initializer
         self.parameter_states = _validate_parameters(parameters)
+        manager = getattr(target, "trainables", None)
+        self._training_token = manager.seal() if hasattr(manager, "seal") else None
         self._initializer_step: FunctionalStep | None = None
         self._functional_step: FunctionalStep | None = None
         self._initializer_coordinates: ParameterCoordinates | None = None
         self._parameter_coordinates: ParameterCoordinates | None = None
-        self._initializer_values: object | None = None
 
     @property
     def prepared(self) -> bool:
@@ -167,6 +168,8 @@ class RolloutGradientEngine:
         Repeated calls are idempotent. A prepared engine is tied to the traced
         target state objects and step-data structure.
         """
+        if self._training_token is not None:
+            self.target.trainables.check_token(self._training_token)
         if self.prepared:
             return self
 
@@ -200,7 +203,6 @@ class RolloutGradientEngine:
         ):
             raise ValueError("Initializer and rollout parameter coordinates must match.")
         self._initializer_coordinates = initializer_coordinates
-        self._initializer_values = self._initializer_step.state_values()
         return self
 
     def __call__(self, step_data) -> RolloutGradientResult:
@@ -241,6 +243,8 @@ class RolloutGradientEngine:
         return self._rtrl_diagnostic(roots, step_data, sample_indices)
 
     def _ensure_prepared(self, step_data) -> None:
+        if self._training_token is not None:
+            self.target.trainables.check_token(self._training_token)
         length = _time_axis_length(step_data)
         if length < 1:
             raise ValueError("step_data must contain at least one time step.")
@@ -250,7 +254,7 @@ class RolloutGradientEngine:
     def _initial_full_carry(self, roots):
         initializer_step, functional_step, _coordinates = self._parts()
         initializer_values = _replace_parameter_values(
-            self._initializer_values,
+            initializer_step.state_values(),
             initializer_step.parameter_indices,
             roots,
         )
@@ -271,7 +275,7 @@ class RolloutGradientEngine:
     def _initial_primal_values(self, roots):
         initializer_step, functional_step, _coordinates = self._parts()
         initializer_values = _replace_parameter_values(
-            self._initializer_values,
+            initializer_step.state_values(),
             initializer_step.parameter_indices,
             roots,
         )
@@ -443,11 +447,12 @@ class TrajectoryGradientEngine:
         self.method = method
         self.initializer = initializer
         self.parameter_states = _validate_parameters(parameters)
+        manager = getattr(target, "trainables", None)
+        self._training_token = manager.seal() if hasattr(manager, "seal") else None
         self._initializer_step: FunctionalStep | None = None
         self._functional_step: FunctionalStep | None = None
         self._initializer_coordinates: ParameterCoordinates | None = None
         self._parameter_coordinates: ParameterCoordinates | None = None
-        self._initializer_values: object | None = None
 
     @property
     def prepared(self) -> bool:
@@ -459,6 +464,8 @@ class TrajectoryGradientEngine:
 
     def prepare(self, example_step_data) -> "TrajectoryGradientEngine":
         """Trace reset and one observation-producing transition."""
+        if self._training_token is not None:
+            self.target.trainables.check_token(self._training_token)
         if self.prepared:
             return self
 
@@ -489,7 +496,6 @@ class TrajectoryGradientEngine:
         ):
             raise ValueError("Initializer and rollout parameter coordinates must match.")
         self._initializer_coordinates = initializer_coordinates
-        self._initializer_values = self._initializer_step.state_values()
         return self
 
     def __call__(self, step_data) -> TrajectoryGradientResult:
@@ -501,6 +507,8 @@ class TrajectoryGradientEngine:
         return self._rtrl_two_pass(roots, step_data)
 
     def _ensure_prepared(self, step_data) -> None:
+        if self._training_token is not None:
+            self.target.trainables.check_token(self._training_token)
         length = _time_axis_length(step_data)
         if length < 1:
             raise ValueError("step_data must contain at least one time step.")
@@ -509,7 +517,7 @@ class TrajectoryGradientEngine:
 
     def _initial_primal_values(self, roots):
         initializer_values = _replace_parameter_values(
-            self._initializer_values,
+            self._initializer_step.state_values(),
             self._initializer_step.parameter_indices,
             roots,
         )
@@ -518,7 +526,7 @@ class TrajectoryGradientEngine:
 
     def _initial_full_carry(self, roots):
         initializer_values = _replace_parameter_values(
-            self._initializer_values,
+            self._initializer_step.state_values(),
             self._initializer_step.parameter_indices,
             roots,
         )

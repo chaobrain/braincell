@@ -472,11 +472,12 @@ class AcyclicTest(unittest.TestCase):
             "__init__": set(),
             "bindings": {"ions", "layouts", "parameters"},
             "bridge": set(),
+            "cable": set(),
             "ions": {"layouts", "parameters"},
             "layouts": {"parameters"},
             "parameters": set(),
             "scheduling": set(),
-            "state": {"bindings", "bridge", "layouts", "parameters"},
+            "state": {"bindings", "bridge", "cable", "layouts", "parameters"},
             # ``table`` builds its rows by matching mechanisms against
             # layout signatures, so it reads ``layouts`` directly rather
             # than through ``state``. ``layouts`` is a leaf, so the edge

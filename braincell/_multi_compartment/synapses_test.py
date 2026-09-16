@@ -107,8 +107,9 @@ class SynapseViewTest(unittest.TestCase):
         cell = _population()
         exp = braincell.mech.Synapse("ExpSyn", name="exp", tau=1.0 * u.ms, e=0.0 * u.mV)
         cell.place(at("soma", 0.5), exp)
-        view = cell.synapses["exp"]
         cell.init_state()
+        view = cell.synapses["exp"]
+        cell.reset_state()
 
         view.set(tau=np.asarray([2.0, 3.0]) * u.ms)
         view.set_state(g=np.asarray([0.1, 0.2]) * u.uS)
@@ -129,8 +130,9 @@ class SynapseViewTest(unittest.TestCase):
             tau2=2.0 * u.ms,
         )
         cell.place(at("soma", 0.5), exp2)
-        view = cell.synapses["exp2"]
         cell.init_state()
+        view = cell.synapses["exp2"]
+        cell.reset_state()
 
         view.set(tau1=3.0 * u.ms, tau2=4.0 * u.ms)
         np.testing.assert_allclose(view.tau1.to_decimal(u.ms), [3.0, 3.0])
@@ -189,7 +191,9 @@ class SynapseViewTest(unittest.TestCase):
         cell.place(at("soma", 0.7), later)
 
         np.testing.assert_array_equal(cell.synapses[first].id, original_ids)
-        np.testing.assert_array_equal(connection.synapse_id, original_ids)
+        with self.assertRaisesRegex(RuntimeError, "stale"):
+            _ = connection.synapse_id
+        np.testing.assert_array_equal(cell.connections["first_input"].synapse_id, original_ids)
         self.assertEqual(cell.synapses.name.tolist(), ["first", "later", "first", "later"])
         self.assertEqual(cell.synapses.id.tolist(), [0, 2, 1, 3])
 
@@ -207,8 +211,9 @@ class SynapseViewTest(unittest.TestCase):
         )
 
         cell.place(locations, exp)
-        view = cell.synapses[exp]
         cell.init_state()
+        view = cell.synapses[exp]
+        cell.reset_state()
 
         self.assertEqual(view.population_index.tolist(), [0, 0, 1])
         np.testing.assert_allclose(view.branch_x, [0.2, 0.4, 0.7])

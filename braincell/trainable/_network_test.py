@@ -35,8 +35,10 @@ class NetworkTrainablesTest(unittest.TestCase):
         for name in ("b", "a"):
             cell = braincell.Cell(make_soma_tree(), pop_size=(1,))
             cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="syn"))
-            cell.synapses["syn"].trainable(tau=braincell.trainable.scale(root, name="factor"))
             net.add_population(name, cell)
+        net.init_state()
+        for population in net.populations.values():
+            population.cell.synapses["syn"].trainable(tau=braincell.trainable.scale(root, name="factor"))
         self.assertEqual(tuple(parameters.states()), ("a.factor",))
         self.assertEqual(len(net.trainables.roots), 1)
         self.assertIs(net.trainables.roots["a.factor"], root)
@@ -62,7 +64,9 @@ class NetworkTrainablesTest(unittest.TestCase):
         for population, parameter in (("a.b", "c"), ("a", "b.c")):
             cell = braincell.Cell(make_soma_tree(), pop_size=(1,))
             cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="syn"))
-            cell.synapses["syn"].trainable(tau=braincell.trainable.scale(name=parameter))
             net.add_population(population, cell)
+        net.init_state()
+        for population, parameter in (("a.b", "c"), ("a", "b.c")):
+            net.populations[population].cell.synapses["syn"].trainable(tau=braincell.trainable.scale(name=parameter))
         with self.assertRaisesRegex(ValueError, "Ambiguous"):
             net.trainables.parameters().states()

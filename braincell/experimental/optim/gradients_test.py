@@ -45,8 +45,9 @@ def _cell(*, population=1):
             E=-54.3 * u.mV,
         ),
     )
-    cell.channels["leak"].trainable(g_max=braincell.trainable.scale(group_by="all", name="leak.factor"))
     cell.init_state()
+    cell.channels["leak"].trainable(g_max=braincell.trainable.scale(group_by="all", name="leak.factor"))
+    cell.reset_state()
     return cell
 
 
@@ -60,6 +61,58 @@ def _engine(cell, method):
 
 
 class RolloutGradientEngineTest(unittest.TestCase):
+    def test_registration_freezes_and_old_engine_expires_after_deinit(self):
+        with brainstate.environ.context(dt=0.025 * u.ms):
+            cell = _cell()
+            engine = _engine(cell, "bptt")
+            inputs = jnp.full((2,), -60.0)
+            engine(inputs)
+            with self.assertRaisesRegex(RuntimeError, "frozen"):
+                cell.channels["leak"].trainable(E=braincell.trainable.parameter())
+            cell.reset_state()
+            engine(inputs)
+            cell.reset()
+            with self.assertRaisesRegex(RuntimeError, "stale"):
+                engine(inputs)
+            cell.init_state()
+            cell.channels["leak"].trainable(g_max=braincell.trainable.scale(name="leak.factor"))
+            with self.assertRaisesRegex(RuntimeError, "stale"):
+                engine.prepare(inputs[0])
+            _engine(cell, "rtrl")(inputs)
+
+    def test_runtime_registered_initial_state_matches_finite_difference_and_recompilation(self):
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            cell = braincell.Cell(_build_tree())
+            cell.paint(AllRegion(), braincell.mech.Ion("CalciumDetailed", name="pool"))
+            cell.init_state()
+            cell.ions["pool"].trainable(Ci_initializer=braincell.trainable.scale(name="initial"))
+            parameters = cell.trainables.parameters()
+
+            def step(target):
+                cell.update()
+                concentration = cell.get_ion("pool").Ci.value.to_decimal(u.mM).sum()
+                return (1000 * concentration - target) ** 2
+
+            inputs = jnp.full((3,), 1.0, dtype=jnp.float64)
+            engines = [build_rollout_value_and_grad(cell, step=step, method=m) for m in ("bptt", "rtrl")]
+            compiled = [brainstate.transform.jit(engine) for engine in engines]
+            for initial in (1.0, 1.2):
+                parameters.set_physical_values({"initial": initial})
+                results = [run(inputs) for run in compiled]
+                eps = 1e-5
+                parameters.set_physical_values({"initial": initial + eps})
+                plus = compiled[0](inputs).loss
+                parameters.set_physical_values({"initial": initial - eps})
+                minus = compiled[0](inputs).loss
+                finite = (plus - minus) / (2 * eps)
+                self.assertNotEqual(float(finite), 0.0)
+                for result in results:
+                    np.testing.assert_allclose(result.gradients["initial"], finite, rtol=1e-7, atol=1e-9)
+                # A new wrapper must also capture the latest roots, not init-time values.
+                parameters.set_physical_values({"initial": initial})
+                fresh = brainstate.transform.jit(engines[1])(inputs)
+                np.testing.assert_allclose(fresh.loss, results[1].loss, rtol=1e-12)
+
     def test_bptt_and_full_rtrl_share_losses_and_optimizer_gradient_mapping(self) -> None:
         with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
             bptt_cell = _cell()
@@ -133,8 +186,9 @@ class RolloutGradientEngineTest(unittest.TestCase):
                     E=-54.3 * u.mV,
                 ),
             )
-            cell.channels["na"].trainable(V_sh=braincell.trainable.scale(group_by="all", name="na.vsh.factor"))
             cell.init_state()
+            cell.channels["na"].trainable(V_sh=braincell.trainable.scale(group_by="all", name="na.vsh.factor"))
+            cell.reset_state()
             return cell
 
         def make_engine(cell, method):
@@ -189,12 +243,18 @@ class RolloutGradientEngineTest(unittest.TestCase):
             jax.tree.leaves(diagnostic.sensitivity),
             jax.tree.leaves(all_steps.sensitivity),
         ):
-            np.testing.assert_allclose(sampled_leaf, np.asarray(all_leaf)[[0, 2, 5]], rtol=1e-10, atol=1e-10)
+            if sampled_leaf.dtype == jax.dtypes.float0:
+                np.testing.assert_array_equal(sampled_leaf, np.asarray(all_leaf)[[0, 2, 5]])
+            else:
+                np.testing.assert_allclose(sampled_leaf, np.asarray(all_leaf)[[0, 2, 5]], rtol=1e-10, atol=1e-10)
         for sampled_leaf, all_leaf in zip(
             jax.tree.leaves(diagnostic.learning_signal),
             jax.tree.leaves(all_steps.learning_signal),
         ):
-            np.testing.assert_allclose(sampled_leaf, np.asarray(all_leaf)[[0, 2, 5]], rtol=1e-10, atol=1e-10)
+            if sampled_leaf.dtype == jax.dtypes.float0:
+                np.testing.assert_array_equal(sampled_leaf, np.asarray(all_leaf)[[0, 2, 5]])
+            else:
+                np.testing.assert_allclose(sampled_leaf, np.asarray(all_leaf)[[0, 2, 5]], rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(
             diagnostic.local_gradients,
             np.asarray(all_steps.local_gradients)[[0, 2, 5]],
@@ -318,8 +378,9 @@ class TrajectoryGradientEngineTest(unittest.TestCase):
                 braincell.mech.Channel("Na_HH1952", name="na", g_max=12.0 * u.mS / u.cm**2),
                 braincell.mech.Channel("IL", name="leak", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
             )
-            cell.channels["na"].trainable(V_sh=braincell.trainable.scale(group_by="all", name="na.vsh.factor"))
             cell.init_state()
+            cell.channels["na"].trainable(V_sh=braincell.trainable.scale(group_by="all", name="na.vsh.factor"))
+            cell.reset_state()
             return cell
 
         def make_engine(cell, method):

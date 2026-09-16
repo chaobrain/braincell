@@ -21,6 +21,7 @@ branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[3.0, 3.0] *
 cell = braincell.Cell(braincell.Morphology.from_root(branch), cv_policy=braincell.CVPerBranch(1))
 cell.paint(AllRegion(), braincell.mech.Ion("SodiumFixed", E=50*u.mV))
 cell.paint(AllRegion(), braincell.mech.Channel("Na_HH1952", name="na", g_max=1.0*u.mS/u.cm**2))
+cell.init_state()
 na = cell.channels["na"]
 
 na.trainable(
@@ -30,8 +31,6 @@ na.trainable(
         name="na.g_max.factor",
     )
 )
-
-cell.init_state()
 
 parameters = cell.trainables.parameters()
 states = parameters.states()
@@ -111,12 +110,12 @@ na.trainable(
 
 ### Contract
 
-- 只能在 `Cell.init_state()` 前调用；
+- 只能在 `Cell.init_state()` 后、建立梯度引擎前调用；必须重新选择最终网格上的 View；
 - View 必须非空，并且只选择一个逻辑 mechanism owner；
 - Channel/Ion/Synapse target 必须出现在其构造签名中；单位、形状和模型原有运算约束仍适用；
 - 同一逻辑 row/field 只能有一个 binding；
-- 多字段调用原子注册，失败时不留下部分 roots 或 bindings；
-- 注册不会立即写 runtime；初始化时分配物理缓冲并进行 materialization；
+- 多字段调用原子注册并物化，失败时回滚新增 roots、bindings 和参数写入；
+- 注册读取当前 runtime 值，并立即写回物理参数；紧凑存储按分组展开，逻辑 CV/机制/状态形状不变；
 - 普通 `set()` 已建立的当前值可以作为 direct initial 或 scale baseline。
 
 ### Channel 候选参数
@@ -134,9 +133,8 @@ na.trainable(
 自然报错。系统不承诺非零梯度，也不自动判断可辨识性。动态 gate state 和
 不在构造签名中的内部常数不因本次扩展而成为候选项。
 
-省略的数值参数可从签名读取默认值并在初始化前 `.set()`。必填参数没有虚构默认值；
-若签名没有数值默认值，必须显式提供初值或覆盖值。通过 View 补值时，需覆盖该
-运行时布局的所有有效行，不能猜测未选行的默认值。
+省略的数值参数可从签名读取默认值。必填参数必须在 init 前通过机制声明提供，
+不能用 `trainable(initial=...)` 补齐首次初始化。init 后 `.set()` 修改已有独立数值参数。
 
 温度派生的 sodium `phi` 在属性访问时重算；显式独立 `phi` 参数保持独立。
 
@@ -427,7 +425,7 @@ manager.materialize() -> None
 ```
 
 读取当前 roots，计算所有 source，并原子更新对应 runtime parameter buffers。未初始化的
-Cell 没有 runtime target，显式调用时报错；正常首次物化由 `init_state()` 完成。
+Cell 没有 runtime target，显式调用时报错；正常首次物化由 `trainable()` 注册完成。
 
 ## `ParameterSet`
 
@@ -487,7 +485,8 @@ reduce 或初始化后删除/替换 ownership。
 
 | Entry | Behavior |
 | --- | --- |
-| `Cell.init_state()` | runtime buffer 建立后、mechanism state 初始化前物化。 |
+| `Cell.init_state()` | 最终离散、机制映射和状态初始化；尚未注册训练参数。 |
+| `View.trainable()` | 读取最终参数、注册并物化；不反写声明。 |
 | `Cell.reset_state()` | 先物化，再重置 dynamic state。 |
 | `Cell.run()` | rollout 入口保证当前 roots 已同步。 |
 
@@ -498,8 +497,10 @@ reduce 或初始化后删除/替换 ownership。
 cell.trainables.materialize()
 ```
 
-`reset_state()` 不回滚 roots 或 scale baseline。完整 `Cell.reset()` 清除 runtime；旧 runtime
-buffer 引用随之失效。
+`reset_state()` 不回滚 roots 或 scale baseline。完整 `Cell.reset()` 清除 runtime、参数覆盖和
+全部训练注册，恢复声明值。旧 View、梯度引擎失效；旧参数与优化器不属于重建后的 Cell。
+梯度引擎创建后冻结注册集合。需要新增目标时完整 reset、重新 init 和注册，然后重建训练程序。
+优化器必须在全部注册完成后创建。外部自行缓存的 JIT 可执行程序需要由调用方丢弃。
 
 ## Synapse, Connection, Network
 
@@ -516,12 +517,13 @@ connections.trainable(
 ```
 
 `cell.event_outputs["spike"].trainable(threshold=...)` 绑定该位置的 Cell.V_th；显式
-`VoltageCrossingSource(..., threshold=...)` 则有独立阈值。绑定仍须在初始化前声明。
+`VoltageCrossingSource(..., threshold=...)` 则有独立阈值。绑定须在初始化后注册。
 Synapse 和 Connection 的 row 是逻辑突触/接触 ID，同一 CV 上的多个对象不会误合并。
 `group_by="cv"` 则明确共享该 CV 的参数；其余 grouping 和 Channel/Ion 相同。
 
 `network.trainables.parameters()` 聚合原始根，以 `population.local_name` 命名，
-共享同一 nn.Param 时按对象身份去重。先在 host 调用 `network.prepare_run(dt=...)`，
+共享同一 nn.Param 时按对象身份去重。先 `network.init_state()`，再注册成员参数，
+然后在 host 调用 `network.prepare_run(dt=...)`，
 再在 `brainstate.transform.for_loop` 中调用 `network.update()`，即可对完整网络做 BPTT。
 `run()` 保留记录和事件表接口，其 host 结果转换不作为网络可微 rollout 接口。
 
@@ -535,7 +537,7 @@ Connection delay 显式拒绝训练；塑性规则及 weight_initial 尚未实�
 
 - 空 selection 或一个 View 跨多个逻辑 owners；
 - 不在 Channel/Ion/Synapse 构造签名中的 target，或其他 owner 不支持的 target；
-- 初始化后新增 binding；
+- 初始化前注册，或建立梯度引擎后新增 binding；
 - 重叠 row/field ownership；
 - root name 冲突或共享对象使用冲突名称；
 - direct grouped current values 不一致；

@@ -74,8 +74,8 @@ def quantity_vector(values: list[object], *, shape: tuple[int, ...] | None = Non
     dtype = brainstate.environ.dftype()
     if hasattr(first, "unit"):
         decimals = [item.to_decimal(first.unit) for item in values]
-        return u.Quantity(np.asarray(decimals, dtype=dtype).reshape(target_shape), first.unit)
-    return np.asarray(values, dtype=dtype).reshape(target_shape)
+        return u.Quantity(u.math.asarray(np.asarray(decimals, dtype=dtype).reshape(target_shape)), first.unit)
+    return u.math.asarray(np.asarray(values, dtype=dtype).reshape(target_shape))
 
 
 def broadcast_to_shape(value: object, shape: tuple[int, ...], *, name: str = "value") -> object:
@@ -288,8 +288,7 @@ _ION_GEOMETRY_ATTRS = (
     "area",
     "diam_mid",
     "diam_arc_mean",
-    "radius_prox",
-    "radius_dist",
+    "radius_mid",
 )
 
 

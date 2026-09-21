@@ -15,11 +15,21 @@
 
 """Verify the local nonlinear protocol and 72-root geometry registration."""
 
+import numpy as np
+from types import SimpleNamespace
 import brainstate
 import brainunit as u
 import jax
 
-from validation.optim.nonlinear_pattern_separation.runners.braincell.model import build_strict_experiment, load_reference, parameter_count, REFERENCE
+from validation.optim.nonlinear_pattern_separation.runners.braincell.model import (
+    RA_BOUNDS_OHM_CM,
+    LENGTH_BOUNDS_UM,
+    build_strict_experiment,
+    export_physical_parameters,
+    load_reference,
+    parameter_count,
+    REFERENCE,
+)
 
 
 def test_reference_loads_from_this_workflow_after_changing_directory(tmp_path, monkeypatch):
@@ -38,3 +48,19 @@ def test_strict_builder_registers_72_roots_and_keeps_cm_fixed():
         assert all(value.size == 12 for value in physical.values())
         assert parameter_count(parameters) == 72
         assert cell.n_cv == 12
+
+
+def test_jaxley_style_geometry_initialization_is_bounded_and_per_field():
+    with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+        _reference, cell, parameters = build_strict_experiment(seed=0, randomize_geometry=True)
+        exported = export_physical_parameters(SimpleNamespace(cell=cell, parameters=parameters))
+        for name, lower, upper in (
+            ("length", LENGTH_BOUNDS_UM[0], LENGTH_BOUNDS_UM[1]),
+            ("Ra", RA_BOUNDS_OHM_CM[0], RA_BOUNDS_OHM_CM[1]),
+        ):
+            values = exported[name]
+            assert np.all((values >= lower) & (values <= upper))
+            assert np.allclose(values, values[0])
+        radius = exported["radius"]
+        assert np.all((radius >= 0.1) & (radius <= 5.0))
+        assert np.allclose(radius, radius[0])

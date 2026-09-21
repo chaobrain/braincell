@@ -56,7 +56,8 @@ def load_reference():
     return module
 
 
-def build_strict_experiment(seed: int = 0):
+def build_strict_experiment(seed: int = 0, *, randomize_geometry: bool = False):
+    """Build the bounded comparison cell with optional Jaxley-style geometry initialization."""
     ref = load_reference()
     if ref.braincell is not braincell:
         raise RuntimeError(f"Reference imported a different braincell package: {ref.braincell.__file__}")
@@ -81,6 +82,27 @@ def build_strict_experiment(seed: int = 0):
         mech.Channel("K_HH1952", name="k"),
         mech.Channel("IL", name="leak", E=-54.387 * u.mV),
     )
+    geometry_initials = None
+    if randomize_geometry:
+        initial_radius_um = random.uniform(0.1, 5.0, dtype=jnp.float64)
+        geometry_initials = {
+            "length": jnp.full(
+                (ref.N_CV,),
+                random.uniform(*LENGTH_BOUNDS_UM, dtype=jnp.float64),
+                dtype=jnp.float64,
+            ) * u.um,
+            "radius_scale": jnp.full(
+                (ref.N_CV,),
+                initial_radius_um / RADIUS_REFERENCE_UM,
+                dtype=jnp.float64,
+            ),
+            "Ra": jnp.full(
+                (ref.N_CV,),
+                random.uniform(*RA_BOUNDS_OHM_CM, dtype=jnp.float64),
+                dtype=jnp.float64,
+            ) * u.ohm * u.cm,
+        }
+
     channel_specs = []
     for channel_name in ("na", "k", "leak"):
         lower, upper = ref.PARAMETER_BOUNDS[f"{channel_name}.g_max"]
@@ -112,17 +134,17 @@ def build_strict_experiment(seed: int = 0):
     # transformed/unconstrained internally, but every materialized geometry
     # value must be in the same physical range.
     cell.geometry.length.trainable(trainable.parameter(
-        cell.geometry.length.get(), group_by="cv",
+        geometry_initials["length"] if geometry_initials is not None else cell.geometry.length.get(), group_by="cv",
         transform=brainstate.nn.SigmoidT(*[x * u.um for x in LENGTH_BOUNDS_UM]),
         name="length",
     ))
     cell.geometry.radius_scale.trainable(trainable.parameter(
-        jnp.ones((ref.N_CV,), dtype=jnp.float64), group_by="cv",
+        geometry_initials["radius_scale"] if geometry_initials is not None else jnp.ones((ref.N_CV,), dtype=jnp.float64), group_by="cv",
         transform=brainstate.nn.SigmoidT(*RADIUS_SCALE_BOUNDS),
         name="radius_scale",
     ))
     cell.geometry.Ra.trainable(trainable.parameter(
-        cell.geometry.Ra.get(), group_by="cv",
+        geometry_initials["Ra"] if geometry_initials is not None else cell.geometry.Ra.get(), group_by="cv",
         transform=brainstate.nn.SigmoidT(*[x * u.ohm * u.cm for x in RA_BOUNDS_OHM_CM]),
         name="Ra",
     ))

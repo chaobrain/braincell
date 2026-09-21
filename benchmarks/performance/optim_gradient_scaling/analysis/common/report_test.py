@@ -20,7 +20,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from benchmarks.performance.optim_gradient_scaling.report import (
+from benchmarks.performance.optim_gradient_scaling.analysis.common.report import (
     generate_report,
     load_result_rows,
     write_report,
@@ -47,7 +47,7 @@ class ScalingReportTest(unittest.TestCase):
             self.assertIn("Ordinary Hines Backsub A/B", report)
             self.assertIn("Successful trials", report)
             output = write_report(root)
-            self.assertEqual(output, root / "RESULTS.md")
+            self.assertEqual(output, root / "analysis" / "RESULTS.md")
             self.assertIn("# RTRL/BPTT Scaling Results", output.read_text())
 
     def test_report_preserves_and_aggregates_controlled_worker_replicates(self) -> None:
@@ -64,8 +64,8 @@ class ScalingReportTest(unittest.TestCase):
 
     @staticmethod
     def _write_run(root: Path, name: str, *, backsub: str | None) -> None:
-        directory = root / name
-        directory.mkdir()
+        directory = root / name / "raw"
+        directory.mkdir(parents=True)
         fields = [
             "config_id",
             "status",
@@ -112,8 +112,8 @@ class ScalingReportTest(unittest.TestCase):
 
     @staticmethod
     def _write_controlled_run(root: Path) -> None:
-        directory = root / "controlled_complexity_a100"
-        directory.mkdir()
+        directory = root / "controlled_complexity_a100" / "raw"
+        directory.mkdir(parents=True)
         fields = [
             "config_id",
             "status",
@@ -173,8 +173,8 @@ class ReportProvenanceTest(unittest.TestCase):
             for name, device, repeats in (("full_block_exact", "Test CPU", 1),
                                           ("backsub_ordinary_block_exact", "Test GPU", 4)):
                 self._write_run(root, name, backsub=None)
-                (root / name / "manifest.json").write_text(json.dumps({"repeats": repeats}))
-                trials = root / name / "trials"
+                (root / name / "raw" / "manifest.json").write_text(json.dumps({"repeats": repeats}))
+                trials = root / name / "raw" / "trials"
                 trials.mkdir()
                 (trials / "trial.json").write_text(json.dumps({
                     "status": "ok", "device": device, "jax_version": "test-version",

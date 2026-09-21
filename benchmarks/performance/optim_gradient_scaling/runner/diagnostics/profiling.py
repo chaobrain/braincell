@@ -84,7 +84,7 @@ class RTRLGradientWorkload:
         import brainstate
         import brainunit as u
         import jax
-        from benchmarks.performance.optim_gradient_scaling.benchmark import (
+        from benchmarks.performance.optim_gradient_scaling.runner.hh_crossover.runner import (
             BenchmarkConfig,
             prepare_benchmark,
         )

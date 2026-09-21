@@ -48,9 +48,12 @@ def _parameter_array(value):
     return np.asarray(value)
 
 
-def run_seed(seed: int, *, epochs: int, learning_rate: float, output_dir: Path):
+def run_seed(seed: int, *, epochs: int, learning_rate: float, output_dir: Path,
+             randomize_geometry: bool = False):
     ref = load_reference()
-    ref.NonlinearPatternExperiment._build_cell = staticmethod(lambda *, seed: build_strict_experiment(seed)[1])
+    ref.NonlinearPatternExperiment._build_cell = staticmethod(
+        lambda *, seed: build_strict_experiment(seed, randomize_geometry=randomize_geometry)[1]
+    )
     with jax.enable_x64(True), brainstate.environ.context(dt=ref.DT_MS * ref.u.ms, precision=64):
         dataset = ref.generate_dataset(seed=seed, n_train=32, n_test=16)
         experiment = ref.NonlinearPatternExperiment(
@@ -95,6 +98,9 @@ def run_seed(seed: int, *, epochs: int, learning_rate: float, output_dir: Path):
             "seed": seed, "epochs": epochs, "updates": epochs * 32,
             "parameter_count": 72, "batch_size": 1,
             "learning_rate": learning_rate, "loss_kind": "voltage_at_3ms",
+            "geometry_initialization": (
+                "jaxley_uniform_per_field" if randomize_geometry else "fixed_morphology"
+            ),
             "backend": jax.default_backend(), "precision": 64,
             "final_epoch_loss": float(np.asarray(sample_losses).reshape((epochs, 32))[-1].mean()),
             "train_mae_mv": float(np.mean(np.abs(train_readout - np.asarray(dataset.train_targets_mv)))),
@@ -112,11 +118,19 @@ def main(argv=None):
     parser.add_argument("--epochs", type=int, default=200)
     parser.add_argument("--learning-rate", type=float, default=0.01)
     parser.add_argument("--seeds", type=int, nargs="+", default=list(range(10)))
+    parser.add_argument(
+        "--randomize-geometry",
+        action="store_true",
+        help="Initialize radius, length, and Ra uniformly per field like Jaxley.",
+    )
     args = parser.parse_args(argv)
     if args.epochs < 1 or args.learning_rate <= 0 or any(seed < 0 for seed in args.seeds):
         parser.error("epochs and learning-rate must be positive and seeds nonnegative")
     root = args.output_dir
     epochs = args.epochs
+    geometry_initialization = (
+        "jaxley_uniform_per_field" if args.randomize_geometry else "fixed_morphology"
+    )
     summaries = []
     for seed in args.seeds:
         seed_dir = root / f"seed_{seed}"
@@ -138,9 +152,17 @@ def main(argv=None):
             existing_summary = json.loads(summary_file.read_text())
             if existing_summary["epochs"] != epochs or existing_summary.get("learning_rate") != args.learning_rate:
                 raise ValueError(f"Existing run at {seed_dir} has different protocol; choose another --output-dir")
+            if existing_summary.get("geometry_initialization", "fixed_morphology") != geometry_initialization:
+                raise ValueError(f"Existing run at {seed_dir} has different geometry initialization; choose another --output-dir")
             summaries.append(json.loads(summary_file.read_text()))
         else:
-            summaries.append(run_seed(seed, epochs=epochs, learning_rate=args.learning_rate, output_dir=seed_dir))
+            summaries.append(run_seed(
+                seed,
+                epochs=epochs,
+                learning_rate=args.learning_rate,
+                output_dir=seed_dir,
+                randomize_geometry=args.randomize_geometry,
+            ))
     figure, axes = plt.subplots(1, 2, figsize=(12, 4.5))
     for summary in summaries:
         data = np.load(root / f"seed_{summary['seed']}" / "history.npz")

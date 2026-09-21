@@ -24,7 +24,7 @@ import unittest
 import jax.numpy as jnp
 import numpy as np
 
-from benchmarks.performance.optim_gradient_scaling.profile_case import (
+from benchmarks.performance.optim_gradient_scaling.runner.diagnostics.profiling import (
     RTRLGradientWorkload,
     _pad_seed_roots,
 )

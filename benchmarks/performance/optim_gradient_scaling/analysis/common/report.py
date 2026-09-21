@@ -25,7 +25,7 @@ import math
 from pathlib import Path
 import statistics
 
-ARTIFACT_ROOT = Path(__file__).resolve().parent / "artifacts" / "rtrl_bptt_scaling"
+ARTIFACT_ROOT = Path(__file__).resolve().parents[2] / "artifacts" / "rtrl_bptt_scaling"
 KNOWN_RUNS = (
     "pilot_block_exact",
     "full_block_exact",
@@ -40,7 +40,7 @@ def load_result_rows(artifact_root: Path) -> list[dict[str, object]]:
     """Load successful rows from every known run directory."""
     rows = []
     for name in KNOWN_RUNS:
-        result_path = artifact_root / name / "results.csv"
+        result_path = artifact_root / name / "raw" / "results.csv"
         if not result_path.exists():
             continue
         with result_path.open(newline="", encoding="utf-8") as stream:
@@ -285,7 +285,7 @@ def generate_report(artifact_root: Path) -> str:
 def _environment_table(artifact_root: Path, rows: list[dict]) -> list[str]:
     records = []
     for name in sorted({row["run"] for row in rows}):
-        directory = artifact_root / name
+        directory = artifact_root / name / "raw"
         manifest_path = directory / "manifest.json"
         manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
         trials = [json.loads(path.read_text()) for path in sorted((directory / "trials").glob("*.json"))]
@@ -304,7 +304,7 @@ def _environment_table(artifact_root: Path, rows: list[dict]) -> list[str]:
 
 def write_report(artifact_root: Path, output: Path | None = None) -> Path:
     """Generate and write the report, returning its path."""
-    output = artifact_root / "RESULTS.md" if output is None else output
+    output = artifact_root / "analysis" / "RESULTS.md" if output is None else output
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(generate_report(artifact_root), encoding="utf-8")
     return output

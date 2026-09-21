@@ -31,7 +31,7 @@ import sys
 import time
 from typing import NamedTuple
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = Path(__file__).resolve().parents[5]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
@@ -42,7 +42,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell.experimental.optim.gradients import build_rollout_value_and_grad
-from benchmarks.performance.optim_gradient_scaling.benchmark import (
+from benchmarks.performance.optim_gradient_scaling.runner.hh_crossover.runner import (
     BACKSUBS,
     DT_MS,
     FULL_HH_SPEC,
@@ -62,7 +62,7 @@ from benchmarks.performance.optim_gradient_scaling.benchmark import (
     simulate_voltage,
 )
 
-ARTIFACT_ROOT = Path(__file__).resolve().parent / "artifacts" / "rtrl_bptt_scaling"
+ARTIFACT_ROOT = Path(__file__).resolve().parents[2] / "artifacts" / "rtrl_bptt_scaling"
 DEFAULT_STEPS = 1600
 DEFAULT_BATCH_SIZE = 16
 DEFAULT_SEEDS = 16
@@ -431,7 +431,7 @@ def run_trial(
 
 def aggregate_results(output_dir: Path) -> list[dict[str, object]]:
     """Aggregate controlled trials and attach replicate-paired correctness."""
-    trial_dir = output_dir / "trials"
+    trial_dir = output_dir / "raw" / "trials"
     rows = [_read_json(path) for path in sorted(trial_dir.glob("*.json"))]
     pairs: dict[str, dict[str, dict[str, object]]] = {}
     for row in rows:
@@ -463,7 +463,7 @@ def aggregate_results(output_dir: Path) -> list[dict[str, object]]:
         }
         bptt.update(comparison)
         rtrl.update(comparison)
-    _write_csv(output_dir / "results.csv", rows)
+    _write_csv(output_dir / "raw" / "results.csv", rows)
     return rows
 
 
@@ -484,12 +484,12 @@ def run_suite(
     if replicates < 1:
         raise ValueError("replicates must be positive.")
     output_dir.mkdir(parents=True, exist_ok=True)
-    trial_dir, log_dir = output_dir / "trials", output_dir / "logs"
-    trial_dir.mkdir(exist_ok=True)
-    log_dir.mkdir(exist_ok=True)
+    trial_dir, log_dir = output_dir / "raw" / "trials", output_dir / "raw" / "logs"
+    trial_dir.mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
     worker_python = str(python_executable or sys.executable)
     _write_json(
-        output_dir / "manifest.json",
+        output_dir / "raw" / "manifest.json",
         {
             "suite": suite,
             "created_utc": datetime.now(timezone.utc).isoformat(),

@@ -1,7 +1,7 @@
 # Synapse Network CPU Gradient Timings
 
 本页保留独立双向 population 梯度计时；它与多 CV scaling 是不同实验，不能合并比较。
-模型及正确性验证见 [突触与网络验证](../../../../docs/design/optim/current/results/synapse-network-learning.md)。
+模型及正确性验证见 [突触与网络验证](../../../../../docs/design/optim/current/results/synapse-network-learning.md)。
 源码精确提交、完整依赖版本及未列出的硬件信息未记录。原始材料未保存，以下记录独立可读。
 
 ## 独立 CPU 计时

@@ -25,7 +25,7 @@ import brainunit as u
 import jax
 import numpy as np
 
-from benchmarks.performance.optim_gradient_scaling.controlled_complexity import (
+from benchmarks.performance.optim_gradient_scaling.runner.complexity.runner import (
     HH_GROUP_PARAMETER_COUNTS,
     ControlledCase,
     aggregate_results,
@@ -34,7 +34,7 @@ from benchmarks.performance.optim_gradient_scaling.controlled_complexity import 
     run_suite,
     suite_cases,
 )
-from benchmarks.performance.optim_gradient_scaling.benchmark import (
+from benchmarks.performance.optim_gradient_scaling.runner.hh_crossover.runner import (
     BenchmarkConfig,
     build_cell,
 )
@@ -123,16 +123,16 @@ class ControlledComplexityBenchmarkTest(unittest.TestCase):
                 resume=False,
                 dry_run=True,
             )
-            manifest = json.loads((output / "manifest.json").read_text())
+            manifest = json.loads((output / "raw" / "manifest.json").read_text())
             self.assertEqual(len(manifest["configs"]), 22)
             self.assertEqual(manifest["replicates"], 3)
             self.assertEqual(manifest["schedule"], "replicate_major_balanced")
-            self.assertEqual((output / "results.csv").read_text(), "")
+            self.assertEqual((output / "raw" / "results.csv").read_text(), "")
 
     def test_aggregate_pairs_methods_within_each_replicate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
-            trials = output / "trials"
+            trials = output / "raw" / "trials"
             trials.mkdir(parents=True)
             case = ControlledCase("synthetic", n_x=8, n_theta=2, num_steps=3, batch_size=1, n_seed=1)
             for replicate in (1, 2):
@@ -172,7 +172,7 @@ if __name__ == "__main__":
 class ExplicitDeviceTest(unittest.TestCase):
     def test_device_selection_precedes_worker_launch(self):
         from unittest.mock import patch
-        from benchmarks.performance.optim_gradient_scaling import controlled_complexity as driver
+        from benchmarks.performance.optim_gradient_scaling.runner.complexity import runner as driver
         with patch.object(driver, "run_suite") as launch:
             for args in (["run"], ["run", "--gpu", "-1"]):
                 with self.subTest(args=args), self.assertRaises(SystemExit):
@@ -181,7 +181,7 @@ class ExplicitDeviceTest(unittest.TestCase):
 
     def test_selected_device_and_interpreter_are_forwarded(self):
         from unittest.mock import patch
-        from benchmarks.performance.optim_gradient_scaling import controlled_complexity as driver
+        from benchmarks.performance.optim_gradient_scaling.runner.complexity import runner as driver
         with patch.object(driver, "run_suite") as launch:
             driver.main(["run", "--gpu", "0", "--python", "custom-python"])
             self.assertEqual(launch.call_args.kwargs["gpu"], 0)

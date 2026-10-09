@@ -71,10 +71,8 @@ def lower_direct_connections(
             synapse_types = tuple(dict.fromkeys(connection.synapse_type.tolist()))
             if len(synapse_types) != 1:
                 raise TypeError("One direct Connection block must target exactly one synapse type.")
-            synapse_type = str(synapse_types[0])
-            layout_id = post.cell._get_synapse_store().layout_id(synapse_type)
+            layout_id, synapse_index, weight = post.cell._connection_event_route(connection)
             layout = post.cell._event_layout(layout_id)
-            synapse_index = post.cell._get_synapse_store().runtime_rows(connection.synapse_id).astype(np.int32)
             delay_steps = _expand_delay_steps(
                 connection.delay,
                 dt=dt,
@@ -91,7 +89,7 @@ def lower_direct_connections(
                     pre_index=connection.source_index.astype(np.int32),
                     post_index=connection.synapse.population_index.astype(np.int32),
                     synapse_index=synapse_index,
-                    weight=connection.weight,
+                    weight=weight,
                     delay_steps=delay_steps,
                     event_source=source,
                 )

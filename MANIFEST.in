@@ -13,6 +13,7 @@ include LICENSE
 include README.md
 include pyproject.toml
 include braincell/py.typed
+recursive-include braincell/reduction *.cu
 
 # Development and documentation trees. None of these are referenced by any
 # module under braincell/.

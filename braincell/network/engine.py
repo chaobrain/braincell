@@ -62,6 +62,7 @@ class _RunSetup:
     n_trace: int
     n_recording: int
     n_event: int
+    delivery_enqueues: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -295,7 +296,7 @@ class Network:
         self._mark_topology_changed()
         return result
 
-    def init_state(self, batch_size=None) -> "Network":
+    def init_state(self, batch_size=None, *, dt=None) -> "Network":
         """Initialize all population cell runtime states.
 
         Parameters
@@ -303,6 +304,9 @@ class Network:
         batch_size : int, optional
             Optional batch size forwarded to uninitialized cell
             ``init_state`` calls.
+        dt : brainunit.Quantity, optional
+            Timestep for automatic reduction preparation. Defaults to the
+            BrainState environment; ``run`` supplies its own timestep.
 
         Returns
         -------
@@ -319,6 +323,16 @@ class Network:
         if self._initialized:
             return self
         self._validate_direct_source_ownership()
+        if dt is None:
+            dt = brainstate.environ.get("dt", None)
+        # Prepare all selected reductions before allocating any final runtime.
+        for population in self._cell_populations().values():
+            cell = population.cell
+            if not cell._initialized and cell._uses_reduction:
+                model = cell._reduction_models[cell._selected_model_name]
+                prepare = getattr(model, "prepare", None)
+                if prepare is not None:
+                    prepare(cell, dt=dt)
         with self._cell_lifecycle():
             for population in self._cell_populations().values():
                 if not getattr(population.cell, "_initialized", False):
@@ -380,7 +394,7 @@ class Network:
         event_backend = normalize_event_backend(event_backend)
         if not self.populations:
             raise ValueError("Network.run(...) requires at least one population.")
-        self.init_state()
+        self.init_state(dt=dt)
         if not self._cell_populations():
             return self._run_scheduled_sources_only(dt=dt, duration=duration)
         setup_key = self._run_setup_cache_key(
@@ -411,6 +425,10 @@ class Network:
         n_trace = setup.n_trace
         n_recording = setup.n_recording
         n_event = setup.n_event
+        for items in setup.compiled_recordings.values():
+            for compiled in items:
+                if compiled.deferred is not None:
+                    compiled.deferred.begin_segment(start_t, n_steps)
         cached_loop = self._network_run_loop(
             setup=setup,
             setup_key=setup_key,
@@ -437,6 +455,9 @@ class Network:
             for compiled in setup.compiled_recordings[population_name]:
                 values = recording_values[recording_index]
                 recording_index += 1
+                if compiled.deferred is not None:
+                    samples[population_name][compiled.spec.name] = compiled.deferred.finish_segment()
+                    continue
                 mask = _recording_time_mask(times, compiled.schema)
                 selected = values[mask]
                 first_time = None if not np.any(mask) else times[int(np.flatnonzero(mask)[0])]
@@ -496,6 +517,16 @@ class Network:
             dt=dt,
             delay_quantization=delay_quantization,
         )
+        delivery_enqueues = []
+        if event_backend == "auto":
+            for name, population in self._cell_populations().items():
+                if not population.cell._uses_reduction:
+                    continue
+                incoming = tuple(block for block in blocks if block.post_population == name)
+                inputs = population.cell._event_runtime()
+                remaining = inputs.prepare_delivery(incoming)
+                blocks = tuple(block for block in blocks if block.post_population != name) + remaining
+                delivery_enqueues.append(inputs.enqueue_events)
         delivery_backend = resolve_event_backend(event_backend)
         grouped_by_delay = delivery_backend == "brainevent"
         delivery_blocks = build_delivery_blocks(blocks, group_by_delay=grouped_by_delay)
@@ -543,6 +574,7 @@ class Network:
             n_trace=sum(len(names) for names in probe_names.values()),
             n_recording=sum(len(items) for items in compiled_recordings.values()),
             n_event=sum(len(items) for items in event_sources.values()),
+            delivery_enqueues=tuple(delivery_enqueues),
         )
         self._run_setup_cache[cache_key] = setup
         return setup
@@ -670,6 +702,8 @@ class Network:
                             )
                         with jax.named_scope("braincell:network_run:enqueue_events"):
                             enqueue_future_events(delivery_blocks, delivery_state)
+                            for enqueue in setup.delivery_enqueues:
+                                enqueue()
                         with jax.named_scope("braincell:network_run:advance_delivery"):
                             advance_delivery_state(delivery_state)
                         with jax.named_scope("braincell:network_run:pack_traces"):

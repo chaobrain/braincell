@@ -116,7 +116,13 @@ def route_source_event(block: DeliveryBlock) -> object:
         One event count per source-population member.
     """
     source = block.source.event_source
-    return source.current_event_count(np.arange(source.size, dtype=np.int32))
+    counts = source.current_event_count(np.arange(source.size, dtype=np.int32))
+    dtype = getattr(block.weight, "dtype", None)
+    if not isinstance(block.weight, u.Quantity) and dtype is not None and np.issubdtype(dtype, np.integer):
+        # Count-only targets keep integer queues even when a detailed source
+        # represents its binary spike output with floating-point values.
+        counts = jnp.asarray(counts, dtype=dtype)
+    return counts
 
 
 def delivery_blocks(

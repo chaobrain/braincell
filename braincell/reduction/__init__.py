@@ -22,6 +22,7 @@ from braincell.reduction.core import (
     ReductionInputs,
     ReductionModel,
     ReductionOutput,
+    ReductionRecording,
     ReductionSynapse,
     ReductionView,
     ReductionViewCollection,
@@ -31,18 +32,28 @@ from braincell.reduction.toy import (
     PayloadAccumulatorReduction,
     SynapticKernelAccumulatorReduction,
 )
+from braincell.reduction.runtime import ReductionInputLayout, ReductionInputRuntime, build_reduction_input_runtime
+from braincell.reduction.dif import DIFReduction
+
+_BUILTIN_MODELS = {"dif": DIFReduction}
+
 
 __all__ = [
+    "DIFReduction",
     "EventAccumulatorReduction",
     "PayloadAccumulatorReduction",
     "ReductionContext",
     "ReductionInputGroup",
     "ReductionInputGroupSchema",
+    "ReductionInputLayout",
+    "ReductionInputRuntime",
     "ReductionInputs",
     "ReductionModel",
     "ReductionOutput",
+    "ReductionRecording",
     "ReductionSynapse",
     "ReductionView",
     "ReductionViewCollection",
     "SynapticKernelAccumulatorReduction",
+    "build_reduction_input_runtime",
 ]

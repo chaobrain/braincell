@@ -329,7 +329,20 @@ def compile_recording(cell, spec: RecordingSpec, *, dt):
         time_offset=(0.5 * dt if isinstance(spec.observable, _ClampCurrentObservable) else 0.0 * u.ms),
     )
     phase = "post" if isinstance(spec.observable, _OutputObservable) else "pre"
-    return _CompiledRecording(spec=spec, schema=schema, sample=sampler, phase=phase)
+    deferred = None
+    if cell._uses_reduction:
+        model = cell._reduction_models[cell._selected_model_name]
+        configure = getattr(model, "prepare_recording", None)
+        if configure is not None:
+            deferred = configure(schema, dt=dt)
+    if deferred is not None:
+        # Deferred outputs own their samples; avoid collecting a second trace.
+        dtype = u.get_mantissa(values).dtype
+
+        def sampler():
+            return jnp.empty((0,), dtype=dtype)
+
+    return _CompiledRecording(spec=spec, schema=schema, sample=sampler, phase=phase, deferred=deferred)
 
 
 @dataclass(frozen=True)
@@ -338,6 +351,7 @@ class _CompiledRecording:
     schema: RecordingSchema
     sample: object = field(compare=False, repr=False)
     phase: str = "pre"
+    deferred: object = field(default=None, compare=False, repr=False)
 
 
 def recording_is_active(cell, spec: RecordingSpec) -> bool:

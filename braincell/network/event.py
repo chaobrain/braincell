@@ -225,7 +225,7 @@ class EventSequence(EventSource):
             time_ms.extend(values.tolist())
         return cls(
             size=len(rows),
-            events=EventTable(source_index=source_index, time=np.asarray(time_ms) * u.ms),
+            events=EventTable(source_index=np.asarray(source_index, dtype=np.int64), time=np.asarray(time_ms) * u.ms),
             name=name,
         )
 

@@ -130,6 +130,9 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     compiled_recordings = rcell._compiled_recordings(dt)
     ordered_probe_names = () if rcell._uses_reduction else tuple(sorted(probes.probe_names(rcell)))
     schedule_issues = _differentiable_schedule_issues(compiled_recordings, dt=dt, n_steps=n_steps)
+    for compiled in compiled_recordings:
+        if compiled.deferred is not None:
+            compiled.deferred.begin_segment(rcell.current_time, n_steps)
 
     with brainstate.environ.context(dt=dt):
         relative_times = u.math.arange(n_steps) * brainstate.environ.get_dt()
@@ -167,6 +170,9 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
 
     samples = {}
     for compiled, values in zip(compiled_recordings, recording_values):
+        if compiled.deferred is not None:
+            samples[compiled.spec.name] = compiled.deferred.finish_segment()
+            continue
         period_steps = _recording_steps(compiled.schema.period, dt)
         if _has_fixed_shape_schedule(compiled, dt=dt, n_steps=n_steps):
             indices = _fixed_recording_indices(
@@ -244,8 +250,6 @@ def _make_run_loop(rcell: "Cell", *, dt, compiled_recordings: tuple, ordered_pro
         with brainstate.environ.context(dt=dt):
             start_t = rcell.current_time
             times = start_t + relative_times
-            with brainstate.environ.context(t=start_t):
-                rcell._prepare_next_synapse_inputs()
 
             def _step(t):
                 with brainstate.environ.context(t=t):
@@ -257,6 +261,8 @@ def _make_run_loop(rcell: "Cell", *, dt, compiled_recordings: tuple, ordered_pro
                             for index, item in enumerate(compiled_recordings)
                             if item.phase == "pre"
                         }
+                    with jax.named_scope("braincell:cell_run:prepare_inputs"):
+                        rcell._prepare_next_synapse_inputs()
                     with jax.named_scope("braincell:cell_run:begin_step"):
                         rcell._begin_step()
                     with jax.named_scope("braincell:cell_run:update_dynamics"):
@@ -264,8 +270,6 @@ def _make_run_loop(rcell: "Cell", *, dt, compiled_recordings: tuple, ordered_pro
                             rcell._update_dynamics()
                     with jax.named_scope("braincell:cell_run:route_live_connections"):
                         rcell._apply_direct_live_connection_events()
-                    with jax.named_scope("braincell:cell_run:prepare_next_synapse_inputs"):
-                        rcell._prepare_next_synapse_inputs(t=t + brainstate.environ.get_dt())
                     with jax.named_scope("braincell:cell_run:sample_outputs"):
                         recording_snapshot = tuple(
                             pre_recording_snapshot[index] if item.phase == "pre" else item.sample()

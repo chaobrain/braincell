@@ -1415,10 +1415,20 @@ class Cell(_CellFacade, HHTypedNeuron):
         return self.reductions[name]
 
     def use_model(self, name: str = "detailed") -> "Cell":
-        """Select the detailed model or one registered reduction for the next initialization."""
+        """Select detailed execution, a registered reduction, or a built-in model.
+
+        Selecting ``"dif"`` creates its default model when not registered.
+        Its table is calibrated automatically when the completed Network is
+        initialized, using that initialization's timestep.
+        """
         self._raise_if_initialized("select a Cell execution model")
         if name != "detailed" and name not in self._reduction_models:
-            raise KeyError(f"Unknown Cell model {name!r}; available reductions: {tuple(self._reduction_models)!r}.")
+            from braincell.reduction import _BUILTIN_MODELS
+
+            factory = _BUILTIN_MODELS.get(name)
+            if factory is None:
+                raise KeyError(f"Unknown Cell model {name!r}; available reductions: {tuple(self._reduction_models)!r}.")
+            self.add_reduction(name, factory())
         self._selected_model_name = name
         self._run_loop_cache.clear()
         self._compiled_recording_cache.clear()
@@ -1582,6 +1592,11 @@ class Cell(_CellFacade, HHTypedNeuron):
         """
         self._raise_if_network_owned("init_state()")
         self._raise_if_initialized("init_state()")
+        if self.network_owner is None and self._uses_reduction:
+            model = self._reduction_models[self._selected_model_name]
+            prepare = getattr(model, "prepare", None)
+            if prepare is not None:
+                prepare(self, dt=brainstate.environ.get("dt", None))
 
         morpho = clone_morpho(self._morpho)
         self._morpho = morpho
@@ -1663,8 +1678,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         """Allocate only packed synapse inputs plus the selected reduced model."""
         self._in_size = self.pop_size
         self._out_size = self.pop_size
-        self._reduction_input_runtime = build_reduction_input_runtime(self)
         model = self._reduction_models[self._selected_model_name]
+        build_inputs = getattr(model, "build_input_runtime", build_reduction_input_runtime)
+        self._reduction_input_runtime = build_inputs(self)
         output = model.init_state(self._reduction_input_runtime.context, batch_size=batch_size)
         self._publish_reduction_output(output, initialize=True)
         self._pending_reduction_inputs = self._reduction_input_runtime.take_inputs()
@@ -2437,12 +2453,10 @@ class Cell(_CellFacade, HHTypedNeuron):
             if layout.id not in self._event_runtime().event_buffers:
                 continue
             total_drive = self._event_runtime().get_event_buffer(layout.id)
-            contact_drive = self._evaluate_contact_inputs(
-                layout,
-                t=t,
-                template=total_drive,
-                scheduled_only=True,
-            )
+            if self._uses_reduction:
+                contact_drive = self._reduction_input_runtime.scheduled_inputs(layout, t=t, template=total_drive)
+            else:
+                contact_drive = self._evaluate_contact_inputs(layout, t=t, template=total_drive, scheduled_only=True)
             total_drive = total_drive + _coerce_drive_like(contact_drive, total_drive)
             total_drive = total_drive + self._evaluate_bound_synapse_inputs(
                 layout,
@@ -2459,20 +2473,17 @@ class Cell(_CellFacade, HHTypedNeuron):
             raise ValueError("Connection event delivery requires brainstate.environ['dt'].")
 
         output = _zeros_like_event_template(template)
-        synapse_store = self._get_synapse_store()
         for connection in self.connections._call_views(scheduled=scheduled_only):
-            synapse_type = str(connection.synapse_type[0])
-            if synapse_store.layout_id(synapse_type) != int(layout.id):
+            layout_id, local_index, connection_weight = self._connection_event_route(connection)
+            if layout_id != int(layout.id):
                 continue
             row_index = np.arange(len(connection), dtype=np.int32)
-            local_index = synapse_store.runtime_rows(connection.synapse_id).astype(np.int32)
             event_count = connection.source.event_count(
                 connection.source_index[row_index],
                 t=t,
                 delay=connection.delay[row_index],
                 dt=dt,
             )
-            connection_weight = connection.weight
             if connection_weight is not None:
                 connection_weight = connection_weight[row_index]
             contribution = event_count * u.math.asarray(_connection_event_weight(template, connection_weight))
@@ -2480,41 +2491,49 @@ class Cell(_CellFacade, HHTypedNeuron):
         return _rewrap_event_template(template, output)
 
     def _apply_direct_live_connection_events(self) -> None:
-        """Route live direct sources and run target handlers at this boundary."""
+        """Apply immediate events and stage delayed arrivals for the next step."""
         live_connections = self.connections._call_views(scheduled=False)
         if not live_connections:
             return
         dt = brainstate.environ.get("dt", None)
         if dt is None:
             raise ValueError("Live Connection delivery requires brainstate.environ['dt'].")
-        t = self._resolve_t()
         layouts = self._event_layouts()
-        drives = {}
+        immediate_drives = {}
+        pending_drives = {}
         event_runtime = self._event_runtime()
         for layout in layouts:
             if layout.id not in event_runtime.event_buffers:
                 continue
-            drives[layout.id] = _zeros_like_event_template(event_runtime.get_event_buffer(layout.id))
+            template = event_runtime.get_event_buffer(layout.id)
+            immediate_drives[layout.id] = _zeros_like_event_template(template)
+            pending_drives[layout.id] = _zeros_like_event_template(template)
 
-        synapse_store = self._get_synapse_store()
         for connection in live_connections:
-            counts = connection.event_count(t=t, dt=dt)
-            synapse_type = str(connection.synapse_type[0])
-            layout_id = synapse_store.layout_id(synapse_type)
-            if layout_id not in drives:
+            counts, immediate = connection._events_after_step(dt=dt)
+            layout_id, local_indices, weight = self._connection_event_route(connection)
+            if layout_id not in immediate_drives:
                 continue
             template = event_runtime.get_event_buffer(layout_id)
-            contribution = counts * u.math.asarray(_connection_event_weight(template, connection.weight))
-            local_indices = synapse_store.runtime_rows(connection.synapse_id).astype(np.int32)
-            drives[layout_id] = drives[layout_id].at[local_indices].add(contribution)
+            contribution = counts * u.math.asarray(_connection_event_weight(template, weight))
+            contribution = jnp.asarray(contribution, dtype=immediate_drives[layout_id].dtype)
+            immediate_drives[layout_id] = (
+                immediate_drives[layout_id].at[local_indices].add(jnp.where(immediate, contribution, 0))
+            )
+            pending_drives[layout_id] = (
+                pending_drives[layout_id].at[local_indices].add(jnp.where(immediate, 0, contribution))
+            )
 
         point_v = None if self._uses_reduction else self._cv_to_point(self.V.value)
         for layout in layouts:
-            if layout.id not in drives:
+            if layout.id not in immediate_drives:
                 continue
             template = event_runtime.get_event_buffer(layout.id)
-            drive = _rewrap_event_template(template, drives[layout.id])
+            drive = _rewrap_event_template(template, immediate_drives[layout.id])
             self._apply_synapse_layout_event_drive(layout.id, drive, point_v=point_v)
+            pending = _rewrap_event_template(template, pending_drives[layout.id])
+            current = event_runtime.get_event_buffer(layout.id)
+            self._set_event_buffer(layout.id, current + _coerce_drive_like(pending, current))
 
     def _apply_synapse_layout_event_drive(self, layout_id: int, drive, *, point_v=None) -> None:
         """Apply one already-aggregated boundary payload to a runtime layout."""
@@ -2528,6 +2547,14 @@ class Cell(_CellFacade, HHTypedNeuron):
             point_v = self._cv_to_point(self.V.value)
         args = (layout.gather_points(point_v),)
         synapse.apply_events(drive, *args)
+
+    def _connection_event_route(self, connection):
+        """Resolve connection rows to the selected model's event layout."""
+        if self._uses_reduction:
+            return self._reduction_input_runtime.connection_route(connection)
+        store = self._get_synapse_store()
+        layout_id = store.layout_id(str(connection.synapse_type[0]))
+        return layout_id, store.runtime_rows(connection.synapse_id).astype(np.int32), connection.weight
 
     def _event_runtime(self):
         """Return the detailed or reduced owner of packed event buffers."""
@@ -2644,7 +2671,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                     f"expected {self._runtime_batch_size!r}, got {requested_batch!r}."
                 )
             self.connections.reset_runtime()
-            self._reduction_input_runtime.clear_event_buffers()
+            self._reduction_input_runtime.reset_state()
             output = self._reduction_models[self._selected_model_name].reset_state(batch_size=batch_size)
             self._publish_reduction_output(output)
             self._pending_reduction_inputs = self._reduction_input_runtime.take_inputs()

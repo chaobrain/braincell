@@ -495,12 +495,21 @@ class ConnectionView:
             call.live_delay_steps = None
             call.live_dt_ms = None
 
-    def _live_event_count(self, *, call: _ConnectionCall, dt):
+    def _events_after_step(self, *, dt):
+        """Return counts and an immediate mask for standalone boundary delivery."""
+        call = self._require_single_call("route live events")
+        counts = self._live_event_count(call=call, dt=dt, step_offset=1)
+        return counts, call.live_delay_steps == 0
+
+    def _live_event_count(self, *, call: _ConnectionCall, dt, step_offset=0):
         self._prepare_live_runtime(dt)
         current = jnp.asarray(call.source.current_event_count(self.source_index))
         steps = call.live_delay_steps
         if steps is None or int(np.max(steps, initial=0)) == 0:
             return current
+        # Standalone delivery prepares positive-delay arrivals for the next
+        # step; event_count() instead reads arrivals at the current step.
+        steps = np.maximum(steps - step_offset, 0)
         rows = np.arange(len(self), dtype=np.int32)
         delayed_row = np.maximum(steps - 1, 0)
         delayed = call.live_history.value[delayed_row, rows]

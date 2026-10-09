@@ -18,12 +18,18 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 import weakref
 
 import numpy as np
+
+from braincell._typing import DT, T
+
+if TYPE_CHECKING:
+    from braincell.network.recording import RecordingSchema, SampleBlock
 
 __all__ = [
     "ReductionContext",
@@ -32,6 +38,7 @@ __all__ = [
     "ReductionInputs",
     "ReductionModel",
     "ReductionOutput",
+    "ReductionRecording",
     "ReductionSynapse",
     "ReductionView",
     "ReductionViewCollection",
@@ -159,8 +166,91 @@ class ReductionContext:
         return int(np.prod(self.pop_size, dtype=np.int64)) if self.pop_size else 1
 
 
+@dataclass(frozen=True)
+class ReductionRecording:
+    """Provide segment callbacks for outputs finalized after a run.
+
+    Parameters
+    ----------
+    begin_segment : callable
+        Accept the segment start time and number of simulation steps.
+    finish_segment : callable
+        Return a ``braincell.SampleBlock`` with finalized values and their
+        actual time range. Unresolved samples may carry into a later segment.
+
+    Notes
+    -----
+    The framework calls each callback once per recording per run. Models
+    sharing one underlying buffer across views coordinate those views.
+    """
+
+    begin_segment: Callable[[T, int], None]
+    finish_segment: Callable[[], SampleBlock]
+
+
 class ReductionModel(ABC):
-    """Define the minimal lifecycle implemented by a Cell reduction model."""
+    """Define the shared lifecycle and optional adapters for Cell reductions.
+
+    Models implement initialization, one update, and state reset. Input
+    routing and output recording use the common implementations unless a
+    model overrides their adapters.
+    """
+
+    def prepare(self, cell, *, dt) -> None:
+        """Prepare model parameters from the completed Cell and Network declarations.
+
+        Parameters
+        ----------
+        cell : braincell.Cell
+            Owning Cell, with all synapses and Connections already declared.
+        dt : brainunit.Quantity or None
+            Initialization timestep, supplied by ``Network.run`` or
+            ``Network.init_state`` and otherwise taken from the environment.
+
+        Notes
+        -----
+        Network calls this hook before initializing its populations. The
+        default does nothing. Implementations retain prepared parameters and
+        reuse them on subsequent initialization; ``reset_state`` does not
+        repeat preparation.
+        """
+
+    def build_input_runtime(self, cell):
+        """Build the event-input adapter shared by reduced Cell execution.
+
+        Parameters
+        ----------
+        cell : braincell.Cell
+            Owner whose final synapse and Connection declarations are used.
+
+        Returns
+        -------
+        braincell.reduction.ReductionInputRuntime
+            Packed inputs preserving synapse payload units and connection
+            weights. Override to use a model-specific input representation.
+            Its context is passed to ``init_state``.
+        """
+        from braincell.reduction.runtime import build_reduction_input_runtime
+
+        return build_reduction_input_runtime(cell)
+
+    def prepare_recording(self, schema: RecordingSchema, *, dt: DT) -> ReductionRecording | None:
+        """Prepare deferred recording, retaining per-step sampling by default.
+
+        Parameters
+        ----------
+        schema : braincell.RecordingSchema
+            Public recording rows, units, and sampling schedule.
+        dt : brainunit.Quantity
+            Simulation timestep.
+
+        Returns
+        -------
+        ReductionRecording or None
+            Segment callbacks for deferred outputs, or ``None`` to keep the
+            framework's ordinary per-step sampler.
+        """
+        return None
 
     @abstractmethod
     def init_state(self, context: ReductionContext, batch_size=None) -> ReductionOutput:

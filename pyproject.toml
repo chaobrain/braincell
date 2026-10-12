@@ -65,7 +65,7 @@ optional-dependencies.dev = [
 # Documentation build (see docs/).
 optional-dependencies.doc = [
   "braincell[io,vis]",
-  "brainx-sphinx-header>=0.5",
+  "brainx-sphinx-header>=0.6.0",
   "jinja2",
   "jupyter-sphinx>=0.5.3",
   "myst-nb",

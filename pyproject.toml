@@ -15,26 +15,26 @@ keywords = [
 license = "Apache-2.0"
 license-files = [ "LICENSE" ]
 authors = [ { name = "BrainCell Developers", email = "chao.brain@qq.com" } ]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 classifiers = [
   "Intended Audience :: Science/Research",
   "Natural Language :: English",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Topic :: Scientific/Engineering :: Bio-Informatics",
   "Topic :: Scientific/Engineering :: Mathematics",
   "Topic :: Software Development :: Libraries",
 ]
 dynamic = [ "version" ]
-# Runtime dependencies. `jax` and `scipy` are intentionally left unpinned:
-# docs/design/TODO.md section 8 specifies "recent" for both, and braincell must not
-# constrain which JAX backend build (CPU / CUDA / TPU) a user installs.
+# Runtime dependencies. `scipy` is intentionally left unpinned and `jax` carries
+# only a floor: docs/design/TODO.md section 8 specifies "recent" for both, and
+# braincell must not constrain which JAX backend build (CPU / CUDA / TPU) a user installs.
 dependencies = [
   "brainevent>=0.0.7",
   "brainpy>=2.7.5",
@@ -45,7 +45,7 @@ dependencies = [
   "brainstate>=0.5.4",
   "braintools>=0.1",
   "brainunit>=0.0.8",
-  "jax",
+  "jax>=0.9.0",
   "numpy>=2",
   "scipy",
 ]
@@ -54,9 +54,9 @@ optional-dependencies.all = [
   "braincell[io,optim,vis]",
 ]
 # JAX backends. Pick exactly one; they are mutually exclusive.
-optional-dependencies.cpu = [ "jax[cpu]" ]
-optional-dependencies.cuda12 = [ "jax[cuda12]" ]
-optional-dependencies.cuda13 = [ "jax[cuda13]" ]
+optional-dependencies.cpu = [ "jax[cpu]>=0.9.0" ]
+optional-dependencies.cuda12 = [ "jax[cuda12]>=0.9.0" ]
+optional-dependencies.cuda13 = [ "jax[cuda13]>=0.9.0" ]
 # Everything needed to develop braincell.
 optional-dependencies.dev = [
   "braincell[doc,testing]",
@@ -92,7 +92,7 @@ optional-dependencies.testing = [
   "pytest",
   "pytest-benchmark",
 ]
-optional-dependencies.tpu = [ "jax[tpu]" ]
+optional-dependencies.tpu = [ "jax[tpu]>=0.9.0" ]
 # Visualization: 2D (matplotlib) + 3D (pyvista / plotly) backends.
 # These stay optional and lazily imported so `import braincell` remains cheap.
 optional-dependencies.vis = [
@@ -128,7 +128,7 @@ package-data.braincell = [ "py.typed" ]
 dynamic.version = { attr = "braincell._version.__version__" }
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 120
 extend-exclude = [ "benchmarks", "data", "dev", "docs", "examples", "validation" ]
 # `preserve` keeps the codebase's existing mix of single and double quotes

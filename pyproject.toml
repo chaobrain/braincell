@@ -70,7 +70,7 @@ optional-dependencies.doc = [
   "jupyter-sphinx>=0.5.3",
   "myst-nb",
   "pandoc",
-  "sphinx>=9.0.4",
+  "sphinx>=9.1.1",
   "sphinx-autodoc-typehints",
   "sphinx-book-theme>=1.2",
   "sphinx-copybutton>=0.5.2",

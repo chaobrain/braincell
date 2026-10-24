@@ -112,6 +112,8 @@ channels already pass, or moves code they already shared.
 
 ### Changes & Improvements
 
+- Require `brainpy>=2.9.0`, where `brainpy.state` is part of BrainPy itself.
+
 - **Definition-time validation.** `HH` and `Markov` resolve and check
   `gates` / `pairs` in `__init_subclass__`. A mistyped gate name, a
   duplicate, a gate defining neither or both rate forms, a transition

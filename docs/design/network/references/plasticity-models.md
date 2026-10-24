@@ -10,7 +10,7 @@
 ## BrainPy 权重规则
 
 参考基线为 2026-09-07 核查的本地 BrainPy 2.7.8 与 brainpy.state 0.0.4 源码。
-下表以 BP 表示 BrainPy，BS 表示 brainpy.state；BS 条目来自其 NEST 兼容模型。
+下表以 BP 表示 BrainPy，BS 表示 brainspike（这些 NEST 兼容模型原在 brainpy.state 中）。
 链接指向官方在线文档，在线版本可能继续更新。它们是方程与模型组织的参考，尚未在 BrainCell
 采用；外部类名中的 `synapse` 不决定本项目的职责归属，也不表示其运行时可以直接接入 BrainCell。
 
@@ -100,28 +100,28 @@ on one event:   Delta g = w * U * x_before
 该对比用于核对[提案中的状态共享语义](../proposals/connection-plasticity.md#两类的组合与共享)。
 
 [song]: https://brainpy.readthedocs.io/apis/generated/brainpy.dyn.STDP_Song2000.html
-[pair]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.stdp_synapse.html
-[power]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.stdp_pl_synapse_hom.html
-[jonke]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.jonke_synapse.html
-[nn-pre]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.stdp_nn_pre_centered_synapse.html
-[nn-restr]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.stdp_nn_restr_synapse.html
-[nn-symm]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.stdp_nn_symm_synapse.html
-[triplet]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.stdp_triplet_synapse.html
-[clopath]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.clopath_synapse.html
-[dopamine]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.stdp_dopamine_synapse.html
-[vogels]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.vogels_sprekeler_synapse.html
-[urbanczik]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.urbanczik_synapse.html
-[pair-hom]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.stdp_synapse_hom.html
-[hardware]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.stdp_facetshw_synapse_hom.html
+[pair]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.stdp_synapse.html
+[power]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.stdp_pl_synapse_hom.html
+[jonke]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.jonke_synapse.html
+[nn-pre]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.stdp_nn_pre_centered_synapse.html
+[nn-restr]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.stdp_nn_restr_synapse.html
+[nn-symm]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.stdp_nn_symm_synapse.html
+[triplet]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.stdp_triplet_synapse.html
+[clopath]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.clopath_synapse.html
+[dopamine]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.stdp_dopamine_synapse.html
+[vogels]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.vogels_sprekeler_synapse.html
+[urbanczik]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.urbanczik_synapse.html
+[pair-hom]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.stdp_synapse_hom.html
+[hardware]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.stdp_facetshw_synapse_hom.html
 [bp-std]: https://brainpy.readthedocs.io/apis/generated/brainpy.dyn.STD.html
-[bs-std]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.STD.html
+[bs-std]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.STD.html
 [bp-stp]: https://brainpy.readthedocs.io/apis/generated/brainpy.dyn.STP.html
-[bs-stp]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.STP.html
-[tsodyks]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.tsodyks_synapse.html
-[tsodyks2]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.tsodyks2_synapse.html
-[tsodyks-hom]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.tsodyks_synapse_hom.html
-[quantal]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.quantal_stp_synapse.html
-[ht]: https://brainx.chaobrain.com/brainpy-state/apis/generated/brainpy.state.ht_synapse.html
+[bs-stp]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.STP.html
+[tsodyks]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.tsodyks_synapse.html
+[tsodyks2]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.tsodyks2_synapse.html
+[tsodyks-hom]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.tsodyks_synapse_hom.html
+[quantal]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.quantal_stp_synapse.html
+[ht]: https://brainx.chaobrain.com/brainspike/apis/generated/brainspike.ht_synapse.html
 [oja]: https://pubmed.ncbi.nlm.nih.gov/7153672/
 [bcm]: https://pubmed.ncbi.nlm.nih.gov/7054394/
 [scaling]: https://pubmed.ncbi.nlm.nih.gov/9495341/

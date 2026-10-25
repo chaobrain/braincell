@@ -14,7 +14,7 @@ keywords = [
 ]
 license = "Apache-2.0"
 license-files = [ "LICENSE" ]
-authors = [ { name = "BrainCell Developers", email = "chao.brain@qq.com" } ]
+authors = [ { name = "BrainCell Developers", email = "chaobrain@outlook.com" } ]
 requires-python = ">=3.12"
 classifiers = [
   "Intended Audience :: Science/Research",

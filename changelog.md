@@ -1,7 +1,18 @@
 # Release Notes
 
 
-## Unreleased
+## Version 0.2.0
+
+This release redesigns heterogeneous network construction, simulation and
+recording, and integrates the CV-space runtime with trainable channels and
+optimization workflows. Parameter learning is unified across channels, ions,
+synapses and networks, and runtime geometry can be trained. The repository
+layout and workflow namespaces are reorganized. A package-wide cleanup fixes a
+series of latent bugs, removes dead API and speeds up morphology and
+visualization work. `Cell` always carries a population axis, and its
+visualization methods move to `braincell.vis.plot_cell_topology`.
+
+BrainCell now requires Python ≥ 3.12, JAX ≥ 0.9 and BrainPy ≥ 2.9.0.
 
 ### Breaking Changes
 

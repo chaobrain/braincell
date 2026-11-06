@@ -3,16 +3,16 @@ myst:
   heading_anchors: 2
 ---
 
-# 测试指南
+# Testing
 
-先运行修改模块的测试，再按影响范围检查集成行为。BrainCell 使用 pytest，
-测试文件与所测源码相邻；测试收集配置在
-[pyproject.toml](https://github.com/chaobrain/braincell/blob/main/pyproject.toml)。
-以下命令在完成 [开发安装](contributing.md#配置开发环境) 后，从仓库根目录运行。
+Start with tests for the changed modules, then check integration behavior according to the scope of the change.
+BrainCell uses pytest with tests next to the source they cover; collection is configured in
+[pyproject.toml](https://github.com/chaobrain/braincell/blob/main/pyproject.toml).
+After [setting up the development environment](contributing.md#set-up-a-development-environment), run the following commands from the repository root.
 
-## 运行相关测试
+## Run relevant tests
 
-以 SWC reader 为例，分别运行一个模块、查看其收集结果，或运行整个 IO 包：
+For the SWC reader, run one module, inspect its collected tests, or run the entire IO package:
 
 ```bash
 python -m pytest braincell/io/swc/reader_test.py -q
@@ -20,16 +20,16 @@ python -m pytest braincell/io/swc/reader_test.py --collect-only -q
 python -m pytest braincell/io/ -q
 ```
 
-涉及多个模块的共享行为时，扩大到相应包；完整核心测试命令为：
+For shared behavior spanning several modules, expand testing to the relevant packages. Run the full core suite with:
 
 ```bash
 python -m pytest braincell/ -q
 ```
 
-测试会使用根 conftest 配置的 CPU JAX 和无窗口 Matplotlib 环境。
-GPU 性能或大型数值对照需要按对应工作流另外运行，不能由这些单元测试推断结果。
+Tests use CPU JAX and headless Matplotlib as configured by the root conftest.
+GPU performance and large numerical comparisons require separate workflows; unit tests do not establish those results.
 
-## 验证与性能工作流
+## Validation and performance workflows
 
 ```bash
 python -m pytest braincell/experimental/optim -q
@@ -38,24 +38,24 @@ python -m pytest benchmarks/performance/optim_gradient_scaling/analysis/common/r
 python -m pytest validation/neuron/cable/tests -q
 ```
 
-NEURON 机制对照需要先编译对应模型，入口和依赖见
-[验证指南](https://github.com/chaobrain/braincell/blob/main/validation/neuron/README.md)。
-上面的报告测试只使用合成记录。Benchmark 目录的其他测试可能调用真实测量或 profiling，
-不能把全目录 pytest 当成普通回归检查。执行前按
-[Benchmark 规范](../../benchmarks/AGENTS.md) 明确并确认轮数、预热、计时重复和额外执行。
+NEURON mechanism comparisons require compiling the relevant models first. See the
+[Validation Guide](https://github.com/chaobrain/braincell/blob/main/validation/neuron/README.md) for entry points and dependencies.
+The report tests above use synthetic records only. Other benchmark tests may run real measurements or profiling, so do not treat pytest over the entire benchmark directory as an ordinary regression check.
+Before execution, specify and confirm rounds, warmup, timing repetitions, and extra runs according to the
+[Benchmark rules](https://github.com/chaobrain/braincell/blob/main/benchmarks/AGENTS.md).
 
-## 编写复现与回归测试
+## Write reproduction and regression tests
 
-错误修复先增加一个会失败的最小复现，修复后保留它作为回归测试。
-新功能选择有可观察结果的场景：返回形状、单位、状态变化、事件时序或数值误差。
-共享行为变更还需验证使用它的 Cell 或 Network 路径。
+For bug fixes, add a minimal failing reproduction first and retain it as a regression test after the fix.
+For new features, choose observable outcomes: return shapes, units, state changes, event timing, or numerical error.
+Shared behavior changes also need validation through the Cell or Network path that uses them.
 
-新测试使用与源码对应的 `*_test.py` 文件。拆分规则、包级导出检查、共享辅助代码和依赖跳过方式见
-[仓库测试规则](https://github.com/chaobrain/braincell/blob/main/AGENTS.md#testing)。
+Name new tests `*_test.py` to match the adjacent source module. See the
+[repository testing rules](https://github.com/chaobrain/braincell/blob/main/AGENTS.md#testing) for splitting tests, package export checks, shared helpers, and optional-dependency skips.
 
-## 复用形态 fixture
+## Reuse morphology fixtures
 
-仓库形态数据位于 `data/morphology/`，通过共享常量获取路径：
+Repository morphology data lives in `data/morphology/`. Access it through shared constants:
 
 ```python
 import braincell as bc
@@ -68,15 +68,15 @@ assert morpho.n_branches > 0
 assert not report.has_errors
 ```
 
-同一辅助模块还提供 `VALID_SWC_FIXTURES`、`ALLOWED_TYPES`，以及指向 `data/cerebellum/` 中原测试版本的 `CEREBELLUM_FIXTURES`。HTTP 等外部服务使用已有测试替身，
-例如 `braincell/io/neuromorpho/_testing.py`；这样普通回归测试可以离线运行。
+The same helper module provides `VALID_SWC_FIXTURES`, `ALLOWED_TYPES`, and `CEREBELLUM_FIXTURES`, which points to the original test variants under `data/cerebellum/`.
+Use existing test doubles for HTTP and other external services, such as `braincell/io/neuromorpho/_testing.py`, so ordinary regression tests can run offline.
 
-## 数值结果如何验收
+## Accept numerical results
 
-先声明参照和容差，再比较结果。固定模型参数、单位、温度、初态、solver 与 dt；
-用解析解或可信参照检查动力学，改变 dt 检查收敛，区分实现错误与离散误差。
-需要重复推进模型时使用仓库约定的 brainstate 编译循环。
-模型扩展的具体检查见 [扩展指南](extending.md)。
+Declare the reference and tolerances before comparing results. Fix model parameters, units, temperature, initial state, solver, and dt.
+Check dynamics against an analytical solution or trusted reference, vary dt to check convergence, and distinguish implementation errors from discretization errors.
+Use the repository's brainstate compiled-loop conventions for repeated model stepping.
+See the [Extension Guide](extending.md) for model-specific checks.
 
-PR 中列出实际执行的命令、通过或跳过情况，以及结果依据。
-文档中的可运行示例单独执行；Sphinx 网站构建当前关闭 notebook 执行。
+In the PR, list commands actually run, passes and skips, and the evidence supporting the results.
+Run executable documentation examples separately; Sphinx website builds currently disable notebook execution.

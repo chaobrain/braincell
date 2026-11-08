@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+import pytest
 import numpy as np
 import brainunit as u
 import brainstate
@@ -27,6 +28,10 @@ from braincell._compute._testing import _build_tree
 from braincell.experimental.optim.gradients import build_trajectory_value_and_grad
 from braincell.trainable import scale
 from validation.optim.nonlinear_pattern_separation.runners.braincell.geometry_checks import compare_finite_difference, recover_one_parameter
+
+
+# Slow tier: runs nightly, not on every pull request (see the CI workflow).
+pytestmark = pytest.mark.slow
 
 
 def _cell():

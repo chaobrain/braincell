@@ -16,10 +16,15 @@
 """Autaptic feedback must retain the full forward sensitivity."""
 
 import unittest
+import pytest
 import brainstate
 import brainunit as u
 
 from validation.optim.gradient_correctness.autapse import DT, compare
+
+
+# Slow tier: runs nightly, not on every pull request (see the CI workflow).
+pytestmark = pytest.mark.slow
 
 
 class AutapseTest(unittest.TestCase):

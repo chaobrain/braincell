@@ -17,6 +17,7 @@
 
 import unittest
 
+import pytest
 import brainstate
 import jax
 import jax.numpy as jnp
@@ -32,6 +33,10 @@ from validation.optim.gradient_correctness.bidirectional import (
     fit,
     gradient_comparison,
 )
+
+
+# Slow tier: runs nightly, not on every pull request (see the CI workflow).
+pytestmark = pytest.mark.slow
 
 
 class BidirectionalTest(unittest.TestCase):

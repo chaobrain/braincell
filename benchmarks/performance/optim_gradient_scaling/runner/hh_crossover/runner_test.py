@@ -21,6 +21,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import pytest
 import brainstate
 import brainunit as u
 import jax
@@ -40,6 +41,10 @@ from benchmarks.performance.optim_gradient_scaling.runner.hh_crossover.runner im
     _stablehlo_operation_counts,
     _summarize_gpu_samples,
 )
+
+
+# Slow tier: runs nightly, not on every pull request (see the CI workflow).
+pytestmark = pytest.mark.slow
 
 
 class ScalingBenchmarkTest(unittest.TestCase):

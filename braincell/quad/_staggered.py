@@ -228,7 +228,9 @@ def dhs_voltage_step(target, *args, t: T = None, dt: DT = None):
         (I - \Delta t \, J)\, V_{n+1} = V_n + \Delta t \, b
 
     is solved by a leaf-to-root forward elimination followed by a
-    recursive-doubling back substitution. Both phases are pure ``jax.numpy``
+    recursive-doubling back substitution. The system is solved for the
+    increment ``V_{n+1} - V_n``, so float32 rounding in the elimination scales
+    with the voltage change per step, not with the voltage itself. Both phases are pure ``jax.numpy``
     kernels and run inside ``jit``/``vmap`` without dynamic shapes.
 
     The public cell voltage lives on CV midpoints with shape
@@ -304,7 +306,7 @@ def dhs_voltage_step(target, *args, t: T = None, dt: DT = None):
         raise TypeError(f"dhs_voltage_step(...) requires a point-voltage aware target, got {type(target)}.")
     point_V_n = target._dhs_point_voltage(V_n)
     with jax.named_scope("braincell:dhs:linearize_membrane_current"):
-        linear, const = _point_linear_and_const_term(
+        linear, rate = _point_linear_and_rate(
             target,
             point_V_n,
             point_capacitance=_point_capacitance(
@@ -317,7 +319,7 @@ def dhs_voltage_step(target, *args, t: T = None, dt: DT = None):
         numeric = _build_dhs_numeric_state(
             point_V_n,
             linear,
-            const,
+            rate,
             dt=dt,
             static_source=static_source,
             static_cache=static_cache,
@@ -348,7 +350,9 @@ def dhs_voltage_step(target, *args, t: T = None, dt: DT = None):
                 static_source.backsub_indices_np,
             )
     with jax.named_scope("braincell:dhs:restore_voltage"):
-        point_solution = _restore_point_voltage(
+        # The system is solved for the increment, so rounding in the
+        # elimination scales with |dV| rather than with |V|.
+        point_solution = point_V_n + _restore_point_voltage(
             solves,
             point_id_to_row=static_source.point_id_to_row_np,
             target_shape=point_V_n.shape,
@@ -480,15 +484,26 @@ def _get_dhs_static_cache(target, source: DHSStaticSource) -> DHSStaticCache:
 
 
 def _build_dhs_numeric_state(
-    point_V_n, linear, const, *, dt, static_source: DHSStaticSource, static_cache: DHSStaticCache
+    point_V_n, linear, rate, *, dt, static_source: DHSStaticSource, static_cache: DHSStaticCache
 ) -> DHSNumericState:
     """Assemble the numeric DHS solve state for one timestep.
 
+    The implicit Euler system ``M V_{n+1} = V_n + dt * const`` with
+    ``M = I_dyn + dt * (A - J)`` is assembled in increment (residual) form,
+    ``M dV = dt * (f(V_n) - A V_n)``, and the caller adds ``dV`` to ``V_n``.
+    Both forms are algebraically identical. The increment form matters in
+    float32: forward elimination onto an algebraic (boundary) root row
+    subtracts nearly equal numbers, and the resulting relative error of the
+    eliminated diagonal (~1e-6) would otherwise multiply ``|V| ~ 65 mV``
+    every step and accumulate systematically. ``A V_n`` is evaluated per
+    edge from voltage differences so it carries no such cancellation.
+
     Parameters
     ----------
-    point_V_n, linear, const : object
-        Voltage, linear term, and constant term in point space. Any
-        leading population/batch axes are flattened into one solve batch.
+    point_V_n, linear, rate : object
+        Voltage, linear term ``J = df/dV``, and membrane rate ``f(V_n)`` in
+        point space. Any leading population/batch axes are flattened into one
+        solve batch.
     dt : Quantity[time]
         Timestep.
     static_source : DHSStaticSource
@@ -500,7 +515,7 @@ def _build_dhs_numeric_state(
     DHSNumericState
         Numeric buffers ready for forward elimination and back-substitution.
     """
-    point_V_n, linear, const = [x.reshape((-1, point_V_n.shape[-1])) for x in (point_V_n, linear, const)]
+    point_V_n, linear, rate = [x.reshape((-1, point_V_n.shape[-1])) for x in (point_V_n, linear, rate)]
     batch_size = point_V_n.shape[0]
     n_point = static_source.n_point
 
@@ -508,7 +523,7 @@ def _build_dhs_numeric_state(
     voltage_by_row = point_V_n[..., point_ids_by_row]
     numeric_dtype = u.get_mantissa(point_V_n).dtype
     linear_ms_inv = u.math.asarray(linear[..., point_ids_by_row], unit=u.ms**-1)
-    const_by_row = const[..., point_ids_by_row]
+    rate_by_row = rate[..., point_ids_by_row]
     dt_ms = u.math.asarray(dt, unit=u.ms)
 
     # Cache precision follows the ambient solver setting, while an initialized
@@ -523,10 +538,21 @@ def _build_dhs_numeric_state(
         jnp.ones((batch_size, len(static_source.dynamic_rows_np)), dtype=diags.dtype) * u.UNITLESS
     )
 
-    rhs_point_mv = u.math.asarray(dt * const_by_row, unit=u.mV)
+    # Residual of the V-form system at V_n: dt * (f(V_n) - A V_n). Row ``i``
+    # with parent ``p`` couples through A[i, p] = lower[i] and
+    # A[p, i] = upper[i]; A's diagonal is minus the sum of its off-diagonals,
+    # so (A V)_i = sum_j A[i, j] (V_j - V_i) needs no large cancelling terms.
+    child_rows, parent_rows = static_source.edges_np[:, 0], static_source.edges_np[:, 1]
+    edge_dv = voltage_by_row[:, parent_rows] - voltage_by_row[:, child_rows]
+    axial_mv = u.Quantity(jnp.zeros((batch_size, n_point), dtype=numeric_dtype), u.mV)
+    # Population-specific coefficients flatten to the same solve batch as V.
+    edge_lower = lower_base.reshape((-1, n_point))[:, child_rows]
+    edge_upper = upper_base.reshape((-1, n_point))[:, child_rows]
+    axial_mv = axial_mv.at[:, child_rows].add(edge_lower * edge_dv)
+    axial_mv = axial_mv.at[:, parent_rows].add(-edge_upper * edge_dv)
+    rhs_point_mv = u.math.asarray(dt * rate_by_row, unit=u.mV) - axial_mv
     solves = u.Quantity(jnp.zeros((batch_size, n_point + 1), dtype=rhs_point_mv.dtype), u.mV)
     solves = solves.at[:, :n_point].set(rhs_point_mv)
-    solves = solves.at[:, static_source.dynamic_rows_np].add(voltage_by_row[:, static_source.dynamic_rows_np])
 
     return DHSNumericState(
         diags=diags,
@@ -1010,8 +1036,8 @@ def _dhs_custom_jvp_enabled() -> bool:
     return os.environ.get("BRAINCELL_DHS_CUSTOM_JVP", "0") == "1"
 
 
-def _point_linear_and_const_term(target, point_V_n, *, point_capacitance, t):
-    """Linearize the complete point-local membrane rate around ``point_V_n``."""
+def _point_linear_and_rate(target, point_V_n, *, point_capacitance, t):
+    """Return ``(df/dV, f)`` of the complete point-local membrane rate at ``point_V_n``."""
 
     from braincell._multi_compartment import currents
 
@@ -1036,8 +1062,7 @@ def _point_linear_and_const_term(target, point_V_n, *, point_capacitance, t):
         linear = u.Quantity(jnp.zeros_like(u.get_mantissa(derivative)), linear_unit)
     else:
         linear = u.Quantity(linear_mantissa, linear_unit)
-    const = derivative - point_V_n * linear
-    return linear, const
+    return linear, derivative
 
 
 def _linear_and_const_term(target, V_n, *args):

@@ -37,6 +37,15 @@
   current were zero. Through a `Cell`, a bare or wrongly dimensioned
   `alpha` or `beta` now fails at `init_state()` with an error naming the
   field. No working call changes: the class could not run before.
+- The `staggered` and `dhs_voltage` solvers no longer accumulate float32
+  rounding with the size of the membrane voltage. The DHS step solved for
+  the new voltage itself, and eliminating onto a sealed-end boundary row
+  cancels nearly equal terms, so every step carried a relative error of
+  about 1e-6 times |V|. On a passive soma, float32 drifted about 1e-2 mV
+  from float64 within 1 ms at any dt; it now stays within 2e-5 mV. The
+  step now solves for the voltage increment. float64 results change only
+  at roundoff (relative 1e-12 or less over 50 ms) and are closer to the
+  exact implicit-Euler solution.
 
 
 ## Version 0.2.0

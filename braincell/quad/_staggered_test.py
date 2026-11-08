@@ -22,7 +22,10 @@ is exercised by the cell-level test suite. The tests in this file
 guard against misuse and verify the registry metadata.
 """
 
+import json
 import os
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -726,6 +729,72 @@ class DhsMultistepClampTest(unittest.TestCase):
         after = float(cell.V.value[0, 0].to_decimal(u.mV))
 
         self.assertGreater(after, before)
+
+
+# Run in a child interpreter because JAX fixes its float precision at start-up.
+_PASSIVE_SOMA_SCRIPT = """
+import json
+import brainunit as u
+import numpy as np
+from braincell import Branch, CVPerBranch, Cell, Morphology, mech
+from braincell.filter import AllRegion
+
+out = {}
+for dt in (0.025, 0.005):
+    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    cell = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch(), solver="staggered")
+    cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV))
+    cell.run(dt=dt * u.ms, duration=1.0 * u.ms)
+    V = cell.V.value.to_decimal(u.mV)
+    out[str(dt)] = {"dtype": str(V.dtype), "V": float(np.asarray(V).ravel()[0])}
+print(json.dumps(out))
+"""
+
+
+def _run_passive_soma(enable_x64: bool) -> dict:
+    env = dict(os.environ, JAX_ENABLE_X64="1" if enable_x64 else "0", JAX_PLATFORMS="cpu")
+    result = subprocess.run(
+        [sys.executable, "-c", _PASSIVE_SOMA_SCRIPT],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(result.stderr)
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+class StaggeredFloat32AccumulationTest(unittest.TestCase):
+    """QUAD-5: float32 rounding must not accumulate with |V| in the DHS solve.
+
+    Before the increment-form solve, the passive soma below drifted about
+    1e-2 mV from float64 within 1 ms, at every dt: eliminating onto an
+    algebraic boundary row cancels nearly equal terms, and that relative error
+    multiplied the full voltage each step.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.f32 = _run_passive_soma(enable_x64=False)
+        cls.f64 = _run_passive_soma(enable_x64=True)
+
+    def test_float32_matches_float64_after_one_millisecond(self):
+        for dt in ("0.025", "0.005"):
+            with self.subTest(dt=dt):
+                self.assertEqual(self.f32[dt]["dtype"], "float32")
+                self.assertEqual(self.f64[dt]["dtype"], "float64")
+                self.assertLessEqual(abs(self.f32[dt]["V"] - self.f64[dt]["V"]), 1e-4)
+
+    def test_float64_matches_the_exact_implicit_euler_recursion(self):
+        # The axial terms cancel on an isopotential soma, so implicit Euler
+        # reduces to V <- (V + dt k E) / (1 + dt k) with k = g / c_m = 0.1 / ms.
+        for dt in (0.025, 0.005):
+            V = -65.0
+            for _ in range(round(1.0 / dt)):
+                V = (V + dt * 0.1 * -70.0) / (1.0 + dt * 0.1)
+            with self.subTest(dt=dt):
+                self.assertAlmostEqual(self.f64[str(dt)]["V"], V, delta=1e-10)
 
 
 if __name__ == "__main__":

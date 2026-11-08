@@ -1748,6 +1748,7 @@ class CalciumFirstOrderTest(unittest.TestCase):
             ("alpha", {"alpha": 0.13}),
             ("alpha", {"alpha": 0.13 * u.mM}),
             ("beta", {"beta": 0.075 * u.mM}),
+            ("beta", {"beta": 0.075}),
         )
         for field, params in cases:
             with self.subTest(**{field: params[field]}):

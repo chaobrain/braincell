@@ -562,12 +562,12 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
         36 degrees Celsius, converted to kelvin via
         ``u.celsius2kelvin`` before being stored.
     alpha : array-like or callable, optional
-        Scale factor applied to the rectified current-drive term in
-        :meth:`derivative`. Defaults to ``0.13`` (a bare, unitless
-        number).
+        Conversion from inward calcium current density to the rate of
+        change of ``Ci``, in concentration / time / current density.
+        Defaults to ``0.13 mM/ms/(uA/cm**2)``.
     beta : array-like or callable, optional
-        First-order decay rate applied to ``Ci`` in :meth:`derivative`.
-        Defaults to ``0.075`` (a bare, unitless number).
+        First-order decay rate applied to ``Ci`` in :meth:`derivative`,
+        in 1 / time. Defaults to ``0.075 /ms``.
     Co : array-like or callable or None, optional
         Extracellular calcium concentration. Defaults to ``None``,
         which falls back to :attr:`Calcium.default_Co` inside
@@ -606,29 +606,42 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
 
     i.e. a *rectified*, positively-scaled current drive minus a
     first-order decay -- not a symmetric ``-alpha*I_Ca - beta*Ca``
-    form. ``alpha`` and ``beta`` are generic first-order-model
-    coefficients with no identified literature source; they are not
-    traceable to a specific paper from the code alone, so none is
-    cited here.
+    form. :math:`I_{Ca}` is ``total_current``, the calcium current
+    density summed over the attached channels with inward current
+    positive (for example in :math:`\mathrm{\mu A/cm^2}`), so only
+    inward current raises ``Ci``. With no channel attached it is
+    treated as a zero current, and ``Ci`` decays toward zero.
 
-    ``alpha`` and ``beta`` are stored as bare, unitless numbers, while
-    ``total_current`` (the calcium current summed over attached
-    channels) carries current-density units such as
-    :math:`\mathrm{\mu A/cm^2}`. Because :meth:`derivative` compares
-    ``self.alpha * total_current`` directly against ``0.0 * u.mM`` in
-    ``u.math.maximum``, calling ``derivative`` with any real,
-    unit-typed ``total_current`` raises
-    ``brainunit.UnitMismatchError``; calling it with no channels
-    attached instead raises ``TypeError``, because ``current()``
-    returns ``None`` rather than a zero quantity when there are no
-    channels to sum. Unlike :class:`CalciumDetailed`, which divides
-    its current term by :math:`2Fd` before clamping (so the clamped
-    quantity and the zero it is compared against share the same
-    derived unit), this class performs no such conversion, so
-    ``derivative`` is not currently callable with a real
-    ``total_current`` in either configuration. This is an existing
-    implementation defect, not a documentation issue; it is recorded
-    here rather than fixed, since this change is documentation-only.
+    The equation fixes the dimensions: ``alpha`` is a concentration
+    per time per current density and ``beta`` a rate, so the result
+    is a concentration per time. The defaults use the same
+    ``mM``/``ms``/``uA/cm**2`` system as :class:`CalciumDetailed`;
+    any compatible units are accepted. Choosing
+    :math:`\alpha = 1/(2Fd)` and :math:`\beta = 1/\tau_{Ca}` reproduces
+    :class:`CalciumDetailed` without its resting level: the two
+    derivatives then differ by exactly :math:`\beta \cdot [Ca]_{rest}`.
+
+    ``alpha`` and ``beta`` are generic first-order-model
+    coefficients with no identified literature source; their default
+    values are not traceable to a specific paper from the code alone,
+    so none is cited here.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> import jax.numpy as jnp
+        >>> from braincell.ion import CalciumFirstOrder
+        >>> ca = CalciumFirstOrder(size=1)
+        >>> Ci = jnp.array([2.4e-4]) * u.mM
+        >>> V = jnp.array([-65.0]) * u.mV
+        >>> inward = jnp.array([1.0]) * u.uA / u.cm**2
+        >>> ca.derivative(Ci, V, total_current=inward).to_decimal(u.mM / u.ms)
+        Array([0.129982], dtype=float32)
+        >>>
+        >>> ca.derivative(Ci, V, total_current=None).to_decimal(u.mM / u.ms)
+        Array([-1.8e-05], dtype=float32)
     """
 
     __module__ = 'braincell.ion'
@@ -638,8 +651,8 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
         self,
         size: Size,
         temp: Initializer = u.celsius2kelvin(36.0),
-        alpha: Initializer = 0.13,
-        beta: Initializer = 0.075,
+        alpha: Initializer = 0.13 * u.mM / u.ms / (u.uA / u.cm**2),
+        beta: Initializer = 0.075 / u.ms,
         Co: Optional[Initializer] = None,
         Ci_initializer: Initializer = braintools.init.Constant(2.4e-4 * u.mM),
         name: Optional[str] = None,
@@ -660,7 +673,8 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
     def derivative(self, Ci, V, total_current=None):
         _ = V
         total_current = self._drive_current(total_current)
-        drive = u.math.maximum(self.alpha * total_current, 0.0 * u.mM)
+        drive = self.alpha * total_current
+        drive = u.math.maximum(drive, u.math.zeros_like(drive))
         return drive - self.beta * Ci
 
 
@@ -1036,7 +1050,7 @@ class ToyCaBindingIcaSourceKinetic_SU2015_DCN(Calcium, KineticIon):
     current-driven calcium sources. This class sets
     ``uses_total_current = True``, so :meth:`KineticIon`'s derivative
     hook always supplies a real ``total_current`` once at least one
-    channel is attached, unlike :class:`CalciumFirstOrder`.
+    channel is attached.
     """
 
     __module__ = "braincell.ion"

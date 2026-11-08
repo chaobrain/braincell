@@ -79,6 +79,39 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(result["time_ms"].shape, result["voltage_mV"].shape)
         self.assertTrue(np.isfinite(result["voltage_mV"]).all())
 
+    def test_stimulus_samples_use_step_midpoints(self) -> None:
+        # BrainCell evaluates a clamp at t + dt/2 for the step [t, t + dt);
+        # NEURON must be played the same value (MECH-15).
+        sine = {
+            "kind": "sine",
+            "start_ms": 0.0,
+            "duration_ms": 2.0,
+            "amplitude_nA": 0.2,
+            "frequency_hz": 250.0,
+            "phase_rad": 0.0,
+            "offset_nA": 0.0,
+        }
+        case = experiment_schema.ChannelNoConcCase.from_dict(self._build_payload(stimulus=sine))
+        times, amps = neuron_runner.stimulus_samples(case)
+
+        dt = case.simulation.dt_ms
+        self.assertEqual(times.shape, (80,))
+        self.assertAlmostEqual(times[1] - times[0], dt, places=12)
+        expected = [neuron_runner.current_at_ms(case.stimulus, t + 0.5 * dt) for t in times]
+        np.testing.assert_array_equal(amps, expected)
+        # A left-endpoint sample of a zero-phase sine would be exactly 0.
+        self.assertAlmostEqual(amps[0], 0.2 * np.sin(2.0 * np.pi * 250.0 * 0.5 * dt * 1e-3), places=15)
+
+    def test_stimulus_samples_keep_dc_edges_on_the_step_grid(self) -> None:
+        dc = {"kind": "dc", "delay_ms": 1.0, "dur_ms": 0.5, "amp_nA": 0.2}
+        case = experiment_schema.ChannelNoConcCase.from_dict(self._build_payload(stimulus=dc))
+        times, amps = neuron_runner.stimulus_samples(case)
+
+        on = times[amps != 0.0]
+        self.assertEqual(on.size, 20)
+        self.assertAlmostEqual(on[0], 1.0, places=12)
+        self.assertAlmostEqual(on[-1], 1.475, places=12)
+
     def test_dc_stimulus_changes_voltage_relative_to_zero_amp_case(self) -> None:
         driven = neuron_runner.run_case(experiment_schema.ChannelNoConcCase.from_dict(self._build_payload()))
         quiet = neuron_runner.run_case(

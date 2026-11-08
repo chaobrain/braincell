@@ -3,6 +3,13 @@
 
 ## Unreleased
 
+### Changes & Improvements
+
+- CI tests Python 3.12 and 3.15 against the JAX floor (0.9.0, 3.12 only,
+  as jaxlib 0.9.0 has no 3.15 wheels) and the latest JAX. The package
+  classifiers now list only those two Python versions; `requires-python`
+  is unchanged (`>=3.12`).
+
 ### Bug Fixes
 
 - `CalciumFirstOrder` can now run. Its `derivative` compared a current

@@ -30,7 +30,7 @@ import braincell
 from braincell import Cell
 from braincell.filter import BranchSlice, at
 from braincell.quad import get_integrator
-from ._testing import _RuntimeTestTwoOwnerChannel, _build_tree  # noqa: F401  # registers the channel
+from braincell._compute._testing import _RuntimeTestTwoOwnerChannel, _build_tree  # noqa: F401  # registers the channel
 
 
 class RuntimeBindingTest(unittest.TestCase):

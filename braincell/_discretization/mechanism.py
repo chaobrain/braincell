@@ -41,14 +41,9 @@ from braincell.mech import (
     StateProbe,
 )
 from braincell.morph.morphology import Morphology
-from .base import DEFAULT_CABLE, EPS_PARAM, CVPointMechanism, Position
-from .context import build_cv_contexts
-from .geometry import (
-    CVGeometryResult,
-    _GeoCV,
-    _build_frusta,
-    interval_area_fraction,
-)
+from braincell._discretization.base import DEFAULT_CABLE, EPS_PARAM, CVPointMechanism, Position
+from braincell._discretization.context import build_cv_contexts
+from braincell._discretization.geometry import CVGeometryResult, _GeoCV, _build_frusta, interval_area_fraction
 
 __all__ = [
     "PaintRule",

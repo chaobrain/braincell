@@ -24,10 +24,10 @@ from braincell.mech import CableProperty
 from braincell.mech._params import quantity_hashable
 from braincell.morph.branch import branch_class_for_type
 from braincell.morph.morphology import Morphology
-from .base import DEFAULT_CABLE, EPS_LEN_UM, EPS_PARAM
+from braincell._discretization.base import DEFAULT_CABLE, EPS_LEN_UM, EPS_PARAM
 
 if TYPE_CHECKING:
-    from .mechanism import PaintRule
+    from braincell._discretization.mechanism import PaintRule
 
 # d_lambda space-constant prefactor yielding μm from sqrt(cm·Ω·cm/(Hz·µF)).
 # The numerical value 1e5 = sqrt(1e-6 cm⁴/F) · (cm→µm conversion); see

@@ -30,7 +30,7 @@ from braincell._compute.ions import _runtime_ion_species_key
 from braincell._compute.parameters import density_parameter_schema, density_parameter_value
 from braincell._misc import require_name as _require_name
 from braincell.mech import Density, get_registry
-from .lifecycle import DiscreteView
+from braincell._multi_compartment.lifecycle import DiscreteView
 
 __all__ = ["ChannelView", "IonView"]
 

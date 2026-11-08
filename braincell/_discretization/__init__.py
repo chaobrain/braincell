@@ -28,7 +28,7 @@ should usually only need the frozen record types plus
 ``build_discretization(...)`` and the policy classes.
 """
 
-from .base import (
+from braincell._discretization.base import (
     CV,
     CVEdge,
     CVPointMechanism,
@@ -42,7 +42,7 @@ from .base import (
     PointPlacement,
     build_discretization,
 )
-from .policy import (
+from braincell._discretization.policy import (
     CompositeByTypePolicy,
     CVPerBranch,
     CVPerBranchList,

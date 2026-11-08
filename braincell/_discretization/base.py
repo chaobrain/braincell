@@ -628,11 +628,11 @@ def _build_discretization_parts(
     place_rules: "tuple[PlaceRule, ...]",
 ) -> tuple[CVTree, NodeTree, tuple[CVContext, ...], tuple[PointPlacement, ...]]:
     """Assemble both static discretization views in one pass."""
-    from .geometry import build_cv_geometry
-    from .context import build_cv_contexts
-    from .mechanism import build_cv_mechanisms
-    from .node_build import build_node_tree_from_cvs
-    from .policy import CVPolicy
+    from braincell._discretization.geometry import build_cv_geometry
+    from braincell._discretization.context import build_cv_contexts
+    from braincell._discretization.mechanism import build_cv_mechanisms
+    from braincell._discretization.node_build import build_node_tree_from_cvs
+    from braincell._discretization.policy import CVPolicy
 
     if not isinstance(policy, CVPolicy):
         raise TypeError(f"build_discretization(...) expects a CVPolicy, got {type(policy).__name__!s}.")

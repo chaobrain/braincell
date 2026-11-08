@@ -35,7 +35,7 @@ import brainstate
 from brainstate._state import record_state_value_write
 
 from braincell._misc import set_module_as
-from ._registry import get_integrator
+from braincell.quad._registry import get_integrator
 
 __all__ = [
     'DiffEqState',

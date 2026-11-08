@@ -38,11 +38,11 @@ import numpy as np
 from braincell.ion import build_placeholder_ions
 from braincell.ion._base import DynamicNernstIon, InitNernstIon
 from braincell.mech import Density, Params, get_registry
-from .layouts import MechanismLayout
-from .parameters import RuntimeParameterState, _density_signature, parameter_state_value
+from braincell._compute.layouts import MechanismLayout
+from braincell._compute.parameters import RuntimeParameterState, _density_signature, parameter_state_value
 
 if TYPE_CHECKING:
-    from .state import CellRuntimeState
+    from braincell._compute.state import CellRuntimeState
 
 
 def _build_runtime_ions(

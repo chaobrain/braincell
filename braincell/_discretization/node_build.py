@@ -26,7 +26,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from braincell.morph.morphology import Morphology
-from .base import (
+from braincell._discretization.base import (
     CV,
     EPS_PARAM,
     Node,

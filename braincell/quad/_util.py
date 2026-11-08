@@ -22,7 +22,7 @@ import jax
 import jax.numpy as jnp
 
 from braincell._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorField, Args
-from .protocol import DiffEqState, DiffEqModule, IndependentIntegration
+from braincell.quad.protocol import DiffEqState, DiffEqModule, IndependentIntegration
 
 
 def environ_time(target: DiffEqModule, t: T = None, dt: DT = None) -> Tuple[T, DT]:

@@ -25,7 +25,7 @@ import numpy as np
 import braincell
 from braincell import Cell
 from braincell.filter import BranchSlice, at
-from ._testing import _build_tree, _quantity_set_at
+from braincell._compute._testing import _build_tree, _quantity_set_at
 
 
 class RuntimeIonTest(unittest.TestCase):

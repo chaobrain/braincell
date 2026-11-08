@@ -15,11 +15,11 @@
 
 """Multi-compartment cell declaration + runtime."""
 
-from .cell import Cell, CellView, MultiCompartment
-from .run import RunResult
-from .synapses import SynapseView
-from .clamps import ClampView
-from .density_views import ChannelView, IonView
+from braincell._multi_compartment.cell import Cell, CellView, MultiCompartment
+from braincell._multi_compartment.run import RunResult
+from braincell._multi_compartment.synapses import SynapseView
+from braincell._multi_compartment.clamps import ClampView
+from braincell._multi_compartment.density_views import ChannelView, IonView
 
 __all__ = [
     "Cell",

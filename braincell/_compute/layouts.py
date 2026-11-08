@@ -69,7 +69,7 @@ from braincell._compute.parameters import RuntimeParameterState, density_paramet
 from braincell.mech._params import _to_hashable
 
 if TYPE_CHECKING:
-    from .state import CellRuntimeState
+    from braincell._compute.state import CellRuntimeState
 
 __all__ = [
     "CLAMP_KINDS",

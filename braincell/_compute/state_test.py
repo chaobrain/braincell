@@ -29,7 +29,7 @@ from braincell import (
     CurrentClamp,
 )
 from braincell.filter import BranchSlice, RootLocation, at
-from ._testing import _build_tree
+from braincell._compute._testing import _build_tree
 
 
 class CellRuntimeStateTest(unittest.TestCase):

@@ -14,6 +14,6 @@
 # ==============================================================================
 
 
-from .base import SingleCompartment
+from braincell._single_compartment.base import SingleCompartment
 
 __all__ = ["SingleCompartment"]

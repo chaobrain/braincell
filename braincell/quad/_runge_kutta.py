@@ -24,9 +24,9 @@ import jax
 
 from braincell._misc import cast_like as _cast_like, set_module_as
 from braincell._typing import DT, PyTree
-from .protocol import DiffEqState, DiffEqModule
-from ._registry import register_integrator
-from ._util import environ_time
+from braincell.quad.protocol import DiffEqState, DiffEqModule
+from braincell.quad._registry import register_integrator
+from braincell.quad._util import environ_time
 
 __all__ = [
     'euler_step',

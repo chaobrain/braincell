@@ -72,14 +72,10 @@ from braincell.mech import (
     Synapse as SynapsePlacement,
     get_registry,
 )
-from .bindings import (
-    _build_runtime_nodes,
-    _configure_runtime_subsolvers,
-    _sync_runtime_node_param,
-)
-from .bridge import attach_runtime_ion_geometry
-from .cable import CableArrays
-from .layouts import (
+from braincell._compute.bindings import _build_runtime_nodes, _configure_runtime_subsolvers, _sync_runtime_node_param
+from braincell._compute.bridge import attach_runtime_ion_geometry
+from braincell._compute.cable import CableArrays
+from braincell._compute.layouts import (
     CLAMP_KINDS,
     MechanismLayout,
     _allocate_clamp_ragged_buffer,
@@ -99,7 +95,7 @@ from .layouts import (
     mechanism_kind,
     mechanism_signature,
 )
-from .parameters import (
+from braincell._compute.parameters import (
     RuntimeParameterState,
     density_parameter_spec,
     make_runtime_parameter_state,

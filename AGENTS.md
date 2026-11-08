@@ -19,6 +19,7 @@ Biophysically detailed brain cell modeling in BrainX. This file holds the rules 
 8. Before pushing, run `pre-commit run --all-files` and the tests your change affects; the PR body lists the commands and their results.
 9. A PR merges when `ci-ok` passes and a code owner other than the author approves (`.github/CODEOWNERS`).
 10. After writing code, list the edge cases it handles and the tests that cover them.
+11. When corrected, state the mistake and how you will avoid repeating it.
 
 Details: [contributing](docs/developer/contributing.md).
 

@@ -1,0 +1,6 @@
+# Code owners. The main branch ruleset requires a pull request to be approved
+# by a code owner other than its author, so every path keeps at least two
+# owners. Per-module lines go below the default one as maintainers take
+# modules on; the last matching pattern wins.
+
+* @chaoming0625 @TLDSZ

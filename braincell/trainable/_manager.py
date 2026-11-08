@@ -124,8 +124,7 @@ class TrainableManager(brainstate.nn.Module):
                     return None
                 targets[id(state)] = state
 
-        roots = {id(root.val): root.val for root in self.roots.values()
-                 if isinstance(root.val, brainstate.State)}
+        roots = {id(root.val): root.val for root in self.roots.values() if isinstance(root.val, brainstate.State)}
         evaluate = brainstate.transform.StatefulFunction(
             lambda: tuple(binding._evaluate() for binding in self._binding_list),
             return_only_write=False,
@@ -331,8 +330,10 @@ class TrainableManager(brainstate.nn.Module):
             self._target_axes[key] = axis
         for state, value in point_pending.values():
             state.value = value
-        if point_pending and hasattr(cell, "_refresh_geometry_runtime") and any(
-            binding.target_owner == "geometry" for binding in self._binding_list
+        if (
+            point_pending
+            and hasattr(cell, "_refresh_geometry_runtime")
+            and any(binding.target_owner == "geometry" for binding in self._binding_list)
         ):
             cell._refresh_geometry_runtime()
         if commits:

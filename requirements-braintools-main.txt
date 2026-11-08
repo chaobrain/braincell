@@ -7,4 +7,4 @@
 # every `-r requirements-braintools-main.txt` / `requirements-braintools-main.txt`
 # reference (one line each in .github/workflows/CI.yml, deploy-docs.yml and
 # .readthedocs.yml, plus the MANIFEST.in line).
-braintools @ git+https://github.com/chaobrain/braintools.git@no-such-branch
+braintools @ git+https://github.com/chaobrain/braintools.git@main

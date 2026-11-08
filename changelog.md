@@ -9,10 +9,11 @@
   the base requirement and in the `cpu`, `cuda12`, `cuda13` and `tpu`
   extras. Users on JAX 0.9 or 0.10 must upgrade JAX before upgrading
   braincell.
-- CI tests Python 3.12 and 3.15 against JAX 0.11.0 (the floor; 3.12 only,
-  as jaxlib 0.11.0 has no 3.15 wheels) and the latest JAX. The package
-  classifiers now list only those two Python versions; `requires-python`
-  is unchanged (`>=3.12`).
+- CI tests Python 3.12, 3.13, 3.14 and 3.15, and the package classifiers
+  declare exactly those four (`requires-python` is unchanged, `>=3.12`).
+  Every Python runs against the latest JAX; JAX 0.11.0 (the floor) is
+  tested on 3.12 only. A `lint` step fails when the classifiers differ from the Python
+  versions CI tests.
 
 ### Bug Fixes
 

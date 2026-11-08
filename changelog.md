@@ -114,6 +114,26 @@ BrainCell now requires Python ≥ 3.12, JAX ≥ 0.9 and BrainPy ≥ 2.9.0.
   `DiffEqState(...)` now raises `TypeError`; write `state(...)` in a
   custom `init_state` instead, and the right class is chosen per host.
 
+- **Three packages were added in this release and were missing from these
+  notes** (recorded afterwards from the history: #154, #155, #156, #157).
+  - **`braincell.trainable`** (#154) maps latent parameters to physical
+    ones for gradient-based learning: `parameter`, `parameterized` and
+    `scale` declare a `ParameterSource`; `ParameterSet`, `ParameterBinding`
+    and `TrainableManager` bind them to channel, ion, synapse and network
+    parameters.
+  - **`braincell.reduction`** (#155) holds interchangeable lightweight
+    execution models for detailed cells: the `ReductionModel` interface
+    with its context, input and output types, and three toy accumulators
+    (`EventAccumulatorReduction`, `PayloadAccumulatorReduction`,
+    `SynapticKernelAccumulatorReduction`).
+  - **`braincell.experimental`** (#156, #157) is explicitly unstable.
+    `experimental.optim` provides BPTT/RTRL gradient engines
+    (`RolloutGradientEngine`, `TrajectoryGradientEngine`,
+    `build_rollout_value_and_grad`, `build_trajectory_value_and_grad`),
+    including gradients through trainable runtime geometry; the package
+    also holds the scheduled-event cell and delivery helpers. Its API may
+    change in any release.
+
 The remaining entries in this section harden the declarative channel
 template layer that `braincell.channel` is built on. The catalogue's
 numeric output is unchanged: each either adds a check that shipped
@@ -207,7 +227,7 @@ This is a landmark release. BrainCell evolves from single-compartment
 Hodgkin–Huxley modeling into a complete **multi-compartment, morphologically
 detailed** neuron simulation framework in JAX. It introduces a morphology layer,
 a control-volume discretization engine with pluggable policies, a compute
-runtime, morphology IO (SWC / ASC / NeuroML2 / NeuroMorpho.Org), a declarative
+runtime, morphology IO (SWC / ASC / NeuroMorpho.Org), a declarative
 mechanism system, location/region selection filters, and a 2D/3D visualization
 stack.
 
@@ -243,7 +263,11 @@ stack.
     gap junctions.
 
 - **Morphology IO** (`braincell.io`) (#68, #69)
-  - Readers for **SWC**, **ASC**, and **NeuroML2**.
+  - Readers for **SWC** and **ASC**.
+  - Correction: these notes originally also listed a **NeuroML2** reader.
+    `NeuroMlReader` is only a stub whose `read()` raises
+    `NotImplementedError`, in 0.1.0 and in 0.2.0; no NeuroML2 reading is
+    available.
   - Three-tier **NeuroMorpho.Org** client with on-disk caching and a
     `braincell-neuromorpho` CLI.
 
@@ -309,6 +333,29 @@ stack.
   type checkers consume BrainCell's inline annotations.
 - Numerous CI workflow and dependency updates: deploy docs on release, GitHub
   Actions version bumps, and `brainx-sphinx-header` upgrades.
+
+## Version 0.0.8
+
+This version was tagged and published to PyPI on 2026-03-11 (tag `v0.0.8`) but
+shipped without a changelog section. The entries below were written afterwards
+from the diff between `v0.0.7` and `v0.0.8`.
+
+### Breaking Changes
+
+- BrainCell requires Python >= 3.11 (it was >= 3.10), and the Python 3.10
+  classifier is dropped.
+- The minimum `brainevent` is 0.0.7 (it was 0.0.2).
+
+### Changes & Improvements
+
+- The `cpu`, `cuda12`, `cuda13` and `tpu` extras now install only the matching
+  `jax[...]` build; the BrainX packages come from the core dependencies.
+- Removed the unused numba, warp and pallas kernel generators and the
+  `comp_triang_call*` / `comp_backsub_call*` helpers from the voltage solver
+  (about 340 lines; internal, not exported).
+- Bumped `actions/upload-artifact` and `actions/download-artifact` in the
+  Publish workflow.
+
 
 ## Version 0.0.7
 

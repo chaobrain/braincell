@@ -18,4 +18,5 @@ and where to start for a given change; :doc:`conventions` holds the code rules.
    conventions
    testing
    extending
+   releasing
    troubleshooting

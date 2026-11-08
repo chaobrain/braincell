@@ -40,7 +40,7 @@ Roadmap tasks have an ID made of a milestone code and a number, for example `CEL
 3. **Reproduce a bug with a failing test** before fixing it, and keep the test.
 4. **Follow the [code conventions](conventions.md)**: units, random numbers, compiled loops, imports, type aliases, docstrings, and the license notice.
 5. **Run the relevant checks**: tests for the changed modules and affected examples first, more for shared behavior; see the [Testing Guide](testing.md). Validate new model dynamics and integration behavior with the [Extension Guide](extending.md).
-6. **Update in the same PR** the docstrings, user documentation, examples, and `changelog.md` that the change affects.
+6. **Update in the same PR** the docstrings, user documentation, examples, and `changelog.md` (under `## Unreleased`) that the change affects.
 
 ## Change documentation
 

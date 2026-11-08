@@ -193,7 +193,6 @@ The docs are layered by what you are trying to do:
    :maxdepth: 1
    :caption: Developer Guide
 
-   repository
    developer/index
 
 .. toctree::

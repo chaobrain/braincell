@@ -42,7 +42,7 @@ Generated backend JSON, aggregate tables and plots belong in ignored `artifacts/
 [Historical setup](results/historical-protocol.md) preserves prior environment and command
 examples; it is not a new performance result. Reviewed measurements belong in `results/`.
 
-Before measuring, follow the [execution rules](../../AGENTS.md): confirm the full
+Before measuring, follow the [execution rules](../../README.md#before-running-a-benchmark): confirm the full
 configuration matrix, independent rounds, first executions, warmups, timed repeats,
 extra validation and time budget. Commands below are templates, not authorization.
 Replace angle-bracket placeholders before running from the repository root.

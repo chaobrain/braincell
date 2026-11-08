@@ -20,7 +20,7 @@ Generated JSON and traces belong in ignored `artifacts/`; reviewed historical su
 belong in `results/` when available. Trace analysis is provided by the shared
 [profiling tools](../../profiling/README.md).
 
-Before measuring, follow the [execution rules](../../AGENTS.md): confirm the full
+Before measuring, follow the [execution rules](../../README.md#before-running-a-benchmark): confirm the full
 configuration matrix, independent rounds, first executions, warmups, timed repeats,
 extra validation and time budget. Commands below are templates, not authorization.
 Replace angle-bracket placeholders before running from the repository root.

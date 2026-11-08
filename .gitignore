@@ -262,3 +262,6 @@ docs/_static/js/brainx-header.js
 # Generated benchmark figures stay in ignored artifacts, not reviewed results.
 /benchmarks/performance/optim_gradient_scaling/results/**/figures/
 /examples/multi_compartment/checkpoint/
+
+# Local agent pointer files; the tracked rules are in AGENTS.md
+/CLAUDE.md

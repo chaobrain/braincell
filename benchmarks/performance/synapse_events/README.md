@@ -26,7 +26,7 @@ python -m benchmarks.performance.synapse_events.query_benchmark --help
 python -m benchmarks.performance.synapse_events.delivery_benchmark --help
 ```
 
-启动测量前按 [Benchmark 执行规范](../../AGENTS.md) 列出并确认设备、配置、独立轮数、进程数、首次执行、额外预热、计时重复、校验执行和时间预算。以下是命令模板，尖括号内容须替换为已确认的值；模板和 CLI 默认值均不是运行授权。单独调用一次命令不代表只执行一次模型。
+启动测量前按 [Benchmark 执行规范](../../README.md#before-running-a-benchmark) 列出并确认设备、配置、独立轮数、进程数、首次执行、额外预热、计时重复、校验执行和时间预算。以下是命令模板，尖括号内容须替换为已确认的值；模板和 CLI 默认值均不是运行授权。单独调用一次命令不代表只执行一次模型。
 
 ```text
 python -m benchmarks.performance.synapse_events.benchmark \

@@ -34,7 +34,7 @@ import numpy as np
 
 from braincell.filter import LocsetMask
 from braincell.morph.morphology import Morphology
-from ._values import _strip_quantity, compose_colorbar_label
+from braincell.vis._values import _strip_quantity, compose_colorbar_label
 
 
 @dataclass(frozen=True)
@@ -175,7 +175,7 @@ def plot_traces(
             trace_axes.append(fig.add_subplot(n_traces, 1, row + 1, sharex=share))
 
     if morpho_ax is not None:
-        from .plot2d import plot2d
+        from braincell.vis.plot2d import plot2d
 
         # Render the morphology view with the locset colour-synced to
         # the traces. We bypass plot2d's own locset overlay (which
@@ -183,8 +183,8 @@ def plot_traces(
         # per-point markers in the same order as the traces.
         plot2d(morpho, layout=layout, shape=shape, ax=morpho_ax)
         if locset is not None:
-            from .scene import OverlaySpec
-            from .scene2d import _Centerline2D, build_render_scene_2d
+            from braincell.vis.scene import OverlaySpec
+            from braincell.vis.scene2d import _Centerline2D, build_render_scene_2d
 
             # Build a scene to recover the per-branch centerlines so
             # we can interpolate each locset point's 2D position.

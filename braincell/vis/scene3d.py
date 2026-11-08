@@ -20,18 +20,18 @@ import brainunit as u
 import numpy as np
 
 from braincell.morph.morphology import Morphology
-from ._arclength import ArcPolyline
-from ._values import (
+from braincell.vis._arclength import ArcPolyline
+from braincell.vis._values import (
     resolve_overlay_values as _resolve_overlay_values_3d,
     with_unit_label as _with_unit_label_3d,
 )
-from .config import (
+from braincell.vis.config import (
     highlight_alpha as _highlight_alpha,
     highlight_color as _highlight_color,
     marker_color as _marker_color,
     marker_radius_3d_um as _marker_radius_3d_um,
 )
-from .scene import (
+from braincell.vis.scene import (
     BranchPolyline3D,
     BranchTypeBatch3D,
     HighlightStroke3D,

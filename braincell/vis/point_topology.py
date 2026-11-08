@@ -31,7 +31,7 @@ from typing import Any, Literal, get_args
 import numpy as np
 
 from braincell._discretization.base import NodeTree
-from ._values import _strip_quantity, compose_colorbar_label
+from braincell.vis._values import _strip_quantity, compose_colorbar_label
 
 ColorMode = Literal["solid", "depth", "values"]
 CoverageMode = Literal["fraction", "any", "all"]

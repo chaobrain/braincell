@@ -43,7 +43,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .backend import module_available
+from braincell.vis.backend import module_available
 
 _VECTOR_SUFFIXES = {".pdf", ".svg", ".eps", ".ps"}
 _HTML_SUFFIXES = {".html", ".htm"}

@@ -37,8 +37,8 @@ from typing import Any
 
 import numpy as np
 
-from .layout import LayoutConfig
-from .plot2d import plot2d
+from braincell.vis.layout import LayoutConfig
+from braincell.vis.plot2d import plot2d
 
 
 def compare_morphologies(

@@ -36,10 +36,10 @@ from typing import Any, Iterator
 
 import numpy as np
 
-from ._values import resolve_value_limits, resolved_colorbar_label
-from .backend import module_available
-from .config import rgb_to_hex as _rgb_to_hex
-from .scene import BranchTypeBatch3D, RenderRequest, RenderScene3D, ValueBatch3D, ValueSpec
+from braincell.vis._values import resolve_value_limits, resolved_colorbar_label
+from braincell.vis.backend import module_available
+from braincell.vis.config import rgb_to_hex as _rgb_to_hex
+from braincell.vis.scene import BranchTypeBatch3D, RenderRequest, RenderScene3D, ValueBatch3D, ValueSpec
 
 
 @dataclass(frozen=True)

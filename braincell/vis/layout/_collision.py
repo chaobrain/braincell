@@ -68,8 +68,8 @@ import math
 
 import numpy as np
 
-from ._common import LayoutBranch2D
-from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
+from braincell.vis.layout._common import LayoutBranch2D
+from braincell.vis.layout._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
 
 
 # ---------------------------------------------------------------------------

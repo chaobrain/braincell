@@ -42,9 +42,9 @@ from typing import Any
 import numpy as np
 
 from braincell.morph.morphology import Morphology
-from ._values import ValueLayout, _strip_quantity, resolve_value_limits
-from .layout import LayoutConfig
-from .scene import ValueSpec as _ValueSpec
+from braincell.vis._values import ValueLayout, _strip_quantity, resolve_value_limits
+from braincell.vis.layout import LayoutConfig
+from braincell.vis.scene import ValueSpec as _ValueSpec
 
 
 @dataclass(frozen=True)
@@ -207,7 +207,7 @@ def _plot_movie_2d(
     from matplotlib.animation import FuncAnimation
     from matplotlib.collections import LineCollection, PolyCollection
 
-    from .plot2d import plot2d
+    from braincell.vis.plot2d import plot2d
 
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
@@ -318,7 +318,7 @@ def _plot_movie_3d(
     """
     import pyvista as pv
 
-    from .scene3d import build_render_scene_3d
+    from braincell.vis.scene3d import build_render_scene_3d
 
     scene = build_render_scene_3d(morpho, mode=mode or "skeleton")
     if not scene.branches:

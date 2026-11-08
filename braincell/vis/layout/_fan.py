@@ -33,7 +33,7 @@ import numpy as np
 from braincell.morph import MorphoBranch
 from braincell.morph.morphology import Morphology
 
-from ._common import (
+from braincell.vis.layout._common import (
     LayoutBranch2D,
     _LayoutSpec2D,
     _child_weight,
@@ -41,8 +41,8 @@ from ._common import (
     _normalize_min_branch_angle_rad,
     walk_layout_top_down,
 )
-from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
-from ._geometry import (
+from braincell.vis.layout._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
+from braincell.vis.layout._geometry import (
     _make_centered_horizontal_layout_branch,
     _make_straight_layout_branch,
     point_on_layout_branch,

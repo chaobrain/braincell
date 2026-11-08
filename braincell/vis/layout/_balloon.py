@@ -26,7 +26,7 @@ import numpy as np
 from braincell.morph import MorphoBranch
 from braincell.morph.morphology import Morphology
 
-from ._common import (
+from braincell.vis.layout._common import (
     LayoutBranch2D,
     _AXON_ROOT_BASE_ANGLE_RAD,
     _DENDRITE_ROOT_BASE_ANGLE_RAD,
@@ -36,12 +36,8 @@ from ._common import (
     _normalize_min_branch_angle_rad,
     walk_layout_top_down,
 )
-from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
-from ._geometry import (
-    _make_layout_branch,
-    _vector_angle_rad,
-    sample_layout_branch,
-)
+from braincell.vis.layout._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
+from braincell.vis.layout._geometry import _make_layout_branch, _vector_angle_rad, sample_layout_branch
 
 
 def _build_layout_branches_balloon(

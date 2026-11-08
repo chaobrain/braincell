@@ -34,7 +34,7 @@ import numpy as np
 from braincell.morph import MorphoBranch
 from braincell.morph.morphology import Morphology
 
-from ._common import (
+from braincell.vis.layout._common import (
     LayoutBranch2D,
     _LayoutSpec2D,
     _allocate_child_regions_legacy,
@@ -46,8 +46,8 @@ from ._common import (
     _side_branch_offsets_rad,
     walk_layout_top_down,
 )
-from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
-from ._geometry import (
+from braincell.vis.layout._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
+from braincell.vis.layout._geometry import (
     _layout_branch_from_points,
     _make_layout_branch,
     _smoothstep,

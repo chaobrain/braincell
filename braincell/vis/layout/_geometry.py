@@ -41,7 +41,7 @@ import numpy as np
 from braincell.morph import MorphoBranch
 from braincell.vis._arclength import segment_index_at
 
-from ._common import LayoutBranch2D, _LayoutSpec2D
+from braincell.vis.layout._common import LayoutBranch2D, _LayoutSpec2D
 
 
 # ---------------------------------------------------------------------------

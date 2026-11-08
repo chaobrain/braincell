@@ -19,7 +19,7 @@ import sys
 from dataclasses import dataclass
 from typing import Protocol
 
-from .scene import RenderScene2D, RenderScene3D
+from braincell.vis.scene import RenderScene2D, RenderScene3D
 
 
 def module_available(module_name: str) -> bool:
@@ -82,9 +82,9 @@ class BackendChooser:
 
     @classmethod
     def default(cls) -> "BackendChooser":
-        from .backend_matplotlib import MatplotlibBackend
-        from .backend_plotly import PlotlyBackend
-        from .backend_pyvista import PyVistaBackend
+        from braincell.vis.backend_matplotlib import MatplotlibBackend
+        from braincell.vis.backend_plotly import PlotlyBackend
+        from braincell.vis.backend_pyvista import PyVistaBackend
 
         # Order matters: PyVista wins over Plotly for 3D when both are
         # installed because it's the higher-fidelity backend; matplotlib

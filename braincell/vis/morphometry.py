@@ -40,8 +40,8 @@ import numpy as np
 
 from braincell.morph import MorphoBranch
 from braincell.morph.morphology import Morphology
-from ._traversal import iter_bottom_up, iter_depth_first
-from .config import color_for_branch_type, rgb_to_float as _rgb_to_float
+from braincell.vis._traversal import iter_bottom_up, iter_depth_first
+from braincell.vis.config import color_for_branch_type, rgb_to_float as _rgb_to_float
 
 
 @dataclass(frozen=True)

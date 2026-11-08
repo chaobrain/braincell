@@ -51,7 +51,7 @@ import brainunit as u
 import numpy as np
 
 from braincell.morph.morphology import Morphology
-from .scene import BranchValues, OverlaySpec, ValueSpec
+from braincell.vis.scene import BranchValues, OverlaySpec, ValueSpec
 
 
 def _strip_quantity(values) -> tuple[np.ndarray, str | None]:

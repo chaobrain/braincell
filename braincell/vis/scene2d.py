@@ -18,16 +18,16 @@ import brainunit as u
 import numpy as np
 
 from braincell.morph.morphology import Morphology
-from ._arclength import ArcPolyline
-from ._values import resolve_overlay_values as _resolve_overlay_values, with_unit_label as _with_unit_label
-from .config import (
+from braincell.vis._arclength import ArcPolyline
+from braincell.vis._values import resolve_overlay_values as _resolve_overlay_values, with_unit_label as _with_unit_label
+from braincell.vis.config import (
     highlight_alpha as _highlight_alpha,
     highlight_color as _highlight_color,
     marker_color as _marker_color,
     marker_size_2d as _marker_size_2d,
 )
-from .layout import LayoutBranch2D, LayoutConfig, build_layout_branches_2d
-from .scene import (
+from braincell.vis.layout import LayoutBranch2D, LayoutConfig, build_layout_branches_2d
+from braincell.vis.scene import (
     HighlightStroke2D,
     Marker2D,
     OverlaySpec,

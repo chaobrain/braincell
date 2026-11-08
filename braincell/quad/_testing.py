@@ -17,7 +17,7 @@
 
 The leading underscore keeps pytest from collecting this file as a test
 module, matching the convention used by ``braincell/io/_testing.py`` and
-``braincell/vis/_testing.py``.
+``braincell/morph/_testing.py``.
 
 Two fixtures live here:
 

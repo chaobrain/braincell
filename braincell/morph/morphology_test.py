@@ -16,16 +16,14 @@
 
 from dataclasses import is_dataclass
 import unittest
+from unittest import mock
 from unittest.mock import patch
-import warnings
 
 import brainunit as u
 import numpy as np
 
 from braincell import Branch, Morphology
 from braincell.filter import BranchSlice, LocsetMask, RootLocation, Terminals
-from braincell.vis._testing import FakeBackend
-from braincell.vis.backend import BackendChooser
 from braincell.morph import MorphoBranch, MorphoMetric
 from braincell.morph._testing import (
     make_apical,
@@ -33,6 +31,8 @@ from braincell.morph._testing import (
     make_basal,
     make_deep_chain_tree,
     make_dendrite,
+    make_projected_node_tree,
+    make_root_split_tree,
     make_soma,
 )
 
@@ -864,137 +864,130 @@ class MorphoSelectAndVisTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             tree.select(123)  # type: ignore[arg-type]
 
-    def test_morpho_vis3d_is_a_thin_wrapper_over_plot3d(self) -> None:
-        soma = Branch.from_points(
-            points=[[0.0, 0.0, 0.0], [20.0, 0.0, 0.0]] * u.um,
-            radii=[10.0, 10.0] * u.um,
-            type="soma",
-        )
-        tree = Morphology.from_root(soma, name="soma")
-        backend = FakeBackend()
-
-        rendered = tree.vis3d(chooser=BackendChooser(backends=(backend,)), backend="fake")
-
-        self.assertIs(rendered, backend.last_request)
-        self.assertEqual(rendered.dimensionality, "3d")
-        self.assertEqual(rendered.mode, "geometry")
-        self.assertEqual(len(rendered.scene.branches), 1)
-
-    def test_morpho_vis3d_accepts_explicit_geometry_mode(self) -> None:
-        soma = Branch.from_points(
-            points=[[0.0, 0.0, 0.0], [20.0, 0.0, 0.0]] * u.um,
-            radii=[10.0, 10.0] * u.um,
-            type="soma",
-        )
-        tree = Morphology.from_root(soma, name="soma")
-        backend = FakeBackend()
-
-        rendered = tree.vis3d(mode="geometry", chooser=BackendChooser(backends=(backend,)), backend="fake")
-
-        self.assertEqual(rendered.mode, "geometry")
-
-    def test_morpho_vis3d_rejects_unknown_mode(self) -> None:
-        soma = Branch.from_points(
-            points=[[0.0, 0.0, 0.0], [20.0, 0.0, 0.0]] * u.um,
-            radii=[10.0, 10.0] * u.um,
-            type="soma",
-        )
-        tree = Morphology.from_root(soma, name="soma")
-
-        with self.assertRaisesRegex(ValueError, "Unsupported 3D mode"):
-            tree.vis3d(mode="layout")
-
-    def test_morpho_vis3d_requires_full_point_geometry(self) -> None:
-        soma = Branch.from_points(
-            points=[[0.0, 0.0, 0.0], [20.0, 0.0, 0.0]] * u.um,
-            radii=[10.0, 10.0] * u.um,
-            type="soma",
-        )
-        dend = Branch.from_lengths(
-            lengths=[80.0] * u.um,
-            radii=[2.0, 1.0] * u.um,
-            type="apical_dendrite",
-        )
-        tree = Morphology.from_root(soma, name="soma")
-        tree.soma.dend = dend
-
-        with self.assertRaisesRegex(ValueError, "requires complete point geometry on every branch"):
-            tree.vis3d()
-
-    def test_morpho_vis2d_routes_into_2d_plot_dispatch(self) -> None:
-        soma = Branch.from_points(
-            points=[[0.0, 0.0, 0.0], [20.0, 0.0, 0.0]] * u.um,
-            radii=[10.0, 10.0] * u.um,
-            type="soma",
-        )
-        dend = Branch.from_points(
-            points=[[20.0, 0.0, 0.0], [20.0, 80.0, 0.0]] * u.um,
-            radii=[2.0, 1.0] * u.um,
-            type="apical_dendrite",
-        )
-        tree = Morphology.from_root(soma, name="soma")
-        tree.soma.dend = dend
-
-        rendered = tree.vis2d(chooser=BackendChooser(backends=(FakeBackend(),)), backend="fake")
-
-        self.assertEqual(rendered.dimensionality, "2d")
-        self.assertEqual(rendered.layout, "fan")
-        self.assertEqual(rendered.shape, "frustum")
-        self.assertIsNotNone(rendered.scene)
-        self.assertEqual(rendered.scene.layout, "fan")
-        self.assertEqual(rendered.scene.shape, "frustum")
-        self.assertEqual(rendered.scene.projection_plane, None)
-        self.assertEqual(len(rendered.scene.polygons), 2)
-
-    def test_morpho_vis2d_accepts_layout_parameters(self) -> None:
-        soma = make_soma()
-        dend_a = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.5] * u.um, type="apical_dendrite")
-        dend_b = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.5] * u.um, type="basal_dendrite")
-        tree = Morphology.from_root(soma, name="soma")
-        tree.attach(parent="soma", child_branch=dend_a, child_name="dend_a", parent_x=1.0)
-        tree.attach(parent="soma", child_branch=dend_b, child_name="dend_b", parent_x=1.0)
-
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            rendered = tree.vis2d(
-                layout="stem",
-                shape="line",
-                min_branch_angle_deg=90.0,
-                root_layout="legacy",
-                chooser=BackendChooser(backends=(FakeBackend(),)),
-                backend="fake",
-            )
-
-        self.assertEqual(rendered.layout, "stem")
-        self.assertEqual(rendered.shape, "line")
-        child_angles = sorted(
-            np.degrees(
-                np.arctan2(
-                    polyline.points_um[-1, 1] - polyline.points_um[0, 1],
-                    polyline.points_um[-1, 0] - polyline.points_um[0, 0],
-                )
-            )
-            for polyline in rendered.scene.polylines
-            if polyline.branch_name in {"dend_a", "dend_b"}
-        )
-        self.assertGreaterEqual(child_angles[1] - child_angles[0], 90.0 - 1e-6)
-
-    def test_morpho_vis2d_accepts_style_overrides(self) -> None:
-        soma = make_soma()
-        dend = Branch.from_lengths(lengths=[30.0] * u.um, radii=[2.0, 1.5] * u.um, type="apical_dendrite")
-        tree = Morphology.from_root(soma, name="soma")
-        tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
-
-        rendered = tree.vis2d(
-            shape="frustum",
-            branch_type_colors={"apical_dendrite": "#445566"},
-            branch_type_edge_colors_2d={"apical_dendrite": "#112233"},
+    def test_vis2d_forwards_every_argument_to_braintools(self) -> None:
+        tree = make_projected_node_tree()
+        arguments = dict(
+            region="region",
+            locset="locset",
+            values="values",
+            layout="stem",
+            shape="line",
+            branch_type_colors={"soma": "#000000"},
+            branch_type_edge_colors_2d={"soma": "#111111"},
             frustum_edge_linewidth_2d=1.25,
-            chooser=BackendChooser(backends=(FakeBackend(),)),
-            backend="fake",
+            backend="matplotlib",
+            chooser="chooser",
+            ax="ax",
+            notebook=True,
+            jupyter_backend="html",
+            return_plotter=True,
+            projection_plane="xz",
+            min_branch_angle_deg=90.0,
+            root_layout="type_split",
         )
+        with mock.patch("braintools.visualize.morphology.plot2d", return_value="axes") as plot2d:
+            self.assertEqual(tree.vis2d(show=False, **arguments), "axes")
+        plot2d.assert_called_once_with(tree, **arguments)
 
-        dend_polygons = [polygon for polygon in rendered.scene.polygons if polygon.branch_name == "dend"]
-        self.assertTrue(all(polygon.color_rgb == (68, 85, 102) for polygon in dend_polygons))
-        self.assertTrue(all(polygon.edge_color_rgb == (17, 34, 51) for polygon in dend_polygons))
-        self.assertTrue(all(abs(polygon.edge_linewidth - 1.25) < 1e-9 for polygon in dend_polygons))
+    def test_vis3d_forwards_every_argument_to_braintools(self) -> None:
+        tree = make_projected_node_tree()
+        arguments = dict(
+            region="region",
+            locset="locset",
+            values="values",
+            mode="skeleton",
+            backend="plotly",
+            chooser="chooser",
+            notebook=True,
+            jupyter_backend="html",
+            return_plotter=True,
+        )
+        with mock.patch("braintools.visualize.morphology.plot3d", return_value="plotter") as plot3d:
+            self.assertEqual(tree.vis3d(show=False, **arguments), "plotter")
+        plot3d.assert_called_once_with(tree, **arguments)
+
+    def test_show_calls_pyplot_show_once(self) -> None:
+        tree = make_projected_node_tree()
+        for method, target in (("vis2d", "plot2d"), ("vis3d", "plot3d")):
+            with self.subTest(method=method):
+                with (
+                    mock.patch(f"braintools.visualize.morphology.{target}"),
+                    mock.patch("matplotlib.pyplot.show") as show,
+                ):
+                    getattr(tree, method)()
+                    show.assert_called_once_with()
+
+    def test_vis2d_draws_with_matplotlib(self) -> None:
+        import matplotlib.axes
+        import matplotlib.pyplot as plt
+
+        self.addCleanup(plt.close, "all")
+        ax = make_projected_node_tree().vis2d(layout="projected", shape="line", show=False)
+        self.assertIsInstance(ax, matplotlib.axes.Axes)
+        self.assertGreater(len(ax.lines), 0)
+
+    def test_vis_errors_come_from_braintools(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires complete point geometry on every branch"):
+            make_root_split_tree().vis3d(show=False)
+        with self.assertRaisesRegex(ValueError, "Unsupported 3D mode"):
+            make_projected_node_tree().vis3d(mode="layout", show=False)
+        with self.assertRaisesRegex(ValueError, "Unsupported root layout 'legacy'"):
+            make_root_split_tree().vis2d(root_layout="legacy", show=False)
+
+
+class MorphoToVisDataTest(unittest.TestCase):
+    """``Morphology.to_vis_data`` copies the tree into braintools' neutral data."""
+
+    def test_every_field_matches_the_morphology(self) -> None:
+        for make in (make_root_split_tree, make_projected_node_tree):
+            tree = make()
+            data = tree.to_vis_data()
+            with self.subTest(fixture=make.__name__):
+                self.assertEqual(len(data.branches), len(tree.branches))
+                self.assertEqual(data.root_index, tree.root.index)
+                for index, (view, branch) in enumerate(zip(tree.branches, data.branches)):
+                    self.assertEqual(branch.index, index)
+                    self.assertEqual(view.index, index)
+                    self.assertEqual(branch.name, view.name)
+                    self.assertEqual(branch.type, view.type)
+                    self.assertEqual(branch.parent_index, None if view.parent is None else view.parent.index)
+                    self.assertEqual(branch.parent_x, view.parent_x)
+                    self.assertEqual(branch.child_x, view.child_x)
+                    for field in ("lengths", "radii_proximal", "radii_distal", "points_proximal", "points_distal"):
+                        expected = getattr(view.branch, field)
+                        actual = getattr(branch, field)
+                        if expected is None:
+                            self.assertIsNone(actual)
+                        else:
+                            np.testing.assert_array_equal(actual.to_decimal(u.um), expected.to_decimal(u.um))
+                self.assertEqual(
+                    data.children,
+                    tuple(tuple(child.index for child in view.children) for view in tree.branches),
+                )
+
+    def test_the_root_has_no_attachment(self) -> None:
+        root = make_root_split_tree().to_vis_data().branches[0]
+        self.assertIsNone(root.parent_index)
+        self.assertIsNone(root.parent_x)
+        self.assertIsNone(root.child_x)
+
+    def test_the_snapshot_is_cached_until_the_tree_is_edited(self) -> None:
+        tree = make_root_split_tree()
+        first = tree.to_vis_data()
+        self.assertIs(tree.to_vis_data(), first)
+        tree.attach(parent="dend", child_branch=make_apical(), child_name="tuft", parent_x=1.0)
+        second = tree.to_vis_data()
+        self.assertIsNot(second, first)
+        self.assertEqual(len(second.branches), len(first.branches) + 1)
+        self.assertIs(tree.to_vis_data(), second)
+
+    def test_point_geometry_flag(self) -> None:
+        self.assertFalse(make_root_split_tree().to_vis_data().has_full_point_geometry)
+        self.assertTrue(make_projected_node_tree().to_vis_data().has_full_point_geometry)
+
+    def test_the_protocol_method_is_to_vis_data(self) -> None:
+        import braintools.visualize.morphology as bvm
+
+        tree = make_projected_node_tree()
+        self.assertIs(tree.__morphology_data__(), tree.to_vis_data())
+        self.assertIs(bvm.as_morphology_data(tree), tree.to_vis_data())

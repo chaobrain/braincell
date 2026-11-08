@@ -15,7 +15,9 @@
 
 """Unit tests for :class:`braincell.Cell`."""
 
+import dataclasses
 import unittest
+from unittest import mock
 
 import brainstate
 import brainunit as u
@@ -39,7 +41,7 @@ from braincell import (
     connect,
 )
 from braincell._multi_compartment import cell as cell_module
-from braincell.filter import AllRegion, LocsetBatch, RootLocation, at
+from braincell.filter import AllRegion, BranchSlice, LocsetBatch, RootLocation, at
 from braincell.mech import StateProbe
 from braincell.quad import DiffEqSingleState, DiffEqState, get_integrator
 
@@ -1456,6 +1458,265 @@ class MultiCompartmentAliasTest(unittest.TestCase):
         cell = braincell.MultiCompartment(_soma_tree())
         self.assertIsInstance(cell, braincell.Cell)
         self.assertEqual(cell.pop_size, (1,))
+
+
+def _topology_cell(**kwargs) -> Cell:
+    from braincell._discretization import CVPerBranch
+    from braincell.morph._testing import make_soma_dend_tree
+
+    return Cell(make_soma_dend_tree(), cv_policy=CVPerBranch(), **kwargs)
+
+
+class CellTopologyDataGuardTest(unittest.TestCase):
+    """Argument validation of ``Cell.topology_data`` that happens before any level is built."""
+
+    def test_an_unknown_level_names_the_valid_ones(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"level must be one of \{.*'node'.*'cv'.*'branch'.*\}"):
+            _topology_cell().topology_data("layout")
+
+    def test_node_level_requires_init_state(self) -> None:
+        # The only level that reads runtime state, so the only one that
+        # refuses a declaration-only cell.
+        with self.assertRaisesRegex(RuntimeError, r"requires init_state\(\) first"):
+            _topology_cell().topology_data("node")
+
+    def test_node_is_the_default_level(self) -> None:
+        cell = _topology_cell()
+        cell.init_state()
+        self.assertEqual(cell.topology_data().level, "node")
+
+
+class CellTopologyDataCvLevelTest(unittest.TestCase):
+    def test_graph_before_init(self) -> None:
+        cell = _topology_cell()
+        graph = cell.topology_data("cv")
+        self.assertEqual(graph.level, "cv")
+        self.assertEqual(graph.node_ids, tuple(cv.id for cv in cell.cvs))
+        self.assertEqual(graph.edges, ((0, 1),))
+        self.assertEqual(graph.root_id, 0)
+        self.assertIsNone(graph.values)
+        self.assertIsNone(graph.highlight_fractions)
+
+    def test_region_gives_area_coverage_fractions(self) -> None:
+        graph = _topology_cell().topology_data("cv", region=BranchSlice(branch_index=1, prox=0.0, dist=0.5))
+        # CV shading is the membrane-area fraction, the same one that scales
+        # a painted conductance. The dendrite tapers, so its proximal half
+        # is 0.5833... of the area and only 0.5 of the length. Branch-level
+        # fractions below are a drawing extent and stay length-based.
+        self.assertAlmostEqual(graph.highlight_fractions[1], 0.5833333333333334)
+
+    def test_locset_is_full_intensity(self) -> None:
+        graph = _topology_cell().topology_data("cv", locset=RootLocation(0.5))
+        self.assertEqual(graph.highlight_fractions[0], 1.0)
+
+    def test_value_V_uses_cv_values(self) -> None:
+        cell = _topology_cell()
+        cell.init_state()
+        graph = cell.topology_data("cv", value="V")
+        self.assertEqual(graph.values.shape, (cell.n_cv,))
+        self.assertEqual(graph.value_label, "V")
+
+    def test_raw_point_values_are_gathered_to_cv(self) -> None:
+        cell = _topology_cell()
+        cell.init_state()
+        point_values = np.asarray([np.nan, 1.0, np.nan, 2.0, np.nan], dtype=float)
+        graph = cell.topology_data("cv", value=point_values)
+        np.testing.assert_allclose(graph.values, cell._point_to_cv(point_values))
+        self.assertIsNone(graph.value_label)
+
+    def test_a_two_dimensional_value_gives_one_frame_per_row(self) -> None:
+        cell = _topology_cell()
+        cell.init_state()
+        frames = np.asarray([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        graph = cell.topology_data("cv", value=frames)
+        self.assertEqual(graph.n_frames, 3)
+        np.testing.assert_allclose(graph.frame(2), [5.0, 6.0])
+
+    def test_layout_id_lookup_works(self) -> None:
+        cell = _topology_cell()
+        full = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(full, mech.Channel("IL", g_max=4.0 * (u.mS / u.cm**2), E=-68.0 * u.mV))
+        cell.init_state()
+        graph = cell.topology_data("cv", value=("layout_id", cell.layouts[0].id, "g_max"))
+        self.assertEqual(graph.values.shape, (cell.n_cv,))
+
+    def test_an_unknown_layout_id_raises_key_error(self) -> None:
+        cell = _topology_cell()
+        cell.init_state()
+        with self.assertRaises(KeyError):
+            cell.topology_data("cv", value=("layout_id", 999_999, "g_max"))
+
+    def test_value_with_region_is_rejected(self) -> None:
+        cell = _topology_cell()
+        cell.init_state()
+        with self.assertRaisesRegex(ValueError, "does not support value together with region/locset"):
+            cell.topology_data("cv", region=BranchSlice(branch_index=1, prox=0.0, dist=1.0), value="V")
+
+    def test_a_value_of_the_wrong_length_is_rejected(self) -> None:
+        cell = _topology_cell()
+        cell.init_state()
+        with self.assertRaises(ValueError):
+            cell.topology_data("cv", value=np.zeros(7))
+
+    def test_more_than_one_root_cv_is_rejected(self) -> None:
+        # A forest has no single node to lay the graph out from. Branch
+        # level tolerates this; CV level does not. A Morphology always has
+        # one root, so the second one has to be injected to reach the guard.
+        cell = _topology_cell()
+        cvs = tuple(cell.cvs)
+        forest = cvs + (dataclasses.replace(cvs[-1], id=len(cvs), parent_cv=None),)
+        with mock.patch.object(Cell, "cvs", new_callable=mock.PropertyMock) as mocked_cvs:
+            mocked_cvs.return_value = forest
+            with self.assertRaisesRegex(ValueError, "expects exactly one root CV"):
+                cell.topology_data("cv")
+
+
+class CellTopologyDataBranchLevelTest(unittest.TestCase):
+    def test_graph_before_init(self) -> None:
+        graph = _topology_cell().topology_data("branch")
+        self.assertEqual((graph.level, graph.node_ids, graph.edges, graph.root_id), ("branch", (0, 1), ((0, 1),), 0))
+
+    def test_region_gives_length_coverage_fractions(self) -> None:
+        graph = _topology_cell().topology_data("branch", region=BranchSlice(branch_index=1, prox=0.25, dist=0.75))
+        self.assertAlmostEqual(graph.highlight_fractions[1], 0.5)
+
+    def test_locset_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "does not support: locset"):
+            _topology_cell().topology_data("branch", locset=RootLocation(0.5))
+
+    def test_value_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "does not support: value"):
+            _topology_cell().topology_data("branch", value="V")
+
+    def test_both_unsupported_arguments_are_reported_together(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"does not support value together with region/locset"):
+            _topology_cell().topology_data("branch", locset=RootLocation(0.5), value="V")
+
+    def test_the_plot_rejects_colormap_arguments_for_a_branch_graph(self) -> None:
+        # The rejection of value-colormap parameters moved to the plot,
+        # which sees graph.level == "branch".
+        import braintools.visualize.morphology as bvm
+
+        graph = _topology_cell().topology_data("branch")
+        for name, argument in (
+            ("cmap", "viridis"),
+            ("vmin", 0.0),
+            ("vmax", 1.0),
+            ("value_label", "V"),
+            ("show_colorbar", False),
+        ):
+            with self.subTest(parameter=name):
+                with self.assertRaisesRegex(ValueError, name):
+                    bvm.plot_topology_graph(graph, **{name: argument})
+
+
+class CellTopologyDataNodeLevelTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.cell = _topology_cell()
+        self.cell.init_state()
+
+    def test_graph_matches_the_node_tree(self) -> None:
+        graph = self.cell.topology_data("node")
+        expected = self.cell.node_tree.to_topology_data()
+        self.assertEqual(
+            (graph.node_ids, graph.edges, graph.root_id),
+            (expected.node_ids, expected.edges, expected.root_id),
+        )
+
+    def test_region_maps_to_midpoint_point_ids(self) -> None:
+        target = int(self.cell.node_tree.cv_to_mid_node_id[1])
+        graph = self.cell.topology_data(region=BranchSlice(branch_index=1, prox=0.0, dist=1.0))
+        self.assertEqual(graph.highlight_fractions[target], 1.0)
+
+    def test_locset_maps_to_midpoint_point_ids(self) -> None:
+        target = int(self.cell.node_tree.cv_to_mid_node_id[0])
+        graph = self.cell.topology_data(locset=RootLocation(0.5))
+        self.assertEqual(graph.highlight_fractions[target], 1.0)
+
+    def test_value_with_region_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "does not support value together with region/locset"):
+            self.cell.topology_data(region=BranchSlice(branch_index=1, prox=0.0, dist=1.0), value="V")
+
+    def test_raw_cv_values_are_converted_to_point_values(self) -> None:
+        from braincell._multi_compartment import field_resolution
+
+        cv_values = np.asarray([1.0, 2.0], dtype=float)
+        graph = self.cell.topology_data(value=cv_values)
+        np.testing.assert_allclose(
+            np.nan_to_num(graph.values, nan=-1.0),
+            np.nan_to_num(field_resolution.cv_to_node_values(self.cell, cv_values), nan=-1.0),
+        )
+
+    def test_value_V_uses_point_voltage(self) -> None:
+        from braincell._multi_compartment import field_resolution
+
+        graph = self.cell.topology_data(value="V")
+        expected = field_resolution.cv_to_node_values(self.cell, self.cell.V.value)
+        np.testing.assert_allclose(graph.values.to_decimal(u.mV), expected.to_decimal(u.mV))
+        self.assertEqual(graph.value_label, "V")
+
+    def test_ion_lookup_works(self) -> None:
+        graph = self.cell.topology_data(value=("ion", "na", "E"))
+        self.assertEqual(graph.values.shape, (self.cell.n_point,))
+        self.assertEqual(graph.value_label, "na.E")
+
+    def test_layout_id_lookup_works(self) -> None:
+        cell = _topology_cell()
+        full = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(full, mech.Channel("IL", g_max=4.0 * (u.mS / u.cm**2), E=-68.0 * u.mV))
+        cell.init_state()
+        graph = cell.topology_data(value=("layout_id", cell.layouts[0].id, "g_max"))
+        self.assertEqual(graph.values.shape, (cell.n_point,))
+
+    def test_channel_lookup_ambiguous_raises(self) -> None:
+        cell = _topology_cell()
+        full = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+        cell.paint(full, mech.Channel("IL", name="leak_a", g_max=4.0 * (u.mS / u.cm**2), E=-68.0 * u.mV))
+        cell.paint(full, mech.Channel("IL", name="leak_b", g_max=5.0 * (u.mS / u.cm**2), E=-67.0 * u.mV))
+        cell.init_state()
+        with self.assertRaisesRegex(ValueError, "multiple runtime layouts"):
+            cell.topology_data(value=("channel", "IL", "g_max"))
+
+    def test_a_missing_mechanism_field_raises_attribute_error(self) -> None:
+        with self.assertRaises(AttributeError):
+            self.cell.topology_data(value=("ion", "na", "no_such_field"))
+
+    def test_the_graph_draws(self) -> None:
+        import braintools.visualize.morphology as bvm
+        import matplotlib.axes
+        import matplotlib.pyplot as plt
+
+        self.addCleanup(plt.close, "all")
+        for graph in (self.cell.topology_data(value="V"), self.cell.node_tree):
+            with self.subTest(graph=type(graph).__name__):
+                ax = bvm.plot_topology_graph(graph, layout="kamada_kawai")
+                self.assertIsInstance(ax, matplotlib.axes.Axes)
+
+
+class CellTopologyDataPopulationAxisTest(unittest.TestCase):
+    """A topology graph is one morphology, so values need one population member."""
+
+    def test_default_single_member_population(self) -> None:
+        cell = _topology_cell()
+        cell.init_state()
+        self.assertEqual(cell.pop_size, (1,))
+        for level in ("cv", "node"):
+            with self.subTest(level=level):
+                self.assertIsNotNone(cell.topology_data(level, value="V").values)
+
+    def test_multi_member_population_is_refused_with_a_useful_message(self) -> None:
+        cell = _topology_cell(pop_size=4)
+        cell.init_state()
+        for level in ("cv", "node"):
+            with self.subTest(level=level):
+                with self.assertRaisesRegex(ValueError, r"population shape \(4,\).*pop_size=\(4,\)"):
+                    cell.topology_data(level, value="V")
+
+    def test_the_refusal_names_the_level_that_was_asked_for(self) -> None:
+        cell = _topology_cell(pop_size=4)
+        cell.init_state()
+        with self.assertRaisesRegex(ValueError, r"Cell\.topology_data\(level='cv'\)"):
+            cell.topology_data("cv", value="V")
 
 
 if __name__ == "__main__":

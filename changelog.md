@@ -5,6 +5,44 @@
 
 ### Breaking Changes
 
+- **`braincell.vis` is removed; plotting lives in `braintools.visualize.morphology`**
+  (VIS-4a). The plots moved to braintools (0.5.0) and read neutral data
+  (`MorphologyData`, `TopologyGraph`) instead of braincell objects. braincell
+  converts its objects with three new methods, and every plot also accepts a
+  `Morphology` or a `NodeTree` directly. `import braincell.vis` raises
+  `ModuleNotFoundError` and `braincell.vis` is no longer an attribute. There
+  is no deprecation period. `import braincell` no longer loads any plotting
+  code. With `import braintools.visualize.morphology as bvm`:
+
+  | Old (`braincell.vis.`) | New |
+  |---|---|
+  | `plot2d`, `plot3d`, `plot_movie`, `plot_traces`, `compare_morphologies`, `compare_values` | `bvm.` the same names, same parameters; the first argument may be a `Morphology` or a `MorphologyData` |
+  | `plot_dendrogram`, `plot_topology`, `plot_sholl`, `plot_branch_order_histogram` | `bvm.` the same names, same parameters |
+  | `plot_point_topology(node_tree, ...)` | `bvm.plot_topology_graph(node_tree, ...)`; also takes a `TopologyGraph`, and `frame=` for multi-frame values |
+  | `plot_cell_topology(cell, level=L, region=R, locset=S, value=V, **style)` | `bvm.plot_topology_graph(cell.topology_data(L, region=R, locset=S, value=V), **style)`; `preset`, `layout`, `coverage_mode`, `highlight_color` and the colour arguments stay on the plot |
+  | `ValueSpec` | `bvm.ValueSpec`, with a new `space=` (`"branch"`, `"segment"`, `"centerline"`) |
+  | `OverlaySpec` | `bvm.OverlaySpec`; `region` / `locset` take neutral data or evaluated masks |
+  | `LayoutConfig` | `bvm.LayoutConfig` without `legacy_root_child_span_rad` |
+  | `LayoutCache` | `bvm.LayoutCache`; `get_or_build` takes a `MorphologyData` |
+  | `VisHooks`, `PickInfo`, `save_figure`, `VisDefaults`, `configure_defaults`, `get_defaults`, `reset_defaults`, `theme`, `publication_theme`, `PublicationTheme`, `PUBLICATION_BRANCH_TYPE_COLORS`, `PUBLICATION_RC_PARAMS` | `bvm.` the same names, unchanged |
+  | `set_defaults` | `bvm.configure_defaults` (it was the same function) |
+  | `braincell.vis.traces.TracesResult`, `braincell.vis.movie.MovieResult` | `bvm.TracesResult`, `bvm.MovieResult` |
+  | `root_layout="legacy"` (deprecated) | removed; `ValueError` naming `"type_split"` |
+
+  | Also | Now |
+  |---|---|
+  | `Morphology.vis2d` / `vis3d`, `Branch.vis2d` / `vis3d` | same signatures, drawn by `bvm.plot2d` / `bvm.plot3d`; `chooser=` takes a `braintools.visualize.morphology.backend.BackendChooser` |
+  | `pip install braincell[vis]` | still works; it now installs `braintools[morphology]` (networkx, plotly, pyvista) |
+
+  New methods:
+  - `Morphology.to_vis_data()` returns a `MorphologyData` (it is also
+    `__morphology_data__`), cached until the morphology is edited.
+  - `Cell.topology_data(level="node", *, value=None, region=None, locset=None)`
+    returns a `TopologyGraph` at the node, CV or branch level. It raises the
+    same errors as `plot_cell_topology` did, and a `(T, n)` value array gives
+    one frame per row.
+  - `NodeTree.to_topology_data()` returns the solver-node graph (it is also
+    `__topology_data__`).
 - **`braincell.quad` uses the `braintools.quad` registry** (QUAD-2b).
   braincell no longer has an integrator registry of its own. Integrator names
   resolve through `braintools.quad`: braincell's stateful steps are registered

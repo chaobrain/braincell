@@ -16,25 +16,18 @@
 
 import math
 import unittest
+from unittest import mock
 
 import brainunit as u
 import numpy as np
 
 from braincell import Branch, Cell, Morphology
 from braincell.filter import AllRegion
-from braincell.vis import plot2d, plot3d
-from braincell import vis as morpho_vis
-from braincell.vis.backend import BackendChooser
-from braincell.vis._testing import FakeBackend
 
 import jax.numpy as jnp
 
 
 class BranchTest(unittest.TestCase):
-    def setUp(self) -> None:
-        morpho_vis.reset_defaults()
-        self.addCleanup(morpho_vis.reset_defaults)
-
     def test_branch_init_accepts_valid_quantities(self) -> None:
         branch = Branch(
             lengths=10.0 * u.um,
@@ -492,101 +485,114 @@ class BranchTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             hash(branch)
 
-    def test_vis2d_frustum_shape(self) -> None:
+    def test_vis2d_draws_a_single_branch_morphology_through_braintools(self) -> None:
         branch = Branch.from_lengths(
             lengths=[10.0, 15.0] * u.um,
             radii=[2.0, 1.5, 1.0] * u.um,
             type="dendrite",
         )
-        backend = FakeBackend()
-        request = branch.vis2d(layout="stem", shape="frustum", show=False, chooser=BackendChooser(backends=(backend,)))
+        with mock.patch("braintools.visualize.morphology.plot2d", return_value="axes") as plot2d:
+            result = branch.vis2d(
+                layout="stem",
+                shape="frustum",
+                branch_type_colors={"dendrite": "#778899"},
+                branch_type_edge_colors_2d={"dendrite": "#112233"},
+                frustum_edge_linewidth_2d=1.4,
+                backend="matplotlib",
+                chooser="chooser",
+                projection_plane="xz",
+                return_plotter=True,
+                show=False,
+            )
 
-        self.assertEqual(request.layout, "stem")
-        self.assertEqual(request.shape, "frustum")
-        self.assertGreater(len(request.scene.polygons), 0)
+        self.assertEqual(result, "axes")
+        (tree,), kwargs = plot2d.call_args
+        self.assertIsInstance(tree, Morphology)
+        self.assertEqual([view.name for view in tree.branches], ["soma"])
+        self.assertIs(tree.root.branch, branch)
+        for name, expected in (
+            ("layout", "stem"),
+            ("shape", "frustum"),
+            ("branch_type_colors", {"dendrite": "#778899"}),
+            ("branch_type_edge_colors_2d", {"dendrite": "#112233"}),
+            ("frustum_edge_linewidth_2d", 1.4),
+            ("backend", "matplotlib"),
+            ("chooser", "chooser"),
+            ("projection_plane", "xz"),
+            ("return_plotter", True),
+        ):
+            with self.subTest(argument=name):
+                self.assertEqual(kwargs[name], expected)
 
-    def test_vis2d_frustum_accepts_style_overrides(self) -> None:
-        branch = Branch.from_lengths(
-            lengths=[10.0, 15.0] * u.um,
-            radii=[2.0, 1.5, 1.0] * u.um,
-            type="dendrite",
-        )
-        backend = FakeBackend()
-
-        request = branch.vis2d(
-            layout="stem",
-            shape="frustum",
-            branch_type_colors={"dendrite": "#778899"},
-            branch_type_edge_colors_2d={"dendrite": "#112233"},
-            frustum_edge_linewidth_2d=1.4,
-            show=False,
-            chooser=BackendChooser(backends=(backend,)),
-        )
-
-        self.assertEqual(request.scene.polygons[0].color_rgb, (119, 136, 153))
-        self.assertEqual(request.scene.polygons[0].edge_color_rgb, (17, 34, 51))
-        self.assertAlmostEqual(request.scene.polygons[0].edge_linewidth, 1.4)
-
-    def test_vis2d_line_shape(self) -> None:
-        branch = Branch.from_lengths(
-            lengths=[20.0] * u.um,
-            radii=[3.0, 3.0] * u.um,
-        )
-        backend = FakeBackend()
-        request = branch.vis2d(layout="stem", shape="line", show=False, chooser=BackendChooser(backends=(backend,)))
-
-        self.assertEqual(request.layout, "stem")
-        self.assertEqual(request.shape, "line")
-        self.assertEqual(len(request.scene.polylines), 1)
-
-    def test_vis2d_projected_layout_requires_points(self) -> None:
-        branch = Branch.from_lengths(
-            lengths=[10.0] * u.um,
-            radii=[2.0, 2.0] * u.um,
-        )
-        backend = FakeBackend()
-        with self.assertRaisesRegex(ValueError, "layout='stem'.*shape='line'.*shape='frustum'"):
-            branch.vis2d(layout="projected", shape="line", show=False, chooser=BackendChooser(backends=(backend,)))
-
-    def test_vis3d_geometry_mode(self) -> None:
+    def test_vis3d_draws_a_single_branch_morphology_through_braintools(self) -> None:
         branch = Branch.from_points(
             points=[[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]] * u.um,
             radii=[2.0, 1.0] * u.um,
             type="axon",
         )
-        backend = FakeBackend()
+        with mock.patch("braintools.visualize.morphology.plot3d", return_value="plotter") as plot3d:
+            result = branch.vis3d(
+                mode="skeleton",
+                backend="plotly",
+                chooser="chooser",
+                notebook=True,
+                jupyter_backend="html",
+                return_plotter=True,
+                show=False,
+            )
 
-        request = branch.vis3d(show=False, chooser=BackendChooser(backends=(backend,)))
-
-        self.assertEqual(request.mode, "geometry")
-        self.assertEqual(len(request.scene.branches), 1)
-
-    def test_vis3d_requires_points_and_suggests_2d_modes(self) -> None:
-        branch = Branch.from_lengths(
-            lengths=[10.0] * u.um,
-            radii=[2.0, 1.0] * u.um,
-            type="axon",
+        self.assertEqual(result, "plotter")
+        (tree,), kwargs = plot3d.call_args
+        self.assertIs(tree.root.branch, branch)
+        self.assertEqual(
+            {name: kwargs[name] for name in ("mode", "backend", "chooser", "notebook", "jupyter_backend")},
+            {
+                "mode": "skeleton",
+                "backend": "plotly",
+                "chooser": "chooser",
+                "notebook": True,
+                "jupyter_backend": "html",
+            },
         )
-        backend = FakeBackend()
+        self.assertTrue(kwargs["return_plotter"])
 
-        with self.assertRaisesRegex(
-            ValueError, r"vis2d\(layout='stem', shape='line'\).+vis2d\(layout='stem', shape='frustum'\)"
-        ):
-            branch.vis3d(show=False, chooser=BackendChooser(backends=(backend,)))
+    def test_show_calls_pyplot_show(self) -> None:
+        branch = Branch.from_lengths(lengths=[10.0] * u.um, radii=[2.0, 2.0] * u.um)
+        for method, target in (("vis2d", "plot2d"), ("vis3d", "plot3d")):
+            with self.subTest(method=method):
+                with (
+                    mock.patch(f"braintools.visualize.morphology.{target}"),
+                    mock.patch("matplotlib.pyplot.show") as show,
+                ):
+                    getattr(branch, method)()
+                    show.assert_called_once_with()
+                    getattr(branch, method)(show=False)
+                    show.assert_called_once_with()
+
+    def test_vis2d_really_draws(self) -> None:
+        import matplotlib.axes
+        import matplotlib.pyplot as plt
+
+        branch = Branch.from_lengths(lengths=[10.0, 15.0] * u.um, radii=[2.0, 1.5, 1.0] * u.um, type="dendrite")
+        ax = branch.vis2d(layout="stem", shape="frustum", show=False)
+        self.addCleanup(plt.close, "all")
+        self.assertIsInstance(ax, matplotlib.axes.Axes)
+        self.assertGreater(len(ax.patches), 0)
 
 
 class BranchViewRejectionTest(unittest.TestCase):
     """A Branch view is not a Morphology and must be refused downstream."""
 
     def test_branch_views_are_rejected_by_downstream_entrypoints(self) -> None:
+        import braintools.visualize.morphology as bvm
+
         soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         tree = Morphology.from_root(soma, name="soma")
-        backend = FakeBackend()
 
         with self.assertRaises(TypeError):
-            plot3d(tree.soma, chooser=BackendChooser(backends=(backend,)))
+            bvm.plot3d(tree.soma)
         with self.assertRaises(TypeError):
-            plot2d(tree.soma, chooser=BackendChooser(backends=(backend,)))
+            bvm.plot2d(tree.soma)
         with self.assertRaises(TypeError):
             Cell(tree.soma)
         with self.assertRaises(TypeError):

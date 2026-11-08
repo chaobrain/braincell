@@ -110,13 +110,41 @@ def make_soma_dend_tree(
     return tree
 
 
+def make_root_split_tree() -> Morphology:
+    """Soma with one apical dendrite and one axon, both length-only."""
+    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    dend = Branch.from_lengths(lengths=[25.0] * u.um, radii=[2.0, 1.5] * u.um, type="apical_dendrite")
+    axon = Branch.from_lengths(lengths=[18.0] * u.um, radii=[1.0, 0.8] * u.um, type="axon")
+    tree = Morphology.from_root(soma, name="soma")
+    tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
+    tree.attach(parent="soma", child_branch=axon, child_name="axon", parent_x=1.0)
+    return tree
+
+
+def make_projected_node_tree() -> Morphology:
+    """Soma and an apical dendrite with explicit 3D points (the dendrite has two segments)."""
+    soma = Branch.from_points(
+        points=[[0.0, 0.0, 0.0], [20.0, 0.0, 0.0]] * u.um,
+        radii=[10.0, 10.0] * u.um,
+        type="soma",
+    )
+    dend = Branch.from_points(
+        points=[[20.0, 0.0, 0.0], [20.0, 40.0, 0.0], [20.0, 80.0, 0.0]] * u.um,
+        radii=[2.0, 1.5, 1.0] * u.um,
+        type="apical_dendrite",
+    )
+    tree = Morphology.from_root(soma, name="soma")
+    tree.attach(parent="soma", child_branch=dend, child_name="dend", parent_x=1.0)
+    return tree
+
+
 def make_deep_chain_tree(n_branches: int = 1200) -> Morphology:
     """An unbranched chain of ``n_branches`` branches hanging off a soma.
 
     Reconstructions of long, thin neurites routinely produce chains far
     deeper than CPython's default recursion limit, so this fixture exists
-    to pin the tree walks in :mod:`braincell.morph` and :mod:`braincell.vis`
-    as iterative. The default depth is comfortably past the ~400-branch
+    to pin the tree walks in :mod:`braincell.morph` and
+    :mod:`braintools.visualize.morphology` as iterative. The default depth is comfortably past the ~400-branch
     point where a recursive walk raises ``RecursionError``, while staying
     small enough to build and lay out in well under a second.
 

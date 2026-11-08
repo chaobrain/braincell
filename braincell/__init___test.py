@@ -27,6 +27,8 @@ is deleted is an ``AttributeError`` at import time.
 import importlib
 import pathlib
 import pickle
+import subprocess
+import sys
 import unittest
 
 import braincell
@@ -46,7 +48,6 @@ _DOMAIN_PACKAGES = (
     "reduction",
     "synapse",
     "trainable",
-    "vis",
 )
 
 #: Explicitly imported namespaces outside the stable top-level export contract.
@@ -97,6 +98,23 @@ class ExperimentalPackageTest(unittest.TestCase):
 
     def test_experimental_packages_are_not_top_level_exports(self) -> None:
         self.assertTrue(set(_EXPERIMENTAL_PACKAGES).isdisjoint(braincell.__all__))
+
+
+class PlottingLivesInBraintoolsTest(unittest.TestCase):
+    """Plotting moved to ``braintools.visualize.morphology``; ``braincell.vis`` is gone."""
+
+    def test_braincell_vis_no_longer_exists(self) -> None:
+        self.assertFalse(hasattr(braincell, "vis"))
+        with self.assertRaises(ModuleNotFoundError):
+            importlib.import_module("braincell.vis")
+
+    def test_import_braincell_loads_no_plotting_code(self) -> None:
+        code = (
+            "import sys, braincell; "
+            "print(sorted(m for m in sys.modules if m.startswith('braintools.visualize.morphology')))"
+        )
+        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.strip(), "[]")
 
 
 class ModuleAttributeTest(unittest.TestCase):

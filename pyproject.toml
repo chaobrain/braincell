@@ -93,13 +93,11 @@ optional-dependencies.testing = [
   "pytest-benchmark",
 ]
 optional-dependencies.tpu = [ "jax[tpu]>=0.11" ]
-# Visualization: 2D (matplotlib) + 3D (pyvista / plotly) backends.
-# These stay optional and lazily imported so `import braincell` remains cheap.
+# Visualization lives in braintools.visualize.morphology; this extra installs
+# its optional backends (networkx, plotly, pyvista). Imported lazily, so
+# `import braincell` loads no plotting code.
 optional-dependencies.vis = [
-  "matplotlib",
-  "networkx",
-  "plotly",
-  "pyvista",
+  "braintools[morphology]>=0.5",
 ]
 urls."Bug Tracker" = "https://github.com/chaobrain/braincell/issues"
 urls."Source Code" = "https://github.com/chaobrain/braincell"

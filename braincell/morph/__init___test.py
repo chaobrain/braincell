@@ -23,15 +23,17 @@ definition moves is an ``AttributeError`` the next time someone runs
 ``from braincell.morph import *``.
 
 The import order is the other. ``morph`` owns ``Branch`` and
-``Morphology``, so ``filter``, ``io``, ``vis``, ``_discretization``, and
+``Morphology``, so ``filter``, ``io``, ``_discretization``, and
 ``_multi_compartment`` all import it at *their* module scope -- and yet
-twelve ``morph`` methods import back up into ``io``, ``vis``, ``filter``,
-and the ``braincell`` root. Every one of those is a function-body import,
-and hoisting any of them to module scope makes ``import braincell`` raise
+several ``morph`` methods import back up into ``io``, ``filter``, and the
+``braincell`` root. Every one of those is a function-body import, and
+hoisting any of them to module scope makes ``import braincell`` raise
 ``ImportError``. The failure often surfaces in a package the editor never
-touched: hoisting ``from braincell.vis.plot3d import plot3d`` reports
-``cannot import name 'RegionMask' from partially initialized module
-'braincell.filter'``, because ``vis`` imports ``filter`` on the way up.
+touched.
+
+The plotting methods (``vis2d``, ``vis3d``, ``to_vis_data``) import
+``braintools.visualize.morphology`` in their bodies for a different reason:
+``import braincell`` must not load any plotting code.
 
 The two checks below turn the
 invariant into a targeted failure so a future editor learns *why* rather
@@ -49,7 +51,7 @@ _MORPH_DIR = pathlib.Path(braincell.morph.__file__).parent
 
 #: Packages ``morph`` sits below. A module-scope import of any of these
 #: closes an import cycle and is fatal at ``import braincell``.
-_UPWARD = ("braincell.io", "braincell.vis", "braincell.filter")
+_UPWARD = ("braincell.io", "braincell.filter", "braintools.visualize.morphology")
 
 #: Every ``braincell`` module a ``morph`` module may import at load time,
 #: as ``{module_stem: {target, ...}}``. ``braincell._misc`` is a leaf;
@@ -103,13 +105,17 @@ def _load_time_nodes(tree: ast.Module):
 
 
 def _braincell_targets(node):
-    """Yield the ``braincell`` modules one import node names."""
+    """Yield the ``braincell`` modules, and the plotting modules, one import node names."""
     if isinstance(node, ast.Import):
         for alias in node.names:
-            if alias.name == "braincell" or alias.name.startswith("braincell."):
+            if alias.name == "braincell" or alias.name.startswith(("braincell.", "braintools.visualize")):
                 yield alias.name
     elif isinstance(node, ast.ImportFrom):
-        if node.level:
+        if (node.module or "").startswith("braintools.visualize"):
+            # ``from braintools.visualize import morphology`` names the submodule.
+            yield node.module
+            yield from (f"{node.module}.{alias.name}" for alias in node.names)
+        elif node.level:
             # ``from . import x`` / ``from .branch import Branch``.
             yield f"braincell.morph.{node.module}" if node.module else "braincell.morph"
         elif node.module == "braincell" or (node.module or "").startswith("braincell."):
@@ -135,7 +141,7 @@ class MorphReExportTest(ReExportTests, unittest.TestCase):
 
 
 class UpwardImportsAreDeferredTest(unittest.TestCase):
-    """No ``morph`` module may import ``io``, ``vis``, ``filter``, or the root at load time."""
+    """No ``morph`` module may import ``io``, ``filter``, the root, or the plotting module at load time."""
 
     def test_no_module_scope_import_reaches_upward(self) -> None:
         offenders = []
@@ -146,9 +152,10 @@ class UpwardImportsAreDeferredTest(unittest.TestCase):
         self.assertEqual(
             offenders,
             [],
-            "braincell.morph is imported before braincell.io / .vis / .filter exist, so a "
-            "module-scope import of one of them makes `import braincell` raise ImportError -- "
-            "often from a package you did not touch. Move it into the method body.",
+            "braincell.morph is imported before braincell.io / .filter exist, so a module-scope "
+            "import of one of them makes `import braincell` raise ImportError -- often from a "
+            "package you did not touch; and `import braincell` must not load "
+            "braintools.visualize.morphology. Move the import into the method body.",
         )
 
 

@@ -24,7 +24,7 @@ prune benchmarks
 prune validation
 
 # Pixel baselines of the vis tests; the tests run from a checkout.
-prune braincell/vis/baseline_images
+prune braincell/vis_baselines
 
 # Repository administration, not package content.
 exclude AGENTS.md

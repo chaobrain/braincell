@@ -18,7 +18,7 @@ If the path points to another environment or installed copy, return to the inten
 ## Missing test, plotting, or documentation dependencies
 
 Use `.[dev]` for contribution development. For individual tasks, use `.[testing]` for tests, `.[doc]` for documentation,
-`.[vis]` for plotting, and `.[io]` for the NeuroMorpho client.
+`.[vis]` for plotting (it installs `braintools[morphology]`), and `.[io]` for the NeuroMorpho client.
 The extras are defined in [pyproject.toml](https://github.com/chaobrain/braincell/blob/main/pyproject.toml).
 
 If a message reports a fallback from GPU to CPU, check the active devices:

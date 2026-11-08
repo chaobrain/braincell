@@ -21,9 +21,8 @@ resolving ``parents[N]`` by hand at each call site meant four copies at two
 different depths, one of which is easy to get silently wrong when a test file
 moves between package levels.
 
-Consumed by the reader tests under ``braincell/io`` and re-exported from
-``braincell/vis/_testing.py`` for the visualization tests that render real
-reconstructions.
+Consumed by the reader tests under ``braincell/io`` and by
+``braincell/vis_baseline_test.py``, which renders real reconstructions.
 """
 
 from pathlib import Path

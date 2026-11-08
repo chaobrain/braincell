@@ -84,7 +84,7 @@ from braincell._version import __version__, __version_info__
 from braincell.mech import CableProperty, CurrentClamp, FunctionClamp, SineClamp
 from braincell.morph.branch import ApicalDendrite, Axon, BasalDendrite, Branch, CustomBranch, Dendrite, Soma
 from braincell.morph.morphology import Morphology
-from braincell import io, network, vis
+from braincell import io, network
 
 # ASCII-sorted, so a new export lands in exactly one place and the guard in
 # ``__init___test.py`` can say so. Every public domain package is listed:
@@ -181,5 +181,4 @@ __all__ = [
     "state_grouping",
     "synapse",
     "trainable",
-    "vis",
 ]

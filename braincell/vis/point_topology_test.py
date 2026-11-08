@@ -29,6 +29,7 @@ from braincell._discretization import CVPerBranch
 from braincell.morph.branch import Branch
 from braincell.morph.morphology import Morphology
 from braincell.vis import plot_point_topology
+from braincell.vis._testing import BaselineMixin, make_baseline_tree
 from braincell.vis.point_topology import (
     _blend_node_rgba,
     _plot_discrete_topology_graph,
@@ -235,6 +236,18 @@ class PointTopologyPlotTest(unittest.TestCase):
             intensities=np.asarray([0.5], dtype=float),
         )
         np.testing.assert_allclose(blended[0, :3], np.asarray([0.5, 0.0, 0.5]))
+
+
+class PointTopologyPixelBaselineTest(BaselineMixin, unittest.TestCase):
+    """Pixel baseline for the point topology graph; regenerate with ``BRAINCELL_UPDATE_BASELINES=1``."""
+
+    def test_point_topology(self) -> None:
+        morpho = make_baseline_tree()
+        cvs = build_discretization(morpho, policy=CVPerBranch()).cvs
+        node_tree = build_node_tree(morpho, cvs=cvs)
+        fig, ax = self.new_axes()
+        plot_point_topology(node_tree, layout="kamada_kawai", ax=ax)
+        self.assert_baseline(fig, "point_topology")
 
 
 if __name__ == "__main__":

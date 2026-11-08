@@ -29,7 +29,7 @@ from braincell._discretization import CVPerBranch
 from braincell._multi_compartment import field_resolution
 from braincell.filter import BranchSlice, RootLocation
 from braincell.vis import plot_cell_topology
-from braincell.vis._testing import make_soma_dend_tree
+from braincell.vis._testing import BaselineMixin, make_baseline_tree, make_soma_dend_tree
 
 _DISCRETE_RENDERER = "braincell.vis.cell_topology._plot_discrete_topology_graph"
 _POINT_RENDERER = "braincell.vis.cell_topology.plot_point_topology"
@@ -371,6 +371,22 @@ class PlotCellTopologyPopulationAxisTest(unittest.TestCase):
         cell.init_state()
         with self.assertRaisesRegex(ValueError, r"plot_cell_topology\(level='cv', \.\.\.\)"):
             plot_cell_topology(cell, level="cv", value="V")
+
+
+class CellTopologyPixelBaselineTest(BaselineMixin, unittest.TestCase):
+    """Pixel baseline for the CV-level cell topology; regenerate with ``BRAINCELL_UPDATE_BASELINES=1``."""
+
+    def test_cv_level(self) -> None:
+        cell = Cell(make_baseline_tree(), cv_policy=CVPerBranch())
+        fig, ax = self.new_axes()
+        plot_cell_topology(
+            cell,
+            level="cv",
+            layout="kamada_kawai",
+            region=BranchSlice(branch_index=1, prox=0.0, dist=0.5),
+            ax=ax,
+        )
+        self.assert_baseline(fig, "cell_topology_cv")
 
 
 if __name__ == "__main__":

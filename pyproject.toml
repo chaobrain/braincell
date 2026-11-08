@@ -204,3 +204,8 @@ report.exclude_also = [
   "if TYPE_CHECKING:",
   "raise NotImplementedError",
 ]
+# Total-coverage floor, enforced by the CI `coverage` job through pytest-cov.
+# Set to the total measured on main when the gate was introduced (87.75 %),
+# rounded down; raise it to the current total, rounded down, before each minor
+# release. Lines a pull request changes are gated separately at 90 % (diff-cover).
+report.fail_under = 87

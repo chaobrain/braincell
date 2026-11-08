@@ -40,7 +40,7 @@ import numpy as np
 from braincell._misc import is_traced_value, set_module_as
 from braincell._typing import DT, T
 from braincell._compute.cable import CableArrays, CableTopology, axial_matrix
-from braincell.quad._registry import register_integrator
+from braincell.quad._registry import register_module_step
 from braincell.quad._util import environ_time
 from braincell.quad.protocol import DiffEqModule
 
@@ -63,7 +63,7 @@ def _with_sentinel(base, fill: float):
     return jnp.concatenate([mantissa, jnp.full_like(mantissa[..., :1], fill)], axis=-1) * u.UNITLESS
 
 
-@register_integrator(
+@register_module_step(
     "staggered",
     aliases=("stagger",),
     category="staggered",
@@ -208,7 +208,7 @@ class DHSNumericState:
     uppers: object
 
 
-@register_integrator(
+@register_module_step(
     "dhs_voltage",
     category="voltage",
     description="Implicit-Euler dendritic hierarchical solver (DHS) voltage step.",

@@ -3,7 +3,40 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- **`braincell.quad` uses the `braintools.quad` registry** (QUAD-2b).
+  braincell no longer has an integrator registry of its own. Integrator names
+  resolve through `braintools.quad`: braincell's stateful steps are registered
+  there under the new `'module'` kind, and the pure-function ODE steppers of
+  braintools are wrapped into module steps. The explicit Runge-Kutta steps now
+  use the braintools kernels; their trajectories match the previous braincell
+  kernels to within 1e-12 relative error in float64, except `ralston4` (see Bug
+  Fixes). braintools' embedded methods (`dopri5`, `rk45`, ...) can now be
+  selected by name as fixed-step solvers. No deprecation period:
+
+  | Old | New |
+  |---|---|
+  | `get_registry()`, `IntegratorRegistry`, `IntegratorEntry` | `braincell.quad.integrator_info(name)` (returns a `braintools.quad.MethodInfo`), `braincell.quad.list_integrators()` |
+  | `all_integrators` | `{n: get_integrator(n) for n in list_integrators()}` |
+  | `@register_integrator(name, aliases=..., category=..., order=..., description=...)` | `braintools.quad.register_method(name, fn, kind='module', aliases=..., category=..., order=..., description=...)`; a pure-function stepper registered with `kind='ode'` is wrapped automatically |
+  | `get_integrator("rk2")`, `solver="rk2"`, `braincell.quad.rk2_step` | `"ralston2"` / `ralston2_step` (same numbers), or `"heun2"` / `heun2_step` for Heun's method. `"rk2"` raises `ValueError` and `rk2_step` raises `AttributeError`, both naming the replacements |
+  | `get_integrator("explicit")` | `"euler"` |
+  | `SingleCompartment(solver='rk2')` default | default `solver='ralston2'`; the numbers are unchanged |
+  | the other `*_step` functions | unchanged names and calls; `module_step_from_ode(ode_step)` wraps any braintools ODE stepper |
+
+  `get_integrator("rk2")` raises for at least one minor version. Once the error
+  is removed, `"rk2"` will resolve to braintools' `rk2`, which is Heun's method
+  and not the Ralston method that `rk2` meant in braincell 0.2.
+- braincell requires `braintools>=0.5.0`.
+
 ### Changes & Improvements
+
+- `Cell.solver_name` records the canonical name of braincell's own steps:
+  `Cell(solver="stagger").solver_name == "staggered"`.
+- `ind_exp_euler` computes each state's update with
+  `braintools.quad.ode_expeuler_step` (the same formula; trajectories are
+  unchanged).
 
 - **Breaking:** braincell now requires `jax>=0.11` (it was `>=0.9`), in
   the base requirement and in the `cpu`, `cuda12`, `cuda13` and `tpu`
@@ -16,6 +49,13 @@
   versions CI tests.
 
 ### Bug Fixes
+
+- `ralston4` uses Ralston's exact coefficients. braincell stored them rounded
+  to 8 decimal places (e.g. `0.17476028` for `(263 + 24*sqrt(5))/1812 =
+  0.1747602822...`), which breaks the fourth-order conditions at the 1e-8
+  level. Trajectories change slightly: on a Hodgkin-Huxley neuron (10 ms,
+  float64) by at most 6.8e-9 relative at dt = 0.1 ms and 1.6e-9 at
+  dt = 0.025 ms.
 
 - `SK_SU2015_DCN`, `Cav1p2_MA2020_GoC`, `Cav1p2_MA2025_BC`,
   `Cav1p3_MA2020_GoC` and `Cav1p3_MA2025_BC` can now run in a `Cell` that

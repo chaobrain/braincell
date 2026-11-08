@@ -14,9 +14,10 @@
 # ==============================================================================
 
 import functools
-from typing import Callable, Dict
+from typing import Callable
 
 import brainstate
+import braintools.quad as btq
 import brainunit as u
 import jax
 import jax.numpy as jnp
@@ -25,7 +26,7 @@ from jax.scipy.linalg import expm
 from braincell._misc import set_module_as
 from braincell._typing import Args, ArrayLike, Aux, DT, Path, T, VectorField, Y0, Y1
 from braincell.quad.protocol import DiffEqModule
-from braincell.quad._registry import register_integrator
+from braincell.quad._registry import register_module_step
 from braincell.quad._util import (
     apply_standard_solver_step,
     environ_time,
@@ -94,7 +95,7 @@ def _exponential_euler(
     return y1, aux
 
 
-@register_integrator(
+@register_module_step(
     "exp_euler",
     category="exponential",
     order=1,
@@ -201,7 +202,7 @@ def exp_euler_step(target: DiffEqModule, *args):
     )
 
 
-@register_integrator(
+@register_module_step(
     "ind_exp_euler",
     category="exponential",
     order=1,
@@ -347,105 +348,38 @@ def _ind_exp_euler_step_selected(
     # Pre-integration hook (e.g., update gating variables)
     pre_integral(*args)
 
-    def vector_field(
-        diffeq_state_key: Path,
-        diffeq_state_val: ArrayLike,
-        other_diffeq_state_vals: Dict,
-        other_state_vals: Dict,
-    ):
-        """
-        Compute the derivative for a single DiffEqState, given its value and the values of other states.
+    # Values at the start of the step: every per-state update linearizes
+    # around them, with all other states frozen.
+    other_state_vals = {k: v.value for k, v in other_states.items()}
+    diffeq_state_vals = {k: v.value for k, v in diffeq_states.items()}
+    t = brainstate.environ.get('t', getattr(target, 'current_time', 0.0 * u.ms))
 
-        Parameters
-        ----------
-        diffeq_state_key : Path
-            The key identifying the current DiffEqState.
-        diffeq_state_val : ArrayLike
-            The value of the current DiffEqState.
-        other_diffeq_state_vals : dict
-            Values of other DiffEqStates.
-        other_state_vals : dict
-            Values of other (non-differential) states.
-
-        Returns
-        -------
-        tuple
-            (diffeq_state_derivative, other_state_vals_out)
-        """
-        # Ensure the state value is a supported floating point type
-        dtype = u.math.get_dtype(diffeq_state_val)
-        if dtype not in [jnp.float32, jnp.float64, jnp.float16, jnp.bfloat16]:
-            raise ValueError(
-                f'The input data type should be float64, float32, float16, or bfloat16 '
-                f'when using Exponential Euler method. But we got {dtype}.'
-            )
-
+    def vector_field(key: Path, value: ArrayLike, t_):
+        """Derivative of the DiffEqState ``key`` at ``value``, the others frozen."""
         with brainstate.StateTraceStack() as trace:
-            # Assign the current and other state values
-            all_states[diffeq_state_key].value = diffeq_state_val
-            for key, val in other_diffeq_state_vals.items():
-                all_states[key].value = val
-            for key, val in other_state_vals.items():
-                all_states[key].value = val
-
-            # Compute derivatives for all states
+            all_states[key].value = value
+            for k, val in diffeq_state_vals.items():
+                if k != key:
+                    all_states[k].value = val
+            for k, val in other_state_vals.items():
+                all_states[k].value = val
             compute_derivative(*args)
-
-            # Validate and retrieve the derivative for the current state
-            _check_diffeq_state_derivative(all_states[diffeq_state_key], dt)  # THIS is important.
-            diffeq_state_derivative = all_states[diffeq_state_key].derivative
-            # Collect updated values for other states
-            other_state_vals_out = {key: other_states[key].value for key in other_state_vals.keys()}
-
-        # Ensure all states in the trace are known
+            _check_diffeq_state_derivative(all_states[key], dt)  # THIS is important.
+            derivative = all_states[key].derivative
         for st in trace.states:
             if id(st) not in all_state_ids:
                 raise ValueError(f'State {st} is not in the state list.')
+        return derivative
 
-        return diffeq_state_derivative, other_state_vals_out
-
-    # Prepare dictionaries of current state values
-    other_state_vals = {k: v.value for k, v in other_states.items()}
-    diffeq_state_vals = {k: v.value for k, v in diffeq_states.items()}
-
-    # data to capture the integrated values of DiffEqStates
-    integrated_diffeq_state_vals = dict()
-
-    # Iterate over each DiffEqState and apply the exponential Euler update independently
-    for i, key in enumerate(diffeq_states):
-        # Compute the linearization (Jacobian), derivative, and auxiliary outputs
-        linear, derivative, aux = brainstate.transform.vector_grad(
-            functools.partial(vector_field, key),
-            argnums=0,
-            return_value=True,
-            has_aux=True,
-            unit_aware=False,
-        )(
-            diffeq_state_vals[key],  # Current DiffEqState value
-            {k: v for k, v in diffeq_state_vals.items() if k != key},  # Other DiffEqState values
-            other_state_vals,  # Other state values
-        )
-
-        # Convert df/dx back to a unit-aware quantity.  With
-        # ``unit_aware=False`` the gradient mantissa is returned without a
-        # reliable physical unit, so reconstruct it from the derivative and
-        # state units.  This keeps ``dt * linear`` dimensionless.
-        state_value = diffeq_state_vals[key]
-        linear = u.Quantity(
-            u.get_mantissa(linear),
-            u.get_unit(derivative) / u.get_unit(state_value),
-        )
-
-        # Compute the exponential relative function phi(dt * linear)
-        phi = u.math.exprel(dt * linear)
-
-        # Apply the exponential Euler update formula
-        integrated_diffeq_state_vals[key] = all_states[key].value + dt * phi * derivative
-
-        if i == 0:
-            # Update other states with auxiliary outputs (only on first iteration)
-            for k, st in other_states.items():
-                st.value = aux[k]
+    # Each DiffEqState takes one exponential Euler step of its own,
+    # y + dt * exprel(dt * lambda) * f with lambda the diagonal Jacobian
+    # (braintools.quad.ode_expeuler_step). Non-DiffEq states keep the values
+    # written by the derivative evaluations, which all see the same frozen
+    # start-of-step values.
+    integrated_diffeq_state_vals = {
+        key: btq.ode_expeuler_step(functools.partial(vector_field, key), diffeq_state_vals[key], t)
+        for key in diffeq_states
+    }
 
     # Assign the integrated values back to the corresponding DiffEqStates
     for k, st in diffeq_states.items():

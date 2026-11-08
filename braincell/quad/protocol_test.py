@@ -293,8 +293,10 @@ class IndependentIntegrationTest(unittest.TestCase):
 
     def test_constructor_resolves_alias_string(self):
         # Aliases should work the same as canonical names.
-        sub = self._make_sub("explicit")
-        self.assertIs(sub.solver, get_integrator("euler"))
+        sub = self._make_sub("stagger")
+        self.assertIs(sub.solver, get_integrator("staggered"))
+        sub = self._make_sub("heun3")
+        self.assertIs(sub.solver, get_integrator("heun"))
 
     def test_make_integration_invokes_solver(self):
         observed = []

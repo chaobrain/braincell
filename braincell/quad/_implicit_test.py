@@ -31,7 +31,7 @@ import unittest
 import brainstate
 import brainunit as u
 
-from braincell.quad import get_registry, implicit_euler_step
+from braincell.quad import get_integrator, implicit_euler_step, integrator_info, list_integrators
 from braincell.quad._testing import LinearDecay
 
 
@@ -63,7 +63,7 @@ class ImplicitEulerLinearTest(unittest.TestCase):
         # The step now matches ``self.solver(self)``, so a host can select it
         # by name. This is what ``requires_time_args`` used to document as
         # impossible.
-        step = get_registry()["implicit_euler"]
+        step = get_integrator("implicit_euler")
         m = LinearDecay()
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
             step(m)
@@ -85,23 +85,22 @@ class ImplicitMethodRegistrationTest(unittest.TestCase):
     )
 
     def test_implicit_euler_registered(self):
-        registry = get_registry()
-        self.assertIn("implicit_euler", registry)
-        self.assertIs(registry["implicit_euler"], implicit_euler_step)
+        self.assertIn("implicit_euler", list_integrators())
+        self.assertIs(get_integrator("implicit_euler"), implicit_euler_step)
 
     def test_implicit_euler_metadata(self):
-        entry = get_registry().entry("implicit_euler")
-        self.assertEqual(entry.category, "implicit")
-        self.assertEqual(entry.order, 1)
-        self.assertEqual(entry.module, "braincell.quad")
+        info = integrator_info("implicit_euler")
+        self.assertEqual(info.kind, "module")
+        self.assertEqual(info.category, "implicit")
+        self.assertEqual(info.order, 1)
+        self.assertEqual(info.fn.__module__, "braincell.quad")
 
     def test_removed_cell_only_steps_are_gone(self):
-        registry = get_registry()
         import braincell.quad as quad
 
         for name in self.REMOVED:
             with self.subTest(name=name):
-                self.assertNotIn(name, registry)
+                self.assertNotIn(name, list_integrators())
                 self.assertFalse(hasattr(quad, f"{name}_step"))
 
 

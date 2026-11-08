@@ -43,7 +43,7 @@ dependencies = [
   # unconditionally and fails at import time. CI installs unpinned jax, so this
   # floor is what keeps `import braincell` working on current JAX.
   "brainstate>=0.5.4",
-  "braintools>=0.1",
+  "braintools>=0.5",
   "brainunit>=0.0.8",
   "jax>=0.11",
   "numpy>=2",

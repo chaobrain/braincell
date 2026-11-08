@@ -53,20 +53,30 @@ itself a host needs to call it.
     state_grouping
 
 
-Integrator Registry
--------------------
+Selecting Integrators
+---------------------
+
+Integrator names live in the :mod:`braintools.quad` registry. braincell's
+stateful steps (``exp_euler``, ``ind_exp_euler``, ``backward_euler``,
+``implicit_euler``, ``staggered``/``stagger``, ``dhs_voltage``) are registered
+there under the ``'module'`` kind; every braintools ODE stepper (``euler``,
+``rk4``, ``ralston2``, ``dopri5``, ...) is usable through
+:func:`module_step_from_ode`, which :func:`get_integrator` applies
+automatically. ``'rk2'`` raises ``ValueError``: it was Ralston's method in
+braincell (now ``'ralston2'``) but is Heun's method in braintools (here
+``'heun2'``). To add an integrator, register a module step
+``step(target, *args) -> None`` with
+``braintools.quad.register_method(name, step, kind='module', ...)``, or a
+pure-function ODE stepper with ``kind='ode'``.
 
 .. autosummary::
    :toctree: generated/
    :nosignatures:
-   :template: classtemplate.rst
 
-    IntegratorEntry
-    IntegratorRegistry
     get_integrator
-    get_registry
-    register_integrator
-    all_integrators
+    integrator_info
+    list_integrators
+    module_step_from_ode
 
 
 Exponential Integrators
@@ -87,7 +97,6 @@ Runge-Kutta Integrators
 
     euler_step
     midpoint_step
-    rk2_step
     heun2_step
     ralston2_step
     rk3_step

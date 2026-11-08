@@ -40,6 +40,41 @@ jobs:
         run: python -m pip install "pre-commit>=2.8"
       - name: Run every hook on every file
         run: pre-commit run --all-files --show-diff-on-failure
+      - name: Require the classifiers to equal the tested Python versions
+        run: |
+          python -m pip install pyyaml
+          python - <<'EOF'
+          import tomllib
+          import yaml
+
+          def tested(node):
+              # Every `python-version` value in the workflow, lists and scalars.
+              if isinstance(node, dict):
+                  for key, value in node.items():
+                      if key == "python-version":
+                          for v in value if isinstance(value, list) else [value]:
+                              if "{{" not in str(v):  # a matrix expression
+                                  yield str(v)
+                      else:
+                          yield from tested(value)
+              elif isinstance(node, list):
+                  for item in node:
+                      yield from tested(item)
+
+          with open(".github/workflows/CI.yml") as f:
+              ci = set(tested(yaml.safe_load(f)))
+          with open("pyproject.toml", "rb") as f:
+              classifiers = tomllib.load(f)["project"]["classifiers"]
+          prefix = "Programming Language :: Python :: "
+          declared = {c[len(prefix):] for c in classifiers
+                      if c.startswith(prefix) and c[len(prefix):].startswith("3.")}
+          print("tested in CI.yml:", sorted(ci))
+          print("classifiers:     ", sorted(declared))
+          if ci != declared:
+              raise SystemExit(
+                  f"classifiers and CI.yml differ: only in CI.yml {sorted(ci - declared)}, "
+                  f"only in classifiers {sorted(declared - ci)}")
+          EOF
 
   # Exercise the packaging path on every push. Publish.yml only builds on a
   # release, so before this job existed a packaging regression stayed invisible
@@ -229,19 +264,25 @@ jobs:
         run: |
           pytest braincell/ -p no:faulthandler
 
-  # The matrix covers the oldest and the newest Python declared in
-  # pyproject.toml (classifiers and `requires-python`) and, for JAX, the floor
-  # and the latest release (""). jaxlib 0.11.0 ships no CPython 3.15 wheels, so
-  # that one pair is excluded. Keep the classifiers equal to the Python
-  # versions listed here.
+  # Python 3.12 runs against the JAX floor (0.11.0) and the latest release (""),
+  # every newer Python (3.13 to 3.15) against the latest JAX only. jaxlib 0.11.0
+  # ships no CPython 3.15 wheels, and the floor needs one Python only. The
+  # `pyproject.toml` classifiers are written by hand
+  # (`generate_python_version_classifiers = false`) and the `lint` job fails
+  # unless they equal the Python versions tested anywhere in this file, so add
+  # or drop a version here and in the classifiers together.
   test_linux:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.15"]
+        python-version: ["3.12", "3.13", "3.14", "3.15"]
         jax-version: ["0.11.0", ""]
         exclude:
+          - python-version: "3.13"
+            jax-version: "0.11.0"
+          - python-version: "3.14"
+            jax-version: "0.11.0"
           - python-version: "3.15"
             jax-version: "0.11.0"
 

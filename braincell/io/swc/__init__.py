@@ -13,8 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
-from .reader import SwcReader
-from .types import SwcIssue, SwcReadOptions, SwcReport
+from braincell.io.swc.reader import SwcReader
+from braincell.io.swc.types import SwcIssue, SwcReadOptions, SwcReport
 
 __all__ = [
     "SwcIssue",

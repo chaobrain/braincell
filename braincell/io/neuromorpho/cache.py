@@ -29,8 +29,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Mapping
 
-from .models import NeuroMorphoCacheStatus, NeuroMorphoMeasurement
-from .urls import safe_filename
+from braincell.io.neuromorpho.models import NeuroMorphoCacheStatus, NeuroMorphoMeasurement
+from braincell.io.neuromorpho.urls import safe_filename
 
 if TYPE_CHECKING:
     from braincell.io.swc.types import SwcReport

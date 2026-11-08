@@ -24,9 +24,9 @@ explicit cache control, drop down to :class:`NeuroMorphoClient`.
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .client import NeuroMorphoClient
-from .models import NeuroMorphoDownloadRecord
-from .urls import DownloadMode
+from braincell.io.neuromorpho.client import NeuroMorphoClient
+from braincell.io.neuromorpho.models import NeuroMorphoDownloadRecord
+from braincell.io.neuromorpho.urls import DownloadMode
 
 if TYPE_CHECKING:
     from braincell.io.swc.types import SwcReport
@@ -213,7 +213,7 @@ def load_neuromorpho(
     """
 
     from braincell.morph.morphology import Morphology
-    from .cache import NeuroMorphoCache
+    from braincell.io.neuromorpho.cache import NeuroMorphoCache
 
     resolved_client, cache_root = _resolve_client(client, cache_dir)
 
@@ -244,7 +244,7 @@ def load_neuromorpho(
     if swc_path is None:
         # Fall back to scanning the cache folder if the download record
         # didn't surface a usable path.
-        from .cache import NeuroMorphoCache
+        from braincell.io.neuromorpho.cache import NeuroMorphoCache
 
         swc_path = NeuroMorphoCache(cache_root).standard_swc_path(neuron_id)
 

@@ -24,10 +24,10 @@ import json
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 
-from .cache import NeuroMorphoCache
-from .errors import NeuroMorphoError, NeuroMorphoHTTPError
-from .http import request_with_retry
-from .models import (
+from braincell.io.neuromorpho.cache import NeuroMorphoCache
+from braincell.io.neuromorpho.errors import NeuroMorphoError, NeuroMorphoHTTPError
+from braincell.io.neuromorpho.http import request_with_retry
+from braincell.io.neuromorpho.models import (
     NeuroMorphoCacheStatus,
     NeuroMorphoDetail,
     NeuroMorphoDownloadItem,
@@ -38,8 +38,8 @@ from .models import (
     NeuroMorphoSearchPage,
     NeuroMorphoUrls,
 )
-from .query import NeuroMorphoQuery
-from .urls import (
+from braincell.io.neuromorpho.query import NeuroMorphoQuery
+from braincell.io.neuromorpho.urls import (
     API_BASE,
     DownloadMode,
     _validate_mode,

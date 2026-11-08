@@ -24,7 +24,7 @@ import random
 import time
 from typing import Any, Callable
 
-from .errors import NeuroMorphoHTTPError, NeuroMorphoNotFoundError
+from braincell.io.neuromorpho.errors import NeuroMorphoHTTPError, NeuroMorphoNotFoundError
 
 __all__ = [
     "MAX_BACKOFF_SECONDS",

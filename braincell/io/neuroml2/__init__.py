@@ -13,6 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 
-from .reader import NeuroMlReader
+from braincell.io.neuroml2.reader import NeuroMlReader
 
 __all__ = ["NeuroMlReader"]

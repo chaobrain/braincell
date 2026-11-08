@@ -19,7 +19,7 @@ from collections.abc import Iterable, Mapping
 
 import numpy as np
 
-from .types import _SwcRow
+from braincell.io.swc.types import _SwcRow
 
 _REL_TOL = 1e-6
 _SPECIAL_THREE_POINT_RADIUS_TOL_SCALE = 0.02

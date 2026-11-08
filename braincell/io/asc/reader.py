@@ -20,7 +20,7 @@ from pathlib import Path
 import brainunit as u
 import numpy as np
 
-from .types import AscMetadata, AscReport, AscSpineRecord
+from braincell.io.asc.types import AscMetadata, AscReport, AscSpineRecord
 from braincell._typing import FilePath
 from braincell.io import _geometry
 from braincell.io._geometry import MIN_SYNTHETIC_LENGTH_UM

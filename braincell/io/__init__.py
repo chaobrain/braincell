@@ -13,14 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
-from .asc import (
-    AscIssue,
-    AscMetadata,
-    AscReader,
-    AscReport,
-    AscSpineRecord,
-)
-from .checkpoint import (
+from braincell.io.asc import AscIssue, AscMetadata, AscReader, AscReport, AscSpineRecord
+from braincell.io.checkpoint import (
     CheckpointError,
     CheckpointVersionError,
     load_branch,
@@ -28,8 +22,8 @@ from .checkpoint import (
     save_branch,
     save_morpho,
 )
-from .neuroml2 import NeuroMlReader
-from .neuromorpho import (
+from braincell.io.neuroml2 import NeuroMlReader
+from braincell.io.neuromorpho import (
     DEFAULT_USER_CACHE_DIR,
     NeuroMorphoCache,
     NeuroMorphoCacheLayout,
@@ -50,12 +44,7 @@ from .neuromorpho import (
     fetch_neuromorpho,
     load_neuromorpho,
 )
-from .swc import (
-    SwcIssue,
-    SwcReadOptions,
-    SwcReader,
-    SwcReport,
-)
+from braincell.io.swc import SwcIssue, SwcReadOptions, SwcReader, SwcReport
 
 __all__ = [
     "AscIssue",

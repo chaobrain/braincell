@@ -25,6 +25,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
 import brainunit as u
 import jax
 import numpy as np
@@ -35,6 +36,10 @@ if str(HERE) not in sys.path:
 
 import braincell_ablation
 from backend_braincell import build_cell
+
+
+# Slow tier: runs nightly, not on every pull request (see the CI workflow).
+pytestmark = pytest.mark.slow
 
 
 class BrainCellAblationTest(unittest.TestCase):

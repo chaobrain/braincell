@@ -24,11 +24,16 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import pytest
 import jax
 import numpy as np
 import brainunit as u
 
 from benchmarks.performance.synapse_events import delivery_benchmark as b
+
+
+# Slow tier: runs nightly, not on every pull request (see the CI workflow).
+pytestmark = pytest.mark.slow
 
 
 class DeliveryBenchmarkTest(unittest.TestCase):

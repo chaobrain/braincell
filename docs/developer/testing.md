@@ -96,6 +96,19 @@ assert not report.has_errors
 
 `MANIFEST.in` leaves `data/` out of the source distribution, so these tests run only from a repository checkout. They have no skip guard and fail rather than skip when the fixtures are missing.
 
+## Compare figures with pixel baselines
+
+A few representative figures of `braincell.vis` (the `plot2d` layouts, value colouring with a colorbar, the dendrogram, the Sholl plot and the two topology graphs) are compared pixel by pixel with PNGs in `braincell/vis/baseline_images/`. The tests mix in `BaselineMixin` from `braincell/vis/_testing.py`, draw on `self.new_axes()` and call `self.assert_baseline(fig, name)`. Rendering is pinned (Agg, default `rcParams`, the bundled DejaVu Sans, fixed size and dpi), and the comparison uses `matplotlib.testing.compare.compare_images` with `tol=0`. Pixels are compared on Linux only; other platforms skip, because font rasterisation differs.
+
+When a deliberate change, or a Matplotlib upgrade, changes a figure, regenerate the baselines on Linux and look at the new images before committing them:
+
+```bash
+BRAINCELL_UPDATE_BASELINES=1 pytest braincell/vis -k Baseline
+git diff --stat braincell/vis/baseline_images
+```
+
+Say in the PR why the images changed. When a comparison fails, the message names a temporary directory that holds the rendered image and a `-failed-diff.png`. `MANIFEST.in` keeps the baselines out of the source distribution, and the wheel does not include them.
+
 ## Accept numerical results
 
 Declare the reference and tolerances before comparing results. Fix model parameters, units, temperature, initial state, solver, and dt.

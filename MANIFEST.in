@@ -31,6 +31,7 @@ exclude CONTRIBUTING.md
 exclude SECURITY.md
 exclude changelog.md
 exclude conftest.py
+exclude requirements-braintools-main.txt
 exclude requirements-dev.txt
 exclude requirements-doc.txt
 exclude requirements.txt

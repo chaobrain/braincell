@@ -1,0 +1,10 @@
+# braincell is developed against the development version of braintools, which
+# is not on PyPI yet. CI, the documentation build and Read the Docs install this
+# file before installing braincell, so the git version satisfies the
+# `braintools>=...` requirement in pyproject.toml and pip keeps it. A direct URL
+# cannot be declared in pyproject.toml (PyPI rejects it), hence this file.
+# Once a braintools release carries what braincell needs, delete this file and
+# every `-r requirements-braintools-main.txt` / `requirements-braintools-main.txt`
+# reference (one line each in .github/workflows/CI.yml, deploy-docs.yml and
+# .readthedocs.yml, plus the MANIFEST.in line).
+braintools @ git+https://github.com/chaobrain/braintools.git@main

@@ -58,7 +58,7 @@ Selecting Integrators
 
 Integrator names live in the :mod:`braintools.quad` registry. braincell's
 stateful steps (``exp_euler``, ``ind_exp_euler``, ``backward_euler``,
-``implicit_euler``, ``staggered``/``stagger``, ``dhs_voltage``) are registered
+``crank_nicolson``, ``staggered``/``stagger``, ``dhs_voltage``) are registered
 there under the ``'module'`` kind; every braintools ODE stepper (``euler``,
 ``rk4``, ``ralston2``, ``dopri5``, ...) is usable through
 :func:`module_step_from_ode`, which :func:`get_integrator` applies
@@ -114,7 +114,7 @@ Implicit Integrators
    :toctree: generated/
 
     backward_euler_step
-    implicit_euler_step
+    crank_nicolson_step
 
 
 Other Integrators

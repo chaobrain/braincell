@@ -34,7 +34,7 @@ stateful integration protocol.
 # braintools.quad registry via @register_module_step.
 from braincell.quad._backward_euler import backward_euler_step
 from braincell.quad._exp_euler import exp_euler_step, ind_exp_euler_step
-from braincell.quad._implicit import implicit_euler_step
+from braincell.quad._implicit import crank_nicolson_step
 from braincell.quad.protocol import (
     DiffEqGroupState,
     DiffEqModule,
@@ -95,7 +95,7 @@ __all__ = [
     'staggered_step',
     'dhs_voltage_step',
     # implicit methods
-    'implicit_euler_step',
+    'crank_nicolson_step',
     # protocol
     'DiffEqState',
     'DiffEqSingleState',
@@ -123,6 +123,11 @@ _REMOVED_ATTRIBUTES = {
     ),
     'IntegratorRegistry': "use braincell.quad.integrator_info(name) and braincell.quad.list_integrators().",
     'IntegratorEntry': "use braincell.quad.integrator_info(name), which returns a braintools.quad.MethodInfo.",
+    'implicit_euler_step': (
+        "it solved the trapezoidal residual with a Newton loop that stopped after one iteration; "
+        "use braincell.quad.crank_nicolson_step (converged trapezoidal rule, results change on "
+        "nonlinear models) or braincell.quad.backward_euler_step (first-order implicit Euler)."
+    ),
 }
 
 

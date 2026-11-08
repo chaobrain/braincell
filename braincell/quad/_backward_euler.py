@@ -95,8 +95,7 @@ def backward_euler_step(target: DiffEqModule, *args, excluded_paths=()):
         y_{n+1} = y_n + \Delta t \, f(t_{n+1}, y_{n+1}),
 
     which is implicit in :math:`y_{n+1}`. Rather than running a Newton
-    solver to convergence (see :func:`implicit_euler_step` for that
-    variant), this routine takes a single Newton step from a local
+    solver to convergence, this routine takes a single Newton step from a local
     Jacobian:
 
     .. math::
@@ -136,7 +135,7 @@ def backward_euler_step(target: DiffEqModule, *args, excluded_paths=()):
 
     See Also
     --------
-    implicit_euler_step : Full Newton iteration on the same residual.
+    crank_nicolson_step : Trapezoidal rule (second order) solved by Newton iteration.
     exp_euler_step : Matrix-exponential exponential Euler step.
 
     Notes

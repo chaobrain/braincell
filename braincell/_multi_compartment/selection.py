@@ -24,7 +24,7 @@ import numpy as np
 from braincell._discretization.base import locate_cv_on_branch
 from braincell._multi_compartment.lifecycle import DiscreteView
 from braincell.filter import LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask
-from . import field_resolution
+from braincell._multi_compartment import field_resolution
 
 __all__ = ["BranchSelector", "CVSelector"]
 

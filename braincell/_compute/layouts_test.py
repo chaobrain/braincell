@@ -35,12 +35,8 @@ from braincell.filter import AllRegion, BranchSlice, RootLocation, at
 from braincell.mech import CVContext, Channel, Ion
 from braincell.morph.branch import Branch
 from braincell.morph.morphology import Morphology
-from ._testing import _build_tree
-from .layouts import (
-    CLAMP_KINDS,
-    ClampRoutingTable,
-    build_clamp_routing_table,
-)
+from braincell._compute._testing import _build_tree
+from braincell._compute.layouts import CLAMP_KINDS, ClampRoutingTable, build_clamp_routing_table
 
 
 @_dataclass

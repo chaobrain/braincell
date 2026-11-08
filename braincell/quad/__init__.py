@@ -30,13 +30,10 @@ registered in :mod:`braincell.quad._registry`.
 
 # Importing the step modules below has the side effect of populating the
 # global registry via @register_integrator decorators on each *_step function.
-from ._backward_euler import backward_euler_step
-from ._exp_euler import (
-    exp_euler_step,
-    ind_exp_euler_step,
-)
-from ._implicit import implicit_euler_step
-from .protocol import (
+from braincell.quad._backward_euler import backward_euler_step
+from braincell.quad._exp_euler import exp_euler_step, ind_exp_euler_step
+from braincell.quad._implicit import implicit_euler_step
+from braincell.quad.protocol import (
     DiffEqGroupState,
     DiffEqModule,
     DiffEqSingleState,
@@ -46,7 +43,7 @@ from .protocol import (
     hidden_state,
     state_grouping,
 )
-from ._registry import (
+from braincell.quad._registry import (
     IntegratorEntry,
     IntegratorRegistry,
     all_integrators,
@@ -54,7 +51,7 @@ from ._registry import (
     get_registry,
     register_integrator,
 )
-from ._runge_kutta import (
+from braincell.quad._runge_kutta import (
     euler_step,
     heun2_step,
     heun3_step,
@@ -67,7 +64,7 @@ from ._runge_kutta import (
     rk4_step,
     ssprk3_step,
 )
-from ._staggered import dhs_voltage_step, staggered_step
+from braincell.quad._staggered import dhs_voltage_step, staggered_step
 
 # Grouped by method family rather than sorted: the Runge-Kutta block is in
 # order of accuracy, which alphabetical order would scramble.

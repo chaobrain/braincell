@@ -35,7 +35,7 @@ from braincell.mech import (
 )
 
 if TYPE_CHECKING:
-    from .cell import Cell
+    from braincell._multi_compartment.cell import Cell
 
 __all__ = ["probe_names", "sample_probe", "sample_probes"]
 

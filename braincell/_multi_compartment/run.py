@@ -43,7 +43,7 @@ from braincell._multi_compartment import probes
 from braincell.network.recording import SampleBlock, concat_sample_blocks
 
 if TYPE_CHECKING:
-    from .cell import Cell
+    from braincell._multi_compartment.cell import Cell
 
 __all__ = ["RunResult", "run"]
 

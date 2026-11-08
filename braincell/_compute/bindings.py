@@ -89,11 +89,11 @@ from braincell._compute.parameters import (
     parameter_state_value,
 )
 from braincell.quad import get_integrator
-from .ions import _build_runtime_ions, _sync_runtime_ion, ion_species_key
-from .layouts import MechanismLayout
+from braincell._compute.ions import _build_runtime_ions, _sync_runtime_ion, ion_species_key
+from braincell._compute.layouts import MechanismLayout
 
 if TYPE_CHECKING:
-    from .state import CellRuntimeState
+    from braincell._compute.state import CellRuntimeState
 
 
 def _configure_runtime_subsolvers(

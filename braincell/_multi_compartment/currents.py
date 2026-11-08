@@ -40,7 +40,7 @@ from braincell._compute.state import CellRuntimeState
 from braincell._compute import bridge
 
 if TYPE_CHECKING:
-    from .cell import Cell
+    from braincell._multi_compartment.cell import Cell
 
 __all__ = ["total_membrane_current", "total_membrane_current_point", "total_membrane_rate_point"]
 

@@ -98,14 +98,14 @@ from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad.protocol import DiffEqGroupState, IndependentIntegration, state_grouping
 from braincell.mech import CVContext, Synapse as SynapsePlacement
-from . import currents, field_resolution, probes, run as run_module
+from braincell._multi_compartment import currents, field_resolution, probes, run as run_module
 from braincell._compute import bridge
-from .synapses import SynapseView, _SynapseStore, raise_on_name_type_conflict
-from .clamps import ClampView, _ClampStore
-from .selection import BranchSelector, CVSelector, _CellScope
-from .lifecycle import DiscreteView
-from .density_views import ChannelView, IonView
-from .geometry import GeometryView
+from braincell._multi_compartment.synapses import SynapseView, _SynapseStore, raise_on_name_type_conflict
+from braincell._multi_compartment.clamps import ClampView, _ClampStore
+from braincell._multi_compartment.selection import BranchSelector, CVSelector, _CellScope
+from braincell._multi_compartment.lifecycle import DiscreteView
+from braincell._multi_compartment.density_views import ChannelView, IonView
+from braincell._multi_compartment.geometry import GeometryView
 
 __all__ = ["Cell", "CellView", "MultiCompartment"]
 

@@ -40,9 +40,9 @@ import numpy as np
 from braincell._misc import is_traced_value, set_module_as
 from braincell._typing import DT, T
 from braincell._compute.cable import CableArrays, CableTopology, axial_matrix
-from ._registry import register_integrator
-from ._util import environ_time
-from .protocol import DiffEqModule
+from braincell.quad._registry import register_integrator
+from braincell.quad._util import environ_time
+from braincell.quad.protocol import DiffEqModule
 
 __all__ = [
     'staggered_step',

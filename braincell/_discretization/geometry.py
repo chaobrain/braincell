@@ -29,7 +29,7 @@ import numpy as np
 
 from braincell.morph.branch import Branch, frustum_areas_um2, length_weighted_mean_radius_um
 from braincell.morph.morphology import Morphology
-from .base import EPS_AREA_UM2, EPS_LEN_UM, EPS_PARAM, locate_cv_on_branch
+from braincell._discretization.base import EPS_AREA_UM2, EPS_LEN_UM, EPS_PARAM, locate_cv_on_branch
 
 __all__ = [
     "CVGeometryResult",

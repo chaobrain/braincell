@@ -25,7 +25,7 @@ from braincell.morph._spatial import MorphologySpatialGeometry, interpolate_bran
 from braincell.morph.morphology import Morphology
 
 if TYPE_CHECKING:
-    from .geometry import _GeoCV
+    from braincell._discretization.geometry import _GeoCV
 
 __all__ = ["build_cv_contexts"]
 

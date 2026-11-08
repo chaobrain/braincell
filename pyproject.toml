@@ -208,4 +208,4 @@ report.exclude_also = [
 # Set to the total measured on main when the gate was introduced (87.75 %),
 # rounded down; raise it to the current total, rounded down, before each minor
 # release. Lines a pull request changes are gated separately at 90 % (diff-cover).
-report.fail_under = 87
+report.fail_under = 99

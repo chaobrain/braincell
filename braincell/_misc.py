@@ -678,3 +678,10 @@ class TreeNode(brainstate.mixin.Mixin):
             if not isinstance(leaf, brainstate.graph.Node):
                 raise ValueError(f'Do not support {type(leaf)}. Must be instance of {brainstate.graph.Node}')
             check_fun(root, leaf)
+
+
+def _dev1_coverage_probe(x):
+    # Temporary DEV-1 probe: no test calls this, so diff-cover must fail.
+    if x > 0:
+        return x + 1
+    return x - 1

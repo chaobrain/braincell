@@ -889,6 +889,12 @@ class HH(Channel):
                 alpha = _as_rate(self._call_rate(f"f_{gate.name}_alpha", V, *ions), gate, "alpha")
                 beta = _as_rate(self._call_rate(f"f_{gate.name}_beta", V, *ions), gate, "beta")
                 value = alpha / (alpha + beta)
+            # A gate whose rates read only scalar inputs (e.g. the ``Ci`` of
+            # an ion the cell did not paint) yields a scalar here. Keep the
+            # shape ``init_state`` allocated, or the integration carry changes
+            # shape after the first step.
+            target = self.varshape if batch_size is None else (batch_size, *self.varshape)
+            value = u.math.broadcast_to(value, jnp.broadcast_shapes(u.math.shape(value), tuple(target)))
             self._gate_state(gate).value = value
             if isinstance(batch_size, int):
                 assert value.shape[0] == batch_size

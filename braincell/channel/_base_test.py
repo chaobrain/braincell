@@ -1516,5 +1516,92 @@ class ChannelTemplateTest(unittest.TestCase):
             )
 
 
+class GateResetShapeTest(unittest.TestCase):
+    """``reset_state`` keeps a gate at the shape ``init_state`` allocated.
+
+    ``SK_SU2015_DCN.f_z_inf`` reads only ``Ca.Ci``. When the calcium is a
+    scalar (an ion the cell did not paint), the steady state is a scalar;
+    writing it unbroadcast made the integration carry change shape from
+    ``float64[]`` to ``float64[1,1]`` on the first step (MECH-14).
+    """
+
+    _CA_ONLY_GATE_CHANNELS = (
+        "SK_SU2015_DCN",
+        "Cav1p2_MA2020_GoC",
+        "Cav1p2_MA2025_BC",
+        "Cav1p3_MA2020_GoC",
+        "Cav1p3_MA2025_BC",
+    )
+
+    @staticmethod
+    def _scalar_info(Ci, Co, E) -> IonInfo:
+        return IonInfo(Ci=Ci * u.mM, Co=Co * u.mM, E=E * u.mV, valence=1)
+
+    def test_scalar_ion_rates_broadcast_to_varshape(self) -> None:
+        from braincell.channel.potassium_calcium import SK_SU2015_DCN
+
+        ch = SK_SU2015_DCN(size=(1, 3))
+        V = jnp.full((1, 3), -65.0) * u.mV
+        K = self._scalar_info(140.0, 2.5, -80.0)
+        Ca = self._scalar_info(2.0e-4, 2.0, 120.0)
+        ch.init_state(V, K, Ca)
+        ch.reset_state(V, K, Ca)
+        self.assertEqual(ch.z.value.shape, (1, 3))
+        cai4 = 2.0e-4**4
+        self.assertTrue(jnp.allclose(ch.z.value, cai4 / (cai4 + 8.1e-15)))
+
+    def test_scalar_ion_rates_broadcast_with_batch(self) -> None:
+        from braincell.channel.potassium_calcium import SK_SU2015_DCN
+
+        ch = SK_SU2015_DCN(size=3)
+        V = jnp.full((2, 3), -65.0) * u.mV
+        K = self._scalar_info(140.0, 2.5, -80.0)
+        Ca = self._scalar_info(2.0e-4, 2.0, 120.0)
+        ch.init_state(V, K, Ca, batch_size=2)
+        ch.reset_state(V, K, Ca, batch_size=2)
+        self.assertEqual(ch.z.value.shape, (2, 3))
+
+    def test_shaped_rates_are_unchanged(self) -> None:
+        ch = _ExampleHHInfTau(size=2)
+        V = jnp.array([-60.0, -40.0]) * u.mV
+        K = k_info(2)
+        ch.init_state(V, K)
+        ch.reset_state(V, K)
+        self.assertEqual(ch.m.value.shape, (2,))
+        self.assertTrue(jnp.array_equal(ch.m.value, ch.f_m_inf(V, K)))
+
+    def test_cell_runs_with_calcium_only_gate_and_unpainted_calcium(self) -> None:
+        import braincell
+        from braincell.filter import AllRegion, at
+        from braincell.mech import CableProperty, Channel, StateProbe
+        from braincell.morph.branch import Branch
+        from braincell.morph.morphology import Morphology
+
+        for name in self._CA_ONLY_GATE_CHANNELS:
+            with self.subTest(channel=name):
+                soma = Branch.from_lengths(lengths=[10.0] * u.um, radii=[15.9, 15.9] * u.um, type="soma")
+                cell = braincell.Cell(
+                    Morphology.from_root(soma, name="soma"),
+                    cv_policy=braincell.CVPerBranch(),
+                    V_init=-60.0 * u.mV,
+                )
+                cell.paint(
+                    AllRegion(),
+                    CableProperty(
+                        resting_potential=-60.0 * u.mV,
+                        membrane_capacitance=1.0 * u.uF / u.cm**2,
+                        axial_resistivity=100.0 * u.ohm * u.cm,
+                    ),
+                )
+                cell.paint(AllRegion(), Channel(name))
+                cell.place(at("soma", 0.5), StateProbe())
+                cell.init_state()
+                cell.reset_state()
+                result = cell.run(dt=0.025 * u.ms, duration=0.1 * u.ms)
+                trace = result.traces["soma(0.5)_v"].to_decimal(u.mV)
+                self.assertEqual(trace.shape[0], 4)
+                self.assertTrue(bool(jnp.all(jnp.isfinite(trace))))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,14 @@
 
 ### Bug Fixes
 
+- `SK_SU2015_DCN`, `Cav1p2_MA2020_GoC`, `Cav1p2_MA2025_BC`,
+  `Cav1p3_MA2020_GoC` and `Cav1p3_MA2025_BC` can now run in a `Cell` that
+  does not paint a calcium ion. Their calcium-only gates reset to a scalar
+  steady state there, and `Cell.run` failed with `TypeError: scan body
+  function carry input and carry output must have equal types`.
+  `HH.reset_state` now broadcasts every gate to the shape `init_state`
+  allocated; gates that already had that shape are unchanged (the voltage
+  traces of the other 107 registered channels are bitwise identical).
 - `CalciumFirstOrder` can now run. Its `derivative` compared a current
   density with `0 mM` and raised `UnitMismatchError`, with or without a
   calcium channel, and a `Cell` rejected a unit-carrying `alpha` as

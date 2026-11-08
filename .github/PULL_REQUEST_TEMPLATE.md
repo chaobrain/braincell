@@ -17,7 +17,7 @@ pytest braincell/...
 
 - [ ] One task or problem; split if the diff is over ~1500 lines (deletions and generated files aside).
 - [ ] A bug fix comes with a test that fails without it.
-- [ ] Docstrings, docs, examples and `changelog.md` are updated in this PR, or nothing user-visible changed.
+- [ ] Docstrings, docs, examples and `changelog.md` (under `Unreleased`) are updated in this PR, or nothing user-visible changed.
 - [ ] Breaking changes: none, or listed below with their deprecation and migration.
 
 ## Breaking changes

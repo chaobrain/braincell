@@ -3,14 +3,17 @@
 
 name: Continuous Integration
 
-# Runs on every pull request and on main after a merge. The daily workflow
-# (CI-daily.yml) calls this same file, so both test one definition. A
-# `push: '**'` trigger would test every pull request twice: push and
-# pull_request runs fall into different concurrency groups.
+# Runs on every pull request, on each merge-queue group (merge_group: main
+# plus the queued pull requests, which is what the queue merges), and on main
+# after a merge. The daily workflow (CI-daily.yml) calls this same file, so
+# both test one definition. A `push: '**'` trigger would test every pull
+# request twice: push and pull_request runs fall into different concurrency
+# groups.
 on:
   push:
     branches: [ main ]
   pull_request:
+  merge_group:
   workflow_call:
 
 
@@ -386,7 +389,17 @@ jobs:
   # fails it.
   ci-ok:
     if: always()
-    needs: [ lint, build_package, docs, test_linux, test_linux_neuron_compare_cable, test_linux_validation_benchmarks, test_macos, test_windows, coverage ]
+    # One job per line, so pull requests that add jobs do not conflict here.
+    needs:
+      - lint
+      - build_package
+      - docs
+      - test_linux
+      - test_linux_neuron_compare_cable
+      - test_linux_validation_benchmarks
+      - test_macos
+      - test_windows
+      - coverage
     runs-on: ubuntu-latest
     steps:
       - name: Require every job to have succeeded

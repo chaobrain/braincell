@@ -22,6 +22,7 @@
   | `@register_integrator(name, aliases=..., category=..., order=..., description=...)` | `braintools.quad.register_method(name, fn, kind='module', aliases=..., category=..., order=..., description=...)`; a pure-function stepper registered with `kind='ode'` is wrapped automatically |
   | `get_integrator("rk2")`, `solver="rk2"`, `braincell.quad.rk2_step` | `"ralston2"` / `ralston2_step` (same numbers), or `"heun2"` / `heun2_step` for Heun's method. `"rk2"` raises `ValueError` and `rk2_step` raises `AttributeError`, both naming the replacements |
   | `get_integrator("explicit")` | `"euler"` |
+  | `get_integrator("implicit_euler")`, `solver="implicit_euler"`, `braincell.quad.implicit_euler_step` | `"crank_nicolson"` / `crank_nicolson_step` (QUAD-2c; the trapezoidal rule, now solved to convergence; results change on nonlinear models, see below), or `"backward_euler"` for first-order implicit Euler. The old names raise and name both replacements |
   | `SingleCompartment(solver='rk2')` default | default `solver='ralston2'`; the numbers are unchanged |
   | the other `*_step` functions | unchanged names and calls; `module_step_from_ode(ode_step)` wraps any braintools ODE stepper |
 
@@ -29,6 +30,15 @@
   is removed, `"rk2"` will resolve to braintools' `rk2`, which is Heun's method
   and not the Ralston method that `rk2` meant in braincell 0.2.
 - braincell requires `braintools>=0.5.0`.
+- **`implicit_euler` is now `crank_nicolson` and its Newton loop converges**
+  (QUAD-2c). The step solved the trapezoidal (Crank-Nicolson) residual but
+  was registered as `implicit_euler` with `order=1`, and its Newton loop
+  stopped after one iteration. `crank_nicolson` (`order=2`) iterates until
+  `max|dy|/(1+|y|) <= eps**0.75` or 20 iterations, with one
+  `n_state x n_state` Jacobian per neuron instead of a dense Jacobian over the
+  whole population. On linear models the result is unchanged; on nonlinear
+  ones it changes: a Hodgkin-Huxley neuron (10 ms, dt = 0.1 ms, float64)
+  differs from the old step by 2.6e-2 relative (1.9 mV).
 
 ### Changes & Improvements
 

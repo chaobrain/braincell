@@ -17,7 +17,7 @@
 
 braincell has no registry of its own: integrator names live in the
 :mod:`braintools.quad` registry. braincell's own stateful steps (``exp_euler``,
-``ind_exp_euler``, ``backward_euler``, ``implicit_euler``, ``staggered``,
+``ind_exp_euler``, ``backward_euler``, ``crank_nicolson``, ``staggered``,
 ``dhs_voltage``) are registered there under the ``'module'`` kind, with the
 signature ``step(target, *args) -> None``. The pure-function ODE steppers of
 braintools (``'ode'`` kind, ``step(f, y, t)``) are wrapped into module steps
@@ -59,6 +59,11 @@ _REMOVED: dict[str, str] = {
         "braintools' 'expeuler' advances a single array and cannot integrate several "
         "DiffEqStates; use 'ind_exp_euler' (the same formula applied per DiffEqState) "
         "or 'exp_euler' (coupled, full Jacobian)."
+    ),
+    'implicit_euler': (
+        "'implicit_euler' solved the trapezoidal residual with a Newton loop that stopped after "
+        "one iteration. Use 'crank_nicolson' (the converged trapezoidal rule; results change on "
+        "nonlinear models) or 'backward_euler' (first-order implicit Euler)."
     ),
 }
 
@@ -176,7 +181,7 @@ def get_integrator(method: str | Callable) -> Callable:
     Raises
     ------
     ValueError
-        If ``method`` is a removed name (``'rk2'``, ``'explicit'``,
+        If ``method`` is a removed name (``'rk2'``, ``'explicit'``, ``'implicit_euler'``,
         ``'expeuler'``; the message names the replacement), or matches no
         registered integrator (the message includes a "did you mean ...?"
         suggestion when a close match exists).

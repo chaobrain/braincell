@@ -48,7 +48,7 @@ EXPECTED = {
     "exp_euler": ("module", "exp_euler", "exponential", 1),
     "ind_exp_euler": ("module", "ind_exp_euler", "exponential", 1),
     "backward_euler": ("module", "backward_euler", "implicit", 1),
-    "implicit_euler": ("module", "implicit_euler", "implicit", 1),
+    "crank_nicolson": ("module", "crank_nicolson", "implicit", 2),
     "staggered": ("module", "staggered", "staggered", None),
     "stagger": ("module", "staggered", "staggered", None),
     "dhs_voltage": ("module", "dhs_voltage", "voltage", None),
@@ -100,9 +100,9 @@ class ResolutionTest(unittest.TestCase):
     def test_list_integrators(self):
         names = list_integrators()
         self.assertEqual(names, sorted(names))
-        for name in ("staggered", "dhs_voltage", "rk4", "ralston4", "dopri5", "heun2", "implicit_euler"):
+        for name in ("staggered", "dhs_voltage", "rk4", "ralston4", "dopri5", "heun2", "crank_nicolson"):
             self.assertIn(name, names)
-        for name in ("rk2", "explicit", "expeuler", "stagger", "heun3"):
+        for name in ("rk2", "explicit", "expeuler", "implicit_euler", "stagger", "heun3"):
             self.assertNotIn(name, names)
         for name in names:
             with self.subTest(name=name):

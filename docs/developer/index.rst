@@ -1,11 +1,14 @@
-贡献者指南
-==========
+Contributor Guide
+=================
 
-从配置开发环境、定位代码到验证修改和提交 PR，本指南按贡献任务组织阅读入口。
-模块的完整接口、方程和架构由 Design 维护，各主题链接到对应说明。
+This guide organizes contribution tasks, from setting up a development environment
+and locating code to validating changes and submitting a pull request.
+Design documents maintain the full module interfaces, equations, and architecture;
+each topic links to the relevant documents.
 
-首次贡献从 :doc:`contributing` 开始；已有明确任务时，直接进入相应主题。
-仓库目录职责与运行入口见 :doc:`../repository`。
+For your first contribution, start with :doc:`contributing`. If you already have a
+specific task, go directly to its topic. See :doc:`../repository` for directory
+responsibilities and workflow entry points.
 
 .. toctree::
    :maxdepth: 1

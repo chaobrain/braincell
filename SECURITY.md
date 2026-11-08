@@ -22,7 +22,7 @@ Instead, use one of these private channels:
    [Security tab](https://github.com/chaobrain/braincell/security/advisories/new) and
    click **Report a vulnerability**. This keeps the report visible only to the
    maintainers until an advisory is published.
-2. **Email** — <chao.brain@qq.com>.
+2. **Email** — <chaobrain@foxmail.com>.
 
 Please include as much of the following as you can:
 

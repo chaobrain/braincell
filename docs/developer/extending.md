@@ -1,48 +1,47 @@
-# 扩展模型与积分器
+# Extend Models and Integrators
 
-添加机制或积分器时，先选择已有模板，再实现模型特有的方程，并验证它能通过 Cell 的实际路径运行。
-下表给出阅读顺序；完整签名、公式与可运行模型例子由对应 Design Current 维护。
+When adding a mechanism or integrator, choose an existing template, implement the model-specific equations, and verify it through the actual Cell execution path.
+The table below gives a reading order. The relevant Design Current documents maintain complete signatures, equations, and runnable model examples.
 
-| 扩展对象 | 先读模板与契约 | 再读注册与集成 |
+| Extension | Templates and contracts | Registration and integration |
 | --- | --- | --- |
-| Channel | [HH/Markov 模板](https://github.com/chaobrain/braincell/blob/main/docs/design/channel/current/api.md)、[模板校验](https://github.com/chaobrain/braincell/blob/main/docs/design/channel/current/template-invariants.md) | [Mech 注册](https://github.com/chaobrain/braincell/blob/main/docs/design/mech/current/api.md#注册与事件契约)、[Cell.paint](https://github.com/chaobrain/braincell/blob/main/docs/design/cell/current/api.md#paint-与-place) |
-| Ion | [公共离子模型](https://github.com/chaobrain/braincell/blob/main/docs/design/ion/current/api.md)、[生命周期与 KineticIon 扩展模板](https://github.com/chaobrain/braincell/blob/main/docs/design/ion/current/kinetic-ion-api.md) | [电流快照与调度](https://github.com/chaobrain/braincell/blob/main/docs/design/cell/current/architecture.md#离子电流快照与调度) |
-| Synapse | [动力学与事件契约](https://github.com/chaobrain/braincell/blob/main/docs/design/synapse/current/api.md)、[状态归属](https://github.com/chaobrain/braincell/blob/main/docs/design/synapse/current/architecture.md) | [事件源与连接](https://github.com/chaobrain/braincell/blob/main/docs/design/network/current/connections.md) |
-| Integrator | [积分注册与调用](https://github.com/chaobrain/braincell/blob/main/docs/design/quad/current/api.md)、[目标协议](https://github.com/chaobrain/braincell/blob/main/docs/design/cell/current/api.md#积分协议) | [求解路径](https://github.com/chaobrain/braincell/blob/main/docs/design/quad/current/architecture.md) |
+| Channel | [HH/Markov templates](https://github.com/chaobrain/braincell/blob/main/docs/design/channel/current/api.md), [template validation](https://github.com/chaobrain/braincell/blob/main/docs/design/channel/current/template-invariants.md) | [Mech registration](https://github.com/chaobrain/braincell/blob/main/docs/design/mech/current/api.md#注册与事件契约), [Cell.paint](https://github.com/chaobrain/braincell/blob/main/docs/design/cell/current/api.md#paint-与-place) |
+| Ion | [Public ion models](https://github.com/chaobrain/braincell/blob/main/docs/design/ion/current/api.md), [lifecycle and KineticIon extension template](https://github.com/chaobrain/braincell/blob/main/docs/design/ion/current/kinetic-ion-api.md) | [Current snapshots and scheduling](https://github.com/chaobrain/braincell/blob/main/docs/design/cell/current/architecture.md#离子电流快照与调度) |
+| Synapse | [Dynamics and event contracts](https://github.com/chaobrain/braincell/blob/main/docs/design/synapse/current/api.md), [state ownership](https://github.com/chaobrain/braincell/blob/main/docs/design/synapse/current/architecture.md) | [Event sources and connections](https://github.com/chaobrain/braincell/blob/main/docs/design/network/current/connections.md) |
+| Integrator | [Integrator registration and calls](https://github.com/chaobrain/braincell/blob/main/docs/design/quad/current/api.md), [target protocol](https://github.com/chaobrain/braincell/blob/main/docs/design/cell/current/api.md#积分协议) | [Solver paths](https://github.com/chaobrain/braincell/blob/main/docs/design/quad/current/architecture.md) |
 
-## 添加 Channel 或 Ion
+## Add a Channel or Ion
 
-1. 找到所属家族及相近模型，在 `braincell/channel/` 或 `braincell/ion/` 的合适模块中实现。
-2. 按 Current 选模板，声明所需参数、状态和离子依赖，注明方程来源及本地调整。
-3. 用 `register_channel` 或 `register_ion` 注册具体模型；进入公共模型目录时更新包导出及相邻测试。
-4. 先验证独立模型的初始化、reset、导数、单位和电流符号，再通过 paint 放入 Cell 验证绑定、状态形状及运行结果。
+1. Find the appropriate family and a similar model, then implement it in a suitable module under `braincell/channel/` or `braincell/ion/`.
+2. Select a template from Current, declare parameters, states, and ion dependencies, and document the equation sources and local adjustments.
+3. Register the concrete model with `register_channel` or `register_ion`. Update package exports and adjacent tests when adding it to the public model catalog.
+4. First validate independent initialization, reset, derivatives, units, and current signs. Then paint the model onto a Cell and check binding, state shapes, and execution results.
 
-HH/Markov 还需验证门稳态或概率守恒；动态 Ion 需检查浓度、守恒约束及电流驱动。
-可复用的模型出处记录在
-[Ion/Channel 文献表](https://github.com/chaobrain/braincell/blob/main/docs/design/ion/references/ion-channel-bibliography.md)，
-具体模型的对照配置和结果随对应验证工作流维护。
+For HH/Markov models, also validate steady-state gates or probability conservation. For dynamic ions, check concentrations, conservation constraints, and current-driven behavior.
+Reusable source references belong in the
+[Ion/Channel bibliography](https://github.com/chaobrain/braincell/blob/main/docs/design/ion/references/ion-channel-bibliography.md).
+Keep model-specific comparison configurations and results with the relevant validation workflow.
 
-## 添加 Synapse
+## Add a Synapse
 
-以 `braincell/synapse/exponential.py` 及相邻测试为起点，确定内部状态和事件输入契约，
-实现动力学后用 `register_synapse` 注册。通过 Cell.place 和 Network.connect 完成一次真实事件投递。
+Start with `braincell/synapse/exponential.py` and its adjacent tests. Define the internal state and event input contract, implement the dynamics, and register the model with `register_synapse`.
+Deliver a real event through Cell.place and Network.connect.
 
-验证事件前后的状态变化、多事件聚合、电流单位与符号、衰减轨迹及 reset。
-如果改变的是 Connection weight 更新规则，先阅读
-[可塑性讨论](https://github.com/chaobrain/braincell/blob/main/docs/design/network/proposals/connection-plasticity.md)，
-确定状态应该属于突触模型还是连接。
+Validate state changes around an event, aggregation of multiple events, current units and signs, decay trajectories, and reset.
+For changes to Connection weight updates, first read the
+[plasticity discussion](https://github.com/chaobrain/braincell/blob/main/docs/design/network/proposals/connection-plasticity.md)
+and determine whether the state belongs to the synapse model or the connection.
 
-## 添加 Integrator
+## Add an Integrator
 
-在 `braincell/quad/` 选择相邻算法作为实现和测试参照，按目标协议实现步函数，
-使用 `register_integrator` 声明名称、别名和阶数。
-明确该算法适用于通用 ODE，还是需要 Cell 的专用电压接口。
+Choose a neighboring algorithm in `braincell/quad/` as an implementation and testing reference. Implement the step function according to the target protocol, and declare its name, aliases, and order with `register_integrator`.
+State whether it supports general ODEs or requires Cell's specialized voltage interface.
 
-用解析解检查单步误差和多步收敛，验证阶段钩子、单位、状态形状及编译循环。
-面向 Cell 的算法还需覆盖多 CV、分叉与边界输入，现有问题见
-[边界输入提案](https://github.com/chaobrain/braincell/blob/main/docs/design/cell/proposals/explicit-solver-boundary-inputs.md)。
+Use analytical solutions to check single-step error and multi-step convergence. Validate stage hooks, units, state shapes, and compiled loops.
+Cell-specific algorithms also need coverage for multiple CVs, branching, and boundary inputs. See the existing
+[boundary-input proposal](https://github.com/chaobrain/braincell/blob/main/docs/design/cell/proposals/explicit-solver-boundary-inputs.md).
 
-## 完成贡献
+## Complete the contribution
 
-更新对应 Current 和实际相关示例，在模块 TODO 中关联完成内容或剩余问题。
-测试命令与 fixture 用法见 [测试指南](testing.md)，提交要求见 [贡献流程](contributing.md#提交-pr)。
+Update the relevant Current documents and actual related examples, and link completed work or remaining issues in the module TODO.
+See the [Testing Guide](testing.md) for commands and fixtures and [Contributing](contributing.md#submit-a-pull-request) for submission requirements.

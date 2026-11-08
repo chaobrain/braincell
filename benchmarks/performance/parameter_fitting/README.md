@@ -12,7 +12,7 @@ Raw outputs may exist only in the original user's ignored artifacts. Any future 
 performance outputs belong in this directory's ignored `artifacts/`, while reviewed
 summaries belong in `results/`.
 
-Before measuring, follow the [execution rules](../../AGENTS.md): confirm the full
+Before measuring, follow the [execution rules](../../README.md#before-running-a-benchmark): confirm the full
 configuration matrix, independent rounds, first executions, warmups, timed repeats,
 extra validation and time budget. Commands below are templates, not authorization.
 Replace angle-bracket placeholders before running from the repository root.

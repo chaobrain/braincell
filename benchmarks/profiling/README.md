@@ -272,5 +272,5 @@ measurements belong in `results/` when available. The case modules adapt models 
 `profile_simulation.py`; `parse_xplane_trace.py` reads existing traces without simulation.
 
 Before any profiling run, confirm all first executions, warmups, timed repeats and extra
-trace/model runs under the [benchmark rules](../AGENTS.md). Example counts describe command
+trace/model runs under the [benchmark rules](../README.md#before-running-a-benchmark). Example counts describe command
 syntax and are not an execution authorization.

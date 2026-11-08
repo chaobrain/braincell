@@ -1,21 +1,20 @@
-# 参与贡献
+# Contributing to BrainCell
 
-BrainCell 接受问题报告、错误修复、新模型、文档和示例贡献。
+BrainCell welcomes bug reports, fixes, new models, documentation and examples.
 
-- **报告问题**：在 [Issues](https://github.com/chaobrain/braincell/issues) 提供最小复现、预期与实际结果，以及环境版本。
-- **提出功能或设计改进**：先开 Issue，说明使用场景和方案取舍。
-- **提交修改**：按照 [贡献流程](docs/developer/contributing.md) 配置环境、修改代码、验证结果并提交 PR。
+- **Report a problem**: open an [issue](https://github.com/chaobrain/braincell/issues) with a minimal reproduction, the expected and actual results, and your versions.
+- **Propose a feature or a design change**: open an issue first and describe the use case and the trade-offs. Roadmap work is planned and assigned by the maintainers; a roadmap task has an ID such as `CELL-3`.
+- **Submit a change**: follow the [contributing guide](docs/developer/contributing.md) to set up the environment, make and test the change, and open a pull request.
 
-详细指南：
-
-| 要做什么 | 阅读入口 |
+| To | Read |
 | --- | --- |
-| 找到相关代码与设计 | [代码与设计导航](docs/developer/project_layout.md) |
-| 编写和运行测试 | [测试指南](docs/developer/testing.md) |
-| 添加通道、离子、突触或积分器 | [扩展指南](docs/developer/extending.md) |
-| 排查开发环境与构建问题 | [开发排错](docs/developer/troubleshooting.md) |
+| Find the code and where things live | [Repository Layout](docs/developer/project_layout.md) |
+| Follow the code conventions | [Code Conventions](docs/developer/conventions.md) |
+| Write and run tests | [Testing](docs/developer/testing.md) |
+| Add a channel, ion, synapse or integrator | [Extension Guide](docs/developer/extending.md) |
+| Fix environment and build problems | [Troubleshooting](docs/developer/troubleshooting.md) |
 
-Developer 说明贡献步骤，Design 维护模块的接口、架构和方案。仓库规则见 [AGENTS.md](AGENTS.md)。
+The rules for changing this repository, for people and coding agents alike, are in [AGENTS.md](AGENTS.md).
 
-参与协作请遵守 [行为准则](CODE_OF_CONDUCT.md)。安全问题通过 [安全报告渠道](SECURITY.md) 私下提交。
-贡献采用项目的 [Apache-2.0 许可证](LICENSE)。
+Please follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues privately through the [security policy](SECURITY.md).
+Contributions are licensed under the project's [Apache-2.0 license](LICENSE).

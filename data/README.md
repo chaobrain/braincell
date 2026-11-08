@@ -10,4 +10,4 @@ Data is read by examples, validation and benchmarks. Python adapters, compiler
 commands and comparisons live with their workflows. Compiled libraries and
 new run outputs are written to workflow `artifacts/`, preserving these sources.
 
-See [repository organization](../docs/repository.md) for top-level directory responsibilities.
+See [Repository Layout](../docs/developer/project_layout.md) for top-level directory responsibilities.

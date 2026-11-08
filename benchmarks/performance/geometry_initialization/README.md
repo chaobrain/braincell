@@ -49,7 +49,7 @@ trainable updates through all caches/ion geometry remain later integration work.
 
 Use an environment with the selected checkout's dependencies (JAX, BrainState,
 BrainUnit and NumPy). Start a fresh interpreter and specify every count explicitly.
-Agree on the execution plan under [benchmark rules](../../AGENTS.md) before running.
+Agree on the execution plan under [benchmark rules](../../README.md#before-running-a-benchmark) before running.
 
 ```bash
 python benchmarks/performance/geometry_initialization/benchmark.py \

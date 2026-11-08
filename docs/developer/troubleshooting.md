@@ -33,7 +33,7 @@ The root conftest sets a CPU environment for ordinary tests. See the
 ## Tests are not collected or input files are missing
 
 Run `python -m pytest` from the repository root, using `--collect-only` to inspect the target test file first.
-Name new tests `*_test.py` to match adjacent source files; configuration lives in `pyproject.toml`.
+Test files follow the naming rule in [Testing](testing.md#name-and-place-test-files); collection is configured in `pyproject.toml`.
 Import morphology fixtures from `braincell.io._testing`; see [Testing](testing.md#reuse-morphology-fixtures) for an example.
 Prepare other workflow data and optional dependencies according to their local instructions.
 
@@ -45,7 +45,7 @@ Install documentation dependencies, then build from the repository root:
 python -m sphinx -b html docs docs/_build/html
 ```
 
-Check new warnings using the source filenames and line numbers in the log.
+Check new warnings using the source filenames and line numbers in the log. If the build hangs, check that it was not started with `-j`: a parallel build forks a process in which JAX already runs threads.
 Internal references in Markdown, RST, and notebooks use the same document names. When converting formats, preserve the document name and remove the old file to avoid duplicate names.
 A successful website build does not establish that notebook code has run.
 

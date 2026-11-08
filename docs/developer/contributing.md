@@ -50,9 +50,11 @@ Maintain existing examples at their actual locations, and use only implemented i
 Build the website:
 
 ```bash
-python -m sphinx -b html docs docs/_build/html
+python -m sphinx -W --keep-going -b html docs docs/_build/html
 ```
 
+CI runs this same command, so any warning (a broken link, cross-reference, or toctree entry) fails the PR; `--keep-going` lists every warning in one run.
+The build downloads the page header from brainx.chaobrain.com into `docs/_brand/`; offline, place that cache first and set `BRAINX_HEADER_OFFLINE=1`.
 Do not add `-j`: parallel builds fork a process in which JAX already runs threads, and can hang.
 The output is `docs/_build/html/index.html`. Website builds currently do not execute notebooks; after changing runnable code in a notebook, run that notebook or its companion script separately.
 
@@ -87,6 +89,6 @@ Support performance claims with measurement configurations and reproduction entr
 
 A PR can merge when:
 
-- the `ci-ok` check passes: it requires every CI job (pre-commit, the package build, the test suites on Linux, macOS and Windows, and the NEURON cable comparison) to succeed;
+- the `ci-ok` check passes: it requires every CI job (pre-commit, the package build, the documentation build, the test suites on Linux, macOS and Windows, and the NEURON cable comparison) to succeed;
 - a code owner other than the author approves it ([.github/CODEOWNERS](https://github.com/chaobrain/braincell/blob/main/.github/CODEOWNERS));
 - the branch is up to date with `main`.

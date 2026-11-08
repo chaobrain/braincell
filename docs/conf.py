@@ -100,7 +100,7 @@ nitpick_ignore = [
     ("py:class", "docutils.parsers.rst.directives.body.Sidebar"),
 ]
 
-suppress_warnings = ["myst.domains", "ref.ref"]
+suppress_warnings = []
 
 numfig = True
 

@@ -13,7 +13,6 @@ pytest -q examples/optim/parameter_learning
 
 The training examples use [fitting diagnostics](../parameter_fitting/README.md).
 Pass an `artifact_dir` under this directory's `artifacts/` when saving training results.
-See [Optimization Design](../../../docs/design/optim/TODO.md) for parameter contracts.
 
 Follow-up: move gradient-comparison sections from the Synapse notebook into
 validation tutorials, reusing the existing [gradient checks](../../../validation/optim/gradient_correctness/README.md).

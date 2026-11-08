@@ -3,8 +3,6 @@
 Compare fresh-cell startup before and after the differentiable geometry refactor.
 The driver loads an explicitly selected BrainCell checkout, so both revisions
 can use the same measurement script without reinstalling the package.
-The design and staged acceptance criteria are in
-[Nonlinear Pattern Separation validation design](../../../docs/design/optim/proposals/geometry-training.md).
 
 The saved comparisons measure the earlier array-preparation prototype, before
 the current runtime geometry lifecycle and trainable integration. Descriptions

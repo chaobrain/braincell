@@ -24,7 +24,6 @@ jobs:
   # Exercise the packaging path on every push. Publish.yml only builds on a
   # release, so before this job existed a packaging regression stayed invisible
   # until the day a release was cut -- which is how every release so far broke.
-  # See docs/specs/2026-08-13-release-publish-ci-fix.md.
   build_package:
     runs-on: ubuntu-latest
     strategy:

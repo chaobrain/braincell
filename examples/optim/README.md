@@ -7,8 +7,7 @@ Declare mechanisms and connections with valid initial parameters, call
 `cell.init_state()` (or `network.init_state()`), then select fresh Views and
 register all trainable parameters before creating the optimizer and gradient
 engine. `reset_state()` retains current parameters; full `reset()` discards
-runtime overrides and training registrations. See the
-[lifecycle contract](../../docs/design/optim/current/api.md#lifecycle).
+runtime overrides and training registrations.
 
 - [Parameter learning](parameter_learning/README.md): channel, ion, synapse and HH training tutorials.
 - [Parameter fitting](parameter_fitting/README.md): composable models, datasets,
@@ -29,6 +28,7 @@ python -m examples.optim.parameter_fitting.run --help
 ```
 
 Each workflow writes generated outputs to its ignored `artifacts/` directory.
-Contracts, proposals and measured results live in [Optimization Design](../../docs/design/optim/TODO.md).
+Correctness checks live in [validation](../../validation/optim/README.md) and measured results in
+[benchmarks](../../benchmarks/performance/optim_gradient_scaling/README.md).
 
 Existing local outputs moved with their workflows. Older ignored `online_learning` and `parameter_learning` files are preserved under `artifacts/legacy_experimental/`.

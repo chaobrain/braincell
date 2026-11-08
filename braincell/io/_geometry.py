@@ -111,8 +111,8 @@ def should_copy_attach_point(
     * The SWC reader passes ``True``. A child whose first point coincides
       with the attachment but carries a different radius still gets the
       copied point, so the branch boundary keeps its radius jump as a
-      zero-length first segment. That behaviour is an invariant recorded in
-      ``docs/design/io/current/swc-reader-invariants.md``.
+      zero-length first segment. That behaviour is an invariant of the SWC
+      reader (see ``braincell.io.swc.reader``).
     * The ASC reader passes ``False``. Neurolucida traces repeat the parent
       terminal coordinate routinely, and NEURON's ``read_nlcda3.hoc``
       suppresses the duplicate on coincident xyz regardless of diameter.

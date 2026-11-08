@@ -13,10 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Deliver fixed-window scheduled events directly to target layouts.
-
-See docs/design/synapse/proposals/event-delivery-optimization.md.
-"""
+"""Deliver fixed-window scheduled events directly to target layouts."""
 
 from dataclasses import dataclass
 import time

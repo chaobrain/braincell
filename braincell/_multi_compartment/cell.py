@@ -15,8 +15,10 @@
 
 """``Cell`` — single-class multi-compartment neuron.
 
-The population-view contract is specified in
-``docs/specs/2026-08-20-cell-population-view.md``.
+``cell[index]`` returns a ``CellView``: a population selection that keeps only
+the root reference and stable indices, and gathers population-shaped values
+from the root on demand. The root ``Cell`` stays the only owner of morphology,
+discretization caches and runtime state.
 
 A ``Cell`` carries both the declaration (morphology, CV policy, paint /
 place rules, solver, spike config) and the runtime (``V`` / ``spike`` /
@@ -90,7 +92,7 @@ from braincell.network.event import EventOutputCollection, _CellSpikeSource
 from braincell.network.recording import RecordingSpec, compile_recording, recording_is_active
 from braincell.reduction import ReductionOutput, ReductionViewCollection
 from braincell.reduction.runtime import ReductionInputRuntime, build_reduction_input_runtime
-from braincell.morph.morphology import Morphology, clone_morpho
+from braincell.morph.morphology import Morphology
 from braincell.quad import get_integrator, ind_exp_euler_step
 from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
@@ -422,7 +424,6 @@ class CellView(DiscreteView, _CellFacade):
     def root(self) -> "Cell":
         """Return the root :class:`Cell` that owns all data."""
         return self._cell
-
 
     @property
     def cell(self) -> "Cell":
@@ -860,9 +861,7 @@ class CVCollectionView(tuple):
         return result
 
     def _geometry(self):
-        self._cell._raise_if_not_initialized(
-            "CV geometry; call init_state() before reading runtime geometry"
-        )
+        self._cell._raise_if_not_initialized("CV geometry; call init_state() before reading runtime geometry")
         scope = self._scope
         if scope is None:
             scope = self._cell._root_scope().select_cv_ids(tuple(cv.id for cv in self))
@@ -2264,7 +2263,8 @@ class Cell(_CellFacade, HHTypedNeuron):
             raise RuntimeError("_get_axial_operator() requires init_state() first.")
         if runtime.geometry is not None and any(is_traced_value(state.value) for state in runtime.geometry.values()):
             return build_cv_axial_operator(
-                self, node_tree=self.node_tree,
+                self,
+                node_tree=self.node_tree,
                 scheduling=self._node_scheduling_unchecked(algorithm="dhs"),
             ) * (u.ms**-1)
         float_dtype = jnp.asarray(0.0).dtype
@@ -3389,8 +3389,9 @@ def _normalize_pop_size(pop_size) -> tuple[int, ...]:
 
     A ``Cell`` always carries a population axis: the canonical shape has at
     least one entry, so runtime state is at least two-dimensional
-    (``pop_size + (n_cv,)``). See ``docs/specs/2026-08-13-cell-hidden-group-state.md``
-    for why rank-0 populations are rejected.
+    (``pop_size + (n_cv,)``). Rank-0 populations are rejected so that every
+    hidden state groups its trailing compartment axis and rank-0 and rank-1
+    populations never take different code paths.
 
     Parameters
     ----------

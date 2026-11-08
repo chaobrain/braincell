@@ -2,7 +2,7 @@
 
 原始运行材料仅保存在运行者本地的 artifacts，未随 Git 提供；本页的正文与表格随仓库维护。原始目录、日志或图像链接仅为可选核查入口，缺失时不影响读取已保存的数据。
 
-固定窗口的直接投递在 CPU 长表和共享布局中有稳定收益；GPU 的固定宽度方案也在共享布局完整模型中达到 **1.23×** 加速。设备、事件分布和目标状态布局共同决定选择，当前证据不支持一个全局最优方法。[完整数据表](scheduled-event-delivery-tables.md) 保存所有方法、稳态时间、首次成本和排除项；[方案](../../../../docs/design/synapse/proposals/event-delivery-optimization.md) 维护生产接入方向。
+固定窗口的直接投递在 CPU 长表和共享布局中有稳定收益；GPU 的固定宽度方案也在共享布局完整模型中达到 **1.23×** 加速。设备、事件分布和目标状态布局共同决定选择，当前证据不支持一个全局最优方法。[完整数据表](scheduled-event-delivery-tables.md) 保存所有方法、稳态时间、首次成本和排除项。
 
 ## 配置与测量口径
 
@@ -80,7 +80,7 @@ shared full 的 `input_scatter_fusion_2` 累积时间从 29.748 ms 降为 8.235 
 
 本轮导出 336 条正式计时记录。微基准逐步计数与加权输入一致，CPU/GPU 源表和计数哈希配对通过。完整模型逐步驱动输入最大误差为 0，电导最大绝对误差 1.863e-9 uS，膜电位最大绝对误差 4.006e-5 mV；允许同一步归约顺序引起的浮点差异。
 
-新增四个测试文件共 19 个测试、39 个子场景通过，另有既有 benchmark 的 12 个测试通过；GPU 10 个核心测试、JAX 0.8.0 CPU 上全部 19 个新增测试通过。新四个源模块语句与分支综合覆盖率为 98.66%。覆盖空桶、重复事件、冲突目标、尾块、异质 delay、半步边界、分段/seek/reset、运行时权重变化、float32/64、资源拒绝和一阶权重/tau 梯度。实际 TrainableManager/Network 路径检查权重、tau 梯度及未连接布局；[接口页](../../../../docs/design/synapse/current/experimental-scheduled-delivery.md) 的编译示例也已执行。
+新增四个测试文件共 19 个测试、39 个子场景通过，另有既有 benchmark 的 12 个测试通过；GPU 10 个核心测试、JAX 0.8.0 CPU 上全部 19 个新增测试通过。新四个源模块语句与分支综合覆盖率为 98.66%。覆盖空桶、重复事件、冲突目标、尾块、异质 delay、半步边界、分段/seek/reset、运行时权重变化、float32/64、资源拒绝和一阶权重/tau 梯度。实际 TrainableManager/Network 路径检查权重、tau 梯度及未连接布局；`braincell.experimental.scheduled_delivery` 文档中的编译示例也已执行。
 
 初始 full 大批次在 CPU/GPU 的 large/shared 共 4 个 worker 超过 120 秒，记录保留。随后拆为“production + 一个候选”成功完成 scan/direct/padded，并对关键候选复测；large/shared 的旧 current 适配器和 bucket 没有补测，表中留空。报告程序因保留这四个历史超时而返回非零；除此之外无缺失、输入不一致或数值校验失败。当前 full 默认已收窄为 direct + production，回归测试验证这一配置。
 

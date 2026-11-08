@@ -121,10 +121,10 @@
 - 原始命令、日志、JSON/NPZ、StableHLO、源码快照和图统计在本地 ignored `artifacts/compile_materialize_diagnostic_20260910/`；不随 Git 提供。`analysis/` 为离线派生结果，`actual_counts.json` 为实际调用计数；`diagnostic_export_incident.json` 记录异常和恢复方式。
 - 完成修复后，14 个不执行神经元的测试及 6 个 subtest 通过，覆盖 materialize 的图规模、单位/精度、部分/重复/多 layout 写入、原子提交、正反向梯度，以及诊断自引用和导出失败时保留结果。未运行会增加模型 rollout 的整目录测试。
 
-实际执行命令（工作目录 `/home/swl/studio/braincell-hh-crossover`）：
+实际执行命令（工作目录 `~/studio/braincell-hh-crossover`）：
 
 ```bash
-/home/swl/miniforge3/envs/braincell/bin/python benchmarks/performance/optim_gradient_scaling/artifacts/compile_materialize_diagnostic_20260910/launch.py --execute
+~/miniforge3/envs/braincell/bin/python benchmarks/performance/optim_gradient_scaling/artifacts/compile_materialize_diagnostic_20260910/launch.py --execute
 ```
 
 该 launcher 对已存在 manifest 拒绝重复启动；重测须使用新的实验目录和明确执行计划。绘图和[旧粗扫描结果](../hh_crossover/before/hh-crossover-h200-20260910-supplement.md)保留原版本，未因本次优化重新解释为新测量。

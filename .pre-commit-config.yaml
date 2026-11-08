@@ -7,34 +7,38 @@
 # Ruff configuration (line length, rule selection, format style) lives in
 # pyproject.toml under [tool.ruff]; it is deliberately NOT duplicated here.
 
+minimum_pre_commit_version: "2.8.0"
+
 default_language_version:
   python: python3
 
-exclude: |
-  (?x)^(
-      docs/.*|
-      examples/.*|
-      benchmarks/.*|
-      validation/.*|
-      data/.*|
-      dev/.*
-  )$
-
+# There is no global `exclude`: the repository checks at the end must see
+# every tracked file. The generic file hooks skip the trees that hold
+# notebooks, data and generated results, so they never rewrite them.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       - id: check-added-large-files
         args: ["--maxkb=1024"]
+        exclude: &content_trees '^(docs|examples|benchmarks|validation|data|dev)/'
       - id: check-ast
+        exclude: *content_trees
       - id: check-json
+        exclude: *content_trees
       - id: check-toml
+        exclude: *content_trees
       - id: check-yaml
+        exclude: *content_trees
       - id: check-merge-conflict
+        exclude: *content_trees
       - id: debug-statements
         types: [python]
+        exclude: *content_trees
       - id: end-of-file-fixer
+        exclude: *content_trees
       - id: trailing-whitespace
+        exclude: *content_trees
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.2
@@ -49,3 +53,32 @@ repos:
     rev: v2.27.1
     hooks:
       - id: pyproject-fmt
+
+  # Repository rules that AGENTS.md states, enforced here so they hold on
+  # every tracked file, not only on the trees ruff lints.
+  - repo: local
+    hooks:
+      - id: license-header
+        name: Apache-2.0 header at the top of every Python file
+        language: pygrep
+        # The notice verbatim (only the year varies); only a shebang and a
+        # PEP 263 encoding line may precede it.
+        # \A, not ^: --multiline makes ^ match at every line.
+        entry: '\A(#![^\n]*\r?\n)?(#[^\n]*coding[:=][^\n]*\r?\n)?# Copyright 20\d\d BrainX Ecosystem Limited\. All Rights Reserved\.\r?\n#\r?\n# Licensed under the Apache License, Version 2\.0 \(the "License"\);\r?\n# you may not use this file except in compliance with the License\.\r?\n# You may obtain a copy of the License at\r?\n#\r?\n#     http://www\.apache\.org/licenses/LICENSE-2\.0\r?\n#\r?\n# Unless required by applicable law or agreed to in writing, software\r?\n# distributed under the License is distributed on an "AS IS" BASIS,\r?\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied\.\r?\n# See the License for the specific language governing permissions and\r?\n# limitations under the License\.\r?\n# ={78}\r?\n'
+        args: [--negate, --multiline]
+        types: [python]
+      - id: test-file-naming
+        name: test modules are named <module>_test.py
+        language: fail
+        entry: test modules are named <module>_test.py beside the module they test; test_*.py and test.py are never collected
+        files: '(^|/)test(_[^/]*)?\.py$'
+        # The NEURON comparison suites keep pytest's prefix style (pyproject.toml, python_files).
+        exclude: '^validation/neuron/(cable|channel_no_conc)/tests/'
+      - id: no-private-references
+        name: no maintainer-spec paths or personal home paths
+        language: pygrep
+        # Specs and design notes are kept outside this repository: name a task
+        # by its ID instead. Bare spec file names count too, not only paths.
+        entry: 'docs/(design|specs)/|\bbraincell-spec\b|decisions-need-me|\b(roadmap|lessons)\.md\b|\bmilestones/|\b20\d\d-\d\d-\d\d-[a-z0-9-]+\.md\b|/home/[A-Za-z0-9_.-]+/'
+        types: [text]
+        exclude: '^(\.pre-commit-config\.yaml|AGENTS\.md)$'

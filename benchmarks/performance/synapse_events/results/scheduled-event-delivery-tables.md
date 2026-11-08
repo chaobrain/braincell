@@ -160,4 +160,4 @@
 
 工作流命令见 [benchmark README](../README.md)。原始 CSV、独立 worker、源码快照及 profiler 输出位于该目录 artifacts/delivery 下；delivery_validation.json 保留所有未通过、超时和不适用项。
 
-[结果解释与选型](scheduled-event-delivery.md) · [方案](../../../../docs/design/synapse/proposals/event-delivery-optimization.md) · [第一轮结果](scheduled-event-queries.md)
+[结果解释与选型](scheduled-event-delivery.md) · [第一轮结果](scheduled-event-queries.md)

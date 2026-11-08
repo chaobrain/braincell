@@ -304,32 +304,32 @@ index, name, utilization.gpu [%], memory.used [MiB]
 
 ```bash
 # 最小案例：两种布局 × CPU/GPU
-/home/swl/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.benchmark \
+~/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.benchmark \
   --suite smoke --devices both --gpu 7
 
 # 全部实验：65 个配置，130 个设备/配置，去除实验间重复项
-/home/swl/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.benchmark \
+~/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.benchmark \
   --suite all --devices both --gpu 7 --out benchmarks/performance/synapse_events/artifacts/baseline
 
 # 输出表格、图、配对检查和 Markdown
-/home/swl/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.report
+~/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.report
 
 # 自定义规模；大规模通过显式参数启用
-/home/swl/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.benchmark \
+~/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.benchmark \
   --suite scaling --cells 100,1000 --inputs 10,100 --devices gpu --gpu 7 \
   --out benchmarks/performance/synapse_events/artifacts/large
 
 # 独立 profiler 运行；trace 在正式计时结束后采集
-/home/swl/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.benchmark \
+~/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.benchmark \
   --suite smoke --devices gpu --gpu 7 --trace \
   --out benchmarks/performance/synapse_events/artifacts/trace
 
 # 从 XPlane 检查现有 BrainCell scope
-/home/swl/anaconda3/envs/braincell_311/bin/python -m benchmarks.profiling.parse_xplane_trace \
+~/anaconda3/envs/braincell_311/bin/python -m benchmarks.profiling.parse_xplane_trace \
   --trace-dir benchmarks/performance/synapse_events/artifacts/trace --mode leaf
 
 # CPU/GPU 双精度诊断；选用主实验中电压差较大的低频配置
-/home/swl/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.benchmark \
+~/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.benchmark \
   --suite scaling --cells 10 --inputs 10 --rate-hz 10 --precision 64 \
   --out benchmarks/performance/synapse_events/artifacts/baseline/diagnostics/precision64
 # 对应单精度诊断将 --precision 改为 32，--out 的 precision64 改为 precision32

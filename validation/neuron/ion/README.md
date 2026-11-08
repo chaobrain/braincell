@@ -53,8 +53,8 @@ tmpdir=$(mktemp -d)
 cd "$tmpdir"
 CPP=/usr/bin/cpp CC=/usr/bin/cc CXX=/usr/bin/c++ \
 nrnivmodl \
-  /home/swl/braincell-ion_dyn/data/cerebellum/goc_ma2020/mechanisms/ion/CdpStC_MA20_GoC.mod \
-  /home/swl/braincell-ion_dyn/data/cerebellum/sc_ma2021/mechanisms/channel/Cav2p1_RI21_SC.mod
+  ~/braincell-ion_dyn/data/cerebellum/goc_ma2020/mechanisms/ion/CdpStC_MA20_GoC.mod \
+  ~/braincell-ion_dyn/data/cerebellum/sc_ma2021/mechanisms/channel/Cav2p1_RI21_SC.mod
 ```
 
 - `cdpstc_ma2020_goc_with_cav3p1.ipynb` 的最小编译命令：

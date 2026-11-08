@@ -182,7 +182,9 @@ class RolloutGradientEngine:
             return self
 
         self._initializer_step, self._functional_step, self._materialization_mode = _prepare_steps(
-            self, example_step_data, require_scalar_output=True,
+            self,
+            example_step_data,
+            require_scalar_output=True,
         )
         self._parameter_coordinates = build_parameter_coordinates(self._functional_step)
         initializer_coordinates = build_parameter_coordinates(self._initializer_step)
@@ -296,6 +298,7 @@ class RolloutGradientEngine:
         coordinates = self._parameter_coordinates
         values, tangents = self._initial_full_carry(roots)
         gradient = jnp.zeros((coordinates.size,), dtype=_coordinate_dtype(roots))
+
         def scan_step(carry, item):
             current_values, current_tangents, current_gradient = carry
             next_values, next_tangents, local_loss, local_gradient = forward_sensitivity_step(
@@ -467,7 +470,9 @@ class TrajectoryGradientEngine:
             return self
 
         self._initializer_step, self._functional_step, self._materialization_mode = _prepare_steps(
-            self, example_step_data, require_scalar_output=False,
+            self,
+            example_step_data,
+            require_scalar_output=False,
         )
         self._parameter_coordinates = build_parameter_coordinates(self._functional_step)
         initializer_coordinates = build_parameter_coordinates(self._initializer_step)
@@ -569,7 +574,8 @@ class TrajectoryGradientEngine:
             (step_data, learning_signals),
         )
         return TrajectoryGradientResult(
-            loss, _unflatten_parameter_gradients(self._parameter_coordinates, gradient, roots),
+            loss,
+            _unflatten_parameter_gradients(self._parameter_coordinates, gradient, roots),
         )
 
 
@@ -621,7 +627,9 @@ def _prepare_steps(engine, example_step_data, *, require_scalar_output):
             return result
 
         candidate = build_stateful_step(
-            unmapped_step, example_step_data, engine.parameter_states,
+            unmapped_step,
+            example_step_data,
+            engine.parameter_states,
             require_scalar_output=require_scalar_output,
         )
         if not any(id(state) in protected for state in step_writes):
@@ -643,12 +651,15 @@ def _prepare_steps(engine, example_step_data, *, require_scalar_output):
 
     initializer_step = build_stateful_step(initialize_and_zero, None, engine.parameter_states)
     if functional_step is None:
+
         def materialized_step(data):
             manager.materialize()
             return engine.step(data)
 
         functional_step = build_stateful_step(
-            materialized_step, example_step_data, engine.parameter_states,
+            materialized_step,
+            example_step_data,
+            engine.parameter_states,
             require_scalar_output=require_scalar_output,
         )
     return initializer_step, functional_step, mode
@@ -826,8 +837,7 @@ def _unflatten_parameter_gradients(coordinates, gradient, roots):
     it is not a conversion to a physical derivative unit such as loss/S.
     """
     arrays = coordinates.unflatten(gradient)
-    return {name: jax.tree.structure(root).unflatten((arrays[name],))
-            for name, root in zip(coordinates.names, roots)}
+    return {name: jax.tree.structure(root).unflatten((arrays[name],)) for name, root in zip(coordinates.names, roots)}
 
 
 def _build_diagnostic_result(coordinates, *, at, samples, final_carry, roots):

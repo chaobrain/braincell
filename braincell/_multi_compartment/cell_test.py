@@ -1221,10 +1221,7 @@ def _hh_cell(pop_size, *, calcium: bool = True) -> Cell:
 
 
 class CellHiddenStatesAreGroupStatesTest(unittest.TestCase):
-    """Every ``Cell`` hidden state groups its trailing spatial axis.
-
-    See ``docs/specs/2026-08-13-cell-hidden-group-state.md``.
-    """
+    """Every ``Cell`` hidden state groups its trailing spatial axis."""
 
     def _hidden_states(self, cell: Cell):
         return [

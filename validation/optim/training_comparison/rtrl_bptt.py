@@ -365,7 +365,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--epochs", type=int, default=DEFAULT_EPOCHS)
     run.add_argument("--learning-rate", type=float, default=DEFAULT_LEARNING_RATE)
     run.add_argument("--gpu", type=int, default=7)
-    run.add_argument("--python", type=Path, default=Path("/home/swl/anaconda3/envs/braincell_311/bin/python"))
+    run.add_argument("--python", type=Path, default=Path(sys.executable))
     run.add_argument("--output-dir", type=Path)
     run.add_argument("--resume", action="store_true")
     run.add_argument("--config", default=json.dumps(asdict(DEFAULT_CONFIG)))

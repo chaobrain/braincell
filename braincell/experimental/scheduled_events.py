@@ -15,7 +15,6 @@
 
 """Experimental fixed-window scheduled event queries.
 
-Design: docs/design/synapse/proposals/event-delivery-optimization.md.
 These kernels do not replace Network delivery. Schedules, topology, delay and dt
 are immutable for the lifetime of a plan. Only integer scheduling is performed;
 weights and synapse dynamics remain outside the scheduling loops.

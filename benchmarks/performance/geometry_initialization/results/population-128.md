@@ -13,11 +13,11 @@ GPU 新旧耗时差在 -2.6% 至 +0.7% 内；CPU 的 10/1000 档接近，1/100 �
 | GPU | 物理 GPU 1，NVIDIA H200，143771 MiB，启动前约 551 MiB 占用；映射到进程内设备 0 |
 | 其他负载 | GPU 0 有其他任务，本实验未使用；整台主机未隔离其他用户负载 |
 | 系统 | Linux 6.17.0-35-generic，x86_64，glibc 2.39 |
-| Python | 3.12.14；解释器 `/home/swl/miniforge3/envs/braincell/bin/python` |
+| Python | 3.12.14；解释器 `~/miniforge3/envs/braincell/bin/python` |
 | 数值库 | JAX/jaxlib 0.11.1，BrainState 0.5.4，BrainUnit 0.5.2，NumPy 2.5.2 |
 | 精度 | CPU/GPU 从初始化开始均为 float64 |
-| 基线 | `/home/swl/studio/braincell`，commit `c70a8b3cdcc867f42d85510f9fe2d5044a05d081`；额外 examples 改动不参与此驱动 |
-| 候选 | `/home/swl/studio/braincell-nonlinear-pattern-separation`，相同基线上的 `feat/cv-nonlinear-pattern-separation` 未提交数值层原型 |
+| 基线 | `~/studio/braincell`，commit `c70a8b3cdcc867f42d85510f9fe2d5044a05d081`；额外 examples 改动不参与此驱动 |
+| 候选 | `~/studio/braincell-nonlinear-pattern-separation`，相同基线上的 `feat/cv-nonlinear-pattern-separation` 未提交数值层原型 |
 | population.py SHA256 | `7042c97ffde450381b6f902ced02b23b7e026e83b60599b2cf51e923d4017c51` |
 | 共享 benchmark.py SHA256 | `59b9f29d66e4baacd87591ae0e12367c80c5e0c06dc54a32916b70d31d96733c` |
 
@@ -123,10 +123,10 @@ population 一定改善 CPU 吞吐。这是当前形态、solver、float64 和�
 
 | 顺序 | label | source-root | backend 参数 |
 | ---: | --- | --- | --- |
-| 1 | baseline_cpu_population128 | /home/swl/studio/braincell | --platform cpu |
-| 2 | arrays_cpu_population128 | /home/swl/studio/braincell-nonlinear-pattern-separation | --platform cpu |
-| 3 | baseline_gpu_population128 | /home/swl/studio/braincell | --platform gpu --gpu 1 |
-| 4 | arrays_gpu_population128 | /home/swl/studio/braincell-nonlinear-pattern-separation | --platform gpu --gpu 1 |
+| 1 | baseline_cpu_population128 | ~/studio/braincell | --platform cpu |
+| 2 | arrays_cpu_population128 | ~/studio/braincell-nonlinear-pattern-separation | --platform cpu |
+| 3 | baseline_gpu_population128 | ~/studio/braincell | --platform gpu --gpu 1 |
+| 4 | arrays_gpu_population128 | ~/studio/braincell-nonlinear-pattern-separation | --platform gpu --gpu 1 |
 
 每条使用上述解释器、`timeout 900`，输出 `artifacts/<label>.json`。这些原始 JSON 和
 `artifacts/<label>_voltages/` 仅保存在本地忽略目录；JSON 含源文件哈希、实际 import

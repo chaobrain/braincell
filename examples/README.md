@@ -23,8 +23,8 @@ requirements and output locations. Generated files belong to local `artifacts/`.
 
 [Validation](../validation/README.md), [benchmarks](../benchmarks/README.md) and
 [shared data](../data/README.md) provide numerical checks, performance measurements
-and reference inputs. Detailed API and architecture contracts live in
-[Design](../docs/design/TODO.md).
+and reference inputs. API details are in the
+[API reference](../docs/apis/braincell.rst).
 
 Older plots with no confirmed workflow owner are preserved locally under
 `artifacts/legacy_multi_compartment/plot/`.

@@ -246,7 +246,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     run.add_argument("--output-dir", type=Path)
     run.add_argument("--gpu", type=int, default=1)
-    run.add_argument("--python", type=Path, default=Path("/home/swl/anaconda3/envs/braincell_311/bin/python"))
+    run.add_argument("--python", type=Path, default=Path(sys.executable))
     run.add_argument("--resume", action="store_true")
     worker = subparsers.add_parser("worker")
     worker.add_argument("--config", type=Path, required=True)

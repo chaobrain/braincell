@@ -49,19 +49,24 @@ class MaterializationGraphTest(unittest.TestCase):
         cell = _MaterializationCell()
         layouts = [SimpleNamespace(id=0, source_cv_ids=tuple(range(n_cv)))]
         if split:
-            layouts = [SimpleNamespace(id=0, source_cv_ids=(0,)),
-                       SimpleNamespace(id=1, source_cv_ids=tuple(range(1, n_cv)))]
+            layouts = [
+                SimpleNamespace(id=0, source_cv_ids=(0,)),
+                SimpleNamespace(id=1, source_cv_ids=tuple(range(1, n_cv))),
+            ]
         states = {}
         for layout in layouts:
             value = jnp.full((2, n_cv), -1.0)
             if unit is not None:
                 value = value * unit
             states[(layout.id, "g_max")] = RuntimeParameterState(
-                value, axis="row", full_shape=(2, n_cv),
+                value,
+                axis="row",
+                full_shape=(2, n_cv),
                 point_mask=np.isin(np.arange(n_cv), layout.source_cv_ids),
             )
         cell._runtime = SimpleNamespace(
-            layouts=layouts, state_buffers=states,
+            layouts=layouts,
+            state_buffers=states,
             layout_mechanisms={layout.id: braincell.mech.Channel("IL", name="leak") for layout in layouts},
         )
         manager = TrainableManager(cell)
@@ -72,11 +77,19 @@ class MaterializationGraphTest(unittest.TestCase):
             root = brainstate.ParamState(jnp.arange(len(selection), dtype=float) + 1 + i * 20)
             roots.append(root)
             rows = tuple(_TargetRow("channel", "leak", "IL", pop, cv, cv) for pop, cv in selection)
-            manager._binding_list.append(ParameterBinding(
-                name=f"root{i}", target_owner="leak", target_field="g_max",
-                row_keys=tuple(selection), group_by="row", root_names=(f"root{i}",), unit=unit,
-                _rows=rows, _evaluate=lambda root=root: root.value if unit is None else root.value * unit,
-            ))
+            manager._binding_list.append(
+                ParameterBinding(
+                    name=f"root{i}",
+                    target_owner="leak",
+                    target_field="g_max",
+                    row_keys=tuple(selection),
+                    group_by="row",
+                    root_names=(f"root{i}",),
+                    unit=unit,
+                    _rows=rows,
+                    _evaluate=lambda root=root: root.value if unit is None else root.value * unit,
+                )
+            )
         return cell, manager, states, roots
 
     def test_materialization_scatter_count_is_bounded_per_layout(self):
@@ -132,15 +145,16 @@ class MaterializationGraphTest(unittest.TestCase):
         # Arbitrary order covers the rectangle; the last repeated entry wins.
         populations = np.array([1, 0, 1, 0, 1])
         cvs = np.array([0, 1, 1, 0, 0])
-        values = jnp.array([1., 2., 3., 4., 5.]) * u.siemens
+        values = jnp.array([1.0, 2.0, 3.0, 4.0, 5.0]) * u.siemens
         actual = _set_rows(full, populations, cvs, values).to_decimal(u.mS)
         np.testing.assert_allclose(actual, [[4000, 2000], [5000, 3000]])
         self.assertTrue(jnp.issubdtype(actual.dtype, jnp.floating))
 
     def test_invalid_later_binding_does_not_commit_earlier_values(self):
         from dataclasses import replace
+
         cell, manager, states, roots = self._fixture(3, [[(0, 0)], [(1, 2)]], unit=u.mS)
-        manager._binding_list[1] = replace(manager._binding_list[1], _evaluate=lambda: jnp.array([1.]))
+        manager._binding_list[1] = replace(manager._binding_list[1], _evaluate=lambda: jnp.array([1.0]))
         with patch("braincell._compute.bindings._sync_runtime_node_param"), self.assertRaises(TypeError):
             manager.materialize()
         np.testing.assert_array_equal(states[(0, "g_max")].dense_value().to_decimal(u.mS), -np.ones((2, 3)))

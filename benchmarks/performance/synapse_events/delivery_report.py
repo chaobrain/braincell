@@ -278,8 +278,6 @@ def export_report(root, report=None):
         "",
         _document_link("已维护结果解释与选型", HERE / "results/scheduled-event-delivery.md", report)
         + " · "
-        + _document_link("方案", ROOT / "docs/design/synapse/proposals/event-delivery-optimization.md", report)
-        + " · "
         + _document_link("已维护查询结果", HERE / "results/scheduled-event-queries.md", report),
     ]
     report.parent.mkdir(parents=True, exist_ok=True)

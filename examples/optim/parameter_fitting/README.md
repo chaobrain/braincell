@@ -79,7 +79,7 @@ pip install -e '.[optim]'
 ```bash
 python examples/optim/initialization/hybrid_initialization.py run \
   --stage pilot --gpu 7 \
-  --python /home/swl/anaconda3/envs/braincell_311/bin/python \
+  --python ~/anaconda3/envs/braincell_311/bin/python \
   --resume
 ```
 
@@ -88,7 +88,7 @@ pilot 通过后运行 search seeds `0/1/2`：
 ```bash
 python examples/optim/initialization/hybrid_initialization.py run \
   --stage formal --gpu 7 \
-  --python /home/swl/anaconda3/envs/braincell_311/bin/python \
+  --python ~/anaconda3/envs/braincell_311/bin/python \
   --resume
 ```
 
@@ -137,9 +137,6 @@ ordering。它不运行参数优化，也不自动冻结最终 train subset。
 python examples/optim/stimulus_design/dataset.py
 python examples/optim/stimulus_design/robust_oed.py
 ```
-
-详细理论、文献和证据边界见
-[刺激设计、Persistent Excitation 与参数可辨识性](../../../docs/design/optim/references/stimulus-design-and-identifiability.md)。
 
 当前 A100 x64 dataset/OED 结果：
 
@@ -461,9 +458,6 @@ spike basin；Nesterov没有稳定优于普通Momentum。这进一步说明Rprop
 
 ## 相关文档
 
-- [模块化训练诊断与优化恢复](../../../docs/design/optim/references/modular-training-diagnostics.md)：当前 `diagnostics.py` 的角色、history alignment、双 archive、spike-region 和恢复策略。
-- [电压轨迹与 Spike-Aware 参数训练](../../../docs/design/optim/references/voltage-and-spike-parameter-fitting.md)：subthreshold/spike loss、mask、curriculum 和历史实验索引。
-- [Optimization Design Overview](../../../docs/design/optim/TODO.md)：公共 `braincell.trainable` 与实验训练代码的边界。
 - [Experimental Optimization Work](../README.md)：exact forward sensitivity、RTRL/BPTT、正确性与 scaling 实验导航。
 
 ## 最小使用方式

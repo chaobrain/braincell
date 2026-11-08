@@ -1,10 +1,21 @@
 # Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
 
 import unittest
 import numpy as np
 import brainstate
-import jax
 import jax.numpy as jnp
 
 import brainunit as u
@@ -37,15 +48,13 @@ class GeometryViewTest(unittest.TestCase):
         with brainstate.environ.context(precision=64, dt=0.025 * u.ms):
             times = jnp.arange(3, dtype=jnp.float64) * 0.025
             fields = ("length", "radius_scale", "Ra", "cm")
-            initial = jnp.asarray([[-65., -50., -40.], [-55., -70., -45.]]) * u.mV
+            initial = jnp.asarray([[-65.0, -50.0, -40.0], [-55.0, -70.0, -45.0]]) * u.mV
 
             def build(group, method):
                 model = _cell(pop_size=(2,), n_cv=3)
                 model.V_init = initial
                 model.init_state()
-                model.geometry.trainable(**{
-                    field: scale(group_by=group, name=field) for field in fields
-                })
+                model.geometry.trainable(**{field: scale(group_by=group, name=field) for field in fields})
 
                 def step(time):
                     with brainstate.environ.context(t=time * u.ms):
@@ -53,7 +62,7 @@ class GeometryViewTest(unittest.TestCase):
                     return model.V.value.to_decimal(u.mV)
 
                 def loss(voltage, _times):
-                    return jnp.mean((voltage - jnp.asarray([-60., -55., -50.]))**2)
+                    return jnp.mean((voltage - jnp.asarray([-60.0, -55.0, -50.0])) ** 2)
 
                 return model, build_trajectory_value_and_grad(model, step=step, loss=loss, method=method)
 
@@ -68,13 +77,19 @@ class GeometryViewTest(unittest.TestCase):
                     names = tuple(rtrl.parameter_states)
                     for index, field in enumerate(names):
                         self.assertEqual(np.size(roots[index]), count)
-                        np.testing.assert_allclose(actual.gradients[field], expected.gradients[field], rtol=1e-8, atol=1e-8)
+                        np.testing.assert_allclose(
+                            actual.gradients[field], expected.gradients[field], rtol=1e-8, atol=1e-8
+                        )
                         direction = jnp.linspace(0.3, 1.0, count).reshape(roots[index].shape)
                         epsilon = 1e-4
+
                         def loss_at(delta):
-                            values = tuple(value + delta * direction if i == index else value for i, value in enumerate(roots))
+                            values = tuple(
+                                value + delta * direction if i == index else value for i, value in enumerate(roots)
+                            )
                             voltage = rtrl._observation_rollout(values, times)
                             return rtrl.loss(voltage, times)
+
                         finite = (loss_at(epsilon) - loss_at(-epsilon)) / (2 * epsilon)
                         automatic = jnp.sum(actual.gradients[field] * direction)
                         self.assertGreater(abs(float(automatic)), 1e-7, (group, field))
@@ -147,13 +162,13 @@ class GeometryViewTest(unittest.TestCase):
         with brainstate.environ.context(precision=64, dt=0.025 * u.ms):
             cell = _cell(pop_size=(2,), n_cv=3)
             cell.init_state()
-            length = np.asarray([[10., 14., 16.], [20., 9., 11.]]) * u.um
-            ra = np.asarray([[90., 100., 110.], [120., 80., 130.]]) * u.ohm * u.cm
-            cm = np.asarray([[0.8, 1.2, 1.], [1.4, 0.7, 1.1]]) * u.uF / u.cm**2
-            radius_scale = np.asarray([[0.8, 1.2, 1.], [1.4, 0.7, 1.1]])
+            length = np.asarray([[10.0, 14.0, 16.0], [20.0, 9.0, 11.0]]) * u.um
+            ra = np.asarray([[90.0, 100.0, 110.0], [120.0, 80.0, 130.0]]) * u.ohm * u.cm
+            cm = np.asarray([[0.8, 1.2, 1.0], [1.4, 0.7, 1.1]]) * u.uF / u.cm**2
+            radius_scale = np.asarray([[0.8, 1.2, 1.0], [1.4, 0.7, 1.1]])
             fields = dict(length=length, Ra=ra, cm=cm, radius_scale=radius_scale)
             cell.geometry.set(**{name: value.reshape(-1) for name, value in fields.items()})
-            initial = jnp.asarray([[-65., -50., -40.], [-55., -70., -45.]]) * u.mV
+            initial = jnp.asarray([[-65.0, -50.0, -40.0], [-55.0, -70.0, -45.0]]) * u.mV
 
             def trajectory(model, voltage):
                 def step(time):
@@ -166,6 +181,7 @@ class GeometryViewTest(unittest.TestCase):
                     model.reset_state()
                     model.V.value = voltage
                     return brainstate.transform.for_loop(step, jnp.arange(4) * 0.025)
+
                 return rollout
 
             rollout = trajectory(cell, initial)
@@ -174,7 +190,7 @@ class GeometryViewTest(unittest.TestCase):
                 other = _cell(n_cv=3)
                 other.init_state()
                 other.geometry.set(**{name: value[population] for name, value in fields.items()})
-                expected = trajectory(other, initial[population:population + 1])()
+                expected = trajectory(other, initial[population : population + 1])()
                 np.testing.assert_allclose(batched[:, population], expected[:, 0], rtol=1e-12, atol=1e-10)
 
             cell.geometry.length.set((length * 1.3).reshape(-1))

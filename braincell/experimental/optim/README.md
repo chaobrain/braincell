@@ -9,7 +9,6 @@ from braincell.experimental import optim
 functionalization and exact forward-sensitivity recurrence. Parameter selection,
 sharing, transforms and materialization come from `braincell.trainable`.
 
-API contracts and examples: [Experimental Workflows](../../../docs/design/optim/current/experimental-workflows.md).
 Scientific checks: [Optimization validation](../../../validation/optim/README.md).
 Performance: [Gradient scaling](../../../benchmarks/performance/optim_gradient_scaling/README.md).
 

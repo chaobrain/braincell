@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Generated Braincell density channel from /home/swl/braincell/examples/convert_mod/nmodl/mod_files/kv.mod."""
+"""Generated Braincell density channel from examples/convert_mod/nmodl/mod_files/kv.mod."""
 
 import braincell
 import braintools

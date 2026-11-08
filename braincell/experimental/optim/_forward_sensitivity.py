@@ -485,6 +485,7 @@ def forward_sensitivity_step(
         return functional_step.call(values, step_data)
 
     if os.environ.get("BRAINCELL_RTRL_JVP_MODE", "linearize") == "direct":
+
         def one_direction(tangent):
             return jax.jvp(transition, (state_values,), (tangent,))
 

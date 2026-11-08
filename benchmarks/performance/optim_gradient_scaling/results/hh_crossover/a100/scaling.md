@@ -7,7 +7,7 @@
 ## Reference 状态
 
 本文是 BrainCell exact RTRL 与 full BPTT 的 tracked 实验结果快照，记录正确性、内存、性能和
-训练一致性。数学推导见 [BPTT/RTRL 通用理论](../../../../../../docs/design/optim/references/bptt-to-rtrl-neuron-derivation.md)，实验程序、
+训练一致性。实验程序、
 CLI 和 notebook 导航见
 [Optimization Experiments](../../../../../../examples/optim/README.md)。
 
@@ -17,7 +17,7 @@ x64 测量。原始 CSV/NPZ、trial JSON、manifest 和 worker log 位于 Git ig
 
 本文于 2026-09-07 从 references 迁入 results，未重跑或修改历史数值。以下包含不同阶段的
 CPU 和 A100 配置；未明确记录的版本/日期不补造，历史 artifact 的存在性不等于新一次验收。
-近期事件网络的不同配置另见 [Synapse/Network](../../../../../../docs/design/optim/current/results/synapse-network-learning.md)。
+近期事件网络的不同配置另见 [梯度正确性验证](../../../../../../validation/optim/gradient_correctness/README.md)。
 
 ## 1. 实验对象与维度
 
@@ -262,7 +262,7 @@ python benchmarks/performance/optim_gradient_scaling/analysis/common/report.py
 ```bash
 python benchmarks/performance/optim_gradient_scaling/runner/hh_crossover/runner.py run \
   --suite full --gpu 7 --repeats 10 \
-  --python /home/swl/anaconda3/envs/braincell_311/bin/python \
+  --python ~/anaconda3/envs/braincell_311/bin/python \
   --output-dir benchmarks/performance/optim_gradient_scaling/artifacts/rtrl_bptt_scaling/full_block_exact \
   --resume
 ```

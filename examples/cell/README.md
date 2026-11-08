@@ -5,8 +5,8 @@
 - [Recording](recording.ipynb): select states and read structured simulation results.
 
 Start with the one-CV example. Recording builds on [Synapse](../synapse/README.md)
-and [Network](../network/README.md). See [Cell Design](../../docs/design/cell/TODO.md)
-for interface and solver details.
+and [Network](../network/README.md). See the
+[cells guide](../../docs/concepts/cells.ipynb) for interface and solver details.
 
 Follow-up: extract the one-CV notebook's numerical comparisons into validation
 and timing measurements into benchmarks, sharing the model setup with this tutorial.

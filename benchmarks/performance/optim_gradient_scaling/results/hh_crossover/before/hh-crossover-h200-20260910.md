@@ -110,13 +110,13 @@ C=81 的 2C、3C 参数组缺少 BPTT 稳态时间。这是编译预算限制，
 ## 实际命令与实现检查
 
 ```bash
-/home/swl/miniforge3/envs/braincell/bin/python -m benchmarks.performance.optim_gradient_scaling.runner.hh_crossover.runner run \
+~/miniforge3/envs/braincell/bin/python -m benchmarks.performance.optim_gradient_scaling.runner.hh_crossover.runner run \
   --suite hh_crossover --gpu 0 --repeats 5 --warmups 2 --no-gpu-monitor \
   --worker-timeout-seconds 1200 --budget-seconds 7200 \
   --output-dir benchmarks/performance/optim_gradient_scaling/artifacts/hh_crossover_20260910 \
-  --python /home/swl/miniforge3/envs/braincell/bin/python
+  --python ~/miniforge3/envs/braincell/bin/python
 ```
 
-工作目录为 `/home/swl/studio/braincell-hh-crossover`。14 项不执行 neuron 模型的驱动测试及 4 个 subtest 已验证；最后增加维度断言后，相关测试替身曾失败并已修正，失败项单独复测通过。正式扫描在该失败返回时已启动，记录这一检查顺序偏差；未增加或重跑模型调用。
+工作目录为 `~/studio/braincell-hh-crossover`。14 项不执行 neuron 模型的驱动测试及 4 个 subtest 已验证；最后增加维度断言后，相关测试替身曾失败并已修正，失败项单独复测通过。正式扫描在该失败返回时已启动，记录这一检查顺序偏差；未增加或重跑模型调用。
 
 后续命令与脚本说明见 [README](../../README.md)。历史 A100 数据见 [历史 scaling](../a100/scaling.md)，本轮不与其混合统计。

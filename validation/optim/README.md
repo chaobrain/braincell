@@ -22,4 +22,3 @@ python -m validation.optim.training_comparison.rtrl_bptt --help
 
 The gradient engines come from `braincell.experimental.optim`. Scaling results
 and resource measurement belong to [benchmarks](../../benchmarks/performance/optim_gradient_scaling/README.md).
-Model contracts and interpretation are maintained in [Optimization Design](../../docs/design/optim/TODO.md).

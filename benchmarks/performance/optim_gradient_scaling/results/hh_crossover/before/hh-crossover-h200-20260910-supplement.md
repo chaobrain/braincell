@@ -73,10 +73,10 @@ B/R 分别表示 BPTT/RTRL；内存单位为 MiB。argument、output、temporary
 - 本地原始材料位于本实验目录下的 ignored artifacts，不随 Git 提供：`hh_crossover_20260910/` 保留第一轮全部成功和超时；`hh_crossover_20260910_supplement/` 保存两个补测 worker 的原始 JSON/NPZ、日志、命令和代码指纹；`hh_crossover_20260910_completed/` 仅组装已保存数据并重算配对，不运行模型。
 - completed 的 manifest 和 trial JSON 记录每条结果的来源及原始 JSON SHA-256，区分初测与补测；supplement 的 actual_counts.json 记录本次实际次数，completed 的 cumulative_attempt_counts.json 记录所有尝试累计次数。
 
-实际启动命令（工作目录 `/home/swl/studio/braincell-hh-crossover`）：
+实际启动命令（工作目录 `~/studio/braincell-hh-crossover`）：
 
 ```bash
-/home/swl/miniforge3/envs/braincell/bin/python benchmarks/performance/optim_gradient_scaling/artifacts/hh_crossover_20260910_supplement/launch.py
+~/miniforge3/envs/braincell/bin/python benchmarks/performance/optim_gradient_scaling/artifacts/hh_crossover_20260910_supplement/launch.py
 ```
 
 ## 边界判读与局限

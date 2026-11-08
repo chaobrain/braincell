@@ -212,6 +212,7 @@ class CompTriangRawTest(unittest.TestCase):
             self.assertFalse(_dhs_custom_jvp_enabled())
         with patch.dict("os.environ", {"BRAINCELL_DHS_CUSTOM_JVP": "1"}):
             self.assertTrue(_dhs_custom_jvp_enabled())
+
     def test_explicit_jvp_matches_jax(self):
         diags = jnp.asarray([[2.0, 3.0, 4.0, 1.0]])
         solves = jnp.asarray([[4.0, 3.0, 8.0, 0.0]])
@@ -219,21 +220,35 @@ class CompTriangRawTest(unittest.TestCase):
         uppers = jnp.asarray([0.0, -0.5, -1.0, 0.0])
         edges = np.asarray([[1, 0], [2, 1]], dtype=np.int32)
         level_offsets = np.asarray([0, 1, 2], dtype=np.int32)
-        primal_tangents = (jnp.asarray([[0.1, -0.2, 0.3, 0.0]]), jnp.asarray([[0.2, 0.1, -0.1, 0.0]]),
-                           jnp.asarray([0.0, 0.1, -0.2, 0.0]), jnp.asarray([0.0, -0.2, 0.1, 0.0]))
-        tangent_kernels = (primal_tangents[0][None], primal_tangents[1][None],
-                           primal_tangents[2][None], primal_tangents[3][None])
+        primal_tangents = (
+            jnp.asarray([[0.1, -0.2, 0.3, 0.0]]),
+            jnp.asarray([[0.2, 0.1, -0.1, 0.0]]),
+            jnp.asarray([0.0, 0.1, -0.2, 0.0]),
+            jnp.asarray([0.0, -0.2, 0.1, 0.0]),
+        )
+        tangent_kernels = (
+            primal_tangents[0][None],
+            primal_tangents[1][None],
+            primal_tangents[2][None],
+            primal_tangents[3][None],
+        )
 
         def primal(d, s, l, u):
             return comp_triang_raw(d, s, l, u, edges, level_offsets)
 
         _, expected = jax.jvp(primal, (diags, solves, lowers, uppers), primal_tangents)
         actual = comp_triang_jvp(
-            diags, solves, lowers, uppers, edges, level_offsets,
+            diags,
+            solves,
+            lowers,
+            uppers,
+            edges,
+            level_offsets,
             *tangent_kernels,
         )
         np.testing.assert_allclose(actual[2], expected[0][None], rtol=1e-6, atol=1e-7)
         np.testing.assert_allclose(actual[3], expected[1][None], rtol=1e-6, atol=1e-7)
+
     def test_no_levels_is_identity(self):
         diags = jnp.array([[2.0, 3.0]])
         solves = jnp.array([[5.0, 7.0]])
@@ -292,8 +307,12 @@ class CompBacksubRawTest(unittest.TestCase):
         level_offsets = np.asarray([0, 1, 2], dtype=np.int32)
         parent_lookup = np.asarray([3, 0, 1, 3], dtype=np.int32)
         indices = _build_backsub_indices(parent_lookup, n_nodes=3)
-        primal_tangents = (jnp.asarray([[0.1, -0.2, 0.3, 0.0]]), jnp.asarray([[0.2, 0.1, -0.1, 0.0]]),
-                           jnp.asarray([0.0, 0.1, -0.2, 0.0]), jnp.asarray([0.0, -0.2, 0.1, 0.0]))
+        primal_tangents = (
+            jnp.asarray([[0.1, -0.2, 0.3, 0.0]]),
+            jnp.asarray([[0.2, 0.1, -0.1, 0.0]]),
+            jnp.asarray([0.0, 0.1, -0.2, 0.0]),
+            jnp.asarray([0.0, -0.2, 0.1, 0.0]),
+        )
 
         def primal(d, s, l, u):
             td, ts = comp_triang_raw(d, s, l, u, edges, level_offsets)
@@ -301,25 +320,34 @@ class CompBacksubRawTest(unittest.TestCase):
 
         _, expected = jax.jvp(primal, (diags, solves, lowers, uppers), primal_tangents)
         td, ts, dtd, dts = comp_triang_jvp(
-            diags, solves, lowers, uppers, edges, level_offsets,
-            primal_tangents[0][None], primal_tangents[1][None],
-            primal_tangents[2][None], primal_tangents[3][None],
+            diags,
+            solves,
+            lowers,
+            uppers,
+            edges,
+            level_offsets,
+            primal_tangents[0][None],
+            primal_tangents[1][None],
+            primal_tangents[2][None],
+            primal_tangents[3][None],
         )
         actual, d_actual = comp_backsub_jvp(
-            td, ts, lowers, indices,
-            dtd, dts, primal_tangents[2][None],
+            td,
+            ts,
+            lowers,
+            indices,
+            dtd,
+            dts,
+            primal_tangents[2][None],
         )
         primal_expected = comp_backsub_raw(td, ts, lowers, indices)
         np.testing.assert_allclose(actual[0], primal_expected[0], rtol=1e-6, atol=1e-7)
         np.testing.assert_allclose(d_actual[0], expected, rtol=1e-6, atol=1e-7)
 
-        jit_jvp = jax.jit(
-            lambda d, s, l, u, dd, ds, dl, du: jax.jvp(
-                primal, (d, s, l, u), (dd, ds, dl, du)
-            )
-        )
+        jit_jvp = jax.jit(lambda d, s, l, u, dd, ds, dl, du: jax.jvp(primal, (d, s, l, u), (dd, ds, dl, du)))
         _, jit_expected = jit_jvp(diags, solves, lowers, uppers, *primal_tangents)
         np.testing.assert_allclose(jit_expected, expected, rtol=1e-6, atol=1e-7)
+
     def test_explicit_jvp_matches_jax(self):
         diags = jnp.asarray([[2.0, 3.0, 4.0, 1.0]])
         solves = jnp.asarray([[4.0, 3.0, 8.0, 0.0]])
@@ -337,6 +365,7 @@ class CompBacksubRawTest(unittest.TestCase):
         actual, d_actual = comp_backsub_jvp(diags, solves, lowers, indices, d_diags, d_solves, d_lowers)
         np.testing.assert_allclose(actual, primal(diags, solves, lowers), rtol=1e-6, atol=1e-7)
         np.testing.assert_allclose(d_actual[0], expected, rtol=1e-6, atol=1e-7)
+
     def test_kernel_contract_violation_on_shape_mismatch(self):
         diags = jnp.array([[2.0, 3.0]])
         solves = jnp.array([[1.0, 1.0, 1.0]])  # mismatched second dim

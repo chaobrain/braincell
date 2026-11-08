@@ -1,29 +1,29 @@
-# Code and Design Navigation
+# Code Navigation
 
-Locate the source for the feature you want to change, then read that module's TODO and Current documents.
+Locate the source for the feature you want to change, then read its public API and the adjacent tests.
 See [Repository Organization](../repository.md) for directory responsibilities and workflow entry points, and the
-[System Overview](https://github.com/chaobrain/braincell/blob/main/docs/design/architecture/current/system-overview.md) for data flow across modules.
+[Architecture](../concepts/architecture.md) page for data flow across modules.
 
 ## Find code by task
 
-Source paths are relative to the repository root. Each module's TODO lists current work and links to its API, architecture, and proposals.
+Source paths are relative to the repository root.
 
-| What to change | Source entry point | Design entry point |
+| What to change | Source entry point | Public API |
 | --- | --- | --- |
-| Morphology construction, connections, statistics | `braincell/morph/` | [Morph](https://github.com/chaobrain/braincell/blob/main/docs/design/morph/TODO.md) |
-| SWC/ASC, checkpoints, online morphology readers | `braincell/io/` | [IO](https://github.com/chaobrain/braincell/blob/main/docs/design/io/TODO.md) |
-| Regions, locations, continuous sampling | `braincell/filter/` | [Filter](https://github.com/chaobrain/braincell/blob/main/docs/design/filter/TODO.md) |
-| Mechanism declarations and registration | `braincell/mech/` | [Mech](https://github.com/chaobrain/braincell/blob/main/docs/design/mech/TODO.md) |
-| Channel and ion dynamics | `braincell/channel/`, `braincell/ion/` | [Channel](https://github.com/chaobrain/braincell/blob/main/docs/design/channel/TODO.md), [Ion](https://github.com/chaobrain/braincell/blob/main/docs/design/ion/TODO.md) |
-| Cell, discretization, runtime binding | `braincell/_multi_compartment/`, `braincell/_discretization/`, `braincell/_compute/` | [Cell](https://github.com/chaobrain/braincell/blob/main/docs/design/cell/TODO.md) |
-| Single-compartment models | `braincell/_single_compartment/` | [Single/Cell unification discussion](https://github.com/chaobrain/braincell/blob/main/docs/design/cell/proposals/single-multi-compartment-unification.md) |
-| Synaptic dynamics | `braincell/synapse/` | [Synapse](https://github.com/chaobrain/braincell/blob/main/docs/design/synapse/TODO.md) |
-| Networks, event sources, connections | `braincell/network/` | [Network](https://github.com/chaobrain/braincell/blob/main/docs/design/network/TODO.md) |
-| Numerical integration and voltage solvers | `braincell/quad/` | [Quad](https://github.com/chaobrain/braincell/blob/main/docs/design/quad/TODO.md) |
-| Parameter selection and learning mappings | `braincell/trainable/` | [Optim](https://github.com/chaobrain/braincell/blob/main/docs/design/optim/TODO.md) |
-| Visualization | `braincell/vis/` | [Vis](https://github.com/chaobrain/braincell/blob/main/docs/design/vis/TODO.md) |
+| Morphology construction, connections, statistics | `braincell/morph/` | [Morphology](../apis/morphology.rst) |
+| SWC/ASC, checkpoints, online morphology readers | `braincell/io/` | [IO](../apis/io.rst) |
+| Regions, locations, continuous sampling | `braincell/filter/` | [Filter](../apis/filter.rst) |
+| Mechanism declarations and registration | `braincell/mech/` | [braincell.mech](../apis/braincell.mech.rst) |
+| Channel and ion dynamics | `braincell/channel/`, `braincell/ion/` | [braincell.channel](../apis/braincell.channel.rst), [braincell.ion](../apis/braincell.ion.rst) |
+| Cell, discretization, runtime binding | `braincell/_multi_compartment/`, `braincell/_discretization/`, `braincell/_compute/` | [braincell](../apis/braincell.rst) |
+| Single-compartment models | `braincell/_single_compartment/` | [braincell](../apis/braincell.rst) |
+| Synaptic dynamics | `braincell/synapse/` | [braincell.synapse](../apis/braincell.synapse.rst) |
+| Networks, event sources, connections | `braincell/network/` | — |
+| Numerical integration and voltage solvers | `braincell/quad/` | [Integration](../apis/integration.rst) |
+| Parameter selection and learning mappings | `braincell/trainable/` | — |
+| Visualization | `braincell/vis/` | [Vis](../apis/vis.rst) |
 
-Internal source paths differ from public import names. For example, import Branch and Morphology from the top-level `braincell` package and mechanism declarations from `braincell.mech`. Use the public entry points described in the module's Current documents.
+Internal source paths differ from public import names. For example, import Branch and Morphology from the top-level `braincell` package and mechanism declarations from `braincell.mech`. Use the public entry points listed in the API reference.
 
 ## Experimental, validation, and performance workflows
 
@@ -34,10 +34,9 @@ See [Repository Organization](../repository.md) for entry points to specific com
 
 ## Read and update in order
 
-1. Find the task in the module TODO. Current documents describe current behavior; proposals preserve designs awaiting discussion or implementation.
+1. Start from the task or issue that describes the change.
 2. Compare the source and adjacent `*_test.py` files to understand existing constraints and actual usage.
 3. Review relevant examples or numerical comparisons to determine what results the change must validate.
-4. After implementation, update affected Current documents, examples, and task status. Preserve useful historical decisions in dated specs.
+4. After implementation, update the affected docstrings, documentation, examples, and `changelog.md` in the same PR.
 
 See the [Extension Guide](extending.md) for adding mechanisms and the [Testing Guide](testing.md) for locating tests and using fixtures.
-The [Design rules](https://github.com/chaobrain/braincell/blob/main/docs/design/AGENTS.md) maintain document responsibilities and status definitions.

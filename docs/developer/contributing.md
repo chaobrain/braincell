@@ -5,7 +5,7 @@ myst:
 
 # Contributing
 
-Start with a problem that can be described and verified. Bug reports should include a minimal reproduction; new models should explain their sources and purpose. Before changing an interface, read the relevant module discussion. See [Code and Design Navigation](project_layout.md) for entry points.
+Start with a problem that can be described and verified. Bug reports should include a minimal reproduction; new models should explain their sources and purpose. Before changing a public interface, open an issue to discuss it. See [Code Navigation](project_layout.md) for entry points.
 
 ## Set up a development environment
 
@@ -31,21 +31,19 @@ Add new dependencies to `pyproject.toml`; `requirements*.txt` files only referen
 
 ## Make and validate changes
 
-1. **Locate the task:** read the relevant [module TODO](https://github.com/chaobrain/braincell/blob/main/docs/design/TODO.md) and Current documents. For new designs, explain the problem and link to the relevant proposal.
+1. **Locate the task:** roadmap tasks have an ID (for example `CELL-3a`) and are assigned by the maintainers; the task's acceptance criteria define done. For anything else, open an [issue](https://github.com/chaobrain/braincell/issues) that describes the problem before starting on a feature.
 2. **Create a working branch:** for example, `git switch -c fix/swc-validation`. Keep each PR focused on one problem.
 3. **Make verifiable changes:** reproduce a bug with a failing test before fixing it. Validate new model dynamics and integration behavior using the [Extension Guide](extending.md).
 4. **Run relevant checks:** start with tests for the changed modules and affected examples. Broaden coverage for shared behavior changes; see the [Testing Guide](testing.md).
-5. **Review before committing:** check the Design documents, implementation and tests, and actual examples relevant to the change. Update affected descriptions and calls.
+5. **Review before committing:** update the docstrings, user documentation, examples, and `changelog.md` that the change affects, in the same PR.
 
 Conventions for physical units, random numbers, compiled loops, imports, licenses, and docstrings are maintained in the
 [repository rules](https://github.com/chaobrain/braincell/blob/main/AGENTS.md).
-See [Design, code, and examples](https://github.com/chaobrain/braincell/blob/main/AGENTS.md#design-code-and-examples) for the scope of the pre-commit review.
 
 ## Change documentation
 
-Contribution steps belong in Developer; interface signatures, equations, architecture, and design discussions belong in the relevant Design pages. Keep links to specific topics in Developer when updating module contracts. See the
-[Design rules](https://github.com/chaobrain/braincell/blob/main/docs/design/AGENTS.md) for document responsibilities and style.
-Maintain existing examples at their actual locations. Historical specs preserve earlier decisions.
+Contribution steps belong in the Developer Guide; signatures, parameters, equations, and runnable examples belong in docstrings, which the [API reference](../apis/braincell.rst) renders.
+Maintain existing examples at their actual locations.
 
 Build the website:
 
@@ -53,7 +51,7 @@ Build the website:
 python -m sphinx -b html docs docs/_build/html
 ```
 
-The output is `docs/_build/html/index.html`. Website builds currently do not execute notebooks; after changing runnable code in a notebook, run that notebook or its companion script separately. API references are generated from docstrings; Design documents are read through repository links.
+The output is `docs/_build/html/index.html`. Website builds currently do not execute notebooks; after changing runnable code in a notebook, run that notebook or its companion script separately. API references are generated from docstrings.
 
 ## Submit a pull request
 

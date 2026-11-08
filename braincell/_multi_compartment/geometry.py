@@ -35,8 +35,12 @@ class GeometryView(DiscreteView):
         "cm": ParameterSpec(1.0 * u.uF / u.cm**2),
     }
     _READONLY = {
-        "radius_mid", "diam_mid", "diam_arc_mean", "area",
-        "resistance_prox", "resistance_dist",
+        "radius_mid",
+        "diam_mid",
+        "diam_arc_mean",
+        "area",
+        "resistance_prox",
+        "resistance_dist",
     }
 
     def __init__(self, cell, scope=None, rows=None):
@@ -44,7 +48,15 @@ class GeometryView(DiscreteView):
         if rows is None:
             pairs = cell._root_scope().pairs if scope is None else scope.pairs
             rows = tuple(
-                GeometryRow("geometry", "geometry", "geometry", int(pop), int(cv), int(cell.node_tree.cv_to_mid_node_id[cv]), int(pop * cell.n_cv + cv))
+                GeometryRow(
+                    "geometry",
+                    "geometry",
+                    "geometry",
+                    int(pop),
+                    int(cv),
+                    int(cell.node_tree.cv_to_mid_node_id[cv]),
+                    int(pop * cell.n_cv + cv),
+                )
                 for pop, cv in pairs
             )
         self._rows = tuple(rows)
@@ -98,7 +110,9 @@ class GeometryView(DiscreteView):
                 values = getattr(runtime.current_cable(), cable_field)
                 values = u.math.broadcast_to(values, runtime.pop_size + (runtime.n_cv,))
             else:
-                reference = runtime.reference_diam_arc_mean if field == "diam_arc_mean" else runtime.reference_radius_mid
+                reference = (
+                    runtime.reference_diam_arc_mean if field == "diam_arc_mean" else runtime.reference_radius_mid
+                )
                 values = reference * runtime.geometry["radius_scale"].value
                 if field == "diam_mid":
                     values = 2 * values
@@ -144,10 +158,7 @@ class GeometryView(DiscreteView):
 
     def _prepare_write(self, field, values):
         state = self._cell.runtime.geometry[field]
-        return [
-            (state, (row.population_index, row.cv_id), value)
-            for row, value in zip(self._rows, values)
-        ]
+        return [(state, (row.population_index, row.cv_id), value) for row, value in zip(self._rows, values)]
 
 
 class GeometryFieldView:

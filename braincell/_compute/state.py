@@ -473,21 +473,14 @@ class CellRuntimeState:
             np.asarray([float(np.asarray(cv.ra.to_decimal(u.ohm * u.cm), dtype=float)) for cv in cell.cvs]),
             u.ohm * u.cm,
         )
-        reference_length = u.Quantity(
-            jnp.asarray([cv.length.to_decimal(u.um) for cv in cell.cvs]), u.um
-        )
-        reference_radius_mid = u.Quantity(
-            jnp.asarray([cv.radius_mid.to_decimal(u.um) for cv in cell.cvs]), u.um
-        )
-        reference_diam_arc_mean = u.Quantity(
-            jnp.asarray([cv.diam_arc_mean.to_decimal(u.um) for cv in cell.cvs]), u.um
-        )
+        reference_length = u.Quantity(jnp.asarray([cv.length.to_decimal(u.um) for cv in cell.cvs]), u.um)
+        reference_radius_mid = u.Quantity(jnp.asarray([cv.radius_mid.to_decimal(u.um) for cv in cell.cvs]), u.um)
+        reference_diam_arc_mean = u.Quantity(jnp.asarray([cv.diam_arc_mean.to_decimal(u.um) for cv in cell.cvs]), u.um)
         shape = pop_size + (n_cv,)
         geometry = {
             "radius_scale": RuntimeParameterState(jnp.ones(shape, dtype=brainstate.environ.dftype())),
             "length": RuntimeParameterState(
-                u.Quantity(jnp.broadcast_to(
-                    jnp.asarray([cv.length.to_decimal(u.um) for cv in cell.cvs]), shape), u.um)
+                u.Quantity(jnp.broadcast_to(jnp.asarray([cv.length.to_decimal(u.um) for cv in cell.cvs]), shape), u.um)
             ),
             "Ra": RuntimeParameterState(
                 u.Quantity(jnp.broadcast_to(reference_ra.to_decimal(u.ohm * u.cm), shape), u.ohm * u.cm)
@@ -572,7 +565,10 @@ class CellRuntimeState:
         length = self.geometry["length"].value
         ra = self.geometry["Ra"].value
         cm = self.geometry["cm"].value
-        if any(is_traced_value(value.mantissa if isinstance(value, u.Quantity) else value) for value in (length, rs, ra, cm)):
+        if any(
+            is_traced_value(value.mantissa if isinstance(value, u.Quantity) else value)
+            for value in (length, rs, ra, cm)
+        ):
             return
         for name, value in self.geometry.items():
             value = value.value
@@ -603,7 +599,9 @@ class CellRuntimeState:
             length, ra, cm, rs = (value.reshape((self.n_cv,)) for value in (length, ra, cm, rs))
         dtype = u.get_mantissa(length).dtype
         ls = u.get_mantissa(length.to_decimal(u.um)) / jnp.asarray(self.reference_length.to_decimal(u.um), dtype=dtype)
-        ratio = u.get_mantissa(ra.to_decimal(u.ohm * u.cm)) / jnp.asarray(self.reference_ra.to_decimal(u.ohm * u.cm), dtype=dtype)
+        ratio = u.get_mantissa(ra.to_decimal(u.ohm * u.cm)) / jnp.asarray(
+            self.reference_ra.to_decimal(u.ohm * u.cm), dtype=dtype
+        )
         rs = jnp.asarray(u.get_mantissa(rs), dtype=dtype)
         return CableArrays(
             area=self.reference_cable.area * (ls * rs),

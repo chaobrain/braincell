@@ -531,8 +531,12 @@ def _build_dhs_numeric_state(
     return DHSNumericState(
         diags=diags,
         solves=solves,
-        lowers=_with_sentinel(lower_base, 0.0).reshape((-1, n_point + 1)) if lower_base.ndim > 1 else _with_sentinel(lower_base, 0.0),
-        uppers=_with_sentinel(upper_base, 0.0).reshape((-1, n_point + 1)) if upper_base.ndim > 1 else _with_sentinel(upper_base, 0.0),
+        lowers=_with_sentinel(lower_base, 0.0).reshape((-1, n_point + 1))
+        if lower_base.ndim > 1
+        else _with_sentinel(lower_base, 0.0),
+        uppers=_with_sentinel(upper_base, 0.0).reshape((-1, n_point + 1))
+        if upper_base.ndim > 1
+        else _with_sentinel(upper_base, 0.0),
     )
 
 
@@ -723,16 +727,31 @@ def _comp_triang_raw_jvp(*jvp_args):
         return tangent
 
     tangent_out = comp_triang_jvp(
-        diags, solves, lowers, uppers, edges, level_offsets,
-        direction_axis(d_diags, diags), direction_axis(d_solves, solves),
-        direction_axis(d_lowers, lowers), direction_axis(d_uppers, uppers),
+        diags,
+        solves,
+        lowers,
+        uppers,
+        edges,
+        level_offsets,
+        direction_axis(d_diags, diags),
+        direction_axis(d_solves, solves),
+        direction_axis(d_lowers, lowers),
+        direction_axis(d_uppers, uppers),
     )
     return primal_out, (tangent_out[2][0], tangent_out[3][0])
 
 
 def comp_triang_jvp(
-    diags, solves, lowers, uppers, edges, level_offsets,
-    d_diags, d_solves, d_lowers, d_uppers,
+    diags,
+    solves,
+    lowers,
+    uppers,
+    edges,
+    level_offsets,
+    d_diags,
+    d_solves,
+    d_lowers,
+    d_uppers,
 ):
     """Apply the exact forward JVP of :func:`comp_triang_raw`.
 
@@ -742,15 +761,31 @@ def comp_triang_jvp(
     its integration is validated against ``jax.jvp`` on complete DHS steps.
     """
     diags, solves, d_diags, d_solves = _check_and_run_triang_jvp(
-        diags, solves, lowers, uppers, edges, level_offsets,
-        d_diags, d_solves, d_lowers, d_uppers,
+        diags,
+        solves,
+        lowers,
+        uppers,
+        edges,
+        level_offsets,
+        d_diags,
+        d_solves,
+        d_lowers,
+        d_uppers,
     )
     return diags, solves, d_diags, d_solves
 
 
 def _check_and_run_triang_jvp(
-    diags, solves, lowers, uppers, edges, level_offsets,
-    d_diags, d_solves, d_lowers, d_uppers,
+    diags,
+    solves,
+    lowers,
+    uppers,
+    edges,
+    level_offsets,
+    d_diags,
+    d_solves,
+    d_lowers,
+    d_uppers,
 ):
     _check_comp_triang(diags, solves, lowers, uppers, edges)
     for i in range(level_offsets.shape[0] - 1):
@@ -772,12 +807,8 @@ def _check_and_run_triang_jvp(
         d_multiplier = d_upper_val / child_diag - upper_val * child_d_diag / child_diag**2
         diags = diags.at[:, parent].add(-lower_val * multiplier)
         solves = solves.at[:, parent].add(-child_solve * multiplier)
-        d_diags = d_diags.at[:, :, parent].add(
-            -d_lower_val * multiplier - lower_val * d_multiplier
-        )
-        d_solves = d_solves.at[:, :, parent].add(
-            -child_d_solve * multiplier - child_solve * d_multiplier
-        )
+        d_diags = d_diags.at[:, :, parent].add(-d_lower_val * multiplier - lower_val * d_multiplier)
+        d_solves = d_solves.at[:, :, parent].add(-child_d_solve * multiplier - child_solve * d_multiplier)
     return diags, solves, d_diags, d_solves
 
 
@@ -918,8 +949,12 @@ def _comp_backsub_raw_jvp(*jvp_args):
         return tangent
 
     tangent_out = comp_backsub_jvp(
-        diags, solves, lowers, backsub_indices,
-        direction_axis(d_diags, diags), direction_axis(d_solves, solves),
+        diags,
+        solves,
+        lowers,
+        backsub_indices,
+        direction_axis(d_diags, diags),
+        direction_axis(d_solves, solves),
         direction_axis(d_lowers, lowers),
     )
     return primal_out, tangent_out[1][0]

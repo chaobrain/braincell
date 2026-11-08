@@ -21,7 +21,7 @@ Biologically detailed brain cell modeling in BrainX.
     - **Long rollout under autograd (backprop through time)** → `brainstate.transform.checkpointed_for_loop` / `brainstate.transform.checkpointed_scan` — same semantics as above but rematerialize activations on the backward pass (tune `base`) to bound peak memory at the cost of recomputation.
 
     Compose them freely (e.g. `jit` an outer driver that calls a `for_loop`/`scan`). Reach for the checkpointed variants only when reverse-mode gradients through a long simulation would otherwise exhaust memory — otherwise prefer plain `for_loop`/`scan`.
-12. Maintain compatibility with JAX versions >= 0.8.0 — `0.8.0` is the floor pinned by the `jax-version` matrix in `.github/workflows/CI-daily.yml`, which also runs latest. Prefer feature/shape detection over hard version checks.
+12. Maintain compatibility with JAX versions >= 0.9.0 — the floor in `pyproject.toml`, tested by the `jax-version` matrix in `.github/workflows/CI.yml`, which also runs latest. Prefer feature/shape detection over hard version checks.
 13. **Every tracked `.py` file opens with the Apache-2.0 license header — add it when you create the file.** It goes at the very top, above the module docstring, below only a shebang or PEP 263 encoding line. See [License header](#license-header) for the verbatim block.
 
 

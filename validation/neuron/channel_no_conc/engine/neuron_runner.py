@@ -42,6 +42,43 @@ except ImportError:  # pragma: no cover
 _LOADED_MECHANISM_DIRS: set[str] = set()
 
 
+def stimulus_samples(case: ChannelNoConcCase) -> tuple[np.ndarray, np.ndarray]:
+    """Return the step start times and the clamp amplitude played at each.
+
+    ``Vector.play`` without interpolation holds ``amp`` constant over each
+    fixed step ``[t, t + dt)``. BrainCell samples every current clamp once
+    per step at the step midpoint, so the amplitude for the step starting at
+    ``t`` is ``I(t + dt / 2)``. Sampling at ``t`` instead shifts a sine by
+    half a step and gave a 0.016 mV voltage error (MECH-15).
+
+    Parameters
+    ----------
+    case : ChannelNoConcCase
+        Case whose ``simulation`` sets the step grid and whose ``stimulus``
+        is sampled.
+
+    Returns
+    -------
+    tuple of numpy.ndarray
+        ``(times_ms, amplitudes_nA)``; ``times_ms`` are the step starts
+        ``0, dt, 2 dt, ...`` below ``duration_ms``.
+
+    Raises
+    ------
+    ValueError
+        If ``duration_ms`` yields no step.
+    """
+    dt_ms = float(case.simulation.dt_ms)
+    times_ms = np.arange(0.0, float(case.simulation.duration_ms), dt_ms, dtype=float)
+    if times_ms.size == 0:
+        raise ValueError("simulation.duration_ms must produce at least one sample.")
+    amplitudes = np.asarray(
+        [current_at_ms(case.stimulus, float(t_ms) + 0.5 * dt_ms) for t_ms in times_ms],
+        dtype=float,
+    )
+    return times_ms, amplitudes
+
+
 def run_case(case: ChannelNoConcCase) -> dict[str, Any]:
     mapping_spec = case.mapping_spec
     h, section, segment = _build_neuron_model(case, mapping_spec=mapping_spec)
@@ -53,18 +90,12 @@ def run_case(case: ChannelNoConcCase) -> dict[str, Any]:
     h.v_init = float(case.simulation.v_init_mV)
     h.finitialize(h.v_init)
     _initialize_neuron_ion_state(h=h, section=section, segment=segment, case=case, mapping_spec=mapping_spec)
-    sample_times_ms = np.arange(0.0, float(case.simulation.duration_ms), float(case.simulation.dt_ms), dtype=float)
-    if sample_times_ms.size == 0:
-        raise ValueError("simulation.duration_ms must produce at least one sample.")
+    sample_times_ms, amp_values = stimulus_samples(case)
 
     stim = h.IClamp(segment)
     stim.delay = 0.0
     stim.dur = 1e9
     stim.amp = 0.0
-    amp_values = np.asarray(
-        [current_at_ms(case.stimulus, float(t_ms)) for t_ms in sample_times_ms],
-        dtype=float,
-    )
     amp_time_vec = h.Vector(sample_times_ms)
     amp_value_vec = h.Vector(amp_values)
     amp_value_vec.play(stim._ref_amp, amp_time_vec)

@@ -48,7 +48,7 @@ Because `braincell` is used for scientific work, one further expectation applies
 
 Tensions can occur between community members even when they are trying their best to collaborate. Not every conflict represents a code of conduct violation, and this Code of Conduct reinforces encouraged behaviors and norms that can help avoid conflicts and minimize harm.
 
-When an incident does occur, it is important to report it promptly. To report a possible violation, email the maintainers at <chao.brain@qq.com>. Reports are received privately by the `braincell` maintainers. Please include what happened, where it happened (for example an issue, pull request, or event), when it occurred, and any links, screenshots, or logs that help us understand the situation. If your report concerns a maintainer, say so in your message and it will be handled by someone not involved.
+When an incident does occur, it is important to report it promptly. To report a possible violation, email the maintainers at <chaobrain@foxmail.com>. Reports are received privately by the `braincell` maintainers. Please include what happened, where it happened (for example an issue, pull request, or event), when it occurred, and any links, screenshots, or logs that help us understand the situation. If your report concerns a maintainer, say so in your message and it will be handled by someone not involved.
 
 Note that this address is for Code of Conduct reports. **Security vulnerabilities go through a different channel** — see [SECURITY.md](SECURITY.md).
 

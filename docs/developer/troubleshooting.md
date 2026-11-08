@@ -42,7 +42,7 @@ Prepare other workflow data and optional dependencies according to their local i
 Install documentation dependencies, then build from the repository root:
 
 ```bash
-python -m sphinx -b html docs docs/_build/html
+python -m sphinx -W --keep-going -b html docs docs/_build/html
 ```
 
 Check new warnings using the source filenames and line numbers in the log. If the build hangs, check that it was not started with `-j`: a parallel build forks a process in which JAX already runs threads.

@@ -175,7 +175,7 @@ jobs:
 
   # The matrix covers the oldest and the newest Python declared in
   # pyproject.toml (classifiers and `requires-python`) and, for JAX, the floor
-  # and the latest release (""). jaxlib 0.9.0 ships no CPython 3.15 wheels, so
+  # and the latest release (""). jaxlib 0.11.0 ships no CPython 3.15 wheels, so
   # that one pair is excluded. Keep the classifiers equal to the Python
   # versions listed here.
   test_linux:
@@ -184,10 +184,10 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.15"]
-        jax-version: ["0.9.0", ""]
+        jax-version: ["0.11.0", ""]
         exclude:
           - python-version: "3.15"
-            jax-version: "0.9.0"
+            jax-version: "0.11.0"
 
     steps:
       - name: Cancel Previous Runs

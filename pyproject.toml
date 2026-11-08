@@ -43,7 +43,7 @@ dependencies = [
   "brainstate>=0.5.4",
   "braintools>=0.1",
   "brainunit>=0.0.8",
-  "jax>=0.9",
+  "jax>=0.11",
   "numpy>=2",
   "scipy",
 ]
@@ -52,9 +52,9 @@ optional-dependencies.all = [
   "braincell[io,optim,vis]",
 ]
 # JAX backends. Pick exactly one; they are mutually exclusive.
-optional-dependencies.cpu = [ "jax[cpu]>=0.9" ]
-optional-dependencies.cuda12 = [ "jax[cuda12]>=0.9" ]
-optional-dependencies.cuda13 = [ "jax[cuda13]>=0.9" ]
+optional-dependencies.cpu = [ "jax[cpu]>=0.11" ]
+optional-dependencies.cuda12 = [ "jax[cuda12]>=0.11" ]
+optional-dependencies.cuda13 = [ "jax[cuda13]>=0.11" ]
 # Everything needed to develop braincell.
 optional-dependencies.dev = [
   "braincell[doc,testing]",
@@ -90,7 +90,7 @@ optional-dependencies.testing = [
   "pytest",
   "pytest-benchmark",
 ]
-optional-dependencies.tpu = [ "jax[tpu]>=0.9" ]
+optional-dependencies.tpu = [ "jax[tpu]>=0.11" ]
 # Visualization: 2D (matplotlib) + 3D (pyvista / plotly) backends.
 # These stay optional and lazily imported so `import braincell` remains cheap.
 optional-dependencies.vis = [

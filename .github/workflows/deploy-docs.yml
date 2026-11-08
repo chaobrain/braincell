@@ -28,6 +28,7 @@ jobs:
           python-version: "3.14"
           cache: pip
           cache-dependency-path: |
+            requirements-braintools-main.txt
             requirements.txt
             requirements-doc.txt
 
@@ -39,9 +40,11 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
+          python -m pip install -r requirements-braintools-main.txt
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-doc.txt
           python -m pip install .
+          python -m pip freeze | grep '^braintools @ git+'
 
       - name: Build documentation
         env:

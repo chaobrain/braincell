@@ -20,18 +20,13 @@ jobs:
   ci:
     uses: ./.github/workflows/CI.yml
 
-  probe:
-    runs-on: ubuntu-latest
-    steps:
-      - run: exit 1
-
   # Keeps one open issue labelled `main-is-red` while the daily run is red:
   # opens it on the first red run, comments on later ones, and closes it on
   # the next green run. A run from another branch (manual dispatch) reports
   # under the title "<branch> is red", so a test run never touches the issue
   # about main. Keep `needs` listing every job above.
   report:
-    needs: [ci, probe]
+    needs: [ci]
     if: always()
     runs-on: ubuntu-latest
     permissions:

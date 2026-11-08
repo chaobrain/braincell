@@ -61,7 +61,7 @@ braincell/**  -linguist-vendored -linguist-documentation
 # affects `git archive` only -- notably GitHub's generated release tarballs.
 #
 # data/, docs/, and examples/ are deliberately NOT listed: they are pruned from
-# the *sdist* by MANIFEST.in (see docs/specs/2026-08-13-release-publish-ci-fix.md),
+# the *sdist* by MANIFEST.in,
 # but a source archive is a different artifact and those trees are useful in it.
 
 # Note: unlike .gitignore, a .gitattributes pattern that matches a directory

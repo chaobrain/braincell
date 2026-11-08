@@ -483,8 +483,6 @@ class ConserveWritebackStateClassTest(unittest.TestCase):
     this test pins the precondition that makes that safe: every
     algebraic species is already a grouped state when the step begins,
     and the same object survives it.
-
-    See ``docs/specs/2026-08-13-cell-hidden-group-state.md``.
     """
 
     @staticmethod

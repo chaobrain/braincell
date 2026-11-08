@@ -91,7 +91,7 @@ BREAKPOINT {
 
 ## 3. 第二步：为什么 `hh.mod` 需要更多块
 
-仓库里的示例文件 [`hh.mod`](/home/swl/braincell/examples/convert_mod/nmodl/mod_files/hh.mod) 是一个简化版 Hodgkin-Huxley 机制。它比 leak 多出来的核心复杂度只有一个：
+仓库里的示例文件 [`hh.mod`](../mod_files/hh.mod) 是一个简化版 Hodgkin-Huxley 机制。它比 leak 多出来的核心复杂度只有一个：
 
 `m`、`h`、`n` 不是常数，而是随时间变化的门控变量。
 
@@ -625,7 +625,7 @@ Arbor 额外支持例如：
 
 ## 11. 对这个仓库里的 `hh.mod` 再补一句
 
-[`hh.mod`](/home/swl/braincell/examples/convert_mod/nmodl/mod_files/hh.mod) 是一个适合教学和 AST/IR 提取的简化版 HH。
+[`hh.mod`](../mod_files/hh.mod) 是一个适合教学和 AST/IR 提取的简化版 HH。
 
 它不是为了完整复刻 NEURON 内置 `hh` 的所有历史细节，而是为了把最核心的块关系保留下来：
 
@@ -641,7 +641,7 @@ Arbor 额外支持例如：
 ## 12. 参考资料
 
 - 仓库内示例 `hh.mod`：
-  - [`examples/convert_mod/nmodl/mod_files/hh.mod`](/home/swl/braincell/examples/convert_mod/nmodl/mod_files/hh.mod)
+  - [`examples/convert_mod/nmodl/mod_files/hh.mod`](../mod_files/hh.mod)
 - Arbor NMODL 规则：
   - <https://docs.arbor-sim.org/en/latest/fileformat/nmodl.html>
 - Arbor NMODL 教程：

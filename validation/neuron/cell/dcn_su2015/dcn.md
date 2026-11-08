@@ -17,7 +17,7 @@ DCN 和其他 ASC 模板不同：正式形态来源是源 HOC 文件，而不是
 NEURON 侧加载源形态：
 
 ```text
-/home/swl/Cerebellum_circuit/DCN/DCN/DCN_mor.hoc
+~/Cerebellum_circuit/DCN/DCN/DCN_mor.hoc
 ```
 
 BrainCell 侧复用 repo 内 native parser：

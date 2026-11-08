@@ -742,8 +742,7 @@ class SingleCompartmentSolverResolutionTest(unittest.TestCase):
 class SingleCompartmentHiddenStatesAreNotGroupedTest(unittest.TestCase):
     """A ``SingleCompartment`` has no spatial axis, so nothing is grouped.
 
-    The counterpart to ``CellHiddenStatesAreGroupStatesTest``. See
-    ``docs/specs/2026-08-13-cell-hidden-group-state.md``.
+    The counterpart to ``CellHiddenStatesAreGroupStatesTest``.
     """
 
     @staticmethod

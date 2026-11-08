@@ -72,19 +72,19 @@ GPU 正常输入下，padded 配对加速仅 1.034×（约少用 3.3% 墙钟）�
 
 原始有效批次位于被忽略的 benchmarks/performance/synapse_events/artifacts/controls/matched，每个 worker 保留日志、源码快照、全部五次计时、构建/准备/编译首次执行/reset 成本和显式计划存储。执行时间与初次停止原因保存在上一层 execution.json。报告输入指定 matched；将失败的旧源码批次混入时，报告会返回失败而非静默拼接。
 
-本轮只评价单 CV 被动模型、10000 个独立突触及固定 NetStim 调度。共享布局、多 CV 主动膜、live 阈值事件、训练循环和生产窗口续建不在该四层对照中。后续执行方向由 [proposal](../../../../docs/design/synapse/proposals/event-delivery-optimization.md#完整模型四层对照) 维护。
+本轮只评价单 CV 被动模型、10000 个独立突触及固定 NetStim 调度。共享布局、多 CV 主动膜、live 阈值事件、训练循环和生产窗口续建不在该四层对照中。
 
 ## 原工作流命令记录
 
 以下保留原 README 的运行命令与示例，包含运行者的解释器路径和设备选择。它们不代表各命令均已执行，实际执行范围以本页实测记录为准，也不构成重新运行授权。其他用户使用公共 README 的参数化入口。
 
 ```bash
-/home/swl/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.delivery_benchmark \
+~/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.delivery_benchmark \
   --phase controls --devices both --gpu 7 --rounds 3 \
   --warmup 2 --repeat 5 --timeout 120 --budget-seconds 3600 \
   --out benchmarks/performance/synapse_events/artifacts/controls/matched
 
-/home/swl/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.controls_report \
+~/anaconda3/envs/braincell_311/bin/python -m benchmarks.performance.synapse_events.controls_report \
   benchmarks/performance/synapse_events/artifacts/controls/matched
 ```
 

@@ -120,5 +120,5 @@
 
 Notebook 入口：
 
-- 单 config run： [workflow.ipynb](/home/swl/braincell/validation/neuron/cable/workflows/workflow.ipynb)
-- 批量 many-config run： [batch_workflow.ipynb](/home/swl/braincell/validation/neuron/cable/workflows/batch_workflow.ipynb)
+- 单 config run： [workflow.ipynb](workflow.ipynb)
+- 批量 many-config run： [batch_workflow.ipynb](batch_workflow.ipynb)

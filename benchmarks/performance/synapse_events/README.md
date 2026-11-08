@@ -10,7 +10,7 @@
 | [query_benchmark.py](query_benchmark.py) | 比较 current、预计算 scan、cursor、bucket；覆盖表长度、密度、扇出、延迟和块大小 | [query_report.py](query_report.py) |
 | [delivery_benchmark.py](delivery_benchmark.py) | micro 比较查询与直接投递；full 比较真实 Cell/Network；controls 做四层对照；profile 采集诊断 | [delivery_report.py](delivery_report.py)、[controls_report.py](controls_report.py) |
 
-`*_test.py` 为各脚本的同目录测试。可复用算法来自 `braincell.experimental`，本目录提供实验驱动；[查询接口](../../../docs/design/synapse/current/experimental-scheduled-events.md)、[直接投递接口](../../../docs/design/synapse/current/experimental-scheduled-delivery.md) 和 [设计方案](../../../docs/design/synapse/proposals/event-delivery-optimization.md) 说明算法合同与采用方向。
+`*_test.py` 为各脚本的同目录测试。可复用算法来自 `braincell.experimental`，本目录提供实验驱动；算法合同见 `braincell.experimental.scheduled_events` 与 `braincell.experimental.scheduled_delivery` 的模块文档。
 
 生产基准中的 N 是逻辑 cell 数，M 是每 cell 的独立 NetStim 源数，每个目标恰好接受 M 个源。独立布局为每源一个 ExpSyn；共享布局为每 cell 一个 ExpSyn。查询实验中的 fanout 另外控制每源连接数。共享与独立是显式构造的两种模型，不能据此自动合并一般模型的独立状态。
 

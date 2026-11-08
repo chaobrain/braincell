@@ -15,8 +15,10 @@
 
 """``Cell`` — single-class multi-compartment neuron.
 
-The population-view contract is specified in
-``docs/specs/2026-08-20-cell-population-view.md``.
+``cell[index]`` returns a ``CellView``: a population selection that keeps only
+the root reference and stable indices, and gathers population-shaped values
+from the root on demand. The root ``Cell`` stays the only owner of morphology,
+discretization caches and runtime state.
 
 A ``Cell`` carries both the declaration (morphology, CV policy, paint /
 place rules, solver, spike config) and the runtime (``V`` / ``spike`` /
@@ -3387,8 +3389,9 @@ def _normalize_pop_size(pop_size) -> tuple[int, ...]:
 
     A ``Cell`` always carries a population axis: the canonical shape has at
     least one entry, so runtime state is at least two-dimensional
-    (``pop_size + (n_cv,)``). See ``docs/specs/2026-08-13-cell-hidden-group-state.md``
-    for why rank-0 populations are rejected.
+    (``pop_size + (n_cv,)``). Rank-0 populations are rejected so that every
+    hidden state groups its trailing compartment axis and rank-0 and rank-1
+    populations never take different code paths.
 
     Parameters
     ----------

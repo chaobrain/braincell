@@ -14,9 +14,7 @@ CPU 基线修复驱动拼写并经确认重跑后，两个后端的前后对照�
 
 这里测的是数组存储与数值路径迁移的成本，不是完整几何训练接口的成本。
 长度、半径、Ra 的参数化、所有派生副本/缓存随训练更新的同步和 Trainable View
-仍未实现。[当前数值层](../../../../docs/design/optim/current/runtime-cable-arrays.md)
-说明能力边界，[proposal](../../../../docs/design/optim/proposals/nonlinear-pattern-separation.md)
-说明后续阶段。
+仍未实现。
 
 ## 环境与代码版本
 
@@ -64,8 +62,8 @@ CPU 基线按相同配置重跑一次。重跑进程于 2026-09-10 08:33:58 UTC 
 正式阶段时间。无额外仿真校验、reset、profiling 或自动重试。已执行的普通代码测试
 不作为性能样本；初次错误、测试失败及修复不从原始失败记录中删除。
 
-实际解释器为 `/home/swl/miniforge3/envs/braincell/bin/python`。在
-`/home/swl/studio/braincell-nonlinear-pattern-separation` 执行 `benchmark.py`，共同参数是：
+实际解释器为 `~/miniforge3/envs/braincell/bin/python`。在
+`~/studio/braincell-nonlinear-pattern-separation` 执行 `benchmark.py`，共同参数是：
 
 ```text
 --sizes 12 128 512 1024 --warmup 1 --repeat 5
@@ -75,10 +73,10 @@ CPU 基线按相同配置重跑一次。重跑进程于 2026-09-10 08:33:58 UTC 
 
 | label | source-root | backend 参数 |
 | --- | --- | --- |
-| baseline_gpu | /home/swl/studio/braincell | --platform gpu --gpu 1 |
-| arrays_cpu | /home/swl/studio/braincell-nonlinear-pattern-separation | --platform cpu |
-| arrays_gpu | /home/swl/studio/braincell-nonlinear-pattern-separation | --platform gpu --gpu 1 |
-| baseline_cpu_retry1 | /home/swl/studio/braincell | --platform cpu |
+| baseline_gpu | ~/studio/braincell | --platform gpu --gpu 1 |
+| arrays_cpu | ~/studio/braincell-nonlinear-pattern-separation | --platform cpu |
+| arrays_gpu | ~/studio/braincell-nonlinear-pattern-separation | --platform gpu --gpu 1 |
+| baseline_cpu_retry1 | ~/studio/braincell | --platform cpu |
 
 各自用 `timeout 600` 包裹，输出到相应 `artifacts/<label>.json`。
 

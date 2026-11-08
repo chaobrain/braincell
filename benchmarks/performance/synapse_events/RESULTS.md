@@ -9,4 +9,4 @@
 | 直接投递 | [结果解释](results/scheduled-event-delivery.md)、[数据表](results/scheduled-event-delivery-tables.md) | direct/padded 的完整模型收益、存储与首次成本 |
 | 完整模型四层对照 | [结果解释](results/scheduled-event-controls.md)、[数据表](results/scheduled-event-controls-tables.md) | 无突触、无连接、静默、正常输入的完整运行对照 |
 
-这些实验回答不同问题，模型与计时图并不相同，不能跨实验相减为内核独占耗时。[设计方案](../../../docs/design/synapse/proposals/event-delivery-optimization.md) 维护采用方向与尚未验收的生产接入合同。
+这些实验回答不同问题，模型与计时图并不相同，不能跨实验相减为内核独占耗时。

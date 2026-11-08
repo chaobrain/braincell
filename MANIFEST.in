@@ -6,8 +6,6 @@
 # in every tracked file -- validation/neuron alone is 15 MB of benchmark
 # CSVs and notebooks. setuptools-scm is gone (#112), but nothing stops a future
 # build dependency from re-enabling VCS discovery, so state the intent here.
-#
-# See docs/specs/2026-08-13-release-publish-ci-fix.md.
 
 include LICENSE
 include README.md

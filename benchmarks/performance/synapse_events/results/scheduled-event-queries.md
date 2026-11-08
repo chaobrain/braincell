@@ -239,7 +239,7 @@ python -m benchmarks.performance.synapse_events.query_benchmark --suite all --de
 python -m benchmarks.performance.synapse_events.query_report
 ```
 
-[方案](../../../../docs/design/synapse/proposals/event-delivery-optimization.md) · [固定版本参考](../../../../docs/design/synapse/references/scheduled-event-delivery.md) · [实验接口](../../../../docs/design/synapse/current/experimental-scheduled-events.md) · [驱动与命令](../README.md)
+[驱动与命令](../README.md)
 
 ## 测量版本与边界修正
 

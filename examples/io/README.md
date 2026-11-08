@@ -5,7 +5,7 @@
 
 The checkpoint tutorial uses the shared `data/morphology/branched_dend.swc` fixture.
 NeuroMorpho downloads require network access and are cached in `data/neuromorpho/`.
-See [IO Design](../../docs/design/io/TODO.md) for interface contracts.
+See the [IO API reference](../../docs/apis/io.rst) for interface contracts.
 
 Follow-up: extract NeuroMorpho metric comparisons into validation with a fixed
 dataset and explicit tolerances; keep query, download and cache usage here.

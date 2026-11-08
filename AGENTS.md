@@ -11,7 +11,7 @@ Biologically detailed brain cell modeling in BrainX.
 5. Every correction: reflect on the mistake, plan to avoid repeating it.
 6. All updates must be happened on the worktree branch, not main.
 7. Use `brainstate.random` instead of `jax.random` directly for all random number generation.
-8. **Check design, implementation, and relevant examples before each commit.** Review only the scope of that commit across `docs/design/`, implementation and tests, and the actual related examples (including root `examples/`). Routine development does not require synchronizing these three after every edit or task. `docs/examples/` is not a mandatory parallel maintenance destination. `docs/specs/` is a chronological historical archive, not the current contract or a required pre-implementation deliverable. Follow [Design, code, and examples](#design-code-and-examples) below.
+8. **Docs, examples and the changelog change in the same PR as the code they describe.** Run the tests and examples the change affects and report in the PR what was checked.
 9. Tests should >90% coverage, but focus on meaningful tests that cover edge cases and critical paths, not just trivial lines.
 10. Co-locate tests with the code under test: each module `foo.py` has its tests in a sibling `foo_test.py` (suffix style — never a separate `tests/` directory, never the `test_*.py` prefix). See [Testing](#testing) for the full rule.
 11. **Never drive a model with a bare Python `for`/`while` loop when it runs repeatedly.** Python loops execute op-by-op (dispatch overhead, no fusion) and trace fresh each step; the `brainstate.transform` primitives lower the whole loop into one compiled XLA program, tracing the body only once. Pick by shape of the work:
@@ -25,40 +25,12 @@ Biologically detailed brain cell modeling in BrainX.
 13. **Every tracked `.py` file opens with the Apache-2.0 license header — add it when you create the file.** It goes at the very top, above the module docstring, below only a shebang or PEP 263 encoding line. See [License header](#license-header) for the verbatim block.
 
 
-## Design, code, and examples
+## Design notes and examples
 
-All paths below are relative to the repository root (`/home/swl/braincell` in the current workspace).
-
-| Location | Maintained responsibility |
-| --- | --- |
-| `docs/design/` | Current design, interface contracts, module discussions, and implementation direction. |
-| `braincell/` | Implementation and co-located tests. |
-| Actual related examples, including root `examples/` | Usage examples relevant to the commit, kept at their existing locations. No duplicate or migration to `docs/examples/` is required. |
-
-Before each commit, review the relevant design, implementation and tests, and actual related examples once for the scope being committed. Routine development may leave these temporarily out of sync; no cross-document synchronization check is required after each edit or task. At the commit check, update affected interfaces, behavior descriptions, and example usage as needed. No-impact files need no edits. For behavior changes being committed, run the relevant code tests and affected examples; report what was checked and any unverified gaps. A discovered mismatch must be fixed within scope or recorded in the module document with a concrete follow-up; do not claim full consistency while a gap remains. This is a review requirement, not a new automatic Git hook.
-
-Design may lead implementation. Clearly distinguish implemented, partially implemented, planned, and research content. Executable examples must use implemented interfaces; proposed syntax belongs in explicitly marked design discussions. A documentation-only proposal does not require implementing the feature or adding an example of an unavailable API.
-
-### Module documents and project progress
-
-Human contributors start with [CONTRIBUTING.md](CONTRIBUTING.md) and the
-[Developer Guide](docs/developer/index.rst). Developer pages explain contribution
-steps and link to Design for module contracts, formulas, and architecture.
-
-See the [Repository organization guide](docs/repository.md) for directory responsibilities,
-content placement, shared data, and the current repository layout.
-
-Follow [Design documentation rules](docs/design/AGENTS.md) when writing or updating `docs/design/`.
-That directory-level guide owns writing style, module layout, document roles, and task status definitions.
-Keep durable design prose under `docs/design/`, with implementation references linking to the relevant document.
-
-### History and deferred documentation
-
-- `docs/specs/YYYY-MM-DD-<slug>.md` preserves historical decisions and change records in creation-date order. Add a record when the history is useful; no new spec is required before every implementation.
-- Current decisions and active plans live in `docs/design/`. Do not continually rewrite old specs to match new interfaces or use historical requirements to override current module documents. Old paths in historical records can remain historical references.
-- Other documentation trees under `docs/`, including `docs/examples/`, are not mandatory parallel maintenance destinations. Select examples by their relevance to the commit, not by a required directory. Do not create duplicate examples, migrate them into `docs/examples/`, or bulk-refresh unrelated documentation or examples unless requested. This does not claim that all existing files are already consistent.
-- Example-specific import progress, comparison settings, and validation work belong alongside the relevant examples (for example, `validation/neuron/cerebellum-import-progress.md`). Reusable API and architecture contracts stay under `docs/design/` and are linked from the example record.
-- Workflow READMEs under `examples/`, `validation/` and `benchmarks/` map files, commands, dependencies and outputs. Benchmark READMEs are environment-neutral public entry points; follow [Benchmark documentation and execution rules](benchmarks/AGENTS.md). Keep full performance findings and measured environments in Git-tracked `results/` beside the experiment; Design cites those findings within the relevant proposal or current architecture document, according to the design lifecycle; no separate Design results index is required. Other durable design and numerical-validation prose keeps its existing responsibility under `docs/design/`. Import reusable experimental algorithms from `braincell.experimental`; keep numerical validation in `validation/`, performance measurements in `benchmarks/`, and shared sources in `data/`. Raw generated outputs belong to ignored workflow `artifacts/` directories.
+- Design notes, task specs and the roadmap are kept by the maintainers outside this repository. Do not cite their paths in code, tests or docs here: name a roadmap task by its ID (for example `DEV-0a`) and state the decision you rely on in the text itself.
+- Human contributors start with [CONTRIBUTING.md](CONTRIBUTING.md) and the [Developer Guide](docs/developer/index.rst); the [Repository organization guide](docs/repository.md) maps directory responsibilities.
+- Usage examples live in root `examples/`, numerical validation in `validation/`, performance measurements in `benchmarks/` (follow [Benchmark documentation and execution rules](benchmarks/AGENTS.md)), shared sources in `data/`. Raw generated outputs go to ignored `artifacts/` directories. Reusable experimental algorithms are imported from `braincell.experimental`.
+- Executable examples use implemented interfaces only.
 
 ## Quick Reference
 

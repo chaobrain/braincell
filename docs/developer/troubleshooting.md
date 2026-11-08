@@ -47,7 +47,6 @@ python -m sphinx -b html docs docs/_build/html
 
 Check new warnings using the source filenames and line numbers in the log.
 Internal references in Markdown, RST, and notebooks use the same document names. When converting formats, preserve the document name and remove the old file to avoid duplicate names.
-Design documents currently do not participate in website builds; Developer links to Design point to GitHub files.
 A successful website build does not establish that notebook code has run.
 
 Regenerating notebooks containing interactive PyVista plots also requires these dependencies for HTML export:
@@ -57,16 +56,16 @@ python -m pip install ipywidgets trame trame-vtk trame-vuetify "jupyterlab>=3"
 ```
 
 Use `vis3d(notebook=True, jupyter_backend="html")` and save the executed outputs so the published page includes the exported interactive HTML.
-See the [Vis API](https://github.com/chaobrain/braincell/blob/main/docs/design/vis/current/api.md) for call parameters.
+See the [Vis API](../apis/vis.rst) for call parameters.
 
 ## Modeling and numerical issues
 
 | Symptom | Where to look |
 | --- | --- |
-| Physical units or parameter shapes do not match | [Units](../concepts/units.ipynb), parameter descriptions in the relevant module's Current documents |
-| Problems with dt/duration, recorded results, or continued runs | [Cell runtime API](https://github.com/chaobrain/braincell/blob/main/docs/design/cell/current/api.md#运行与结果), [Recording](https://github.com/chaobrain/braincell/blob/main/docs/design/network/current/recording.md) |
-| Solver name or supported model does not match | [Quad API](https://github.com/chaobrain/braincell/blob/main/docs/design/quad/current/api.md) |
-| Numerical divergence or disagreement with a reference | [Numerical acceptance](testing.md#accept-numerical-results), [Cell solver paths](https://github.com/chaobrain/braincell/blob/main/docs/design/cell/current/architecture.md#两条电压路径) |
-| SWC/ASC reading fails | [Readers and diagnostic reports](https://github.com/chaobrain/braincell/blob/main/docs/design/io/current/api.md) |
+| Physical units or parameter shapes do not match | [Units](../concepts/units.ipynb), parameter descriptions in the [API reference](../apis/braincell.rst) |
+| Problems with dt/duration, recorded results, or continued runs | [Cells](../concepts/cells.ipynb), the `Cell.run` docstring |
+| Solver name or supported model does not match | [Integration](../concepts/integration.ipynb), [Integration API](../apis/integration.rst) |
+| Numerical divergence or disagreement with a reference | [Numerical acceptance](testing.md#accept-numerical-results) |
+| SWC/ASC reading fails | [IO API](../apis/io.rst) |
 
 If the problem remains unresolved, open an [issue](https://github.com/chaobrain/braincell/issues) with a runnable reproduction and environment details.

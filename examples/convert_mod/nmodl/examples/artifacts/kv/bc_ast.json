@@ -1,5 +1,5 @@
 {
-  "source_file": "/home/swl/braincell/examples/convert_mod/nmodl/mod_files/kv.mod",
+  "source_file": "examples/convert_mod/nmodl/mod_files/kv.mod",
   "title": "Simplified Kv example for BrainCell template generation",
   "mechanism_name": "Kv",
   "raw_blocks": {

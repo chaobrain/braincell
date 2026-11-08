@@ -8,7 +8,7 @@ move on 2026-09-07 did not rerun comparisons or advance their validation status.
 ## Current status
 
 - Declarative KineticIon and its public pieces exist. Reusable species, conservation, and current-input
-  semantics are maintained in the [KineticIon contract](../../docs/design/ion/current/kinetic-ion.md).
+  semantics are documented in the ``KineticIon`` docstrings.
 - Concrete calcium pools are imported in [calcium.py](../../braincell/ion/calcium.py):
   `CdpStC_MA2020_GoC`, `CdpStC_NoCAM_MA2020_GoC`, `CdpStC_CAMOnly_MA2020_GoC`,
   `CdpStC_MA2025_BC`, `CdpStC_RI2021_SC`, `CdpCAM_MA2024_PC`, and `CdpCR_MA2020_GrC`.
@@ -17,8 +17,7 @@ move on 2026-09-07 did not rerun comparisons or advance their validation status.
 - The [PC MA2024 scaffold](cell/pc_ma2024/pc.md) includes simplified NEURON and BrainCell
   assemblies, shared parameters, debug variants, and a [comparison notebook](cell/pc_ma2024/run.ipynb).
 - Spatial callable parameters are implemented; the former statement that paint required explicit
-  arrays or per-region calls is obsolete. Their current boundary is documented in
-  [Filter spatial parameters](../../docs/design/filter/current/spatial-callable-parameters.md).
+  arrays or per-region calls is obsolete. See the [filter API reference](../../docs/apis/filter.rst).
 
 ## Comparison entry points
 
@@ -35,8 +34,7 @@ move on 2026-09-07 did not rerun comparisons or advance their validation status.
 For runs with current-driven calcium pools, use `cache_ion_total_current=True` together with
 `ion_channel_update_order="family"`. Both are current Cell defaults; specifying them makes the
 comparison configuration explicit. `"integration"` remains an alternative for controlled comparisons.
-The timing and ownership of these options are defined by the
-[Cell scheduling contract](../../docs/design/cell/current/architecture.md#离子电流快照与调度).
+The timing and ownership of these options are documented on ``Cell``.
 
 The import work also covered same-name channels on disjoint soma/dendrite layouts and local PC
 calcium-channel `_Frozen` variants that stop differentiation through the voltage in the current
@@ -55,7 +53,7 @@ expression. These are specific compatibility paths, not proof that the full mode
 
 The earlier record also described MechanismProbe support for plain-value fields and listed the old
 probes implementation/tests. That is historical context, not a current API entry point; use the current
-[recording API](../../docs/design/network/current/api.md) for supported observation interfaces.
+recording API of ``Network`` for supported observation interfaces.
 
 ## Validation limits
 
@@ -64,8 +62,8 @@ probes implementation/tests. That is historical context, not a current API entry
 - Not every Cerebellum MOD file has a BrainCell counterpart. The completed import focus was the
   ion/channel subset needed by the PC and calcium-pool comparisons.
 - These comparisons do not establish kinetic-ion equivalence for a future unified single mode.
-  SingleCompartment has its own update path; compatibility scope remains in the
-  [Single/MultiCompartment unification proposal](../../docs/design/cell/proposals/single-multi-compartment-unification.md).
+  SingleCompartment has its own update path; compatibility scope remains an open design question
+  (single/multi-compartment unification).
 - The original record reported targeted scheduling/runtime, calcium-ion, and PC channel tests.
   It did not include a dated run manifest or complete tolerance table, and those results were not
   rerun during this documentation move.
@@ -79,6 +77,4 @@ probes implementation/tests. That is historical context, not a current API entry
 | Remaining Cerebellum imports | 待讨论 | Prioritize remaining MOD mechanisms after the PC scheduling path is stable |
 
 PC MA2024 remains the current end-to-end validation target for this import effort.
-Module-level contracts and source attribution live in [Ion TODO](../../docs/design/ion/TODO.md),
-[Channel TODO](../../docs/design/channel/TODO.md), and the shared
-[Ion/Channel bibliography](../../docs/design/ion/references/ion-channel-bibliography.md).
+Source attribution lives in the References sections of the ion and channel docstrings.

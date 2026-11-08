@@ -24,10 +24,7 @@ between the grouped and ungrouped classes.
 Which class a hidden state gets is a per-host decision:
 :class:`braincell.SingleCompartment` has no spatial axis and uses
 :class:`DiffEqSingleState`, while :class:`braincell.Cell` groups its
-trailing compartment axis with :class:`DiffEqGroupState`. See
-``docs/specs/2026-08-13-cell-hidden-group-state.md``,
-``docs/specs/2026-08-14-diffeq-state-mixin-split.md``, and
-``docs/design/cell/current/architecture.md``.
+trailing compartment axis with :class:`DiffEqGroupState`.
 """
 
 import contextlib

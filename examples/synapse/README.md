@@ -6,4 +6,4 @@ reads the shared GoC morphology from `data/cerebellum/`; the 3D plot uses Plotly
 
 Continue with [Connection](../network/connection.ipynb) to deliver events and
 [Network](../network/network.ipynb) to run populations together.
-Interface details live in [Synapse Design](../../docs/design/synapse/TODO.md).
+Interface details live in the [synapse API reference](../../docs/apis/braincell.synapse.rst).

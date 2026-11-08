@@ -10,8 +10,7 @@ when preparing a new experiment; the historical measurements are not a new runna
 environment, numerical results, training quality and missing historical metadata.
 Raw outputs may exist only in the original user's ignored artifacts. Any future local
 performance outputs belong in this directory's ignored `artifacts/`, while reviewed
-summaries belong in `results/`. Reusable interfaces and design rationale are described
-in the [optimization architecture](../../../docs/design/optim/current/architecture.md).
+summaries belong in `results/`.
 
 Before measuring, follow the [execution rules](../../AGENTS.md): confirm the full
 configuration matrix, independent rounds, first executions, warmups, timed repeats,

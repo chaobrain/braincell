@@ -290,13 +290,7 @@ def export_report(directory, report=None):
         "",
         "复现实验时读取本批次 manifest 的协议并重新确认执行清单；公共入口提供参数化命令。",
         "",
-        _document_link("方案", ROOT / "docs/design/synapse/proposals/event-delivery-optimization.md", report)
-        + " · "
-        + _document_link("固定版本参考", ROOT / "docs/design/synapse/references/scheduled-event-delivery.md", report)
-        + " · "
-        + _document_link("实验接口", ROOT / "docs/design/synapse/current/experimental-scheduled-events.md", report)
-        + " · "
-        + _document_link("驱动与命令", HERE / "README.md", report)
+        _document_link("驱动与命令", HERE / "README.md", report)
         + " · "
         + _document_link("已维护结果索引", HERE / "RESULTS.md", report),
         "",

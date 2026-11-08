@@ -24,10 +24,12 @@ import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
+import braincell
 from braincell._base_channel import IonInfo
 from braincell._base_ion import Ion
 from braincell._base_neuron import HHTypedNeuron
 from braincell.channel.calcium import CaT_HM1992
+from braincell.filter import AllRegion
 from braincell.ion.calcium import (
     CdpStC_CAMOnly_MA2020_GoC,
     CdpStC_NoCAM_MA2020_GoC,
@@ -1650,6 +1652,24 @@ class CdpLVA_SU2015_DCNTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(info.Ci, ion.Ci.value, atol=1e-12 * u.mM))
 
 
+_CURRENT_DENSITY = u.uA / u.cm**2
+_ALPHA_UNIT = u.mM / u.ms / _CURRENT_DENSITY
+
+
+def _first_order_cell(with_channel: bool, **ion_params):
+    """Build a one-CV cell carrying a ``CalciumFirstOrder`` pool named ``ca``."""
+    branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[5.0, 5.0] * u.um)
+    cell = braincell.Cell(braincell.Morphology.from_root(branch), cv_policy=braincell.CVPerBranch(1))
+    cell.paint(AllRegion(), braincell.mech.Ion("CalciumFirstOrder", name="ca", **ion_params))
+    if with_channel:
+        cell.paint(AllRegion(), braincell.mech.Channel("CaT_HM1992", name="cat", g_max=0.5 * u.mS / u.cm**2))
+    cell.paint(
+        AllRegion(),
+        braincell.mech.Channel("IL", name="leak", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV),
+    )
+    return cell
+
+
 class CalciumFirstOrderTest(unittest.TestCase):
     """The simpler first-order calcium buffering model."""
 
@@ -1660,21 +1680,110 @@ class CalciumFirstOrderTest(unittest.TestCase):
 
     def test_default_parameters(self) -> None:
         cfo = CalciumFirstOrder(size=1)
-        self.assertTrue(u.math.allclose(cfo.alpha, jnp.asarray(0.13), atol=1e-9))
-        self.assertTrue(u.math.allclose(cfo.beta, jnp.asarray(0.075), atol=1e-9))
+        self.assertTrue(u.math.allclose(cfo.alpha, _ALPHA_UNIT * 0.13, atol=1e-9 * _ALPHA_UNIT))
+        self.assertTrue(u.math.allclose(cfo.beta, 0.075 / u.ms, atol=1e-9 / u.ms))
         self.assertTrue(u.math.allclose(cfo.Co, 2.0 * u.mM, atol=1e-9 * u.mM))
         self.assertTrue(u.math.allclose(cfo.temp, u.celsius2kelvin(36.0), atol=1e-6 * u.kelvin))
 
     def test_custom_parameters_are_honoured(self) -> None:
         cfo = CalciumFirstOrder(
             size=1,
-            alpha=0.2,
-            beta=0.1,
+            alpha=0.2 * _ALPHA_UNIT,
+            beta=0.1 / u.ms,
             Co=1.5 * u.mM,
         )
-        self.assertTrue(u.math.allclose(cfo.alpha, jnp.asarray(0.2), atol=1e-9))
-        self.assertTrue(u.math.allclose(cfo.beta, jnp.asarray(0.1), atol=1e-9))
+        self.assertTrue(u.math.allclose(cfo.alpha, 0.2 * _ALPHA_UNIT, atol=1e-9 * _ALPHA_UNIT))
+        self.assertTrue(u.math.allclose(cfo.beta, 0.1 / u.ms, atol=1e-9 / u.ms))
         self.assertTrue(u.math.allclose(cfo.Co, 1.5 * u.mM, atol=1e-9 * u.mM))
+
+    def test_derivative_is_a_concentration_rate_for_every_current(self) -> None:
+        # dCi/dt = max(alpha * I_Ca, 0) - beta * Ci with the defaults
+        # alpha = 0.13 mM/ms/(uA/cm**2), beta = 0.075 /ms, Ci = 2.4e-4 mM:
+        # inward +1 uA/cm**2 gives 0.13 - 1.8e-5; outward current is
+        # rectified away, and "no current" (None) is a zero current.
+        cfo = CalciumFirstOrder(size=1)
+        V = _V([-60.0])
+        Ci = jnp.array([2.4e-4]) * u.mM
+        cases = (
+            ("inward", jnp.array([1.0]) * _CURRENT_DENSITY, 0.129982),
+            ("outward", jnp.array([-1.0]) * _CURRENT_DENSITY, -1.8e-5),
+            ("none", None, -1.8e-5),
+        )
+        for label, current, expected in cases:
+            with self.subTest(total_current=label):
+                dCi = cfo.derivative(Ci, V, total_current=current)
+                self.assertTrue(u.have_same_dim(dCi, u.mM / u.ms))
+                np.testing.assert_allclose(np.asarray(dCi.to_decimal(u.mM / u.ms)), [expected], rtol=1e-5)
+
+    def test_compute_derivative_without_channels_decays_Ci(self) -> None:
+        # The ion's own hook path: no channel attached, so ``current()``
+        # returns None and ``_drive_current`` substitutes a zero current.
+        cfo = CalciumFirstOrder(size=1)
+        V = _V([-60.0])
+        cfo.init_state(V)
+        cfo.compute_derivative(V)
+        np.testing.assert_allclose(np.asarray(cfo.Ci.derivative.to_decimal(u.mM / u.ms)), [-1.8e-5], rtol=1e-5)
+
+    def test_derivative_matches_calcium_detailed_up_to_the_resting_term(self) -> None:
+        # With alpha = 1/(2 F d) and beta = 1/tau both models share the
+        # rectified influx and the -Ci/tau decay; Detailed additionally
+        # relaxes toward C_rest, so the difference is exactly beta * C_rest.
+        d = 1.0 * u.um
+        tau = 5.0 * u.ms
+        C_rest = 2.4e-4 * u.mM
+        detailed = CalciumDetailed(size=1, d=d, tau=tau, C_rest=C_rest)
+        first_order = CalciumFirstOrder(size=1, alpha=1 / (2 * u.faraday_constant * d), beta=1 / tau)
+        V = _V([-60.0])
+        Ci = jnp.array([6e-4]) * u.mM
+        expected = np.asarray((C_rest / tau).to_decimal(u.mM / u.ms))
+        for current in (jnp.array([1.0]) * _CURRENT_DENSITY, jnp.array([-1.0]) * _CURRENT_DENSITY, None):
+            with self.subTest(total_current=current):
+                diff = detailed.derivative(Ci, V, total_current=current) - first_order.derivative(
+                    Ci, V, total_current=current
+                )
+                np.testing.assert_allclose(np.asarray(diff.to_decimal(u.mM / u.ms)), [expected], rtol=1e-5)
+
+    def test_cell_rejects_parameters_with_the_wrong_dimension(self) -> None:
+        cases = (
+            ("alpha", {"alpha": 0.13}),
+            ("alpha", {"alpha": 0.13 * u.mM}),
+            ("beta", {"beta": 0.075 * u.mM}),
+            ("beta", {"beta": 0.075}),
+        )
+        for field, params in cases:
+            with self.subTest(**{field: params[field]}):
+                cell = _first_order_cell(with_channel=False, **params)
+                with self.assertRaisesRegex((TypeError, ValueError), f"'{field}'"):
+                    cell.init_state()
+
+    def test_cell_accepts_parameters_in_other_compatible_units(self) -> None:
+        cell = _first_order_cell(
+            with_channel=False,
+            alpha=1.3e-4 * u.mM / u.ms / (u.nA / u.cm**2),
+            beta=75.0 / u.second,
+        )
+        cell.run(dt=0.025 * u.ms, duration=0.1 * u.ms)
+        Ci = cell.get_ion("ca").Ci.value
+        self.assertTrue(np.all(np.isfinite(np.asarray(Ci.to_decimal(u.mM)))))
+
+    def test_cell_run_with_inward_calcium_current_raises_Ci(self) -> None:
+        cell = _first_order_cell(with_channel=True)
+        cell.run(dt=0.025 * u.ms, duration=0.1 * u.ms)
+        Ci = cell.get_ion("ca").Ci.value
+        self.assertTrue(u.have_same_dim(Ci, u.mM))
+        Ci_mM = np.asarray(Ci.to_decimal(u.mM))
+        self.assertTrue(np.all(np.isfinite(Ci_mM)))
+        self.assertTrue(np.all(Ci_mM > 2.4e-4))
+
+    def test_cell_run_without_calcium_channel_decays_Ci(self) -> None:
+        # No channel: dCi/dt = -beta * Ci, so Ci(t) = Ci(0) * exp(-beta t).
+        cell = _first_order_cell(with_channel=False)
+        cell.run(dt=0.025 * u.ms, duration=0.1 * u.ms)
+        Ci = cell.get_ion("ca").Ci.value
+        self.assertTrue(u.have_same_dim(Ci, u.mM))
+        Ci_mM = np.asarray(Ci.to_decimal(u.mM))
+        self.assertTrue(np.all(np.isfinite(Ci_mM)))
+        np.testing.assert_allclose(Ci_mM, 2.4e-4 * np.exp(-0.075 * 0.1), rtol=1e-4)
 
     def test_init_state_creates_diffeq_state_Ci(self) -> None:
         cfo = CalciumFirstOrder(size=3)

@@ -1,6 +1,24 @@
 # Release Notes
 
 
+## Unreleased
+
+### Bug Fixes
+
+- `CalciumFirstOrder` can now run. Its `derivative` compared a current
+  density with `0 mM` and raised `UnitMismatchError`, with or without a
+  calcium channel, and a `Cell` rejected a unit-carrying `alpha` as
+  "must be dimensionless" because the constructor defaults were bare
+  numbers. `alpha` is now a concentration per time per current density
+  and `beta` a rate, with defaults `alpha=0.13 * u.mM / u.ms / (u.uA /
+  u.cm**2)` and `beta=0.075 / u.ms` (the numbers are unchanged), and
+  `derivative` returns a concentration per time. Inward current stays
+  positive and rectified, and a pool without channels decays as if the
+  current were zero. Through a `Cell`, a bare or wrongly dimensioned
+  `alpha` or `beta` now fails at `init_state()` with an error naming the
+  field. No working call changes: the class could not run before.
+
+
 ## Version 0.2.0
 
 This release redesigns heterogeneous network construction, simulation and

@@ -32,20 +32,16 @@ Tier 3 is the toolkit for custom schedulers, parallel downloaders, or
 alternative storage backends.
 """
 
-from .cache import NeuroMorphoCache, NeuroMorphoCacheLayout
-from .client import DEFAULT_TIMEOUT, NeuroMorphoClient
-from .entry import (
+from braincell.io.neuromorpho.cache import NeuroMorphoCache, NeuroMorphoCacheLayout
+from braincell.io.neuromorpho.client import DEFAULT_TIMEOUT, NeuroMorphoClient
+from braincell.io.neuromorpho.entry import (
     DEFAULT_USER_CACHE_DIR,
     default_cache_dir,
     fetch_neuromorpho,
     load_neuromorpho,
 )
-from .errors import (
-    NeuroMorphoError,
-    NeuroMorphoHTTPError,
-    NeuroMorphoNotFoundError,
-)
-from .models import (
+from braincell.io.neuromorpho.errors import NeuroMorphoError, NeuroMorphoHTTPError, NeuroMorphoNotFoundError
+from braincell.io.neuromorpho.models import (
     NeuroMorphoCacheStatus,
     NeuroMorphoDetail,
     NeuroMorphoDownloadItem,
@@ -56,8 +52,8 @@ from .models import (
     NeuroMorphoSearchPage,
     NeuroMorphoUrls,
 )
-from .query import NeuroMorphoQuery
-from .urls import (
+from braincell.io.neuromorpho.query import NeuroMorphoQuery
+from braincell.io.neuromorpho.urls import (
     API_BASE,
     FILE_BASE,
     DownloadMode,

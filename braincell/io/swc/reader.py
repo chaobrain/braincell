@@ -43,14 +43,9 @@ from braincell._typing import FilePath
 from braincell.io._geometry import MIN_SYNTHETIC_LENGTH_UM, should_copy_attach_point, synthetic_soma_geometry
 from braincell.morph.branch import Branch, branch_class_for_type
 from braincell.morph.morphology import Morphology
-from .rules import apply_swc_rules, raise_for_swc_errors
-from .soma import (
-    contour_equivalent_center_radius,
-    is_special_three_point_soma,
-    row_point,
-    row_radius,
-)
-from .types import (
+from braincell.io.swc.rules import apply_swc_rules, raise_for_swc_errors
+from braincell.io.swc.soma import contour_equivalent_center_radius, is_special_three_point_soma, row_point, row_radius
+from braincell.io.swc.types import (
     SwcReadOptions,
     SwcReport,
     _SwcAttach,

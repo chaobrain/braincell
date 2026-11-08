@@ -27,7 +27,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from .urls import DownloadMode
+from braincell.io.neuromorpho.urls import DownloadMode
 
 __all__ = [
     "NeuroMorphoCacheStatus",

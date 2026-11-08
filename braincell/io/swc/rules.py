@@ -18,7 +18,7 @@ import heapq
 from functools import partial
 from pathlib import Path
 
-from .types import SWC_TYPE_MAP, SwcReport, _SwcContext, _SwcRow
+from braincell.io.swc.types import SWC_TYPE_MAP, SwcReport, _SwcContext, _SwcRow
 
 
 def apply_swc_rules(context: _SwcContext) -> None:

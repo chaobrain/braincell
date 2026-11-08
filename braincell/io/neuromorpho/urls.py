@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Literal
 from urllib.parse import quote
 
 if TYPE_CHECKING:
-    from .models import NeuroMorphoFilePlan, NeuroMorphoNeuron
+    from braincell.io.neuromorpho.models import NeuroMorphoFilePlan, NeuroMorphoNeuron
 
 __all__ = [
     "API_BASE",
@@ -268,7 +268,7 @@ def plan_neuron_files(
         'standard'
     """
 
-    from .models import NeuroMorphoFilePlan  # local to break import cycle
+    from braincell.io.neuromorpho.models import NeuroMorphoFilePlan  # local to break import cycle
 
     _validate_mode(mode)
     stem = safe_filename(neuron.neuron_name)

@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-from .reader import AscReader
-from .types import AscIssue, AscMetadata, AscReport, AscSpineRecord
+from braincell.io.asc.reader import AscReader
+from braincell.io.asc.types import AscIssue, AscMetadata, AscReport, AscSpineRecord
 
 __all__ = ["AscIssue", "AscMetadata", "AscReader", "AscReport", "AscSpineRecord"]

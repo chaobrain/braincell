@@ -48,11 +48,11 @@ from pathlib import Path
 from typing import Any
 
 from braincell.morph.morphology import Morphology
-from .cache import NeuroMorphoCache
-from .client import DEFAULT_TIMEOUT, NeuroMorphoClient
-from .entry import default_cache_dir
-from .errors import NeuroMorphoError
-from .models import (
+from braincell.io.neuromorpho.cache import NeuroMorphoCache
+from braincell.io.neuromorpho.client import DEFAULT_TIMEOUT, NeuroMorphoClient
+from braincell.io.neuromorpho.entry import default_cache_dir
+from braincell.io.neuromorpho.errors import NeuroMorphoError
+from braincell.io.neuromorpho.models import (
     NeuroMorphoCacheStatus,
     NeuroMorphoDetail,
     NeuroMorphoDownloadRecord,
@@ -60,7 +60,7 @@ from .models import (
     NeuroMorphoNeuron,
     NeuroMorphoSearchPage,
 )
-from .query import QUERY_FIELDS, NeuroMorphoQuery
+from braincell.io.neuromorpho.query import QUERY_FIELDS, NeuroMorphoQuery
 
 __all__ = ["build_arg_parser", "main"]
 

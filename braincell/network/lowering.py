@@ -24,8 +24,8 @@ import numpy as np
 
 from braincell._misc import scalar_decimal, validate_time_quantity
 
-from .core import Population
-from .event import round_half_up_steps_host as _round_half_up_steps
+from braincell.network.core import Population
+from braincell.network.event import round_half_up_steps_host as _round_half_up_steps
 
 
 @dataclass(frozen=True)

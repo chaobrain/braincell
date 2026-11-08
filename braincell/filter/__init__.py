@@ -13,11 +13,11 @@
 # limitations under the License.
 # ==============================================================================
 
-from .cache import SelectionCache
-from . import density
-from . import metric
-from ._sampling import SamplingContext
-from .locset import (
+from braincell.filter.cache import SelectionCache
+from braincell.filter import density
+from braincell.filter import metric
+from braincell.filter._sampling import SamplingContext
+from braincell.filter.locset import (
     AtLocation,
     BranchPoints,
     ForkPoints,
@@ -37,7 +37,7 @@ from .locset import (
     at,
     sample,
 )
-from .region import (
+from braincell.filter.region import (
     AllRegion,
     BranchInFilter,
     BranchRangeFilter,

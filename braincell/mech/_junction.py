@@ -28,8 +28,8 @@ cell handle so multi-cell gap junctions can be expressed end-to-end.
 
 from dataclasses import dataclass, field
 
-from ._params import Params
-from ._point import Point
+from braincell.mech._params import Params
+from braincell.mech._point import Point
 
 __all__ = ["Junction"]
 

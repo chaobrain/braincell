@@ -27,7 +27,7 @@ import brainunit as u
 import numpy as np
 
 from braincell._multi_compartment.synapses import SynapseView
-from .event import EventSourceView
+from braincell.network.event import EventSourceView
 from braincell.morph._spatial import MorphologySpatialGeometry, interpolate_branch
 
 Score = Callable[["PairingContext"], object]

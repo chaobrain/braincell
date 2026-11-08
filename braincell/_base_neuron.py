@@ -31,9 +31,9 @@ import brainpy
 import brainunit as u
 
 from braincell._typing import Size
-from ._base_channel import IonChannel
-from ._misc import Container, TreeNode, cast_like as _cast_like
-from .quad.protocol import DiffEqModule
+from braincell._base_channel import IonChannel
+from braincell._misc import Container, TreeNode, cast_like as _cast_like
+from braincell.quad.protocol import DiffEqModule
 
 __all__ = ["HHTypedNeuron"]
 

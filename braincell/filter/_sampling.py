@@ -29,7 +29,7 @@ from scipy.stats.sampling import NumericalInversePolynomial
 
 from braincell.morph._spatial import MorphologySpatialGeometry
 from braincell.morph.morphology import Morphology
-from . import helper
+from braincell.filter import helper
 
 Density = Callable[["SamplingContext"], object]
 _MEASURES = {"normalized", "length", "lateral_area", "area"}

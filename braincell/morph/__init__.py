@@ -13,14 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
-from .branch import (
-    branch_class_for_type,
-)
-from .morphology import (
-    MorphoEdge,
-    MorphoMetric,
-    MorphoBranch,
-)
+from braincell.morph.branch import branch_class_for_type
+from braincell.morph.morphology import MorphoEdge, MorphoMetric, MorphoBranch
 
 __all__ = [
     "MorphoBranch",

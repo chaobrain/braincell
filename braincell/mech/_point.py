@@ -44,9 +44,9 @@ import warnings
 import brainunit as u
 import numpy as np
 
-from ._base import Mechanism
-from ._params import Params, quantity_hashable
-from ._validate import require_str
+from braincell.mech._base import Mechanism
+from braincell.mech._params import Params, quantity_hashable
+from braincell.mech._validate import require_str
 
 __all__ = [
     "Point",

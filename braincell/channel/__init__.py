@@ -15,7 +15,7 @@
 # ==============================================================================
 
 
-from ._base import (
+from braincell.channel._base import (
     Gate,
     Transition,
     HH,
@@ -27,8 +27,8 @@ from ._base import (
     ghk_flux,
     q10_factor,
 )
-from ._base import __all__ as _base_all
-from .calcium import (
+from braincell.channel._base import __all__ as _base_all
+from braincell.channel.calcium import (
     CaN_IS2008,
     CaT_HM1992,
     CaT_HP1992,
@@ -65,8 +65,8 @@ from .calcium import (
     Ca_ZH2019_IO,
     Ca_ZH2019_IO_Frozen,
 )
-from .calcium import __all__ as _calcium_all
-from .hyperpolarization_activated import (
+from braincell.channel.calcium import __all__ as _calcium_all
+from braincell.channel.hyperpolarization_activated import (
     HCN_HM1992,
     HCN1_MA2025_BC,
     HCN1_MA2024_PC,
@@ -76,13 +76,10 @@ from .hyperpolarization_activated import (
     HCN_SU2015_DCN,
     HCN_ZH2019_IO,
 )
-from .hyperpolarization_activated import __all__ as _hyperpolarization_activated_all
-from .leaky import (
-    LeakageChannel,
-    IL,
-)
-from .leaky import __all__ as _leaky_all
-from .potassium import (
+from braincell.channel.hyperpolarization_activated import __all__ as _hyperpolarization_activated_all
+from braincell.channel.leaky import LeakageChannel, IL
+from braincell.channel.leaky import __all__ as _leaky_all
+from braincell.channel.potassium import (
     KDR_Ba2002,
     K_TM1991,
     K_HH1952,
@@ -122,8 +119,8 @@ from .potassium import (
     Kv4p3_MA2020_GrC,
     Kdr_ZH2019_IO,
 )
-from .potassium import __all__ as _potassium_all
-from .potassium_calcium import (
+from braincell.channel.potassium import __all__ as _potassium_all
+from braincell.channel.potassium_calcium import (
     AHP_De1994,
     SK_SU2015_DCN,
     Kca3p1_MA2020_GoC,
@@ -140,12 +137,10 @@ from .potassium_calcium import (
     Kca1p1_MA2024_PC,
     Kca1p1_RI2021_SC,
 )
-from .potassium_calcium import __all__ as _potassium_calcium_all
-from .potassium_sodium import (
-    Kv1p5_MA2020_GrC,
-)
-from .potassium_sodium import __all__ as _potassium_sodium_all
-from .sodium import (
+from braincell.channel.potassium_calcium import __all__ as _potassium_calcium_all
+from braincell.channel.potassium_sodium import Kv1p5_MA2020_GrC
+from braincell.channel.potassium_sodium import __all__ as _potassium_sodium_all
+from braincell.channel.sodium import (
     Na_Ba2002,
     Na_TM1991,
     Na_HH1952,
@@ -161,7 +156,7 @@ from .sodium import (
     Nav_MA2020_GrC,
     NaFHF_MA2020_GrC,
 )
-from .sodium import __all__ as _sodium_all
+from braincell.channel.sodium import __all__ as _sodium_all
 
 # ASCII-sorted, so a new channel lands in exactly one place and
 # ``__init___test.ChannelReExportTest`` can say so.

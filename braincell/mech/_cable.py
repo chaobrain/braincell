@@ -28,7 +28,7 @@ from typing import Any
 import brainunit as u
 import numpy as np
 
-from ._params import quantity_hashable
+from braincell.mech._params import quantity_hashable
 
 __all__ = ["CableProperty"]
 

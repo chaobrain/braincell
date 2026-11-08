@@ -36,9 +36,9 @@ That is the invariant this package depends on, and
 maintaining a list of modules presumed dangerous.
 """
 
-from .connection import NetworkConnections
-from .core import NetworkResult, Population
-from .engine import Network
+from braincell.network.connection import NetworkConnections
+from braincell.network.core import NetworkResult, Population
+from braincell.network.engine import Network
 
 __all__ = [
     "Network",

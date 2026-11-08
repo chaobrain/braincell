@@ -14,12 +14,12 @@
 # ==============================================================================
 
 
-from .backend import BackendChooser, validate_backend_for_scene
-from .config import SUPPORTED_3D_MODES, resolve_default_3d_mode
-from .hooks import VisHooks
-from .plot2d import _build_value_spec
-from .scene import OverlaySpec, RenderRequest
-from .scene3d import build_render_scene_3d
+from braincell.vis.backend import BackendChooser, validate_backend_for_scene
+from braincell.vis.config import SUPPORTED_3D_MODES, resolve_default_3d_mode
+from braincell.vis.hooks import VisHooks
+from braincell.vis.plot2d import _build_value_spec
+from braincell.vis.scene import OverlaySpec, RenderRequest
+from braincell.vis.scene3d import build_render_scene_3d
 
 
 def plot3d(

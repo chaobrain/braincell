@@ -19,11 +19,11 @@ from itertools import chain
 
 import numpy as np
 
-from ._values import resolve_value_limits, resolved_colorbar_label
-from .backend import module_available
-from .config import rgb_to_float as _rgb_to_float
-from .hooks import PickInfo, VisHooks
-from .scene import (
+from braincell.vis._values import resolve_value_limits, resolved_colorbar_label
+from braincell.vis.backend import module_available
+from braincell.vis.config import rgb_to_float as _rgb_to_float
+from braincell.vis.hooks import PickInfo, VisHooks
+from braincell.vis.scene import (
     HighlightStroke2D,
     Marker2D,
     Polygon2D,

@@ -44,8 +44,8 @@ import numpy as np
 from braincell.morph import MorphoBranch
 from braincell.morph.morphology import Morphology
 
-from ._collision import _build_collision_index
-from ._common import (
+from braincell.vis.layout._collision import _build_collision_index
+from braincell.vis.layout._common import (
     LayoutBranch2D,
     _allocate_weighted_angles,
     _AXON_ROOT_BASE_ANGLE_RAD,
@@ -56,8 +56,8 @@ from ._common import (
     _pick_trunk_child,
     _resolve_trunk_child_angle,
 )
-from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
-from ._geometry import (
+from braincell.vis.layout._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
+from braincell.vis.layout._geometry import (
     _layout_branch_from_angles,
     _make_layout_branch,
     _shortest_angle_delta_rad,

@@ -37,17 +37,14 @@ import warnings
 from braincell.morph.morphology import Morphology
 from braincell.vis.config import DISPATCHED_2D_LAYOUTS, LAYOUT_2D_ALIASES
 
-from ._balloon import _build_layout_branches_balloon
-from ._cache import LayoutCache, get_default_layout_cache
-from ._common import LayoutBranch2D, _build_layout_specs
-from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
-from ._fan import _build_layout_branches_fan
-from ._legacy import _build_layout_branches_legacy
-from ._radial import _build_layout_branches_radial_360
-from ._stem import (
-    _build_layout_branches_stem,
-    _build_layout_branches_stem_linear,
-)
+from braincell.vis.layout._balloon import _build_layout_branches_balloon
+from braincell.vis.layout._cache import LayoutCache, get_default_layout_cache
+from braincell.vis.layout._common import LayoutBranch2D, _build_layout_specs
+from braincell.vis.layout._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
+from braincell.vis.layout._fan import _build_layout_branches_fan
+from braincell.vis.layout._legacy import _build_layout_branches_legacy
+from braincell.vis.layout._radial import _build_layout_branches_radial_360
+from braincell.vis.layout._stem import _build_layout_branches_stem, _build_layout_branches_stem_linear
 
 _VALID_ROOT_LAYOUTS = {"type_split", "legacy"}
 

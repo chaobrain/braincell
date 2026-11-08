@@ -28,7 +28,7 @@ import numpy as np
 from braincell.morph import MorphoBranch
 from braincell.morph.morphology import Morphology
 
-from ._common import (
+from braincell.vis.layout._common import (
     LayoutBranch2D,
     _LayoutSpec2D,
     _leaf_counts_by_branch,
@@ -36,12 +36,8 @@ from ._common import (
     _weighted_child_intervals,
     walk_layout_top_down,
 )
-from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
-from ._geometry import (
-    _make_layout_branch,
-    _vector_angle_rad,
-    sample_layout_branch,
-)
+from braincell.vis.layout._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
+from braincell.vis.layout._geometry import _make_layout_branch, _vector_angle_rad, sample_layout_branch
 
 _RADIAL_MIN_CHILD_SPAN_RAD = math.radians(40.0)
 

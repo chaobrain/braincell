@@ -382,7 +382,7 @@ def publication_theme(
     # Apply matplotlib rcParams lazily — only import if available.
     # ``module_available`` is imported here rather than at module scope
     # because ``backend`` imports ``scene``, which imports this module.
-    from .backend import module_available
+    from braincell.vis.backend import module_available
 
     mpl_available = module_available("matplotlib")
     rc_snapshot: dict[str, object] = {}

@@ -23,11 +23,11 @@ from typing import Any
 
 import numpy as np
 
-from ._values import resolve_value_limits, resolved_colorbar_label
-from .backend import module_available
-from .config import rgb_to_float as _rgb_to_float
-from .hooks import PickInfo, VisHooks
-from .scene import RenderRequest, RenderScene3D, ValueBatch3D, ValueSpec
+from braincell.vis._values import resolve_value_limits, resolved_colorbar_label
+from braincell.vis.backend import module_available
+from braincell.vis.config import rgb_to_float as _rgb_to_float
+from braincell.vis.hooks import PickInfo, VisHooks
+from braincell.vis.scene import RenderRequest, RenderScene3D, ValueBatch3D, ValueSpec
 
 # Attribute name used by the PyVista backend to attach a point→branch
 # lookup table to a plotter. Downstream picking callbacks read it via

@@ -42,8 +42,8 @@ import brainunit as u
 import numpy as np
 
 from braincell.morph.morphology import Morphology
-from ._common import LayoutBranch2D
-from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
+from braincell.vis.layout._common import LayoutBranch2D
+from braincell.vis.layout._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
 
 
 class LayoutCache:

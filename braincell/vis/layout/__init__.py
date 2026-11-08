@@ -34,15 +34,11 @@ Sub-modules
 - ``_dispatch``   — ``build_layout_branches_2d`` dispatcher.
 """
 
-from ._cache import LayoutCache, get_default_layout_cache
-from ._common import LayoutBranch2D
-from ._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
-from ._dispatch import build_layout_branches_2d
-from ._geometry import (
-    point_on_layout_branch,
-    sample_layout_branch,
-    tangent_on_layout_branch,
-)
+from braincell.vis.layout._cache import LayoutCache, get_default_layout_cache
+from braincell.vis.layout._common import LayoutBranch2D
+from braincell.vis.layout._config import DEFAULT_LAYOUT_CONFIG, LayoutConfig
+from braincell.vis.layout._dispatch import build_layout_branches_2d
+from braincell.vis.layout._geometry import point_on_layout_branch, sample_layout_branch, tangent_on_layout_branch
 
 __all__ = [
     "DEFAULT_LAYOUT_CONFIG",

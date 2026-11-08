@@ -20,7 +20,7 @@ import numpy as np
 
 from braincell._typing import ArrayLike
 
-from .config import (
+from braincell.vis.config import (
     alpha_for_2d as _alpha_for_2d,
     alpha_for_2d_line as _alpha_for_2d_line,
     alpha_for_2d_poly as _alpha_for_2d_poly,

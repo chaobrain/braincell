@@ -17,11 +17,11 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from .backend import BackendChooser, validate_backend_for_scene
-from .config import LAYOUT_2D_DISPATCHED_NAMES, layout_2d_title
-from .layout import LayoutConfig
-from .scene import OverlaySpec, RenderRequest
-from .scene2d import build_render_scene_2d
+from braincell.vis.backend import BackendChooser, validate_backend_for_scene
+from braincell.vis.config import LAYOUT_2D_DISPATCHED_NAMES, layout_2d_title
+from braincell.vis.layout import LayoutConfig
+from braincell.vis.scene import OverlaySpec, RenderRequest
+from braincell.vis.scene2d import build_render_scene_2d
 
 
 def compare_layouts_2d(

@@ -16,12 +16,12 @@
 
 from contextlib import nullcontext
 
-from .backend import BackendChooser, validate_backend_for_scene
-from .config import resolve_default_2d_layout, resolve_default_2d_shape, theme as vis_theme
-from .hooks import VisHooks
-from .layout import LayoutConfig
-from .scene import OverlaySpec, RenderRequest, ValueSpec
-from .scene2d import build_render_scene_2d
+from braincell.vis.backend import BackendChooser, validate_backend_for_scene
+from braincell.vis.config import resolve_default_2d_layout, resolve_default_2d_shape, theme as vis_theme
+from braincell.vis.hooks import VisHooks
+from braincell.vis.layout import LayoutConfig
+from braincell.vis.scene import OverlaySpec, RenderRequest, ValueSpec
+from braincell.vis.scene2d import build_render_scene_2d
 
 
 def plot2d(

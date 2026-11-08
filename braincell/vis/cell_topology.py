@@ -40,7 +40,7 @@ from typing import Any, Literal, get_args
 from braincell._multi_compartment import field_resolution
 from braincell._multi_compartment.cell import Cell
 from braincell.filter import LocsetExpr, LocsetMask, RegionExpr, RegionMask
-from .point_topology import CoverageMode, _plot_discrete_topology_graph, plot_point_topology
+from braincell.vis.point_topology import CoverageMode, _plot_discrete_topology_graph, plot_point_topology
 
 __all__ = ["plot_cell_topology"]
 

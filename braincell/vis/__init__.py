@@ -13,9 +13,9 @@
 # limitations under the License.
 # ==============================================================================
 
-from .cell_topology import plot_cell_topology
-from .compare import compare_morphologies, compare_values
-from .config import (
+from braincell.vis.cell_topology import plot_cell_topology
+from braincell.vis.compare import compare_morphologies, compare_values
+from braincell.vis.config import (
     PUBLICATION_BRANCH_TYPE_COLORS,
     PUBLICATION_RC_PARAMS,
     PublicationTheme,
@@ -27,21 +27,16 @@ from .config import (
     set_defaults,
     theme,
 )
-from .export import save_figure
-from .hooks import PickInfo, VisHooks
-from .layout import LayoutCache, LayoutConfig
-from .morphometry import (
-    plot_branch_order_histogram,
-    plot_dendrogram,
-    plot_sholl,
-    plot_topology,
-)
-from .movie import plot_movie
-from .point_topology import plot_point_topology
-from .plot2d import plot2d
-from .plot3d import plot3d
-from .scene import OverlaySpec, ValueSpec
-from .traces import plot_traces
+from braincell.vis.export import save_figure
+from braincell.vis.hooks import PickInfo, VisHooks
+from braincell.vis.layout import LayoutCache, LayoutConfig
+from braincell.vis.morphometry import plot_branch_order_histogram, plot_dendrogram, plot_sholl, plot_topology
+from braincell.vis.movie import plot_movie
+from braincell.vis.point_topology import plot_point_topology
+from braincell.vis.plot2d import plot2d
+from braincell.vis.plot3d import plot3d
+from braincell.vis.scene import OverlaySpec, ValueSpec
+from braincell.vis.traces import plot_traces
 
 __all__ = [
     "LayoutCache",

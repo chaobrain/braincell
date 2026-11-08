@@ -53,7 +53,7 @@ jobs:
                   for key, value in node.items():
                       if key == "python-version":
                           for v in value if isinstance(value, list) else [value]:
-                              if not str(v).startswith("${{"):
+                              if "{{" not in str(v):  # a matrix expression
                                   yield str(v)
                       else:
                           yield from tested(value)

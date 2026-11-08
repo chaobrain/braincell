@@ -163,7 +163,7 @@ class Population:
 
     def _prepare_event_output_registration(self, source, *, name: str | None = None):
         """Validate one event-output registration without mutating the Population."""
-        from .event import EventSource, EventSourceView
+        from braincell.network.event import EventSource, EventSourceView
 
         if self.kind != "cell":
             raise TypeError("Additional event outputs are supported only for Cell populations.")
@@ -236,7 +236,7 @@ class Population:
 
 
 def _model_size_and_kind(model) -> tuple[int, str]:
-    from .event import EventSequence, NetStim
+    from braincell.network.event import EventSequence, NetStim
 
     if isinstance(model, (NetStim, EventSequence)):
         return int(model.size), "netstim" if isinstance(model, NetStim) else "event_sequence"
@@ -322,7 +322,7 @@ class NetworkResult:
         NetworkResult
             Concatenated immutable result.
         """
-        from .recording import concat_sample_blocks
+        from braincell.network.recording import concat_sample_blocks
 
         parts = tuple(parts)
         if not parts:
@@ -391,7 +391,7 @@ def _nested_mapping_proxy(value):
 
 
 def _concat_event_series(series):
-    from .recording import EventSeries
+    from braincell.network.recording import EventSeries
 
     return EventSeries(
         time=_concat_values(tuple(item.time for item in series)),

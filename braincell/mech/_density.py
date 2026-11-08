@@ -43,10 +43,10 @@ via :func:`braincell.mech.get_registry().get(category, class_name)
 import operator
 from typing import Any, Callable, ClassVar, Mapping
 
-from ._base import Mechanism
-from ._params import Params
-from ._registry import _CATEGORY_CHANNEL, _CATEGORY_ION, get_registry
-from ._validate import require_fraction, require_str
+from braincell.mech._base import Mechanism
+from braincell.mech._params import Params
+from braincell.mech._registry import _CATEGORY_CHANNEL, _CATEGORY_ION, get_registry
+from braincell.mech._validate import require_fraction, require_str
 
 __all__ = [
     "Density",

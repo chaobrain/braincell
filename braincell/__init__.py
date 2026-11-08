@@ -27,20 +27,11 @@ from braincell.quad.protocol import (
     hidden_state,
     state_grouping,
 )
-from . import quad, mech, channel, synapse, ion, filter, morph, reduction, trainable
-from ._base_channel import (
-    Channel,
-    IonInfo,
-    IonChannel,
-    Synapse,
-)
-from ._base_ion import (
-    Ion,
-    MixIons,
-    mix_ions,
-)
-from ._base_neuron import HHTypedNeuron
-from ._discretization import (
+from braincell import quad, mech, channel, synapse, ion, filter, morph, reduction, trainable
+from braincell._base_channel import Channel, IonInfo, IonChannel, Synapse
+from braincell._base_ion import Ion, MixIons, mix_ions
+from braincell._base_neuron import HHTypedNeuron
+from braincell._discretization import (
     CompositeByTypePolicy,
     CV,
     CVTree,
@@ -54,7 +45,7 @@ from ._discretization import (
     NodeTree,
     PointPlacement,
 )
-from ._multi_compartment import (
+from braincell._multi_compartment import (
     Cell,
     CellView,
     ChannelView,
@@ -64,12 +55,9 @@ from ._multi_compartment import (
     RunResult,
     SynapseView,
 )
-from .network import (
-    Network,
-    NetworkResult,
-)
-from .network.connection import ConnectionView, NetworkConnections, connect
-from .network.event import (
+from braincell.network import Network, NetworkResult
+from braincell.network.connection import ConnectionView, NetworkConnections, connect
+from braincell.network.event import (
     EventSequence,
     EventSource,
     EventSourceView,
@@ -77,8 +65,8 @@ from .network.event import (
     NetStim,
     VoltageCrossingSource,
 )
-from .network.recording import EventSeries, RecordingSchema, RecordingSpec, SampleBlock, observe
-from .reduction import (
+from braincell.network.recording import EventSeries, RecordingSchema, RecordingSpec, SampleBlock, observe
+from braincell.reduction import (
     EventAccumulatorReduction,
     PayloadAccumulatorReduction,
     ReductionContext,
@@ -92,29 +80,11 @@ from .reduction import (
     ReductionViewCollection,
     SynapticKernelAccumulatorReduction,
 )
-from ._version import (
-    __version__,
-    __version_info__,
-)
-from .mech import (
-    CableProperty,
-    CurrentClamp,
-    FunctionClamp,
-    SineClamp,
-)
-from .morph.branch import (
-    ApicalDendrite,
-    Axon,
-    BasalDendrite,
-    Branch,
-    CustomBranch,
-    Dendrite,
-    Soma,
-)
-from .morph.morphology import (
-    Morphology,
-)
-from . import io, network, vis
+from braincell._version import __version__, __version_info__
+from braincell.mech import CableProperty, CurrentClamp, FunctionClamp, SineClamp
+from braincell.morph.branch import ApicalDendrite, Axon, BasalDendrite, Branch, CustomBranch, Dendrite, Soma
+from braincell.morph.morphology import Morphology
+from braincell import io, network, vis
 
 # ASCII-sorted, so a new export lands in exactly one place and the guard in
 # ``__init___test.py`` can say so. Every public domain package is listed:

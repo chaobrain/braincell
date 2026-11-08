@@ -29,11 +29,11 @@ from braincell._misc import freeze_array, normalize_loop_outputs, scalar_decimal
 from braincell._multi_compartment import probes as _probes
 from braincell._multi_compartment.run import _duration_steps, _recording_time_mask
 from braincell._multi_compartment.synapses import SynapseView
-from .connection import NetworkConnections, PairingSpec, _UNSET, _connect_with_pairing_seed
-from .recording import EventSeries, SampleBlock
+from braincell.network.connection import NetworkConnections, PairingSpec, _UNSET, _connect_with_pairing_seed
+from braincell.network.recording import EventSeries, SampleBlock
 
-from .core import NetworkResult, Population
-from .delivery import (
+from braincell.network.core import NetworkResult, Population
+from braincell.network.delivery import (
     DeliveryBlock,
     advance_delivery_state,
     apply_immediate_events,
@@ -45,7 +45,7 @@ from .delivery import (
     resolve_event_backend,
     write_arrivals,
 )
-from .lowering import lower_direct_connections
+from braincell.network.lowering import lower_direct_connections
 from braincell.mech import Synapse
 
 
@@ -178,7 +178,7 @@ class Network:
             Resolved Network-owned population.
         """
         self._raise_if_initialized("add a population")
-        from .event import EventSource
+        from braincell.network.event import EventSource
 
         if callable(model) and not isinstance(model, EventSource) and not hasattr(model, "pop_size"):
             model = model()
@@ -783,7 +783,7 @@ class Network:
         raise RuntimeError(f"Network.connect {role} is not registered in this Network.")
 
     def _require_registered_source(self, source) -> Population:
-        from .event import EventSource, EventSourceView
+        from braincell.network.event import EventSource, EventSourceView
 
         if isinstance(source, Population):
             registered = self.populations.get(source.name)
@@ -803,7 +803,7 @@ class Network:
     @staticmethod
     def _prepare_source_event_output_registration(source_population: Population, source):
         """Validate automatic publication of a live Cell event source."""
-        from .event import EventSource, EventSourceView
+        from braincell.network.event import EventSource, EventSourceView
 
         if isinstance(source, Population) or source_population.kind != "cell":
             return None

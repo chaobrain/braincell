@@ -116,10 +116,14 @@ def _production_modules() -> Iterator[Path]:
 
     Test modules and their helpers are excluded: they are not part of the
     package's import graph, and several legitimately import
-    ``braincell.vis`` at module level.
+    ``braincell.vis`` at module level. So is the root ``braincell/__init__.py``:
+    it re-exports ``vis`` as its last statement, after ``Cell`` and every other
+    name ``vis`` needs are already bound, so it closes no cycle.
     """
     for path in sorted(_BRAINCELL_DIR.rglob("*.py")):
         if _PACKAGE_DIR in path.parents or path.parent == _PACKAGE_DIR:
+            continue
+        if path == _BRAINCELL_DIR / "__init__.py":
             continue
         if path.name.endswith("_test.py") or path.name in {"_testing.py", "conftest.py"}:
             continue

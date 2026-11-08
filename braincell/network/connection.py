@@ -29,7 +29,7 @@ from braincell._misc import require_name as _require_name, scalar_decimal
 from braincell._parameter_schema import RuntimeParameterState
 from braincell._multi_compartment.synapses import SynapseView, _cell_label
 from braincell._multi_compartment.lifecycle import DiscreteView
-from .pairing import (
+from braincell.network.pairing import (
     PairingContext,
     PairingSpec,
     by_source,
@@ -47,8 +47,8 @@ from braincell.mech import (
     TriggerEventInput,
     get_registry,
 )
-from .core import Population
-from .event import (
+from braincell.network.core import Population
+from braincell.network.event import (
     EventSource,
     EventSourceView,
     _quantity_vector,

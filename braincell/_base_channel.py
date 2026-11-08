@@ -34,9 +34,9 @@ import brainunit as u
 
 from braincell._typing import ArrayLike, Size
 from braincell._parameter_schema import RuntimeParameterState, constructor_parameters
-from ._misc import TreeNode
-from .mech import NoEventInput, StateSpec
-from .quad.protocol import DiffEqModule, DiffEqSingleState, IndependentIntegration
+from braincell._misc import TreeNode
+from braincell.mech import NoEventInput, StateSpec
+from braincell.quad.protocol import DiffEqModule, DiffEqSingleState, IndependentIntegration
 
 __all__ = ["IonChannel", "IonInfo", "Channel", "Synapse"]
 

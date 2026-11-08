@@ -132,15 +132,16 @@ extend-exclude = [ "benchmarks", "data", "dev", "docs", "examples", "validation"
 # `preserve` keeps the codebase's existing mix of single and double quotes
 # so the initial formatting pass does not churn every string literal.
 format.quote-style = "preserve"
-# Ruff's default rule set (pycodestyle errors + pyflakes). Import sorting (I)
-# and pyupgrade (UP) are deliberately NOT enabled yet.
+# Ruff's default rule set (pycodestyle errors + pyflakes) plus TID252
+# (absolute imports only). Import sorting (I) and pyupgrade (UP) are
+# deliberately NOT enabled yet.
 #
 # Every code below is a rule the current tree violates. This pass is
 # format-and-trivial only, so each is silenced rather than mass-fixed, and each
 # is listed with its violation count at the time of writing so the debt is
 # auditable. Delete an entry once its cleanup lands; none of them are silenced
 # because the rule is wrong.
-lint.select = [ "E4", "E7", "E9", "F" ]
+lint.select = [ "E4", "E7", "E9", "F", "TID252" ]
 lint.ignore = [
   # 145x -- lambda assigned to a variable. Pervasive and stylistic.
   "E731",
@@ -153,6 +154,9 @@ lint.ignore = [
 # unused-import rule reports the whole surface as dead. Nowhere else in the tree
 # is F401 silenced -- an unused import in a real module is still an error.
 lint.per-file-ignores."**/__init__.py" = [ "F401" ]
+# Internal imports are absolute (`from braincell.morph import MorphoBranch`):
+# TID252 with "all" rejects every relative import, including same-package ones.
+lint.flake8-tidy-imports.ban-relative-imports = "all"
 
 # The Python classifiers are written by hand: they list exactly the versions the
 # CI matrix tests, which is not every minor release between the two ends.

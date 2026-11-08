@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-from .calcium import (
+from braincell.ion.calcium import (
     Calcium,
     CalciumFixed,
     CalciumInitNernst,
@@ -34,24 +34,13 @@ from .calcium import (
     CdpHVA_SU2015_DCN,
     CdpLVA_SU2015_DCN,
 )
-from .calcium import __all__ as _calcium_all
-from .nonspecific import (
-    NonSpecific,
-    NonSpecificFixed,
-)
-from .nonspecific import __all__ as _nonspecific_all
-from .potassium import (
-    Potassium,
-    PotassiumFixed,
-    PotassiumInitNernst,
-)
-from .potassium import __all__ as _potassium_all
-from .sodium import (
-    Sodium,
-    SodiumFixed,
-    SodiumInitNernst,
-)
-from .sodium import __all__ as _sodium_all
+from braincell.ion.calcium import __all__ as _calcium_all
+from braincell.ion.nonspecific import NonSpecific, NonSpecificFixed
+from braincell.ion.nonspecific import __all__ as _nonspecific_all
+from braincell.ion.potassium import Potassium, PotassiumFixed, PotassiumInitNernst
+from braincell.ion.potassium import __all__ as _potassium_all
+from braincell.ion.sodium import Sodium, SodiumFixed, SodiumInitNernst
+from braincell.ion.sodium import __all__ as _sodium_all
 
 # ASCII-sorted; see ``__init___test.IonReExportTest``.
 __all__ = sorted(_calcium_all + _nonspecific_all + _potassium_all + _sodium_all + ["build_placeholder_ions"])

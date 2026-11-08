@@ -23,7 +23,7 @@ import heapq
 import brainunit as u
 import numpy as np
 
-from .morphology import Morphology
+from braincell.morph.morphology import Morphology
 
 __all__ = ["MorphologySpatialGeometry", "interpolate_branch"]
 

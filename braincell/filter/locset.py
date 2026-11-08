@@ -22,10 +22,10 @@ import numpy as np
 from brainunit import Quantity
 
 from braincell.morph.morphology import Morphology
-from . import helper
-from ._sampling import sample_locations_from_region
-from .cache import SelectionCache, evaluate_cached
-from .region import RegionExpr
+from braincell.filter import helper
+from braincell.filter._sampling import sample_locations_from_region
+from braincell.filter.cache import SelectionCache, evaluate_cached
+from braincell.filter.region import RegionExpr
 
 Location = tuple[int, float]
 

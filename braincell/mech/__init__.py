@@ -60,20 +60,15 @@ braincell.ion : Concrete ion-species implementations.
 braincell.synapse : Concrete synapse implementations.
 """
 
-from ._base import Mechanism
-from ._cable import CableProperty
-from ._context import CVContext
-from ._density import Channel, Density, Ion
-from ._event_contract import (
-    EventInput,
-    NoEventInput,
-    ScalarEventInput,
-    TriggerEventInput,
-)
-from ._junction import Junction
-from ._params import Params
-from ._synapse_schema import ParameterSpec, StateSpec, positive
-from ._point import (
+from braincell.mech._base import Mechanism
+from braincell.mech._cable import CableProperty
+from braincell.mech._context import CVContext
+from braincell.mech._density import Channel, Density, Ion
+from braincell.mech._event_contract import EventInput, NoEventInput, ScalarEventInput, TriggerEventInput
+from braincell.mech._junction import Junction
+from braincell.mech._params import Params
+from braincell.mech._synapse_schema import ParameterSpec, StateSpec, positive
+from braincell.mech._point import (
     CurrentProbe,
     CurrentClamp,
     FunctionClamp,
@@ -84,7 +79,7 @@ from ._point import (
     StateProbe,
     Synapse,
 )
-from ._registry import (
+from braincell.mech._registry import (
     MechanismEntry,
     MechanismRegistry,
     get_registry,

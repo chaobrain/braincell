@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-from .exponential import Exp2Syn, ExpSyn
+from braincell.synapse.exponential import Exp2Syn, ExpSyn
 
 __all__ = [
     "Exp2Syn",

@@ -21,8 +21,8 @@ from dataclasses import dataclass
 from brainunit import Quantity
 
 from braincell.morph.morphology import Morphology
-from . import helper
-from .cache import SelectionCache, evaluate_cached
+from braincell.filter import helper
+from braincell.filter.cache import SelectionCache, evaluate_cached
 
 ClosedSide = str
 

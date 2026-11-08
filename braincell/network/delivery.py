@@ -38,7 +38,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from .lowering import ConnectionBlock
+from braincell.network.lowering import ConnectionBlock
 
 
 @dataclass(frozen=True)

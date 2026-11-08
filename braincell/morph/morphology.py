@@ -31,12 +31,7 @@ import brainunit as u
 import numpy as np
 from brainunit import Quantity
 
-from .branch import (
-    Branch,
-    frustum_areas_um2,
-    frustum_volumes_um3,
-    length_weighted_mean_radius_um,
-)
+from braincell.morph.branch import Branch, frustum_areas_um2, frustum_volumes_um3, length_weighted_mean_radius_um
 
 _BRANCH_RESERVED_NAMES = set(Branch.__dataclass_fields__) | {name for name in dir(Branch) if not name.startswith("_")}
 
@@ -1689,7 +1684,7 @@ class Morphology:
 
     @staticmethod
     def _swc_type_map() -> dict[int, str]:
-        from ..io.swc.types import SWC_TYPE_MAP
+        from braincell.io.swc.types import SWC_TYPE_MAP
 
         return SWC_TYPE_MAP
 

@@ -35,15 +35,15 @@ from brainstate.mixin import _JointGenericAlias
 
 from braincell._typing import Size
 from braincell._parameter_schema import RuntimeParameterState
-from ._base_channel import Channel, IonChannel, IonInfo
-from ._base_neuron import HHTypedNeuron
-from ._misc import (
+from braincell._base_channel import Channel, IonChannel, IonInfo
+from braincell._base_neuron import HHTypedNeuron
+from braincell._misc import (
     Container,
     profile_barrier_current as _profile_barrier_current,
     profiler_safe_name,
     set_module_as,
 )
-from .quad.protocol import IndependentIntegration
+from braincell.quad.protocol import IndependentIntegration
 
 __all__ = ["Ion", "MixIons", "mix_ions"]
 

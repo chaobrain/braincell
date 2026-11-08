@@ -159,8 +159,9 @@ jobs:
 
   # Single-channel BrainCell/NEURON comparisons (validation/neuron/channel_no_conc).
   # A separate job, so its NEURON mechanism libraries never share a process
-  # with the cable suite's. Compiling the eight models takes about 25 s and
-  # the suite about 35 s, so it runs on every pull request.
+  # with the cable suite's. On CI, compiling the eight models takes about 75 s
+  # and the suite about 70 s (no module above the slow-tier threshold), so it
+  # runs on every pull request.
   test_linux_neuron_compare_channel:
     runs-on: ubuntu-latest
     strategy:
@@ -177,9 +178,12 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools
+          python -m pip install -r requirements-braintools-main.txt
           python -m pip install -r requirements-dev.txt
           python -m pip install neuron pandas
           python -m pip install .
+      - name: Require braintools from git
+        run: python -m pip freeze | grep '^braintools @ git+'
       - name: Compile the channel mechanisms
         run: |
           for model in bc_ma2025 dcn_su2015 goc_ma2020 grc_ma2020 io_zh2019 pc_ma2024 sc_ma2021 testing; do

@@ -37,9 +37,9 @@ def use_double_precision() -> None:
     """Force float64 for a suite that compares against NEURON.
 
     NEURON integrates in double precision, and these suites compare against
-    it at tolerances as tight as 2e-5 mV. Under the float32 default, rounding
-    accumulates through the capacitive voltage update -- roughly 0.03 mV of
-    monotonic drift over a 4 ms run, growing with step count -- which swamps
+    it at tolerances as tight as 1e-6 mV. The DHS step solves for the voltage
+    increment, so float32 rounding no longer accumulates with |V|, but the
+    float32 errors left on these cases (up to about 3e-4 mV) still exceed
     those tolerances.
 
     ``brainstate.environ.set`` is process-global, so whichever module runs

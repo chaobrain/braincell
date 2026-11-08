@@ -15,21 +15,23 @@
 
 """Numerical integrators for BrainCell.
 
-Exposes :func:`get_integrator` plus every canonical solver name
-registered in :mod:`braincell.quad._registry`.
+Exposes :func:`get_integrator`, :func:`integrator_info` and
+:func:`list_integrators`, which resolve names through the
+:mod:`braintools.quad` registry, plus braincell's step functions and the
+stateful integration protocol.
 
 .. note::
 
     This ``__init__.py`` deliberately performs **side-effect imports** of
-    every ``_<backend>.py`` module. Each backend self-registers into the
-    integrator registry at import time via ``@register_integrator``. Do
-    not lazily defer these imports — unresolved solver names would
-    surface as ``ValueError: unknown integrator`` from
+    every ``_<backend>.py`` module. Each backend registers its steps in the
+    ``'module'`` kind of :mod:`braintools.quad` at import time via
+    ``@register_module_step``. Do not lazily defer these imports; unresolved
+    solver names would surface as ``ValueError: Unknown integrator`` from
     :func:`get_integrator` at first call instead of at import time.
 """
 
-# Importing the step modules below has the side effect of populating the
-# global registry via @register_integrator decorators on each *_step function.
+# Importing the step modules below registers braincell's module steps in the
+# braintools.quad registry via @register_module_step.
 from braincell.quad._backward_euler import backward_euler_step
 from braincell.quad._exp_euler import exp_euler_step, ind_exp_euler_step
 from braincell.quad._implicit import implicit_euler_step
@@ -44,14 +46,12 @@ from braincell.quad.protocol import (
     state_grouping,
 )
 from braincell.quad._registry import (
-    IntegratorEntry,
-    IntegratorRegistry,
-    all_integrators,
     get_integrator,
-    get_registry,
-    register_integrator,
+    integrator_info,
+    list_integrators,
 )
-from braincell.quad._runge_kutta import (
+from braincell.quad._explicit import (
+    module_step_from_ode,
     euler_step,
     heun2_step,
     heun3_step,
@@ -59,7 +59,6 @@ from braincell.quad._runge_kutta import (
     ralston2_step,
     ralston3_step,
     ralston4_step,
-    rk2_step,
     rk3_step,
     rk4_step,
     ssprk3_step,
@@ -71,13 +70,11 @@ from braincell.quad._staggered import dhs_voltage_step, staggered_step
 # ``__init___test`` checks membership and uniqueness but deliberately does
 # not require ASCII order.
 __all__ = [
-    # registry
+    # name resolution
     'get_integrator',
-    'register_integrator',
-    'get_registry',
-    'IntegratorEntry',
-    'IntegratorRegistry',
-    'all_integrators',
+    'integrator_info',
+    'list_integrators',
+    'module_step_from_ode',
     # implicit backward Euler
     'backward_euler_step',
     # exponential Euler
@@ -86,7 +83,6 @@ __all__ = [
     # runge-kutta methods
     'euler_step',
     'midpoint_step',
-    'rk2_step',
     'heun2_step',
     'ralston2_step',
     'rk3_step',
@@ -110,3 +106,27 @@ __all__ = [
     'hidden_state',
     'state_grouping',
 ]
+
+#: Removed names and their replacements, raised as ``AttributeError``.
+_REMOVED_ATTRIBUTES = {
+    'rk2_step': (
+        "braincell.quad.rk2_step was Ralston's second-order method; use "
+        "braincell.quad.ralston2_step (same numbers), or heun2_step for Heun's method."
+    ),
+    'get_registry': "use braincell.quad.integrator_info(name) and braincell.quad.list_integrators().",
+    'all_integrators': (
+        "use {name: braincell.quad.get_integrator(name) for name in braincell.quad.list_integrators()}."
+    ),
+    'register_integrator': (
+        "register module steps with braintools.quad.register_method(name, fn, kind='module', ...); "
+        "pure-function ODE steppers registered with kind='ode' are wrapped automatically."
+    ),
+    'IntegratorRegistry': "use braincell.quad.integrator_info(name) and braincell.quad.list_integrators().",
+    'IntegratorEntry': "use braincell.quad.integrator_info(name), which returns a braintools.quad.MethodInfo.",
+}
+
+
+def __getattr__(name):
+    if name in _REMOVED_ATTRIBUTES:
+        raise AttributeError(f'braincell.quad.{name} was removed; {_REMOVED_ATTRIBUTES[name]}')
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')

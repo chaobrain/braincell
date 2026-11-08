@@ -47,7 +47,7 @@ from braincell.channel import (
 )
 from braincell.ion import PotassiumFixed, SodiumFixed
 from braincell import DiffEqSingleState, DiffEqState, IndependentIntegration
-from braincell.quad import rk2_step, rk4_step
+from braincell.quad import ralston2_step, rk4_step
 
 
 def _V(values, unit=u.mV):
@@ -95,9 +95,9 @@ class SingleCompartmentDefaultsTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(sc.C, 1.0 * u.uF / u.cm**2, atol=1e-12 * u.uF / u.cm**2))
         self.assertTrue(u.math.allclose(sc.V_th, 0.0 * u.mV, atol=1e-9 * u.mV))
 
-    def test_default_solver_is_rk2(self) -> None:
+    def test_default_solver_is_ralston2(self) -> None:
         sc = SingleCompartment(size=1)
-        self.assertIs(sc.solver, rk2_step)
+        self.assertIs(sc.solver, ralston2_step)
 
     def test_default_spk_fun_is_callable(self) -> None:
         sc = SingleCompartment(size=1)

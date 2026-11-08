@@ -93,7 +93,7 @@ from braincell.network.recording import RecordingSpec, compile_recording, record
 from braincell.reduction import ReductionOutput, ReductionViewCollection
 from braincell.reduction.runtime import ReductionInputRuntime, build_reduction_input_runtime
 from braincell.morph.morphology import Morphology
-from braincell.quad import get_integrator, ind_exp_euler_step
+from braincell.quad import get_integrator, ind_exp_euler_step, integrator_info
 from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad.protocol import DiffEqGroupState, IndependentIntegration, state_grouping
@@ -3307,7 +3307,12 @@ def _scatter_drive_rows(target, rows, contribution):
 
 def _resolve_solver(solver):
     if isinstance(solver, str):
-        return solver, get_integrator(solver)
+        # Record the canonical name of braincell's own steps, so an alias such
+        # as "stagger" selects the same solver-specific paths as "staggered".
+        # ODE methods keep the given name: braintools' canonical name of
+        # "heun2" is "rk2", which braincell no longer accepts.
+        info = integrator_info(solver)
+        return (info.name if info.kind == "module" else solver), get_integrator(solver)
     if callable(solver):
         return getattr(solver, "__name__", type(solver).__name__), solver
     raise TypeError(f"solver must be str or callable, got {type(solver).__name__!s}.")

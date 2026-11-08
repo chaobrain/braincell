@@ -8,7 +8,7 @@ The table below gives a reading order: the public API first, then the templates 
 | Channel | [braincell.channel](../apis/braincell.channel.rst), [braincell.mech](../apis/braincell.mech.rst) | HH/Markov templates and a channel of the same family in `braincell/channel/`; `register_channel`; `Cell.paint` |
 | Ion | [braincell.ion](../apis/braincell.ion.rst) | `braincell/ion/`, including the `KineticIon` template; `register_ion` |
 | Synapse | [braincell.synapse](../apis/braincell.synapse.rst) | `braincell/synapse/exponential.py`; `register_synapse`; `Cell.place`, `Network.connect` |
-| Integrator | [Integration](../apis/integration.rst) | a neighboring algorithm in `braincell/quad/`; `register_integrator` |
+| Integrator | [Integration](../apis/integration.rst) | a neighboring algorithm in `braincell/quad/`; `braintools.quad.register_method` |
 
 ## Add a Channel or Ion
 
@@ -31,7 +31,7 @@ For changes to Connection weight updates, open an issue first: whether such stat
 
 ## Add an Integrator
 
-Choose a neighboring algorithm in `braincell/quad/` as an implementation and testing reference. Implement the step function according to the target protocol, and declare its name, aliases, and order with `register_integrator`.
+Choose a neighboring algorithm in `braincell/quad/` as an implementation and testing reference. A pure-function ODE stepper `step(f, y, t)` belongs in braintools (`braintools.quad.register_method(name, step, kind='ode', order=...)`); braincell wraps it automatically. A stateful step `step(target, *args) -> None` that needs braincell's models stays in `braincell/quad/` and is registered with `register_module_step` (from `braincell.quad._registry`), which declares its name, aliases and order in braintools' `'module'` kind and can be re-imported without error.
 State whether it supports general ODEs or requires Cell's specialized voltage interface.
 
 Use analytical solutions to check single-step error and multi-step convergence. Validate stage hooks, units, state shapes, and compiled loops.

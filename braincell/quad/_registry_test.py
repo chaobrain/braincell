@@ -13,365 +13,206 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Tests for :mod:`braincell.quad._registry`.
+"""Tests for name resolution in :mod:`braincell.quad._registry`.
 
-These tests exercise the registry in isolation by constructing a fresh
-:class:`IntegratorRegistry` for most cases. The integration with the global
-singleton (used by ``braincell.quad.get_integrator``) is also covered.
+braincell has no registry of its own; these tests pin how braincell's names
+map onto the :mod:`braintools.quad` registry.
 """
 
-import inspect
+import copy
+import importlib
 import unittest
-import warnings
 
+import braintools.quad as btq
+import brainunit as u
+from braintools.quad import _registry as bt_registry
+
+import braincell
 import braincell.quad as quad
-from braincell.quad._registry import (
-    IntegratorEntry,
-    IntegratorRegistry,
-)
+from braincell.quad import get_integrator, integrator_info, list_integrators
+from braincell.quad._registry import register_module_step
+from braincell.quad._testing import HH
 
-
-def _noop(target, *args, **kwargs):  # pragma: no cover - body irrelevant
-    return None
-
-
-#: Every canonical integrator the package ships, mapped to its ``(category,
-#: order)`` metadata. This is the single source of truth for both "are the
-#: expected names registered" and "is each one filed correctly"; keeping two
-#: copies of the name list let them drift.
-EXPECTED_METADATA = {
-    "euler": ("explicit", 1),
-    "midpoint": ("explicit", 2),
-    "rk2": ("explicit", 2),
-    "heun2": ("explicit", 2),
-    "ralston2": ("explicit", 2),
-    "rk3": ("explicit", 3),
-    "heun3": ("explicit", 3),
-    "ssprk3": ("explicit", 3),
-    "ralston3": ("explicit", 3),
-    "rk4": ("explicit", 4),
-    "ralston4": ("explicit", 4),
-    "exp_euler": ("exponential", 1),
-    "ind_exp_euler": ("exponential", 1),
-    "backward_euler": ("implicit", 1),
-    "implicit_euler": ("implicit", 1),
-    "staggered": ("staggered", None),
-    "dhs_voltage": ("voltage", None),
+#: Every name braincell ships, mapped to ``(kind, canonical name, category, order)``.
+EXPECTED = {
+    "euler": ("ode", "euler", "explicit", 1),
+    "midpoint": ("ode", "midpoint", "explicit", 2),
+    "heun2": ("ode", "rk2", "explicit", 2),
+    "ralston2": ("ode", "ralston2", "explicit", 2),
+    "rk3": ("ode", "rk3", "explicit", 3),
+    "heun3": ("ode", "heun", "explicit", 3),
+    "ssprk3": ("ode", "ssprk33", "explicit", 3),
+    "ralston3": ("ode", "ralston3", "explicit", 3),
+    "rk4": ("ode", "rk4", "explicit", 4),
+    "ralston4": ("ode", "ralston4", "explicit", 4),
+    "exp_euler": ("module", "exp_euler", "exponential", 1),
+    "ind_exp_euler": ("module", "ind_exp_euler", "exponential", 1),
+    "backward_euler": ("module", "backward_euler", "implicit", 1),
+    "implicit_euler": ("module", "implicit_euler", "implicit", 1),
+    "staggered": ("module", "staggered", "staggered", None),
+    "stagger": ("module", "staggered", "staggered", None),
+    "dhs_voltage": ("module", "dhs_voltage", "voltage", None),
 }
 
 
-class IntegratorRegistryTest(unittest.TestCase):
-    def setUp(self):
-        self.registry = IntegratorRegistry()
+class _SavedRegistry:
+    """Restore the braintools registry tables after a test."""
 
-    # ------------------------------------------------------------------ #
-    # basic registration / lookup
-    # ------------------------------------------------------------------ #
-    def test_register_and_lookup(self):
-        entry = self.registry.register("foo", _noop, category="explicit", order=1)
-        self.assertIsInstance(entry, IntegratorEntry)
-        self.assertEqual(entry.name, "foo")
-        self.assertIs(self.registry["foo"], _noop)
-        self.assertIn("foo", self.registry)
-        self.assertEqual(self.registry.names(), ["foo"])
-        self.assertEqual(self.registry.entry("foo").order, 1)
+    def __enter__(self):
+        self.saved = {
+            name: copy.deepcopy({k: dict(v) for k, v in getattr(bt_registry, name).items()})
+            for name in ("_REGISTRY", "_META", "_ALIASES")
+        }
+        return self
 
-    def test_aliases_resolve_to_canonical(self):
-        self.registry.register("foo", _noop, aliases=("bar", "baz"))
-        self.assertIs(self.registry["bar"], _noop)
-        self.assertIs(self.registry["baz"], _noop)
-        self.assertEqual(self.registry.resolve("bar"), "foo")
-        self.assertEqual(self.registry.resolve("foo"), "foo")
-        self.assertIn("bar", self.registry)
-
-    def test_get_returns_default_on_miss(self):
-        sentinel = object()
-        self.assertIs(self.registry.get("missing", sentinel), sentinel)
-        self.assertIsNone(self.registry.get("missing"))
-
-    def test_module_field_populated(self):
-        self.registry.register("foo", _noop)
-        self.assertEqual(self.registry.entry("foo").module, _noop.__module__)
-
-    # ------------------------------------------------------------------ #
-    # collisions
-    # ------------------------------------------------------------------ #
-    def test_duplicate_canonical_name_rejected(self):
-        self.registry.register("foo", _noop)
-        with self.assertRaisesRegex(ValueError, "already registered"):
-            self.registry.register("foo", _noop)
-
-    def test_alias_collides_with_canonical_name(self):
-        self.registry.register("foo", _noop)
-        with self.assertRaisesRegex(ValueError, "canonical integrator"):
-            self.registry.register("bar", _noop, aliases=("foo",))
-
-    def test_alias_collides_with_other_alias(self):
-        self.registry.register("foo", _noop, aliases=("shared",))
-        with self.assertRaisesRegex(ValueError, "already.*alias"):
-            self.registry.register("baz", _noop, aliases=("shared",))
-
-    def test_canonical_collides_with_existing_alias(self):
-        self.registry.register("foo", _noop, aliases=("shared",))
-        with self.assertRaisesRegex(ValueError, "already an alias"):
-            self.registry.register("shared", _noop)
-
-    # ------------------------------------------------------------------ #
-    # override + unregister
-    # ------------------------------------------------------------------ #
-    def test_override_emits_runtime_warning(self):
-        self.registry.register("foo", _noop, aliases=("bar",))
-
-        def replacement(target, *a, **k):
-            return "replacement"
-
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            self.registry.register("foo", replacement, override=True)
-        self.assertTrue(any(issubclass(w.category, RuntimeWarning) for w in caught))
-        self.assertIs(self.registry["foo"], replacement)
-        # Old aliases should be cleared.
-        self.assertNotIn("bar", self.registry)
-
-    def test_unregister_removes_aliases(self):
-        self.registry.register("foo", _noop, aliases=("bar",))
-        self.registry.unregister("foo")
-        self.assertNotIn("foo", self.registry)
-        self.assertNotIn("bar", self.registry)
-
-    def test_unregister_unknown_raises(self):
-        with self.assertRaises(KeyError):
-            self.registry.unregister("missing")
-
-    # ------------------------------------------------------------------ #
-    # validation
-    # ------------------------------------------------------------------ #
-    def test_register_rejects_non_callable(self):
-        with self.assertRaises(TypeError):
-            self.registry.register("foo", "not callable")  # type: ignore[arg-type]
-
-    def test_register_rejects_empty_name(self):
-        with self.assertRaises(TypeError):
-            self.registry.register("", _noop)
-
-    def test_register_rejects_empty_alias(self):
-        with self.assertRaises(TypeError):
-            self.registry.register("foo", _noop, aliases=("",))
-
-    # ------------------------------------------------------------------ #
-    # deprecation + suggestions
-    # ------------------------------------------------------------------ #
-    def test_deprecation_warning_emitted_once(self):
-        self.registry.register("foo", _noop, deprecated=True)
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            _ = self.registry["foo"]
-            _ = self.registry["foo"]
-        deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
-        self.assertEqual(len(deprecation_warnings), 1)
-
-    def test_suggest_close_match(self):
-        self.registry.register("euler", _noop)
-        self.registry.register("midpoint", _noop)
-        self.assertEqual(self.registry.suggest("eler", n=1), ["euler"])
-        self.assertEqual(self.registry.suggest("nothinglikeit"), [])
-
-    # ------------------------------------------------------------------ #
-    # introspection
-    # ------------------------------------------------------------------ #
-    def test_by_category(self):
-        self.registry.register("a", _noop, category="explicit")
-        self.registry.register("b", _noop, category="implicit")
-        self.registry.register("c", _noop, category="explicit")
-        explicit_names = [e.name for e in self.registry.by_category("explicit")]
-        self.assertEqual(explicit_names, ["a", "c"])
-
-    def test_as_dict_includes_aliases_by_default(self):
-        self.registry.register("foo", _noop, aliases=("bar",))
-        flat = self.registry.as_dict()
-        self.assertEqual(set(flat), {"foo", "bar"})
-        self.assertIs(flat["bar"], _noop)
-        only_canonical = self.registry.as_dict(include_aliases=False)
-        self.assertEqual(set(only_canonical), {"foo"})
-
-    def test_names_with_and_without_aliases(self):
-        self.registry.register("foo", _noop, aliases=("bar",))
-        self.assertEqual(self.registry.names(), ["foo"])
-        self.assertEqual(self.registry.names(include_aliases=True), ["bar", "foo"])
+    def __exit__(self, *exc):
+        for name, value in self.saved.items():
+            getattr(bt_registry, name).clear()
+            getattr(bt_registry, name).update(value)
+        return False
 
 
-class GlobalRegistryIntegrationTest(unittest.TestCase):
-    """Tests against the singleton populated by importing braincell.quad."""
+class ResolutionTest(unittest.TestCase):
+    def test_every_shipped_name_resolves_with_metadata(self):
+        for name, (kind, canonical, category, order) in EXPECTED.items():
+            with self.subTest(name=name):
+                info = integrator_info(name)
+                self.assertEqual((info.kind, info.name, info.category, info.order), (kind, canonical, category, order))
+                self.assertTrue(callable(get_integrator(name)))
 
-    def test_get_integrator_returns_callable(self):
-        func = quad.get_integrator("euler")
-        self.assertTrue(callable(func))
-        self.assertIs(func, quad.euler_step)
+    def test_module_steps_are_braincells_functions(self):
+        self.assertIs(get_integrator("staggered"), quad.staggered_step)
+        self.assertIs(get_integrator("stagger"), quad.staggered_step)
+        self.assertIs(get_integrator("exp_euler"), quad.exp_euler_step)
+        self.assertIs(get_integrator("backward_euler"), btq.get_method("backward_euler", "module"))
 
-    def test_explicit_alias_resolves_to_euler(self):
-        self.assertIs(
-            quad.get_integrator("explicit"),
-            quad.get_integrator("euler"),
-        )
+    def test_ode_methods_are_wrapped(self):
+        self.assertIs(get_integrator("rk4"), quad.rk4_step)
+        self.assertIs(integrator_info("rk4").fn, btq.ode_rk4_step)
+        self.assertIs(get_integrator("ode_rk4_step"), quad.rk4_step)
 
-    def test_stagger_alias_resolves_to_staggered(self):
-        self.assertIs(
-            quad.get_integrator("stagger"),
-            quad.get_integrator("staggered"),
-        )
-
-    def test_get_integrator_passes_callable_through(self):
-        def custom(target, *args):
+    def test_callable_passes_through(self):
+        def step(target, *args):
             return None
 
-        self.assertIs(quad.get_integrator(custom), custom)
+        self.assertIs(get_integrator(step), step)
 
-    def test_unknown_integrator_raises_with_suggestion(self):
-        with self.assertRaises(ValueError) as ctx:
-            quad.get_integrator("eler")
-        # Either the suggestion or the available list should be present.
-        self.assertIn("euler", str(ctx.exception))
-
-    def test_unknown_integrator_no_suggestion(self):
-        with self.assertRaises(ValueError) as ctx:
-            quad.get_integrator("totally_unknown_xyz")
-        self.assertIn("Available", str(ctx.exception))
-
-    def test_get_integrator_rejects_non_string_non_callable(self):
-        with self.assertRaises(TypeError):
-            quad.get_integrator(42)  # type: ignore[arg-type]
-
-    def test_all_integrators_view_in_sync(self):
-        # Legacy mapping must reflect what the registry holds.
-        self.assertIn("euler", quad.all_integrators)
-        self.assertIn("rk4", quad.all_integrators)
-        self.assertIn("staggered", quad.all_integrators)
-        self.assertIs(quad.all_integrators["euler"], quad.euler_step)
-        # Aliases are exposed too.
-        self.assertIn("explicit", quad.all_integrators)
-        self.assertIn("stagger", quad.all_integrators)
-
-    def test_registered_canonical_names_include_known_methods(self):
-        names = set(quad.get_registry().names())
-        missing = set(EXPECTED_METADATA) - names
-        self.assertFalse(missing, f"Missing canonical names: {sorted(missing)}")
-
-
-class PublicSurfaceTest(unittest.TestCase):
-    """Tests targeting the public ``braincell.quad`` package surface."""
-
-    def test_get_integrator_resolves_all_canonical_names(self):
-        for name in quad.get_registry().names():
+    def test_list_integrators(self):
+        names = list_integrators()
+        self.assertEqual(names, sorted(names))
+        for name in ("staggered", "dhs_voltage", "rk4", "ralston4", "dopri5", "heun2", "implicit_euler"):
+            self.assertIn(name, names)
+        for name in ("rk2", "explicit", "expeuler", "stagger", "heun3"):
+            self.assertNotIn(name, names)
+        for name in names:
             with self.subTest(name=name):
-                self.assertTrue(callable(quad.get_integrator(name)))
-
-    def test_get_integrator_unknown_close_match_suggestion(self):
-        with self.assertRaises(ValueError) as ctx:
-            quad.get_integrator("rk44")
-        self.assertIn("Did you mean", str(ctx.exception))
-        self.assertIn("rk4", str(ctx.exception))
-
-    def test_get_integrator_rejects_invalid_type(self):
-        with self.assertRaises(TypeError):
-            quad.get_integrator(3.14)  # type: ignore[arg-type]
-
-    def test_all_integrators_is_read_only_view(self):
-        # Mapping protocol checks.
-        self.assertGreater(len(quad.all_integrators), 5)
-        self.assertIn("euler", quad.all_integrators)
-        self.assertIs(quad.all_integrators["euler"], quad.euler_step)
-        # Iteration includes alias keys (legacy contract).
-        self.assertIn("explicit", list(quad.all_integrators))
-        # The view is read-only — there is no __setitem__.
-        with self.assertRaises(TypeError):
-            quad.all_integrators["euler"] = lambda *a, **k: None  # type: ignore[index]
-
-    def test_all_integrators_repr_is_informative(self):
-        rep = repr(quad.all_integrators)
-        self.assertIn("_RegistryDictView", rep)
-        self.assertIn("euler", rep)
+                self.assertTrue(callable(get_integrator(name)))
 
 
-class RegistryMetadataTest(unittest.TestCase):
-    """Categories, orders, and module strings for in-tree integrators."""
+class RemovedNamesTest(unittest.TestCase):
+    def test_rk2_raises_with_replacements(self):
+        for call in (lambda: get_integrator("rk2"), lambda: integrator_info("rk2")):
+            with self.assertRaises(ValueError) as ctx:
+                call()
+            self.assertIn("ralston2", str(ctx.exception))
+            self.assertIn("heun2", str(ctx.exception))
 
-    def test_categories_and_orders(self):
-        registry = quad.get_registry()
-        for name, (category, order) in EXPECTED_METADATA.items():
+    def test_rk2_fails_at_model_construction(self):
+        with self.assertRaisesRegex(ValueError, "ralston2"):
+            HH(1, solver="rk2")
+
+    def test_explicit_and_expeuler(self):
+        with self.assertRaisesRegex(ValueError, "'euler'"):
+            get_integrator("explicit")
+        with self.assertRaisesRegex(ValueError, "ind_exp_euler"):
+            get_integrator("expeuler")
+        with self.assertRaisesRegex(ValueError, "ind_exp_euler"):
+            get_integrator("ode_expeuler_step")
+
+    def test_removed_attributes(self):
+        for name, hint in (
+            ("rk2_step", "ralston2_step"),
+            ("get_registry", "integrator_info"),
+            ("all_integrators", "list_integrators"),
+            ("register_integrator", "register_method"),
+            ("IntegratorRegistry", "integrator_info"),
+            ("IntegratorEntry", "MethodInfo"),
+        ):
             with self.subTest(name=name):
-                entry = registry.entry(name)
-                self.assertEqual(entry.category, category)
-                self.assertEqual(entry.order, order)
-                # ``module`` is the *public* path the integrator is exported
-                # from, not the private submodule it happens to be defined
-                # in — ``register_integrator`` is applied outside
-                # ``set_module_as`` precisely so this records the former.
-                self.assertEqual(entry.module, "braincell.quad")
+                with self.assertRaisesRegex(AttributeError, hint):
+                    getattr(quad, name)
+        with self.assertRaisesRegex(AttributeError, "no attribute"):
+            quad.not_a_name
 
-    def test_by_category_groups(self):
-        registry = quad.get_registry()
-        explicit_names = {e.name for e in registry.by_category("explicit")}
-        self.assertTrue({"euler", "midpoint", "rk4"} <= explicit_names)
-        implicit_names = {e.name for e in registry.by_category("implicit")}
-        self.assertIn("backward_euler", implicit_names)
-        self.assertIn("implicit_euler", implicit_names)
-        exponential_names = {e.name for e in registry.by_category("exponential")}
-        self.assertIn("exp_euler", exponential_names)
-        self.assertIn("ind_exp_euler", exponential_names)
+    def test_unknown_name(self):
+        with self.assertRaisesRegex(ValueError, "Did you mean 'euler'"):
+            get_integrator("eler")
+        with self.assertRaisesRegex(ValueError, "Unknown integrator"):
+            integrator_info("qqqqqq")
+
+    def test_bad_types(self):
+        with self.assertRaises(TypeError):
+            get_integrator(3)
+        with self.assertRaises(TypeError):
+            integrator_info(None)
 
 
-class CallConventionTest(unittest.TestCase):
-    """Every registered step must match the convention its hosts use.
+class _Other:
+    """A foreign function with a braincell step name."""
 
-    :meth:`braincell.Cell._update_dynamics` calls ``self.solver(self)`` and
-    :class:`braincell.SingleCompartment` calls ``self.solver(self, I_ext)``;
-    neither passes ``t`` or ``dt``. A step declared ``(target, t, dt, *args)``
-    is therefore unreachable through ``solver="<name>"`` even though it
-    resolves fine through :func:`get_integrator`. That mismatch is what let
-    six dead cell-only integrators sit in the registry unnoticed, and it is
-    what made ``dhs_voltage`` and ``implicit_euler`` unselectable until they
-    were given keyword-only ``t``/``dt``. It is pinned here rather than left
-    to be rediscovered.
-    """
-
-    def test_every_registered_step_binds_with_the_host_calls(self):
-        registry = quad.get_registry()
-        sentinel = object()
-        for entry in registry.entries():
-            with self.subTest(name=entry.name):
-                signature = inspect.signature(entry.func)
-                # The exact call ``Cell._update_dynamics`` makes.
-                signature.bind(sentinel)
-                # ...and the one ``SingleCompartment.update`` makes.
-                signature.bind(sentinel, sentinel)
-
-    def test_time_arguments_are_keyword_only_overrides(self):
-        # A step may still accept ``t``/``dt``, but only as keyword-only
-        # parameters that default to the ``brainstate.environ`` context —
-        # never as positionals that displace ``*args``.
-        registry = quad.get_registry()
-        for entry in registry.entries():
-            parameters = inspect.signature(entry.func).parameters
-            for name in ("t", "dt"):
-                if name not in parameters:
-                    continue
-                with self.subTest(name=entry.name, parameter=name):
-                    parameter = parameters[name]
-                    self.assertEqual(parameter.kind, inspect.Parameter.KEYWORD_ONLY)
-                    self.assertIsNone(parameter.default)
+    @staticmethod
+    def staggered_step(target, *args):
+        return None
 
 
-class GlobalRegisterIntegratorDecoratorTest(unittest.TestCase):
-    """The ``register_integrator`` decorator on the global singleton."""
+class IdempotentRegistrationTest(unittest.TestCase):
+    def test_reload_does_not_raise(self):
+        import braincell.quad._backward_euler as module
 
-    def test_collision_with_existing_canonical_name_rejected(self):
-        from braincell.quad import register_integrator
+        with _SavedRegistry():
+            reloaded = importlib.reload(module)
+            self.assertIs(get_integrator("backward_euler"), reloaded.backward_euler_step)
+            self.assertIsNot(reloaded.backward_euler_step, quad.backward_euler_step)
+        self.assertIs(get_integrator("backward_euler"), quad.backward_euler_step)
 
-        with self.assertRaises(ValueError):
+    def test_reregistering_the_same_function_is_a_no_op(self):
+        with _SavedRegistry():
+            register_module_step("staggered", aliases=("stagger",), category="staggered")(quad.staggered_step)
+            self.assertIs(get_integrator("stagger"), quad.staggered_step)
 
-            @register_integrator("euler")
-            def _stub(target, *args):
-                return None
+    def test_foreign_function_with_a_braincell_name_raises(self):
+        with _SavedRegistry():
+            with self.assertRaisesRegex(ValueError, "already registered"):
+                register_module_step("staggered")(_Other.staggered_step)
+
+    def test_braincell_name_taken_by_another_package_raises(self):
+        def staggered_step(target, *args):
+            return None
+
+        with _SavedRegistry():
+            btq.register_method("dhs_voltage", staggered_step, kind="module", overwrite=True)
+            with self.assertRaisesRegex(ValueError, "already registered"):
+                register_module_step("dhs_voltage", category="voltage")(quad.dhs_voltage_step)
+
+
+class CellSolverNameTest(unittest.TestCase):
+    def test_alias_is_recorded_as_canonical_name(self):
+        soma = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        tree = braincell.Morphology.from_root(soma, name="soma")
+        cell = braincell.Cell(tree, solver="stagger")
+        self.assertEqual(cell.solver_name, "staggered")
+        self.assertIs(cell.solver, quad.staggered_step)
+        cell = braincell.Cell(tree, solver="heun2")
+        self.assertEqual(cell.solver_name, "heun2")
+
+
+class SingleCompartmentDefaultTest(unittest.TestCase):
+    def test_default_solver_is_ralston2(self):
+        class Leak(braincell.SingleCompartment):
+            def __init__(self):
+                super().__init__(1)
+
+        self.assertIs(Leak().solver, get_integrator("ralston2"))
 
 
 if __name__ == "__main__":

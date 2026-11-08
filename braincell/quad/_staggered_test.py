@@ -48,7 +48,7 @@ from braincell import (
     observe,
 )
 from braincell.filter import AllRegion, RootLocation
-from braincell.quad import get_registry, staggered_step
+from braincell.quad import get_integrator, integrator_info, staggered_step
 from braincell.quad._staggered import (
     _build_backsub_indices,
     _build_dhs_ordinary_backsub_order,
@@ -512,15 +512,13 @@ class StaggeredStepGuardTest(unittest.TestCase):
 
 class StaggeredRegistryMetadataTest(unittest.TestCase):
     def test_canonical_name_and_alias(self):
-        registry = get_registry()
-        self.assertIn("staggered", registry)
-        self.assertIn("stagger", registry)
         # ``stagger`` is an alias of the canonical ``staggered`` entry.
-        self.assertIs(registry["stagger"], registry["staggered"])
-        self.assertIs(registry["staggered"], staggered_step)
+        self.assertIs(get_integrator("stagger"), get_integrator("staggered"))
+        self.assertIs(get_integrator("staggered"), staggered_step)
+        self.assertEqual(integrator_info("stagger").name, "staggered")
 
     def test_category_and_description(self):
-        entry = get_registry().entry("staggered")
+        entry = integrator_info("staggered")
         self.assertEqual(entry.category, "staggered")
         self.assertEqual(entry.aliases, ("stagger",))
         self.assertTrue(entry.description)

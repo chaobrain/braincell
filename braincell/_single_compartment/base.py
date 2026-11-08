@@ -79,7 +79,9 @@ class SingleCompartment(HHTypedNeuron):
     spk_fun : Callable, optional
         Spike function for threshold crossing detection. Default is ReLU gradient
     solver : str or Callable, optional
-        Numerical integration method. Default is 'rk2' (second-order Runge-Kutta)
+        Numerical integration method, a name accepted by
+        :func:`braincell.quad.get_integrator` or a step function. Default is
+        ``'ralston2'`` (Ralston's second-order Runge-Kutta method).
     name : str, optional
         The neuron group name.
     **ion_channels : dict
@@ -101,7 +103,7 @@ class SingleCompartment(HHTypedNeuron):
         V_th: Initializer = 0.0 * u.mV,
         V_initializer: Initializer = braintools.init.Uniform(-70 * u.mV, -60.0 * u.mV),
         spk_fun: Callable = braintools.surrogate.ReluGrad(),
-        solver: Union[str, Callable] = 'rk2',
+        solver: Union[str, Callable] = 'ralston2',
         name: Optional[str] = None,
         **ion_channels,
     ):

@@ -19,7 +19,7 @@ import jax.numpy as jnp
 from braincell._misc import set_module_as
 from braincell._typing import Args, Aux, DT, T, VectorField, Y0, Y1
 from braincell.quad.protocol import DiffEqModule
-from braincell.quad._registry import register_integrator
+from braincell.quad._registry import register_module_step
 from braincell.quad._util import apply_standard_solver_step, environ_time, linearize_flat
 
 __all__ = [
@@ -78,7 +78,7 @@ def _backward_euler(
     return y1, aux
 
 
-@register_integrator(
+@register_module_step(
     "backward_euler",
     category="implicit",
     order=1,

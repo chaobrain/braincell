@@ -13,474 +13,265 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Integrator registry for ``braincell.quad``.
+"""Integrator name resolution for ``braincell.quad``.
 
-This module provides the central, decentralized mechanism that lets numerical
-integration methods (the ``*_step`` functions) declare a stable, user-facing
-name independent of their Python identifier. The registry replaces the
-previous ``locals()``-scanning approach in :mod:`braincell.quad.__init__`,
-which forced every new integrator to be re-imported into ``__init__.py`` and
-silently coupled the user-facing name to the function symbol.
+braincell has no registry of its own: integrator names live in the
+:mod:`braintools.quad` registry. braincell's own stateful steps (``exp_euler``,
+``ind_exp_euler``, ``backward_euler``, ``implicit_euler``, ``staggered``,
+``dhs_voltage``) are registered there under the ``'module'`` kind, with the
+signature ``step(target, *args) -> None``. The pure-function ODE steppers of
+braintools (``'ode'`` kind, ``step(f, y, t)``) are wrapped into module steps
+by :func:`module_step_from_ode`.
 
-The registry is intentionally small. Its responsibilities are:
+:func:`get_integrator` resolves a name in this order:
 
-* Map a stable canonical name (e.g. ``"staggered"``) to a step function.
-* Track aliases (e.g. ``"stagger"``, ``"explicit"``) without conflating them
-  with canonical names.
-* Carry lightweight metadata (category, convergence order, description,
-  deprecation flag) for documentation and introspection.
-* Detect collisions and provide actionable error messages on misses.
-
-Typical usage::
-
-    from braincell.quad import register_integrator
-
-    @register_integrator(
-        "staggered",
-        aliases=("stagger",),
-        category="staggered",
-        description="Staggered voltage / ion-channel splitting.",
-    )
-    def staggered_step(target, *args):
-        ...
+1. a table of removed names, which raises ``ValueError`` naming the
+   replacements (e.g. ``'rk2'`` was Ralston's method in braincell but is
+   Heun's method in braintools, so the name must not silently change meaning);
+2. the ``'module'`` kind;
+3. the ``'ode'`` kind, wrapped by :func:`module_step_from_ode`.
 """
 
 import difflib
-import warnings
-from dataclasses import dataclass
-from typing import Callable, Iterable, Iterator, Mapping
+from typing import Callable
+
+import braintools.quad as btq
+
+from braincell._misc import set_module_as
 
 __all__ = [
-    'IntegratorEntry',
-    'IntegratorRegistry',
-    'get_registry',
-    'register_integrator',
+    'get_integrator',
+    'integrator_info',
+    'list_integrators',
 ]
 
-
-@dataclass(frozen=True)
-class IntegratorEntry:
-    """A single registered integrator and its metadata.
-
-    Parameters
-    ----------
-    name : str
-        Canonical, user-facing name of the integrator (e.g. ``"euler"``).
-    func : Callable
-        The underlying ``*_step`` function.
-    aliases : tuple of str
-        Alternative names that resolve to this entry.
-    category : str
-        Loose grouping for introspection and documentation. Common values
-        used in-tree are ``"explicit"``, ``"implicit"``, ``"exponential"``,
-        ``"staggered"``, ``"voltage"``, and ``"general"``.
-    order : int or None
-        Convergence order of the method, when applicable.
-    description : str
-        One-line human-readable description shown in error messages and
-        documentation.
-    deprecated : bool
-        If ``True``, looking up this entry by name emits a
-        :class:`DeprecationWarning`.
-    module : str
-        Module path ``func`` advertises through ``__module__``. Populated
-        automatically by :meth:`IntegratorRegistry.register`. For
-        BrainCell's own integrators this is the public export path
-        (``'braincell.quad'``) rather than the private submodule they are
-        defined in, because :func:`braincell._misc.set_module_as` is
-        applied first — see the note in :func:`register_integrator`.
-    """
-
-    name: str
-    func: Callable
-    aliases: tuple[str, ...] = ()
-    category: str = "general"
-    order: int | None = None
-    description: str = ""
-    deprecated: bool = False
-    module: str = ""
+#: Names that do not resolve, with the message explaining what to use instead.
+#: ``rk2`` stays here for at least one minor version: after it is removed,
+#: ``get_integrator('rk2')`` resolves to braintools' ``rk2`` (Heun's method),
+#: which differs from the ``rk2`` (Ralston's method) of braincell <= 0.2.
+_REMOVED: dict[str, str] = {
+    'rk2': (
+        "braincell's 'rk2' was Ralston's second-order method; it is now called 'ralston2' "
+        "(same numbers). braintools' 'rk2' is Heun's method, available here as 'heun2'."
+    ),
+    'explicit': "'explicit' was an alias of 'euler'; use 'euler'.",
+    'expeuler': (
+        "braintools' 'expeuler' advances a single array and cannot integrate several "
+        "DiffEqStates; use 'ind_exp_euler' (the same formula applied per DiffEqState) "
+        "or 'exp_euler' (coupled, full Jacobian)."
+    ),
+}
 
 
-class IntegratorRegistry:
-    """Mutable, observable registry of integrator step functions.
-
-    The registry maintains two indexes:
-
-    * ``_entries``: canonical name → :class:`IntegratorEntry`
-    * ``_aliases``: alias name → canonical name
-
-    Lookups via :meth:`__getitem__` and :meth:`get` consult both, so callers
-    do not need to know whether a string is a canonical name or an alias.
-
-    Most code interacts with the global singleton returned by
-    :func:`get_registry`. Constructing a fresh ``IntegratorRegistry()`` is
-    useful in tests that want to avoid touching global state.
-    """
-
-    def __init__(self) -> None:
-        self._entries: dict[str, IntegratorEntry] = {}
-        self._aliases: dict[str, str] = {}
-        self._deprecation_warned: set[str] = set()
-
-    # ------------------------------------------------------------------ #
-    # registration
-    # ------------------------------------------------------------------ #
-    def register(
-        self,
-        name: str,
-        func: Callable,
-        *,
-        aliases: Iterable[str] = (),
-        category: str = "general",
-        order: int | None = None,
-        description: str = "",
-        deprecated: bool = False,
-        override: bool = False,
-    ) -> IntegratorEntry:
-        """Register an integrator under ``name`` (and any ``aliases``).
-
-        Parameters
-        ----------
-        name : str
-            Canonical name to register. Must not already be present unless
-            ``override=True``.
-        func : Callable
-            The integrator step function to associate with ``name``.
-        aliases : iterable of str
-            Optional alternative names. Each alias must be unique across the
-            full registry (canonical names *and* other aliases).
-        category, order, description, deprecated
-            Forwarded to the resulting :class:`IntegratorEntry`.
-        override : bool
-            If ``True``, replace an existing entry with the same canonical
-            name and emit a :class:`RuntimeWarning` identifying the previous
-            owner. If ``False`` (the default), a colliding canonical name
-            raises :class:`ValueError`.
-
-        Returns
-        -------
-        IntegratorEntry
-            The entry that was inserted.
-
-        Raises
-        ------
-        TypeError
-            If ``func`` is not callable, or ``name`` is not a non-empty string.
-        ValueError
-            If ``name`` collides with an existing canonical name or alias and
-            ``override`` is False, or if any alias collides with an existing
-            canonical name or alias owned by a different entry.
-        """
-        if not isinstance(name, str) or not name:
-            raise TypeError(f"Integrator name must be a non-empty string, got {name!r}.")
-        if not callable(func):
-            raise TypeError(f"Integrator {name!r} must be a callable, got {type(func).__name__}.")
-
-        alias_tuple = tuple(aliases)
-        for alias in alias_tuple:
-            if not isinstance(alias, str) or not alias:
-                raise TypeError(f"Aliases for integrator {name!r} must be non-empty strings, got {alias!r}.")
-
-        # Canonical-name collision check.
-        if name in self._entries and not override:
-            existing = self._entries[name]
-            raise ValueError(
-                f"Integrator {name!r} is already registered by {existing.module!r}. Pass override=True to replace it."
-            )
-        if name in self._aliases and self._aliases[name] != name:
-            owner = self._aliases[name]
-            raise ValueError(f"Cannot register integrator {name!r}: the name is already an alias for {owner!r}.")
-
-        # Alias collision check.
-        for alias in alias_tuple:
-            if alias in self._entries and alias != name:
-                raise ValueError(
-                    f"Cannot register alias {alias!r} for {name!r}: a canonical "
-                    f"integrator with that name already exists."
-                )
-            existing_owner = self._aliases.get(alias)
-            if existing_owner is not None and existing_owner != name:
-                raise ValueError(
-                    f"Cannot register alias {alias!r} for {name!r}: it is already an alias for {existing_owner!r}."
-                )
-
-        if override and name in self._entries:
-            previous = self._entries[name]
-            warnings.warn(
-                f"Overriding integrator {name!r} previously registered by {previous.module!r}.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            # Strip the previous aliases owned by this canonical name.
-            for alias, target in list(self._aliases.items()):
-                if target == name:
-                    del self._aliases[alias]
-
-        entry = IntegratorEntry(
-            name=name,
-            func=func,
-            aliases=alias_tuple,
-            category=category,
-            order=order,
-            description=description,
-            deprecated=deprecated,
-            module=getattr(func, "__module__", "") or "",
-        )
-        self._entries[name] = entry
-        for alias in alias_tuple:
-            self._aliases[alias] = name
-        # Reset deprecation warning state for this name so re-registration
-        # under the same name resurfaces the warning if appropriate.
-        self._deprecation_warned.discard(name)
-        return entry
-
-    def unregister(self, name: str) -> None:
-        """Remove the integrator registered as ``name``.
-
-        ``name`` must be a canonical name; passing an alias raises
-        :class:`KeyError`. All aliases owned by the entry are removed too.
-        """
-        if name not in self._entries:
-            raise KeyError(f"No integrator registered as {name!r}.")
-        for alias, target in list(self._aliases.items()):
-            if target == name:
-                del self._aliases[alias]
-        del self._entries[name]
-        self._deprecation_warned.discard(name)
-
-    # ------------------------------------------------------------------ #
-    # lookup
-    # ------------------------------------------------------------------ #
-    def __contains__(self, name: object) -> bool:
-        if not isinstance(name, str):
-            return False
-        return name in self._entries or name in self._aliases
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._entries)
-
-    def __len__(self) -> int:
-        return len(self._entries)
-
-    def __getitem__(self, name: str) -> Callable:
-        return self.entry(name).func
-
-    def get(self, name: str, default: Callable | None = None) -> Callable | None:
-        """Return the step function for ``name``, or ``default`` if missing."""
-        try:
-            return self[name]
-        except KeyError:
-            return default
-
-    def entry(self, name: str) -> IntegratorEntry:
-        """Return the :class:`IntegratorEntry` for ``name``.
-
-        ``name`` may be a canonical name or an alias. Looking up a deprecated
-        entry emits a :class:`DeprecationWarning` once per name per registry
-        instance.
-        """
-        canonical = self._aliases.get(name, name)
-        try:
-            entry = self._entries[canonical]
-        except KeyError as exc:
-            raise KeyError(name) from exc
-        if entry.deprecated and name not in self._deprecation_warned:
-            self._deprecation_warned.add(name)
-            warnings.warn(
-                f"Integrator {name!r} is deprecated.",
-                DeprecationWarning,
-                stacklevel=3,
-            )
-        return entry
-
-    def resolve(self, name: str) -> str:
-        """Return the canonical name for ``name`` (which may be an alias)."""
-        return self.entry(name).name
-
-    def names(self, *, include_aliases: bool = False) -> list[str]:
-        """Return the sorted list of registered names.
-
-        If ``include_aliases`` is ``True``, alias names are appended.
-        """
-        names = sorted(self._entries.keys())
-        if include_aliases:
-            names = sorted(set(names) | set(self._aliases.keys()))
-        return names
-
-    def by_category(self, category: str) -> list[IntegratorEntry]:
-        """Return all entries belonging to ``category``, sorted by name."""
-        return sorted(
-            (e for e in self._entries.values() if e.category == category),
-            key=lambda e: e.name,
-        )
-
-    def entries(self) -> Iterator[IntegratorEntry]:
-        """Iterate over all canonical :class:`IntegratorEntry` instances."""
-        return iter(self._entries.values())
-
-    def as_dict(self, *, include_aliases: bool = True) -> dict[str, Callable]:
-        """Return a flat ``{name: func}`` snapshot.
-
-        By default the snapshot includes alias keys, matching the behavior of
-        the legacy ``all_integrators`` mapping.
-        """
-        out: dict[str, Callable] = {name: entry.func for name, entry in self._entries.items()}
-        if include_aliases:
-            for alias, canonical in self._aliases.items():
-                out[alias] = self._entries[canonical].func
-        return out
-
-    def suggest(self, name: str, *, n: int = 1, cutoff: float = 0.6) -> list[str]:
-        """Return up to ``n`` close-match suggestions for an unknown ``name``."""
-        candidates = self.names(include_aliases=True)
-        return difflib.get_close_matches(name, candidates, n=n, cutoff=cutoff)
+def _same_function(a: Callable, b: Callable) -> bool:
+    return (
+        getattr(a, '__module__', None) == getattr(b, '__module__', None)
+        and getattr(a, '__qualname__', None) == getattr(b, '__qualname__', None)
+        and getattr(a, '__qualname__', None) is not None
+    )
 
 
-# ---------------------------------------------------------------------- #
-# global singleton + decorator
-# ---------------------------------------------------------------------- #
-_REGISTRY = IntegratorRegistry()
-
-
-def get_registry() -> IntegratorRegistry:
-    """Return the process-wide :class:`IntegratorRegistry` singleton."""
-    return _REGISTRY
-
-
-def register_integrator(
+def register_module_step(
     name: str,
     *,
-    aliases: Iterable[str] = (),
-    category: str = "general",
+    aliases: tuple[str, ...] = (),
+    category: str | None = None,
     order: int | None = None,
-    description: str = "",
-    deprecated: bool = False,
-    override: bool = False,
+    description: str = '',
 ) -> Callable[[Callable], Callable]:
-    """Decorator: register the wrapped function in the global registry.
+    """Register a braincell module step in the braintools ``'module'`` kind.
 
-    The decorated function is returned unchanged so it remains directly
-    callable. Place this decorator **outside** any other decorators (such as
-    :func:`braincell._misc.set_module_as`) so that the registry stores the
-    final exported function.
-
-    Parameters
-    ----------
-    name : str
-        Canonical name under which to register the integrator.
-    aliases : iterable of str
-        Alternative lookup names. See :meth:`IntegratorRegistry.register`.
-    category, order, description, deprecated, override
-        Forwarded to :meth:`IntegratorRegistry.register`.
-
-    Examples
-    --------
-
-    .. code-block:: python
-
-        >>> from braincell.quad import register_integrator
-        >>> @register_integrator("euler", aliases=("explicit",),
-        ...                      category="explicit", order=1)
-        ... def euler_step(target, *args):
-        ...     ...
+    Registration is idempotent: when the name is already taken by a function
+    with the same ``__module__`` and ``__qualname__`` (braincell's own step,
+    e.g. after ``importlib.reload``), the entry is replaced. A name taken by
+    any other function raises ``ValueError`` (from
+    :func:`braintools.quad.register_method`).
     """
 
-    def _wrap(func: Callable) -> Callable:
-        _REGISTRY.register(
+    def decorator(fn: Callable) -> Callable:
+        try:
+            existing = btq.method_info(name, 'module').fn
+        except KeyError:
+            existing = None
+        overwrite = existing is not None and _same_function(existing, fn)
+        btq.register_method(
             name,
-            func,
-            aliases=aliases,
-            category=category,
+            fn,
+            kind='module',
+            overwrite=overwrite,
             order=order,
+            category=category,
+            aliases=aliases,
             description=description,
-            deprecated=deprecated,
-            override=override,
         )
-        return func
+        return fn
 
-    return _wrap
-
-
-class _RegistryDictView(Mapping[str, Callable]):
-    """Read-only ``{name: func}`` mapping view backed by the registry.
-
-    Presents the registry as the plain dict that ``all_integrators`` used to
-    be, while keeping :class:`IntegratorRegistry` as the single source of
-    truth. Alias names are included, so lookups such as
-    ``all_integrators['explicit']`` resolve.
-    """
-
-    def __init__(self, registry: IntegratorRegistry) -> None:
-        self._registry = registry
-
-    def __getitem__(self, name: str) -> Callable:
-        return self._registry[name]
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._registry.names(include_aliases=True))
-
-    def __len__(self) -> int:
-        return len(self._registry.names(include_aliases=True))
-
-    def __contains__(self, name: object) -> bool:
-        return name in self._registry
-
-    def __repr__(self) -> str:
-        return f"_RegistryDictView({sorted(self._registry.names(include_aliases=True))!r})"
+    return decorator
 
 
-#: Mapping view of the integrator registry, keyed by canonical name and alias.
-#:
-#: Treat it as read-only; new integrators should be registered with
-#: :func:`register_integrator`.
-all_integrators: Mapping[str, Callable] = _RegistryDictView(get_registry())
+def _module_names() -> list[str]:
+    return btq.list_methods('module')
 
 
+def _ode_names() -> list[str]:
+    # A removed canonical name is listed under its first alias, if any
+    # (braintools' 'rk2' as 'heun2').
+    names = []
+    for name in btq.list_methods('ode'):
+        if name not in _REMOVED:
+            names.append(name)
+        else:
+            names.extend(btq.method_info(name, 'ode').aliases[:1])
+    return names
+
+
+def _all_names_and_aliases() -> list[str]:
+    names = []
+    for kind, canonical in (('module', _module_names()), ('ode', btq.list_methods('ode'))):
+        for name in canonical:
+            names.append(name)
+            names.extend(btq.method_info(name, kind).aliases)
+    return [n for n in names if n not in _REMOVED]
+
+
+def _lookup(name: str) -> tuple[str, 'btq.MethodInfo']:
+    """Return ``(kind, info)`` for ``name``; raise ``ValueError`` if it does not resolve."""
+    if name in _REMOVED:
+        raise ValueError(f'Integrator {name!r} is not available. {_REMOVED[name]}')
+    for kind in ('module', 'ode'):
+        try:
+            info = btq.method_info(name, kind)
+        except KeyError:
+            continue
+        # A removed canonical name may still be reachable through an alias
+        # ('heun2' for braintools' 'rk2'), but not through its full function
+        # name (e.g. 'ode_expeuler_step').
+        if info.name in _REMOVED and name not in info.aliases:
+            raise ValueError(f'Integrator {name!r} is not available. {_REMOVED[info.name]}')
+        return kind, info
+    close = difflib.get_close_matches(name, _all_names_and_aliases(), n=1, cutoff=0.6)
+    hint = f' Did you mean {close[0]!r}?' if close else ''
+    raise ValueError(f'Unknown integrator {name!r}.{hint} Available: {", ".join(list_integrators())}.')
+
+
+@set_module_as('braincell.quad')
 def get_integrator(method: str | Callable) -> Callable:
     """Resolve a numerical integrator from a string name or a callable.
 
     Parameters
     ----------
     method : str or Callable
-        Either the registered name (canonical or alias) of an integrator or
-        a step function to use directly.
+        A name or alias registered in :mod:`braintools.quad` (``'module'``
+        kind for braincell's stateful steps, ``'ode'`` kind for the
+        pure-function steppers), or a step function ``step(target, *args)``
+        to use directly.
 
     Returns
     -------
     Callable
-        The integrator step function corresponding to ``method``.
+        The module step ``step(target, *args) -> None``. An ``'ode'`` method
+        is wrapped by :func:`module_step_from_ode`; the same wrapper object
+        is returned on every call.
 
     Raises
     ------
     ValueError
-        If ``method`` is a string that does not match any registered
-        integrator. The error message includes a "did you mean ...?"
-        suggestion when a close match exists.
+        If ``method`` is a removed name (``'rk2'``, ``'explicit'``,
+        ``'expeuler'``; the message names the replacement), or matches no
+        registered integrator (the message includes a "did you mean ...?"
+        suggestion when a close match exists).
     TypeError
         If ``method`` is neither a string nor a callable.
+
+    See Also
+    --------
+    integrator_info : Metadata of an integrator.
+    list_integrators : All integrator names.
 
     Examples
     --------
 
     .. code-block:: python
 
-        >>> from braincell.quad import get_integrator
-        >>> get_integrator('euler')              # doctest: +ELLIPSIS
-        <function euler_step at ...>
-        >>> get_integrator('explicit') is get_integrator('euler')
+        >>> from braincell.quad import get_integrator, rk4_step
+        >>> get_integrator('rk4') is rk4_step
         True
         >>> get_integrator('stagger') is get_integrator('staggered')
+        True
+        >>> get_integrator('heun3') is get_integrator('heun')
         True
     """
     if callable(method):
         return method
     if isinstance(method, str):
-        registry = get_registry()
-        try:
-            return registry[method]
-        except KeyError:
-            suggestions = registry.suggest(method, n=1)
-            hint = f" Did you mean {suggestions[0]!r}?" if suggestions else ""
-            available = ", ".join(registry.names())
-            raise ValueError(f"Unknown integrator {method!r}.{hint} Available: {available}.")
+        kind, info = _lookup(method)
+        if kind == 'module':
+            return info.fn
+        from braincell.quad._explicit import module_step_from_ode
+
+        return module_step_from_ode(info.fn)
     raise TypeError(f"Integrator method must be a string or callable, got {type(method).__name__}.")
+
+
+@set_module_as('braincell.quad')
+def integrator_info(name: str) -> 'btq.MethodInfo':
+    """Return the metadata of an integrator name.
+
+    Parameters
+    ----------
+    name : str
+        A name or alias accepted by :func:`get_integrator`.
+
+    Returns
+    -------
+    braintools.quad.MethodInfo
+        The canonical name, kind (``'module'`` or ``'ode'``), order, category,
+        aliases and description. For an ``'ode'`` method, ``fn`` is the
+        pure-function stepper of braintools; use :func:`get_integrator` for
+        the module step.
+
+    Raises
+    ------
+    ValueError
+        As :func:`get_integrator`, for removed and unknown names.
+    TypeError
+        If ``name`` is not a string.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> from braincell.quad import integrator_info
+        >>> info = integrator_info('stagger')
+        >>> info.name, info.kind
+        ('staggered', 'module')
+        >>> integrator_info('rk4').order
+        4
+    """
+    if not isinstance(name, str):
+        raise TypeError(f'Integrator name must be a string, got {type(name).__name__}.')
+    return _lookup(name)[1]
+
+
+@set_module_as('braincell.quad')
+def list_integrators() -> list[str]:
+    """Return the sorted canonical names accepted by :func:`get_integrator`.
+
+    The list holds braincell's stateful steps (``'module'`` kind of
+    :mod:`braintools.quad`) and the braintools ODE steppers, without aliases
+    and without the removed names; braintools' ``'rk2'`` (Heun's method) is
+    listed as ``'heun2'``.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> from braincell.quad import list_integrators
+        >>> 'staggered' in list_integrators() and 'rk4' in list_integrators()
+        True
+        >>> 'rk2' in list_integrators()
+        False
+    """
+    return sorted(set(_module_names()) | set(_ode_names()))

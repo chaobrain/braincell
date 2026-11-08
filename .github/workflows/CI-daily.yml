@@ -40,7 +40,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      RESULT: ${{ needs.ci.result }}
+      NEEDS: ${{ toJSON(needs) }}
       REF_NAME: ${{ github.ref_name }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
@@ -48,6 +48,9 @@ jobs:
         run: |
           set -euo pipefail
           label=main-is-red
+          # Red when any job in `needs` did not succeed.
+          RESULT=$(jq -r 'if all(.[]; .result == "success") then "success"
+            else ([.[].result] | map(select(. != "success")) | first) end' <<<"$NEEDS")
           title="$REF_NAME is red"
           gh label create "$label" --color B60205 \
             --description "The daily CI run is red" 2>/dev/null || true

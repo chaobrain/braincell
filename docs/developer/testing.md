@@ -60,7 +60,21 @@ Tests use `unittest.TestCase` classes collected by pytest.
 For bug fixes, add a minimal failing reproduction first and retain it as a regression test after the fix.
 For new features, choose observable outcomes: return shapes, units, state changes, event timing, or numerical error.
 Shared behavior changes also need validation through the Cell or Network path that uses them.
-Aim for more than 90 % coverage by testing edge cases and critical paths, not trivial lines.
+
+## Meet the coverage gates
+
+The `coverage` job in CI runs `pytest braincell/ --cov=braincell --cov-report=xml` on the latest JAX and enforces two tiers:
+
+1. **Total floor.** Total coverage of `braincell/` (branch coverage on; `*_test.py` and `braincell/_version.py` omitted, see `[tool.coverage]` in `pyproject.toml`) must not fall below `report.fail_under`. The floor started at the total measured on `main` when the gate was introduced, rounded down; before each minor release it is raised to the current total, rounded down.
+2. **Changed lines.** On a pull request, the lines it adds or changes must be at least 90 % covered, checked by `diff-cover coverage.xml --compare-branch=origin/main --fail-under=90`.
+
+Reach coverage by testing edge cases and critical paths, not trivial lines. To check a change locally before pushing:
+
+```bash
+pip install pytest-cov diff-cover
+pytest braincell/ --cov=braincell --cov-report=xml
+diff-cover coverage.xml --compare-branch=origin/main --fail-under=90
+```
 
 ## Reuse morphology fixtures
 

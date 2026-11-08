@@ -40,7 +40,7 @@ Details and examples: [conventions](docs/developer/conventions.md).
 
 - Run `pytest braincell/`; tests use `unittest.TestCase` and run on CPU (`conftest.py`).
 - A module `foo.py` has its tests in a sibling `foo_test.py`, never in `test_*.py` or a `tests/` directory (pre-commit checks); package-wide guards go in `<package>/__init___test.py`.
-- Aim for more than 90 % coverage through tests of edge cases and critical paths, not of trivial lines.
+- Coverage gates (CI `coverage` job): total coverage of `braincell/` must not fall below `fail_under` in `[tool.coverage]`, which is raised to the current total before each minor release; lines a PR adds or changes need at least 90 % (`diff-cover`). Cover edge cases and critical paths, not trivial lines.
 - Import fixture paths from `braincell/io/_testing.py`; never recompute them.
 
 Details: [testing](docs/developer/testing.md).

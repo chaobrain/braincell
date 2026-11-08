@@ -261,6 +261,8 @@ class Morphology:
         self._full_point_geometry: bool | None = None
         self._all_segment_arrays_cache: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None
         self._all_points_cache: np.ndarray | None = None
+        # (revision, MorphologyData) of the last to_vis_data() call.
+        self._vis_data_cache: tuple[int, object] | None = None
         # Bumped on every structural change so consumers holding derived
         # results (e.g. braincell.filter.SelectionCache) can detect staleness.
         self._revision = 0
@@ -1137,6 +1139,93 @@ class Morphology:
             lines.extend(self._format_topology(child_id, prefix="", is_last=index == len(child_ids) - 1))
         return "\n".join(lines)
 
+    def to_vis_data(self):
+        """Return this morphology as plotting data for :mod:`braintools.visualize.morphology`.
+
+        The plots in ``braintools.visualize.morphology`` do not read braincell
+        objects; they take a neutral, frozen
+        :class:`~braintools.visualize.morphology.MorphologyData`. Every plot
+        there also accepts a ``Morphology`` directly, because
+        ``__morphology_data__`` is this method.
+
+        Branch ``index`` is the position in :attr:`branches`, so evaluated
+        region and locset masks of this morphology refer to the same
+        branches. Geometry is copied in micrometres. The result is cached
+        until the morphology is edited: calling this twice without an edit
+        in between returns the same object.
+
+        Returns
+        -------
+        braintools.visualize.morphology.MorphologyData
+            One :class:`~braintools.visualize.morphology.BranchData` per
+            branch, with the children in :attr:`MorphoBranch.children` order.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch, Morphology
+            >>> tree = Morphology.from_root(
+            ...     Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma"),
+            ... )
+            >>> tree.attach(
+            ...     parent="soma",
+            ...     child_branch=Branch.from_lengths(
+            ...         lengths=[50.0, 50.0] * u.um, radii=[1.0, 0.8, 0.5] * u.um, type="basal_dendrite",
+            ...     ),
+            ...     child_name="dend",
+            ... )
+            >>> data = tree.to_vis_data()
+            >>> [branch.name for branch in data.branches]
+            ['soma', 'dend']
+            >>> data.children
+            ((1,), ())
+            >>> tree.to_vis_data() is data
+            True
+        """
+        cached = self._vis_data_cache
+        if cached is not None and cached[0] == self._revision:
+            return cached[1]
+
+        from braintools.visualize.morphology import BranchData, MorphologyData
+
+        views = self.branches
+        position = {view.name: index for index, view in enumerate(views)}
+
+        def um(quantity):
+            return None if quantity is None else quantity.in_unit(u.um)
+
+        branches = []
+        for index, view in enumerate(views):
+            parent = view.parent
+            geometry = view.branch
+            branches.append(
+                BranchData(
+                    index=index,
+                    name=view.name,
+                    type=str(view.type),
+                    parent_index=None if parent is None else position[parent.name],
+                    parent_x=None if view.parent_x is None else float(view.parent_x),
+                    child_x=None if view.child_x is None else float(view.child_x),
+                    lengths=um(geometry.lengths),
+                    radii_proximal=um(geometry.radii_proximal),
+                    radii_distal=um(geometry.radii_distal),
+                    points_proximal=um(geometry.points_proximal),
+                    points_distal=um(geometry.points_distal),
+                )
+            )
+        data = MorphologyData(
+            branches=tuple(branches),
+            root_index=position[self.root.name],
+            children=tuple(tuple(position[child.name] for child in view.children) for view in views),
+        )
+        self._vis_data_cache = (self._revision, data)
+        return data
+
+    __morphology_data__ = to_vis_data
+
     def vis3d(
         self,
         *,
@@ -1161,7 +1250,7 @@ class Morphology:
         ----------
         mode : str or None
             Visualization mode. When omitted, uses the global 3-D
-            default configured via :func:`braincell.vis.configure_defaults`.
+            default configured via :func:`braintools.visualize.morphology.configure_defaults`.
             The initial default is ``"geometry"``.
         backend : str or None
             Rendering backend name (e.g., ``"pyvista"``).
@@ -1277,9 +1366,9 @@ class Morphology:
 
             >>> morph.vis3d(notebook=True, jupyter_backend="html")  # doctest: +SKIP
         """
-        from braincell.vis.plot3d import plot3d
+        from braintools.visualize import morphology as bvm
 
-        result = plot3d(
+        result = bvm.plot3d(
             self,
             region=region,
             locset=locset,
@@ -1337,12 +1426,12 @@ class Morphology:
             geometry. ``"fan"``, ``"stem"``, ``"balloon"``, and
             ``"radial_360"`` use the schematic branch layout pipeline.
             When omitted, uses the global 2-D default configured via
-            :func:`braincell.vis.configure_defaults`. The initial default
+            :func:`braintools.visualize.morphology.configure_defaults`. The initial default
             is ``"fan"``.
         shape : str or None
             2-D drawing shape: ``"line"`` or ``"frustum"``. When omitted,
             uses the global 2-D default configured via
-            :func:`braincell.vis.configure_defaults`. The initial default
+            :func:`braintools.visualize.morphology.configure_defaults`. The initial default
             is ``"frustum"``.
         branch_type_colors : mapping or None
             Per-branch-type colour overrides for this call only. These
@@ -1427,9 +1516,9 @@ class Morphology:
 
             >>> morph.vis2d(layout="stem", shape="frustum")  # doctest: +SKIP
         """
-        from braincell.vis.plot2d import plot2d
+        from braintools.visualize import morphology as bvm
 
-        result = plot2d(
+        result = bvm.plot2d(
             self,
             region=region,
             locset=locset,

@@ -452,6 +452,44 @@ class NodeTree:
     root_node_id: int
     cv_to_mid_node_id: np.ndarray
 
+    def to_topology_data(self):
+        """Return this node tree as a graph for :func:`braintools.visualize.morphology.plot_topology_graph`.
+
+        ``plot_topology_graph`` also accepts a ``NodeTree`` directly, because
+        ``__topology_data__`` is this method.
+
+        Returns
+        -------
+        braintools.visualize.morphology.TopologyGraph
+            ``level="node"``, one graph node per solver node, with the node
+            ids, the parent-to-child edges and the root of this tree; no
+            values.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> import braincell as bc
+            >>> from braincell.morph._testing import make_soma_dend_tree
+            >>> cell = bc.Cell(make_soma_dend_tree(), cv_policy=bc.CVPerBranch())
+            >>> graph = cell.node_tree.to_topology_data()
+            >>> graph.level, graph.root_id
+            ('node', 0)
+            >>> len(graph.node_ids) == len(cell.node_tree.nodes)
+            True
+        """
+        from braintools.visualize.morphology import TopologyGraph
+
+        return TopologyGraph(
+            node_ids=tuple(int(node.id) for node in self.nodes),
+            edges=tuple((int(edge.parent_node_id), int(edge.child_node_id)) for edge in self.edges),
+            root_id=int(self.root_node_id),
+            level="node",
+        )
+
+    __topology_data__ = to_topology_data
+
     def __repr__(self) -> str:
         return f"NodeTree(n_nodes={len(self.nodes)!r}, n_edges={len(self.edges)!r}, root_node_id={self.root_node_id!r})"
 

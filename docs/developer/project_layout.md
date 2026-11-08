@@ -33,7 +33,7 @@ Source paths are relative to the repository root. The [Architecture](../concepts
 | Numerical integration and voltage solvers | `braincell/quad/` | [Integration](../apis/integration.rst) |
 | Parameter selection and learning mappings | `braincell/trainable/` | — |
 | Model reduction | `braincell/reduction/` | — |
-| Visualization | `braincell/vis/` | [Vis](../apis/vis.rst) |
+| Visualization adapters (plots live in `braintools.visualize.morphology`) | `Morphology.to_vis_data`, `Cell.topology_data`, `NodeTree.to_topology_data` | [Visualization](../apis/vis.rst) |
 
 Internal source paths differ from public import names: import `Branch` and `Morphology` from the top-level `braincell` package and mechanism declarations from `braincell.mech`. [Code Conventions](conventions.md#imports-and-package-layout) explains which packages are public.
 

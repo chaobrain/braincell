@@ -309,5 +309,28 @@ class LowerPropertyTest(unittest.TestCase):
         self.assertEqual(sorted(roots + children), list(range(len(cvs))))
 
 
+class NodeTreeTopologyDataTest(unittest.TestCase):
+    """``NodeTree.to_topology_data`` is the node-level graph braintools draws."""
+
+    def test_graph_matches_the_tree(self) -> None:
+        from braincell.morph._testing import make_soma_dend_tree
+
+        morpho = make_soma_dend_tree()
+        tree = build_discretization(morpho, policy=CVPerBranch()).node_tree
+        graph = tree.to_topology_data()
+        self.assertEqual(graph.level, "node")
+        self.assertEqual(graph.node_ids, tuple(node.id for node in tree.nodes))
+        self.assertEqual(graph.edges, tuple((edge.parent_node_id, edge.child_node_id) for edge in tree.edges))
+        self.assertEqual(graph.root_id, tree.root_node_id)
+        self.assertIsNone(graph.values)
+
+    def test_the_protocol_method_is_to_topology_data(self) -> None:
+        import braintools.visualize.morphology as bvm
+        from braincell.morph._testing import make_soma_dend_tree
+
+        tree = build_discretization(make_soma_dend_tree(), policy=CVPerBranch()).node_tree
+        self.assertEqual(bvm.as_topology_graph(tree), tree.to_topology_data())
+
+
 if __name__ == "__main__":
     unittest.main()

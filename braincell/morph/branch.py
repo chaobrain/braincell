@@ -826,7 +826,7 @@ class Branch:
             2-D layout choice: ``"fan"``, ``"projected"``, ``"stem"``,
             ``"balloon"``, or ``"radial_360"``. When omitted, uses the
             global 2-D default configured via
-            :func:`braincell.vis.configure_defaults`.
+            :func:`braintools.visualize.morphology.configure_defaults`.
         shape : str or None
             2-D drawing shape: ``"line"`` or ``"frustum"``.
         branch_type_colors : mapping or None
@@ -915,7 +915,7 @@ class Branch:
         ----------
         mode : str or None
             Visualization mode. When omitted, uses the global 3-D default
-            configured via :func:`braincell.vis.configure_defaults`. The
+            configured via :func:`braintools.visualize.morphology.configure_defaults`. The
             initial default is ``"geometry"``.
         backend : str or None
             Rendering backend name (e.g., ``"pyvista"``).

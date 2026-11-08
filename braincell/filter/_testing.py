@@ -21,9 +21,7 @@ module as a test file. Helpers here are consumed by the co-located
 
 The per-type branch builders are re-exported rather than redefined:
 ``braincell/morph/_testing.py`` owns them, because the objects they build
-are morphology objects with no selection content. This is the same
-re-export pattern ``braincell/vis/_testing.py`` uses for
-``braincell/io/_testing.py``'s fixture paths.
+are morphology objects with no selection content.
 """
 
 import brainunit as u

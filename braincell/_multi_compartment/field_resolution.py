@@ -19,8 +19,8 @@ Three different surfaces ask a ``Cell`` the same shape of question — given
 a *selector*, which CVs or points does it name, and what value does each
 one carry?
 
-- :func:`braincell.vis.plot_cell_topology` colours a topology graph by a
-  region, a locset, or a runtime field.
+- :meth:`braincell.Cell.topology_data` builds a topology graph highlighted by
+  a region or a locset, or coloured by a runtime field.
 - ``Cell.on(...)`` narrows a selection scope to the CVs a region covers
   (see :mod:`braincell._multi_compartment.selection`).
 - ``cell.runtime_cvs[i].ions[...]`` reads one runtime field through a
@@ -28,9 +28,8 @@ one carry?
 
 The answer is the same computation in all three cases, so it lives here
 as free functions taking ``cell`` rather than as methods on ``Cell``.
-Keeping it out of the class is what lets :mod:`braincell.vis` import a
-module instead of reaching for private attributes across a package
-boundary.
+Keeping it out of the class keeps ``Cell`` smaller and lets each consumer
+import a module instead of reaching for private attributes.
 
 There are two families:
 

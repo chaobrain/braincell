@@ -1606,6 +1606,155 @@ class Cell(_CellFacade, HHTypedNeuron):
     def node_tree(self) -> NodeTree:
         return self._discretization.node_tree
 
+    def topology_data(self, level: str = "node", *, value=None, region=None, locset=None):
+        """Return this cell's topology as a graph for :func:`braintools.visualize.morphology.plot_topology_graph`.
+
+        The cell can be drawn at three granularities, from finest to
+        coarsest. ``"node"`` has one graph node per runtime point, the level
+        the solver works at, so only it can show per-point runtime state.
+        ``"cv"`` has one node per control volume, and ``"branch"`` one per
+        morphology branch (topology only: a branch has no single runtime
+        value).
+
+        A graph either highlights a selection (``region`` / ``locset``) or
+        carries values (``value``), never both.
+
+        Parameters
+        ----------
+        level : {"node", "cv", "branch"}, optional
+            Topology abstraction level. ``"node"`` needs an initialized cell;
+            ``"cv"`` and ``"branch"`` also work on a declaration-only cell.
+        value : object, optional
+            Values to colour by. Not supported at ``level="branch"``. One of:
+
+            - an array in the level's own space (``n_point`` or ``n_cv``), or
+              in the other space, which is mapped across;
+            - a ``(T, n)`` array, one row per frame (pick one with
+              ``plot_topology_graph(..., frame=i)``);
+            - ``"V"`` or ``"voltage"``;
+            - ``("ion", ion_name, field)``, ``("channel", class_name, field)``
+              or ``("layout_id", layout_id, field)``.
+        region : braincell.filter.RegionExpr or braincell.filter.RegionMask, optional
+            Continuous selection to highlight. At ``"node"`` and ``"cv"`` it
+            is reduced to CV granularity (membrane-area fractions; at
+            ``"node"`` each CV is attributed to its midpoint point); at
+            ``"branch"`` the fractions are lengths along each branch.
+        locset : braincell.filter.LocsetExpr or braincell.filter.LocsetMask, optional
+            Discrete locations to highlight at full intensity, each mapped to
+            the CV that owns it. Not supported at ``level="branch"``.
+
+        Returns
+        -------
+        braintools.visualize.morphology.TopologyGraph
+            Graph with ``level`` set, and ``highlight_fractions`` or
+            ``values`` and ``value_label`` filled in when requested.
+
+        Raises
+        ------
+        ValueError
+            If ``level`` is unknown; if ``value`` is combined with ``region``
+            or ``locset``; if ``level="branch"`` is given ``locset`` or
+            ``value``; if ``level="cv"`` finds more than one root CV; if a
+            value cannot be mapped into the level's space; for a
+            multi-member population; or if a channel selection is ambiguous.
+        RuntimeError
+            If ``level="node"`` is used before :meth:`init_state`.
+        AttributeError
+            If a named mechanism field does not exist.
+        KeyError
+            If a ``layout_id`` does not exist.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> import braincell as bc
+            >>> from braincell.morph._testing import make_soma_dend_tree
+            >>> cell = bc.Cell(make_soma_dend_tree(), cv_policy=bc.CVPerBranch())
+            >>> graph = cell.topology_data("cv", region=bc.filter.BranchSlice(1, 0.0, 0.5))
+            >>> graph.level, graph.node_ids
+            ('cv', (0, 1))
+            >>> round(graph.highlight_fractions[1], 4)
+            0.5833
+
+        Draw it with ``braintools.visualize.morphology.plot_topology_graph``:
+
+        .. code-block:: python
+
+            >>> import braintools.visualize.morphology as bvm
+            >>> ax = bvm.plot_topology_graph(graph)
+        """
+        from braintools.visualize.morphology import TopologyGraph
+
+        levels = ("node", "cv", "branch")
+        if level not in levels:
+            options = ", ".join(repr(name) for name in levels)
+            raise ValueError(f"Cell.topology_data(...) level must be one of {{{options}}}, got {level!r}.")
+        caller = f"Cell.topology_data(level={level!r})"
+        if value is not None and (region is not None or locset is not None):
+            raise ValueError(f"{caller} does not support value together with region/locset highlighting.")
+
+        if level == "branch":
+            unsupported = [name for name, given in (("locset", locset), ("value", value)) if given is not None]
+            if unsupported:
+                raise ValueError(
+                    f"{caller} does not support: {', '.join(unsupported)}. Branch-level graphs are topology-only."
+                )
+            morpho = self.morpho
+            fractions = (
+                None if region is None else field_resolution.branch_coverage_fractions(self, region, caller=caller)
+            )
+            return TopologyGraph(
+                node_ids=tuple(branch.index for branch in morpho.branches),
+                edges=tuple((edge.parent.index, edge.child.index) for edge in morpho.edges),
+                root_id=int(morpho.root.index),
+                level="branch",
+                highlight_fractions=fractions,
+            )
+
+        if level == "node":
+            field_resolution.require_initialized(self, caller)
+            tree = self.node_tree
+            node_ids = tuple(int(node.id) for node in tree.nodes)
+            edges = tuple((int(edge.parent_node_id), int(edge.child_node_id)) for edge in tree.edges)
+            root_id = int(tree.root_node_id)
+            highlight = field_resolution.node_highlight_fractions
+            resolve = field_resolution.resolve_node_field_values
+        else:
+            cvs = self.cvs
+            root_ids = [cv.id for cv in cvs if cv.parent_cv is None]
+            if len(root_ids) != 1:
+                raise ValueError(f"{caller} expects exactly one root CV, got {root_ids!r}.")
+            node_ids = tuple(int(cv.id) for cv in cvs)
+            edges = tuple((int(cv.parent_cv), int(cv.id)) for cv in cvs if cv.parent_cv is not None)
+            root_id = int(root_ids[0])
+            highlight = field_resolution.cv_highlight_fractions
+            resolve = field_resolution.resolve_cv_field_values
+
+        fractions = None
+        values = None
+        value_label = None
+        if region is not None or locset is not None:
+            fractions = highlight(self, region=region, locset=locset, caller=caller)
+        elif value is not None:
+            if not isinstance(value, (str, tuple)) and np.ndim(value) == 2:
+                frames = [resolve(self, row, caller=caller) for row in value]
+                value_label = frames[0][1]
+                rows = [frame[0] for frame in frames]
+                values = u.math.stack(rows) if isinstance(rows[0], u.Quantity) else np.stack(rows)
+            else:
+                values, value_label = resolve(self, value, caller=caller)
+        return TopologyGraph(
+            node_ids=node_ids,
+            edges=edges,
+            root_id=root_id,
+            level=level,
+            values=values,
+            value_label=value_label,
+            highlight_fractions=fractions,
+        )
+
     @property
     def cv_contexts(self) -> tuple[CVContext, ...]:
         """Return read-only spatial contexts in stable CV order.

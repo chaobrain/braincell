@@ -93,8 +93,10 @@ Feature highlights
      - SWC, Neurolucida ASC, and NeuroML2 readers, plus a full
        `NeuroMorpho.Org <https://neuromorpho.org>`_ client with caching.
    * - **Visualization**
-     - :mod:`braincell.vis`: 2-D tree layouts (matplotlib) and 3-D rendering
-       (PyVista / Plotly), color-by-values, and morphometry plots.
+     - ``Morphology.vis2d`` / ``vis3d`` and adapters for
+       ``braintools.visualize.morphology``: 2-D tree layouts (matplotlib),
+       3-D rendering (PyVista / Plotly), color-by-values, morphometry and
+       topology plots.
    * - **Numerical integration**
      - :mod:`braincell.quad`: a registry of solvers selectable by name.
    * - **Declarative mechanisms**

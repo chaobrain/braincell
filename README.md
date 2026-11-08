@@ -32,7 +32,7 @@ It is built on top of [JAX](https://github.com/jax-ml/jax) and [brainstate](http
 - **Multi-compartment cells** — `braincell.Cell` with declarative mechanism painting (`cell.paint`) and point-process placement (`cell.place`) onto morphological regions.
 - **Morphology system** — `braincell.morph`: immutable `Branch` geometry, typed subclasses (`Soma`, `Dendrite`, `Axon`, `BasalDendrite`, `ApicalDendrite`), and the mutable `Morphology` tree.
 - **IO readers** — SWC, ASC, and NeuroML2 file readers; a full [NeuroMorpho.Org](https://neuromorpho.org) client with search, download, and local caching.
-- **Visualization** — `braincell.vis`: 2D tree layouts (matplotlib) and 3D rendering (PyVista / Plotly), color-by-values, morphometry plots, and movie export.
+- **Visualization** — `Morphology.vis2d` / `vis3d` and the plots in [`braintools.visualize.morphology`](https://github.com/chaobrain/braintools): 2D tree layouts (matplotlib) and 3D rendering (PyVista / Plotly), color-by-values, morphometry plots, topology graphs and movie export. braincell objects convert with `Morphology.to_vis_data()`, `Cell.topology_data()` and `NodeTree.to_topology_data()`, and every plot accepts a `Morphology` directly.
 - **Integrator registry** — `braincell.quad`: explicit (Euler, RK2/3/4), implicit, exponential-Euler, and staggered cable solve, all selectable by name.
 - **Declarative mechanisms** — `braincell.mech`: `Channel`, `Ion`, `CableProperty`, `CurrentClamp`, `Synapse`, `Junction` specs for the `Cell` frontend.
 - **CLI** — `braincell-neuromorpho` command for searching and downloading from NeuroMorpho.Org.
@@ -110,16 +110,21 @@ cell.place(RootLocation(0.5), mech.CurrentClamp(delay=10 * u.ms, durations=50 * 
 
 ```python
 import braincell
-import braincell.vis as vis
+import braintools.visualize.morphology as bvm
 
 # Load from NeuroMorpho.Org by neuron id (downloaded and cached locally)
 morpho = braincell.Morphology.from_neuromorpho(12345)
 
-# 2-D layout plot
-vis.plot2d(morpho)
+# 2-D layout plot (same as bvm.plot2d(morpho))
+morpho.vis2d()
 
 # 3-D rendering
-vis.plot3d(morpho)
+morpho.vis3d()
+
+# Sholl profile, or the control-volume topology of a cell
+bvm.plot_sholl(morpho)
+cell = braincell.Cell(morpho)
+bvm.plot_topology_graph(cell.topology_data("cv"))
 ```
 
 
@@ -134,7 +139,7 @@ Optional dependency groups:
 
 | Extra | What it installs |
 |-------|-----------------|
-| `braincell[vis]` | matplotlib, pyvista, plotly (visualization backends) |
+| `braincell[vis]` | `braintools[morphology]`: networkx, pyvista, plotly (visualization backends) |
 | `braincell[io]` | requests (NeuroMorpho.Org client) |
 | `braincell[all]` | all of the above |
 | `braincell[cpu]` | jax[cpu] |

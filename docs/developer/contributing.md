@@ -92,3 +92,5 @@ A PR can merge when:
 - the `ci-ok` check passes: it requires every CI job (pre-commit, the package build, the documentation build, the test suites on Linux, macOS and Windows, and the NEURON cable comparison) to succeed;
 - a code owner other than the author approves it ([.github/CODEOWNERS](https://github.com/chaobrain/braincell/blob/main/.github/CODEOWNERS));
 - the branch is up to date with `main`.
+
+Temporary DEV-2 check: [a missing page](no-such-page.md) and {ref}`no-such-label`.

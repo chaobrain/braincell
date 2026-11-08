@@ -157,6 +157,38 @@ jobs:
         run: |
           pytest validation/neuron/cable/tests
 
+  # Single-channel BrainCell/NEURON comparisons (validation/neuron/channel_no_conc).
+  # A separate job, so its NEURON mechanism libraries never share a process
+  # with the cable suite's. Compiling the eight models takes about 25 s and
+  # the suite about 35 s, so it runs on every pull request.
+  test_linux_neuron_compare_channel:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.13" ]
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools
+          python -m pip install -r requirements-dev.txt
+          python -m pip install neuron pandas
+          python -m pip install .
+      - name: Compile the channel mechanisms
+        run: |
+          for model in bc_ma2025 dcn_su2015 goc_ma2020 grc_ma2020 io_zh2019 pc_ma2024 sc_ma2021 testing; do
+            python -m validation.neuron._mechanisms "$model" --kind channel > /dev/null
+          done
+      - name: Test the channel_no_conc suite
+        run: |
+          pytest validation/neuron/channel_no_conc/tests --durations=10
+
   # Tests that live outside the braincell package: the optim validation suite
   # and the benchmark scripts' own tests. Modules marked `slow` (pyproject.toml)
   # run only in the daily job below.
@@ -423,6 +455,7 @@ jobs:
       - docs
       - test_linux
       - test_linux_neuron_compare_cable
+      - test_linux_neuron_compare_channel
       - test_linux_validation_benchmarks
       - test_macos
       - test_windows

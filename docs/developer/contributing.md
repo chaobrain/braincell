@@ -91,7 +91,7 @@ Support performance claims with measurement configurations and reproduction entr
 
 A PR can merge when:
 
-- the `ci-ok` check passes: it requires every CI job (pre-commit, the package build, the documentation build, the test suites on Linux, macOS and Windows, and the NEURON cable comparison) to succeed;
+- the `ci-ok` check passes: it requires every CI job (pre-commit, the package build, the documentation build, the test suites on Linux, macOS and Windows, and the NEURON cable and single-channel comparisons) to succeed;
 - a code owner other than the author approves it ([.github/CODEOWNERS](https://github.com/chaobrain/braincell/blob/main/.github/CODEOWNERS)).
 
 PRs merge through the merge queue: once both hold, choose *Merge when ready* (or `gh pr merge <N> --squash`). The queue tests `main` plus the queued PRs, runs `ci-ok` again on that combination, and squash-merges only if it passes, so a PR no longer needs to be rebased each time `main` moves.

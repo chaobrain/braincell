@@ -36,11 +36,12 @@ python -m pytest braincell/experimental/optim -q
 python -m pytest validation/optim benchmarks -m "not slow" -q   # every pull request
 python -m pytest validation/optim benchmarks -m slow -q         # daily CI run
 python -m pytest validation/neuron/cable/tests -q
+python -m pytest validation/neuron/channel_no_conc/tests -q   # after compiling its mechanisms
 ```
 
 CI runs `validation/optim` and the benchmark scripts' tests in two tiers: modules marked `pytestmark = pytest.mark.slow` (more than about 25 s on their own) run only in the daily workflow, the rest on every pull request. A new test module there runs on every pull request unless you mark it slow.
 
-NEURON mechanism comparisons require compiling the relevant models first. See the
+Both NEURON suites run on every pull request, each in its own job (and so its own process). NEURON mechanism comparisons require compiling the relevant models first. See the
 [Validation Guide](https://github.com/chaobrain/braincell/blob/main/validation/neuron/README.md) for entry points and dependencies.
 The benchmark tests check the scripts on small configurations and synthetic records; nothing they time is a benchmark result. Running a benchmark itself is different:
 list and confirm the run counts first, as the

@@ -23,7 +23,7 @@ import numpy as np
 
 from braincell._discretization.base import locate_cv_on_branch
 from braincell._multi_compartment.lifecycle import DiscreteView
-from braincell.filter import LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask
+from braincell.filter import LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask, branch_in
 from braincell._multi_compartment import field_resolution
 
 __all__ = ["BranchSelector", "CVSelector"]
@@ -39,8 +39,23 @@ class _LocationRow:
 
 
 @dataclass(frozen=True)
+class _Undeclarable:
+    """Marks a spatial selection that no region or locset expression reproduces."""
+
+    reason: str
+
+
+@dataclass(frozen=True)
 class _CellScope:
-    """Static population/spatial selection without owning model arrays."""
+    """Static population/spatial selection without owning model arrays.
+
+    ``target`` is the declaration-level expression the spatial selection was
+    made with, which view ``paint``/``place`` forward to the root Cell:
+    ``None`` for the whole cell, a region expression (``on``, ``soma``,
+    ``branch[...]``), a locset (``loc``), or :class:`_Undeclarable` for
+    selections that depend on the discretization (``cv[...]``) or nest a
+    location selection inside another spatial selection.
+    """
 
     population_indices: tuple[int, ...]
     pairs: tuple[tuple[int, int], ...]
@@ -48,6 +63,7 @@ class _CellScope:
     locations: tuple[_LocationRow, ...] = ()
     exact_branch_ids: tuple[int, ...] | None = None
     spatially_restricted: bool = False
+    target: object = None
 
     @classmethod
     def root(cls, cell) -> "_CellScope":
@@ -93,6 +109,12 @@ class _CellScope:
         return self.select_cv_ids(tuple(cv_ids[index] for index in local))
 
     def select_cv_ids(self, cv_ids) -> "_CellScope":
+        return replace(
+            self._restrict_cv_ids(cv_ids),
+            target=_Undeclarable("a control-volume selection (cv[...]) depends on the discretization"),
+        )
+
+    def _restrict_cv_ids(self, cv_ids) -> "_CellScope":
         requested = _normalize_global_ids(cv_ids, name="CV")
         available = set(self.cv_ids)
         selected_set = {cv_id for cv_id in requested if cv_id in available}
@@ -104,32 +126,55 @@ class _CellScope:
             spatially_restricted=True,
         )
 
-    def select_branches(self, cell, branch_ids) -> "_CellScope":
+    def select_branches(self, cell, branch_ids, region: RegionExpr | None = None) -> "_CellScope":
         selected = _normalize_global_ids(branch_ids, name="branch")
         if any(branch_id < 0 or branch_id >= len(cell.morpho.branches) for branch_id in selected):
             raise IndexError("Branch index is out of range.")
         selected_branches = set(selected)
         cv_ids = tuple(cv.id for cv in cell.cvs if cv.branch_id in selected_branches)
-        return replace(self.select_cv_ids(cv_ids), exact_branch_ids=selected)
+        if region is None:
+            region = branch_in("index", list(selected))
+        return replace(
+            self._restrict_cv_ids(cv_ids),
+            exact_branch_ids=selected,
+            target=self._narrowed_region(region),
+        )
 
     def select_region(self, cell, region: RegionExpr | RegionMask) -> "_CellScope":
         if not isinstance(region, (RegionExpr, RegionMask)):
             raise TypeError(f"Cell.on(...) expects RegionExpr or RegionMask, got {type(region).__name__!s}.")
         fractions = field_resolution.cv_area_coverage_fractions(cell, region, caller="Cell.on(...)")
         selected = tuple(cv_id for cv_id, fraction in fractions.items() if float(fraction) > 0.0)
-        result = self.select_cv_ids(selected)
+        result = self._restrict_cv_ids(selected)
         selected_set = set(result.cv_ids)
         return replace(
             result,
             coverage=tuple((cv_id, float(fractions[cv_id])) for cv_id in selected if cv_id in selected_set),
             locations=(),
             exact_branch_ids=None,
+            target=self._narrowed_region(region),
         )
+
+    def _narrowed_region(self, region) -> object:
+        """Declaration target after narrowing this scope to ``region``."""
+        if self.target is None:
+            return region
+        if isinstance(self.target, RegionExpr) and isinstance(region, RegionExpr):
+            return self.target & region
+        if isinstance(self.target, _Undeclarable):
+            return self.target
+        return _Undeclarable("a region selection inside a location or region-mask selection")
 
     def select_locations(self, cell, locset) -> "_CellScope":
         rows = _resolve_location_rows(cell, self.population_indices, locset)
         allowed = set(self.pairs)
         rows = tuple(row for row in rows if (row.population_index, row.cv_id) in allowed)
+        if self.target is None:
+            target = locset
+        elif isinstance(self.target, _Undeclarable):
+            target = self.target
+        else:
+            target = _Undeclarable("a location selection inside another spatial selection")
         return replace(
             self,
             pairs=_ordered_unique((row.population_index, row.cv_id) for row in rows),
@@ -137,6 +182,7 @@ class _CellScope:
             locations=rows,
             exact_branch_ids=None,
             spatially_restricted=True,
+            target=target,
         )
 
 
@@ -151,7 +197,9 @@ class BranchSelector:
     def __getitem__(self, selector):
         if isinstance(selector, str):
             branch = self._owner.root.morpho.branch(name=selector)
-            return self._owner._with_scope(self._owner._scope.select_branches(self._owner.root, (branch.index,)))
+            return self._owner._with_scope(
+                self._owner._scope.select_branches(self._owner.root, (branch.index,), branch_in("name", [selector]))
+            )
         branch_ids = np.arange(len(self._owner.root.morpho.branches), dtype=np.int64)
         selected = np.asarray(branch_ids[selector]).reshape(-1)
         return self._owner._with_scope(self._owner._scope.select_branches(self._owner.root, selected))
@@ -160,7 +208,9 @@ class BranchSelector:
         if not isinstance(branch_type, str) or not branch_type:
             raise ValueError("branch type must be a non-empty string.")
         selected = tuple(branch.index for branch in self._owner.root.morpho.branches if branch.type == branch_type)
-        return self._owner._with_scope(self._owner._scope.select_branches(self._owner.root, selected))
+        return self._owner._with_scope(
+            self._owner._scope.select_branches(self._owner.root, selected, branch_in("type", [branch_type]))
+        )
 
 
 class CVSelector(DiscreteView):

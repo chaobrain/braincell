@@ -80,6 +80,27 @@
 
 ### New Features
 
+- **The same `paint` / `place` verbs on a Cell and its views** (CELL-22).
+  `cell.paint(*mechanisms)` without a region paints the whole cell
+  (`AllRegion()`), so a point neuron and a morphological one are declared
+  the same way. Spatial views declare too, and return the root Cell for
+  chaining: `cell.soma.paint(m)` is `cell.paint(branch_in("type",
+  ["soma"]), m)`, `cell.on(region).paint(m)` is `cell.paint(region, m)`
+  (nested region views paint the intersection), and
+  `cell.loc(locset).place(m)` is `cell.place(locset, m)` for any point
+  mechanism, clamps included. `cell[indices].loc(locset).place(syn)`
+  places on the selected members, as `cell[indices].place(locset, syn)`
+  does. Errors at the call:
+  - `ValueError` for `paint` on a population view (`cell[0].paint(m)`):
+    declarations are the same for every member;
+  - `ValueError` for `paint` on a location or `cv[...]` view, `place` on a
+    region view, and a location view nested in another spatial view;
+  - `TypeError` for `cell.paint()` without a mechanism, and for a region or
+    locset passed to a view that already has one.
+
+  Existing calls are unchanged: a region first still paints that region,
+  and `cell[indices].place(locset, ...)` still returns the view.
+
 - **Mechanism classes are used by identity; no registration needed**
   (CELL-25). `mech.Channel(MyChannel, ...)`, `mech.Ion(MyIon, ...)` and now
   `mech.Synapse(MySynapse, ...)` accept a class that was never registered:

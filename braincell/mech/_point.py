@@ -45,6 +45,7 @@ import brainunit as u
 import numpy as np
 
 from braincell.mech._base import Mechanism
+from braincell.mech._density import _resolve_class_name
 from braincell.mech._params import Params, quantity_hashable
 from braincell.mech._validate import require_str
 
@@ -319,13 +320,14 @@ class ProbeMechanism(_LegacyProbe):
 
 
 class Synapse(Point):
-    """Registry-keyed synapse declaration.
+    """Synapse declaration, by registry name or class.
 
     Parameters
     ----------
-    synapse_type : str
-        Registry key for the target synapse class (currently ``"ExpSyn"`` or
-        ``"Exp2Syn"``).
+    synapse_type : str or type
+        Registry name of the synapse class (such as ``"ExpSyn"``), or the
+        class itself. An unregistered class is kept by identity: it is
+        stored under the key :meth:`MechanismRegistry.key_for` returns.
     name : str or None
         Optional instance label.
     **params
@@ -346,13 +348,13 @@ class Synapse(Point):
 
     def __init__(
         self,
-        synapse_type: str,
+        synapse_type: str | type,
         /,
         *,
         name: str | None = None,
         **params: Any,
     ) -> None:
-        require_str(synapse_type, "Synapse", "synapse_type")
+        synapse_type = _resolve_class_name("synapse", synapse_type)
         if "params" in params:
             raise TypeError("Synapse parameters must be passed as keyword arguments, not as params={...}.")
         require_str(name, "Synapse", "name", optional=True)

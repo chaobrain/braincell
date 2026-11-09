@@ -35,7 +35,7 @@ from brainstate.mixin import _JointGenericAlias
 
 from braincell._typing import Size
 from braincell._parameter_schema import RuntimeParameterState
-from braincell._base_channel import Channel, IonChannel, IonInfo
+from braincell._base_channel import Channel, IonChannel, IonInfo, Synapse
 from braincell._base_neuron import HHTypedNeuron
 from braincell._misc import (
     Container,
@@ -43,6 +43,7 @@ from braincell._misc import (
     profiler_safe_name,
     set_module_as,
 )
+from braincell.mech._registry import _register_runtime_base
 from braincell.quad.protocol import IndependentIntegration
 
 __all__ = ["Ion", "MixIons", "mix_ions"]
@@ -825,3 +826,10 @@ def mix_ions(*ions) -> MixIons:
         assert isinstance(ion, Ion), f'Must be instance of {Ion.__name__}. But got {type(ion)}'
     assert len(ions) >= 2, f'mix_ions requires at least two ions, got {len(ions)}.'
     return MixIons(*ions)
+
+
+# braincell.mech cannot import this module, so report the runtime bases that
+# declarations check class arguments against.
+_register_runtime_base("channel", IonChannel, excluded=(Ion, Synapse))
+_register_runtime_base("ion", Ion)
+_register_runtime_base("synapse", Synapse)

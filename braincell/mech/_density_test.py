@@ -15,7 +15,9 @@
 
 import unittest
 
+import braintools
 import brainunit as u
+import numpy as np
 
 import braincell
 from braincell.mech import Channel, Density, Ion, Params
@@ -261,6 +263,86 @@ class DensityImmutabilityTest(unittest.TestCase):
         spec = Channel("IL")
         with self.assertRaises(AttributeError):
             del spec.class_name  # type: ignore[misc]
+
+
+class _UnregisteredLeak(braincell.Channel):
+    """An ohmic leak no registry knows, as SingleCompartment users write them."""
+
+    root_type = braincell.HHTypedNeuron
+
+    def __init__(self, size, g_max=0.1 * (u.mS / u.cm**2), E=-70.0 * u.mV, name=None):
+        super().__init__(size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape)
+        self.E = braintools.init.param(E, self.varshape)
+
+    def init_state(self, V, batch_size=None):
+        pass
+
+    def reset_state(self, V, batch_size=None):
+        pass
+
+    def compute_derivative(self, V, *args, **kwargs):
+        pass
+
+    def current(self, V, *args, **kwargs):
+        return self.g_max * (self.E - V)
+
+
+class DensityUnregisteredClassTest(unittest.TestCase):
+    """CELL-25: unregistered classes are kept and resolved by identity."""
+
+    def test_unregistered_channel_resolves_to_the_class(self) -> None:
+        spec = Channel(_UnregisteredLeak, g_max=0.3 * (u.mS / u.cm**2))
+        self.assertEqual(spec.class_name, "_UnregisteredLeak")
+        self.assertIs(braincell.mech.get_registry().get("channel", spec.class_name), _UnregisteredLeak)
+        self.assertEqual(spec, Channel(_UnregisteredLeak, g_max=0.3 * (u.mS / u.cm**2)))
+
+    def test_unregistered_classes_with_one_name_give_distinct_specs(self) -> None:
+        def make():
+            class Leak(_UnregisteredLeak):
+                pass
+
+            return Leak
+
+        first, second = make(), make()
+        a, b = Channel(first), Channel(second)
+        self.assertNotEqual(a, b)
+        registry = braincell.mech.get_registry()
+        self.assertIs(registry.get("channel", a.class_name), first)
+        self.assertIs(registry.get("channel", b.class_name), second)
+
+    def test_unregistered_channel_runs_on_cable_and_lumped_cells(self) -> None:
+        from braincell.filter import AllRegion
+
+        params = dict(g_max=0.3 * (u.mS / u.cm**2), E=-54.3 * u.mV)
+        for kind, make in (
+            ("lumped", lambda: braincell.Cell.point(2, V_init=-65.0 * u.mV)),
+            ("cable", lambda: braincell.Cell(braincell.Morphology.from_soma(), pop_size=2, V_init=-65.0 * u.mV)),
+        ):
+            with self.subTest(cell=kind):
+                traces = []
+                for channel in (_UnregisteredLeak, "IL"):
+                    cell = make()
+                    cell.paint(AllRegion(), Channel(channel, **params))
+                    cell.record("v", braincell.observe.state("v"))
+                    cell.init_state()
+                    result = cell.run(dt=0.025 * u.ms, duration=2.0 * u.ms)
+                    traces.append(result.samples["v"].values.to_decimal(u.mV))
+                self.assertGreater(float(traces[0][-1, 0]), -61.0)
+                np.testing.assert_array_equal(traces[0], traces[1])
+
+    def test_instances_and_foreign_classes_are_rejected_at_construction(self) -> None:
+        cases = (
+            ("instance", lambda: Channel(braincell.channel.IL(1)), "instance of 'IL'"),
+            ("ion class as channel", lambda: Channel(braincell.ion.SodiumFixed), "and not of Ion or Synapse"),
+            ("synapse class as channel", lambda: Channel(braincell.synapse.ExpSyn), "and not of Ion or Synapse"),
+            ("plain class as channel", lambda: Channel(int), "subclass of braincell.IonChannel"),
+            ("channel class as ion", lambda: Ion(braincell.channel.IL), "subclass of braincell.Ion"),
+        )
+        for label, build, message in cases:
+            with self.subTest(case=label):
+                with self.assertRaisesRegex(TypeError, message):
+                    build()
 
 
 if __name__ == "__main__":

@@ -119,6 +119,11 @@ class MechanismRegistry:
     def __init__(self) -> None:
         self._entries: dict[tuple[str, str], MechanismEntry] = {}
         self._aliases: dict[tuple[str, str], str] = {}
+        # Unregistered classes used in declarations, by identity: key -> class
+        # and class -> key. Kept apart from the named entries, so ``names`` and
+        # ``items`` list registered mechanisms only.
+        self._anonymous: dict[tuple[str, str], type] = {}
+        self._anonymous_keys: dict[tuple[str, type], str] = {}
 
     # ------------------------------------------------------------------
     # mutation
@@ -142,6 +147,13 @@ class MechanismRegistry:
         """
         _check_category(entry.category)
         key = (entry.category, entry.name)
+        for name in (entry.name, *entry.aliases):
+            used = self._anonymous.get((entry.category, name))
+            if used is not None and used is not entry.cls:
+                raise ValueError(
+                    f"Cannot register {entry.category!r}/{name!r}: an unregistered class "
+                    f"{used!r} has already been declared under that name."
+                )
         if key in self._entries:
             raise ValueError(
                 f"Mechanism {entry.category!r}/{entry.name!r} is already "
@@ -174,6 +186,8 @@ class MechanismRegistry:
                 self._aliases.pop(alias_key, None)
             self._entries.pop(key, None)
             raise
+        # A class declared before it was registered keeps resolving: its
+        # identity key, if any, stays as a lookup for the same class.
 
     def unregister(self, category: str, name: str) -> None:
         """Remove a canonical entry and all of its aliases.
@@ -206,16 +220,59 @@ class MechanismRegistry:
         """
         self._entries.clear()
         self._aliases.clear()
+        self._anonymous.clear()
+        self._anonymous_keys.clear()
 
     # ------------------------------------------------------------------
     # lookup
     # ------------------------------------------------------------------
 
     def contains(self, category: str, name: str) -> bool:
-        """Return whether ``name`` (canonical or alias) is known."""
+        """Return whether ``name`` (canonical, alias or identity key) is known."""
         _check_category(category)
         key = (category, name)
-        return key in self._entries or key in self._aliases
+        return key in self._entries or key in self._aliases or key in self._anonymous
+
+    def key_for(self, category: str, cls: type) -> str:
+        """Return the name under which declarations refer to ``cls``.
+
+        A registered class resolves to its canonical name. An unregistered
+        class gets an identity key the first time it is seen: its
+        ``__name__`` when no other class uses that name in ``category``,
+        else ``module.qualname``, with ``#n`` appended if that is taken
+        too. :meth:`get` resolves the key back to this very class, so two
+        unregistered classes that share a ``__name__`` stay distinct.
+
+        Parameters
+        ----------
+        category : str
+            Mechanism category.
+        cls : type
+            The class to refer to.
+
+        Returns
+        -------
+        str
+            The canonical name or identity key.
+        """
+        _check_category(category)
+        for entry_name, entry_cls in self.items(category):
+            if entry_cls is cls:
+                return entry_name
+        known = self._anonymous_keys.get((category, cls))
+        if known is not None:
+            return known
+        base = f"{cls.__module__}.{cls.__qualname__}"
+        candidates = (cls.__name__, base)
+        key = next((name for name in candidates if not self.contains(category, name)), None)
+        suffix = 2
+        while key is None:
+            if not self.contains(category, f"{base}#{suffix}"):
+                key = f"{base}#{suffix}"
+            suffix += 1
+        self._anonymous[(category, key)] = cls
+        self._anonymous_keys[(category, cls)] = key
+        return key
 
     def get(self, category: str, name: str) -> type:
         """Return the concrete class registered as ``(category, name)``.
@@ -225,7 +282,7 @@ class MechanismRegistry:
         category : str
             One of ``"channel"``, ``"ion"``, or ``"synapse"``.
         name : str
-            Canonical name or alias.
+            Canonical name, alias, or identity key (see :meth:`key_for`).
 
         Returns
         -------
@@ -248,7 +305,7 @@ class MechanismRegistry:
         category : str
             Mechanism category.
         name : str
-            Canonical name or alias.
+            Canonical name, alias, or identity key (see :meth:`key_for`).
 
         Returns
         -------
@@ -267,6 +324,8 @@ class MechanismRegistry:
             return self._entries[key]
         if key in self._aliases:
             return self._entries[(category, self._aliases[key])]
+        if key in self._anonymous:
+            return MechanismEntry(category=category, name=name, cls=self._anonymous[key])
         raise KeyError(_missing_mechanism_message(self, category, name))
 
     def names(
@@ -330,6 +389,30 @@ class MechanismRegistry:
         counts = {cat: sum(1 for (c, _) in self._entries if c == cat) for cat in sorted(_VALID_CATEGORIES)}
         summary = ", ".join(f"{cat}={count}" for cat, count in counts.items())
         return f"MechanismRegistry(total={total}, {summary})"
+
+
+# Runtime base classes ----------------------------------------------------
+#
+# ``braincell.mech`` may not import the runtime packages (it is a leaf), so the
+# modules that define the runtime bases report them here. Declarations use
+# them to reject a class outside a category's hierarchy at construction.
+_RUNTIME_BASES: dict[str, tuple[type, tuple[type, ...]]] = {}
+
+
+def _register_runtime_base(category: str, base: type, *, excluded: tuple[type, ...] = ()) -> None:
+    """Record the runtime base class of ``category`` and subclasses it excludes."""
+    _check_category(category)
+    _RUNTIME_BASES[category] = (base, tuple(excluded))
+
+
+def _runtime_base(category: str) -> tuple[type, tuple[type, ...]]:
+    """Return ``(base, excluded)`` for ``category``.
+
+    ``import braincell`` imports the base modules that report them, and
+    ``braincell.mech`` cannot be imported without ``braincell``, so every
+    category is reported before a declaration is built.
+    """
+    return _RUNTIME_BASES[category]
 
 
 # Module-level singleton --------------------------------------------------

@@ -29,25 +29,66 @@ Resolved:
   allocated. The SU15 DCN SK configuration then matches NEURON to
   `4.7e-10 mV` (voltage, vinit and dc templates) and `1.1e-19` (gate `z`).
 
-## Untested differences in the full channel sweep
+## Channel sweep differences
 
 On 2026-11-08 every `channel_no_conc` configuration was compared with NEURON
-under each template it declares (883 cases). With the midpoint stimulus, 77 of
-the 89 configurations agree to `1.2e-7 mV` or better in every template. The
-remaining 12 differ in vinit and dc as well, so the difference is in the
-channel, not the stimulus. No test asserts these cases' accuracy (their smoke
-tests check shapes and finiteness only). The numbers are in double precision,
-as in the tests; `engine/run.py` runs in single precision unless
-`JAX_ENABLE_X64=1` is set (for `cav2p1_ma24_pc`, dc case 3 reads `0.99 mV`
-instead of `0.627 mV`):
+under each template it declares. With the midpoint stimulus, most
+configurations agree to `1.2e-7 mV` or better in every template. The groups
+below differ for the reasons given; MECH-16 traced each one on 2026-11-09
+(NEURON 9.0.2, JAX 0.12.0.1, double precision). In every case, patching only
+the named cause in-process brought all three templates below `1e-9 mV`.
+[`test_neuron_agreement.py`](channel_no_conc/tests/test_neuron_agreement.py)
+asserts the per-template limits approved for these configurations. The numbers
+are in double precision, as in the tests; `engine/run.py` runs in single
+precision unless `JAX_ENABLE_X64=1` is set (for `cav2p1_ma24_pc`, dc case 3
+reads `0.99 mV` instead of `0.627 mV`).
 
-| Configuration | Max voltage difference, vinit and dc | Max, ac |
+| Configuration | Measured vinit / dc / ac (mV) | Limit vinit / dc / ac (mV) |
 |---|---|---|
-| `cav2p1` in `ma24_pc`, `ma25_bc`, `ri21_sc` | `0.627 mV` | `8.0e-5 mV` |
-| `cav3p1` in `ma20_goc`, `ma24_pc` (`cav3p1_ma24_pc`, `cav3p1_test2_pc24`) | `0.166 mV` | `0.180 mV` |
-| `calva_su15_dcn` | `3.2e-4 mV` | `9.3e-5 mV` |
-| `na_zh19_io` | `2.6e-5 mV` | `8.7e-8 mV` |
-| `kca2p2` in `ma20_goc`, `ma20_grc`, `ma25_bc`, `ri21_sc` | `6.4e-6 mV` | `3.5e-6 mV` |
+| `cav2p1` in `ma24_pc`, `ma25_bc`, `ri21_sc` | `2.8e-4` / `0.627` / `8.0e-5` | `5e-4` / `1.0` / `2e-4` |
+| `cav3p1_ma20_goc`, `cav3p1_ma24_pc`, `cav3p1_test2_pc24` | `0.039` / `0.166` / `0.180` | `0.06` / `0.25` / `0.25` |
+| `cav3p3_ma24_pc`, `cav3p3_ri21_sc` | `7.1e-15` / `6.9e-7` / `7.3e-9` | `1e-6` each |
+| The six `_frozen` Cav2.1, Cav3.1 and Cav3.3 configurations | `<= 2.3e-11` | `1e-6` each |
+| `calva_su15_dcn` | `3.2e-4` / `9.3e-5` / `9.3e-5` | `5e-4` / `2e-4` / `2e-4` |
+| `na_zh19_io` | `2.6e-5` / `4.5e-11` / `2.1e-10` | `5e-5` / `1e-6` / `1e-6` |
+| `kca2p2` in `ma20_goc`, `ma20_grc`, `ma25_bc`, `ri21_sc` | `4.2e-6` / `6.4e-6` / `3.5e-6` | `1e-5` each |
+
+- **Unfrozen GHK calcium channels** (`Cav2p1_*`, `Cav3p1_*`, `Cav3p3_*`): the
+  `.mod` files compute the GHK drive (`gk`, `g`, `ghk`) inside `rates()` in
+  the `DERIVATIVE` block. NEURON's finite-difference conductance therefore
+  treats the drive as constant. The staggered solver linearizes the whole
+  membrane current by autodiff, so the unfrozen classes include the drive's
+  voltage derivative in the implicit voltage step. The `_Frozen` classes
+  (`freeze_drive_gradient = True`) leave it out and match NEURON. The Cav2.1
+  `_Frozen` classes also use the `.mod`'s GHK constants (`F = 9.6485e4`,
+  `R = 8.3145`, `273.19 + celsius`); freezing alone leaves `7.4e-3 mV`. Both
+  linearizations are first-order accurate: against a `dt = 1e-4 ms` reference
+  at `dt = 0.01 ms`, the unfrozen and frozen Cav2.1 errors are `0.320` and
+  `0.311 mV` (Cav3.1: `0.082` and `0.084 mV`). Both class sets are kept: the
+  whole-cell models use the `_Frozen` Cav2.1 and Cav3.1 classes, and the
+  unfrozen classes keep the drive in reverse-mode gradients.
+  `Cav3p3_RI2021_SC` has no `_Frozen` class.
+- **`calva_su15_dcn`**: NEURON computes the membrane conductance as
+  `(i(v + 0.001) - i(v)) / 0.001`. With `perm = 1 cm/s` the GHK current is
+  stiff enough for that forward difference's truncation error to show; the
+  BrainCell formula matches the `.mod`. Using the same difference in the
+  BrainCell linearization gives `6.6e-10 mV`.
+- **`na_zh19_io`**: only the vinit case with `v_init = -50 mV`. At
+  `|v + 50| < 1e-6` the `.mod` evaluates `b_h` at `v + 50.000001`; BrainCell
+  takes the exact limit with `exprel` (see the `Na_ZH2019_IO` docstring), a
+  relative difference of `5e-8` in `b_h(-50)`. Copying the `.mod` branch gives
+  `4.5e-12 mV`.
+- **`kca2p2` (GoC, GrC, BC, SC)**: these `.mod` files initialize with
+  `SOLVE kin STEADYSTATE sparse`, a backward-Euler step of `dt = 1e9` from
+  zero. It leaves the initial state `6.1e-9` from the exact steady state
+  (`d(state)/dt = 8e-10 /ms` at `t = 0`). BrainCell solves the steady state
+  exactly, as the PC `.mod`'s `LINEAR` block does (that configuration agrees to
+  `5e-9 mV`). Setting NEURON's initial state to the exact steady state with an
+  `FInitializeHandler` gives `3.8e-12 mV`.
+
+Not addressed: the current (`ix`) traces of the two runners are one step
+apart, and NEURON's sample `k + 1` matches BrainCell's sample `k`. This affects
+the current metrics only, not voltage or gates.
 
 Run each workflow in a fresh process. Combining cell and channel suites in one
 pytest process can attempt to register the same NEURON mechanism from both the

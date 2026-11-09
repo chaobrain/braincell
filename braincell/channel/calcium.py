@@ -2324,14 +2324,23 @@ class Cav3p1_MA2020_GoC_Frozen(Cav3p1_MA2020_GoC):
 
     Notes
     -----
-    "Frozen" describes the gradient path, not the forward numerics and
-    not the channel states. Both gates keep integrating exactly as in
-    the base class -- nothing stops evolving. The whole class body is
+    "Frozen" describes the GHK drive's voltage derivative, not the
+    channel states. Both gates keep integrating exactly as in the
+    base class -- nothing stops evolving. The whole class body is
     ``freeze_drive_gradient = True``: :attr:`~braincell.channel.GhkHH.freeze_drive_gradient`
     routes the membrane potential through
     :func:`~braincell.channel.freeze_gradient` before it reaches the GHK
     helper, so the drive's explicit voltage dependence contributes nothing to
     reverse-mode gradients while the value it computes is unchanged.
+    Freezing also changes the simulated trajectory: the staggered
+    solver builds its implicit voltage step from the autodiff
+    derivative of the membrane current, so the frozen drive drops
+    out of that linearization. That is what the mod file does --
+    it computes the drive in its state block, so NEURON's
+    finite-difference conductance treats it as constant -- and the
+    frozen class matches NEURON to 1e-10 mV in the single-channel
+    comparison, where the unfrozen class differs by up to 0.18 mV.
+    Both are first-order accurate in ``dt``.
 
     The unfrozen ``V`` is still passed to
     :meth:`~braincell.channel._base.HH.conductance_factor`, but that
@@ -2418,9 +2427,9 @@ class Cav3p1_MA2024_PC_Frozen(Cav3p1_MA2024_PC):
     ``freeze_drive_gradient = True``, so a change to
     :class:`Cav3p1_MA2020_GoC` reaches both.
 
-    "Frozen" describes the gradient path, not the forward numerics and
-    not the channel states. Both gates keep integrating normally --
-    nothing stops evolving. :attr:`~braincell.channel.GhkHH.freeze_drive_gradient`
+    "Frozen" describes the GHK drive's voltage derivative, not the
+    channel states. Both gates keep integrating normally -- nothing
+    stops evolving. :attr:`~braincell.channel.GhkHH.freeze_drive_gradient`
     routes the membrane potential through
     :func:`~braincell.channel.freeze_gradient` before it reaches the GHK
     helper, so the drive's explicit voltage dependence contributes nothing to
@@ -2429,14 +2438,21 @@ class Cav3p1_MA2024_PC_Frozen(Cav3p1_MA2024_PC):
     :meth:`~braincell.channel._base.HH.conductance_factor`, but that
     method ignores its voltage argument and reads only the gate
     states, so the distinction affects neither value nor gradient.
+    Freezing also changes the simulated trajectory: the staggered
+    solver builds its implicit voltage step from the autodiff
+    derivative of the membrane current, so the frozen drive drops
+    out of that linearization. That is what the mod file does --
+    it computes the drive in its state block, so NEURON's
+    finite-difference conductance treats it as constant -- and the
+    frozen class matches NEURON to 1e-10 mV in the single-channel
+    comparison, where the unfrozen class differs by up to 0.18 mV.
+    Both are first-order accurate in ``dt``.
 
     The kinetics are those of ``PC/channel/Cav3p1_MA24_PC.mod``, which
     is identical to ``GoC/channel/Cav3p1_MA20_GoC.mod`` except for its
     ``SUFFIX`` line and a dropped ``INDEPENDENT`` statement. No mod
-    file ships a frozen-gradient variant: freezing is a BrainCell
-    autodiff facility with no counterpart in NMODL, so it is not an
-    import deviation and changes nothing a NEURON comparison would
-    observe.
+    file ships a separate frozen variant: the mod file's own drive
+    already behaves as frozen in the voltage step.
 
     As in :class:`Cav3p1_MA2020_GoC`, ``g_max`` is a permeability in
     ``cm/s`` rather than a conductance density,
@@ -3073,6 +3089,17 @@ class Cav2p1_MA2024_PC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2024_PC):
     states, so the distinction affects neither value nor gradient
     there.
 
+    Freezing, together with the helper swap below, also changes the
+    simulated trajectory: the staggered solver builds its implicit
+    voltage step from the autodiff
+    derivative of the membrane current, so the frozen drive drops
+    out of that linearization. That is what the mod file does --
+    it computes the drive in its state block, so NEURON's
+    finite-difference conductance treats it as constant -- and the
+    frozen class matches NEURON to 1e-10 mV in the single-channel
+    comparison, where the unfrozen class differs by up to 0.63 mV.
+    Both are first-order accurate in ``dt``.
+
     **The freezing is not the only difference from the unfrozen
     class.** ``_FrozenCav3p1Ghk`` also declares
     :attr:`~braincell.channel.GhkHH.ghk` as the module-level
@@ -3090,10 +3117,8 @@ class Cav2p1_MA2024_PC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2024_PC):
     here. The consequence is that this class's forward current
     differs from :class:`Cav2p1_MA2024_PC`'s by of order
     :math:`10^{-4}` in relative terms, and that this class is the
-    closer of the two to the mod file. Nothing in the mod file
-    corresponds to the freezing itself: it is a BrainCell autodiff
-    facility with no NMODL counterpart, so it is not an import
-    deviation and changes nothing a NEURON comparison would observe.
+    closer of the two to the mod file. Freezing alone leaves a
+    7e-3 mV difference from NEURON; the helper swap removes it.
 
     As in :class:`Cav2p1_RI2021_SC`, ``g_max`` is a permeability in
     ``cm/s`` rather than a conductance density, the mod file's
@@ -3177,11 +3202,12 @@ class Cav2p1_RI2021_SC_Frozen(_FrozenCav3p1Ghk, Cav2p1_RI2021_SC):
 
     Everything in :class:`Cav2p1_MA2024_PC_Frozen`'s Notes applies
     unchanged and is not repeated here: no channel state stops
-    evolving, the freezing affects reverse-mode gradients only, and
-    the frozen path uses the NMODL-constant GHK helper rather than
-    the shared :func:`~braincell.channel._base.ghk_flux`, so the
-    forward current differs slightly from
-    :class:`Cav2p1_RI2021_SC`'s.
+    evolving, the freezing removes the drive from both reverse-mode
+    gradients and the implicit voltage step, and the frozen path uses
+    the NMODL-constant GHK helper rather than the shared
+    :func:`~braincell.channel._base.ghk_flux`, so the forward current
+    differs slightly from :class:`Cav2p1_RI2021_SC`'s. Together these make this
+    class, not :class:`Cav2p1_RI2021_SC`, the one that matches NEURON.
 
     The ``RI2021`` import-deviations tables list no ``TABLE``
     removal, no ``derivimplicit`` -> ``cnexp`` substitution and no
@@ -3259,11 +3285,12 @@ class Cav2p1_MA2025_BC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2025_BC):
 
     Everything in :class:`Cav2p1_MA2024_PC_Frozen`'s Notes applies
     unchanged and is not repeated here: no channel state stops
-    evolving, the freezing affects reverse-mode gradients only, and
-    the frozen path uses the NMODL-constant GHK helper rather than
-    the shared :func:`~braincell.channel._base.ghk_flux`, so the
-    forward current differs slightly from
-    :class:`Cav2p1_MA2025_BC`'s.
+    evolving, the freezing removes the drive from both reverse-mode
+    gradients and the implicit voltage step, and the frozen path uses
+    the NMODL-constant GHK helper rather than the shared
+    :func:`~braincell.channel._base.ghk_flux`, so the forward current
+    differs slightly from :class:`Cav2p1_MA2025_BC`'s. Together these make this
+    class, not :class:`Cav2p1_MA2025_BC`, the one that matches NEURON.
 
     The ``MA2025`` import-deviations tables list no ``TABLE``
     removal, no ``derivimplicit`` -> ``cnexp`` substitution and no
@@ -4034,9 +4061,9 @@ class Cav3p3_MA2024_PC_Frozen(Cav3p3_MA2024_PC):
     constant and rate function comes from :class:`Cav3p3_MA2024_PC`,
     so a change to :class:`Cav3p3_RI2021_SC` reaches this class too.
 
-    "Frozen" describes the gradient path, not the forward numerics
-    and not the channel states. Both gates keep integrating normally
-    -- nothing stops evolving. :attr:`~braincell.channel.GhkHH.freeze_drive_gradient`
+    "Frozen" describes the GHK drive's voltage derivative, not the
+    channel states. Both gates keep integrating normally -- nothing
+    stops evolving. :attr:`~braincell.channel.GhkHH.freeze_drive_gradient`
     routes the membrane potential through
     :func:`~braincell.channel.freeze_gradient` before it reaches the GHK
     helper, so the drive's explicit voltage dependence contributes nothing to
@@ -4047,15 +4074,22 @@ class Cav3p3_MA2024_PC_Frozen(Cav3p3_MA2024_PC):
     there. **Unlike** :class:`Cav2p1_MA2024_PC_Frozen`, this class
     inherits the same ``_cav3p3_nmodl_ghk_flux`` helper its unfrozen
     counterpart uses, so freezing is the only difference between
-    the two and the forward current is unchanged.
+    the two and the current at a given state is unchanged.
+    Freezing also changes the simulated trajectory: the staggered
+    solver builds its implicit voltage step from the autodiff
+    derivative of the membrane current, so the frozen drive drops
+    out of that linearization. That is what the mod file does --
+    it computes the drive in its state block, so NEURON's
+    finite-difference conductance treats it as constant -- and the
+    frozen class matches NEURON to 1e-10 mV in the single-channel
+    comparison, where the unfrozen class differs by up to 6.9e-7 mV.
+    Both are first-order accurate in ``dt``.
 
     The kinetics are those of ``PC/channel/Cav3p3_MA24_PC.mod``,
     which is identical to ``SC/channel/Cav3p3_RI21_SC.mod`` apart
     from its ``SUFFIX`` line and a ``g_equiv`` diagnostic. No mod
-    file ships a frozen-gradient variant: freezing is a BrainCell
-    autodiff facility with no counterpart in NMODL, so it is not an
-    import deviation and changes nothing a NEURON comparison would
-    observe.
+    file ships a separate frozen variant: the mod file's own drive
+    already behaves as frozen in the voltage step.
 
     As in :class:`Cav3p3_RI2021_SC`, the mod file's current-law
     scaling is not dimensionally self-consistent and ``g_scale`` is

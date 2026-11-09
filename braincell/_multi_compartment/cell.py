@@ -1196,7 +1196,10 @@ class Cell(_CellFacade, HHTypedNeuron):
     def _raise_if_lumped_unsupported_declarations(self) -> None:
         """Reject declarations a lumped runtime cannot run before switching to it."""
         if self._reduction_models:
-            self._raise_if_lumped("A reduction model (add_reduction)")
+            raise NotImplementedError(
+                "A reduction model (add_reduction) is not supported on a lumped Cell (cv_policy=Lumped()) yet; "
+                "this cell already has one."
+            )
         for rule in self._place_rules:
             for mechanism in rule.mechanisms:
                 if isinstance(mechanism, SynapsePlacement):

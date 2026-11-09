@@ -392,9 +392,8 @@ def _observable_rows_and_sampler(cell, spec: RecordingSpec):
 
         if getattr(cell, "_is_lumped", False):
             # A lumped Cell's V has no CV axis: every pair is (member, the one CV).
+            # Recording scopes need a one-dimensional pop_size, as on cable cells.
             def sample():
-                if len(cell.pop_size) == 0:
-                    return u.math.reshape(cell.V.value, cell.V.value.shape + (1,))
                 pop = np.asarray([pair[0] for pair in spec.scope.pairs], dtype=np.int32)
                 return cell.V.value[..., pop]
 

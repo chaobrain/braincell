@@ -60,6 +60,40 @@ def _clamp():
     )
 
 
+def _late_current(t):
+    return u.math.where(t > 2.0 * u.ms, 0.02 * u.nA, 0.0 * u.nA)
+
+
+def _mixed_clamps():
+    return (
+        bc.mech.FunctionClamp(fn=_late_current),
+        bc.mech.CurrentClamp(durations=1.0 * u.ms, amplitudes=0.03 * u.nA),
+        bc.mech.SineClamp(
+            amplitude=0.05 * u.nA,
+            frequency=100.0 * u.Hz,
+            phase=0.3,
+            offset=0.01 * u.nA,
+            delay=1.0 * u.ms,
+            duration=3.0 * u.ms,
+        ),
+        bc.mech.CurrentClamp(delay=0.5 * u.ms, durations=2.0 * u.ms, amplitudes=0.04 * u.nA),
+    )
+
+
+class _NoopReduction:
+    def init_state(self, *args, **kwargs):
+        pass
+
+    def update(self, *args, **kwargs):
+        pass
+
+    def reset_state(self, *args, **kwargs):
+        pass
+
+    def reset(self):
+        pass
+
+
 def _point_cell(*, hh=True, clamp=False, solver=None, pop_size=N):
     cell = bc.Cell.point(pop_size, length=LENGTH, radius=RADIUS, V_init=-65.0 * u.mV, solver=solver)
     cell.paint(AllRegion(), *_mechanisms(hh))
@@ -153,6 +187,30 @@ class LumpedShapeLifecycleTest(unittest.TestCase):
         self.assertEqual(cell.V.value.shape, (N,))
         self.assertEqual(cell.spike.value.shape, (N,))
         self.assertEqual(cell.voltage_shape, (N,))
+        np.testing.assert_allclose(cell._lumped_runtime.area.to_decimal(u.um**2), _area().to_decimal(u.um**2))
+        self.assertIn("lumped=True", repr(cell))
+
+    def test_integration_hooks_match_compute_derivative(self) -> None:
+        reference = _point_cell(clamp=True, solver="rk4")
+        hooked = _point_cell(clamp=True, solver="rk4")
+        for cell in (reference, hooked):
+            cell.init_state()
+        with brainstate.environ.context(t=3.0 * u.ms, dt=DT):
+            reference.compute_derivative()
+            hooked.pre_integral()
+            hooked.compute_derivative()
+            hooked.post_integral()
+        np.testing.assert_array_equal(
+            hooked.V.derivative.to_decimal(u.mV / u.ms), reference.V.derivative.to_decimal(u.mV / u.ms)
+        )
+
+    def test_cable_runtime_views_raise(self) -> None:
+        cell = _point_cell()
+        cell.init_state()
+        for name in ("runtime", "n_point", "layouts"):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(RuntimeError, "lumped Cell"):
+                    getattr(cell, name)
 
     def test_batch_axis_and_reset_state(self) -> None:
         cell = _point_cell(clamp=True)
@@ -197,6 +255,46 @@ class LumpedShapeLifecycleTest(unittest.TestCase):
             values = result.samples[name].values.to_decimal(u.nA)
             self.assertEqual(values.shape, (8, N))
             np.testing.assert_allclose(values, np.repeat(expected[:, None], N, axis=1), atol=1e-7)
+
+    def test_every_clamp_type_matches_a_one_cv_cable_cell(self) -> None:
+        results = []
+        for cell, site in (
+            (bc.Cell.point(2), ()),
+            (bc.Cell(bc.Morphology.from_soma(), pop_size=2), (RootLocation(0.5),)),
+        ):
+            cell.paint(AllRegion(), *_mechanisms(False))
+            cell.place(*site, *_mixed_clamps())
+            cell.record("each", bc.observe.clamp_current(reduce="none"))
+            cell.init_state()
+            results.append(cell.run(dt=DT, duration=5.0 * u.ms).samples["each"].values.to_decimal(u.nA))
+        self.assertEqual(results[0].shape, (200, 8))
+        self.assertGreater(float(np.max(np.abs(results[0]))), 0.05)
+        np.testing.assert_allclose(results[0], results[1], rtol=0.0, atol=1e-12)
+
+    def test_spatial_parameters_are_evaluated_at_the_cv(self) -> None:
+        def run(g_max):
+            cell = bc.Cell.point(N, V_init=-65.0 * u.mV)
+            cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=g_max, E=-54.3 * u.mV))
+            cell.record("v", bc.observe.state("v"))
+            cell.init_state()
+            return cell.run(dt=DT, duration=2.0 * u.ms).samples["v"].values.to_decimal(u.mV)
+
+        constant = run(0.3 * u.mS / u.cm**2)
+        np.testing.assert_array_equal(run(lambda cv: 0.3 * u.mS / u.cm**2), constant)
+
+    def test_channel_named_like_an_ion_keeps_both(self) -> None:
+        traces = []
+        for name in (None, "na"):
+            cell = bc.Cell.point(N, V_init=-65.0 * u.mV)
+            cell.paint(
+                AllRegion(),
+                bc.mech.Ion("SodiumFixed", name="na"),
+                bc.mech.Channel("IL", name=name, g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+            )
+            cell.record("v", bc.observe.state("v"))
+            cell.init_state()
+            traces.append(cell.run(dt=DT, duration=2.0 * u.ms).samples["v"].values.to_decimal(u.mV))
+        np.testing.assert_array_equal(traces[0], traces[1])
 
     def test_reset_returns_to_declaring(self) -> None:
         cell = _point_cell(hh=False)
@@ -364,6 +462,42 @@ class LumpedCounterexampleTest(unittest.TestCase):
         with self.assertRaisesRegex(NotImplementedError, "lumped Cell"):
             cable.cv_policy = bc.Lumped()
         self.assertIsInstance(cable.cv_policy, bc.CVPerBranch)
+
+    def test_bad_spatial_parameters_raise_at_init_state(self) -> None:
+        cases = (
+            (ValueError, "raised ZeroDivisionError", lambda cv: 1 / 0),
+            (TypeError, "must return a scalar", lambda cv: np.ones(2) * u.mS / u.cm**2),
+            (TypeError, "numeric scalar or a Quantity", lambda cv: "x"),
+        )
+        for error, message, g_max in cases:
+            with self.subTest(message=message):
+                cell = bc.Cell.point(N)
+                cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=g_max, E=-54.3 * u.mV))
+                with self.assertRaisesRegex(error, message):
+                    cell.init_state()
+
+    def test_bad_ion_declarations_raise_at_init_state(self) -> None:
+        cases = (
+            ("canonical family key", bc.mech.Ion("SodiumFixed", name="k")),
+            ("unsupported runtime ion params", bc.mech.Ion("SodiumFixed", foo=1.0)),
+        )
+        for message, ion in cases:
+            with self.subTest(message=message):
+                cell = bc.Cell.point(N)
+                cell.paint(AllRegion(), ion)
+                with self.assertRaisesRegex(ValueError, message):
+                    cell.init_state()
+
+    def test_switching_to_lumped_rejects_cable_only_declarations(self) -> None:
+        with_reduction = bc.Cell(bc.Morphology.from_soma())
+        with_reduction.add_reduction("reduced", _NoopReduction())
+        with_junction = bc.Cell(bc.Morphology.from_soma())
+        with_junction.place(RootLocation(0.5), bc.mech.Junction())
+        for name, cell in (("reduction", with_reduction), ("junction", with_junction)):
+            with self.subTest(declaration=name):
+                with self.assertRaisesRegex(NotImplementedError, "lumped Cell"):
+                    cell.cv_policy = bc.Lumped()
+                self.assertIsInstance(cell.cv_policy, bc.CVPerBranch)
 
     def test_network_rejects_lumped_cell(self) -> None:
         network = bc.Network("lumped")

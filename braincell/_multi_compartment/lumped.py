@@ -153,17 +153,14 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> LumpedRuntime:
     ions: dict[str, object] = {}
     family_candidates: dict[str, list[str]] = {}
     class_candidates: dict[str, list[str]] = {}
-    ion_classes: dict[str, type] = {}
     schedule_pairs: list[tuple[Density, object]] = []
     channel_declarations: list[Density] = []
 
+    # Discretization has already rejected an ion or channel painted twice on
+    # the CV, so each instance name appears once here.
     for declaration in cv.density_mech:
-        if not isinstance(declaration, Density):
-            continue
         if declaration.category == "channel":
             channel_declarations.append(declaration)
-            continue
-        if declaration.category != "ion":
             continue
         runtime_cls = registry.get("ion", declaration.class_name)
         species_key = _runtime_ion_species_key(runtime_cls)
@@ -172,13 +169,6 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> LumpedRuntime:
             raise ValueError(
                 f"Ion instance name {name!r} conflicts with canonical family key for a different ion family."
             )
-        if name in ions:
-            if ion_classes[name] is not runtime_cls:
-                raise ValueError(
-                    f"Ion instance name {name!r} cannot mix classes "
-                    f"{ion_classes[name].__name__!r} and {runtime_cls.__name__!r}."
-                )
-            raise ValueError(f"Ion instance {name!r} is declared twice on the one CV of a lumped Cell.")
         invalid = set(declaration.params) - set(_supported_ion_runtime_params(runtime_cls))
         if invalid:
             raise ValueError(
@@ -187,7 +177,6 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> LumpedRuntime:
             )
         node = runtime_cls(size=pop_size, name=name, **_resolve_params(declaration, context))
         ions[name] = node
-        ion_classes[name] = runtime_cls
         family_candidates.setdefault(species_key, []).append(name)
         class_candidates.setdefault(runtime_cls.__name__, []).append(name)
         schedule_pairs.append((declaration, node))
@@ -310,31 +299,15 @@ class LumpedClamps:
         store = cell._get_clamp_store()
         self.n_component = len(store.id)
         self.state_buffers: dict[tuple[int, str], object] = {}
-        self._entries: list[tuple[int, object, np.ndarray | None, np.ndarray]] = []
-        rows = np.arange(self.n_population, dtype=np.int64)
-        component_rows = []
+        self._entries: list[tuple[int, object]] = []
+        # ``Cell.place`` admits only clamps on a lumped Cell, and only on the
+        # whole population (population views raise), so every placement
+        # covers every member. The clamp store numbers rows in placement
+        # order, so concatenating per-placement currents gives store order.
         for placement in cell.point_placements:
-            mechanism = placement.mechanism
-            if not isinstance(mechanism, CLAMP_TYPES):
-                continue
             key = int(placement.id)
-            self._allocate(key, mechanism)
-            if placement.population_index is None:
-                member = None
-                logical = key * self.n_population + rows
-            else:
-                member = np.zeros((self.n_population,), dtype=bool)
-                member[int(placement.population_index)] = True
-                member = member.reshape(self.pop_size)
-                logical = np.asarray([key * self.n_population + int(placement.population_index)], dtype=np.int64)
-            component_rows.append(store.row_indices(logical))
-            self._entries.append((key, self._tabulate(key, mechanism), member, component_rows[-1]))
-        order = np.concatenate(component_rows) if component_rows else np.zeros((0,), dtype=np.int64)
-        # ``evaluate`` concatenates the components in placement order; this
-        # gather (skipped when it is the identity) puts them in store order.
-        inverse = np.empty_like(order)
-        inverse[order] = np.arange(order.size)
-        self._component_order = None if np.array_equal(inverse, np.arange(order.size)) else inverse
+            self._allocate(key, placement.mechanism)
+            self._entries.append((key, self._tabulate(key, placement.mechanism)))
 
     def __len__(self) -> int:
         return len(self._entries)
@@ -405,20 +378,13 @@ class LumpedClamps:
         """
         total = 0.0
         parts = []
-        for key, table, member, _ in self._entries:
+        for key, table in self._entries:
             value = self._placement_current(key, table, t)
-            if member is None:
-                total = total + value
-                if self.with_components:
-                    parts.append(value.reshape(-1))
-            else:
-                total = total + jnp.where(member, value, 0.0)
-                if self.with_components:
-                    parts.append(value.reshape(-1)[np.flatnonzero(member.reshape(-1))])
+            total = total + value
+            if self.with_components:
+                parts.append(value.reshape(-1))
         density = u.Quantity(jnp.broadcast_to(jnp.asarray(total) * self._per_area, self.pop_size), self.density_unit)
         if not self.with_components:
             return density, None
         components = jnp.concatenate(parts) if parts else jnp.zeros((0,), dtype=float)
-        if self._component_order is not None:
-            components = components[self._component_order]
         return density, u.Quantity(components, u.nA)

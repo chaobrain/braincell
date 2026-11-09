@@ -104,6 +104,18 @@
   error, because the voltage was stored as an integer array. The values are now
   converted to the default float dtype (`brainstate.environ.dftype()`) when the
   cell materializes them, so the run matches the float declaration bitwise.
+
+- `Network.run` / `Network.prepare_run` with `event_backend="brainevent"`
+  run again (CELL-20). The backend used `brainevent.coomv`, which brainevent
+  removed in 0.1.0, so on every brainevent release since then it raised
+  `RuntimeError`. It now uses `brainevent.csrmv` (available from brainevent
+  0.0.7, the existing floor, through 0.4.1) and matches `"scatter"` to float
+  rounding, gradients included. `event_backend="auto"` now always resolves to
+  `"scatter"`, which it already did on brainevent >= 0.1.0; with the default
+  `brainevent_backend="jax_raw"` the brainevent operator lowers to the same
+  gather and scatter-add. A brainevent without `csrmv` is rejected at setup
+  with a `RuntimeError` that points to `"scatter"`.
+
 - `ralston4` uses Ralston's exact coefficients. braincell stored them rounded
   to 8 decimal places (e.g. `0.17476028` for `(263 + 24*sqrt(5))/1812 =
   0.1747602822...`), which breaks the fourth-order conditions at the 1e-8

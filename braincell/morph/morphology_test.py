@@ -22,10 +22,11 @@ from unittest.mock import patch
 import brainunit as u
 import numpy as np
 
-from braincell import Branch, Morphology
+from braincell import Branch, Cell, Morphology, SingleCompartment
 from braincell.filter import BranchSlice, LocsetMask, RootLocation, Terminals
 from braincell.io._testing import ALLOWED_TYPES, FIXTURE_DIR, VALID_SWC_FIXTURES
 from braincell.morph import MorphoBranch, MorphoMetric
+from braincell.morph.branch import _ALLOWED_BRANCH_TYPES
 from braincell.morph._testing import (
     make_apical,
     make_axon,
@@ -725,6 +726,60 @@ class MorphoReservedNameTest(unittest.TestCase):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(ValueError, "reserved by the Morphology API"):
                     self._attach_named(self._tree(), name)
+
+    def test_branch_type_names_stay_available_as_branch_names(self) -> None:
+        # A public Morphology name is a reserved branch name, so a new method
+        # named after a branch type would break every tree that uses it: a
+        # ``Morphology.soma`` constructor was proposed and renamed for this.
+        names = sorted(_ALLOWED_BRANCH_TYPES) + ["dend", "apic"]
+        for name in names:
+            with self.subTest(name=name):
+                tree = Morphology.from_root(make_soma(), name=name)
+                self.assertEqual(getattr(tree, name).name, name)
+
+
+class MorphoFromSomaTest(unittest.TestCase):
+    """``Morphology.from_soma`` builds the one-branch soma a point neuron needs."""
+
+    def test_matches_the_two_step_construction(self) -> None:
+        tree = Morphology.from_soma(length=20.0 * u.um, radius=10.0 * u.um)
+        two_step = Morphology.from_root(
+            Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma"),
+            name="soma",
+        )
+        self.assertEqual(len(tree.branches), 1)
+        self.assertEqual(tree.root.name, "soma")
+        self.assertEqual(tree.root.branch.type, "soma")
+        self.assertEqual(tree.root.branch, two_step.root.branch)
+        self.assertEqual(tree.total_area, two_step.total_area)
+
+    def test_cell_membrane_area_is_the_lateral_cylinder_area(self) -> None:
+        tree = Morphology.from_soma(length=20.0 * u.um, radius=10.0 * u.um)
+        area = Cell(tree).cvs[0].area.to_decimal(u.um**2)
+        # Float32 by default, so compare at its precision.
+        np.testing.assert_allclose(area, 2.0 * np.pi * 10.0 * 20.0, rtol=1e-6)
+
+    def test_defaults_give_the_single_compartment_default_area(self) -> None:
+        expected = SingleCompartment(1).area.to_decimal(u.um**2)
+        np.testing.assert_allclose(Morphology.from_soma().total_area.to_decimal(u.um**2), expected, rtol=1e-6)
+
+    def test_name_is_passed_to_the_root(self) -> None:
+        tree = Morphology.from_soma(name="cell_body")
+        self.assertEqual(tree.root.name, "cell_body")
+        self.assertEqual(tree.root.branch.type, "soma")
+
+    def test_rejects_values_that_are_not_positive_scalar_lengths(self) -> None:
+        for field in ("length", "radius"):
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(TypeError, f"{field} must satisfy unit"):
+                    Morphology.from_soma(**{field: 20.0})
+                with self.assertRaisesRegex(TypeError, f"{field} must satisfy unit"):
+                    Morphology.from_soma(**{field: 20.0 * u.mV})
+                for bad in (0.0 * u.um, -1.0 * u.um):
+                    with self.assertRaisesRegex(ValueError, f"{field} must satisfy >"):
+                        Morphology.from_soma(**{field: bad})
+                with self.assertRaisesRegex(ValueError, "expected 0D"):
+                    Morphology.from_soma(**{field: [10.0, 20.0] * u.um})
 
 
 class MorphoDeepTreeTest(unittest.TestCase):

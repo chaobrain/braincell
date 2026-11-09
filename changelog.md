@@ -78,6 +78,18 @@
   ones it changes: a Hodgkin-Huxley neuron (10 ms, dt = 0.1 ms, float64)
   differs from the old step by 2.6e-2 relative (1.9 mV).
 
+### New Features
+
+- **`Morphology.from_soma(length=10 * u.um, radius=5 * u.um, name="soma")`**
+  builds a morphology of one cylindrical soma branch in one call, replacing
+  `Morphology.from_root(Branch.from_lengths(lengths=[L], radii=[r, r],
+  type="soma"), name="soma")`. Its membrane area is the lateral area
+  `2 * pi * r * L`; the defaults give `SingleCompartment`'s default area.
+  It is the geometry of the planned point-neuron `Cell` (CELL-21a). No
+  public `Morphology` name may equal a branch type or a common short branch
+  name (`dend`, `apic`), because public names are reserved as branch names;
+  a test now guards this.
+
 ### Changes & Improvements
 
 - `Cell.solver_name` records the canonical name of braincell's own steps:

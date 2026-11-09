@@ -269,8 +269,8 @@ def state_grouping(enabled: bool = True) -> Iterator[bool]:
     enabled : bool, default True
         ``True`` inside a :class:`braincell.Cell`, ``False`` inside a
         :class:`braincell.SingleCompartment`. Both hosts set it
-        explicitly, so a :class:`braincell.Network` holding a mix of the
-        two is correct regardless of construction order.
+        explicitly, so a program that builds both is correct regardless
+        of construction order.
 
     Yields
     ------

@@ -98,6 +98,18 @@
 
 ### Bug Fixes
 
+- `Network.add_population` (and `Population`) reject a `SingleCompartment`
+  with a `TypeError` that says to build the neuron as a `Cell`. The check
+  accepted any model with a one-dimensional `pop_size`, so a
+  `SingleCompartment` passed it and then failed with
+  `AttributeError: ... '_bind_network_owner'`. The `state_grouping` docstring
+  and a `SingleCompartment` comment no longer claim a `Network` can hold both
+  model types, and the `SingleCompartment.compute_derivative` docstring no
+  longer claims `I_ext` may be a total current: it must match the unit system
+  of `C`. `examples/single_compartment/SC05_*.py` (and SC06, which imports
+  it) failed at construction because it assigned to the read-only `area`
+  property; the factor is now `area_factor`.
+
 - An integer-valued `V_init` or `V_th` (e.g. `V_init=-65 * u.mV`, also as the
   result of a callable `V_init`) made `Cell.run` fail with a confusing
   "scan body function carry input and carry output must have equal types"

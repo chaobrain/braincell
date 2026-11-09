@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 
 class ThalamusNeuron(braincell.SingleCompartment):
     def compute_derivative(self, I_ext=0. * u.nA):
-        I_ext = self.sum_current_inputs(I_ext, self.V.value) * self.area
+        I_ext = self.sum_current_inputs(I_ext, self.V.value) * self.area_factor
         for key, ch in self.nodes(braincell.IonChannel, allowed_hierarchy=(1, 1)).items():
             I_ext = I_ext + ch.current(self.V.value)
         self.V.derivative = I_ext / self.C
@@ -55,7 +55,7 @@ class HTC(ThalamusNeuron):
     ):
         super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV, solver=solver)
 
-        self.area = 1e-3 / (2.9e-4 * u.cm ** 2)
+        self.area_factor = 1e-3 / (2.9e-4 * u.cm ** 2)
 
         self.na = braincell.ion.SodiumFixed(size, E=50. * u.mV)
         self.na.add(INa=braincell.channel.Na_Ba2002(size, V_sh=-30 * u.mV))
@@ -93,7 +93,7 @@ class RTC(ThalamusNeuron):
     ):
         super().__init__(size, V_initializer=V_initializer, V_th=20 * u.mV, solver=solver)
 
-        self.area = 1e-3 / (2.9e-4 * u.cm ** 2)
+        self.area_factor = 1e-3 / (2.9e-4 * u.cm ** 2)
 
         self.na = braincell.ion.SodiumFixed(size)
         self.na.add(INa=braincell.channel.Na_Ba2002(size, V_sh=-40 * u.mV))
@@ -131,7 +131,7 @@ class IN(ThalamusNeuron):
     ):
         super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV, solver=solver)
 
-        self.area = 1e-3 / (1.7e-4 * u.cm ** 2)
+        self.area_factor = 1e-3 / (1.7e-4 * u.cm ** 2)
 
         self.na = braincell.ion.SodiumFixed(size)
         self.na.add(INa=braincell.channel.Na_Ba2002(size, V_sh=-30 * u.mV))
@@ -168,7 +168,7 @@ class TRN(ThalamusNeuron):
     ):
         super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV, solver=solver)
 
-        self.area = 1e-3 / (1.43e-4 * u.cm ** 2)
+        self.area_factor = 1e-3 / (1.43e-4 * u.cm ** 2)
 
         self.na = braincell.ion.SodiumFixed(size)
         self.na.add(INa=braincell.channel.Na_Ba2002(size, V_sh=-40 * u.mV))

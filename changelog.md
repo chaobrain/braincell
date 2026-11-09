@@ -92,6 +92,14 @@
 
 ### Changes & Improvements
 
+- **`Cell.run` costs less per call.** Each call now dispatches one cached
+  compiled program: segment start / stop times and the selection of
+  fixed-schedule samples moved inside it, and the schedule checks are
+  computed once per run shape. A 10-step run of a 100-member cell with one
+  voltage recording dropped from 1.12 to 0.42 ms per call on CPU and from
+  2.58 to 0.90 ms on GPU (RTX 3090); results are unchanged.
+  `RunResult.start_time` is now the cell time at the start of the call
+  rather than `stop_time - duration`, so contiguous segments chain exactly.
 - `Cell.solver_name` records the canonical name of braincell's own steps:
   `Cell(solver="stagger").solver_name == "staggered"`.
 - `ind_exp_euler` computes each state's update with

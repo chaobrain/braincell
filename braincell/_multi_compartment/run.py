@@ -121,7 +121,16 @@ class RunResult:
 
 
 def run(rcell: "Cell", *, dt, duration) -> RunResult:
-    """Advance ``rcell`` for ``duration`` at ``dt`` and collect recordings."""
+    """Advance ``rcell`` for ``duration`` at ``dt`` and collect recordings.
+
+    Notes
+    -----
+    Each call dispatches one cached, jitted program: the step loop, the
+    segment start / stop times and the selection of fixed-schedule samples
+    all run inside it. Python work per call is limited to argument checks,
+    the cache lookup and wrapping the outputs, so short repeated runs are not
+    dominated by eager array operations.
+    """
     _validate_time_quantity(dt, name="dt")
     _validate_time_quantity(duration, name="duration")
     n_steps = _duration_steps(duration, dt)
@@ -129,66 +138,49 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
 
     compiled_recordings = rcell._compiled_recordings(dt)
     ordered_probe_names = () if rcell._uses_reduction else tuple(sorted(probes.probe_names(rcell)))
-    schedule_issues = _differentiable_schedule_issues(compiled_recordings, dt=dt, n_steps=n_steps)
+    plan = _cached_run_plan(
+        rcell,
+        dt=dt,
+        n_steps=n_steps,
+        compiled_recordings=compiled_recordings,
+        ordered_probe_names=ordered_probe_names,
+    )
 
     with brainstate.environ.context(dt=dt):
-        relative_times = u.math.arange(n_steps) * brainstate.environ.get_dt()
-        cached_run = _cached_run_loop(
-            rcell,
-            dt=dt,
-            n_steps=n_steps,
-            compiled_recordings=compiled_recordings,
-            ordered_probe_names=ordered_probe_names,
-        )
-        times, traces_over_time = cached_run(relative_times)
+        times, start_time, stop_time, recorded, probe_values = plan.loop()
 
     traced = is_traced_value(times)
-    if traced and schedule_issues:
-        details = "; ".join(schedule_issues)
+    if traced and plan.schedule_issues:
+        details = "; ".join(plan.schedule_issues)
         raise ValueError(
             "Cell.run(...) recording under jax.jit/grad requires start=0 and duration "
             "to be an integer multiple of every recording period; "
             f"incompatible recordings: {details}. Adjust start, period, or duration."
         )
-    if not traced:
-        _warn_for_variable_length_schedules(compiled_recordings, dt=dt, n_steps=n_steps, duration=duration)
-
-    n_output = len(compiled_recordings) + len(ordered_probe_names)
-    values_tuple = _normalize_loop_outputs(
-        traces_over_time,
-        count=n_output,
-        prefix="Cell.run(...)",
-        noun="trace arrays",
-    )
-    recording_values = values_tuple[: len(compiled_recordings)]
-    probe_values = values_tuple[len(compiled_recordings) :]
-    start_time = rcell.current_time - duration
-    stop_time = rcell.current_time
+    if not traced and plan.unaligned_names:
+        warnings.warn(
+            "Cell.run(...) duration "
+            f"{duration!r} is not an integer multiple of the recording period for {plan.unaligned_names}; "
+            "eager mode returns variable-length sample blocks, but this schedule is unsupported "
+            "under jax.jit/grad. Adjust period or duration for differentiable recording.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
 
     samples = {}
-    for compiled, values in zip(compiled_recordings, recording_values):
-        period_steps = _recording_steps(compiled.schema.period, dt)
-        if _has_fixed_shape_schedule(compiled, dt=dt, n_steps=n_steps):
-            indices = _fixed_recording_indices(
-                start_time,
-                dt=dt,
-                period_steps=period_steps,
-                n_steps=n_steps,
-            )
-            selected = values[indices]
-            first_time = times[indices[0]]
-        else:
+    for compiled, fixed, (values, first_time) in zip(compiled_recordings, plan.fixed_schedules, recorded):
+        if not fixed:
             mask = _recording_time_mask(times, compiled.schema)
-            selected = values[mask]
+            values = values[mask]
             first_time = None if not np.any(mask) else times[int(np.flatnonzero(mask)[0])]
         samples[compiled.spec.name] = SampleBlock(
-            values=selected,
+            values=values,
             schema=compiled.schema,
             segment_start=start_time,
             segment_stop=stop_time,
             first_time=first_time,
         )
-    traces = {name: trace for name, trace in zip(ordered_probe_names, probe_values)}
+    traces = dict(zip(ordered_probe_names, probe_values))
     traces.update({name: block.values for name, block in samples.items()})
     return RunResult(
         time=times,
@@ -200,22 +192,33 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     )
 
 
-def _cached_run_loop(
+@dataclass(frozen=True)
+class _RunPlan:
+    """Static schedule facts and the jitted loop for one run shape."""
+
+    loop: object
+    fixed_schedules: tuple[bool, ...]
+    schedule_issues: tuple[str, ...]
+    unaligned_names: str
+
+
+def _cached_run_plan(
     rcell: "Cell",
     *,
     dt,
     n_steps: int,
     compiled_recordings: tuple,
     ordered_probe_names: tuple[str, ...],
-):
-    """Return a persistent jitted loop for one run shape.
+) -> _RunPlan:
+    """Return the persistent plan for one run shape.
 
     Notes
     -----
     ``brainstate.transform.for_loop`` builds a fresh ``scan`` when called
     from a new Python closure. Caching the enclosing jitted function avoids
     paying XLA compile time on repeated ``Cell.run`` calls with the same
-    timestep, step count, and probe layout.
+    timestep, step count, and probe layout. The schedule checks depend on
+    the same key, so they are computed once here as well.
     """
     cache = rcell._run_loop_cache
     key = (
@@ -227,23 +230,52 @@ def _cached_run_loop(
     )
     cached = cache.get(key)
     if cached is None:
-        cached = _make_run_loop(
-            rcell,
-            dt=dt,
-            compiled_recordings=compiled_recordings,
-            ordered_probe_names=ordered_probe_names,
+        fixed_schedules = tuple(
+            _has_fixed_shape_schedule(compiled, dt=dt, n_steps=n_steps) for compiled in compiled_recordings
+        )
+        unaligned = tuple(
+            compiled for compiled in compiled_recordings if n_steps % _recording_steps(compiled.schema.period, dt) != 0
+        )
+        cached = _RunPlan(
+            loop=_make_run_loop(
+                rcell,
+                dt=dt,
+                n_steps=n_steps,
+                compiled_recordings=compiled_recordings,
+                fixed_schedules=fixed_schedules,
+                ordered_probe_names=ordered_probe_names,
+            ),
+            fixed_schedules=fixed_schedules,
+            schedule_issues=_differentiable_schedule_issues(compiled_recordings, dt=dt, n_steps=n_steps),
+            unaligned_names=", ".join(repr(compiled.spec.name) for compiled in unaligned),
         )
         cache[key] = cached
     return cached
 
 
-def _make_run_loop(rcell: "Cell", *, dt, compiled_recordings: tuple, ordered_probe_names: tuple[str, ...]):
-    """Create the jitted stateful run loop for a fixed observer layout."""
+def _make_run_loop(
+    rcell: "Cell",
+    *,
+    dt,
+    n_steps: int,
+    compiled_recordings: tuple,
+    fixed_schedules: tuple[bool, ...],
+    ordered_probe_names: tuple[str, ...],
+):
+    """Create the jitted stateful run loop for a fixed observer layout.
 
-    def _run_loop(relative_times):
+    The loop returns ``(times, start_time, stop_time, recorded, probes)``.
+    ``recorded`` holds one ``(values, first_time)`` pair per recording: the
+    selected samples for a fixed-shape schedule, or every step's values and
+    ``None`` for a variable-length one (selected eagerly by the caller).
+    """
+    n_recordings = len(compiled_recordings)
+    period_steps = tuple(_recording_steps(compiled.schema.period, dt) for compiled in compiled_recordings)
+
+    def _run_loop():
         with brainstate.environ.context(dt=dt):
             start_t = rcell.current_time
-            times = start_t + relative_times
+            times = start_t + u.math.arange(n_steps) * brainstate.environ.get_dt()
             with brainstate.environ.context(t=start_t):
                 rcell._prepare_next_synapse_inputs()
 
@@ -278,8 +310,23 @@ def _make_run_loop(rcell: "Cell", *, dt, compiled_recordings: tuple, ordered_pro
                 return recording_snapshot + tuple(probe_snapshot[name] for name in ordered_probe_names)
 
             traces_over_time = brainstate.transform.for_loop(_step, times)
-            rcell._set_current_time(start_t + int(times.shape[0]) * brainstate.environ.get_dt())
-        return times, traces_over_time
+            stop_t = start_t + n_steps * brainstate.environ.get_dt()
+            rcell._set_current_time(stop_t)
+
+        values = _normalize_loop_outputs(
+            traces_over_time,
+            count=n_recordings + len(ordered_probe_names),
+            prefix="Cell.run(...)",
+            noun="trace arrays",
+        )
+        recorded = []
+        for index, fixed in enumerate(fixed_schedules):
+            if fixed:
+                indices = _fixed_recording_indices(start_t, dt=dt, period_steps=period_steps[index], n_steps=n_steps)
+                recorded.append((values[index][indices], times[indices[0]]))
+            else:
+                recorded.append((values[index], None))
+        return times, start_t, stop_t, tuple(recorded), tuple(values[n_recordings:])
 
     return brainstate.transform.jit(_run_loop)
 
@@ -334,23 +381,6 @@ def _differentiable_schedule_issues(compiled_recordings, *, dt, n_steps: int) ->
         if reasons:
             issues.append(f"{compiled.spec.name!r} ({', '.join(reasons)})")
     return tuple(issues)
-
-
-def _warn_for_variable_length_schedules(compiled_recordings, *, dt, n_steps: int, duration) -> None:
-    unaligned = tuple(
-        compiled for compiled in compiled_recordings if n_steps % _recording_steps(compiled.schema.period, dt) != 0
-    )
-    if not unaligned:
-        return
-    names = ", ".join(repr(compiled.spec.name) for compiled in unaligned)
-    warnings.warn(
-        "Cell.run(...) duration "
-        f"{duration!r} is not an integer multiple of the recording period for {names}; "
-        "eager mode returns variable-length sample blocks, but this schedule is unsupported "
-        "under jax.jit/grad. Adjust period or duration for differentiable recording.",
-        RuntimeWarning,
-        stacklevel=3,
-    )
 
 
 def _fixed_recording_indices(start_time, *, dt, period_steps: int, n_steps: int):

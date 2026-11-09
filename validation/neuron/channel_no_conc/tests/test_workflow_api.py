@@ -161,6 +161,7 @@ class WorkflowInputTest(unittest.TestCase):
                 "cav1p2_ma25_bc",
                 "cav1p3_ma25_bc",
                 "cav2p1_ma25_bc",
+                "cav2p1_ma25_bc_frozen",
                 "cav3p2_ma25_bc",
                 "hcn1_ma25_bc",
                 "kca1p1_ma25_bc",
@@ -188,6 +189,7 @@ class WorkflowInputTest(unittest.TestCase):
                 "cav1p3_ma20_goc",
                 "nav1p6_ma20_goc",
                 "cav3p1_ma20_goc",
+                "cav3p1_ma20_goc_frozen",
                 "hcn1_ma20_goc",
                 "hcn2_ma20_goc",
                 "km_ma20_goc",
@@ -231,6 +233,7 @@ class WorkflowInputTest(unittest.TestCase):
             set(records_by_name),
             {
                 "cav2p1_ri21_sc",
+                "cav2p1_ri21_sc_frozen",
                 "cav3p2_ri21_sc",
                 "cav3p3_ri21_sc",
                 "hcn1_ri21_sc",

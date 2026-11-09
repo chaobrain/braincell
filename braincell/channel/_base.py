@@ -1048,6 +1048,10 @@ class GhkHH(HH):
         ``V`` *before* the shift: ``stop_gradient(V) - V_sh`` leaves a live
         gradient path to ``V_sh`` that ``stop_gradient(V - V_sh)`` would kill,
         and the published frozen variants were written the first way.
+        Freezing also changes the simulation, not only gradients: the
+        staggered solver linearizes the membrane current by autodiff for its
+        implicit voltage step, so a frozen drive is held constant there, as
+        NEURON holds a drive that a ``.mod`` file computes in its state block.
     ``permeability``
         The scale factor. Defaults to ``self.g_max``, which occupies the
         permeability slot a textbook GHK equation writes as :math:`P_s`.

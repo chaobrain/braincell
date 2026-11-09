@@ -103,14 +103,39 @@ def _configure_runtime_subsolvers(
     substeps: int,
 ) -> None:
     """Apply declaration-local or Cell-wide independent schedules."""
-    fallback_solver = get_integrator(solver)
-    records: dict[int, dict[str, object]] = {}
-
+    pairs = []
     for layout in runtime.layouts:
         declaration = runtime.layout_mechanisms[layout.id]
         if not isinstance(declaration, Density):
             continue
-        node = runtime.runtime_nodes.get(layout.id)
+        pairs.append((declaration, runtime.runtime_nodes.get(layout.id)))
+    apply_subsolver_schedule(pairs, solver=solver, substeps=substeps)
+
+
+def apply_subsolver_schedule(pairs, *, solver, substeps: int) -> None:
+    """Set the independent schedule of each Markov channel and kinetic ion.
+
+    Parameters
+    ----------
+    pairs : iterable of (Density, object)
+        Each density declaration with the runtime node built from it. A node
+        may appear in several pairs (one ion instance painted twice).
+    solver : str or callable
+        Cell-wide fallback subsolver.
+    substeps : int
+        Cell-wide fallback substep count.
+
+    Raises
+    ------
+    ValueError
+        If a declaration sets ``solver``/``substeps`` on a node that is neither
+        a Markov channel nor a kinetic ion, or two declarations give one node
+        conflicting schedules.
+    """
+    fallback_solver = get_integrator(solver)
+    records: dict[int, dict[str, object]] = {}
+
+    for declaration, node in pairs:
         supports_schedule = isinstance(node, (Markov, KineticIon))
         has_override = declaration.solver is not None
         if has_override and not supports_schedule:
@@ -399,6 +424,59 @@ def _instantiate_runtime_node(
         size = pop_size + (layout.spatial_axis_len,)
     node = runtime_cls(size=size, **_constructor_parameter_values(params))
     _attach_runtime_parameter_states(node, params)
+    point_mask = None
+    if layout.layout == "dense" and layout.cv_mask is not None and not np.all(layout.cv_mask):
+        point_mask = layout.cv_mask
+    bound_ion_keys, current_owner_key = install_channel_on_ions(
+        node,
+        runtime_cls=runtime_cls,
+        mechanism=mechanism,
+        ions=ions,
+        ion_aliases=ion_aliases,
+        ion_family_candidates=ion_family_candidates,
+        layout_id=layout.id,
+        point_mask=point_mask,
+    )
+    return node, bound_ion_keys, current_owner_key
+
+
+def install_channel_on_ions(
+    node: object,
+    *,
+    runtime_cls: type,
+    mechanism: Density,
+    ions: dict[str, object],
+    ion_aliases: dict[str, str],
+    ion_family_candidates: dict[str, tuple[str, ...]],
+    layout_id: int,
+    point_mask=None,
+) -> tuple[tuple[str, ...], str | tuple[str, ...] | None]:
+    """Bind one runtime channel to its ions and add it to its owner ions.
+
+    Parameters
+    ----------
+    node : Channel
+        Runtime channel instance.
+    runtime_cls : type
+        Its registered class.
+    mechanism : Density
+        The channel declaration (``ion_name`` / ``ion_names`` select ions).
+    ions, ion_aliases, ion_family_candidates : dict
+        Runtime ions and the lookup tables built with them.
+    layout_id : int
+        Disambiguates channel keys when one ion carries two channels with the
+        same instance name.
+    point_mask : ndarray of bool, optional
+        CV mask of a channel that covers only some CVs.
+
+    Returns
+    -------
+    bound_ion_keys : tuple of str
+        Keys of the ions the channel reads.
+    current_owner_key : str, tuple of str, or None
+        Keys of the ions that own its current; ``None`` for a channel that
+        is not owned by an ion (it belongs at the neuron's root level).
+    """
     bound_ions, current_owner_specs = _resolve_channel_runtime_bindings(
         runtime_cls=runtime_cls,
         mechanism=mechanism,
@@ -407,13 +485,12 @@ def _instantiate_runtime_node(
         ion_family_candidates=ion_family_candidates,
     )
     current_owner_keys = tuple(ion_key for _, ion_key in current_owner_specs)
-    if current_owner_specs:
-        if layout.layout == "dense" and layout.cv_mask is not None and not np.all(layout.cv_mask):
-            setattr(node, "_point_mask", layout.cv_mask)
+    if current_owner_specs and point_mask is not None:
+        setattr(node, "_point_mask", point_mask)
     state_owner_assigned = False
     for component_key, current_owner_key in current_owner_specs:
         owner_ion = ions[current_owner_key]
-        channel_key = _unique_ion_channel_key(owner_ion, mechanism.instance_name, layout_id=layout.id)
+        channel_key = _unique_ion_channel_key(owner_ion, mechanism.instance_name, layout_id=layout_id)
         if component_key is None and len(bound_ions) == 1 and bound_ions[0][0] == current_owner_key:
             owner_ion.add(**{channel_key: node})
             continue
@@ -429,8 +506,8 @@ def _instantiate_runtime_node(
             component_key=component_key,
             owns_state=owns_state,
         )
-        if layout.layout == "dense" and layout.cv_mask is not None and not np.all(layout.cv_mask):
-            setattr(wrapper, "_point_mask", layout.cv_mask)
+        if point_mask is not None:
+            setattr(wrapper, "_point_mask", point_mask)
         owner_ion.add(**{channel_key: wrapper})
     current_owner_key = (
         None
@@ -439,7 +516,7 @@ def _instantiate_runtime_node(
         if len(current_owner_keys) == 1
         else current_owner_keys
     )
-    return node, tuple(ion_key for ion_key, _ in bound_ions), current_owner_key
+    return tuple(ion_key for ion_key, _ in bound_ions), current_owner_key
 
 
 def _install_merged_channel_nodes(

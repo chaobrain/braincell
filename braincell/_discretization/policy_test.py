@@ -28,6 +28,7 @@ from braincell import (
     CableProperty,
     Cell,
     DLambda,
+    Lumped,
     MaxCVLen,
     Morphology,
 )
@@ -123,6 +124,17 @@ class CVPolicyTest(unittest.TestCase):
             Cell(tree, cv_policy=CVPerBranchList(cv_per_branch=(1, True, 3)))
         with self.assertRaises(ValueError):
             Cell(tree, cv_policy=CVPerBranchList(cv_per_branch=(1, 0, 3)))
+
+    def test_lumped_gives_one_cv_on_a_single_branch(self) -> None:
+        morpho = Morphology.from_soma(length=20.0 * u.um, radius=10.0 * u.um)
+        self.assertEqual(Lumped().resolve_cv_bounds(morpho), (((0.0, 1.0),),))
+        cell = Cell(morpho, cv_policy=Lumped())
+        self.assertEqual(cell.n_cv, 1)
+        self.assertEqual(Lumped(), Lumped())
+
+    def test_lumped_rejects_a_branched_morphology(self) -> None:
+        with self.assertRaisesRegex(ValueError, "single-branch morphology, got 2 branches"):
+            Lumped().resolve_cv_bounds(_build_two_branch_tree())
 
     def test_max_cv_len_resolve_bounds_on_policy(self) -> None:
         tree = _build_two_branch_tree()

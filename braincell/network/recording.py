@@ -377,10 +377,28 @@ def _observable_rows_and_sampler(cell, spec: RecordingSpec):
 
         return rows, sample
 
+    if getattr(cell, "_is_lumped", False) and not isinstance(
+        observable, (_CellStateObservable, _ClampCurrentObservable)
+    ):
+        raise NotImplementedError(
+            f"Recording {type(observable).__name__} is not supported on a lumped Cell (cv_policy=Lumped()) yet; "
+            'record the voltage (observe.state("v")) or clamp current.'
+        )
+
     if isinstance(observable, _CellStateObservable):
         if observable.field != "v":
             raise KeyError(f"Cell state {observable.field!r} is not recordable in v1.")
         rows = tuple(_spatial_row(cell, pair, field="v") for pair in spec.scope.pairs)
+
+        if getattr(cell, "_is_lumped", False):
+            # A lumped Cell's V has no CV axis: every pair is (member, the one CV).
+            def sample():
+                if len(cell.pop_size) == 0:
+                    return u.math.reshape(cell.V.value, cell.V.value.shape + (1,))
+                pop = np.asarray([pair[0] for pair in spec.scope.pairs], dtype=np.int32)
+                return cell.V.value[..., pop]
+
+            return rows, sample
 
         def sample():
             cv = np.asarray([pair[1] for pair in spec.scope.pairs], dtype=np.int32)

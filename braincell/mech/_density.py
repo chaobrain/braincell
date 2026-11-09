@@ -45,7 +45,7 @@ from typing import Any, Callable, ClassVar, Mapping
 
 from braincell.mech._base import Mechanism
 from braincell.mech._params import Params
-from braincell.mech._registry import _CATEGORY_CHANNEL, _CATEGORY_ION, get_registry
+from braincell.mech._registry import _CATEGORY_CHANNEL, _CATEGORY_ION, _runtime_base, get_registry
 from braincell.mech._validate import require_fraction, require_str
 
 __all__ = [
@@ -69,10 +69,11 @@ class Density(Mechanism):
     ----------
     class_name : str or type
         Registry key for the concrete runtime class, or a class object
-        whose canonical name the registry already knows (e.g.
-        ``braincell.ion.PotassiumFixed``). A type argument is resolved
-        through :func:`braincell.mech.get_registry` at construction
-        time; the stored :attr:`class_name` is always a string.
+        (e.g. ``braincell.ion.PotassiumFixed``). A registered class is
+        stored under its canonical name; an unregistered one under an
+        identity key that resolves back to the same class
+        (:meth:`braincell.mech.MechanismRegistry.key_for`). The stored
+        :attr:`class_name` is always a string.
     params : Mapping or None
         Parameter mapping, supplied by the concrete subclass from its own
         ``**params`` capture. This is an internal contract between
@@ -298,7 +299,8 @@ class Channel(Density):
     class_name : str or type
         Registry key for the target channel class (e.g. ``"IL"``,
         ``"Na_HH1952"``, or ``"leaky"`` via an alias), or a class
-        object such as ``braincell.channel.IL``.
+        object such as ``braincell.channel.IL`` or an unregistered
+        :class:`~braincell.IonChannel` subclass.
     name : str or None
         Optional instance label. See
         :attr:`Density.instance_name`.
@@ -391,7 +393,8 @@ class Ion(Density):
     class_name : str or type
         Registry key for the target ion class (e.g. ``"SodiumFixed"``,
         ``"CalciumDetailed"``), or a class object such as
-        ``braincell.ion.PotassiumFixed``.
+        ``braincell.ion.PotassiumFixed`` or an unregistered
+        :class:`~braincell.Ion` subclass.
     name : str or None
         Optional instance label.
     coverage_area_fraction : float
@@ -489,26 +492,42 @@ def _normalize_integration_override(
 
 
 def _resolve_class_name(category: str, value: Any) -> str:
-    """Normalise a ``class_name`` argument to a string.
+    """Normalise a ``class_name`` argument to the string stored on a declaration.
 
-    Accepts either a plain string (returned after a non-empty check) or
-    a class object. For class objects, the canonical registry name is
-    preferred when the class is already registered; otherwise we fall
-    back to ``cls.__name__``. The string form is what gets stored on
-    the declaration and later consumed by
-    :meth:`braincell.mech.MechanismRegistry.get`.
+    A string is returned as given and resolved against the registry at
+    ``init_state``. A class must subclass the runtime base of ``category``
+    (:class:`~braincell.IonChannel` but not an ion or synapse for channels,
+    :class:`~braincell.Ion` for ions, the runtime ``Synapse`` base for
+    synapses), as reported by the modules that define those bases; it resolves to its registered name, or, when
+    unregistered, to an identity key that
+    :meth:`~braincell.mech.MechanismRegistry.get` maps back to the same
+    class object (:meth:`~braincell.mech.MechanismRegistry.key_for`).
+
+    Raises
+    ------
+    TypeError
+        If ``value`` is neither a string nor a class, or is a class outside
+        the category's runtime hierarchy.
+    ValueError
+        If ``value`` is an empty string.
     """
     if isinstance(value, str):
         if not value:
             raise ValueError("class_name must be a non-empty string.")
         return value
-    if isinstance(value, type):
-        reg = get_registry()
-        for entry_name, entry_cls in reg.items(category):
-            if entry_cls is value:
-                return entry_name
-        return value.__name__
-    raise TypeError(f"class_name must be a string or class, got {type(value).__name__!r}.")
+    if not isinstance(value, type):
+        raise TypeError(
+            f"class_name must be a registry name or a mechanism class, got an instance of {type(value).__name__!r}."
+        )
+    base, excluded = _runtime_base(category)
+    if not issubclass(value, base) or issubclass(value, excluded):
+        not_these = " or ".join(cls.__qualname__ for cls in excluded)
+        raise TypeError(
+            f"A {category} declaration needs a subclass of {base.__module__}.{base.__qualname__}"
+            + (f" and not of {not_these}" if excluded else "")
+            + f", got {value.__module__}.{value.__qualname__}."
+        )
+    return get_registry().key_for(category, value)
 
 
 def _normalize_ion_names(value: Mapping[str, str] | None) -> tuple[tuple[str, str], ...] | None:

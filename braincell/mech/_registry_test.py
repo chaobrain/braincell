@@ -318,5 +318,66 @@ class BuiltinRegistrationTest(unittest.TestCase):
         self.assertFalse(_REGISTRY.contains("synapse", "AMPA"))
 
 
+class MechanismRegistryIdentityKeyTest(MechanismRegistryIsolationMixin, unittest.TestCase):
+    """Unregistered classes resolve by identity through ``key_for``."""
+
+    def test_registered_class_resolves_to_canonical_name(self) -> None:
+        reg = self.make_registry()
+        reg.register(MechanismEntry(category="channel", name="Foo", cls=_DummyChannel, aliases=("foo",)))
+        self.assertEqual(reg.key_for("channel", _DummyChannel), "Foo")
+
+    def test_unregistered_class_gets_its_name_and_resolves_to_itself(self) -> None:
+        reg = self.make_registry()
+        key = reg.key_for("channel", _DummyChannel)
+        self.assertEqual(key, "_DummyChannel")
+        self.assertIs(reg.get("channel", key), _DummyChannel)
+        self.assertTrue(reg.contains("channel", key))
+        self.assertEqual(reg.key_for("channel", _DummyChannel), key)
+        self.assertFalse(reg.contains("ion", key))
+        self.assertEqual(reg.names("channel"), ())
+        self.assertEqual(reg.items("channel"), ())
+
+    def test_classes_sharing_a_name_stay_distinct(self) -> None:
+        reg = self.make_registry()
+        reg.register(MechanismEntry(category="channel", name="_DummyIon", cls=_DummyChannel))
+
+        def make():
+            class Leak:
+                pass
+
+            return Leak
+
+        first, second, third = make(), make(), make()
+        keys = [reg.key_for("channel", cls) for cls in (_DummyIon, first, second, third)]
+        self.assertEqual(keys[0], f"{__name__}._DummyIon")
+        self.assertEqual(keys[1], "Leak")
+        self.assertEqual(keys[2], f"{first.__module__}.{first.__qualname__}")
+        self.assertEqual(keys[3], f"{first.__module__}.{first.__qualname__}#2")
+        for key, cls in zip(keys, (_DummyIon, first, second, third)):
+            self.assertIs(reg.get("channel", key), cls)
+
+    def test_registering_a_used_key_for_another_class_raises(self) -> None:
+        reg = self.make_registry()
+        key = reg.key_for("channel", _DummyChannel)
+        with self.assertRaisesRegex(ValueError, "unregistered class"):
+            reg.register(MechanismEntry(category="channel", name=key, cls=_DummyIon))
+        with self.assertRaisesRegex(ValueError, "unregistered class"):
+            reg.register(MechanismEntry(category="channel", name="Other", cls=_DummyIon, aliases=(key,)))
+        self.assertIs(reg.get("channel", key), _DummyChannel)
+
+    def test_registering_the_class_later_keeps_its_key(self) -> None:
+        reg = self.make_registry()
+        key = reg.key_for("channel", _DummyChannel)
+        reg.register(MechanismEntry(category="channel", name="Registered", cls=_DummyChannel))
+        self.assertEqual(reg.key_for("channel", _DummyChannel), "Registered")
+        self.assertIs(reg.get("channel", key), _DummyChannel)
+
+    def test_clear_forgets_identity_keys(self) -> None:
+        reg = self.make_registry()
+        key = reg.key_for("channel", _DummyChannel)
+        reg.clear()
+        self.assertFalse(reg.contains("channel", key))
+
+
 if __name__ == "__main__":
     unittest.main()

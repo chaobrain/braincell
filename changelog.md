@@ -80,6 +80,21 @@
 
 ### New Features
 
+- **Mechanism classes are used by identity; no registration needed**
+  (CELL-25). `mech.Channel(MyChannel, ...)`, `mech.Ion(MyIon, ...)` and now
+  `mech.Synapse(MySynapse, ...)` accept a class that was never registered:
+  the declaration stores an identity key (`MechanismRegistry.key_for`) that
+  resolves to that very class, so custom `braincell.Channel` subclasses
+  written for `SingleCompartment` models run on a `Cell` unchanged. Two
+  unregistered classes that share a `__name__` stay distinct (the second gets
+  `module.qualname`). A registered class still resolves to its registry name,
+  so `mech.Synapse(ExpSyn) == mech.Synapse("ExpSyn")`, and strings are still
+  resolved by the registry at `init_state`. An instance, or a class outside
+  the category (a non-`IonChannel`, an `Ion` or `Synapse` passed to
+  `Channel`, ...), raises `TypeError` when the declaration is built.
+  Previously an unregistered class silently fell back to `cls.__name__` and
+  failed at `init_state` with `KeyError`, so no working call changes.
+
 - **`Morphology.from_soma(length=10 * u.um, radius=5 * u.um, name="soma")`**
   builds a morphology of one cylindrical soma branch in one call, replacing
   `Morphology.from_root(Branch.from_lengths(lengths=[L], radii=[r, r],

@@ -306,5 +306,43 @@ class SynapseTest(unittest.TestCase):
         self.assertEqual(Synapse("NotARealSynapse").synapse_type, "NotARealSynapse")
 
 
+class SynapseClassArgumentTest(unittest.TestCase):
+    """CELL-25: ``Synapse`` accepts classes, like ``Channel`` and ``Ion``."""
+
+    def test_registered_class_equals_its_name(self) -> None:
+        import braincell
+
+        by_class = Synapse(braincell.synapse.ExpSyn, name="fast", tau=2.0 * u.ms)
+        by_name = Synapse("ExpSyn", name="fast", tau=2.0 * u.ms)
+        self.assertEqual(by_class, by_name)
+        self.assertEqual(hash(by_class), hash(by_name))
+        self.assertEqual(by_class.synapse_type, "ExpSyn")
+
+    def test_unregistered_class_runs_on_a_cell(self) -> None:
+        import braincell
+        from braincell.filter import AllRegion, RootLocation
+
+        class SlowExpSyn(braincell.synapse.ExpSyn):
+            pass
+
+        declaration = Synapse(SlowExpSyn, name="slow", tau=5.0 * u.ms)
+        self.assertIs(braincell.mech.get_registry().get("synapse", declaration.synapse_type), SlowExpSyn)
+        cell = braincell.Cell(braincell.Morphology.from_soma(), pop_size=2)
+        cell.paint(AllRegion(), braincell.mech.Channel("IL"))
+        cell.place(RootLocation(0.5), declaration)
+        cell.init_state()
+        cell.run(dt=0.025 * u.ms, duration=0.25 * u.ms)
+        runtime_types = {type(node) for node in cell.nodes().values()}
+        self.assertIn(SlowExpSyn, runtime_types)
+
+    def test_instances_and_foreign_classes_are_rejected(self) -> None:
+        import braincell
+
+        with self.assertRaisesRegex(TypeError, "instance of 'int'"):
+            Synapse(3)  # type: ignore[arg-type]
+        with self.assertRaisesRegex(TypeError, "synapse declaration needs a subclass"):
+            Synapse(braincell.channel.IL)
+
+
 if __name__ == "__main__":
     unittest.main()

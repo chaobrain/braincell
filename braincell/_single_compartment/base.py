@@ -210,8 +210,9 @@ class SingleCompartment(HHTypedNeuron):
         """
         # A SingleCompartment has no spatial axis, so its hidden states are
         # plain (non-grouped) states. The scope is set explicitly rather than
-        # left to the default so that a Network mixing SingleCompartment and
-        # Cell is correct regardless of construction order.
+        # left to the default so that a program building both a
+        # SingleCompartment and a Cell is correct regardless of construction
+        # order.
         with state_grouping(False):
             self.V = state(braintools.init.param(self.V_initializer, self.varshape, batch_size))
             self.spike = brainstate.ShortTermState(_zero_spike_like(self.V.value))
@@ -259,7 +260,9 @@ class SingleCompartment(HHTypedNeuron):
         Parameters
         ----------
         I_ext : float, optional
-            External current input. Supports either current density or total current.
+            External current input, in the unit system of ``C``: a current
+            density with the default ``C`` in uF/cm^2. It is not converted
+            by ``area``.
         """
         channels = self._ion_channels()
         I_ext = self.sum_current_inputs(I_ext, self.V.value)

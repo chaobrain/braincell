@@ -20,7 +20,6 @@ The tests are organised by surface area:
 
 * :class:`SingleCompartmentDefaultsTest` - construction & default parameters
 * :class:`SingleCompartmentPropertiesTest` - ``area`` / ``pop_size`` / ``n_compartment``
-* :class:`SingleCompartmentNormalizeCurrentTest` - ``_normalize_external_current``
 * :class:`SingleCompartmentLifecycleTest` - ``init_state`` / ``reset_state``
 * :class:`SingleCompartmentPreIntegralTest` - ``pre_integral`` forwarding
 * :class:`SingleCompartmentComputeDerivativeTest` - core ``compute_derivative`` path
@@ -782,7 +781,7 @@ class SingleCompartmentHiddenStatesAreNotGroupedTest(unittest.TestCase):
         self.assertIs(type(neuron.V), DiffEqSingleState)
 
     def test_a_preceding_cell_does_not_leak_its_grouped_scope(self) -> None:
-        # A Network may hold both model types; SingleCompartment sets the
+        # A program may build both model types; SingleCompartment sets the
         # scope explicitly rather than relying on the default, so the order
         # of construction cannot matter.
         with braincell.state_grouping(True):

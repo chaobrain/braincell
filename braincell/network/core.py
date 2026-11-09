@@ -238,10 +238,17 @@ class Population:
 def _model_size_and_kind(model) -> tuple[int, str]:
     from braincell.network.event import EventSequence, NetStim
 
+    from braincell._multi_compartment.cell import Cell
+
     if isinstance(model, (NetStim, EventSequence)):
         return int(model.size), "netstim" if isinstance(model, NetStim) else "event_sequence"
-    if not hasattr(model, "pop_size"):
-        raise TypeError(f"Population model must be a Cell, NetStim, or EventSequence; got {type(model).__name__!s}.")
+    if not isinstance(model, Cell):
+        # A pop_size alone is not enough: a SingleCompartment has one but
+        # none of the Cell runtime the Network drives.
+        raise TypeError(
+            f"Population model must be a Cell, NetStim, or EventSequence; got {type(model).__name__!s}. "
+            "A SingleCompartment cannot join a Network; build the neuron as a braincell.Cell."
+        )
     pop_size = tuple(model.pop_size)
     if not pop_size:
         raise ValueError("Network v1 requires one-dimensional cell.pop_size; got scalar pop_size ().")

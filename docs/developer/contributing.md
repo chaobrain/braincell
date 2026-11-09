@@ -29,8 +29,6 @@ See the [Installation Guide](../getting_started/installation.ipynb) for CPU/GPU 
 
 Add new dependencies to `pyproject.toml`; `requirements*.txt` files only reference these extras for CI and other tools.
 
-CI, the documentation build and Read the Docs install braintools from its git `main` branch (`requirements-braintools-main.txt`) before they install braincell, so changes that need unreleased braintools code can merge before braintools is released; `pyproject.toml` still declares an ordinary `braintools>=...` floor, because PyPI rejects direct URL dependencies. Locally, run `python -m pip install -r requirements-braintools-main.txt` first to match CI. After a braintools release that carries the code braincell needs, raise the floor in `pyproject.toml` to that release and delete `requirements-braintools-main.txt` together with its references: one line each in `.github/workflows/CI.yml` (the install and the `pip freeze` check, in every job), `.github/workflows/deploy-docs.yml`, `.readthedocs.yml` and `MANIFEST.in`.
-
 ## Find or claim a task
 
 Roadmap tasks have an ID made of a milestone code and a number, for example `CELL-3`; `CELL-3a` is one PR of `CELL-3`. The maintainers plan and assign them, and each task's acceptance criteria define when it is done. For anything without a task, open an issue first.

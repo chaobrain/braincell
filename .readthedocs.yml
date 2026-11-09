@@ -17,5 +17,4 @@ sphinx:
 # Optionally set the version of Python and requirements required to build your docs
 python:
   install:
-    - requirements: requirements-braintools-main.txt
     - requirements: requirements-doc.txt

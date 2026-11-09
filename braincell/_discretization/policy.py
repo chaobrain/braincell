@@ -166,6 +166,70 @@ class CVPerBranchList(CVPolicy):
         return tuple(_uniform_bounds_for_count(count) for count in self.cv_per_branch)
 
 
+@dataclass(frozen=True)
+class Lumped(CVPolicy):
+    """Model the whole cell as one lumped compartment (a point neuron).
+
+    The policy covers a single-branch morphology with one CV, like
+    ``CVPerBranch(1)``. A :class:`~braincell.Cell` with this policy builds a
+    lumped runtime instead of a cable one: ``V``, ``spike`` and mechanism
+    states have shape ``pop_size`` (plus a leading batch axis) with no CV
+    axis, the cell has a single site at the CV midpoint, and the default
+    solver is ``"ralston2"``. :meth:`braincell.Cell.point` builds such a cell.
+
+    Raises
+    ------
+    ValueError
+        From :meth:`resolve_cv_bounds` when the morphology has more than one
+        branch; the lumped form of a branched morphology is not defined yet.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> import braincell as bc
+        >>> morpho = bc.Morphology.from_soma(length=20.0 * u.um, radius=10.0 * u.um)
+        >>> cell = bc.Cell(morpho, pop_size=3, cv_policy=bc.Lumped())
+        >>> cell.solver_name
+        'ralston2'
+    """
+
+    def resolve_cv_bounds(
+        self,
+        morpho: Morphology,
+        *,
+        paint_rules: tuple["PaintRule", ...] | None = None,
+    ) -> BoundsByBranch:
+        """Return one CV covering the only branch.
+
+        Parameters
+        ----------
+        morpho : Morphology
+            Morphology being discretized; it must have exactly one branch.
+        paint_rules : tuple of PaintRule or None, optional
+            Unused for this policy.
+
+        Returns
+        -------
+        BoundsByBranch
+            ``((0.0, 1.0),)``.
+
+        Raises
+        ------
+        ValueError
+            If ``morpho`` has more than one branch.
+        """
+        n_branch = len(morpho.branches)
+        if n_branch != 1:
+            raise ValueError(
+                f"Lumped() requires a single-branch morphology, got {n_branch} branches. "
+                "A lumped (point) cell has one compartment; build it from Morphology.from_soma(...) "
+                "or use a cable policy such as CVPerBranch()."
+            )
+        return (_uniform_bounds_for_count(1),)
+
+
 @quantity_hashable
 @dataclass(frozen=True)
 class MaxCVLen(CVPolicy):

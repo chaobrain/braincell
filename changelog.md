@@ -90,6 +90,43 @@
   name (`dend`, `apic`), because public names are reserved as branch names;
   a test now guards this.
 
+- **Point neurons as `Cell`s: `Cell.point(...)` and `cv_policy=Lumped()`**
+  (CELL-21b). `Cell.point(pop_size, length=, radius=, V_init=, ...)` is
+  shorthand for `Cell(Morphology.from_soma(length=, radius=), pop_size=...,
+  cv_policy=Lumped())`. A lumped cell is declared like any `Cell` (`paint`,
+  `place`, `record`, `run`, `update`) but has no CV axis: `V`, `spike` and
+  mechanism states have shape `pop_size` (plus a leading batch axis), as in
+  `SingleCompartment`, and it reproduces `SingleCompartment` numerically
+  (float64 voltages agree to 1e-13 mV with `rk4`, `euler`, `ralston2` and
+  `exp_euler`) at about the same cost per step.
+
+  ```python
+  cell = bc.Cell.point(100, length=20 * u.um, radius=10 * u.um, V_init=-65 * u.mV)
+  cell.paint(bc.filter.AllRegion(), bc.mech.Ion("SodiumFixed", E=50 * u.mV),
+             bc.mech.Channel("Na_HH1952", g_max=120 * u.mS / u.cm**2), ...)
+  cell.place(bc.mech.CurrentClamp(durations=50 * u.ms, amplitudes=0.1 * u.nA))  # the one site
+  cell.record("v", bc.observe.state("v"))
+  result = cell.run(dt=0.025 * u.ms, duration=50 * u.ms)  # cell.V.value.shape == (100,)
+  ```
+
+  - `place` may omit the locset on a lumped cell; an explicit locset must be
+    the CV midpoint (`RootLocation(0.5)`, `cell.cv_midpoints`), otherwise
+    `place` raises `ValueError`. Only current clamps can be placed.
+  - `Lumped()` on a morphology with more than one branch raises `ValueError`
+    when the cell is built or the policy assigned.
+  - Initial gates are at steady state for `V_init` (as on cable cells;
+    `SingleCompartment.init_state()` leaves them at 0). `V_init=None` starts
+    at the resting potential.
+  - Views (`cell.channels`, `cell.ions`, `cell.synapses`, `cell.on(...)`,
+    `cell.cv[...]`, `cell[...]`, `cell.geometry`), trainable parameters,
+    synapses, `add_reduction` and `Network.add_population` raise
+    `NotImplementedError` on a lumped cell for now.
+- **`Cell(solver=None)` resolves by mode.** The default is now `None`:
+  `"staggered"` on a cable cell (unchanged) and `"ralston2"` on a lumped
+  cell. A lumped cell accepts every single-step solver of
+  `braincell.quad.get_integrator` except `"staggered"` and `"dhs_voltage"`,
+  which raise `ValueError`.
+
 ### Changes & Improvements
 
 - **`Cell.run` costs less per call.** Each call now dispatches one cached

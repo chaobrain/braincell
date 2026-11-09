@@ -49,6 +49,7 @@ from braincell._discretization.policy import (
     CVPolicy,
     CVPolicyByTypeRule,
     DLambda,
+    Lumped,
     MaxCVLen,
 )
 
@@ -64,6 +65,7 @@ __all__ = [
     "CVPolicyByTypeRule",
     "DLambda",
     "Discretization",
+    "Lumped",
     "MaxCVLen",
     "Node",
     "NodeEdge",

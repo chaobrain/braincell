@@ -81,6 +81,7 @@ CVs each branch receives.
     CVPolicyByTypeRule
     CompositeByTypePolicy
     DLambda
+    Lumped
     MaxCVLen
 
 

@@ -87,7 +87,7 @@ from braincell._discretization.base import (
     NodeTree,
     build_discretization,
 )
-from braincell.filter import LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask, at
+from braincell.filter import AllRegion, LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask, at
 from braincell.network.event import EventOutputCollection, _CellSpikeSource
 from braincell.network.recording import (
     RecordingSpec,
@@ -102,12 +102,12 @@ from braincell.quad import get_integrator, ind_exp_euler_step, integrator_info
 from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad.protocol import DiffEqGroupState, IndependentIntegration, state_grouping
-from braincell.mech import CVContext, Point, Synapse as SynapsePlacement
+from braincell.mech import CableProperty, CVContext, Density, Point, Synapse as SynapsePlacement
 from braincell._multi_compartment import currents, field_resolution, probes, run as run_module
 from braincell._compute import bridge
 from braincell._multi_compartment.synapses import SynapseView, _SynapseStore, raise_on_name_type_conflict
 from braincell._multi_compartment.clamps import ClampView, _ClampStore
-from braincell._multi_compartment.selection import BranchSelector, CVSelector, _CellScope
+from braincell._multi_compartment.selection import BranchSelector, CVSelector, _CellScope, _Undeclarable
 from braincell._multi_compartment.lifecycle import DiscreteView
 from braincell._multi_compartment.density_views import ChannelView, IonView
 from braincell._multi_compartment.geometry import GeometryView
@@ -772,41 +772,106 @@ class CellView(DiscreteView, _CellFacade):
         self._cell._set_runtime_voltage_parameters(self._scope, parameters)
         return self
 
-    def place(
-        self,
-        locset: LocsetExpr | LocsetMask | LocsetBatch,
-        *mechanisms,
-    ) -> "CellView":
-        """Place independent point instances on selected population members.
+    def place(self, *args):
+        """Place point mechanisms through this view.
+
+        On a location view (``cell.loc(locset)``) the view supplies the
+        locset: ``cell.loc(locset).place(*mechanisms)`` is
+        ``cell.place(locset, *mechanisms)`` and accepts any point mechanism.
+        On a population view (``cell[indices]``) pass the locset first; the
+        mechanisms are placed on the selected members only, which currently
+        supports synapses.
 
         Parameters
         ----------
-        locset : LocsetExpr, LocsetMask, LocsetBatch, or sequence
-            One shared locset, an aligned rectangular batch, or one possibly
-            ragged locset per selected population member.
-        *mechanisms : Point
-            Point declarations. Per-cell locset sequences currently accept
-            synapse declarations.
+        *args
+            ``*mechanisms`` on a location view; ``locset, *mechanisms`` on a
+            population view, where ``locset`` is a shared locset, an aligned
+            :class:`LocsetBatch`, or one possibly ragged locset per selected
+            member.
 
         Returns
         -------
-        CellView
-            This population view.
-        """
-        if self._scope.spatially_restricted:
-            raise RuntimeError(
-                "Spatial CellView.place() is not supported; pass the desired Locset to Cell.place() "
-                "or select population members only before place()."
-            )
-        self._cell._place_selected(self._population_indices, locset, mechanisms)
-        return self
+        Cell or CellView
+            The root Cell for a location view; this view for a population
+            view.
 
-    def paint(self, region: RegionExpr, *mechanisms):
-        """Reject population-specific density painting in v1."""
-        raise NotImplementedError(
-            "CellView.paint() does not support population-specific density mechanisms; "
-            "use root Cell.paint() to paint the whole population."
-        )
+        Raises
+        ------
+        TypeError
+            If a location view is also given a locset.
+        ValueError
+            If the view selects a region or control volumes rather than
+            locations, or nests a location selection inside another spatial
+            selection.
+        """
+        scope = self._scope
+        if not scope.spatially_restricted:
+            if not args:
+                raise TypeError("CellView.place(locset, *mechanisms) needs a locset on a population view.")
+            locset, *mechanisms = args
+            self._cell._place_selected(self._population_indices, locset, tuple(mechanisms))
+            return self
+        target = scope.target
+        if not isinstance(target, (LocsetExpr, LocsetMask, LocsetBatch)):
+            raise ValueError(
+                f"CellView.place() needs a location view such as cell.loc(locset); this view is "
+                f"{_describe_target(target)}."
+            )
+        if args and isinstance(args[0], (LocsetExpr, LocsetMask, LocsetBatch, tuple, list)):
+            raise TypeError(
+                "A location view places at its own locations; call view.place(*mechanisms) without a locset."
+            )
+        if self._covers_population:
+            return self._cell.place(target, *args)
+        self._cell._place_selected(self._population_indices, target, tuple(args))
+        return self._cell
+
+    def paint(self, *mechanisms) -> "Cell":
+        """Paint density mechanisms onto this view's region.
+
+        ``cell.soma.paint(m)`` is ``cell.paint(branch_in("type", ["soma"]), m)``
+        and ``cell.on(region).paint(m)`` is ``cell.paint(region, m)``; nested
+        region selections paint their intersection.
+
+        Parameters
+        ----------
+        *mechanisms : Density or CableProperty
+            Declarations to paint.
+
+        Returns
+        -------
+        Cell
+            The root Cell, for chaining.
+
+        Raises
+        ------
+        TypeError
+            If a region is passed as well; the view supplies it.
+        ValueError
+            If the view selects population members (declarations are the
+            same for every member) or anything other than a region.
+        """
+        if not self._covers_population:
+            raise ValueError(
+                "CellView.paint() paints every population member alike; call paint() on the root Cell "
+                "or on a spatial view of it (cell.soma, cell.on(region)), not on cell[...]."
+            )
+        if mechanisms and isinstance(mechanisms[0], (RegionExpr, RegionMask)):
+            raise TypeError("A spatial view paints its own region; call view.paint(*mechanisms) without a region.")
+        target = self._scope.target
+        if target is None:
+            return self._cell.paint(*mechanisms)
+        if not isinstance(target, RegionExpr):
+            raise ValueError(
+                f"CellView.paint() needs a region view such as cell.soma or cell.on(region); this view is "
+                f"{_describe_target(target)}."
+            )
+        return self._cell.paint(target, *mechanisms)
+
+    @property
+    def _covers_population(self) -> bool:
+        return set(self._population_indices) == set(range(self._cell._population_size))
 
     def init_state(self, *args, **kwargs):
         """Reject lifecycle transitions on a population view."""
@@ -846,6 +911,15 @@ class CellView(DiscreteView, _CellFacade):
             f"CellView(name={self.name!r}, population_indices={self._population_indices!r}, "
             f"cv_ids={self._scope.cv_ids!r})"
         )
+
+
+def _describe_target(target) -> str:
+    """Name a view's spatial selection in an error message."""
+    if isinstance(target, _Undeclarable):
+        return target.reason
+    if isinstance(target, (LocsetExpr, LocsetMask, LocsetBatch)):
+        return f"a location selection ({target!r})"
+    return f"a region selection ({target!r})"
 
 
 class CVCollectionView(tuple):
@@ -1532,9 +1606,39 @@ class Cell(_CellFacade, HHTypedNeuron):
             population_size=self._population_size,
         )
 
-    def paint(self, region: RegionExpr, *mechanisms) -> "Cell":
-        """Paint mechanisms onto ``region``. Returns ``self`` for chaining."""
+    def paint(self, *args) -> "Cell":
+        """Paint density mechanisms onto a region of every population member.
+
+        Parameters
+        ----------
+        *args
+            ``region, *mechanisms``, or just ``*mechanisms`` to paint the
+            whole cell (``AllRegion()``). ``region`` is a
+            :class:`~braincell.filter.RegionExpr`; each mechanism is a
+            :class:`~braincell.mech.Density` (``Channel``, ``Ion``) or a
+            :class:`~braincell.mech.CableProperty`.
+
+        Returns
+        -------
+        Cell
+            This Cell, for chaining.
+
+        Raises
+        ------
+        TypeError
+            If no mechanism is given, or an argument has the wrong type.
+        ValueError
+            If a region is given without mechanisms.
+        RuntimeError
+            After :meth:`init_state`.
+        """
         self._raise_if_initialized("paint()")
+        if not args:
+            raise TypeError("Cell.paint(...) needs at least one mechanism, optionally after a region.")
+        if isinstance(args[0], (Density, CableProperty)):
+            region, mechanisms = AllRegion(), args
+        else:
+            region, mechanisms = args[0], args[1:]
         previous_rules = self._paint_rules
         self._paint_rules = merge_paint_rules(previous_rules, normalize_paint_rules(region, mechanisms))
         try:

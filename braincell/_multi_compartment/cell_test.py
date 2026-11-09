@@ -407,13 +407,16 @@ class TestCellDeclaration(unittest.TestCase):
         with self.assertRaisesRegex(AttributeError, "read-only"):
             _ = selected.compute_derivative
 
-    def test_cell_view_rejects_density_paint_and_lifecycle_ownership(self):
+    def test_population_view_rejects_paint_and_lifecycle_ownership(self):
         cell = Cell(_simple_cell().morpho, cv_policy=CVPerBranch(), pop_size=(2,))
         view = cell[0]
         channel = mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70 * u.mV)
 
-        with self.assertRaisesRegex(NotImplementedError, r"root Cell\.paint"):
+        with self.assertRaisesRegex(ValueError, "every population member alike"):
+            view.paint(channel)
+        with self.assertRaisesRegex(ValueError, "every population member alike"):
             view.paint(AllRegion(), channel)
+        self.assertEqual(len(cell.paint_rules), 1)
         with self.assertRaisesRegex(RuntimeError, "root Cell"):
             view.init_state()
         cell.init_state()

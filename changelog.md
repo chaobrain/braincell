@@ -98,6 +98,12 @@
 
 ### Bug Fixes
 
+- An integer-valued `V_init` or `V_th` (e.g. `V_init=-65 * u.mV`, also as the
+  result of a callable `V_init`) made `Cell.run` fail with a confusing
+  "scan body function carry input and carry output must have equal types"
+  error, because the voltage was stored as an integer array. The values are now
+  converted to the default float dtype (`brainstate.environ.dftype()`) when the
+  cell materializes them, so the run matches the float declaration bitwise.
 - `ralston4` uses Ralston's exact coefficients. braincell stored them rounded
   to 8 decimal places (e.g. `0.17476028` for `(263 + 24*sqrt(5))/1812 =
   0.1747602822...`), which breaks the fourth-order conditions at the 1e-8

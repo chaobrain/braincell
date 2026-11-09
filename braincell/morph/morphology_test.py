@@ -24,6 +24,7 @@ import numpy as np
 
 from braincell import Branch, Morphology
 from braincell.filter import BranchSlice, LocsetMask, RootLocation, Terminals
+from braincell.io._testing import ALLOWED_TYPES, FIXTURE_DIR, VALID_SWC_FIXTURES
 from braincell.morph import MorphoBranch, MorphoMetric
 from braincell.morph._testing import (
     make_apical,
@@ -991,3 +992,44 @@ class MorphoToVisDataTest(unittest.TestCase):
         tree = make_projected_node_tree()
         self.assertIs(tree.__morphology_data__(), tree.to_vis_data())
         self.assertIs(bvm.as_morphology_data(tree), tree.to_vis_data())
+
+
+class MorphoSwcRender3dTest(unittest.TestCase):
+    """Real SWC reconstructions render in 3D (SWC reading stays in braincell)."""
+
+    def test_swc_fixtures_build_a_3d_scene(self) -> None:
+        from braintools.visualize.morphology._tree import as_tree
+        from braintools.visualize.morphology.scene3d import build_render_scene_3d
+
+        for fixture_name in VALID_SWC_FIXTURES:
+            with self.subTest(fixture=fixture_name):
+                tree = Morphology.from_swc(FIXTURE_DIR / fixture_name)
+                scene = build_render_scene_3d(as_tree(tree))
+
+                self.assertEqual(len(scene.branches), len(tree.branches))
+                self.assertGreaterEqual(len(scene.batches), 1)
+                for branch in scene.branches:
+                    self.assertTrue(branch.branch_name)
+                    self.assertIn(branch.branch_type, ALLOWED_TYPES)
+                    self.assertEqual(branch.points_um.ndim, 2)
+                    self.assertEqual(branch.points_um.shape[1], 3)
+                    self.assertGreaterEqual(len(branch.points_um), 2)
+                    self.assertEqual(len(branch.radii_um), len(branch.points_um))
+
+    def test_swc_fixtures_render_with_pyvista(self) -> None:
+        try:
+            import pyvista as pv
+        except ImportError:
+            self.skipTest("pyvista is not installed.")
+        from braintools.visualize.morphology.backend import BackendChooser
+        from braintools.visualize.morphology.backend_pyvista import PyVistaBackend
+
+        for fixture_name in VALID_SWC_FIXTURES:
+            with self.subTest(fixture=fixture_name):
+                tree = Morphology.from_swc(FIXTURE_DIR / fixture_name)
+                backend = PyVistaBackend(plotter_kwargs={"off_screen": True}, show_axes=False)
+                plotter = tree.vis3d(backend="pyvista", chooser=BackendChooser(backends=(backend,)), show=False)
+
+                self.assertIsInstance(plotter, pv.Plotter)
+                self.assertGreater(len(plotter.renderer.actors), 0)
+                plotter.close()

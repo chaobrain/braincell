@@ -54,7 +54,7 @@ Tests use `unittest.TestCase` classes collected by pytest.
 - **A module `foo.py` has its tests in a sibling `foo_test.py`** *(checked by pre-commit)*: `braincell/io/neuromorpho/client.py` is tested by `braincell/io/neuromorpho/client_test.py`. Never use `test_*.py`, a bare `test.py` (it matches no collection pattern and is silently skipped), or a `tests/` directory.
 - The only `test_*.py` files are the NEURON comparison suites under `validation/neuron/cable/tests/` and `validation/neuron/channel_no_conc/tests/`; `pyproject.toml` documents that exception.
 - **The `foo` in `foo_test.py` names a real sibling module.** When a test file grows to cover several modules, split it, one file per module whose API the tests call. A test that drives a higher-level entry point (`SwcReader`, `Cell`, `Network.run`) belongs with that entry point's module, even when the behavior under test originates deeper.
-- **Package-wide guards go in `<package>/__init___test.py`**: an AST scan over a package's import graph, or a docstring check with one allowlist for the package. `braincell/channel/__init___test.py` and `braincell/_compute/__init___test.py` are examples. This and `braincell/vis_baseline_test.py` (the pixel baselines, which draw through several modules' adapters into braintools) are the only test files without a sibling module.
+- **Package-wide guards go in `<package>/__init___test.py`**: an AST scan over a package's import graph, or a docstring check with one allowlist for the package. `braincell/channel/__init___test.py` and `braincell/_compute/__init___test.py` are examples.
 - **Shared helpers that are not tests** go in a private `_testing.py` in the same package, so that pytest does not collect them. `braincell/io/neuromorpho/_testing.py`, for example, provides the `FakeResponse` and `FakeSession` doubles that keep the NeuroMorpho tests offline.
 - **Optional-dependency skips travel with the tests they guard.** When you split a file guarded by a module-level `pytestmark = pytest.mark.skipif(...)`, the destination files already hold unguarded tests, so re-express the guard per class (`@unittest.skipUnless`) or per function, and request any autouse fixture explicitly. Put shared autouse fixtures in a `conftest.py`, because pytest resolves fixtures by name and cannot import them from `_testing.py`.
 
@@ -95,19 +95,6 @@ assert not report.has_errors
 ```
 
 `MANIFEST.in` leaves `data/` out of the source distribution, so these tests run only from a repository checkout. They have no skip guard and fail rather than skip when the fixtures are missing.
-
-## Compare figures with pixel baselines
-
-Plotting lives in `braintools.visualize.morphology`. `braincell/vis_baseline_test.py` draws a few representative figures from braincell objects, through `Morphology.vis2d`, `Cell.topology_data` and `NodeTree.to_topology_data` (the `plot2d` layouts, value colouring with a colorbar, the dendrogram, the Sholl plot and the two topology graphs), and compares them pixel by pixel with PNGs in `braincell/vis_baselines/`; braintools compares the same images in its own tests. A test draws on `self.new_axes()` and calls `self.assert_baseline(fig, name)`. Rendering is pinned (Agg, default `rcParams`, the bundled DejaVu Sans, fixed size and dpi), and the comparison uses `matplotlib.testing.compare.compare_images` with `tol=0`. Pixels are compared on Linux only; other platforms skip, because font rasterisation differs.
-
-When a deliberate change, or a Matplotlib upgrade, changes a figure, regenerate the baselines on Linux and look at the new images before committing them:
-
-```bash
-BRAINCELL_UPDATE_BASELINES=1 pytest braincell/vis_baseline_test.py
-git diff --stat braincell/vis_baselines
-```
-
-Say in the PR why the images changed; an image that changes here because of braintools changes there too. When a comparison fails, the message names a temporary directory that holds the rendered image and a `-failed-diff.png`. `MANIFEST.in` keeps the baselines out of the source distribution, and the wheel does not include them.
 
 ## Accept numerical results
 

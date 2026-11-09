@@ -938,9 +938,12 @@ class Cell(_CellFacade, HHTypedNeuron):
     cv_policy : CVPolicy, optional
         Control-volume splitting policy; defaults to :class:`CVPerBranch`.
     V_th : Quantity
-        Spike-detection threshold (default ``0. mV``).
+        Spike-detection threshold (default ``0. mV``). An integer-valued
+        quantity such as ``0 * u.mV`` is converted to the default float dtype.
     V_init : Quantity or Callable or None
         Initial voltage. ``None`` means "use per-CV resting potential".
+        An integer-valued quantity such as ``-65 * u.mV``, or an integer
+        result of a callable, is converted to the default float dtype.
     spk_fun : Callable
         Surrogate-gradient spike function.
     solver : str or Callable
@@ -1361,6 +1364,10 @@ class Cell(_CellFacade, HHTypedNeuron):
             value = braintools.init.param(initializer, self.varshape)
         else:  # pragma: no cover - internal invariant
             raise KeyError(name)
+        # Integer-valued declarations (``-65 * u.mV``) and callable results
+        # would otherwise make the step carry int-typed while the update is
+        # float-typed, which only fails deep inside ``run``.
+        value = _as_float_voltage(value)
         if name == "V_init" and self._runtime_V_init is not None:
             value = u.math.where(self._runtime_V_init_mask.value, self._runtime_V_init.value, value)
         return value
@@ -3405,6 +3412,19 @@ def _select_packed_population_value(value, *, owners: np.ndarray, population_ind
     if shape[-1] == len(owners):
         return value[..., selected]
     return value
+
+
+def _as_float_voltage(value):
+    """Cast an integer-valued voltage to the default float dtype.
+
+    Floating values keep their dtype; a ``Quantity`` keeps its unit.
+    """
+    mantissa = value.mantissa if isinstance(value, u.Quantity) else value
+    mantissa = jnp.asarray(mantissa)
+    if jnp.issubdtype(mantissa.dtype, jnp.floating):
+        return value
+    mantissa = mantissa.astype(brainstate.environ.dftype())
+    return u.Quantity(mantissa, value.unit) if isinstance(value, u.Quantity) else mantissa
 
 
 def _normalize_selected_voltage_parameter(value, *, count: int, n_cv: int, name: str) -> tuple[object, ...]:

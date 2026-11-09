@@ -675,6 +675,57 @@ class TestCellLifecycle(unittest.TestCase):
         cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
         self.assertIs(cell._runtime, first_runtime)
 
+    def _run_leak_cell(self, **kwargs):
+        cell = Cell(_soma_tree(), cv_policy=CVPerBranch(), **kwargs)
+        cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV))
+        cell.run(dt=0.025 * u.ms, duration=1.0 * u.ms)
+        return cell
+
+    def test_integer_valued_voltages_match_float_bitwise(self):
+        reference = self._run_leak_cell(V_init=-65.0 * u.mV, V_th=0.0 * u.mV)
+        dtype = brainstate.environ.dftype()
+        ref_v = np.asarray(reference.V.value.to_decimal(u.mV))
+
+        def int_callable(shape, **_):
+            return u.Quantity(jnp.full(shape, -65), u.mV)
+
+        for label, kwargs in {
+            "constructor": dict(V_init=-65 * u.mV, V_th=0 * u.mV),
+            "callable": dict(V_init=int_callable, V_th=0 * u.mV),
+        }.items():
+            with self.subTest(label):
+                cell = self._run_leak_cell(**kwargs)
+                np.testing.assert_array_equal(np.asarray(cell.V.value.to_decimal(u.mV)), ref_v)
+                self.assertEqual(cell.V.value.mantissa.dtype, dtype)
+                self.assertEqual(cell.V_th.mantissa.dtype, dtype)
+                np.testing.assert_array_equal(
+                    np.asarray(cell.V_th.to_decimal(u.mV)), np.asarray(reference.V_th.to_decimal(u.mV))
+                )
+
+    def test_integer_valued_voltage_setters_and_view_set(self):
+        reference = Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=(2,), V_init=-65.0 * u.mV)
+        reference.V_th = 3.0 * u.mV
+        reference.init_state()
+        reference[1].set(V_init=-60.0 * u.mV, V_th=1.0 * u.mV)
+
+        cell = Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=(2,))
+        cell.V_init = -65 * u.mV
+        cell.V_th = 3 * u.mV
+        cell.init_state()
+        cell[1].set(V_init=-60 * u.mV, V_th=1 * u.mV)
+
+        dtype = brainstate.environ.dftype()
+        self.assertEqual(cell.V_th.mantissa.dtype, dtype)
+        np.testing.assert_array_equal(
+            np.asarray(cell.V_th.to_decimal(u.mV)), np.asarray(reference.V_th.to_decimal(u.mV))
+        )
+        self.assertEqual(cell.V.value.mantissa.dtype, dtype)
+        cell.reset_state()
+        reference.reset_state()
+        np.testing.assert_array_equal(
+            np.asarray(cell.V.value.to_decimal(u.mV)), np.asarray(reference.V.value.to_decimal(u.mV))
+        )
+
     def test_run_loop_cache_reuses_matching_shape(self):
         cell = _cell_with_probe()
         cell.init_state()

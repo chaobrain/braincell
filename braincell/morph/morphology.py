@@ -31,6 +31,7 @@ import brainunit as u
 import numpy as np
 from brainunit import Quantity
 
+from braincell._misc import normalize_param
 from braincell.morph.branch import Branch, frustum_areas_um2, frustum_volumes_um3, length_weighted_mean_radius_um
 
 _BRANCH_RESERVED_NAMES = set(Branch.__dataclass_fields__) | {name for name in dir(Branch) if not name.startswith("_")}
@@ -310,6 +311,69 @@ class Morphology:
         """
 
         return cls(root_name=name, root_branch=branch)
+
+    @classmethod
+    def from_soma(
+        cls,
+        *,
+        length: Quantity = 10.0 * u.um,
+        radius: Quantity = 5.0 * u.um,
+        name: str | None = "soma",
+    ) -> "Morphology":
+        """Create a morphology made of one cylindrical soma branch.
+
+        The shortest way to give a point neuron its geometry. It is not
+        named ``soma`` because every public name of :class:`Morphology` is
+        reserved and cannot be used as a branch name. The membrane
+        area is the cylinder's lateral area :math:`2 \\pi r L`; the defaults
+        give the same area as :class:`braincell.SingleCompartment`'s default
+        ``length`` and ``radius``.
+
+        Parameters
+        ----------
+        length : Quantity[u.um], optional
+            Positive scalar cylinder length. Default ``10 um``.
+        radius : Quantity[u.um], optional
+            Positive scalar cylinder radius. Default ``5 um``.
+        name : str or None, optional
+            Name of the branch, as in :meth:`from_root`. Default ``"soma"``.
+
+        Returns
+        -------
+        Morphology
+            New morphology whose only branch has ``type="soma"``.
+
+        Raises
+        ------
+        TypeError
+            If ``length`` or ``radius`` is not a length quantity (a bare
+            number included).
+        ValueError
+            If ``length`` or ``radius`` is not a scalar or not positive.
+
+        See Also
+        --------
+        from_root : Build the tree from any root branch.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Morphology
+            >>> morph = Morphology.from_soma(length=20.0 * u.um, radius=10.0 * u.um)
+            >>> morph.root.name, morph.root.branch.type
+            ('soma', 'soma')
+        """
+        length = normalize_param(length, name="length", unit=u.um, shape=(), bounds={"gt": 0 * u.um})
+        radius = normalize_param(radius, name="radius", unit=u.um, shape=(), bounds={"gt": 0 * u.um})
+        branch = Branch.from_lengths(
+            lengths=u.Quantity(np.full((1,), length.to_decimal(u.um)), u.um),
+            radii=u.Quantity(np.full((2,), radius.to_decimal(u.um)), u.um),
+            type="soma",
+        )
+        return cls.from_root(branch, name=name)
 
     @classmethod
     def from_swc(

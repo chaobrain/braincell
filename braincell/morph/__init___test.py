@@ -61,7 +61,7 @@ _EXPECTED_LOAD_TIME_IMPORTS = {
     "_spatial": {"braincell.morph.morphology"},
     "_testing": {"braincell.morph.branch", "braincell.morph.morphology"},
     "branch": {"braincell._misc"},
-    "morphology": {"braincell.morph.branch"},
+    "morphology": {"braincell._misc", "braincell.morph.branch"},
 }
 
 

@@ -14,6 +14,8 @@
 # ==============================================================================
 
 import unittest
+from types import ModuleType
+from unittest.mock import patch
 
 import brainstate
 import brainunit as u
@@ -51,13 +53,25 @@ class NetworkRuntimeTest(unittest.TestCase):
         self._check_prepared_network_gradients("scatter")
 
     def test_prepared_network_keeps_weight_and_threshold_gradients_brainevent(self):
-        try:
-            import brainevent
-        except ImportError:
-            self.skipTest("brainevent is unavailable")
-        if not hasattr(brainevent, "coomv"):
-            self.skipTest("brainevent.coomv is unavailable")
         self._check_prepared_network_gradients("brainevent")
+
+    def test_event_backends_agree_elementwise(self):
+        traces = {}
+        for backend in ("scatter", "brainevent", "auto"):
+            result = make_runtime_network(delay=0.2 * u.ms).run(
+                dt=0.1 * u.ms, duration=1.0 * u.ms, event_backend=backend
+            )
+            traces[backend] = result.samples["post"]["g"].values.to_decimal(u.uS)
+        self.assertGreater(float(np.max(traces["scatter"])), 0.0)
+        np.testing.assert_allclose(traces["brainevent"], traces["scatter"], rtol=1e-6)
+        # "auto" resolves to the scatter path, so it is bit-identical.
+        np.testing.assert_array_equal(traces["auto"], traces["scatter"])
+
+    def test_brainevent_without_csrmv_is_rejected_at_prepare_run(self):
+        network = make_runtime_network(delay=0.2 * u.ms)
+        with patch.dict("sys.modules", {"brainevent": ModuleType("brainevent")}):
+            with self.assertRaisesRegex(RuntimeError, "event_backend='scatter'"):
+                network.prepare_run(dt=0.1 * u.ms, event_backend="brainevent")
 
     def _check_prepared_network_gradients(self, backend):
         network = make_runtime_network(delay=0.2 * u.ms)

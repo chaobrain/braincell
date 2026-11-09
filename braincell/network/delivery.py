@@ -493,26 +493,30 @@ def resolve_event_backend(value: str) -> str:
     Raises
     ------
     RuntimeError
-        If ``value`` is ``"brainevent"`` but ``brainevent.coomv`` is not
-        available.
+        If ``value`` is ``"brainevent"`` but the installed brainevent has no
+        ``brainevent.csrmv``. The message points to ``"scatter"``.
 
     Notes
     -----
-    ``"auto"`` prefers ``brainevent.coomv`` when available and otherwise falls
-    back to the JAX scatter implementation.
+    ``"auto"`` resolves to ``"scatter"``. With the default
+    ``brainevent_backend="jax_raw"`` the brainevent operator lowers to the
+    same gather and scatter-add, so preferring it would change the default
+    path without a benefit.
     """
-    if value == "scatter":
+    if value in ("auto", "scatter"):
         return "scatter"
     try:
-        import brainevent  # noqa: F401
-    except Exception:
-        if value == "brainevent":
-            raise
-        return "scatter"
-    if not hasattr(brainevent, "coomv"):
-        if value == "brainevent":
-            raise RuntimeError("event_backend='brainevent' requires brainevent.coomv.")
-        return "scatter"
+        import brainevent
+    except ImportError as error:
+        raise RuntimeError(
+            "event_backend='brainevent' requires the brainevent package; use event_backend='scatter' instead."
+        ) from error
+    if not hasattr(brainevent, "csrmv"):
+        raise RuntimeError(
+            "event_backend='brainevent' requires brainevent.csrmv, which this brainevent "
+            f"{getattr(brainevent, '__version__', '(unknown version)')} does not provide; "
+            "use event_backend='scatter' instead."
+        )
     return "brainevent"
 
 
@@ -534,7 +538,7 @@ def make_delivery_op(
     backend : {"scatter", "brainevent"}
         Delivery backend selected for this run setup.
     brainevent_backend : str or None, optional
-        Backend forwarded to ``brainevent.coomv`` when used.
+        Backend forwarded to ``brainevent.csrmv`` when used.
 
     Returns
     -------
@@ -546,27 +550,35 @@ def make_delivery_op(
     -----
     The returned callable captures static sparse indices as JAX arrays. The
     scatter path computes ``pre_spike[pre_index] * weight`` and accumulates it
-    into ``flat_target_index``. The ``brainevent`` path uses ``brainevent.coomv``
-    with the same sparse topology. Its exact bilinear derivative uses scatter
-    operations so batching weight and event tangents does not depend on the
-    backend's sparse-primitive batching rules.
+    into ``flat_target_index``. The ``brainevent`` path stores the same
+    contacts as a CSR matrix with one row per presynaptic member (contacts
+    stably sorted by ``pre_index``; repeated destinations are kept) and
+    computes ``brainevent.csrmv(..., transpose=True)``. Its exact bilinear
+    derivative uses scatter operations so batching weight and event tangents
+    does not depend on the backend's sparse-primitive batching rules.
     """
     target_size = int(block.source.n_active)
     pre_index = jnp.asarray(block.pre_index, dtype=jnp.int32)
     flat_target_index = jnp.asarray(block.flat_target_index, dtype=jnp.int32)
     if backend == "brainevent":
-        try:
-            import brainevent
-        except Exception:  # pragma: no cover
-            backend = "scatter"
-    if backend == "brainevent" and hasattr(brainevent, "coomv"):
+        import brainevent
+
+        static_pre = np.asarray(block.pre_index, dtype=np.int32)
+        order = np.argsort(static_pre, kind="stable")
+        csr_indices = jnp.asarray(np.asarray(block.flat_target_index, dtype=np.int32)[order])
+        csr_indptr = jnp.asarray(
+            np.concatenate([[0], np.cumsum(np.bincount(static_pre, minlength=int(pre_size)))]).astype(np.int32)
+        )
+        csr_order = jnp.asarray(order)
 
         @jax.custom_jvp
-        def _coomv(weight, pre_spike):
-            return brainevent.coomv(
-                weight,
-                pre_index,
-                flat_target_index,
+        def _csrmv(weight, pre_spike):
+            # A one-element weight is homogeneous for csrmv and needs no reordering.
+            csr_weight = weight.reshape(1) if weight.size == 1 else weight[csr_order]
+            return brainevent.csrmv(
+                csr_weight,
+                csr_indices,
+                csr_indptr,
                 pre_spike,
                 shape=(int(pre_size), target_size),
                 transpose=True,
@@ -577,18 +589,18 @@ def make_delivery_op(
             contact_event = pre_spike[pre_index] * weight
             return jnp.zeros((target_size,), dtype=contact_event.dtype).at[flat_target_index].add(contact_event)
 
-        @_coomv.defjvp
-        def _coomv_jvp(primals, tangents):
+        @_csrmv.defjvp
+        def _csrmv_jvp(primals, tangents):
             weight, event = primals
             dweight, devent = tangents
             # d(W z) = dW z + W dz, including repeated sparse destinations.
-            return _coomv(weight, event), _scatter(dweight, event) + _scatter(weight, devent)
+            return _csrmv(weight, event), _scatter(dweight, event) + _scatter(weight, devent)
 
         def _op(pre_spike):
             weight, weight_unit = u.split_mantissa_unit(block.weight)
             event, event_unit = u.split_mantissa_unit(pre_spike)
             dtype = jnp.result_type(weight, event, float)
-            result = _coomv(jnp.asarray(weight, dtype=dtype), jnp.asarray(event, dtype=dtype))
+            result = _csrmv(jnp.asarray(weight, dtype=dtype), jnp.asarray(event, dtype=dtype))
             return u.maybe_decimal(result * weight_unit * event_unit)
 
         return _op

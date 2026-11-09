@@ -113,6 +113,15 @@ class DeliveryTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "brainevent.csrmv.*event_backend='scatter'"):
                 delivery.resolve_event_backend("brainevent")
 
+    def test_event_backend_selection_without_brainevent(self) -> None:
+        import braincell.network.delivery as delivery
+
+        # A ``None`` entry makes ``import brainevent`` raise ImportError.
+        with patch.dict("sys.modules", {"brainevent": None}):
+            self.assertEqual(delivery.resolve_event_backend("auto"), "scatter")
+            with self.assertRaisesRegex(RuntimeError, "brainevent package.*event_backend='scatter'"):
+                delivery.resolve_event_backend("brainevent")
+
 
 if __name__ == "__main__":
     unittest.main()

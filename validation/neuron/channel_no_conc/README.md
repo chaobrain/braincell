@@ -90,5 +90,6 @@ cv.stiffness(cv.channel_class(cv.load_case("ma20_goc/nav1p6_ma20_goc", "vc_steps
 表的覆盖检查（`COVERAGE_SCOPE`）现在要求两个代表配置与类，以及钙家族
 （`calcium.py`、`potassium_calcium.py` 的 50 个类、45 个配置）；
 `validation/neuron/_convergence_test.py` 在每个 PR 运行，并对 registry 的全部
-通道类做奇点扫描。按家族的收敛测试标 `slow`：
-`tests/test_convergence_calcium.py`（本机约 1.7 分钟）。
+通道类做奇点扫描。按家族的收敛测试标 `slow`，只在每日 CI 的
+`slow_tests_neuron` job 中运行（`pytest tests -m slow`），PR 的 channel job
+用 `-m "not slow"` 跳过它们：`tests/test_convergence_calcium.py`（本机约 1.7 分钟）。

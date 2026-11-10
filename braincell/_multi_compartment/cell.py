@@ -1041,7 +1041,18 @@ class Cell(_CellFacade, HHTypedNeuron):
         resolved name.
     subsolver : str or Callable or None
         Integrator for Markov channels and kinetic ions. Together with
-        ``substeps=None``, ``None`` selects ``"backward_euler"``.
+        ``substeps=None``, ``None`` selects ``"backward_euler"``. A
+        declaration that sets its own ``solver``/``substeps`` overrides it;
+        a channel class's ``default_solver`` does not. The catalogue's
+        sodium Markov channels are stiff, so use only ``"backward_euler"``
+        or ``"exp_euler"`` for them: explicit methods, ``"crank_nicolson"``
+        and ``"ind_exp_euler"`` diverge. ``"backward_euler"`` is first
+        order (at ``dt = 0.025 ms`` their voltage-clamp currents are off by
+        7-20 %, as in NEURON); ``"exp_euler"`` is exact while the voltage
+        is constant over a step and costs about 4-6 times as much per step.
+        To use it for one channel, declare
+        ``bc.mech.Channel("Nav1p6_MA2020_GoC", solver="exp_euler", substeps=1)``.
+        See :class:`~braincell.channel.Markov`.
     substeps : int or None
         Number of subsolver steps per main cell step. Together with
         ``subsolver=None``, ``None`` selects one step.

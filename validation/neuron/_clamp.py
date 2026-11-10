@@ -42,6 +42,45 @@ def _steps(duration_ms: float, dt_ms: float) -> int:
     return int(round(count))
 
 
+_EDGE_MS = 1e-9
+"""Times this close to a step edge count as on it, so ``n * dt`` rounding does not move an edge."""
+
+
+def protocol_duration_ms(spec: Mapping[str, Any]) -> float:
+    """Return the duration of a ``voltage_clamp`` block, in ms."""
+    kind = spec.get("kind")
+    if kind == "steps":
+        return float(spec["hold_ms"]) + float(spec["test_ms"]) + float(spec["tail_ms"])
+    if kind == "ramp":
+        start, stop, slope = (float(spec[key]) for key in ("start_mV", "stop_mV", "slope_mV_per_ms"))
+        return float(spec["hold_ms"]) + (stop - start) / slope + float(spec["final_hold_ms"])
+    raise ValueError(f"voltage_clamp.kind must be 'steps' or 'ramp', got {kind!r}.")
+
+
+def command_values(spec: Mapping[str, Any], t_ms, *, side: str = "right") -> np.ndarray:
+    """Evaluate every command of a ``voltage_clamp`` block at the times ``t_ms``.
+
+    Returns an array of shape ``(n_commands, len(t_ms))`` in mV. ``kind =
+    "steps"`` is piecewise constant: ``side = "right"`` takes the value that
+    starts at a step edge, ``side = "left"`` the value that ends there. The
+    ramp is continuous, so ``side`` does not change it.
+    """
+    if side not in ("left", "right"):
+        raise ValueError(f"side must be 'left' or 'right', got {side!r}.")
+    protocol_duration_ms(spec)  # validates kind
+    t_ms = np.asarray(t_ms, dtype=float)
+    if spec["kind"] == "steps":
+        start, stop = float(spec["hold_ms"]), float(spec["hold_ms"]) + float(spec["test_ms"])
+        if side == "right":
+            in_test = (t_ms >= start - _EDGE_MS) & (t_ms < stop - _EDGE_MS)
+        else:
+            in_test = (t_ms > start + _EDGE_MS) & (t_ms <= stop + _EDGE_MS)
+        return np.stack([np.where(in_test, float(test), float(spec["hold_mV"])) for test in spec["test_mV"]])
+    start, stop, slope = (float(spec[key]) for key in ("start_mV", "stop_mV", "slope_mV_per_ms"))
+    ramp = np.clip(start + slope * (t_ms - float(spec["hold_ms"])), min(start, stop), max(start, stop))
+    return ramp[np.newaxis]
+
+
 def protocol_commands(spec: Mapping[str, Any], dt_ms: float) -> list[np.ndarray]:
     """Expand the ``voltage_clamp`` block of a template into per-step commands.
 
@@ -52,22 +91,26 @@ def protocol_commands(spec: Mapping[str, Any], dt_ms: float) -> list[np.ndarray]
     Element ``n`` of each returned command is held over the step that starts
     at ``t = n dt``.
     """
-    kind = spec.get("kind")
-    if kind == "steps":
-        n_hold, n_test, n_tail = (_steps(spec[key], dt_ms) for key in ("hold_ms", "test_ms", "tail_ms"))
-        commands = []
-        for test in spec["test_mV"]:
-            command = np.full(n_hold + n_test + n_tail, float(spec["hold_mV"]))
-            command[n_hold : n_hold + n_test] = float(test)
-            commands.append(command)
-        return commands
-    if kind == "ramp":
-        start, stop, slope = (float(spec[key]) for key in ("start_mV", "stop_mV", "slope_mV_per_ms"))
-        hold_ms = float(spec["hold_ms"])
-        n_steps = _steps(hold_ms + (stop - start) / slope + float(spec["final_hold_ms"]), dt_ms)
-        t_ms = np.arange(n_steps) * dt_ms
-        return [np.clip(start + slope * (t_ms - hold_ms), min(start, stop), max(start, stop))]
-    raise ValueError(f"voltage_clamp.kind must be 'steps' or 'ramp', got {kind!r}.")
+    if spec.get("kind") == "steps":
+        for key in ("hold_ms", "test_ms", "tail_ms"):
+            _steps(spec[key], dt_ms)
+    n_steps = _steps(protocol_duration_ms(spec), dt_ms)
+    return list(command_values(spec, np.arange(n_steps) * dt_ms, side="right"))
+
+
+def replay_table(spec: Mapping[str, Any], dt_ms: float) -> np.ndarray:
+    """Return the voltage table that replays every command at once, ``(n_step + 1, P)``.
+
+    Row ``0`` is the initial voltage; row ``n + 1`` is the voltage written
+    by step ``n``, the command just before ``t_{n+1}``: the value a step
+    command holds over ``[t_n, t_{n+1}]`` and ``V(t_{n+1})`` on a ramp.
+    Column ``p`` is command ``p``, replayed by population ``p`` of the Cell.
+    """
+    n_steps = _steps(protocol_duration_ms(spec), dt_ms)
+    t_ms = np.arange(n_steps + 1) * dt_ms
+    table = command_values(spec, t_ms, side="left")
+    table[:, 0] = command_values(spec, t_ms[:1], side="right")[:, 0]
+    return table.T
 
 
 def initialize_neuron(h, segment, *, v_init_mV, dt_ms, celsius, concentrations=None) -> None:
@@ -129,14 +172,16 @@ def run_neuron_seclamp(
     return {name: np.asarray(trace, dtype=float) for name, trace in records.items()}
 
 
-def voltage_replay_solver(voltages_mV: Sequence[float]):
+def voltage_replay_solver(voltages_mV):
     """Return a Cell solver that replays ``V_0, ..., V_N`` instead of solving for V.
 
     Step ``n`` (``t = n dt``, from a Cell starting at ``t = 0``) follows the
     staggered order with the voltage solve replaced: it caches the ion total
     currents at ``V_n``, sets every CV to ``voltages_mV[n + 1]``, then
     advances the runtime synapses and the ion and channel states with that
-    voltage, honoring ``ion_channel_update_order``.
+    voltage, honoring ``ion_channel_update_order``. A table of shape
+    ``(N + 1, P)`` gives population ``p`` of a Cell with ``pop_size = P`` the
+    voltages of column ``p``.
     """
     import brainunit as u
     import jax.numpy as jnp
@@ -144,13 +189,17 @@ def voltage_replay_solver(voltages_mV: Sequence[float]):
     from braincell.quad._util import environ_time
 
     table = np.asarray(voltages_mV, dtype=float)
+    if table.ndim not in (1, 2):
+        raise ValueError(f"the replay table must have shape (N + 1,) or (N + 1, P), got {table.shape!r}.")
 
     def voltage_replay(cell):
         t, dt = environ_time(cell)
         step = jnp.round(u.get_magnitude(t / dt)).astype(jnp.int32)
         cell.cache_ion_total_currents(cell.V.value)
         mantissa = cell.V.value.to_decimal(u.mV)
-        V = jnp.full_like(mantissa, jnp.asarray(table, dtype=mantissa.dtype)[step + 1]) * u.mV
+        row = jnp.asarray(table, dtype=mantissa.dtype)[step + 1]
+        row = row.reshape(row.shape + (1,) * (mantissa.ndim - row.ndim))
+        V = jnp.broadcast_to(row, mantissa.shape) * u.mV
         cell.V.value = V
         if cell.ion_channel_update_order == "family":
             cell._integrate_runtime_synapse_dynamics(cell._point_voltage_for_mechanisms(V))

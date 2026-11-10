@@ -187,6 +187,15 @@
   Steuber et al. (2011) prints, and `SK_SU2015_DCN` notes that the
   supplement's `tau_z` is 60 times the value in the authors' own code, which
   this class follows. No behaviour changes.
+- The docstrings of `Markov` and of `Cell`'s `subsolver` say which
+  subsolvers suit stiff Markov channels (MECH-22). The catalogue's sodium
+  Markov channels are stiff, so use `backward_euler` (the default; first
+  order, voltage-clamp current off by 7-20 % at `dt = 0.025 ms`, as in
+  NEURON) or `exp_euler` (exact while the voltage is constant over a step,
+  about 4-6 times the cost per step), never an explicit method; and one
+  declaration selects `exp_euler` with
+  `bc.mech.Channel(..., solver="exp_euler", substeps=1)`. No defaults
+  change.
 
 - **Breaking:** braincell now requires `jax>=0.11` (it was `>=0.9`), in
   the base requirement and in the `cpu`, `cuda12`, `cuda13` and `tpu`

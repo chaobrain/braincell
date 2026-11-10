@@ -52,3 +52,38 @@ T0（`e_V ≤ 1e-6 mV`；`e_I`、`e_s ≤ 1e-10`）；每个 T1 项写明偏差�
 当前推荐的 `MA24_PC` batch 配置目录为：
 
 - `configs/ma24_pc/`
+
+## 收敛与刚性
+
+`validation/neuron/_convergence.py` 不用 NEURON，测 Cell 的积分路径在不同 `dt`
+下的误差，结果与限值在 [`convergence.py`](convergence.py)（与 `tolerances.py`
+互不读取）：
+
+- 协议：`vc_steps`、`vc_ramp` 的 8 条（或 1 条）命令作为 Cell 的 8 个
+  population 一次回放；第 n 步写入 V_{n+1}，阶跃取该步区间上的命令值，斜坡取
+  V(t_{n+1})。松弛协议把通道的独立状态全部置 0、保持 −80 mV 35 ms、只比较
+  `e_s`，用于电压钳下状态不变的通道（只受钙门控）。
+- 参照：阶跃与松弛取 `dt = 0.025 ms` 的 `exp_euler`（电压在步内为常数时精确；
+  HH 门在回放中换用 `exp_euler`，Markov 用 Cell 的 `subsolver`）；`dt` 取
+  0.1、0.05、0.025、0.0125、0.00625 ms，每 0.1 ms 比较一次。斜坡不设参照，
+  用 0.05、0.025、0.0125 ms 三个解的相邻差与 Richardson 阶数。
+- 分类：所有 `dt` 的 `e_I`、`e_s` ≤ 1e-10 为"精确"；否则最小三个 `dt`
+  的拟合阶数须在 [0.8, 1.2]，0.025 ms 下 ≤ 1e-2 为"收敛"，超过为"收敛但误差
+  超过指引线"；出现非有限值或阶数在窗口外为"不收敛"（需修正，不写限值）。
+  斜坡阶数窗口：`e_s` [0.8, 1.2]，`e_I` [0.7, 1.3]。
+- 刚性：`rho_max` 为 −100…60 mV（0.25 mV 步长）、36 °C 下 Markov 转移矩阵
+  的谱半径或 HH 门的 α + β（含温度倍率），`rho_max · 0.025 > 2` 为刚性（显式
+  solver 在该 `dt` 下不可用）。奇点扫描在 0.001 mV 网格上检查门值、门导数与
+  电流都有限，已知的可去奇点列在 `KNOWN_SINGULARITIES`。
+
+```python
+from validation.neuron import _convergence as cv
+
+report = cv.check_config("ma20_goc/nav1p6_ma20_goc")  # 或 subsolver="exp_euler", substeps=1
+report.classification, report.errors[0.025], report.orders
+cv.stiffness(cv.channel_class(cv.load_case("ma20_goc/nav1p6_ma20_goc", "vc_steps")[0])).rho_max
+```
+
+表的覆盖检查（`COVERAGE_SCOPE`）现在只要求两个代表配置与类；
+`validation/neuron/_convergence_test.py` 在每个 PR 运行，并对 registry 的全部
+通道类做奇点扫描。

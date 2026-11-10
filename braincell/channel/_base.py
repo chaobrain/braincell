@@ -1151,6 +1151,21 @@ class Markov(Channel, IndependentIntegration):
     ``u.ms`` rather than declared per transition -- the catalogue's Markov
     channels all come from NEURON ``.mod`` sources written in milliseconds.
 
+    **Choosing a solver.** In a :class:`~braincell.Cell` the states advance
+    with the declaration's ``solver``/``substeps`` if it sets them, otherwise
+    with the Cell's ``subsolver``/``substeps`` (default ``"backward_euler"``,
+    one step); :attr:`default_solver` and :attr:`default_substeps` apply only
+    to a channel constructed on its own. The catalogue's sodium Markov
+    channels are stiff: their transition matrices reach spectral radii of
+    2e5-5.5e6 /ms, so explicit methods, ``"crank_nicolson"`` and
+    ``"ind_exp_euler"`` diverge on them. Use only ``"backward_euler"`` or
+    ``"exp_euler"``. ``"backward_euler"`` is first order: at
+    ``dt = 0.025 ms`` their voltage-clamp currents are off by 7-20 %, as
+    with NEURON's ``sparse`` method. ``"exp_euler"`` is exact while the
+    voltage is constant over a step and costs about 4-6 times as much per
+    step; to use it for one channel, declare
+    ``bc.mech.Channel("Nav1p6_MA2020_GoC", solver="exp_euler", substeps=1)``.
+
     Attributes
     ----------
     pairs : tuple of Transition or tuple

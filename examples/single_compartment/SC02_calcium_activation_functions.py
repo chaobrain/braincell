@@ -25,10 +25,14 @@ caht = braincell.channel.CaHT_HM1992(1)
 
 vs = u.math.arange(-100 * u.mV, 0 * u.mV, 0.1 * u.mV)
 
+# Gate rate functions take the voltage and the calcium IonInfo; these two
+# channels do not read it, but the signature requires one.
+ca = braincell.ion.CalciumFixed(1).pack_info()
+
 fig, gs = braintools.visualize.get_figure(1, 2, 3., 4.5)
 
-q_inf = cat.f_q_inf(vs)
-p_inf = cat.f_p_inf(vs)
+q_inf = cat.f_q_inf(vs, ca)
+p_inf = cat.f_p_inf(vs, ca)
 
 fig.add_subplot(gs[0, 0])
 plt.plot(vs / u.mV, q_inf, label='q_inf')
@@ -39,8 +43,8 @@ plt.title('Low-threshold Calcium Channel')
 plt.xlabel('mV')
 # plt.show()
 
-q_inf = caht.f_q_inf(vs)
-p_inf = caht.f_p_inf(vs)
+q_inf = caht.f_q_inf(vs, ca)
+p_inf = caht.f_p_inf(vs, ca)
 fig.add_subplot(gs[0, 1])
 plt.plot(vs / u.mV, q_inf, label='q_inf')
 plt.plot(vs / u.mV, p_inf, label='p_inf')

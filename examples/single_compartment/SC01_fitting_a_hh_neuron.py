@@ -46,7 +46,7 @@ class INa(braincell.Channel):
         self,
         size: brainstate.typing.Size,
         ENa: Union[brainstate.typing.ArrayLike, Callable] = 50. * u.mV,
-        gNa: Union[brainstate.typing.ArrayLike, Callable] = 120. * u.mS,
+        gNa: Union[brainstate.typing.ArrayLike, Callable] = 120. * (u.mS / u.cm ** 2),
         vth: Union[brainstate.typing.ArrayLike, Callable] = -63 * u.mV,
     ):
         super().__init__(size)
@@ -87,7 +87,7 @@ class IK(braincell.Channel):
         self,
         size: brainstate.typing.Size,
         EK: Union[brainstate.typing.ArrayLike, Callable] = -90. * u.mV,
-        gK: Union[brainstate.typing.ArrayLike, Callable] = 36. * u.mS,
+        gK: Union[brainstate.typing.ArrayLike, Callable] = 36. * (u.mS / u.cm ** 2),
         vth: Union[brainstate.typing.ArrayLike, Callable] = -63 * u.mV,
     ):
         super().__init__(size)
@@ -117,9 +117,9 @@ class HH(braincell.SingleCompartment):
         self,
         size,
         v_initializer: Callable = braintools.init.Uniform(-70 * u.mV, -60. * u.mV),
-        gL: Union[brainstate.typing.ArrayLike, Callable] = 0.003 * u.mS,
-        gNa: Union[brainstate.typing.ArrayLike, Callable] = 120. * u.mS,
-        gK: Union[brainstate.typing.ArrayLike, Callable] = 36. * u.mS,
+        gL: Union[brainstate.typing.ArrayLike, Callable] = 0.3 * (u.mS / u.cm ** 2),
+        gNa: Union[brainstate.typing.ArrayLike, Callable] = 120. * (u.mS / u.cm ** 2),
+        gK: Union[brainstate.typing.ArrayLike, Callable] = 36. * (u.mS / u.cm ** 2),
         C: Union[brainstate.typing.ArrayLike, Callable] = 1. * (u.uF / u.cm ** 2),
         solver: str = 'rk4'
     ):
@@ -161,10 +161,16 @@ def visualize(voltages, gl, g_na, g_kd, C):
 
 
 def simulate_model(gl, g_na, g_kd, C):
-    current = inp_traces.T
+    # The fitted parameters are whole-cell values (conductances in S, C in F);
+    # braincell channels take densities, so divide them and the injected
+    # current by the membrane area.
+    current = inp_traces.T / area
     assert current.ndim == 2  # [T, B]
     n_input = current.shape[1]
-    hh = HH((n_input, 1), gL=gl, gNa=g_na, gK=g_kd, C=C, v_initializer=braintools.init.Constant(-65. * u.mV), )
+    hh = HH(
+        (n_input, 1), gL=gl / area, gNa=g_na / area, gK=g_kd / area, C=C / area,
+        v_initializer=braintools.init.Constant(-65. * u.mV),
+    )
     hh.init_state()
 
     def step_fun(i, inp):
@@ -233,6 +239,9 @@ def fitting_by_nevergrad(method='DE', n_sample=200, n_iter=20):
 
     @brainstate.transform.jit
     def loss_with_multiple_run(**params):
+        # NevergradOptimizer passes plain numbers expressed in the unit of
+        # each lower bound; attach those units again.
+        params = {key: u.Quantity(value, bounds[key].unit) for key, value in params.items()}
         return brainstate.transform.vmap(compare_potentials)(params)
 
     opt = braintools.optim.NevergradOptimizer(

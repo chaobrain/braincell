@@ -59,6 +59,19 @@ def has_citation(doc: str) -> bool:
     return bool(body) and bool(_CITATION.search(body))
 
 
+_FOOTNOTE = re.compile(r"^\s*\.\.\s+\[(?P<label>[^\]\s]+)\]\s", re.MULTILINE)
+
+
+def unreferenced_footnotes(doc: str) -> list[str]:
+    """Labels of ``.. [label]`` entries that the text never cites as ``[label]_``.
+
+    Sphinx reports such a footnote ("Footnote [1] is not referenced"), and the
+    docs build runs with ``-W``, so it fails there; ``has_citation`` only checks
+    that an entry exists.
+    """
+    return [m.group("label") for m in _FOOTNOTE.finditer(doc) if f"[{m.group('label')}]_" not in doc]
+
+
 class ReExportTests:
     """Assertions shared by the per-package ``__all__`` guards.
 
@@ -152,6 +165,15 @@ class DocstringConformanceTests:
             if doc is None or not has_citation(doc):
                 uncited.append(f"{mod}.{name}")
         self.assertEqual(uncited, [], f"missing References with '.. [n]': {uncited}")
+
+    def test_every_footnote_is_referenced(self):
+        bad = []
+        for mod, name, obj in self._symbols():
+            doc = own_docstring(obj)
+            labels = unreferenced_footnotes(doc) if doc else []
+            if labels:
+                bad.append(f"{mod}.{name}: {labels}")
+        self.assertEqual(bad, [], f"footnotes never cited as '[n]_' (the docs build fails): {bad}")
 
     def test_no_primary_source_allowlist_has_no_dead_entries(self):
         if not self.covered_modules:

@@ -47,13 +47,32 @@ reads `0.99 mV` instead of `0.627 mV`).
 
 | Configuration | Measured vinit / dc / ac (mV) | Limit vinit / dc / ac (mV) |
 |---|---|---|
-| `cav2p1` in `ma24_pc`, `ma25_bc`, `ri21_sc` | `2.8e-4` / `0.627` / `8.0e-5` | `5e-4` / `1.0` / `2e-4` |
+| `cav2p1` in `ma24_pc`, `ma25_bc`, `ri21_sc` | `1.5e-4` / `0.632` / `4.6e-5` | `5e-4` / `1.0` / `1e-4` |
 | `cav3p1_ma20_goc`, `cav3p1_ma24_pc`, `cav3p1_test2_pc24` | `0.039` / `0.166` / `0.180` | `0.06` / `0.25` / `0.25` |
 | `cav3p3_ma24_pc`, `cav3p3_ri21_sc` | `7.1e-15` / `6.9e-7` / `7.3e-9` | `1e-6` each |
 | The six `_frozen` Cav2.1, Cav3.1 and Cav3.3 configurations | `<= 2.3e-11` | `1e-6` each |
 | `calva_su15_dcn` | `3.2e-4` / `9.3e-5` / `9.3e-5` | `5e-4` / `2e-4` / `2e-4` |
 | `na_zh19_io` | `2.6e-5` / `4.5e-11` / `2.1e-10` | `5e-5` / `1e-6` / `1e-6` |
 | `kca2p2` in `ma20_goc`, `ma20_grc`, `ma25_bc`, `ri21_sc` | `4.2e-6` / `6.4e-6` / `3.5e-6` | `1e-5` each |
+| `ca_zh19_io` with `freeze_m_inf=False` | `3.9e-3` / `0.076` / `0.18` | `1e-2` / `0.2` / `0.5` |
+
+The Cav2.1 row was measured on 2026-11-11, after MECH-6a; before it the
+unfrozen classes used CODATA constants and gave `2.8e-4` / `0.627` /
+`8.0e-5 mV`.
+
+Under voltage clamp the catalogue tests (`tests/test_catalogue_*.py`, slow)
+assert every configuration; the T1 entries explained in this document are
+below (2026-11-11, MECH-19a; `e_I` is relative to the protocol's largest
+current).
+
+| Configuration | Measured `vc_steps` / `vc_ramp` (`e_I`, `e_s`) | Limit `vc_steps` / `vc_ramp` |
+|---|---|---|
+| `kca2p2` in `ma20_goc`, `ma20_grc`, `ma25_bc`, `ri21_sc` | `1.1e-6`, `3.1e-9` / `4.3e-7`, `3.1e-9` | `2e-6`, `5e-9` / `1e-6`, `5e-9` |
+| `kca1p1` in `ma20_goc`, `ma20_grc`, `ma25_bc`, `ri21_sc` | `1.1e-13`, `3.1e-11` / `4.5e-10`, `2.8e-11` | T0 / `1e-9`, T0 |
+| `cav3p3_ma24_pc`, `cav3p3_ma24_pc_frozen`, `cav3p3_ri21_sc` | `2.7e-14`, `3.0e-14` without the 0 mV step / `2.5e-5`, `1.1e-14` | T0 / `5e-5`, T0 |
+| `cav3p1_test2_pc24` | `3.4e-6`, `7.4e-15` / `1.6e-6`, `2.6e-15` | `1e-5`, T0 / `5e-6`, T0 |
+| `cahva_su15_dcn` | `6.7e-6`, `1.4e-15` / `7.2e-6`, `2.2e-16` | `2e-5`, T0 / `2e-5`, T0 |
+| `calva_su15_dcn` | `4.1e-10`, `6.3e-15` / `7.4e-11`, `1.9e-15` | `1e-9`, T0 / T0 |
 
 ### Unfrozen GHK calcium channels
 
@@ -63,12 +82,14 @@ Class (d), `Cav2p1_*`, `Cav3p1_*`, `Cav3p3_*`: the
   treats the drive as constant. The staggered solver linearizes the whole
   membrane current by autodiff, so the unfrozen classes include the drive's
   voltage derivative in the implicit voltage step. The `_Frozen` classes
-  (`freeze_drive_gradient = True`) leave it out and match NEURON. The Cav2.1
-  `_Frozen` classes also use the `.mod`'s GHK constants (`F = 9.6485e4`,
-  `R = 8.3145`, `273.19 + celsius`); freezing alone leaves `7.4e-3 mV`. Both
+  (`freeze_drive_gradient = True`) leave it out and match NEURON. Since
+  MECH-6a every Cav2.1 class uses the `.mod`'s GHK constants (`F = 9.6485e4`,
+  `R = 8.3145`, `273.19 + celsius`), so freezing is the whole difference:
+  setting `freeze_drive_gradient = True` on `Cav2p1_MA2024_PC` gives
+  `2.8e-13` / `4.7e-11` / `1.4e-12 mV` (vinit / dc / ac). Both
   linearizations are first-order accurate: against a `dt = 1e-4 ms` reference
   at `dt = 0.01 ms`, the unfrozen and frozen Cav2.1 errors are `0.320` and
-  `0.311 mV` (Cav3.1: `0.082` and `0.084 mV`). Both class sets are kept: the
+  `0.311 mV` (Cav3.1: `0.082` and `0.084 mV`; measured before MECH-6a). Both class sets are kept: the
   whole-cell models use the `_Frozen` Cav2.1 and Cav3.1 classes, and the
   unfrozen classes keep the drive in reverse-mode gradients.
   `Cav3p3_RI2021_SC` has no `_Frozen` class.
@@ -85,7 +106,10 @@ Class (c), `calva_su15_dcn`: NEURON computes the membrane conductance as
   `(i(v + 0.001) - i(v)) / 0.001`. With `perm = 1 cm/s` the GHK current is
   stiff enough for that forward difference's truncation error to show; the
   BrainCell formula matches the `.mod`. Using the same difference in the
-  BrainCell linearization gives `6.6e-10 mV`.
+  BrainCell linearization gives `6.6e-10 mV`. Under voltage clamp the
+  configuration is T0; its large current holds NEURON's `SEClamp` up to
+  `3.3e-6 mV` from the command (`rs = 1e-9 MΩ`), which does not enter the
+  comparison because BrainCell replays NEURON's voltage.
 
 ### Na_ZH2019_IO limit branch
 
@@ -103,7 +127,68 @@ Class (c), `kca2p2` (GoC, GrC, BC, SC): these `.mod` files initialize with
   (`d(state)/dt = 8e-10 /ms` at `t = 0`). BrainCell solves the steady state
   exactly, as the PC `.mod`'s `LINEAR` block does (that configuration agrees to
   `5e-9 mV`). Setting NEURON's initial state to the exact steady state with an
-  `FInitializeHandler` gives `3.8e-12 mV`.
+  `FInitializeHandler` gives `3.8e-12 mV`. Under voltage clamp the same
+  initial offset gives `e_I = 1.1e-6`, `e_s = 3.1e-9` (`vc_steps`); writing
+  BrainCell's initial state into NEURON after `finitialize` gives
+  `e_I = 3.3e-13`, `e_s = 1.0e-16` in both protocols.
+
+### Kca1.1 steady-state initialization
+
+Class (c), `kca1p1` (GoC, GrC, BC, SC): the same `SOLVE activation
+  STEADYSTATE sparse` as Kca2.2, in a ten-state scheme. The initial state is
+  `1.3e-10` from the exact steady state at `-80 mV` (`1.1e-10` at `-100 mV`,
+  where `vc_ramp` starts). The current error under `vc_ramp`,
+  `e_I = 4.5e-10`, exceeds T0 while the states stay below it
+  (`e_s <= 3.1e-11`). The PC `.mod` solves a `LINEAR` system and is T0
+  (`e_I = 2.9e-14`). Writing BrainCell's initial state into NEURON after
+  `finitialize` gives `e_I = 2.9e-14`, `e_s = 2.8e-16` (`vc_ramp`). Under
+  current clamp all three templates stay within T0 (`<= 5.0e-9 mV`).
+
+### GHK drive near 0 mV in mod files without a limit branch
+
+Class (c), `cav3p3_ma24_pc`, `cav3p3_ma24_pc_frozen`, `cav3p3_ri21_sc`
+  (`vc_ramp`) and `cav3p1_test2_pc24` (both protocols): these `.mod` files
+  compute the GHK drive with `w/(exp(w) - 1)`, `w = v*0.001*z*F/(R*T)`, and no
+  branch at `w = 0`. `cahva_su15_dcn` (both protocols) and `calva_su15_dcn`
+  (`vc_steps`) are the same case below. Where the clamped voltage is within `1e-11 mV` of 0 mV
+  (the ramp sample at `t = 105 ms`, `v = -1.0e-11 mV`; the first sample of the
+  0 mV step, `v = 4.7e-13 mV`), `exp(w) - 1` keeps only a few significant
+  digits, and NEURON's current there is off by up to `2.5e-5` of the
+  protocol's largest current. BrainCell switches to the series `1 - w/2`
+  when `|exp(w) - 1| < 1e-6`, as `Cav3p1_MA24_PC.mod` does in its `ghk()`;
+  `cav3p1_ma24_pc`, the same class against that `.mod`, is T0. Evaluating the
+  `.mod`'s expression without the branch in BrainCell gives
+  `e_I = 1.3e-14` (Cav3.3 `vc_ramp`), `2.9e-14` and `4.1e-15` (test2
+  `vc_steps`, `vc_ramp`); the same patch raises `cav3p1_ma24_pc`'s `vc_ramp`
+  to `1.6e-6`. Closer still, the expression is singular: in the Cav3.3
+  `vc_steps` run, the second sample of the 0 mV step is `v = -1.3e-17 mV`,
+  where `exp(w)` rounds to exactly 1, so `ica` and then `v` and the gates are
+  not finite for the rest of that command (1198 of 1401 samples). The
+  comparison leaves that command out (`NON_FINITE_REFERENCE` in
+  `tolerances.py`; the test checks that it is still not finite); the other
+  seven are T0. Before MECH-19a the metrics dropped such NaN samples
+  silently and reported this protocol as T0; they now raise `ValueError` on
+  any non-finite sample. The current clamp of these configurations is not
+  affected (the unfrozen Cav3.1 rows above are the linearization).
+
+  The two SU2015 DCN `.mod` files compute `(v/T)/(1 - A)` with
+  `A = exp(-23.20764929 v/T)`, again without a branch. Since MECH-23a,
+  BrainCell evaluates this ratio through `exprel`, so it is finite at
+  0 mV and exact near it. The largest differences sit at the samples nearest
+  0 mV: `v = 3.0e-12 mV` in the 0 mV step and `1.7e-11 mV` on the ramp
+  (`cahva_su15_dcn`, `e_I = 6.7e-6`, `7.2e-6`), and `v = 1.5e-8 mV`
+  (`calva_su15_dcn` `vc_steps`, `4.1e-10`). Evaluating the `.mod`'s form, as
+  BrainCell did before MECH-23a, gives `e_I <= 8.2e-15`.
+
+### Ca_ZH2019_IO with freeze_m_inf=False
+
+Class (d), `ca_zh19_io` with the non-default `freeze_m_inf=False`: the `.mod`
+  computes `minf` in `rates()`, called from the `DERIVATIVE` block, so
+  NEURON's finite-difference conductance treats it as constant, as the default
+  `freeze_m_inf=True` does (`1.3e-12 mV`). With `False`, the staggered
+  solver's autodiff linearization also includes `d(minf)/dV`, the same
+  mechanism as the unfrozen GHK classes above. The option does not change the
+  current, and the voltage clamp stays T0 (`e_I = 1.3e-14`).
 
 Not addressed: the current (`ix`) traces of the two runners are one step
 apart, and NEURON's sample `k + 1` matches BrainCell's sample `k`. This affects

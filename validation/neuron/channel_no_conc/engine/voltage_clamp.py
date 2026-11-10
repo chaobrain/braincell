@@ -21,7 +21,7 @@ NEURON's voltage. The comparison metrics are ``e_I`` (current, normalized by
 the protocol's largest NEURON current) and ``e_s`` (every compared state).
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 import json
 from pathlib import Path
 from typing import Any
@@ -105,20 +105,24 @@ def compare_protocol(
     *,
     initialize=None,
     replay_voltages: Callable[[np.ndarray], np.ndarray] | None = None,
+    skip_commands: Collection[int] = (),
 ) -> dict[str, Any]:
     """Run every command of a voltage-clamp template on both sides.
 
     ``initialize`` replaces the NEURON initializer and ``replay_voltages``
     maps NEURON's voltage trace to the table BrainCell replays (tests use
-    both to check the initialization order and the step alignment). Returns
-    ``e_I``, ``e_s``, ``clamp_error_mV`` (largest ``|v - command|``), the
-    ``case`` and the per-command traces of both sides.
+    both to check the initialization order and the step alignment).
+    ``skip_commands`` lists command indices left out, for a reference that is
+    not finite there. Returns ``e_I``, ``e_s``, ``clamp_error_mV`` (largest
+    ``|v - command|``), the ``case`` and the per-command traces of both sides.
     """
     case, commands = load_protocol(config_path, template_path)
     gate_map = case.mapping_spec.gate_map
     currents, states, results = [], [], []
     clamp_error = 0.0
-    for command in commands:
+    for index, command in enumerate(commands):
+        if index in skip_commands:
+            continue
         neuron = run_neuron_command(case, command, initialize=initialize)
         clamp_error = max(clamp_error, float(np.max(np.abs(neuron["v"][1:] - command))))
         voltages = neuron["v"] if replay_voltages is None else replay_voltages(neuron["v"])

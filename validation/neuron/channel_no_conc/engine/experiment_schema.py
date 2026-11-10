@@ -774,6 +774,12 @@ def _resolve_template_paths(templates_raw: Any, *, config_path: Path) -> tuple[P
         resolved_path = _resolve_template_reference(template_path=text, config_dir=config_path.parent)
         if not resolved_path.exists():
             raise FileNotFoundError(f"Unknown scan template path: {resolved_path!s}.")
+        if "voltage_clamp" in json.loads(resolved_path.read_text()):
+            # The sweep workflows would run it as a current clamp and ignore the commands.
+            raise ValueError(
+                f"templates[{index}] ({resolved_path.name}) has a voltage_clamp block; "
+                "load it with engine/voltage_clamp.py instead of listing it."
+            )
         resolved_paths.append(resolved_path)
     return tuple(resolved_paths)
 

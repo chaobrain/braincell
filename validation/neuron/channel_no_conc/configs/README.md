@@ -217,6 +217,7 @@ HCN 的 `E_mV` 就应该写在这里：
 - 必填
 - 必须是相对当前 config 目录的路径
 - 路径都要存在
+- 只列电流钳模板：带 `voltage_clamp` 块的模板（`vc_steps`、`vc_ramp`）列入时抛 `ValueError`，它们由 `engine/voltage_clamp.py` 加载（见第 15 节）
 
 例如：
 

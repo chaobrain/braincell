@@ -31,8 +31,10 @@
 电压钳模板由 `engine/voltage_clamp.py` 运行：NEURON 用 `SEClamp`（`rs = 1e-9 MΩ`）
 钳住 soma，braincell 用同一个 Cell、以回放 NEURON 电压的 solver 只推进通道状态
 （共享模块 `validation/neuron/_clamp.py`）。观测量为电流 `ix`（按协议内最大
-NEURON 电流归一，`e_I`）与 `gates.*`（`e_s`）。这两个模板暂不写进各配置的
-`templates` 列表，只由 `tests/test_voltage_clamp.py` 对代表配置显式运行：
+NEURON 电流归一，`e_I`）与 `gates.*`（`e_s`）。这两个模板不写进配置的
+`templates` 列表（列入时 `load_model_config` 抛 `ValueError`，否则 sweep 工作流会把它
+当作电流钳运行），由测试显式运行：`tests/test_voltage_clamp.py` 跑每种模板的代表配置，
+`tests/test_catalogue_*.py`（`slow`）按家族跑全部配置的五个协议：
 
 ```python
 compare_protocol("configs/ma20_goc/kv3p4_ma20_goc.json", "templates/vc_steps.json")

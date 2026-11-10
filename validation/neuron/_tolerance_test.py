@@ -47,6 +47,14 @@ class MetricTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             relative_current_error([([0.0], [0.0])])
 
+    def test_metrics_reject_non_finite_samples_in_any_pair(self):
+        # Python's max() drops a NaN that is not first, so a NaN trace used to read as agreement.
+        finite = ([1.0, 2.0], [1.0, 2.0])
+        for bad in (([1.0, np.nan], [1.0, 2.0]), ([1.0, 2.0], [np.inf, 2.0])):
+            for metric in (max_abs_error, relative_current_error):
+                with self.subTest(metric=metric.__name__, bad=bad), self.assertRaisesRegex(ValueError, "non-finite"):
+                    metric([finite, bad])
+
 
 class ToleranceTableTest(unittest.TestCase):
     def test_unlisted_configurations_and_metrics_are_t0(self):

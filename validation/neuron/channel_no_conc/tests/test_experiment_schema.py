@@ -231,6 +231,17 @@ class ExperimentSchemaTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "not declared in config.templates"):
                 experiment_schema.load_sweep_config(config_path, undeclared_path)
 
+    def test_load_model_config_rejects_a_listed_voltage_clamp_template(self) -> None:
+        # A listed voltage-clamp template would run as a plain current clamp;
+        # voltage_clamp.compare_protocol loads it instead.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = write_json(
+                Path(tmpdir) / "kv_test.json",
+                build_main_config_payload([str(CHANNEL_NO_CONC_ROOT / "templates" / "vc_steps.json")]),
+            )
+            with self.assertRaisesRegex(ValueError, r"templates\[0\].*vc_steps\.json.*voltage_clamp"):
+                experiment_schema.load_model_config(config_path)
+
     def test_expand_cases_generates_group_cartesian_product(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

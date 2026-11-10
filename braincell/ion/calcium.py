@@ -621,10 +621,32 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
     :class:`CalciumDetailed` without its resting level: the two
     derivatives then differ by exactly :math:`\beta \cdot [Ca]_{rest}`.
 
-    ``alpha`` and ``beta`` are generic first-order-model
-    coefficients with no identified literature source; their default
-    values are not traceable to a specific paper from the code alone,
-    so none is cited here.
+    The form and the default values are those of the dendritic
+    calcium equation of the Pinsky-Rinzel model [1]_,
+    :math:`Ca' = -0.13\, I_{Ca} - 0.075\, Ca`, as implemented in
+    ModelDB accession 35358. There :math:`I_{Ca}` is
+    outward-positive, so the signs agree with the inward-positive
+    :math:`I_{Ca}` here. Three things differ:
+
+    - In that implementation the calcium variable is dimensionless:
+      it starts at 0 and is compared against thresholds of 250 and
+      500 by the potassium currents it gates. The ``mM`` and
+      ``uA/cm**2`` units of the defaults here are a BrainCell
+      assignment, not the source's. With them the steady state
+      :math:`Ci = (\alpha/\beta) I_{Ca}` is about 1.7 mM per
+      :math:`\mathrm{\mu A/cm^2}` of inward current, several orders of
+      magnitude above the ``2.4e-4 mM`` initial value.
+    - The rectification :math:`\max(\cdot, 0)` is a BrainCell
+      addition.
+    - The initial value ``2.4e-4 mM`` is BrainCell's; the source
+      starts from 0.
+
+    References
+    ----------
+    .. [1] Pinsky, P. F., & Rinzel, J. (1994). Intrinsic and network
+           rhythmogenesis in a reduced Traub model for CA3 neurons.
+           Journal of Computational Neuroscience, 1(1-2), 39-60.
+           doi:10.1007/BF00962717
 
     Examples
     --------
@@ -3751,13 +3773,15 @@ class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
     imported NMODL's ``* 1e4`` unit-conversion literal rather than
     deriving it dimensionally.
 
-    The kinetic constants (``kCa``, ``tauCa``, ``caiBase``, ``depth``)
-    are DCN-model parameters; no paper's text can be cited as
-    printing this specific relaxation-model form. The kinetics trace
-    to the deep cerebellar nucleus model of Steuber et al. (2011)
-    [1]_, translated from GENESIS to NEURON by Luthman et al. (2011)
-    and used in the NEURON DCN model of Sudhakar et al. (2015) [2]_,
-    from which this mechanism is imported.
+    The supplementary material of [1]_ prints this relaxation form,
+    driven by the CaHVA current only, with a 50 nM baseline, a 70 ms
+    decay time constant, a 200 nm shell and a scale factor of
+    3.45e-7 mol/C in the soma (1.04e-6 mol/C in dendrites); the mod
+    file and this class carry the same numbers but label ``kCa`` in
+    1/C. The kinetics trace to the deep cerebellar nucleus model of
+    Steuber et al. (2011) [1]_, translated from GENESIS to NEURON by
+    Luthman et al. (2011) and used in the NEURON DCN model of Sudhakar
+    et al. (2015) [2]_, from which this mechanism is imported.
 
     References
     ----------
@@ -3923,13 +3947,15 @@ class CdpLVA_SU2015_DCN(Calcium, DynamicNernstIon):
     imported NMODL's ``* 1e4`` unit-conversion literal rather than
     deriving it dimensionally.
 
-    The kinetic constants (``kCal``, ``tauCal``, ``caliBase``,
-    ``depth``) are DCN-model parameters; no paper's text can be cited
-    as printing this specific relaxation-model form. The kinetics
-    trace to the deep cerebellar nucleus model of Steuber et al.
-    (2011) [1]_, translated from GENESIS to NEURON by Luthman et al.
-    (2011) and used in the NEURON DCN model of Sudhakar et al. (2015)
-    [2]_, from which this mechanism is imported.
+    The constants are those of :class:`CdpHVA_SU2015_DCN`, whose pool
+    the supplementary material of [1]_ prints; [1]_ itself describes
+    no pool fed by the LVA current, and its Methods state that the
+    CaV3.1 current was not connected to the calcium pool. The mod
+    file's own ``COMMENT`` calls this mechanism a copy of the HVA
+    pool. The kinetics trace to the deep cerebellar nucleus model of
+    Steuber et al. (2011) [1]_, translated from GENESIS to NEURON by
+    Luthman et al. (2011) and used in the NEURON DCN model of Sudhakar
+    et al. (2015) [2]_, from which this mechanism is imported.
 
     References
     ----------

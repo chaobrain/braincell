@@ -178,6 +178,15 @@
 - `ind_exp_euler` computes each state's update with
   `braintools.quad.ode_expeuler_step` (the same formula; trajectories are
   unchanged).
+- Docstrings of `CalciumFirstOrder` and the deep cerebellar nucleus
+  mechanisms (`*_SU2015_DCN`, `Cdp*_SU2015_DCN`) state their sources more
+  precisely (MECH-13). `CalciumFirstOrder` now cites Pinsky & Rinzel (1994),
+  whose dendritic calcium equation it implements, and notes that the source's
+  calcium variable is dimensionless while the defaults here are in `mM`. The
+  DCN docstrings now say which constants the supplementary material of
+  Steuber et al. (2011) prints, and `SK_SU2015_DCN` notes that the
+  supplement's `tau_z` is 60 times the value in the authors' own code, which
+  this class follows. No behaviour changes.
 
 - **Breaking:** braincell now requires `jax>=0.11` (it was `>=0.9`), in
   the base requirement and in the `cpu`, `cuda12`, `cuda13` and `tpu`

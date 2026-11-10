@@ -1017,11 +1017,11 @@ class HCN_SU2015_DCN(OhmicHH):
     translated from GENESIS to NEURON by Luthman et al. (2011), and
     used in Sudhakar et al. (2015) [2]_. ``HCN`` is one of only four
     mechanism names (with ``CaLVA``, ``NaP`` and ``SK``) that occur
-    as strings in the text of [2]_; the paper does not, however,
-    print the Boltzmann or time constants above for any mechanism --
-    those are established only by direct comparison against the
-    ``.mod`` source, not by a per-mechanism statement in either
-    paper.
+    as strings in the text of [2]_; that paper does not, however,
+    print the Boltzmann or time constants above for any mechanism.
+    The supplementary material of [1]_ does: :math:`m^2` gating,
+    :math:`V_h = -80` mV, :math:`k = 5` mV and a constant
+    :math:`\tau_m = 400` ms, for 32 degrees Celsius.
 
     :meth:`f_m_tau` returns the constant ``400.0 / qdeltat`` (400 ms
     by default), a genuine, finite, voltage-independent time

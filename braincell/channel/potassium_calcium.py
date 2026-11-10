@@ -238,6 +238,15 @@ class SK_SU2015_DCN(OhmicHH):
     text and is recorded here only as the translation step, not as a
     numbered reference.
 
+    **The supplementary material of [1]_ disagrees with its own code
+    on** :math:`\tau_z`. It prints :math:`z_\infty` as above
+    (half-activation at 3e-4 mM, Hill coefficient 4), but gives
+    :math:`\tau_z = 60 - 11.2 \times 10^3 [\mathrm{Ca}]_i` ms below
+    0.005 mM and 4 ms above -- 60 times the values used here. This
+    class follows the mod file, which matches the GENESIS code
+    deposited with [1]_ (ModelDB 136175): 1 ms minus 186.7 ms/mM times
+    :math:`[\mathrm{Ca}]_i`, and 0.0667 ms.
+
     **Import deviation, distinct from the code's own branch.** The
     upstream ``.mod`` file tabulated ``zinf`` and ``tauz`` over a
     clamped ``cai`` range of ``[0, 0.01]`` mM via a NEURON ``TABLE``

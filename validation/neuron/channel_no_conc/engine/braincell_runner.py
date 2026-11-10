@@ -54,7 +54,20 @@ except ImportError:  # pragma: no cover
     from stimulus import build_braincell_stimulus  # type: ignore
 
 
-def run_case(case: ChannelNoConcCase, *, solver: str | None = None) -> dict[str, Any]:
+def build_cell(
+    case: ChannelNoConcCase,
+    *,
+    solver=None,
+    pop_size: int = 1,
+    subsolver: str | None = None,
+    substeps: int | None = None,
+):
+    """Build and initialize the single-soma Cell of ``case``, with its probes.
+
+    ``pop_size``, ``subsolver`` and ``substeps`` are passed to
+    :class:`braincell.Cell`; the convergence checks use them to replay
+    several voltage commands at once and to choose the Markov subsolver.
+    """
     import braincell
     from braincell.filter import AllRegion, at
     from braincell.mech import CableProperty, Channel, CurrentProbe, Ion, MechanismProbe, StateProbe, get_registry
@@ -81,6 +94,9 @@ def run_case(case: ChannelNoConcCase, *, solver: str | None = None) -> dict[str,
         cv_policy=braincell.CVPerBranch(),
         V_init=float(case.simulation.v_init_mV) * u.mV,
         solver="staggered" if solver is None else solver,
+        pop_size=pop_size,
+        subsolver=subsolver,
+        substeps=substeps,
     )
 
     region = AllRegion()
@@ -157,7 +173,12 @@ def run_case(case: ChannelNoConcCase, *, solver: str | None = None) -> dict[str,
             ion = cell.get_ion(ion_name)
             ion.E = float(case.ion_state.E_mV) * u.mV
     cell.reset_state()
+    return cell
 
+
+def run_case(case: ChannelNoConcCase, *, solver: str | None = None) -> dict[str, Any]:
+    cell = build_cell(case, solver=solver)
+    mapping_spec = case.mapping_spec
     dt = float(case.simulation.dt_ms) * u.ms
     result = cell.run(
         dt=dt,

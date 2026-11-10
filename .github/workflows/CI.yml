@@ -183,7 +183,7 @@ jobs:
           done
       - name: Test the channel_no_conc suite
         run: |
-          pytest validation/neuron/channel_no_conc/tests --durations=10
+          pytest validation/neuron/channel_no_conc/tests validation/neuron/_convergence_test.py --durations=10
 
   # Tests that live outside the braincell package: the optim validation suite
   # and the benchmark scripts' own tests. Modules marked `slow` (pyproject.toml)

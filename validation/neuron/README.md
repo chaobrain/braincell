@@ -33,7 +33,7 @@ Ion notebooks build their explicit mechanism subsets. Builds live under
 the Python process when changing a loaded mechanism version.
 
 `_paths.py` owns repository source and build locations; `_mechanisms.py` owns
-compilation. Two modules are shared by the comparison suites:
+compilation. Three modules are shared by the comparison suites:
 
 - `_clamp.py`: voltage-clamp protocols (`steps`, `ramp`), the NEURON
   `SEClamp` run with its initialization order (ion concentrations written
@@ -43,9 +43,13 @@ compilation. Two modules are shared by the comparison suites:
   and the per-suite T1 tolerance table. A configuration missing from a
   suite's table is T0; each T1 entry names its deviation class and a heading
   of [known differences](known-differences.md).
+- `_convergence.py`: `dt` convergence and stiffness without NEURON. It replays
+  the clamp commands at several `dt` against an exact reference, classifies
+  the Cell's integration path, and scans a channel class for stiffness
+  (`rho_max`) and non-finite values; see the channel_no_conc README.
 
 ```bash
-pytest -q validation/neuron/_clamp_test.py validation/neuron/_tolerance_test.py
+pytest -q validation/neuron/_clamp_test.py validation/neuron/_tolerance_test.py validation/neuron/_convergence_test.py
 ``` Model builders and comparison configuration remain in this tree,
 so performance workflows can reuse them without duplicating model parameters.
 

@@ -173,6 +173,8 @@ def _validate_like_default(
         return unit_error_message(name, problem, owner=owner, source=source, value=value)
 
     if isinstance(default, u.Quantity):
+        if units_only and isinstance(value, u.Quantity) and value.dim is default.dim:
+            return  # dimensions are interned; skip formatting ``expected``
         expected = f"{default.unit}" + (f" (declared in {declared_in})" if declared_in else "")
         if not isinstance(value, u.Quantity):
             raise TypeError(message(f"requires a quantity compatible with {expected}"))

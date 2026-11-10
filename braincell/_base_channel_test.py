@@ -139,6 +139,8 @@ class DirectConstructionUnitCheckTest(unittest.TestCase):
         counts = {}
         for category in ("channel", "ion"):
             for _, cls in get_registry().items(category):
+                if cls.__module__.endswith("_test"):
+                    continue  # classes other tests register
                 with warnings.catch_warnings():
                     warnings.simplefilter("error", FutureWarning)
                     cls(1)

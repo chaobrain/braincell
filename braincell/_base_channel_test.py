@@ -128,5 +128,84 @@ class BaseChannelExportTest(unittest.TestCase):
         self.assertTrue(issubclass(Synapse, IonChannel))
 
 
+class DirectConstructionUnitCheckTest(unittest.TestCase):
+    """Channel and Ion check parameter units after their outermost ``__init__`` (MECH-28)."""
+
+    def test_registry_classes_constructed_with_defaults_do_not_warn(self):
+        import warnings
+
+        from braincell.mech import get_registry
+
+        counts = {}
+        for category in ("channel", "ion"):
+            for _, cls in get_registry().items(category):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", FutureWarning)
+                    cls(1)
+                counts[category] = counts.get(category, 0) + 1
+        self.assertGreaterEqual(counts["channel"], 112)
+        self.assertGreaterEqual(counts["ion"], 23)
+
+    def test_runtime_nodes_built_by_a_cell_do_not_warn(self):
+        import warnings
+
+        import brainunit as u
+        import braincell
+        from braincell.filter import AllRegion
+
+        branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[5.0, 5.0] * u.um)
+        cell = braincell.Cell(braincell.Morphology.from_root(branch), cv_policy=braincell.CVPerBranch(2))
+        cell.paint(AllRegion(), braincell.mech.Channel("IL", name="leak", g_max=0.2 * u.mS / u.cm**2))
+        cell.paint(AllRegion(), braincell.mech.Ion("CalciumDetailed", tau=10.0 * u.ms))
+        cell.paint(AllRegion(), braincell.mech.Channel("CaL_IS2008", g_max=lambda ctx: 1.0 * u.mS / u.cm**2))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            cell.init_state()
+
+    def test_wrapping_keeps_the_constructor_signature(self):
+        import inspect
+
+        import brainunit as u
+        from braincell import Channel
+        from braincell.channel import IL
+        from braincell.ion import SodiumFixed
+
+        for cls in (IL, SodiumFixed):
+            with self.subTest(cls=cls.__name__):
+                self.assertEqual(inspect.signature(cls.__init__), inspect.signature(cls.__init__.__wrapped__))
+                self.assertEqual(cls.__init__.__name__, "__init__")
+        self.assertEqual(list(inspect.signature(IL.__init__).parameters), ["self", "size", "g_max", "E", "name"])
+
+        class Custom(Channel):
+            parameter_units = {"g_max": u.mS / u.cm**2}
+
+            def __init__(self, size, g_max=None, name=None):
+                super().__init__(size, name=name)
+                self.g_max = g_max
+
+        self.assertEqual(str(inspect.signature(Custom.__init__)), "(self, size, g_max=None, name=None)")
+        with self.assertWarnsRegex(FutureWarning, "declared in .*Custom.parameter_units\\); got 0.1 mV") as caught:
+            Custom(1, g_max=0.1 * u.mV)
+        self.assertEqual(caught.filename, __file__)
+
+    def test_a_failed_constructor_does_not_disable_later_checks(self):
+        from braincell.channel import IL
+
+        class Failing(IL):
+            def __init__(self, size, **kwargs):
+                super().__init__(size, **kwargs)
+                raise RuntimeError("boom")
+
+        with self.assertRaisesRegex(RuntimeError, "boom"):
+            Failing(1, g_max=0.1)  # no check: the constructor did not return
+        with self.assertWarns(FutureWarning):
+            IL(1, g_max=0.1)
+
+    def test_synapses_are_not_wrapped(self):
+        from braincell.synapse import ExpSyn
+
+        self.assertFalse(hasattr(ExpSyn.__init__, "__wrapped__"))
+
+
 if __name__ == "__main__":
     unittest.main()

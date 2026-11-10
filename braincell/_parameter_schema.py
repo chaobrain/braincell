@@ -62,7 +62,9 @@ class SignatureParameterSpec(ParameterSpec):
     prototype: object = inspect.Parameter.empty
     declared_in: str | None = None
 
-    def validate(self, value: object, name: str, *, owner: str | None = None, source: str | None = None) -> None:
+    def validate(
+        self, value: object, name: str, *, owner: str | None = None, source: str | None = None, units_only: bool = False
+    ) -> None:
         prototype = self.prototype if _has_unit_prototype(self.prototype) else self.default
         if not _has_unit_prototype(prototype):
             prototype = value
@@ -73,8 +75,9 @@ class SignatureParameterSpec(ParameterSpec):
             owner=owner,
             source=source,
             declared_in=self.declared_in,
+            units_only=units_only,
         )
-        if self.validator is not None:
+        if self.validator is not None and not units_only:
             self.validator(value, name)
 
 

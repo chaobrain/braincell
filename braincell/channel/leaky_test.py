@@ -16,8 +16,10 @@
 
 
 import unittest
+import warnings
 
 import brainunit as u
+import jax
 import jax.numpy as jnp
 
 from braincell._base_neuron import HHTypedNeuron
@@ -139,6 +141,71 @@ class ILTest(unittest.TestCase):
         self.assertIsNone(ch.compute_derivative(V))
         self.assertIsNone(ch.init_state(V))
         self.assertIsNone(ch.reset_state(V))
+
+
+class ILDirectConstructionUnitTest(unittest.TestCase):
+    """Parameter units are checked when ``IL`` is constructed directly (MECH-28)."""
+
+    def test_wrong_units_warn_at_the_constructing_line(self) -> None:
+        cases = [
+            (0.1 * u.mV, ValueError, "has units incompatible with mS / cm\\^2; got 0.1 mV"),
+            (0.1, TypeError, "requires a quantity compatible with mS / cm\\^2; got 0.1 \\(no unit\\)"),
+        ]
+        for g_max, error, problem in cases:
+            with self.subTest(g_max=g_max):
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    ch = IL(1, g_max=g_max)
+                future = [w for w in caught if issubclass(w.category, FutureWarning)]
+                self.assertEqual(len(future), 1)
+                self.assertEqual(future[0].filename, __file__)
+                self.assertRegex(
+                    str(future[0].message),
+                    f"^Channel 'IL' parameter 'g_max' {problem}\\. "
+                    f"This will raise {error.__name__} at construction from braincell 0.4\\.$",
+                )
+                # The object is built as before: the value is stored unchanged.
+                stored = ch.g_max.to_decimal(u.mV) if isinstance(g_max, u.Quantity) else ch.g_max
+                self.assertTrue(u.math.allclose(stored, jnp.array([0.1])))
+
+    def test_instance_name_appears_in_the_message(self) -> None:
+        with self.assertWarnsRegex(FutureWarning, "^Channel 'leak' \\(IL\\) parameter 'E' "):
+            IL(1, E=-70.0 * u.mS, name="leak")
+
+    def test_subclass_warns_once_after_its_outermost_init(self) -> None:
+        class Rescaled(IL):
+            def __init__(self, size, g_max=0.1 * (u.mS / u.cm**2), E=-70.0 * u.mV, name=None):
+                super().__init__(size, g_max=g_max, E=E, name=name)
+                if not isinstance(g_max, u.Quantity):
+                    self.g_max = g_max * (u.mS / u.cm**2)  # bare numbers are taken as mS/cm^2
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            fixed = Rescaled(1, g_max=0.2)
+        self.assertTrue(u.math.allclose(fixed.g_max.to_decimal(u.mS / u.cm**2), 0.2))
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            Rescaled(1, g_max=0.2 * u.mV)
+        future = [w for w in caught if issubclass(w.category, FutureWarning)]
+        self.assertEqual([w.filename for w in future], [__file__])
+        self.assertIn("Channel 'Rescaled' parameter 'g_max'", str(future[0].message))
+
+    def test_traced_values_with_units_do_not_warn_inside_jit(self) -> None:
+        def build(g, E):
+            ch = IL(1, g_max=g * (u.mS / u.cm**2), E=E * u.mV)
+            return ch.current(jnp.array([-60.0]) * u.mV).to_decimal(u.mS * u.mV / u.cm**2)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            got = jax.jit(build)(0.1, -70.0)
+            jax.grad(lambda g: build(g, -70.0).sum())(0.1)
+        self.assertTrue(u.math.allclose(got, jnp.array([-1.0]), atol=1e-6))
+
+    def test_traced_bare_values_warn_inside_jit(self) -> None:
+        with self.assertWarnsRegex(FutureWarning, "'g_max' requires a quantity compatible with mS / cm\\^2") as caught:
+            jax.jit(lambda g: IL(1, g_max=g).g_max)(0.1)
+        self.assertEqual(caught.filename, __file__)
 
 
 if __name__ == "__main__":

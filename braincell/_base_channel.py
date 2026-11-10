@@ -25,6 +25,7 @@ modules above it can name these classes with plain top-of-file imports.
 The public import path is ``braincell`` itself, which re-exports all four.
 """
 
+import functools
 from typing import Mapping, NamedTuple, Optional
 
 import brainstate
@@ -36,6 +37,7 @@ from braincell._typing import ArrayLike, Size
 from braincell._parameter_schema import RuntimeParameterState, SignatureParameterSpec, constructor_parameters
 from braincell._misc import TreeNode
 from braincell.mech import NoEventInput, StateSpec
+from braincell.mech._units import warn_invalid_constructed_parameters
 from braincell.quad.protocol import DiffEqModule, DiffEqSingleState, IndependentIntegration
 
 __all__ = ["IonChannel", "IonInfo", "Channel", "Synapse"]
@@ -71,6 +73,50 @@ def _normalize_size(size) -> tuple:
         if all(isinstance(item, (int, np.integer)) for item in size):
             return tuple(int(item) for item in size)
     raise ValueError(f'size must be int, or a non-empty tuple/list of int. But we got {size!r}')
+
+
+#: Nesting depth of ``__init__`` calls for each instance under construction,
+#: keyed by ``id``; an instance is checked when its outermost call returns.
+_INIT_DEPTH: dict = {}
+
+
+@functools.lru_cache(maxsize=None)
+def _metaclass_call_codes(metaclass: type) -> frozenset:
+    """Code objects of the Python ``__call__`` methods along a metaclass MRO.
+
+    brainstate's ``GraphNodeMeta.__call__`` runs ``__init__`` for the user, so
+    its frame sits between the user's line and the outermost ``__init__``.
+    """
+    codes = (getattr(vars(klass).get("__call__"), "__code__", None) for klass in metaclass.__mro__)
+    return frozenset(code for code in codes if code is not None)
+
+
+def _check_units_after_init(init):
+    """Wrap a Channel or Ion ``__init__`` to check parameter units after the outermost call.
+
+    The depth is tracked per instance, so a channel built inside another
+    node's constructor is still checked on its own. ``functools.wraps``
+    keeps ``inspect.signature``, which parameter discovery reads.
+    """
+
+    @functools.wraps(init)
+    def __init__(self, *args, **kwargs):
+        key = id(self)
+        depth = _INIT_DEPTH.get(key, 0)
+        _INIT_DEPTH[key] = depth + 1
+        try:
+            init(self, *args, **kwargs)
+        finally:
+            if depth:
+                _INIT_DEPTH[key] = depth
+            else:
+                del _INIT_DEPTH[key]
+        if not depth:
+            warn_invalid_constructed_parameters(
+                self, self._unit_check_category, skip=_metaclass_call_codes(type(type(self)))
+            )
+
+    return __init__
 
 
 class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
@@ -136,6 +182,23 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
     #: Units of constructor parameters whose default cannot carry one, such
     #: as ``g_max=None``; merged along the MRO, see :meth:`parameter_info`.
     parameter_units: Mapping[str, u.Unit] = {}
+
+    #: ``"channel"`` or ``"ion"`` for classes whose direct construction checks
+    #: parameter units (see :meth:`__init_subclass__`); ``None`` otherwise.
+    _unit_check_category: Optional[str] = None
+
+    def __init_subclass__(cls, **kwargs):
+        """Wrap the subclass's own ``__init__`` to check parameter units.
+
+        For Channel and Ion subclasses, the parameters in
+        :meth:`parameter_info` are read back once the outermost ``__init__``
+        returns; a unit mismatch gives a ``FutureWarning`` at the
+        constructing line.
+        """
+        super().__init_subclass__(**kwargs)
+        init = vars(cls).get("__init__")
+        if cls._unit_check_category is not None and init is not None:
+            cls.__init__ = _check_units_after_init(init)
 
     def __init__(
         self,
@@ -401,8 +464,20 @@ class Channel(IonChannel):
     {"g_max": u.mS / u.cm**2}``; otherwise any unit passes. Values reaching
     the channel through a Cell are checked against these units in
     ``Cell.init_state()``, by ``View.set`` and when a trainable source is
-    registered (see :meth:`IonChannel.parameter_info`); direct construction
-    does not check them.
+    registered (see :meth:`IonChannel.parameter_info`). A directly
+    constructed channel (``IL(1, g_max=...)``, as in a ``SingleCompartment``)
+    compares the units of these parameters once its outermost ``__init__``
+    returns; values traced under ``jax.jit`` or ``jax.grad`` are compared too.
+
+    Warns
+    -----
+    FutureWarning
+        At the constructing line, when a directly constructed channel stores
+        a parameter whose units do not match :meth:`IonChannel.parameter_info`,
+        such as ``IL(1, g_max=0.1 * u.mV)`` or ``IL(1, g_max=0.1)``. The
+        object is built as before; the first ``update`` would fail with a
+        ``UnitMismatchError``. From braincell 0.4 the constructor raises the
+        ``TypeError`` or ``ValueError`` the warning names.
 
     Examples
     --------
@@ -422,6 +497,7 @@ class Channel(IonChannel):
     """
 
     __module__ = 'braincell'
+    _unit_check_category = "channel"
 
     states: Mapping[str, StateSpec] = {}
 

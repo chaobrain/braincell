@@ -383,6 +383,18 @@
   declaration and never initializes it is affected; from 0.4 the declaration
   itself will raise. Callables, braintools initializers and names not yet
   registered are still checked at `init_state()` only.
+- **Directly constructing a Channel or Ion with wrongly united parameters**
+  (MECH-28). A `bc.Channel` or `bc.Ion` built outside a Cell (for example in a
+  `SingleCompartment`) now compares the units of its `parameter_info()`
+  parameters once its outermost `__init__` returns, and emits a
+  `FutureWarning` at the constructing line, e.g. `Channel 'IL' parameter
+  'g_max' requires a quantity compatible with mS / cm^2; got 0.1 (no unit).
+  This will raise TypeError at construction from braincell 0.4.` Such an
+  object already failed at its first `update` with a `UnitMismatchError` that
+  named neither class nor parameter; the object is built as before. Only units
+  are compared, so values traced under `jax.jit` or `jax.grad` are checked too;
+  `*_initializer` parameters, callables and `None` are skipped. Subclass
+  `__init__` signatures are unchanged. Synapses already check at construction.
 
 
 ## Version 0.2.0

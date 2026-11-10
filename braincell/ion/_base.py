@@ -478,6 +478,23 @@ class InitNernstIon(brainstate.mixin.Mixin):
         self._update_reversal()
 
 
+def _total_current_input(ion, V):
+    """Return the ``total_current`` a dynamic ion's derivative consumes.
+
+    The one reading path shared by :class:`DynamicNernstIon` and
+    :class:`KineticIon`: ``None`` unless the class sets
+    ``uses_total_current``; otherwise the step-start snapshot
+    ``_cached_total_current`` when the Cell has set one (so the pool does not
+    see a current from channel states already advanced later in the step),
+    else ``ion.current(V, include_external=True)``.
+    """
+    if not type(ion).uses_total_current:
+        return None
+    if hasattr(ion, "_cached_total_current"):
+        return ion._cached_total_current
+    return ion.current(V, include_external=True)
+
+
 class DynamicNernstIon(brainstate.mixin.Mixin):
     r"""Mixin for ions with a dynamic ``Ci`` state and Nernst-computed ``E``.
 
@@ -605,20 +622,10 @@ class DynamicNernstIon(brainstate.mixin.Mixin):
 
     def _ion_compute_derivative_hook(self, V):
         """Populate ``Ci.derivative`` using the concrete ion model."""
-        total_current = None
-        if type(self).uses_total_current:
-            # In the family-phased update path, current-driven ion dynamics
-            # consume a step-start cached current snapshot when available.
-            # This avoids re-evaluating a newer current after channel or
-            # voltage states have already advanced later in the step.
-            if hasattr(self, "_cached_total_current"):
-                total_current = self._cached_total_current
-            else:
-                total_current = self.current(V, include_external=True)
         self.Ci.derivative = self.derivative(
             self.Ci.value,
             V,
-            total_current=total_current,
+            total_current=_total_current_input(self, V),
         )
 
     def _drive_current(self, total_current):
@@ -917,15 +924,7 @@ class KineticIon(IndependentIntegration):
         specs = _Specs.for_type(type(self))
         species = _Species(self, specs)
         conserve = _Conserve(self, specs, species)
-        total_current = None
-        if type(self).uses_total_current:
-            # Reuse a cached total current when a caller has precomputed one;
-            # otherwise fall back to the ion's current evaluation path.
-            if hasattr(self, "_cached_total_current"):
-                total_current = self._cached_total_current
-            else:
-                total_current = self.current(V, include_external=True)
-        _Flux(self, specs, species).compute(V, conserve.resolve(V), total_current=total_current)
+        _Flux(self, specs, species).compute(V, conserve.resolve(V), total_current=_total_current_input(self, V))
 
     def _ion_post_integral_hook(self, V):
         """Refresh cached algebraic species after one integration step."""

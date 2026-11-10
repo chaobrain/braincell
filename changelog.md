@@ -191,6 +191,17 @@
 
 ### Bug Fixes
 
+- Current-driven calcium pools read their current consistently (MECH-2).
+  `CdpHVA_SU2015_DCN`, `CdpLVA_SU2015_DCN`,
+  `ToyCaBindingIcaSourceKinetic_SU2015_DCN` and
+  `ToyCaPumpFactorKinetic_SU2015_DCN` read `kCa`/`kCal` in `1/coulomb`
+  instead of taking its bare mantissa, so `3.45e-4 / u.kcoulomb` no longer
+  drives `Ci` 1000 times faster than the equal default `3.45e-7 / u.coulomb`
+  in a directly constructed pool (`Cell` already converted the unit); defaults
+  are unchanged. `Cell.cache_ion_total_currents` no longer retries a
+  `TypeError` without `include_external`, which silently dropped the external
+  currents from the step-start snapshot.
+
 - `Network.add_population` (and `Population`) reject a `SingleCompartment`
   with a `TypeError` that says to build the neuron as a `Cell`. The check
   accepted any model with a one-dimensional `pop_size`, so a

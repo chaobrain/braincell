@@ -20,10 +20,12 @@ import brainstate
 import braintools
 import brainunit as u
 import jax.numpy as jnp
+import numpy as np
 
 from braincell._base_channel import Channel
 from braincell._base_channel import IonInfo
 from braincell.ion import Calcium
+from braincell.ion import CalciumDetailed
 from braincell.ion import _base as ionbase
 from braincell.ion._base import Conserve
 from braincell.ion._base import DynamicNernstIon
@@ -34,6 +36,8 @@ from braincell.ion._base import KineticIon
 from braincell.ion._base import Reaction
 from braincell.ion._base import Species
 from braincell.ion._base import _RadialShellGeometry
+from braincell.ion._testing import make_shell_ion
+from braincell.mech import get_registry
 from braincell.quad import get_integrator
 from braincell.quad.protocol import DiffEqState
 
@@ -719,6 +723,161 @@ class DerivedInitialValueTest(unittest.TestCase):
             ion.Buffnull2 = 2 * ion.Buffnull2
             ion.reset_state(-65 * u.mV)
             self.assertTrue(u.math.allclose(ion.Buff2.value, first if explicit else 2 * first))
+
+
+# Ion-current input contract for every registered dynamic ion (MECH-2). A pool
+# with ``uses_total_current`` turns its summed inward current -- own channels
+# plus ``register_external_current`` callbacks, or the step-start snapshot
+# ``_cached_total_current`` when set -- into ``dCi/dt``. The rates below come
+# from each model's equation; a new dynamic ion fails
+# ``test_every_dynamic_ion_is_classified`` until it is listed in one table.
+_F = u.faraday_constant
+
+
+def _mod_shell_rate(k, depth):
+    """``k / depth * 1e4`` of the DCN ``.mod`` files, in mM/ms per mA/cm**2."""
+    return k.to_decimal(u.coulomb**-1) / depth.to_decimal(u.um) * 1e4 * (u.mM / u.ms) / (u.mA / u.cm**2)
+
+
+def _radial_shell_rate(ion):
+    """Influx ``I * pi * diam / (2 F)`` into the outer shell of volume ``diam**2 * vrat``."""
+    return u.math.pi / (2.0 * _F * ion.diam_arc_mean * ion.vrat)
+
+
+#: ``d(dCi/dt) / dI`` for an inward (positive) current density ``I``.
+_CURRENT_TO_CI_RATE = {
+    "CalciumDetailed": lambda ion: 1.0 / (2.0 * _F * ion.d),
+    "CalciumFirstOrder": lambda ion: ion.alpha,
+    "CdpHVA_SU2015_DCN": lambda ion: _mod_shell_rate(ion.kCa, ion.depth),
+    "CdpLVA_SU2015_DCN": lambda ion: _mod_shell_rate(ion.kCal, ion.depth),
+    "ToyCaBindingIcaSourceKinetic_SU2015_DCN": lambda ion: _mod_shell_rate(ion.kCa, ion.depth),
+    # Source and ``Ci`` both carry the ``cyt_volume`` factor.
+    "ToyCaPumpFactorKinetic_SU2015_DCN": lambda ion: _mod_shell_rate(ion.kCa, ion.depth),
+    **dict.fromkeys(
+        (
+            "CdpCAM_MA2024_PC",
+            "CdpCR_MA2020_GrC",
+            "CdpStC_MA2020_GoC",
+            "CdpStC_MA2025_BC",
+            "CdpStC_NoCAM_MA2020_GoC",
+            "CdpStC_RI2021_SC",
+        ),
+        _radial_shell_rate,
+    ),
+}
+
+#: Dynamic ions with ``uses_total_current = False``, and why.
+_NOT_CURRENT_DRIVEN = {
+    "CdpStC_CAMOnly_MA2020_GoC": "isolates the CaM subnetwork of its .mod file; no influx or pump",
+    "ToyCaBindingKinetic_SU2015_DCN": "binding-only fixture with no source term",
+    "ToyCaBindingSourceKinetic_SU2015_DCN": "fixture with a constant, not current-driven, source",
+    "ToyDiamFactorKinetic_SU2015_DCN": "geometry-factor fixture with no source term",
+}
+
+_CONTRACT_V = jnp.array([-65.0, -60.0]) * u.mV
+# Large enough that the current term dominates the float32 rounding of the
+# reaction terms (about 0.2 mM/ms in the toy kinetic pools).
+_EXTERNAL_I = jnp.array([50.0, 150.0]) * u.uA / u.cm**2
+_SNAPSHOT_I = jnp.array([20.0, 80.0]) * u.uA / u.cm**2
+
+
+def _make_contract_ion(cls):
+    """Build ``cls`` at its defaults with the geometry the Cell would attach."""
+    ion = make_shell_ion(cls, size=2)
+    ion.init_state(_CONTRACT_V)
+    return ion
+
+
+def _ci_derivative(ion):
+    ion.compute_derivative(_CONTRACT_V)
+    return ion.Ci.derivative
+
+
+def _assert_rate_close(actual, expected):
+    assert u.get_unit(actual).dim == (u.mM / u.ms).dim, f"dCi/dt has unit {u.get_unit(actual)}"
+    np.testing.assert_allclose(
+        np.asarray(actual.to_decimal(u.mM / u.ms)), np.asarray(expected.to_decimal(u.mM / u.ms)), rtol=1e-4
+    )
+
+
+def _check_external_current(cls, rate):
+    """(a) An external current shifts ``dCi/dt`` by ``rate * I``."""
+    ion = _make_contract_ion(cls)
+    baseline = _ci_derivative(ion)
+    ion.register_external_current("external", lambda V, info: _EXTERNAL_I)
+    _assert_rate_close(_ci_derivative(ion) - baseline, rate(ion) * _EXTERNAL_I)
+
+
+def _check_snapshot(cls, rate):
+    """(b) A step-start snapshot replaces the live current, which is not evaluated."""
+    ion = _make_contract_ion(cls)
+    baseline = _ci_derivative(ion)
+    calls = []
+    ion.register_external_current("live", lambda V, info: calls.append(V) or _EXTERNAL_I)
+    ion._cached_total_current = _SNAPSHOT_I
+    shifted = _ci_derivative(ion)
+    assert not calls, "the live current was evaluated although a snapshot was set"
+    _assert_rate_close(shifted - baseline, rate(ion) * _SNAPSHOT_I)
+
+
+def _check_current_units(cls):
+    """(c) ``dCi/dt`` is a concentration rate, the same in any current unit."""
+    ion = _make_contract_ion(cls)
+    derivatives = []
+    for current in (_SNAPSHOT_I, _SNAPSHOT_I.to(u.amp / u.meter**2), _SNAPSHOT_I.in_unit(u.mA / u.cm**2)):
+        ion._cached_total_current = current
+        derivatives.append(_ci_derivative(ion))
+    for derivative in derivatives[1:]:
+        _assert_rate_close(derivative, derivatives[0])
+
+
+class _IgnoresTotalCurrent(CalciumDetailed):
+    """Counter-example: a pool that drops the current it is handed."""
+
+    def derivative(self, Ci, V, total_current=None):
+        return super().derivative(Ci, V, total_current=None)
+
+
+class IonCurrentInputContractTest(unittest.TestCase):
+    """Every registered dynamic ion reads its current through the base hook."""
+
+    def test_every_dynamic_ion_is_classified(self) -> None:
+        registry = get_registry()
+        dynamic = {n for n, cls in registry.items("ion") if issubclass(cls, (DynamicNernstIon, KineticIon))}
+        self.assertEqual(dynamic, set(_CURRENT_TO_CI_RATE) | set(_NOT_CURRENT_DRIVEN))
+        for name in dynamic:
+            with self.subTest(ion=name):
+                self.assertEqual(registry.get("ion", name).uses_total_current, name in _CURRENT_TO_CI_RATE)
+
+    def test_current_driven_pools_follow_the_contract(self) -> None:
+        for name, rate in _CURRENT_TO_CI_RATE.items():
+            cls = get_registry().get("ion", name)
+            with self.subTest(ion=name, check="external"):
+                _check_external_current(cls, rate)
+            with self.subTest(ion=name, check="snapshot"):
+                _check_snapshot(cls, rate)
+            with self.subTest(ion=name, check="units"):
+                _check_current_units(cls)
+
+    def test_pools_without_current_input_never_evaluate_it(self) -> None:
+        def forbidden(V, info):
+            raise AssertionError("an ion current was evaluated")
+
+        for name in _NOT_CURRENT_DRIVEN:
+            with self.subTest(ion=name):
+                ion = _make_contract_ion(get_registry().get("ion", name))
+                baseline = _ci_derivative(ion)
+                ion.register_external_current("forbidden", forbidden)
+                ion._cached_total_current = _SNAPSHOT_I
+                _assert_rate_close(_ci_derivative(ion), baseline)
+
+    def test_counter_example_that_ignores_total_current_fails_the_contract(self) -> None:
+        rate = _CURRENT_TO_CI_RATE["CalciumDetailed"]
+        with self.assertRaises(AssertionError):
+            _check_external_current(_IgnoresTotalCurrent, rate)
+        with self.assertRaises(AssertionError):
+            _check_snapshot(_IgnoresTotalCurrent, rate)
+        _check_external_current(CalciumDetailed, rate)  # the unmodified parent passes
 
 
 if __name__ == "__main__":

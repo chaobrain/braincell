@@ -1109,6 +1109,49 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
             self.assertFalse(any(isinstance(arg, bool) for arg in ions))
 
 
+class CellIonTotalCurrentSnapshotTest(unittest.TestCase):
+    """``cache_ion_total_currents`` snapshots exactly what the ion hook would read."""
+
+    def _calcium_cell(self):
+        cell = Cell(_soma_tree(), cv_policy=CVPerBranch())
+        cell.paint(AllRegion(), mech.Ion("CalciumDetailed", name="ca"))
+        cell.paint(AllRegion(), mech.Channel("CaT_HM1992", name="cat", g_max=0.5 * u.mS / u.cm**2))
+        cell.init_state()
+        return cell, cell.runtime.get_ion("ca")
+
+    def test_snapshot_sums_channel_and_external_currents(self):
+        cell, ion = self._calcium_cell()
+        external = 3.0 * u.uA / u.cm**2
+        ion.register_external_current("external", lambda V, info: jnp.ones(V.shape) * external)
+
+        cell.cache_ion_total_currents()
+        expected = ion.current(cell.V.value) + external
+        np.testing.assert_allclose(
+            np.asarray(ion._cached_total_current.to_decimal(u.uA / u.cm**2)),
+            np.asarray(expected.to_decimal(u.uA / u.cm**2)),
+            rtol=1e-6,
+        )
+        cell.clear_ion_total_current_cache()
+        self.assertFalse(hasattr(ion, "_cached_total_current"))
+
+    def test_an_external_current_error_is_not_retried_without_it(self):
+        cell, ion = self._calcium_cell()
+
+        def broken(V, info):
+            raise TypeError("broken external current")
+
+        ion.register_external_current("broken", broken)
+        with self.assertRaisesRegex(TypeError, "broken external current"):
+            cell.cache_ion_total_currents()
+        self.assertFalse(hasattr(ion, "_cached_total_current"))
+
+    def test_disabled_cache_leaves_ions_reading_live_currents(self):
+        cell, ion = self._calcium_cell()
+        cell.cache_ion_total_current = False
+        cell.cache_ion_total_currents()
+        self.assertFalse(hasattr(ion, "_cached_total_current"))
+
+
 class DiscretizationTracksAMutatedMorphologyTest(unittest.TestCase):
     """A ``Cell`` shares its ``Morphology``, so it must notice edits to it.
 

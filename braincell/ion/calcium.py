@@ -1069,7 +1069,7 @@ class ToyCaBindingIcaSourceKinetic_SU2015_DCN(Calcium, KineticIon):
                 braintools.init.param(0.0 * (u.mM / u.ms), self.varshape)
                 if total_current is None
                 else (
-                    u.get_mantissa(self.kCa)
+                    self.kCa.to_decimal(u.coulomb**-1)
                     / self.depth.to_decimal(u.um)
                     * total_current.to_decimal(u.mA / u.cm**2)
                     * 1e4
@@ -1269,7 +1269,7 @@ class ToyCaPumpFactorKinetic_SU2015_DCN(Calcium, KineticIon):
                 else self.cyt_volume
                 * (
                     (
-                        u.get_mantissa(self.kCa)
+                        self.kCa.to_decimal(u.coulomb**-1)
                         / self.depth.to_decimal(u.um)
                         * total_current.to_decimal(u.mA / u.cm**2)
                         * 1e4
@@ -3815,7 +3815,10 @@ class CdpHVA_SU2015_DCN(Calcium, DynamicNernstIon):
         # channels follow the repo-wide inward-positive current convention, so
         # the equivalent imported-ion drive here is positive in ``total_current``.
         drive_value = (
-            u.get_mantissa(self.kCa) / self.depth.to_decimal(u.um) * total_current.to_decimal(u.mA / u.cm**2) * 1e4
+            self.kCa.to_decimal(u.coulomb**-1)
+            / self.depth.to_decimal(u.um)
+            * total_current.to_decimal(u.mA / u.cm**2)
+            * 1e4
         )
         drive = drive_value * (u.mM / u.ms)
         return drive - (Ci - self.caiBase) / self.tauCa
@@ -3984,7 +3987,10 @@ class CdpLVA_SU2015_DCN(Calcium, DynamicNernstIon):
         # channel currents use the repo-wide inward-positive convention, so
         # the equivalent imported-ion drive here is positive in ``total_current``.
         drive_value = (
-            u.get_mantissa(self.kCal) / self.depth.to_decimal(u.um) * total_current.to_decimal(u.mA / u.cm**2) * 1e4
+            self.kCal.to_decimal(u.coulomb**-1)
+            / self.depth.to_decimal(u.um)
+            * total_current.to_decimal(u.mA / u.cm**2)
+            * 1e4
         )
         drive = drive_value * (u.mM / u.ms)
         return drive - (Ci - self.caliBase) / self.tauCal

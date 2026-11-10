@@ -96,6 +96,13 @@ class _ExpRateGateCurrent:
     Users of the mixin must define ``ca``, ``cva``, ``cka``, ``cb``, ``cvb``,
     ``ckb``, ``zn``, ``gunit``, ``e0`` and ``gateCurrent``, and declare a
     single ``n`` gate in alpha/beta form.
+
+    The gating current is :math:`n_c e_0 \, 4 z_n \, \mathrm{d}n/\mathrm{d}t`
+    with the channel density :math:`n_c = g_{\max} / g_{\text{unit}}`. The
+    ``.mod`` files write it as ``nc = (1e12)*gbar/gunit`` and
+    ``igate = nc*(1e6)*e0*4*zn*ngateFlip()``; those two factors are NEURON's
+    unit conversions (pS to S, C/ms to mA) and are not applied to the united
+    quantities here.
     """
 
     def f_n_alpha(self, V, K: IonInfo):
@@ -120,8 +127,12 @@ class _ExpRateGateCurrent:
         alpha = self.f_n_alpha(V, K)
         beta = self.f_n_beta(V, K)
         ngate_flip = phi * (alpha * (1.0 - n) - beta * n) / u.ms
-        nc = 1e12 * self.g_max / self.gunit
-        igate = nc * 1e6 * self.e0 * 4.0 * self.zn * ngate_flip
+        # The ``.mod`` writes ``nc = (1e12)*gbar/gunit`` and
+        # ``igate = nc*(1e6)*e0*4*zn*ngateFlip()``: the two factors convert
+        # pS to S and C/ms to mA in NEURON's unit-free arithmetic. These
+        # quantities carry units, so the factors do not belong here.
+        nc = self.g_max / self.gunit
+        igate = nc * self.e0 * 4.0 * self.zn * ngate_flip
         return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
 
 
@@ -2167,9 +2178,9 @@ class Kv1p1_MA2025_BC(_ExpRateGateCurrent, HH):
 
     .. math::
 
-        I_{\text{gate}} = n_c \cdot 10^{6} \cdot e_0 \cdot 4 \, z_n
+        I_{\text{gate}} = n_c \cdot e_0 \cdot 4 \, z_n
         \cdot \frac{\mathrm{d}n}{\mathrm{d}t}, \qquad
-        n_c = 10^{12} \, \frac{g_{\max}}{g_{\text{unit}}}
+        n_c = \frac{g_{\max}}{g_{\text{unit}}}
 
     where :math:`g_{\text{unit}} = 16` pS is the unitary channel
     conductance, :math:`z_n = 2.7978` the n-gate valence,
@@ -2328,9 +2339,9 @@ class Kv1p1_MA2024_PC(Kv1p1_MA2025_BC):
 
     .. math::
 
-        I_{\text{gate}} = n_c \cdot 10^{6} \cdot e_0 \cdot 4 \, z_n
+        I_{\text{gate}} = n_c \cdot e_0 \cdot 4 \, z_n
         \cdot \frac{\mathrm{d}n}{\mathrm{d}t}, \qquad
-        n_c = 10^{12} \, \frac{g_{\max}}{g_{\text{unit}}}
+        n_c = \frac{g_{\max}}{g_{\text{unit}}}
 
     where :math:`g_{\text{unit}} = 16` pS is the unitary channel
     conductance, :math:`z_n = 2.7978` the n-gate valence,
@@ -2466,9 +2477,9 @@ class Kv1p1_RI2021_SC(Kv1p1_MA2025_BC):
 
     .. math::
 
-        I_{\text{gate}} = n_c \cdot 10^{6} \cdot e_0 \cdot 4 \, z_n
+        I_{\text{gate}} = n_c \cdot e_0 \cdot 4 \, z_n
         \cdot \frac{\mathrm{d}n}{\mathrm{d}t}, \qquad
-        n_c = 10^{12} \, \frac{g_{\max}}{g_{\text{unit}}}
+        n_c = \frac{g_{\max}}{g_{\text{unit}}}
 
     where :math:`g_{\text{unit}} = 16` pS is the unitary channel
     conductance, :math:`z_n = 2.7978` the n-gate valence,
@@ -2800,9 +2811,9 @@ class Kv3p3_MA2024_PC(_ExpRateGateCurrent, HH):
 
     .. math::
 
-        I_{\text{gate}} = n_c \cdot 10^{6} \cdot e_0 \cdot 4 \, z_n
+        I_{\text{gate}} = n_c \cdot e_0 \cdot 4 \, z_n
         \cdot \frac{\mathrm{d}n}{\mathrm{d}t}, \qquad
-        n_c = 10^{12} \, \frac{g_{\max}}{g_{\text{unit}}}
+        n_c = \frac{g_{\max}}{g_{\text{unit}}}
 
     where :math:`g_{\text{unit}} = 16` pS is the unitary channel
     conductance, :math:`z_n = 1.9196` the n-gate valence,
@@ -4109,9 +4120,9 @@ class Kv1p1_MA2020_GoC(Kv1p1_MA2025_BC):
 
     .. math::
 
-        I_{\text{gate}} = n_c \cdot 10^{6} \cdot e_0 \cdot 4 \, z_n
+        I_{\text{gate}} = n_c \cdot e_0 \cdot 4 \, z_n
         \cdot \frac{\mathrm{d}n}{\mathrm{d}t}, \qquad
-        n_c = 10^{12} \, \frac{g_{\max}}{g_{\text{unit}}}
+        n_c = \frac{g_{\max}}{g_{\text{unit}}}
 
     where :math:`g_{\text{unit}} = 16` pS is the unitary channel
     conductance, :math:`z_n = 2.7978` the n-gate valence,
@@ -4794,9 +4805,9 @@ class Kv1p1_MA2020_GrC(Kv1p1_MA2025_BC):
 
     .. math::
 
-        I_{\text{gate}} = n_c \cdot 10^{6} \cdot e_0 \cdot 4 \, z_n
+        I_{\text{gate}} = n_c \cdot e_0 \cdot 4 \, z_n
         \cdot \frac{\mathrm{d}n}{\mathrm{d}t}, \qquad
-        n_c = 10^{12} \, \frac{g_{\max}}{g_{\text{unit}}}
+        n_c = \frac{g_{\max}}{g_{\text{unit}}}
 
     where :math:`g_{\text{unit}} = 16` pS is the unitary channel
     conductance, :math:`z_n = 2.7978` the n-gate valence,

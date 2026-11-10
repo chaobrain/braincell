@@ -200,6 +200,22 @@
 
 ### Bug Fixes
 
+- The optional gating current of `Kv1p1_MA2025_BC`, `Kv1p1_MA2024_PC`,
+  `Kv1p1_RI2021_SC`, `Kv1p1_MA2020_GoC`, `Kv1p1_MA2020_GrC` and
+  `Kv3p3_MA2024_PC` (`gateCurrent != 0`) was 1e18 times too large: the
+  `(1e12)` and `(1e6)` factors of the `.mod` formula are NEURON's unit
+  conversions (pS to S, C/ms to mA) and were applied again to quantities that
+  already carry units (MECH-6b). It is now `g_max / gunit * e0 * 4 * zn * dn/dt`
+  and matches NEURON to 1.2e-13 relative along a voltage-clamp trace. The
+  default `gateCurrent = 0` is unaffected.
+
+- `Kv1p5_MA2020_GrC` with a nonzero `gnonspec` computes the nonspecific
+  reversal as its `.mod` does (MECH-6b): `z = R*(celsius + 273.15)/F` there is
+  a number in volts that the formula reads as millivolts, so the reversal is
+  1000 times closer to 0 mV than the Nernst-like value the class used. The
+  `ino` component now matches NEURON to 5e-16 relative (it was off by up to
+  0.9). The default `gnonspec = 0` is unaffected.
+
 - `Cav2p1_RI2021_SC`, `Cav2p1_MA2024_PC` and `Cav2p1_MA2025_BC` compute
   their GHK drive with the constants their `.mod` sources declare
   (`F = 9.6485e4 C/mol`, `R = 8.3145 J/(K mol)`, `T = 273.19 K + celsius`)

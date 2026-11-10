@@ -247,12 +247,21 @@ class Kv1p5_MA2020_GrC(Kv1p5_MA2024_PC):
         reversal expression is therefore expanded directly in this
         method as ``z * log((nao + ko) / (nai + ki))`` and used in
         ``gnonspec * gates * (E_no - V)``.
+
+        The source computes ``z = (R*(celsius + 273.15))/F`` with ``R``
+        in joule/degC and ``F`` in coulombs, which is a number in volts
+        (about 0.027 at 37 degrees Celsius); ``v - z*log(...)`` then
+        uses it as millivolts. ``E_no`` therefore sits 1000 times closer
+        to 0 mV than the Nernst-like value ``R*T/F*log(...)``.
+        This method reproduces the source, so a nonzero ``gnonspec``
+        matches NEURON.
         """
         conductance = self._voltage_factor(V) * self.conductance_factor(V, K, Na, No)
         ik = self.g_max * conductance * (K.E - V)
-        ino = (
-            self.gnonspec
-            * conductance
-            * ((u.gas_constant * self.temp / u.faraday_constant * u.math.log((Na.Co + K.Co) / (Na.Ci + K.Ci))) - V)
-        )
+        # ``z = (R*(celsius+273.15))/F`` with ``R`` in joule/degC and ``F`` in
+        # coulombs is a number in volts; ``v - z*log(...)`` then reads it as
+        # millivolts. Reproduce that, not the physical Nernst value.
+        z = (u.gas_constant * self.temp / u.faraday_constant).to_decimal(u.volt)
+        e_no = z * u.math.log((Na.Co + K.Co) / (Na.Ci + K.Ci)) * u.mV
+        ino = self.gnonspec * conductance * (e_no - V)
         return {"k": ik, "no": ino}

@@ -15,6 +15,7 @@
 # ==============================================================================
 
 
+import math
 import unittest
 
 import brainunit as u
@@ -68,6 +69,35 @@ from braincell.channel._testing import (
     k_info,
     voltage,
 )
+
+
+def _mod_igate(gbar_s_cm2, zn, ca, cva, cka, cb, cvb, ckb, q10, celsius, v_mv, n):
+    """Gating current of ``Kv1p1_*.mod`` / ``Kv3p3_MA24_PC.mod`` in mA/cm2, outward positive.
+
+    Plain-float transcription of the NMODL arithmetic, independent of the
+    channel class: ``nc = (1e12) * gbar / gunit`` (``gbar`` in S/cm2,
+    ``gunit = 16`` pS) and ``igate = nc * (1e6) * e0 * 4 * zn * ngateFlip()``.
+    """
+    qt = q10 ** ((celsius - 22.0) / 10.0)
+    alpha = ca * math.exp(-(v_mv + cva) / cka)
+    beta = cb * math.exp(-(v_mv + cvb) / ckb)
+    ninf = alpha / (alpha + beta)
+    taun = 1.0 / (qt * (alpha + beta))
+    nc = 1e12 * gbar_s_cm2 / 16.0
+    return nc * 1e6 * 1.60217646e-19 * 4.0 * zn * (ninf - n) / taun
+
+
+def _assert_gating_current_matches_mod(case, ch, mod_constants, celsius, v_mv, n):
+    """Counter-example for the gating-current scale: braincell vs the ``.mod`` numbers."""
+    V = voltage([v_mv])
+    k = k_info()
+    ch.init_state(V, k)
+    ch.n.value = jnp.array([n])
+    conductive = (ch.g_max * ch.n.value**4 * (k.E - V)).to_decimal(u.mA / u.cm**2)
+    gating = ch.current(V, k).to_decimal(u.mA / u.cm**2) - conductive
+    expected = -_mod_igate(ch.g_max.to_decimal(u.siemens / u.cm**2), *mod_constants, celsius, v_mv, n)
+    case.assertTrue(abs(expected) > 1e-6)
+    case.assertTrue(jnp.allclose(gating, jnp.array([expected]), rtol=1e-5, atol=0.0), msg=f"{gating} vs {expected}")
 
 
 class _P4HHMixin:
@@ -536,32 +566,13 @@ class Kv1p1MA25BCTest(unittest.TestCase):
             )
         )
 
-    def test_gating_current_path_matches_manual_formula(self) -> None:
-        temp = u.celsius2kelvin(22.0)
-        proto = Kv1p1_MA2025_BC(size=1, temp=temp, gateCurrent=1.0)
-        V = voltage([-50.0])
-        k = k_info()
-
-        proto.init_state(V, k)
-        proto.reset_state(V, k)
-        proto.n.value = jnp.array([0.35])
-        alpha = proto.f_n_alpha(V, k)
-        beta = proto.f_n_beta(V, k)
-        phi = proto.gate_phi(proto._iter_gates()[0])
-        conductive = proto.g_max * proto.n.value**4 * (k.E - V)
-        ngate_flip = phi * (alpha * (1.0 - proto.n.value) - beta * proto.n.value) / u.ms
-        nc = 1e12 * proto.g_max / proto.gunit
-        igate = nc * 1e6 * proto.e0 * 4.0 * proto.zn * ngate_flip
-        expected_current = conductive - igate
-
-        i_proto = proto.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                i_proto.to_decimal(DENSITY_UNIT),
-                expected_current.to_decimal(DENSITY_UNIT),
-                atol=1e-6,
-            )
-        )
+    def test_gating_current_matches_mod_magnitude(self) -> None:
+        # The NMODL factors 1e12 (pS -> S) and 1e6 (C/ms -> mA) belong to
+        # NEURON's unit-free arithmetic; applied to united quantities they
+        # made the gating current 1e18 times too large.
+        ch = Kv1p1_MA2025_BC(size=1, temp=u.celsius2kelvin(30.0), gateCurrent=1.0)
+        constants = (2.7978, 0.12889, 45.0, -33.90877, 0.12889, 45.0, 12.42101, 2.7)
+        _assert_gating_current_matches_mod(self, ch, constants, 30.0, -30.0, 0.2)
 
 
 class Kv3p4MA25BCTest(unittest.TestCase):
@@ -792,29 +803,9 @@ class Kv3p3MA24PCTest(unittest.TestCase):
         )
 
     def test_gating_current_path_matches_mod_formula(self) -> None:
-        ch = Kv3p3_MA2024_PC(size=1, gateCurrent=1.0)
-        V = voltage([-10.0])
-        k = k_info()
-        ch.init_state(V, k)
-        ch.n.value = jnp.array([0.35])
-
-        alpha = ch.f_n_alpha(V, k)
-        beta = ch.f_n_beta(V, k)
-        phi = ch.gate_phi(ch._iter_gates()[0])
-        conductive = ch.g_max * ch.n.value**4 * (k.E - V)
-        ngate_flip = phi * (alpha * (1.0 - ch.n.value) - beta * ch.n.value) / u.ms
-        nc = 1e12 * ch.g_max / ch.gunit
-        igate = nc * 1e6 * ch.e0 * 4.0 * ch.zn * ngate_flip
-        expected = conductive - igate
-
-        current = ch.current(V, k)
-        self.assertTrue(
-            u.math.allclose(
-                current.to_decimal(DENSITY_UNIT),
-                expected.to_decimal(DENSITY_UNIT),
-                atol=1e-6,
-            )
-        )
+        ch = Kv3p3_MA2024_PC(size=1, temp=u.celsius2kelvin(30.0), gateCurrent=1.0)
+        constants = (1.9196, 0.22, 16.0, -26.5, 0.22, 16.0, 26.5, 2.7)
+        _assert_gating_current_matches_mod(self, ch, constants, 30.0, -10.0, 0.35)
 
 
 class Kv3p4MA24PCTest(unittest.TestCase):

@@ -62,6 +62,8 @@ SAMPLE_MS = 0.1
 
 EXACT_LIMIT = 1e-10
 GUIDE_LINE = 1e-2
+LIMIT_FACTOR = 1.5
+"""A table limit is at least this multiple of the measured error; see :func:`rounded_limit`."""
 STEP_ORDER_WINDOW = (0.8, 1.2)
 RAMP_ORDER_WINDOWS = {"e_I": (0.7, 1.3), "e_s": (0.8, 1.2)}
 
@@ -212,6 +214,19 @@ def errors(run: Mapping[str, Any], reference: Mapping[str, Any]) -> dict[str, fl
     current_diff = float(np.max(np.abs(run["current"] - reference["current"])))
     state_diff = max(float(np.max(np.abs(run["states"][g] - reference["states"][g]))) for g in reference["states"])
     return {"e_I": None if scale == 0.0 else current_diff / scale, "e_s": state_diff}
+
+
+def rounded_limit(measured: float) -> float:
+    """Return the table limit of a measured error: :data:`LIMIT_FACTOR` times it, rounded up to 1, 2 or 5 times a power of ten."""
+    if not (math.isfinite(measured) and measured > 0.0):
+        raise ValueError(f"a limit needs a positive, finite measurement, got {measured!r}.")
+    target = LIMIT_FACTOR * measured
+    exponent = math.floor(math.log10(target))
+    for mantissa in (1, 2, 5, 10):
+        limit = float(f"{mantissa}e{exponent}")
+        if limit >= target:
+            return limit
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def fitted_order(dts: Iterable[float], values: Iterable[float]) -> float:

@@ -215,6 +215,9 @@
   declaration selects `exp_euler` with
   `bc.mech.Channel(..., solver="exp_euler", substeps=1)`. No defaults
   change.
+  The `Kca1p1_*` docstrings add the same guidance with their own numbers
+  (MECH-23a): about 2 % at `dt = 0.025 ms` on `backward_euler`, 0.6 % with
+  four substeps, exact on `exp_euler`.
 
 - **Breaking:** braincell now requires `jax>=0.11` (it was `>=0.9`), in
   the base requirement and in the `cpu`, `cuda12`, `cuda13` and `tpu`
@@ -227,6 +230,17 @@
   versions CI tests.
 
 ### Bug Fixes
+
+- Five calcium channels no longer return NaN when the voltage sits exactly on
+  a removable 0/0 point of their source expressions (MECH-23a): `CaHT_Re1993`
+  at -27 mV (the `p` gate's rate, so its state, derivative and current),
+  `CaHVA_SU2015_DCN` at -8.9 mV (`m` derivative) and at 0 mV (current),
+  `CaLVA_SU2015_DCN` at 0 mV (current), and `Cav1p2_MA2020_GoC` and
+  `Cav1p2_MA2025_BC` at -8.124 mV (`m` derivative). A voltage clamp at 0 mV
+  or a ramp through it gave NaN currents for the two DCN channels. The rates
+  and the DCN GHK drive now use `exprel`, which equals the source expression
+  to 1e-13 relative at least 0.01 mV away from those voltages and takes the
+  limit at them.
 
 - The optional gating current of `Nav1p1_MA2025_BC` and `Nav1p1_RI2021_SC`
   (`gateCurrent != 0`) was 1e18 times too large, for the same reason as the

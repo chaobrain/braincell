@@ -15,14 +15,19 @@
 # ==============================================================================
 
 
+import contextlib
 import math
 import unittest
+from unittest import mock
 
+import brainstate
 import brainunit as u
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from braincell._base_neuron import HHTypedNeuron
+from braincell.channel import calcium as calcium_module
 from braincell.channel._base import HH, ghk_flux
 from braincell.channel.calcium import (
     CaHVA_SU2015_DCN,
@@ -1524,6 +1529,133 @@ class CaZH19IOTest(unittest.TestCase):
         actual = jax.grad(current_decimal)(V0)
         expected = -(ch.g_max * ch.f_m_inf(V) * ch.h.value).to_decimal(u.mS / u.cm**2)[0]
         self.assertTrue(u.math.allclose(actual, expected, atol=1e-6))
+
+
+# The expressions as written before the removable 0/0 singularities were
+# replaced by their analytic limits, verbatim; the singularity tests below
+# compare against them away from the singular voltage V*.
+def _prefix_caht_re1993_p_alpha(self, V, Ca):
+    temp = (-V + self.V_sh).to_decimal(u.mV)
+    delta = -27.0 + temp
+    return 0.055 * delta / (u.math.exp(delta / 3.8) - 1.0)
+
+
+def _prefix_cahva_su2015_dcn_m_tau(self, V, Ca):
+    V = V.to_decimal(u.mV)
+    activation = 31.746 / (u.math.exp((V - 5.0) / -13.89) + 1.0)
+    correction = 3.97e-4 * (V + 8.9) / (u.math.exp((V + 8.9) / 5.0) - 1.0)
+    return 1.0 / (activation + correction) / self.qdeltat
+
+
+def _prefix_su2015_dcn_ghk_drive(V, ci, co, temp):
+    v_mV = V.to_decimal(u.mV)
+    temp_K = temp.to_decimal(u.kelvin)
+    A = u.math.exp(-23.20764929 * v_mV / temp_K)
+    return (
+        (4.47814e6 * v_mV / temp_K) * ((ci.to_decimal(u.mM) / 1000.0) - (co.to_decimal(u.mM) / 1000.0) * A) / (1.0 - A)
+    )
+
+
+def _prefix_cav1p2_m_tau(self, V, Ca):
+    V = V.to_decimal(u.mV)
+    m_alpha = 39800.0 * (V + 8.124) / (u.math.exp((V + 8.124) / 9.005) - 1.0)
+    m_beta = 990.0 * u.math.exp(V / 31.4)
+    return 1.0 / (m_alpha + m_beta)
+
+
+_PREFIX_CAHVA_SU2015_DCN = (
+    (CaHVA_SU2015_DCN, "f_m_tau", _prefix_cahva_su2015_dcn_m_tau),
+    (calcium_module, "_su2015_dcn_ghk_drive", _prefix_su2015_dcn_ghk_drive),
+)
+_PREFIX_CAV1P2 = ((Cav1p2_MA2020_GoC, "f_m_tau", _prefix_cav1p2_m_tau),)
+
+# class, singular voltages (mV), the pre-fix expressions.
+_REMOVABLE_SINGULARITIES = (
+    (CaHT_Re1993, (-27.0,), ((CaHT_Re1993, "f_p_alpha", _prefix_caht_re1993_p_alpha),)),
+    (CaHVA_SU2015_DCN, (-8.9, 0.0), _PREFIX_CAHVA_SU2015_DCN),
+    (CaLVA_SU2015_DCN, (0.0,), _PREFIX_CAHVA_SU2015_DCN[1:]),
+    (Cav1p2_MA2020_GoC, (-8.124,), _PREFIX_CAV1P2),
+    (Cav1p2_MA2025_BC, (-8.124,), _PREFIX_CAV1P2),
+)
+_GRID_MV = np.arange(-100_000, 60_001) / 1000.0
+
+
+def _gate_quantities(cls, V_mV) -> dict:
+    """Steady-state gates, their derivatives at state 0 and the current at the steady state, in float64."""
+    V_mV = np.asarray(V_mV, dtype=float)
+    V = jnp.asarray(V_mV) * u.mV
+    ca = ca_info(V_mV.size)
+    ch = cls(size=V_mV.size)
+    ch.init_state(V, ca)
+    ch.reset_state(V, ca)
+    names = [gate.name for gate in ch._iter_gates()]
+    found = {f"{name}.value": getattr(ch, name).value for name in names}
+    found["current"] = ch.current(V, ca).to_decimal(DENSITY_UNIT)
+    for name in names:
+        getattr(ch, name).value = jnp.zeros(V_mV.size)
+    ch.compute_derivative(V, ca)
+    for name in names:
+        found[f"{name}.derivative"] = getattr(ch, name).derivative.to_decimal(u.ms**-1)
+    return {
+        key: np.broadcast_to(np.asarray(u.get_magnitude(value), dtype=float), V_mV.shape)
+        for key, value in found.items()
+    }
+
+
+class RemovableSingularityTest(unittest.TestCase):
+    """Rates and GHK drives that are 0/0 at one voltage V* use their analytic limit there.
+
+    Away from V* the result is the source expression's; at V* it is the
+    limit, so a Cell clamped exactly at V* no longer integrates NaN.
+    """
+
+    def _assert_finite(self, cls, V_mV):
+        for key, values in _gate_quantities(cls, V_mV).items():
+            self.assertTrue(
+                np.all(np.isfinite(values)), f"{cls.__name__} {key} at {np.asarray(V_mV)[~np.isfinite(values)]}"
+            )
+
+    def test_finite_on_the_grid_and_equal_to_the_source_expression_away_from_V_star(self):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for cls, singular, prefix in _REMOVABLE_SINGULARITIES:
+                with self.subTest(cls=cls.__name__):
+                    fixed = _gate_quantities(cls, _GRID_MV)
+                    for key, values in fixed.items():
+                        self.assertTrue(np.all(np.isfinite(values)), f"{cls.__name__} {key}")
+                    away = np.min(np.abs(_GRID_MV[:, None] - np.asarray(singular)[None, :]), axis=1) >= 0.01 - 1e-9
+                    with contextlib.ExitStack() as stack:
+                        for owner, attribute, function in prefix:
+                            stack.enter_context(mock.patch.object(owner, attribute, function))
+                        source = _gate_quantities(cls, _GRID_MV[away])
+                    for key, values in source.items():
+                        np.testing.assert_allclose(
+                            fixed[key][away], values, rtol=1e-10, atol=0.0, err_msg=f"{cls.__name__} {key}"
+                        )
+
+    def test_the_value_at_V_star_is_the_limit_of_its_neighbours(self):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for cls, singular, _ in _REMOVABLE_SINGULARITIES:
+                for v_star in singular:
+                    with self.subTest(cls=cls.__name__, V=v_star):
+                        at, below, above = (_gate_quantities(cls, [v_star + h]) for h in (0.0, -1e-4, 1e-4))
+                        for key, value in at.items():
+                            mean = 0.5 * (below[key] + above[key])
+                            self.assertLessEqual(
+                                float(np.abs(value - mean)[0]), 1e-6 * float(np.abs(value)[0]), f"{cls.__name__} {key}"
+                            )
+
+    def test_the_source_expressions_are_not_finite_at_V_star(self):
+        # Counter-example: with the pre-fix expressions, the finiteness check fails at V*.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for cls, singular, prefix in _REMOVABLE_SINGULARITIES:
+                for v_star in singular:
+                    with self.subTest(cls=cls.__name__, V=v_star):
+                        self._assert_finite(cls, [v_star])
+                        with contextlib.ExitStack() as stack:
+                            for owner, attribute, function in prefix:
+                                stack.enter_context(mock.patch.object(owner, attribute, function))
+                            with self.assertRaises(AssertionError):
+                                self._assert_finite(cls, [v_star])
 
 
 if __name__ == "__main__":

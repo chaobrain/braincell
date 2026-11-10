@@ -3020,17 +3020,14 @@ class Cell(_CellFacade, HHTypedNeuron):
         for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not getattr(type(node), "uses_total_current", False):
                 continue
+            # The same call the ion's derivative hook makes when no snapshot
+            # is set; never retried without ``include_external``, which would
+            # silently drop the external currents.
             with jax.named_scope(_scope_name("braincell:ion_current_cache:node", path, node)):
-                try:
-                    node._cached_total_current = jax.named_call(
-                        node.current,
-                        name=_call_name("braincell:ion_current_cache:node_current", path, node),
-                    )(cv_V, include_external=True)
-                except TypeError:
-                    node._cached_total_current = jax.named_call(
-                        node.current,
-                        name=_call_name("braincell:ion_current_cache:node_current", path, node),
-                    )(cv_V)
+                node._cached_total_current = jax.named_call(
+                    node.current,
+                    name=_call_name("braincell:ion_current_cache:node_current", path, node),
+                )(cv_V, include_external=True)
 
     def clear_ion_total_current_cache(self) -> None:
         """Remove per-step ion source-current caches."""

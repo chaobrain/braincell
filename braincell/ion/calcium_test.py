@@ -1571,6 +1571,40 @@ class CdpCR_MA2020_GrCTest(KineticPumpContractTests, unittest.TestCase):
         self.assertLess(float(ion.Ci.value[0].to_decimal(u.mM)), 1e-3)
 
 
+class DcnShellCoefficientUnitTest(unittest.TestCase):
+    """The DCN shell coefficient is read in ``1/C``, whatever unit it was given in.
+
+    ``kCa / depth * ica * 1e4`` is the ``.mod`` expression with ``kCa`` in
+    ``1/coulomb``. Reading the bare mantissa made ``3.45e-4/kC`` -- the same
+    quantity as the default ``3.45e-7/C`` -- drive ``Ci`` 1000 times faster.
+    """
+
+    CASES = (
+        (CdpHVA_SU2015_DCN, "kCa"),
+        (CdpLVA_SU2015_DCN, "kCal"),
+        (ToyCaBindingIcaSourceKinetic_SU2015_DCN, "kCa"),
+        (ToyCaPumpFactorKinetic_SU2015_DCN, "kCa"),
+    )
+
+    def _ci_derivative(self, cls, **kwargs):
+        ion = cls(size=1, **kwargs)
+        ion.init_state(_V([-60.0]))
+        ion._cached_total_current = jnp.array([0.01]) * u.mA / (u.cm**2)
+        ion.compute_derivative(_V([-60.0]))
+        return ion.Ci.derivative
+
+    def test_equivalent_coefficient_units_give_the_same_derivative(self) -> None:
+        for cls, field in self.CASES:
+            with self.subTest(ion=cls.__name__):
+                reference = self._ci_derivative(cls)
+                rescaled = self._ci_derivative(cls, **{field: 3.45e-4 / u.kcoulomb})
+                np.testing.assert_allclose(
+                    np.asarray(rescaled.to_decimal(u.mM / u.ms)),
+                    np.asarray(reference.to_decimal(u.mM / u.ms)),
+                    rtol=1e-5,
+                )
+
+
 class CdpLVA_SU2015_DCNTest(unittest.TestCase):
     """Imported DCN low-voltage calcium-pool template from ``CdpLVA_SU15_DCN.mod``."""
 

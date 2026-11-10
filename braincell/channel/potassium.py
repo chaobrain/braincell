@@ -1394,10 +1394,9 @@ class fKdr_SU2015_DCN(OhmicHH):
     et al. (2015) [2]_. The 2011 translation paper is named in this
     prose only, per house style, and not as a numbered reference.
 
-    **What this docstring does not claim.** No paper in that chain
-    was shown to print the Boltzmann and time-constant constants
-    above; the code-side check ran from the ``.mod`` file to this
-    class only. The string "fKdr" does not occur anywhere in the
+    The supplementary material of [1]_ prints the :math:`m^4` gating
+    and the Boltzmann and time-constant constants above, for 32
+    degrees Celsius. The string "fKdr" does not occur anywhere in the
     Sudhakar et al. (2015) text, so this records that the mechanism is
     part of the model published as [2]_, not that the paper names or
     describes it.
@@ -1506,10 +1505,9 @@ class sKdr_SU2015_DCN(fKdr_SU2015_DCN):
     et al. (2015) [2]_. The 2011 translation paper is named in this
     prose only, per house style, and not as a numbered reference.
 
-    **What this docstring does not claim.** No paper in that chain
-    was shown to print the Boltzmann and time-constant constants
-    above; the code-side check ran from the ``.mod`` file to this
-    class only. The string "sKdr" does not occur anywhere in the
+    The supplementary material of [1]_ prints the :math:`m^4` gating
+    and the Boltzmann and time-constant constants above, for 32
+    degrees Celsius. The string "sKdr" does not occur anywhere in the
     Sudhakar et al. (2015) text, so this records that the mechanism is
     part of the model published as [2]_, not that the paper names or
     describes it.

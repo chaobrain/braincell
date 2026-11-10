@@ -436,7 +436,12 @@ class NaF_SU2015_DCN(OhmicHH):
     Kinetics originate in the GENESIS deep cerebellar nucleus model of
     Steuber et al. (2011) [1]_, translated to NEURON by Luthman et al.
     (2011), and reused by (Sudhakar et al., 2015) [2]_, which cites
-    only the GENESIS model and not the NEURON translation.
+    only the GENESIS model and not the NEURON translation. The
+    supplementary material of [1]_ prints the :math:`m^3 h` gating
+    and the rate constants above, for 32 degrees Celsius; the GENESIS
+    code deposited with [1]_ (ModelDB 136175) uses a slope of
+    -7.324 mV in :math:`m_\infty` where the supplement and the mod
+    file use -7.3 mV.
 
     The former NEURON ``TABLE`` tabulated ``minf``, ``taum``, ``hinf``
     and ``tauh`` over ``[-150, 100] mV`` and clamped outside that
@@ -528,8 +533,10 @@ class NaP_SU2015_DCN(OhmicHH):
     -----
     Ported from ``NaP_SU15_DCN.mod``. ``NaP`` is one of only four
     mechanism names (with ``CaLVA``, ``HCN`` and ``SK``) that actually
-    occur in the text of (Sudhakar et al., 2015) [2]_; even so, the
-    paper does not print these Boltzmann constants.
+    occur in the text of (Sudhakar et al., 2015) [2]_; even so, that
+    paper does not print these Boltzmann constants. The supplementary
+    material of [1]_ does, together with the :math:`m^3 h` gating,
+    for 32 degrees Celsius.
 
     Kinetics originate in the GENESIS deep cerebellar nucleus model of
     Steuber et al. (2011) [1]_, translated to NEURON by Luthman et al.

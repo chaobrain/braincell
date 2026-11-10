@@ -1000,8 +1000,9 @@ class CaHVA_SU2015_DCN(HH):
     (2015) [2]_. The string "CaHVA" does not occur in the Sudhakar et
     al. (2015) article text; this docstring records only that the
     mechanism is part of the model published as [2]_, not that the
-    paper names or describes it, and it does not claim that either
-    paper prints the ``m_inf``/``tau_m`` constants above.
+    paper names or describes it. The ``m_inf``/``tau_m`` constants
+    above, the :math:`m^3` gating and the GHK current law are printed
+    in the supplementary material of [1]_, for 32 degrees Celsius.
 
     ``current()`` evaluates the GHK constant-field equation inline
     with the mod file's own hard-coded literals
@@ -1136,11 +1137,19 @@ class CaL_SU2015_DCN(OhmicHH):
     :meth:`~braincell.channel._base.OhmicHH.reversal_potential` to
     return the fixed ``E`` parameter and derives its driving force
     ohmically, while :class:`CaLVA_SU2015_DCN` derives its driving
-    force from a GHK flux against explicit ion concentrations. The
-    default ``E = 139.0 mV`` was not independently verified against
-    the mod file's own ``PARAMETER`` block for this task; it is
-    documented here as a shipped BrainCell default, not attributed to
-    a specific value printed in Sudhakar et al. (2015) [2]_.
+    force from a GHK flux against explicit ion concentrations.
+
+    This class is the form the supplementary material of [1]_ prints
+    for its low-voltage-activated ("CaLVA / CaT") current: an ohmic
+    :math:`m^2 h` current with :math:`E_{Ca} = 139` mV and the rate
+    constants above, for 32 degrees Celsius. The default
+    ``E = 139.0 mV`` is that value and the mod file's hard-coded
+    ``carev = 139``. In the GENESIS code deposited with [1]_
+    (ModelDB 136175) :math:`E_{Ca}` is computed from the Nernst
+    equation at 32 degrees Celsius with 2 mM outside and 50 nM inside,
+    which gives about 139 mV, and the :math:`V < -81` branch of
+    :math:`\tau_h` uses 66.6 mV where the supplement and the mod file
+    use 66 mV.
 
     The origin of the DCN kinetics is the GENESIS model of Steuber,
     Schultheiss, Silver, De Schutter & Jaeger (2011) [1]_, translated
@@ -1149,8 +1158,7 @@ class CaL_SU2015_DCN(OhmicHH):
     credit, in Sudhakar et al. (2015) [2]_. The string "CaL" does not
     occur in the Sudhakar et al. (2015) article text; this docstring
     records only that the mechanism is part of the model published as
-    [2]_, not that the paper names or describes it, and it does not
-    claim that either paper prints the constants above.
+    [2]_, not that the paper names or describes it.
 
     The original mechanism's ``TABLE`` directive tabulated ``minf``,
     ``taum``, ``hinf`` and ``tauh`` over ``[-150, 100] mV`` (with no
@@ -1329,9 +1337,17 @@ class CaLVA_SU2015_DCN(HH):
     from GENESIS to NEURON by Luthman, Hoebeek, Maex, Davey, Adams,
     De Zeeuw & Steuber (2011) and reused, without modification
     credit, in Sudhakar et al. (2015) [2]_. The string "CaLVA" does
-    occur in the Sudhakar et al. (2015) article text, but this
-    docstring does not claim that either paper prints the
-    ``m_inf``/``tau_m``/``h_inf``/``tau_h`` constants above.
+    occur in the Sudhakar et al. (2015) article text.
+
+    The ``m_inf``/``tau_m``/``h_inf``/``tau_h`` constants above are
+    printed in the supplementary material of [1]_, for 32 degrees
+    Celsius, but there this current is ohmic, with
+    :math:`E_{Ca} = 139` mV -- the form of :class:`CaL_SU2015_DCN`.
+    Neither the GHK drive nor a calcium pool fed by this current is
+    described in [1]_, whose Methods state that the CaV3.1 current
+    was not connected to the calcium pool. The GHK form and the
+    separate ``cal`` pool come from the mod files as deposited, and
+    this mod file carries no author credit.
 
     The original mechanism's ``TABLE`` directive tabulated ``minf``,
     ``taum``, ``hinf`` and ``tauh`` over ``[-150, 100] mV`` (plus a

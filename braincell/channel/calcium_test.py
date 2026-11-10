@@ -15,6 +15,7 @@
 # ==============================================================================
 
 
+import math
 import unittest
 
 import brainunit as u
@@ -751,19 +752,16 @@ class Cav3p1TestPC24Test(unittest.TestCase):
 class _FrozenVariantTests:
     """Shared assertions for a ``freeze_drive_gradient`` variant.
 
-    Every frozen class in this module is now its unfrozen sibling plus one or
-    two class-level declarations, so the interesting questions are the same
-    for all six: does it still inherit the sibling's parameters, does the
+    Every frozen class in this module is its unfrozen sibling plus the single
+    ``freeze_drive_gradient`` declaration, so the interesting questions are the
+    same for all six: does it still inherit the sibling's parameters, does the
     forward value agree, and is the gradient through the GHK drive actually
-    gone? ``SAME_VALUE`` is ``False`` for the three Cav2.1 variants, whose
-    deposits also transcribe a different GHK helper -- freezing is not their
-    only difference from the unfrozen class.
+    gone?
     """
 
     FROZEN: type
     UNFROZEN: type
     NAME: str
-    SAME_VALUE = True
 
     def _pair(self):
         V = voltage([-48.0])
@@ -783,14 +781,13 @@ class _FrozenVariantTests:
     def test_forward_value_agrees_with_the_unfrozen_sibling(self) -> None:
         frozen, base, V, ca = self._pair()
         unit = u.mA / (u.cm**2)
-        agrees = bool(
+        self.assertTrue(
             u.math.allclose(
                 frozen.current(V, ca).to_decimal(unit),
                 base.current(V, ca).to_decimal(unit),
                 atol=1e-12,
             )
         )
-        self.assertEqual(agrees, self.SAME_VALUE)
 
     def test_freezing_removes_the_gradient_through_the_drive(self) -> None:
         # The gates ignore their voltage argument, so the GHK drive is the
@@ -868,6 +865,27 @@ class Cav2p1RI21SCTest(unittest.TestCase):
         )
         self.assertTrue(u.math.allclose(tau, expected, atol=1e-6))
 
+    def test_ghk_drive_uses_the_mod_file_constants(self) -> None:
+        # Counter-example for MECH-6a: ``Cav2p1_*.mod`` computes the GHK drive
+        # with F = 9.6485e4, R = 8.3145 and T = 273.19 + celsius. The CODATA
+        # constants and exact Kelvin of the shared ``ghk_flux`` give a current
+        # about 3e-4 (relative) away from this transcription, which rtol=1e-5
+        # rejects.
+        celsius, pcabar, m, ci, co, v_mV = 36.0, 2.2e-4, 0.7, 5e-5, 2.0, -20.0
+        F, R, z = 9.6485e4, 8.3145, 2.0
+        zeta = z * F * (1e-3 * v_mV) / (R * (273.19 + celsius))
+        ghk = 1e-6 * z * zeta * F * (ci - co * math.exp(-zeta)) / (1.0 - math.exp(-zeta))
+        neuron_ica = 1e3 * pcabar * m**3 * ghk  # mA/cm2, outward-positive
+        for cls in (Cav2p1_RI2021_SC, Cav2p1_MA2024_PC, Cav2p1_MA2025_BC):
+            with self.subTest(cls=cls.__name__):
+                ch = cls(size=1, temp=u.celsius2kelvin(celsius))
+                V = voltage([v_mV])
+                ca = ca_info(Ci=ci, Co=co)
+                ch.init_state(V, ca)
+                ch.m.value = jnp.array([m])
+                current = float(ch.current(V, ca).to_decimal(u.mA / (u.cm**2))[0])
+                self.assertAlmostEqual(current / -neuron_ica, 1.0, delta=1e-5)
+
     def test_current_matches_ghk_template_formula(self) -> None:
         ch = Cav2p1_RI2021_SC(size=1)
         V = voltage([-40.0])
@@ -878,7 +896,7 @@ class Cav2p1RI21SCTest(unittest.TestCase):
         expected = (
             -ch.g_max
             * ch.m.value**3
-            * ghk_flux(
+            * _cav3p1_nmodl_ghk_flux(
                 V=V,
                 ci=ca.Ci,
                 co=ca.Co,
@@ -906,7 +924,7 @@ class Cav2p1RI21SCTest(unittest.TestCase):
         expected_current = (
             -ch.g_max
             * ch.m.value**3
-            * ghk_flux(
+            * _cav3p1_nmodl_ghk_flux(
                 V=shifted,
                 ci=ca.Ci,
                 co=ca.Co,
@@ -972,21 +990,18 @@ class Cav2p1FrozenPC24Test(_FrozenVariantTests, unittest.TestCase):
     FROZEN = Cav2p1_MA2024_PC_Frozen
     UNFROZEN = Cav2p1_MA2024_PC
     NAME = "Cav2p1_MA2024_PC_Frozen"
-    SAME_VALUE = False
 
 
 class Cav2p1FrozenRI21SCTest(_FrozenVariantTests, unittest.TestCase):
     FROZEN = Cav2p1_RI2021_SC_Frozen
     UNFROZEN = Cav2p1_RI2021_SC
     NAME = "Cav2p1_RI2021_SC_Frozen"
-    SAME_VALUE = False
 
 
 class Cav2p1FrozenMA25BCTest(_FrozenVariantTests, unittest.TestCase):
     FROZEN = Cav2p1_MA2025_BC_Frozen
     UNFROZEN = Cav2p1_MA2025_BC
     NAME = "Cav2p1_MA2025_BC_Frozen"
-    SAME_VALUE = False
 
 
 class Cav3p3FrozenPC24Test(_FrozenVariantTests, unittest.TestCase):

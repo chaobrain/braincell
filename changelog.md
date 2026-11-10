@@ -200,6 +200,15 @@
 
 ### Bug Fixes
 
+- `Cav2p1_RI2021_SC`, `Cav2p1_MA2024_PC` and `Cav2p1_MA2025_BC` compute
+  their GHK drive with the constants their `.mod` sources declare
+  (`F = 9.6485e4 C/mol`, `R = 8.3145 J/(K mol)`, `T = 273.19 K + celsius`)
+  instead of the CODATA constants and exact Kelvin of `ghk_flux` (MECH-6a).
+  The calcium current changes by about 3e-4 relative; against NEURON the
+  steady-state I-V error drops from 3.1e-4 to 1.5e-15 relative. The
+  `_Frozen` variants already used these constants, so their forward current
+  now equals the unfrozen classes'.
+
 - Current-driven calcium pools read their current consistently (MECH-2).
   `CdpHVA_SU2015_DCN`, `CdpLVA_SU2015_DCN`,
   `ToyCaBindingIcaSourceKinetic_SU2015_DCN` and

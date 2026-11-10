@@ -79,7 +79,11 @@ __all__ = [
 
 
 def _cav3p1_nmodl_ghk_flux(V, ci, co, z, temp):
-    """GHK helper matching the constants and Kelvin conversion in Cav3p1 NMODL."""
+    """GHK helper matching the constants and Kelvin conversion in Cav3p1 NMODL.
+
+    ``Cav2p1_*.mod`` declares the same ``F``, ``R`` and ``273.19 + celsius``
+    conversion, so the Cav2.1 classes use this helper too.
+    """
     ghk_temp = temp + _CAV3P1_NMODL_TEMP_OFFSET
     zeta = (z * _CAV3P1_NMODL_FARADAY * V) / (_CAV3P1_NMODL_GAS_CONSTANT * ghk_temp)
     exp_term = u.math.exp(-zeta)
@@ -121,22 +125,6 @@ def _su2015_dcn_ghk_drive(V, ci, co, temp):
         * ((ci.to_decimal(u.mM) / 1000.0) - (co.to_decimal(u.mM) / 1000.0) * A)
         / (1.0 - A)
     )
-
-
-class _FrozenCav3p1Ghk:
-    """Mixin for the three Cav2.1 variants that freeze the drive *and* swap helpers.
-
-    Their ``.mod`` deposits transcribe the Cav3.1 constants rather than the
-    ones :func:`~braincell.channel._base.ghk_flux` uses, so each frozen class
-    differs from its unfrozen sibling in the forward current as well as in the
-    gradient -- by around 5e-4 relative. That was previously implicit in three
-    copies of a ``current`` body; declaring both facts here states the anomaly
-    once and lets each frozen class inherit its parameters from the unfrozen
-    sibling it is meant to mirror.
-    """
-
-    ghk = staticmethod(_cav3p1_nmodl_ghk_flux)
-    freeze_drive_gradient = True
 
 
 @register_channel("CaN_IS2008")
@@ -2727,7 +2715,9 @@ class Cav2p1_RI2021_SC(GhkHH):
 
     where :math:`V' = V - V_{sh}`, :math:`v_{1/2} = -29.458` mV,
     :math:`k = 8.429` mV, :math:`P` is the calcium permeability and
-    :math:`\Phi` is :func:`~braincell.channel._base.ghk_flux`. The
+    :math:`\Phi` is the constant-field flux of
+    :func:`~braincell.channel._base.ghk_flux`, evaluated with the mod
+    file's own physical constants (see Notes). The
     :math:`\tau_m` branch reads :math:`V'` in millivolts and returns
     milliseconds; its branch point is inclusive at exactly
     :math:`-40` mV. :math:`\phi_m` is supplied by the ``Gate``
@@ -2761,12 +2751,11 @@ class Cav2p1_RI2021_SC(GhkHH):
     Cav2p1_MA2025_BC : The same mechanism re-imported for the basket
         cell model; identical kinetics, different model citation.
     Cav2p1_RI2021_SC_Frozen : Stellate-cell variant with the GHK
-        term's voltage dependence removed from the autodiff graph.
-        It is **not** a subclass of this class, and it is not
-        numerically identical to it (see its Notes).
-    braincell.channel._base.ghk_flux : Shared GHK flux helper called
-        by :meth:`current`; the constant-field derivation lives
-        there and is not restated here.
+        term's voltage dependence removed from the autodiff graph;
+        same forward current.
+    braincell.channel._base.ghk_flux : Shared GHK flux helper; the
+        constant-field derivation lives there and is not restated
+        here.
 
     Notes
     -----
@@ -2785,22 +2774,22 @@ class Cav2p1_RI2021_SC(GhkHH):
     the mechanism's author and is deliberately not turned into a
     citation.
 
-    ``current()`` evaluates ``-g_max * m^3 * drive`` with ``drive``
-    from :func:`~braincell.channel._base.ghk_flux`, so ``g_max``
-    occupies that function's permeability slot :math:`P_s` and is a
+    ``current()`` evaluates ``-g_max * m^3 * drive``, so ``g_max``
+    occupies the flux's permeability slot :math:`P_s` and is a
     permeability in ``cm/s``, not a conductance density. The
     negation matches BrainCell's repo-wide inward-positive
     convention against NEURON's outward-positive ``ica``.
 
-    **The shared helper's physical constants are not the mod
-    file's.** :func:`~braincell.channel._base.ghk_flux` uses the
-    CODATA Faraday and gas constants and the temperature exactly as
-    passed, whereas this mod file declares ``F = 9.6485e4``,
-    ``R = 8.3145`` and a ``kelvinfkt`` conversion of
-    ``273.19 + celsius``. The resulting flux differs by of order
-    :math:`10^{-4}` in relative terms. The frozen variants of this
-    mechanism route through a helper that does carry the mod file's
-    constants; see :class:`Cav2p1_MA2024_PC_Frozen`.
+    **The drive uses the mod file's physical constants.** The mod
+    file declares ``F = 9.6485e4``, ``R = 8.3145`` and a
+    ``kelvinfkt`` conversion of ``273.19 + celsius``, not the CODATA
+    constants and exact Kelvin temperature of
+    :func:`~braincell.channel._base.ghk_flux`; the two fluxes differ
+    by about :math:`3 \times 10^{-4}` in relative terms. The class
+    therefore declares the module's NMODL-constant helper as
+    :attr:`~braincell.channel.GhkHH.ghk` (the one the Cav3.1 import,
+    whose mod file declares the same values, also uses). Releases
+    before this change used the shared helper.
 
     The mod file's ``vhalfh = -11.039 (mV)`` and
     ``cvh = 16.098 (mV)`` are declared but never used -- the
@@ -2843,6 +2832,7 @@ class Cav2p1_RI2021_SC(GhkHH):
     __module__ = "braincell.channel"
     root_type = Calcium
     gates = (Gate("m", power=3, q10=3.0, temp_ref=u.celsius2kelvin(23.0)),)
+    ghk = staticmethod(_cav3p1_nmodl_ghk_flux)
 
     def __init__(
         self,
@@ -3038,7 +3028,7 @@ class Cav2p1_MA2024_PC(Cav2p1_RI2021_SC):
 
 
 @register_channel("Cav2p1_MA2024_PC_Frozen")
-class Cav2p1_MA2024_PC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2024_PC):
+class Cav2p1_MA2024_PC_Frozen(Cav2p1_MA2024_PC):
     r"""Purkinje cell Cav2.1 with the GHK drive frozen for autodiff.
 
     A standalone Purkinje-cell Cav2.1 mechanism that stops the
@@ -3049,9 +3039,9 @@ class Cav2p1_MA2024_PC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2024_PC):
     kinetics built from the dissociated Purkinje neuron recordings
     of (Swensen & Bean, 2005) [1]_ and published in (Anwar, Hong &
     De Schutter, 2012) [2]_, imported for the human Purkinje cell
-    model of (Masoli et al., 2024) [3]_. It inherits none of that
-    code, and its forward current is **not** identical to the
-    unfrozen class's -- see Notes.
+    model of (Masoli et al., 2024) [3]_. Its forward current is
+    identical to the unfrozen class's; only the gradient through
+    the drive differs -- see Notes.
 
     Parameters
     ----------
@@ -3085,9 +3075,9 @@ class Cav2p1_MA2024_PC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2024_PC):
 
     Notes
     -----
-    The class body is the two declarations ``_FrozenCav3p1Ghk``
-    supplies. Every gate, constant and rate function comes from
-    :class:`Cav2p1_MA2024_PC`, so a change to
+    The class body is the single declaration
+    ``freeze_drive_gradient = True``. Every gate, constant and rate
+    function comes from :class:`Cav2p1_MA2024_PC`, so a change to
     :class:`Cav2p1_RI2021_SC` propagates here. The two Cav2.1 frozen
     siblings, :class:`Cav2p1_RI2021_SC_Frozen` and
     :class:`Cav2p1_MA2025_BC_Frozen`, are built the same way over
@@ -3105,8 +3095,7 @@ class Cav2p1_MA2024_PC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2024_PC):
     states, so the distinction affects neither value nor gradient
     there.
 
-    Freezing, together with the helper swap below, also changes the
-    simulated trajectory: the staggered solver builds its implicit
+    Freezing also changes the simulated trajectory: the staggered solver builds its implicit
     voltage step from the autodiff
     derivative of the membrane current, so the frozen drive drops
     out of that linearization. That is what the mod file does --
@@ -3116,25 +3105,11 @@ class Cav2p1_MA2024_PC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2024_PC):
     comparison, where the unfrozen class differs by up to 0.63 mV.
     Both are first-order accurate in ``dt``.
 
-    **The freezing is not the only difference from the unfrozen
-    class.** ``_FrozenCav3p1Ghk`` also declares
-    :attr:`~braincell.channel.GhkHH.ghk` as the module-level
-    ``_cav3p1_nmodl_ghk_flux`` helper, whereas
-    :class:`Cav2p1_RI2021_SC` calls the shared
-    :func:`~braincell.channel._base.ghk_flux`. The two helpers use
-    different physical constants: the shared one uses CODATA values
-    and the temperature as passed, while the NMODL helper uses
-    ``F = 9.6485e4 C/mol``, ``R = 8.3145 J/(K mol)`` and a
-    ``273.19 + celsius`` Kelvin conversion carried as
-    ``_CAV3P1_NMODL_TEMP_OFFSET``. Those are exactly the constants
-    ``Cav2p1_MA24_PC.mod`` itself declares, so the helper's
-    ``_cav3p1_`` name -- inherited from the Cav3.1 import, whose mod
-    file declares the same values -- understates its applicability
-    here. The consequence is that this class's forward current
-    differs from :class:`Cav2p1_MA2024_PC`'s by of order
-    :math:`10^{-4}` in relative terms, and that this class is the
-    closer of the two to the mod file. Freezing alone leaves a
-    7e-3 mV difference from NEURON; the helper swap removes it.
+    The GHK drive is the one :class:`Cav2p1_RI2021_SC` declares, with
+    the constants ``Cav2p1_MA24_PC.mod`` itself declares
+    (``F = 9.6485e4 C/mol``, ``R = 8.3145 J/(K mol)``,
+    ``273.19 + celsius`` Kelvin), so the forward currents of the
+    frozen and unfrozen classes agree.
 
     As in :class:`Cav2p1_RI2021_SC`, ``g_max`` is a permeability in
     ``cm/s`` rather than a conductance density, the mod file's
@@ -3166,10 +3141,11 @@ class Cav2p1_MA2024_PC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2024_PC):
     """
 
     __module__ = "braincell.channel"
+    freeze_drive_gradient = True
 
 
 @register_channel("Cav2p1_RI2021_SC_Frozen")
-class Cav2p1_RI2021_SC_Frozen(_FrozenCav3p1Ghk, Cav2p1_RI2021_SC):
+class Cav2p1_RI2021_SC_Frozen(Cav2p1_RI2021_SC):
     r"""Stellate cell Cav2.1 with the GHK drive frozen for autodiff.
 
     The stellate-cell registration of the frozen-GHK Cav2.1
@@ -3201,16 +3177,15 @@ class Cav2p1_RI2021_SC_Frozen(_FrozenCav3p1Ghk, Cav2p1_RI2021_SC):
     See Also
     --------
     Cav2p1_MA2024_PC_Frozen : The Purkinje-cell frozen variant,
-        where the freezing mechanism, the GHK helper's constants and
-        the difference from the unfrozen classes are documented.
+        where the freezing mechanism is documented.
     Cav2p1_RI2021_SC : The unfrozen stellate-cell import of the same
-        mechanism, and this class's base. The two are **not**
-        numerically identical: see the Notes.
+        mechanism, and this class's base; same forward current.
 
     Notes
     -----
-    The class body is the two declarations ``_FrozenCav3p1Ghk``
-    supplies; every gate, constant and rate function comes from
+    The class body is the single declaration
+    ``freeze_drive_gradient = True``; every gate, constant and rate
+    function comes from
     :class:`Cav2p1_RI2021_SC`. Per the bibliography's attribution
     scan this subclass contributes no rate-function code of its own;
     its zero literal overlap in that scan is an artefact of the
@@ -3218,12 +3193,10 @@ class Cav2p1_RI2021_SC_Frozen(_FrozenCav3p1Ghk, Cav2p1_RI2021_SC):
 
     Everything in :class:`Cav2p1_MA2024_PC_Frozen`'s Notes applies
     unchanged and is not repeated here: no channel state stops
-    evolving, the freezing removes the drive from both reverse-mode
-    gradients and the implicit voltage step, and the frozen path uses
-    the NMODL-constant GHK helper rather than the shared
-    :func:`~braincell.channel._base.ghk_flux`, so the forward current
-    differs slightly from :class:`Cav2p1_RI2021_SC`'s. Together these make this
-    class, not :class:`Cav2p1_RI2021_SC`, the one that matches NEURON.
+    evolving, and the freezing removes the drive from both reverse-mode
+    gradients and the implicit voltage step. The forward current equals
+    :class:`Cav2p1_RI2021_SC`'s; the frozen linearization is what makes
+    this class's voltage trajectory match NEURON's.
 
     The ``RI2021`` import-deviations tables list no ``TABLE``
     removal, no ``derivimplicit`` -> ``cnexp`` substitution and no
@@ -3249,10 +3222,11 @@ class Cav2p1_RI2021_SC_Frozen(_FrozenCav3p1Ghk, Cav2p1_RI2021_SC):
     """
 
     __module__ = "braincell.channel"
+    freeze_drive_gradient = True
 
 
 @register_channel("Cav2p1_MA2025_BC_Frozen")
-class Cav2p1_MA2025_BC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2025_BC):
+class Cav2p1_MA2025_BC_Frozen(Cav2p1_MA2025_BC):
     r"""Basket cell Cav2.1 with the GHK drive frozen for autodiff.
 
     The basket-cell registration of the frozen-GHK Cav2.1 mechanism
@@ -3284,16 +3258,15 @@ class Cav2p1_MA2025_BC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2025_BC):
     See Also
     --------
     Cav2p1_MA2024_PC_Frozen : The Purkinje-cell frozen variant,
-        where the freezing mechanism, the GHK helper's constants and
-        the difference from the unfrozen classes are documented.
+        where the freezing mechanism is documented.
     Cav2p1_MA2025_BC : The unfrozen basket-cell import of the same
-        mechanism, and this class's base. The two are **not**
-        numerically identical: see the Notes.
+        mechanism, and this class's base; same forward current.
 
     Notes
     -----
-    The class body is the two declarations ``_FrozenCav3p1Ghk``
-    supplies; every gate, constant and rate function comes from
+    The class body is the single declaration
+    ``freeze_drive_gradient = True``; every gate, constant and rate
+    function comes from
     :class:`Cav2p1_MA2025_BC`. Per the bibliography's attribution
     scan this subclass contributes no rate-function code of its own;
     its zero literal overlap in that scan is an artefact of the
@@ -3301,12 +3274,10 @@ class Cav2p1_MA2025_BC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2025_BC):
 
     Everything in :class:`Cav2p1_MA2024_PC_Frozen`'s Notes applies
     unchanged and is not repeated here: no channel state stops
-    evolving, the freezing removes the drive from both reverse-mode
-    gradients and the implicit voltage step, and the frozen path uses
-    the NMODL-constant GHK helper rather than the shared
-    :func:`~braincell.channel._base.ghk_flux`, so the forward current
-    differs slightly from :class:`Cav2p1_MA2025_BC`'s. Together these make this
-    class, not :class:`Cav2p1_MA2025_BC`, the one that matches NEURON.
+    evolving, and the freezing removes the drive from both reverse-mode
+    gradients and the implicit voltage step. The forward current equals
+    :class:`Cav2p1_MA2025_BC`'s; the frozen linearization is what makes
+    this class's voltage trajectory match NEURON's.
 
     The ``MA2025`` import-deviations tables list no ``TABLE``
     removal, no ``derivimplicit`` -> ``cnexp`` substitution and no
@@ -3332,6 +3303,7 @@ class Cav2p1_MA2025_BC_Frozen(_FrozenCav3p1Ghk, Cav2p1_MA2025_BC):
     """
 
     __module__ = "braincell.channel"
+    freeze_drive_gradient = True
 
 
 @register_channel("Cav3p2_RI2021_SC")

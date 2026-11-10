@@ -237,7 +237,7 @@ def _pump(self, V, x, total_current=None):
 class Cldif_JE2011(Chloride, KineticIon):
     r"""Radial-diffusion chloride pool of Jedlicka et al. (2011), ``cldif.mod``.
 
-    The compartment is split into four concentric shells, ``Ci`` (the
+    The compartment is split into four concentric shells [1]_, ``Ci`` (the
     outermost, read by the Nernst potential) and ``cl1``-``cl3``.
     With :math:`d` the compartment's ``diam_arc_mean``, the shell
     volume per unit length is :math:`V_i = d^2\,\mathrm{vrat}_i`, and in

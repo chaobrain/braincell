@@ -42,6 +42,7 @@ from braincell.mech import (
     Point,
     StateProbe,
 )
+from braincell.mech._units import user_frame
 from braincell.morph.morphology import Morphology
 from braincell._discretization.base import DEFAULT_CABLE, EPS_PARAM, CVPointMechanism, Position
 from braincell._discretization.context import build_cv_contexts
@@ -104,24 +105,20 @@ class PlaceRule:
     origin: str | None = field(default=None, compare=False, repr=False)
 
 
-_PACKAGE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + os.sep
-
-
 def caller_origin() -> str | None:
     """Return ``<file>:<line>`` of the nearest caller outside braincell's own code.
 
     Frames in the braincell package are skipped, except its ``*_test.py``
-    files, which call ``paint``/``place`` as users do. Returns ``None``
-    where frames are unavailable (``sys._getframe`` is CPython-specific).
+    files, which call ``paint``/``place`` as users do (the rule shared with
+    declaration warnings, :func:`braincell.mech._units.user_frame`). Returns
+    ``None`` where frames are unavailable (``sys._getframe`` is
+    CPython-specific).
     """
     getframe = getattr(sys, "_getframe", None)
-    frame = getframe(1) if getframe is not None else None
-    while frame is not None:
-        filename = frame.f_code.co_filename
-        if not filename.startswith(_PACKAGE_DIR) or filename.endswith("_test.py"):
-            return f"{os.path.basename(filename)}:{frame.f_lineno}"
-        frame = frame.f_back
-    return None
+    frame, _ = user_frame(getframe(1) if getframe is not None else None)
+    if frame is None:
+        return None
+    return f"{os.path.basename(frame.f_code.co_filename)}:{frame.f_lineno}"
 
 
 @dataclass

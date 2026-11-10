@@ -36,8 +36,8 @@ from braincell._discretization.geometry import (
     _GeoCV,
     _build_frusta,
 )
+from braincell.mech._units import _PACKAGE_DIR
 from braincell._discretization.mechanism import (
-    _PACKAGE_DIR,
     PaintRule,
     PlaceRule,
     _MechBucket,
@@ -235,7 +235,9 @@ class MergePaintRulesTest(unittest.TestCase):
 
     def test_density_different_classes_both_kept(self) -> None:
         d1 = Channel("IL", g_max=0.1 * (u.mS / u.cm**2), E=-70 * u.mV)
-        d2 = Channel("Na_Ba2002", g_max=0.05 * (u.mS / u.cm**2), E=50 * u.mV)
+        # ``Na_Ba2002`` has no ``E``; the declaration warns (MECH-26) but merges as data.
+        with self.assertWarnsRegex(FutureWarning, "unexpected parameter 'E'"):
+            d2 = Channel("Na_Ba2002", g_max=0.05 * (u.mS / u.cm**2), E=50 * u.mV)
         r1 = PaintRule(region=AllRegion(), mechanism=d1)
         r2 = PaintRule(region=AllRegion(), mechanism=d2)
         merged = merge_paint_rules((r1,), (r2,))

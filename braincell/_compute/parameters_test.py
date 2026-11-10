@@ -142,10 +142,9 @@ class ParameterUnitMessageTest(unittest.TestCase):
             cell.init_state()
         return str(caught.exception), site
 
-    def test_channel_ion_and_synapse_literals(self):
-        callable_line = f"parameters_test.py:{inspect.currentframe().f_lineno + 1}"
-        no_unit = lambda ctx: 0.1  # noqa: E731
-        cases = (
+    @staticmethod
+    def _literal_cases(no_unit):
+        return (
             (
                 Channel("IL", name="leak", g_max=0.1),
                 TypeError,
@@ -175,6 +174,14 @@ class ParameterUnitMessageTest(unittest.TestCase):
             (Synapse("ExpSyn", name="syn", tau=5.0), TypeError, "Synapse 'syn' (ExpSyn)", "tau", "ms", "5.0 (no unit)"),
             (Synapse("ExpSyn", name="syn", tau=5 * u.mV), ValueError, "Synapse 'syn' (ExpSyn)", "tau", "ms", "5 mV"),
         )
+
+    def test_channel_ion_and_synapse_literals(self):
+        callable_line = f"parameters_test.py:{inspect.currentframe().f_lineno + 1}"
+        no_unit = lambda ctx: 0.1  # noqa: E731
+        # MECH-26: each literal warns at its declaration; the callable cannot.
+        with self.assertWarns(FutureWarning) as warned:
+            cases = self._literal_cases(no_unit)
+        self.assertEqual(len(warned.warnings), 6)
         for declaration, expected_type, owner, field, unit, got in cases:
             with self.subTest(declaration=declaration):
                 place = isinstance(declaration, Synapse)
@@ -197,7 +204,8 @@ class ParameterUnitMessageTest(unittest.TestCase):
         self.assertIn(site, message)
 
     def test_unknown_paint_origin_and_unmatched_declarations_are_omitted(self):
-        declaration = Channel("IL", name="leak", g_max=0.1)
+        with self.assertWarns(FutureWarning):
+            declaration = Channel("IL", name="leak", g_max=0.1)
         rule = PaintRule(region=AllRegion(), mechanism=declaration)
         self.assertEqual(
             density_error_context(declaration, (rule,)), ("Channel 'leak' (IL)", "painted on AllRegion().")

@@ -46,6 +46,7 @@ from typing import Any, Callable, ClassVar, Mapping
 from braincell.mech._base import Mechanism
 from braincell.mech._params import Params
 from braincell.mech._registry import _CATEGORY_CHANNEL, _CATEGORY_ION, _runtime_base, get_registry
+from braincell.mech._units import warn_invalid_declared_parameters
 from braincell.mech._validate import require_fraction, require_str
 
 __all__ = [
@@ -320,19 +321,35 @@ class Channel(Density):
         callable accepting one :class:`braincell.mech.CVContext`; it is
         resolved once per active CV during ``Cell.init_state()``.
 
+    Warns
+    -----
+    FutureWarning
+        When the runtime class is known at construction (a class object, or
+        a registered name) and a literal parameter (quantity, number or
+        array) has the wrong unit, or a parameter name is not a constructor
+        parameter of the class. The warning points at the line that builds
+        the declaration and quotes the error ``Cell.init_state()`` raises,
+        e.g. ``Channel 'leak' (IL) parameter 'g_max' has units incompatible
+        with mS / cm^2; got 0.1 mV. This will raise ValueError at declaration
+        from braincell 0.4.``; an unknown name (``TypeError`` at
+        ``init_state``) suggests a close match. From braincell 0.4 the
+        declaration raises instead.
+
     Notes
     -----
     Each value must have the unit of the runtime class's prototype: the
     signature default, or the class attribute ``parameter_units`` for a
     parameter whose default cannot carry a unit (see
-    :meth:`braincell.IonChannel.parameter_info`). The check runs in
-    ``Cell.init_state()``, on a callable's result once it is evaluated: a
+    :meth:`braincell.IonChannel.parameter_info`). ``Cell.init_state()``
+    checks every value, a callable's result once it is evaluated: a
     bare number for a dimensioned parameter raises ``TypeError`` and
     incompatible units raise ``ValueError``. The message names the channel, the parameter, the
     expected unit, the value, the painted region and the ``paint`` line, for
     example ``Channel 'leak' (IL) parameter 'g_max' has units incompatible
     with mS / cm^2; got 0.1 mV. Painted on AllRegion() at model.py:12.``
-    A ``braintools`` initializer is rejected with ``TypeError``.
+    A ``braintools`` initializer is rejected with ``TypeError``. Callables,
+    initializers and names registered after the declaration is built are
+    checked only there.
 
     See Also
     --------
@@ -397,6 +414,7 @@ class Channel(Density):
             raise ValueError("Channel cannot define both ion_name and ion_names.")
         object.__setattr__(self, "ion_name", ion_name)
         object.__setattr__(self, "ion_names", normalized_ion_names)
+        warn_invalid_declared_parameters(self.category, self.class_name, self.instance_name, self.params)
 
 
 class Ion(Density):
@@ -423,6 +441,14 @@ class Ion(Density):
         Ion parameters, passed as keyword arguments. A parameter may also
         be a callable accepting one :class:`braincell.mech.CVContext`; it is
         resolved once per active CV during ``Cell.init_state()``.
+
+    Warns
+    -----
+    FutureWarning
+        As for :class:`Channel`: a literal parameter with the wrong unit, or
+        an unknown parameter name (``ValueError`` at ``init_state``), when
+        the class is known at construction. From braincell 0.4 the
+        declaration raises instead.
 
     Notes
     -----
@@ -477,6 +503,7 @@ class Ion(Density):
             solver=solver,
             substeps=substeps,
         )
+        warn_invalid_declared_parameters(self.category, self.class_name, self.instance_name, self.params)
 
 
 # ---------------------------------------------------------------------------

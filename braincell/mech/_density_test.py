@@ -14,6 +14,7 @@
 # ==============================================================================
 
 import unittest
+import warnings
 
 import braintools
 import brainunit as u
@@ -343,6 +344,103 @@ class DensityUnregisteredClassTest(unittest.TestCase):
             with self.subTest(case=label):
                 with self.assertRaisesRegex(TypeError, message):
                     build()
+
+
+class DeclarationParameterWarningTest(unittest.TestCase):
+    """MECH-26: invalid literal parameters warn where the declaration is written."""
+
+    def _init_state_on_a_cell(self, declaration) -> None:
+        from braincell.filter import AllRegion
+
+        cell = braincell.Cell(braincell.Morphology.from_soma())
+        cell.paint(AllRegion(), declaration)
+        cell.init_state()
+
+    def test_invalid_literals_warn_at_this_line_and_still_raise_at_init_state(self) -> None:
+        mS_cm2 = u.mS / u.cm**2
+        cases = (
+            (lambda: Channel("IL", name="leak", g_max=0.1), TypeError, ("Channel 'leak' (IL)", "'g_max'", "mS / cm^2")),
+            (
+                lambda: Channel("IL", name="leak", g_max=0.1 * u.mV),
+                ValueError,
+                ("Channel 'leak' (IL)", "'g_max'", "mS / cm^2", "0.1 mV"),
+            ),
+            (
+                lambda: Channel("IL", name="leak", gmax=0.1 * mS_cm2),
+                TypeError,
+                ("Channel 'leak' (IL)", "'gmax'", "Did you mean 'g_max'?"),
+            ),
+            (lambda: Ion("SodiumFixed", E=50.0), TypeError, ("Ion 'SodiumFixed'", "'E'", "mV", "(no unit)")),
+            (lambda: Ion("SodiumFixed", E=50.0 * u.mM), ValueError, ("Ion 'SodiumFixed'", "'E'", "mV", "50.0 mM")),
+            (lambda: Ion("SodiumFixed", Cii=10.0 * u.mM), ValueError, ("Ion 'SodiumFixed'", "'Cii'", "'Ci'")),
+        )
+        for build, error, fragments in cases:
+            with self.subTest(fragments=fragments):
+                with self.assertWarns(FutureWarning) as caught:
+                    declaration = build()
+                self.assertEqual(caught.filename, __file__)
+                message = str(caught.warning)
+                for fragment in fragments:
+                    self.assertIn(fragment, message)
+                self.assertTrue(
+                    message.endswith(f"This will raise {error.__name__} at declaration from braincell 0.4.")
+                )
+                with self.assertRaises(error):
+                    self._init_state_on_a_cell(declaration)
+
+    def test_one_warning_per_invalid_parameter(self) -> None:
+        with self.assertWarns(FutureWarning) as caught:
+            Channel("IL", g_max=0.1, E=-70.0)
+        self.assertEqual({w.filename for w in caught.warnings}, {__file__})
+        self.assertEqual([str(w.message).split()[3] for w in caught.warnings], ["'g_max'", "'E'"])
+
+    def test_values_checked_only_at_init_state_do_not_warn(self) -> None:
+        mS_cm2 = u.mS / u.cm**2
+        builds = (
+            lambda: Channel("IL", g_max=0.1 * mS_cm2, E=-70.0 * u.mV),
+            lambda: Channel("IL", g_max=np.full(3, 0.1) * mS_cm2),
+            lambda: Channel("IL", g_max=lambda ctx: 0.1),
+            lambda: Channel("IL", g_max=braintools.init.Constant(0.1 * mS_cm2)),
+            lambda: Channel("IL", g_max=None),
+            lambda: Channel("NotARealChannel", g_max=0.1, foo=1.0),
+            lambda: Ion("NotARealIon", E=50.0),
+            lambda: Ion("SodiumFixed", Ci=braintools.init.Constant(10.0 * u.mM), valence=1),
+            lambda: Channel(_UnregisteredLeak, g_max=0.3 * mS_cm2),
+        )
+        for build in builds:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", FutureWarning)
+                build()
+
+    def test_copies_are_not_checked_again(self) -> None:
+        with self.assertWarns(FutureWarning):
+            spec = Channel("IL", g_max=0.1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            self.assertEqual(spec.with_coverage(0.5).params, spec.params)
+
+    def test_unregistered_class_is_checked_against_its_own_signature(self) -> None:
+        with self.assertWarns(FutureWarning) as caught:
+            Channel(_UnregisteredLeak, g_max=0.3 * u.mV)
+        self.assertIn("Channel '_UnregisteredLeak' parameter 'g_max' has units incompatible", str(caught.warning))
+
+    def test_traced_values_are_checked_for_units_only(self) -> None:
+        # ``Params`` cannot hash a traced scalar, so declarations inside
+        # ``jit`` carry traced arrays; their entries are unknown until run.
+        import jax
+
+        mS_cm2 = u.mS / u.cm**2
+
+        def declare(g, unit):
+            Channel("IL", g_max=u.Quantity(g, unit))
+            return g
+
+        nan = np.full(3, np.nan, dtype=np.float32)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            jax.jit(declare, static_argnums=1)(nan, mS_cm2)
+        with self.assertWarnsRegex(FutureWarning, "has units incompatible with mS / cm\\^2; got an array of shape"):
+            jax.jit(declare, static_argnums=1)(nan, u.mV)
 
 
 if __name__ == "__main__":

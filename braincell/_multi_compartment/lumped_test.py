@@ -477,9 +477,12 @@ class LumpedCounterexampleTest(unittest.TestCase):
                     cell.init_state()
 
     def test_bad_ion_declarations_raise_at_init_state(self) -> None:
+        # MECH-26: the unknown parameter warns at the declaration first.
+        with self.assertWarnsRegex(FutureWarning, "Ion 'SodiumFixed' got an unexpected parameter 'foo'"):
+            unknown_param = bc.mech.Ion("SodiumFixed", foo=1.0)
         cases = (
             ("canonical family key", bc.mech.Ion("SodiumFixed", name="k")),
-            ("unsupported runtime ion params", bc.mech.Ion("SodiumFixed", foo=1.0)),
+            ("unsupported runtime ion params", unknown_param),
         )
         for message, ion in cases:
             with self.subTest(message=message):

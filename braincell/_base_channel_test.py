@@ -80,8 +80,10 @@ class BaseChannelExportTest(unittest.TestCase):
             cell.paint(AllRegion(), braincell.mech.Channel(CustomLeak, g_max=0.1 * u.mV))
             return cell
 
+        with self.assertWarnsRegex(FutureWarning, r"declared in .*CustomLeak.parameter_units"):
+            cell = build(with_units=True)
         with self.assertRaisesRegex(ValueError, r"\(declared in .*CustomLeak.parameter_units\); got 0.1 mV"):
-            build(with_units=True).init_state()
+            cell.init_state()
         build(with_units=False).init_state()
 
     def test_parameter_units_merge_along_the_mro_and_name_real_parameters(self):

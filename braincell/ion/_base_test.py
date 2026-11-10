@@ -15,6 +15,7 @@
 # ==============================================================================
 
 import unittest
+import warnings
 
 import brainstate
 import braintools
@@ -883,6 +884,62 @@ class IonCurrentInputContractTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             _check_snapshot(_IgnoresTotalCurrent, rate)
         _check_external_current(CalciumDetailed, rate)  # the unmodified parent passes
+
+
+class IonDirectConstructionUnitTest(unittest.TestCase):
+    """Parameter units are checked when an Ion is constructed directly (MECH-28)."""
+
+    def test_wrong_units_warn_at_the_constructing_line(self):
+        from braincell.ion import SodiumFixed
+
+        cases = [
+            (
+                lambda: SodiumFixed(1, E=50.0),
+                "Ion 'SodiumFixed' parameter 'E' requires a quantity compatible with mV",
+                "E",
+            ),
+            (
+                lambda: CalciumDetailed(1, tau=5 * u.mV),
+                "Ion 'CalciumDetailed' parameter 'tau' has units incompatible with ms",
+                "tau",
+            ),
+        ]
+        for build, message, name in cases:
+            with self.subTest(name=name):
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    ion = build()
+                future = [w for w in caught if issubclass(w.category, FutureWarning)]
+                self.assertEqual(len(future), 1)
+                self.assertEqual(future[0].filename, __file__)
+                self.assertIn(message, str(future[0].message))
+                self.assertIn("at construction from braincell 0.4.", str(future[0].message))
+                # The object is built as before: the value is stored unchanged.
+                stored = getattr(ion, name)
+                expected = 5.0 if name == "tau" else 50.0
+                stored = stored.to_decimal(u.mV) if isinstance(stored, u.Quantity) else stored
+                np.testing.assert_allclose(np.asarray(stored), expected)
+
+    def test_channels_built_inside_another_constructor_are_checked(self):
+        from braincell.channel import IL
+        from braincell.ion import SodiumFixed
+
+        class WithLeak(SodiumFixed):
+            def __init__(self, size, **kwargs):
+                super().__init__(size, **kwargs)
+                self.leak = IL(size, g_max=0.1)  # checked as its own outermost construction
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            WithLeak(1)
+        messages = [str(w.message) for w in caught if issubclass(w.category, FutureWarning)]
+        self.assertEqual(len(messages), 1)
+        self.assertIn("Channel 'IL' parameter 'g_max'", messages[0])
+
+    def test_initializer_parameters_are_not_checked(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", FutureWarning)
+            CalciumDetailed(1, Ci_initializer=braintools.init.Constant(1e-4 * u.mM))
 
 
 if __name__ == "__main__":

@@ -39,7 +39,12 @@ import numpy as np
 from braincell.mech._registry import get_registry
 from braincell.mech._synapse_schema import describe_mechanism
 
-__all__ = ["user_frame", "warn_at_user_frame", "warn_invalid_declared_parameters"]
+__all__ = [
+    "user_frame",
+    "warn_at_user_frame",
+    "warn_invalid_constructed_parameters",
+    "warn_invalid_declared_parameters",
+]
 
 _PACKAGE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + os.sep
 
@@ -54,7 +59,7 @@ _UNRESOLVABLE = object()
 _PARAMETER_INFO: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
-def user_frame(frame):
+def user_frame(frame, skip=frozenset()):
     """Return the nearest frame outside braincell's own code, and its distance.
 
     Frames in the braincell package are skipped, except its ``*_test.py``
@@ -64,6 +69,9 @@ def user_frame(frame):
     ----------
     frame : frame or None
         Frame to start from.
+    skip : collection of code objects, optional
+        Further frames to skip, such as a metaclass ``__call__`` that runs
+        ``__init__`` on the user's behalf.
 
     Returns
     -------
@@ -74,24 +82,25 @@ def user_frame(frame):
     hops = 0
     while frame is not None:
         filename = frame.f_code.co_filename
-        if not filename.startswith(_PACKAGE_DIR) or filename.endswith("_test.py"):
+        if frame.f_code not in skip and (not filename.startswith(_PACKAGE_DIR) or filename.endswith("_test.py")):
             return frame, hops
         frame = frame.f_back
         hops += 1
     return None, hops
 
 
-def warn_at_user_frame(message: str, category: type[Warning] = FutureWarning) -> None:
+def warn_at_user_frame(message: str, category: type[Warning] = FutureWarning, *, skip=frozenset()) -> None:
     """Issue ``message`` attributed to the nearest user frame (see :func:`user_frame`).
 
     The caller's own frame counts, so a call from a braincell ``*_test.py``
     is attributed to that line. Where frames are unavailable (``sys._getframe``
-    is CPython-specific) the warning points at the caller.
+    is CPython-specific) the warning points at the caller. ``skip`` is passed
+    to :func:`user_frame`.
     """
     stacklevel = 2
     getframe = getattr(sys, "_getframe", None)
     if getframe is not None:
-        frame, hops = user_frame(getframe(1))
+        frame, hops = user_frame(getframe(1), skip)
         if frame is not None:
             stacklevel += hops
     warnings.warn(message, category, stacklevel=stacklevel)
@@ -144,8 +153,34 @@ def warn_invalid_declared_parameters(
                 _warn(str(exc), type(exc))
 
 
-def _warn(message: str, error: type[Exception]) -> None:
-    warn_at_user_frame(f"{message} This will raise {error.__name__} at declaration from braincell 0.4.")
+def warn_invalid_constructed_parameters(node: Any, category: str, *, skip=frozenset()) -> None:
+    """Warn about the units of the parameters a directly built Channel or Ion stores.
+
+    ``node`` is a ``category`` (``"channel"`` or ``"ion"``) instance whose
+    constructor has returned. Each ``parameter_info()`` name is read back and
+    compared by unit only (no finite check, no array conversion), so values
+    traced under ``jax.jit`` or ``jax.grad`` are checked too. ``size``,
+    ``name``, ``*_initializer``, missing attributes and non-literal values
+    are skipped. ``skip`` is passed to :func:`user_frame`.
+    """
+    info = _class_parameter_info(type(node))
+    if info is _UNRESOLVABLE:
+        return
+    owner = None
+    for name, spec in info.items():
+        if name in _CELL_SUPPLIED or name.endswith("_initializer"):
+            continue
+        value = getattr(node, name, None)
+        if _is_literal(value):
+            owner = owner or describe_mechanism(category, type(node).__name__, getattr(node, "name", None))
+            try:
+                spec.validate(value, name, owner=owner, units_only=True)
+            except (TypeError, ValueError) as exc:
+                _warn(str(exc), type(exc), "construction", skip=skip)
+
+
+def _warn(message: str, error: type[Exception], where: str = "declaration", *, skip=frozenset()) -> None:
+    warn_at_user_frame(f"{message} This will raise {error.__name__} at {where} from braincell 0.4.", skip=skip)
 
 
 def _parameter_info(category: str, class_name: str):
@@ -157,7 +192,11 @@ def _parameter_info(category: str, class_name: str):
     registry = get_registry()
     if not registry.contains(category, class_name):
         return _UNRESOLVABLE
-    cls = registry.get(category, class_name)
+    return _class_parameter_info(registry.get(category, class_name))
+
+
+def _class_parameter_info(cls: type):
+    """Return ``cls.parameter_info()`` as a dict, cached per class; ``_UNRESOLVABLE`` if it raises."""
     info = _PARAMETER_INFO.get(cls)
     if info is None:
         try:

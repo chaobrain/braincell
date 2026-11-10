@@ -267,10 +267,23 @@ class Ion(IonChannel, Container):
     ----------
     channels : Dict[str, Channel]
         A dictionary of Channel instances associated with this ion.
+
+    Warns
+    -----
+    FutureWarning
+        At the constructing line, when a directly constructed ion stores a
+        parameter whose units do not match :meth:`parameter_info`, such as
+        ``SodiumFixed(1, E=50.0)`` or ``CalciumDetailed(1, tau=5 * u.mV)``.
+        Units are compared once the outermost ``__init__`` returns, also for
+        values traced under ``jax.jit``; ``*_initializer`` parameters are not
+        checked. The object is built as before. From braincell 0.4 the
+        constructor raises the ``TypeError`` or ``ValueError`` the warning
+        names.
     """
 
     __module__ = 'braincell'
     _container_name = 'channels'
+    _unit_check_category = "ion"
     root_type = HHTypedNeuron
 
     def __getattribute__(self, name: str):

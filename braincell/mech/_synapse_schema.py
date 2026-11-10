@@ -38,7 +38,9 @@ class ParameterSpec:
     default: object
     validator: Validator | None = None
 
-    def validate(self, value: object, name: str, *, owner: str | None = None, source: str | None = None) -> None:
+    def validate(
+        self, value: object, name: str, *, owner: str | None = None, source: str | None = None, units_only: bool = False
+    ) -> None:
         """Validate one resolved parameter value against this declaration.
 
         Parameters
@@ -54,6 +56,9 @@ class ParameterSpec:
         source : str, optional
             Sentence appended to unit errors that says where the value came
             from, such as the ``paint`` call that declared it.
+        units_only : bool, default False
+            Compare units (dimensions) only: skip the empty and finite checks
+            and the validator, and never convert the value to an array.
 
         Raises
         ------
@@ -63,8 +68,8 @@ class ParameterSpec:
         ValueError
             If the units are incompatible, or the value is empty or not finite.
         """
-        _validate_like_default(value, self.default, name=name, owner=owner, source=source)
-        if self.validator is not None:
+        _validate_like_default(value, self.default, name=name, owner=owner, source=source, units_only=units_only)
+        if self.validator is not None and not units_only:
             self.validator(value, name)
 
 
@@ -162,14 +167,21 @@ def _validate_like_default(
     owner: str | None = None,
     source: str | None = None,
     declared_in: str | None = None,
+    units_only: bool = False,
 ) -> None:
     def message(problem: str) -> str:
         return unit_error_message(name, problem, owner=owner, source=source, value=value)
 
     if isinstance(default, u.Quantity):
+        if units_only and isinstance(value, u.Quantity) and value.dim is default.dim:
+            return  # dimensions are interned; skip formatting ``expected``
         expected = f"{default.unit}" + (f" (declared in {declared_in})" if declared_in else "")
         if not isinstance(value, u.Quantity):
             raise TypeError(message(f"requires a quantity compatible with {expected}"))
+        if units_only:
+            if not u.have_same_dim(value, default):
+                raise ValueError(message(f"has units incompatible with {expected}"))
+            return
         try:
             decimal = value.to_decimal(default.unit)
         except Exception as exc:
@@ -177,6 +189,8 @@ def _validate_like_default(
     else:
         if isinstance(value, u.Quantity):
             raise TypeError(message("must be dimensionless"))
+        if units_only:
+            return
         decimal = value
     if isinstance(decimal, jax.core.Tracer):
         return  # a traced value has a unit but no concrete entries to inspect

@@ -43,6 +43,12 @@ T0（`e_V ≤ 1e-6 mV`；`e_I`、`e_s ≤ 1e-10`）；每个 T1 项写明偏差�
 [已知差异](../known-differences.md)中的小节。`tests/test_neuron_agreement.py`
 （电流钳）与 `tests/test_voltage_clamp.py`（电压钳）都从这张表读限值。
 
+注册表中的每个通道要么在 `configs/` 下有配置，要么列在 `tolerances.py` 的
+`UNCOVERED` 中并写明原因；`tests/test_coverage.py` 检查这一点，新增通道两者都没有
+时失败。`configs/testing/kv_testing.json` 对照 `data/mechanisms/testing/kv.mod`
+（先运行 `python -m validation.neuron._mechanisms testing --kind channel`），也是
+转换器示例 `examples/convert_mod/mod_validate/channel_validate.ipynb` 运行的配置。
+
 当前推荐的 `MA24_PC` batch 配置目录为：
 
 - `configs/ma24_pc/`

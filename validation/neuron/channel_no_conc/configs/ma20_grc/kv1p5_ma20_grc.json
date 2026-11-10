@@ -31,6 +31,9 @@
       "g_max_S_cm2": {
         "neuron": "gKur",
         "braincell": "g_max"
+      },
+      "gnonspec_S_cm2": {
+        "common": "gnonspec"
       }
     }
   },

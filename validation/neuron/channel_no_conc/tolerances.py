@@ -26,8 +26,8 @@ approval.
 ``NON_FINITE_REFERENCE`` names the voltage-clamp commands whose NEURON run is
 not finite and that the comparison therefore leaves out.
 
-``VARIANTS`` names the default-off constructor options that are compared
-separately; their entries use the variant name as the configuration.
+``VARIANTS`` names the default-off options that are compared separately;
+their entries use the variant name as the configuration.
 
 ``UNCOVERED`` lists the registry channels that have no configuration under
 ``configs/``, each with its reason. ``tests/test_coverage.py`` fails when a
@@ -35,7 +35,9 @@ registered channel has neither, and when a listed name is not registered or
 already has a configuration.
 """
 
+from collections.abc import Mapping
 from pathlib import Path
+from typing import NamedTuple
 
 from validation.neuron._tolerance import ToleranceEntry, ToleranceTable
 
@@ -48,16 +50,36 @@ _KCA2P2 = "Kca2.2 steady-state initialization"
 _KCA1P1 = "Kca1.1 steady-state initialization"
 _GHK_ZERO = "GHK drive near 0 mV in mod files without a limit branch"
 _CA_ZH19_M_INF = "Ca_ZH2019_IO with freeze_m_inf=False"
+_KDR_ZH19 = "Kdr_ZH2019_IO limit branch"
+_GATE_CURRENT = "Kv1.1 and Kv3.3 gating current"
+_KV1P1 = tuple(f"{model}/kv1p1_{model}" for model in ("ma20_goc", "ma20_grc", "ma24_pc", "ma25_bc", "ri21_sc"))
 _CAV3P3 = ("ma24_pc/cav3p3_ma24_pc", "ma24_pc/cav3p3_ma24_pc_frozen", "ri21_sc/cav3p3_ri21_sc")
 
-VARIANTS = {
-    "zh19_io/ca_zh19_io:freeze_m_inf=False": ("zh19_io/ca_zh19_io", {"freeze_m_inf": False}),
-}
-"""Default-off constructor options compared on their own.
 
-Name -> (configuration, BrainCell constructor overrides). The NEURON side is
-the configuration's unchanged; the name is the table key of the variant.
-"""
+class Variant(NamedTuple):
+    """A default-off option of a configuration, compared on its own.
+
+    ``channel_params`` overrides the configuration's channel parameters on
+    both sides (a BrainCell-only option is a BrainCell-only parameter of the
+    mapping). ``extra_neuron_currents`` are the mechanism's currents that
+    NEURON keeps apart and BrainCell folds into the channel current; the
+    voltage clamp adds them to NEURON's ``ix``.
+    """
+
+    config: str
+    channel_params: Mapping[str, object]
+    extra_neuron_currents: tuple[str, ...] = ()
+
+
+VARIANTS = {
+    "zh19_io/ca_zh19_io:freeze_m_inf=False": Variant("zh19_io/ca_zh19_io", {"freeze_m_inf": False}),
+    **{
+        f"{config}:gateCurrent=1": Variant(config, {"gate_current": 1.0}, ("i",))
+        for config in (*_KV1P1, "ma24_pc/kv3p3_ma24_pc")
+    },
+    "ma20_grc/kv1p5_ma20_grc:gnonspec": Variant("ma20_grc/kv1p5_ma20_grc", {"gnonspec_S_cm2": 1.3195e-4}, ("ino",)),
+}
+"""Name (the table key of the variant) -> variant."""
 
 
 def _current_clamp(config: str, vinit: float | None, dc: float | None, ac: float | None, cls: str, section: str):
@@ -89,6 +111,13 @@ ENTRIES = [
         for entry in _current_clamp(config, 1e-5, 1e-5, 1e-5, "c", _KCA2P2)
     ),
     *_current_clamp("zh19_io/ca_zh19_io:freeze_m_inf=False", 1e-2, 0.2, 0.5, "d", _CA_ZH19_M_INF),
+    # Current clamp, e_V in mV (MECH-19b).
+    *(
+        entry
+        for config in _KV1P1
+        for entry in _current_clamp(f"{config}:gateCurrent=1", 1e-3, 1e-2, 5e-3, "d", _GATE_CURRENT)
+    ),
+    *_current_clamp("ma24_pc/kv3p3_ma24_pc:gateCurrent=1", 5e-6, 5e-3, 1e-3, "d", _GATE_CURRENT),
     # Voltage clamp, e_I and e_s (MECH-19a).
     *(
         ToleranceEntry(config, protocol, {"e_I": e_I, "e_s": 5e-9}, "c", _KCA2P2)
@@ -105,6 +134,8 @@ ENTRIES = [
     ToleranceEntry("su15_dcn/cahva_su15_dcn", "vc_steps", {"e_I": 2e-5}, "c", _GHK_ZERO),
     ToleranceEntry("su15_dcn/cahva_su15_dcn", "vc_ramp", {"e_I": 2e-5}, "c", _GHK_ZERO),
     ToleranceEntry("su15_dcn/calva_su15_dcn", "vc_steps", {"e_I": 1e-9}, "c", _GHK_ZERO),
+    # Voltage clamp (MECH-19b).
+    ToleranceEntry("zh19_io/kdr_zh19_io", "vc_ramp", {"e_I": 2e-9, "e_s": 1e-8}, "c", _KDR_ZH19),
 ]
 
 TABLE = ToleranceTable(ENTRIES)
@@ -120,6 +151,7 @@ _NO_MOD = "no .mod reference in the repository"
 # The candidate references below are ModelDB files without a licence statement;
 # whether such files may enter the repository is a pending lead decision.
 _MODELDB = "no .mod reference in the repository; candidate reference"
+_HM1992 = "no candidate .mod file identified for Huguenard & McCormick (1992)"
 
 UNCOVERED = {
     "AHP_De1994": f"{_MODELDB} ModelDB 3670 IAHP.mod, which also scales tau_m by 3^((celsius - 22)/10) (MECH-6a)",
@@ -131,17 +163,16 @@ UNCOVERED = {
     "CaT_HP1992": f"{_MODELDB} ModelDB 3670 IT2.mod",
     "HCN_HM1992": _NO_MOD,
     "IL": f"{_NO_MOD}; NEURON's built-in pas is a candidate reference (MECH-19c)",
-    "KA1_HM1992": _NO_MOD,
-    "KA2_HM1992": _NO_MOD,
-    "KDR_Ba2002": _NO_MOD,
-    "KK2A_HM1992": _NO_MOD,
-    "KK2B_HM1992": _NO_MOD,
-    "KNI_Ya1989": _NO_MOD,
-    "K_HH1952": f"{_NO_MOD}; NEURON's built-in hh is a candidate reference (MECH-19b)",
-    "K_Leak": _NO_MOD,
-    "K_TM1991": _NO_MOD,
+    "KA1_HM1992": f"{_NO_MOD}; {_HM1992}",
+    "KA2_HM1992": f"{_NO_MOD}; {_HM1992}",
+    "KDR_Ba2002": f"{_MODELDB} ModelDB 3670 HH2.mod: the rates of K_TM1991 with V_sh = -50 mV and q10 = 3",
+    "KK2A_HM1992": f"{_NO_MOD}; {_HM1992}",
+    "KK2B_HM1992": f"{_NO_MOD}; {_HM1992}",
+    "KNI_Ya1989": f"{_MODELDB} ModelDB 3817 IM.mod, which ships taumax = 1000 ms and gkbar = 1e-6 S/cm2",
+    "K_Leak": f"{_NO_MOD}; no source model: an ohmic leak at E_K with a placeholder default",
+    "K_TM1991": f"{_MODELDB} ModelDB 3670 HH2.mod, whose rate factor tadj = 3^((celsius - 36)/10) is 1 at 36 degC",
     "Na_Ba2002": _NO_MOD,
-    "Na_HH1952": f"{_NO_MOD}; NEURON's built-in hh is a candidate reference (MECH-19b)",
+    "Na_HH1952": f"{_NO_MOD}; NEURON's built-in hh is a candidate reference: K_HH1952 matches it (MECH-19c)",
     "Na_TM1991": _NO_MOD,
 }
 """Registry name -> why the channel has no NEURON comparison configuration."""

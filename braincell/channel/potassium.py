@@ -454,13 +454,17 @@ class K_HH1952(OhmicHH):
     ``10.0 mS/cm2``. Document it as a BrainCell default, not as the
     published value.
 
-    **The default temperature is not the paper's either.** The rates
-    above were measured at 6.3 degrees Celsius, whereas ``temp`` and
-    ``temp_ref`` both default to 36 degrees Celsius, which makes the
-    Q10 correction a no-op as shipped. ``q10 = 3.0`` is Hodgkin &
-    Huxley's own factor-of-three-per-ten-degrees, but the shipped
-    defaults do not reproduce the paper's 6.3 degrees Celsius
-    behaviour.
+    **The default temperatures do not read as the paper's, but the
+    kinetics are.** Hodgkin & Huxley measured these rates at 6.3
+    degrees Celsius, not at this class's ``temp_ref = 36`` degrees
+    Celsius default. Because ``temp`` and ``temp_ref`` are equal by
+    default, the Q10 factor is 1 and the gate runs at the published
+    rates: the defaults reproduce the 6.3-degree-Celsius kinetics even
+    though ``temp`` reads 36 degrees Celsius. NEURON's ``hh`` mechanism
+    scales the rates by :math:`3^{(T - 6.3)/10}`; pass
+    ``temp_ref=u.celsius2kelvin(6.3)`` to do the same, which makes the
+    rate at 36 degrees Celsius :math:`3^{2.97} \approx 26` times
+    faster than the defaults.
 
     References
     ----------

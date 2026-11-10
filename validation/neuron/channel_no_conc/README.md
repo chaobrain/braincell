@@ -34,7 +34,8 @@
 NEURON 电流归一，`e_I`）与 `gates.*`（`e_s`）。这两个模板不写进配置的
 `templates` 列表（列入时 `load_model_config` 抛 `ValueError`，否则 sweep 工作流会把它
 当作电流钳运行），由测试显式运行：`tests/test_voltage_clamp.py` 跑每种模板的代表配置，
-`tests/test_catalogue_*.py`（`slow`）按家族跑全部配置的五个协议：
+`tests/test_catalogue_*.py`（`slow`，共用 `tests/_catalogue.py`）按家族跑全部配置与
+`tolerances.VARIANTS`（默认关闭的可选路径，两侧同改 `channel_params`）的五个协议：
 
 ```python
 compare_protocol("configs/ma20_goc/kv3p4_ma20_goc.json", "templates/vc_steps.json")
@@ -47,7 +48,7 @@ T0（`e_V ≤ 1e-6 mV`；`e_I`、`e_s ≤ 1e-10`）；每个 T1 项写明偏差�
 
 注册表中的每个通道要么在 `configs/` 下有配置，要么列在 `tolerances.py` 的
 `UNCOVERED` 中并写明原因；`tests/test_coverage.py` 检查这一点，新增通道两者都没有
-时失败。`configs/testing/kv_testing.json` 对照 `data/mechanisms/testing/kv.mod`
+时失败；它同时检查每个用例的电导（`g_max` 或 `perm`）大于 0。`configs/testing/kv_testing.json` 对照 `data/mechanisms/testing/kv.mod`
 （先运行 `python -m validation.neuron._mechanisms testing --kind channel`），也是
 转换器示例 `examples/convert_mod/mod_validate/channel_validate.ipynb` 运行的配置。
 `configs/testing/cl_leak_testing.json` 对照同一库中的 `clleak.mod`：没有门变量

@@ -449,6 +449,25 @@ HCN 就是这样。
 }
 ```
 
+### 只有一侧有的参数
+
+只写 `neuron` 或只写 `braincell` 的参数只作用于那一侧：
+
+- 只有 `neuron`：把参照机制里与本通道无关的部分置零，例如 `hh` 的
+  `gnabar`、`gl`（[builtin/k_hh1952_hh.json](builtin/k_hh1952_hh.json)）；
+- 只有 `braincell`：`.mod` 写死的常数或 BrainCell 独有的开关，例如
+  `K_HH1952` 的 `temp_ref`（`hh` 的 Q10 参考温度 6.3 °C）、
+  `Ca_ZH2019_IO` 的 `freeze_m_inf`。
+
+公共参数名的后缀决定 BrainCell 侧的单位：`_S_cm2`、`_mS_cm2`、`_cm_s`、`_mV`、
+`_celsius`（换成开尔文），无后缀的原样传入。
+
+默认关闭的可选路径（`gateCurrent`、`gnonspec`、`freeze_m_inf`）在 mapping 中声明，
+数值不写进 `defaults`，由 `tolerances.VARIANTS` 另开一次对照。
+
+每个用例的电导（映射到 BrainCell `g_max` 或 `perm` 的参数）都必须大于 0，
+`tests/test_coverage.py` 检查。
+
 ### 数值写在哪里
 
 不要把数值写进 `mapping.channel_params`。
@@ -734,6 +753,8 @@ HCN 就是这样。
 - `configs/ri21_sc/`
 - `configs/su15_dcn/`
 - `configs/testing/`（`kv_testing.json`：`data/mechanisms/testing/kv.mod` 的 `Kv` 对 `K_Kv_test`）
+- `configs/builtin/`（NEURON 自带机制作参照：`k_hh1952_hh.json` 为 `hh` 只留钾电导，
+  对 `K_HH1952`；带 `TABLE` 的机制由 runner 设 `usetable_<mech> = 0`）
 
 `ma24_pc/` 目前放了 PC 里已经可直接从 `braincell.channel` 导入、且适合走 `channel_no_conc` compare 的 7 个 channel：
 
@@ -781,6 +802,7 @@ PC 其余机制不在这个目录的原因：
 - NMODL 同时声明 `ik` 和 `ino`
 - `ino` 由 `gnonspec` 控制，但 `gnonspec` 默认是 `0`
 - 本目录的配置只比较默认 `ik` path；非零 `gnonspec` 的 `ino` 由 `current_components()["no"]` 给出，按 mod 的写法计算反转电位（`z = R*(celsius+273.15)/F` 以伏为单位的数值当作毫伏用）
+- 非零 `gnonspec` 由 `tolerances.VARIANTS` 另开一次对照（电压钳把 NEURON 的 `ino` 加进 `ik`），五个协议均为 T0
 
 GrC 其余机制不在这个目录的原因：
 

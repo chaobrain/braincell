@@ -41,6 +41,9 @@
       "m_mid_mV": {
         "neuron": "mMidV",
         "braincell": "mMidV"
+      },
+      "freeze_m_inf": {
+        "braincell": "freeze_m_inf"
       }
     }
   },

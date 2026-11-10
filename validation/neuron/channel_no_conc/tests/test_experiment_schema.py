@@ -72,9 +72,10 @@ class ExperimentSchemaTest(unittest.TestCase):
             model_config = experiment_schema.load_model_config(config_path)
             config_suffixes.add(model_config.mapping_spec.neuron.mechanism_name)
 
+        neuron_builtins = {"hh"}  # NEURON's own mechanisms, compiled into every library
         self.assertEqual(len(mod_suffixes), 86)
-        self.assertEqual(len(config_suffixes), 86)
-        self.assertEqual(config_suffixes, mod_suffixes)
+        self.assertEqual(len(config_suffixes), 87)
+        self.assertEqual(config_suffixes, mod_suffixes | neuron_builtins)
 
     def test_repo_all_configs_load_and_expand_templates(self) -> None:
         config_root = CHANNEL_NO_CONC_ROOT / "configs"

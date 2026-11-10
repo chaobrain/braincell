@@ -5,6 +5,11 @@
   "identity": {
     "mod_dir": "../../../artifacts/mechanisms/pc_ma2024/channel"
   },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.0009
+    }
+  },
   "mapping": {
     "current": "ik",
     "impl_name": {

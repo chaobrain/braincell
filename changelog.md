@@ -368,6 +368,22 @@
   at roundoff (relative 1e-12 or less over 50 ms) and are closer to the
   exact implicit-Euler solution.
 
+### Deprecations
+
+- **Constructing an invalid mechanism declaration** (MECH-26).
+  `bc.mech.Channel`, `bc.mech.Ion` and `bc.mech.Synapse` now check literal
+  parameters (quantities, numbers, arrays) and parameter names when the class
+  is known at construction (a class object, or an already registered name),
+  and emit a `FutureWarning` at the declaring line, e.g.
+  `Channel 'leak' (IL) parameter 'g_max' has units incompatible with mS / cm^2;
+  got 0.1 mV. This will raise ValueError at declaration from braincell 0.4.`
+  An unknown name warns with a close match, e.g. `Channel 'leak' (IL) got an
+  unexpected parameter 'gmax'. Did you mean 'g_max'?`. `init_state()` still
+  raises the same exception as before, so only code that builds such a
+  declaration and never initializes it is affected; from 0.4 the declaration
+  itself will raise. Callables, braintools initializers and names not yet
+  registered are still checked at `init_state()` only.
+
 
 ## Version 0.2.0
 

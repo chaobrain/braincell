@@ -265,7 +265,8 @@ class ProbeMechanismValidatesInputsTest(unittest.TestCase):
 
 class SynapseTest(unittest.TestCase):
     def test_direct_construction(self) -> None:
-        syn = Synapse("ExpSyn", tau=5.0)
+        with self.assertWarnsRegex(FutureWarning, "Synapse 'ExpSyn' parameter 'tau' requires a quantity"):
+            syn = Synapse("ExpSyn", tau=5.0)
         self.assertEqual(syn.synapse_type, "ExpSyn")
         self.assertEqual(syn.params["tau"], 5.0)
 
@@ -278,8 +279,11 @@ class SynapseTest(unittest.TestCase):
         self.assertEqual(syn.instance_name, "fast")
 
     def test_equality_and_hash(self) -> None:
-        a = Synapse("ExpSyn", tau=5.0, e=0.0)
-        b = Synapse("ExpSyn", e=0.0, tau=5.0)
+        # Bare numbers are invalid but still compared as data (MECH-26).
+        with self.assertWarns(FutureWarning):
+            a = Synapse("ExpSyn", tau=5.0, e=0.0)
+        with self.assertWarns(FutureWarning):
+            b = Synapse("ExpSyn", e=0.0, tau=5.0)
         self.assertEqual(a, b)
         self.assertEqual(hash(a), hash(b))
 
@@ -342,6 +346,58 @@ class SynapseClassArgumentTest(unittest.TestCase):
             Synapse(3)  # type: ignore[arg-type]
         with self.assertRaisesRegex(TypeError, "synapse declaration needs a subclass"):
             Synapse(braincell.channel.IL)
+
+
+class SynapseDeclarationWarningTest(unittest.TestCase):
+    """MECH-26: invalid literal parameters warn where the declaration is written."""
+
+    def test_invalid_literals_warn_at_this_line_and_still_raise_at_init_state(self) -> None:
+        import braincell
+        from braincell.filter import AllRegion, RootLocation
+
+        cases = (
+            (lambda: Synapse("ExpSyn", name="fast", tau=5.0), TypeError, ("Synapse 'fast' (ExpSyn)", "'tau'", "ms")),
+            (
+                lambda: Synapse("ExpSyn", name="fast", tau=5.0 * u.mV),
+                ValueError,
+                ("Synapse 'fast' (ExpSyn)", "'tau'", "ms", "5.0 mV"),
+            ),
+            (
+                lambda: Synapse("ExpSyn", name="fast", taus=5.0 * u.ms),
+                TypeError,
+                ("Synapse 'fast' (ExpSyn)", "'taus'", "Did you mean 'tau'?"),
+            ),
+        )
+        for build, error, fragments in cases:
+            with self.subTest(fragments=fragments):
+                with self.assertWarns(FutureWarning) as caught:
+                    declaration = build()
+                self.assertEqual(caught.filename, __file__)
+                message = str(caught.warning)
+                for fragment in fragments:
+                    self.assertIn(fragment, message)
+                self.assertTrue(
+                    message.endswith(f"This will raise {error.__name__} at declaration from braincell 0.4.")
+                )
+                cell = braincell.Cell(braincell.Morphology.from_soma())
+                cell.paint(AllRegion(), braincell.mech.Channel("IL"))
+                cell.place(RootLocation(0.5), declaration)
+                with self.assertRaises(error):
+                    cell.init_state()
+
+    def test_valid_and_unresolvable_declarations_do_not_warn(self) -> None:
+        import warnings
+
+        import braincell
+
+        for build in (
+            lambda: Synapse("ExpSyn", tau=2.0 * u.ms, e=0.0 * u.mV),
+            lambda: Synapse(braincell.synapse.ExpSyn, tau=np.array([2.0, 3.0]) * u.ms),
+            lambda: Synapse("NotARealSynapse", tau=5.0),
+        ):
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", FutureWarning)
+                build()
 
 
 if __name__ == "__main__":

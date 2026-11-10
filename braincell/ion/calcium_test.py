@@ -1786,7 +1786,9 @@ class CalciumFirstOrderTest(unittest.TestCase):
         )
         for field, params in cases:
             with self.subTest(**{field: params[field]}):
-                cell = _first_order_cell(with_channel=False, **params)
+                # MECH-26: the declaration warns first; init_state still raises.
+                with self.assertWarnsRegex(FutureWarning, f"'{field}'"):
+                    cell = _first_order_cell(with_channel=False, **params)
                 with self.assertRaisesRegex((TypeError, ValueError), f"'{field}'"):
                     cell.init_state()
 

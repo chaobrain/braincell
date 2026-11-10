@@ -47,6 +47,7 @@ import numpy as np
 from braincell.mech._base import Mechanism
 from braincell.mech._density import _resolve_class_name
 from braincell.mech._params import Params, quantity_hashable
+from braincell.mech._units import warn_invalid_declared_parameters
 from braincell.mech._validate import require_str
 
 __all__ = [
@@ -333,6 +334,18 @@ class Synapse(Point):
     **params
         Synapse parameters.
 
+    Warns
+    -----
+    FutureWarning
+        When the synapse class is known at construction (a class object, or
+        a registered name) and a literal parameter has the wrong unit or a
+        parameter name is unknown (``TypeError`` at ``init_state``). The
+        warning points at the declaring line and quotes the ``init_state``
+        error, e.g. ``Synapse 'ExpSyn' parameter 'tau' requires a quantity
+        compatible with ms; got 5.0 (no unit). This will raise TypeError at
+        declaration from braincell 0.4.``. From braincell 0.4 the declaration
+        raises instead.
+
     Notes
     -----
     Units are checked in ``Cell.init_state()`` against the runtime class's
@@ -369,6 +382,7 @@ class Synapse(Point):
         object.__setattr__(self, "synapse_type", synapse_type)
         object.__setattr__(self, "params", Params(params) if params else Params())
         object.__setattr__(self, "name", name)
+        warn_invalid_declared_parameters("synapse", synapse_type, self.instance_name, self.params)
 
     def __setattr__(self, name: str, value: Any) -> None:
         raise AttributeError(f"{type(self).__name__} is immutable; cannot set attribute {name!r}.")

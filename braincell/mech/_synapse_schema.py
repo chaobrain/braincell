@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 import brainunit as u
+import jax
 import numpy as np
 
 __all__ = ["ParameterSpec", "StateSpec", "positive"]
@@ -170,13 +171,16 @@ def _validate_like_default(
         if not isinstance(value, u.Quantity):
             raise TypeError(message(f"requires a quantity compatible with {expected}"))
         try:
-            decimal = np.asarray(value.to_decimal(default.unit))
+            decimal = value.to_decimal(default.unit)
         except Exception as exc:
             raise ValueError(message(f"has units incompatible with {expected}")) from exc
     else:
         if isinstance(value, u.Quantity):
             raise TypeError(message("must be dimensionless"))
-        decimal = np.asarray(value)
+        decimal = value
+    if isinstance(decimal, jax.core.Tracer):
+        return  # a traced value has a unit but no concrete entries to inspect
+    decimal = np.asarray(decimal)
     if decimal.size == 0:
         raise ValueError(message("cannot be empty"))
     try:

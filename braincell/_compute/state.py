@@ -97,10 +97,12 @@ from braincell._compute.layouts import (
 )
 from braincell._compute.parameters import (
     RuntimeParameterState,
+    density_error_context,
     density_parameter_spec,
     make_runtime_parameter_state,
     parameter_state_value,
     set_runtime_parameter_value,
+    spatial_callable_source,
 )
 
 if TYPE_CHECKING:
@@ -366,6 +368,9 @@ class CellRuntimeState:
                 synapse_store.bind_runtime(mechanism.synapse_type, layout_spec.id, logical_ids)
                 continue
 
+            owner, source = (
+                density_error_context(mechanism, cell.paint_rules) if isinstance(mechanism, Density) else (None, None)
+            )
             for var_name in _mechanism_var_names(mechanism):
                 if isinstance(mechanism, CurrentClamp) and var_name == "delay":
                     quantity = _allocate_current_clamp_delay_buffer(
@@ -392,6 +397,16 @@ class CellRuntimeState:
                 parameter_spec = density_parameter_spec(mechanism, var_name) if isinstance(mechanism, Density) else None
                 if (
                     isinstance(mechanism, Density)
+                    and mechanism.category == "channel"
+                    and isinstance(value, braintools.init.Initialization)
+                ):
+                    raise TypeError(
+                        f"{owner} parameter {var_name!r} is a {type(value).__name__} initializer; braintools "
+                        "initializers are not supported for Channel parameters in a Cell; pass a quantity "
+                        f"or a CVContext callable.{' ' + source if source else ''}"
+                    )
+                if (
+                    isinstance(mechanism, Density)
                     and callable(value)
                     and not isinstance(value, braintools.init.Initialization)
                 ):
@@ -411,6 +426,8 @@ class CellRuntimeState:
                             spec=parameter_spec,
                             name=var_name,
                             point_mask=layout_spec.cv_mask,
+                            owner=owner,
+                            source=spatial_callable_source(value) + (f"; {source}" if source else "."),
                         )
                         if parameter_spec is not None
                         else allocated
@@ -422,6 +439,8 @@ class CellRuntimeState:
                         spec=parameter_spec,
                         name=var_name,
                         point_mask=layout_spec.cv_mask,
+                        owner=owner,
+                        source=source,
                     )
                 else:
                     state_buffers[(layout_spec.id, var_name)] = _allocate_state_buffer(

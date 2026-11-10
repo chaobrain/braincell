@@ -18,7 +18,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import dataclasses
 import inspect
+import os
 import functools
 
 import braintools
@@ -27,11 +29,12 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._parameter_schema import ParameterSpec, RuntimeParameterState, constructor_parameters
-from braincell._parameter_schema import SignatureParameterSpec as _SignatureParameterSpec
 from braincell.mech import Density, get_registry
+from braincell.mech._synapse_schema import describe_mechanism
 
 __all__ = [
     "RuntimeParameterState",
+    "density_error_context",
     "density_parameter_names",
     "density_parameter_spec",
     "density_parameter_value",
@@ -43,17 +46,22 @@ __all__ = [
 
 
 def density_parameter_schema(mechanism: Density) -> Mapping[str, ParameterSpec]:
-    """Return Channel/Ion signature metadata or an existing density schema."""
+    """Return Channel/Ion ``parameter_info()`` with the stored defaults filled in.
+
+    The unit prototypes come from the runtime class's ``parameter_info()``;
+    an Ion's ``None`` defaults are replaced by the values a default-built
+    instance stores, so omitted parameters still get a runtime buffer.
+    """
     runtime_cls = get_registry().get(mechanism.category, mechanism.class_name)
     if mechanism.category in {"channel", "ion"}:
         result = {}
-        for name, parameter in _density_signature(runtime_cls).items():
-            default = parameter.default
+        for name, spec in runtime_cls.parameter_info().items():
+            default = spec.default
             if mechanism.category == "ion":
                 default = _ion_default(runtime_cls, name, default)
             if default is inspect.Parameter.empty or default is None or callable(default):
                 default = mechanism.params.get(name, default)
-            result[name] = _SignatureParameterSpec(default)
+            result[name] = dataclasses.replace(spec, default=default)
         return result
     schema = getattr(runtime_cls, "parameters", {})
     return schema if isinstance(schema, Mapping) else {}
@@ -132,6 +140,47 @@ def density_parameter_value(mechanism: Density, name: str) -> object:
     return spec.default
 
 
+def density_error_context(mechanism: Density, paint_rules=()) -> tuple[str, str | None]:
+    """Describe a painted declaration for parameter error messages.
+
+    Parameters
+    ----------
+    mechanism : Density
+        Declaration whose parameter failed validation.
+    paint_rules : tuple of PaintRule, optional
+        The Cell's paint rules; the first one declaring ``mechanism`` supplies
+        the region and the ``paint`` call site.
+
+    Returns
+    -------
+    owner : str
+        Such as ``"Channel 'leak' (IL)"``.
+    source : str or None
+        Such as ``"painted on AllRegion() at model.py:12."``, or ``None``
+        when no paint rule declares ``mechanism``.
+    """
+    owner = describe_mechanism(mechanism.category, mechanism.class_name, mechanism.instance_name)
+    for rule in paint_rules:
+        declared = rule.mechanism
+        if (
+            isinstance(declared, Density)
+            and (declared.category, declared.class_name, declared.instance_name)
+            == (mechanism.category, mechanism.class_name, mechanism.instance_name)
+            and declared.params == mechanism.params
+        ):
+            at = f" at {rule.origin}" if rule.origin else ""
+            return owner, f"painted on {rule.region!r}{at}."
+    return owner, None
+
+
+def spatial_callable_source(function: object) -> str:
+    """Name a spatial callable and where it is defined, for error messages."""
+    name = getattr(function, "__name__", type(function).__name__)
+    code = getattr(function, "__code__", None)
+    where = f" ({os.path.basename(code.co_filename)}:{code.co_firstlineno})" if code is not None else ""
+    return f"The value came from the spatial callable {name}{where}"
+
+
 def make_runtime_parameter_state(
     value: object,
     *,
@@ -139,9 +188,14 @@ def make_runtime_parameter_state(
     spec: ParameterSpec,
     name: str,
     point_mask: object | None = None,
+    owner: str | None = None,
+    source: str | None = None,
 ) -> RuntimeParameterState:
-    """Validate and normalize one schema parameter into a compact runtime state."""
-    spec.validate(value, name)
+    """Validate and normalize one schema parameter into a compact runtime state.
+
+    ``owner`` and ``source`` only enrich the validation error message.
+    """
+    spec.validate(value, name, owner=owner, source=source)
     pop_shape, point_size = _rectangular_shape(full_shape)
     population_size = int(np.prod(pop_shape, dtype=int))
     state_kwargs = {

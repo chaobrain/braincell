@@ -25,9 +25,11 @@ reachable only through a concrete synapse.
 import unittest
 
 import brainunit as u
+import jax
 import numpy as np
 
 from braincell.mech import ParameterSpec, StateSpec, positive
+from braincell.mech._synapse_schema import describe_mechanism, describe_value
 
 
 class ParameterSpecTest(unittest.TestCase):
@@ -106,6 +108,44 @@ class PositiveValidatorTest(unittest.TestCase):
     def test_one_bad_entry_rejects_the_whole_array(self) -> None:
         with self.assertRaisesRegex(ValueError, "must be > 0"):
             positive(np.asarray([1.0, -1.0]) * u.ms, "tau")
+
+
+class UnitErrorMessageTest(unittest.TestCase):
+    def test_without_context_the_message_is_unchanged(self) -> None:
+        with self.assertRaises(TypeError) as caught:
+            ParameterSpec(default=2.0 * u.ms).validate(5.0, "tau")
+        self.assertEqual(str(caught.exception), "Mechanism field 'tau' requires a quantity compatible with ms.")
+
+    def test_context_names_owner_value_and_source(self) -> None:
+        spec = ParameterSpec(default=2.0 * u.ms)
+        owner = describe_mechanism("synapse", "ExpSyn", "syn")
+        with self.assertRaises(ValueError) as caught:
+            spec.validate(5.0 * u.mV, "tau", owner=owner, source="placed on X at f.py:3.")
+        self.assertEqual(
+            str(caught.exception),
+            "Synapse 'syn' (ExpSyn) parameter 'tau' has units incompatible with ms; got 5.0 mV. Placed on X at f.py:3.",
+        )
+        with self.assertRaisesRegex(TypeError, "^Mechanism parameter 'ratio' must be dimensionless; got 1.0 ms.$"):
+            ParameterSpec(default=0.5).validate(1.0 * u.ms, "ratio", source="")
+        with self.assertRaisesRegex(
+            ValueError, "^Ion 'Na' parameter 'E' must contain only finite values; got nan mV.$"
+        ):
+            ParameterSpec(default=1.0 * u.mV).validate(np.nan * u.mV, "E", owner="Ion 'Na'")
+
+    def test_owner_omits_an_instance_name_equal_to_the_class(self) -> None:
+        self.assertEqual(describe_mechanism("channel", "IL", "IL"), "Channel 'IL'")
+        self.assertEqual(describe_mechanism("ion", "SodiumFixed"), "Ion 'SodiumFixed'")
+        self.assertEqual(describe_mechanism("channel", "IL", "leak"), "Channel 'leak' (IL)")
+
+    def test_values_are_described_by_scalar_or_shape(self) -> None:
+        self.assertEqual(describe_value(0.1), "0.1 (no unit)")
+        self.assertEqual(describe_value(np.asarray([[0.1]]) * u.mV), "0.1 mV")
+        self.assertEqual(describe_value(np.zeros((2, 3))), "an array of shape (2, 3) (no unit)")
+        self.assertEqual(describe_value(np.zeros(2) * u.mV), "an array of shape (2,) in mV")
+        seen = []
+        jax.jit(lambda x: seen.append(describe_value(x * u.mV)) or x)(1.0)
+        self.assertIn("Tracer", seen[0])
+        self.assertTrue(seen[0].endswith(" mV"))
 
 
 if __name__ == "__main__":

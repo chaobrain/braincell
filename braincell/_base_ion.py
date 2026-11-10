@@ -227,6 +227,16 @@ def _safe_inactive_voltage(V, point_mask):
     return _where_active(V, point_mask, _INACTIVE_POINT_VOLTAGE)
 
 
+# Ion constructor parameters whose ``None`` (or initializer) default stands for
+# a class-level default that carries the unit.
+_ION_DEFAULT_ATTRS = {
+    "Ci": "default_Ci",
+    "Ci_initializer": "default_Ci",
+    "Co": "default_Co",
+    "valence": "default_valence",
+}
+
+
 class Ion(IonChannel, Container):
     """
     The base class for modeling ion dynamics in neuronal simulations.
@@ -273,6 +283,14 @@ class Ion(IonChannel, Container):
             current.value = value
             return
         super().__setattr__(name, value)
+
+    @classmethod
+    def _default_unit_prototype(cls, name: str, default):
+        """Give ``Ci``, ``Co``, ``Ci_initializer`` and ``valence`` defaults of ``None`` their class default."""
+        attr = _ION_DEFAULT_ATTRS.get(name)
+        if attr is not None and (default is None or callable(default)) and hasattr(cls, attr):
+            return getattr(cls, attr)
+        return default
 
     def __init__(self, size: Size, name: Optional[str] = None, **channels) -> None:
         super().__init__(size, name=name)

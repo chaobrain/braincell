@@ -121,6 +121,16 @@ class SynapseViewTest(unittest.TestCase):
         with self.assertRaisesRegex(KeyError, "parameter"):
             view.set_state(tau=1.0 * u.ms)
 
+    def test_post_init_unit_errors_name_the_synapse(self):
+        cell = _population()
+        cell.place(at("soma", 0.2), braincell.mech.Synapse("ExpSyn", name="fast"))
+        cell.place(at("soma", 0.4), braincell.mech.Synapse("ExpSyn", name="slow"))
+        cell.init_state()
+        with self.assertRaisesRegex(ValueError, r"^Synapse 'fast' \(ExpSyn\) parameter 'tau' has units .* got 5 mV\.$"):
+            cell.synapses["fast"].set(tau=5 * u.mV)
+        with self.assertRaisesRegex(TypeError, r"^Synapse 'ExpSyn' parameter 'tau' requires .* got 5.0 \(no unit\)\.$"):
+            cell.synapses.set(tau=5.0)
+
     def test_post_init_parameter_validation_is_atomic(self):
         cell = _population()
         exp2 = braincell.mech.Synapse(

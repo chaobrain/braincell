@@ -17,12 +17,13 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import inspect
 
 import brainstate
 import brainunit as u
 
-from braincell.mech._synapse_schema import ParameterSpec, StateSpec, positive
+from braincell.mech._synapse_schema import ParameterSpec, StateSpec, _validate_like_default, positive
 
 __all__ = ["ParameterSpec", "RuntimeParameterState", "StateSpec", "positive"]
 
@@ -43,14 +44,38 @@ def constructor_parameters(runtime_cls):
     return result
 
 
-class SignatureParameterSpec(ParameterSpec):
-    """Infer a missing unit prototype from the supplied constructor value."""
+def _has_unit_prototype(value: object) -> bool:
+    return value is not inspect.Parameter.empty and value is not None and not callable(value)
 
-    def validate(self, value: object, name: str) -> None:
-        default = self.default
-        if default is inspect.Parameter.empty or default is None or callable(default):
-            default = value
-        ParameterSpec(default).validate(value, name)
+
+@dataclass(frozen=True)
+class SignatureParameterSpec(ParameterSpec):
+    """One constructor parameter: its stored default and its unit prototype.
+
+    ``default`` is the value a declaration that omits the parameter stores.
+    ``prototype`` is the value whose unit a supplied value must match; it
+    falls back to ``default`` and then, when neither carries a unit or a
+    number (``None``, a callable, no default), to the supplied value itself.
+    ``declared_in`` names the ``parameter_units`` that supplied the prototype.
+    """
+
+    prototype: object = inspect.Parameter.empty
+    declared_in: str | None = None
+
+    def validate(self, value: object, name: str, *, owner: str | None = None, source: str | None = None) -> None:
+        prototype = self.prototype if _has_unit_prototype(self.prototype) else self.default
+        if not _has_unit_prototype(prototype):
+            prototype = value
+        _validate_like_default(
+            value,
+            prototype,
+            name=name,
+            owner=owner,
+            source=source,
+            declared_in=self.declared_in,
+        )
+        if self.validator is not None:
+            self.validator(value, name)
 
 
 class RuntimeParameterState(brainstate.LongTermState):

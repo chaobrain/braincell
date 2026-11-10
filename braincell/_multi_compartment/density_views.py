@@ -30,6 +30,7 @@ from braincell._compute.ions import _runtime_ion_species_key
 from braincell._compute.parameters import density_parameter_schema, density_parameter_value
 from braincell._misc import require_name as _require_name
 from braincell.mech import Density, get_registry
+from braincell.mech._synapse_schema import describe_mechanism, unit_error_message
 from braincell._multi_compartment.lifecycle import DiscreteView
 
 __all__ = ["ChannelView", "IonView"]
@@ -231,6 +232,8 @@ class _DensityView(DiscreteView):
             population_size=self._cell._population_size,
             point_size=self._cell.n_cv,
             value=value,
+            name=field,
+            owner=describe_mechanism(row.category, row.mechanism_type, row.name),
         )
         if row.category == "ion" and field.endswith("_initializer"):
             node = runtime.get_runtime_node(layout.id)
@@ -343,16 +346,25 @@ def _take_population(value, population_index: int, population_size: int):
     return value
 
 
-def _set_population_point(buffer, *, population_index, point_id, population_size, point_size, value):
+def _set_population_point(
+    buffer, *, population_index, point_id, population_size, point_size, value, name="value", owner=None
+):
+    def message(problem: str) -> str:
+        return unit_error_message(name, problem, owner=owner or "Density", value=value)
+
     unit = buffer.unit if isinstance(buffer, u.Quantity) else None
     if unit is not None:
         if not isinstance(value, u.Quantity):
-            raise TypeError(f"Density parameter override requires a Quantity compatible with {unit}.")
-        decimal = value.to_decimal(unit)
+            raise TypeError(message(f"requires a quantity compatible with {unit}"))
+        try:
+            decimal = value.to_decimal(unit)
+        except u.UnitMismatchError as exc:
+            # Keep the brainunit type: callers may already catch it.
+            raise u.UnitMismatchError(message(f"has units incompatible with {unit}")) from exc
         mantissa = jnp.asarray(buffer.to_decimal(unit))
     else:
         if isinstance(value, u.Quantity):
-            raise TypeError("Dimensionless density parameter override cannot be a Quantity.")
+            raise TypeError(message("must be dimensionless"))
         decimal = value
         mantissa = jnp.asarray(buffer)
     if mantissa.shape[-1] != point_size:

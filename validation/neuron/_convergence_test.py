@@ -123,6 +123,33 @@ class ClassificationTest(unittest.TestCase):
         self.assertAlmostEqual(cv.fitted_order([0.1, 0.05, 0.025], [4e-2, 1e-2, 2.5e-3]), 2.0, places=12)
         self.assertTrue(math.isnan(cv.fitted_order([0.1, 0.05], [1e-3, 0.0])))
 
+    def test_rounded_limit(self):
+        # 1.5 times the measurement, rounded up to 1, 2 or 5 times a power of ten.
+        for measured, limit in ((7.84e-2, 2e-1), (3.24e-2, 5e-2), (1.2e-4, 2e-4), (6.6e-5, 1e-4), (4e-3, 1e-2), (2e-3, 5e-3)):
+            self.assertEqual(cv.rounded_limit(measured), limit, measured)
+        for bad in (0.0, -1.0, math.nan, math.inf):
+            with self.assertRaises(ValueError):
+                cv.rounded_limit(bad)
+
+    def test_assert_matches(self):
+        first = self._errors([0.2 * dt for dt in cv.DTS_MS])
+        classification, orders = cv.classify(first)
+        report = cv.ConvergenceReport("c", "C", "p", cv.STEPS, first, orders, classification)
+        entry = table.ConfigEntry("c", cv.CONVERGENT, limits={"e_I": 1e-2})
+        table.assert_matches(report, entry)
+        for wrong in (
+            dataclasses.replace(entry, protocol=cv.RELAXATION, limits={"e_s": 1e-2}),
+            dataclasses.replace(entry, classification=cv.ABOVE_GUIDE_LINE),
+            dataclasses.replace(entry, limits={"e_I": 4e-3}),
+        ):
+            with self.assertRaises(AssertionError):
+                table.assert_matches(report, wrong)
+        with self.assertRaisesRegex(AssertionError, "order"):
+            table.assert_matches(dataclasses.replace(report, orders={"e_I": 1.5}), entry)
+        exact = cv.ConvergenceReport("c", "C", "p", cv.STEPS, self._errors([1e-13] * 4 + [2e-10]), {}, cv.EXACT)
+        with self.assertRaisesRegex(AssertionError, "dt = 0.00625"):
+            table.assert_matches(exact, table.ConfigEntry("c", cv.EXACT))
+
 
 class RepresentativeChannelTest(unittest.TestCase):
     """Acceptance of the two representative configurations on the Cell's default path."""
@@ -132,22 +159,8 @@ class RepresentativeChannelTest(unittest.TestCase):
         cls.kv = cv.check_config(KV)
         cls.nav = cv.check_config(NAV)
 
-    def _assert_matches_table(self, report, entry):
-        self.assertEqual(report.protocol, entry.protocol)
-        self.assertEqual(report.classification, entry.classification, report.errors)
-        if entry.classification == cv.EXACT:
-            for dt, values in report.errors.items():
-                for metric, value in values.items():
-                    if value is not None:
-                        self.assertLessEqual(value, cv.EXACT_LIMIT, (entry.config, dt, metric))
-            return
-        for metric, order in report.orders.items():
-            self.assertTrue(cv.STEP_ORDER_WINDOW[0] <= order <= cv.STEP_ORDER_WINDOW[1], (entry.config, metric, order))
-        for metric, limit in entry.limits.items():
-            self.assertLessEqual(report.error(metric), limit, f"{entry.config} {metric}: {report.error(metric):.3e}")
-
     def test_kv3p4_is_exact_and_its_ramp_converges_at_first_order(self):
-        self._assert_matches_table(self.kv, _config_entry(KV))
+        table.assert_matches(self.kv, _config_entry(KV))
         self.assertEqual(self.kv.path, "ind_exp_euler")
         self.assertTrue(self.kv.ramp_ok, self.kv.ramp_orders)
         self.assertTrue(0.8 <= self.kv.ramp_orders["e_s"] <= 1.2)
@@ -169,7 +182,7 @@ class RepresentativeChannelTest(unittest.TestCase):
         self.assertTrue(all(errors["e_I"] is None for errors in report.errors.values()))
 
     def test_nav1p6_default_path_converges_at_first_order_above_the_guide_line(self):
-        self._assert_matches_table(self.nav, _config_entry(NAV))
+        table.assert_matches(self.nav, _config_entry(NAV))
         self.assertEqual(self.nav.path, "backward_euler x 1")
         self.assertLessEqual(self.nav.error("e_I"), 2e-1)
         self.assertLessEqual(self.nav.error("e_s"), 5e-2)
@@ -197,13 +210,13 @@ class RepresentativeChannelTest(unittest.TestCase):
         with mock.patch.object(_clamp, "replay_table", step_start):
             report = cv.check_config(KV, ramp=False)
         with self.assertRaises(AssertionError):
-            self._assert_matches_table(report, _config_entry(KV))
+            table.assert_matches(report, _config_entry(KV))
 
     def test_a_limit_below_the_measurement_fails(self):
         entry = _config_entry(NAV)
         tightened = dataclasses.replace(entry, limits={**entry.limits, "e_I": 0.9 * self.nav.error("e_I")})
         with self.assertRaises(AssertionError):
-            self._assert_matches_table(self.nav, tightened)
+            table.assert_matches(self.nav, tightened)
 
 
 class StiffnessAndSingularityTest(unittest.TestCase):

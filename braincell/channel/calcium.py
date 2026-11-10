@@ -119,11 +119,15 @@ def _su2015_dcn_ghk_drive(V, ci, co, temp):
     """
     v_mV = V.to_decimal(u.mV)
     temp_K = temp.to_decimal(u.kelvin)
-    A = u.math.exp(_SU2015_DCN_ZETA_PER_MV_KELVIN * v_mV / temp_K)
+    zeta = _SU2015_DCN_ZETA_PER_MV_KELVIN * v_mV / temp_K
+    A = u.math.exp(zeta)
+    # The source's ``(scale v / T) (ci - co A) / (1 - A)``, with
+    # ``v / (1 - A) = -(T / zeta_per_mV_K) / exprel(zeta)``: finite at 0 mV,
+    # where the source form is 0/0.
     return (
-        (_SU2015_DCN_FLUX_SCALE * v_mV / temp_K)
+        (-_SU2015_DCN_FLUX_SCALE / _SU2015_DCN_ZETA_PER_MV_KELVIN)
         * ((ci.to_decimal(u.mM) / 1000.0) - (co.to_decimal(u.mM) / 1000.0) * A)
-        / (1.0 - A)
+        / u.math.exprel(zeta)
     )
 
 
@@ -733,6 +737,12 @@ class CaHT_Re1993(OhmicHH):
     defaults to ``q10_p = q10_q = 2.3`` at ``temp_ref = 23 degC``.
     Gating is :math:`m^2 h` in both.
 
+    :math:`\alpha_p` is evaluated as
+    :math:`0.055 \cdot 3.8 / \operatorname{exprel}((V'' - 27) / 3.8)`
+    with :math:`\operatorname{exprel}(x) = (\exp(x) - 1) / x`: the same
+    value as the mod file's form, which is 0/0 at :math:`V'' = 27`, and
+    its limit there.
+
     References
     ----------
     .. [1] Reuveni, I., Friedman, A., Amitai, Y., & Gutnick, M. J.
@@ -774,7 +784,8 @@ class CaHT_Re1993(OhmicHH):
     def f_p_alpha(self, V, Ca: IonInfo):
         temp = (-V + self.V_sh).to_decimal(u.mV)
         delta = -27.0 + temp
-        return 0.055 * delta / (u.math.exp(delta / 3.8) - 1.0)
+        # 0.055 delta / (exp(delta / 3.8) - 1), finite at delta = 0 (V = V_sh - 27 mV).
+        return 0.055 * 3.8 / u.math.exprel(delta / 3.8)
 
     def f_p_beta(self, V, Ca: IonInfo):
         temp = (-V + self.V_sh).to_decimal(u.mV)
@@ -1007,6 +1018,14 @@ class CaHVA_SU2015_DCN(HH):
     BrainCell removes the table and evaluates both expressions
     per-call instead.
 
+    The second term of :math:`\tau_m` is evaluated as
+    :math:`3.97 \times 10^{-4} \cdot 5 / \operatorname{exprel}((V + 8.9) / 5)`,
+    and the GHK drive's :math:`V / (1 - A)` through
+    :math:`\operatorname{exprel}`, with
+    :math:`\operatorname{exprel}(x) = (\exp(x) - 1) / x`. Both equal the
+    mod file's expressions, which are 0/0 at -8.9 mV and 0 mV, and take
+    their limits there.
+
     References
     ----------
     .. [1] Steuber, V., Schultheiss, N. W., Silver, R. A., De
@@ -1056,7 +1075,8 @@ class CaHVA_SU2015_DCN(HH):
     def f_m_tau(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
         activation = 31.746 / (u.math.exp((V - 5.0) / -13.89) + 1.0)
-        correction = 3.97e-4 * (V + 8.9) / (u.math.exp((V + 8.9) / 5.0) - 1.0)
+        # 3.97e-4 (V + 8.9) / (exp((V + 8.9) / 5) - 1), finite at -8.9 mV.
+        correction = 3.97e-4 * 5.0 / u.math.exprel((V + 8.9) / 5.0)
         return 1.0 / (activation + correction) / self.qdeltat
 
 
@@ -1320,6 +1340,10 @@ class CaLVA_SU2015_DCN(HH):
     sign is flipped in ``current()`` to match BrainCell's repo-wide
     inward-positive convention.
 
+    The drive's :math:`V / (1 - A)` is evaluated through
+    :math:`\operatorname{exprel}(x) = (\exp(x) - 1) / x`: the same value
+    as the mod file's form, which is 0/0 at 0 mV, and its limit there.
+
     The origin of the DCN kinetics is the GENESIS model of Steuber,
     Schultheiss, Silver, De Schutter & Jaeger (2011) [1]_, translated
     from GENESIS to NEURON by Luthman, Hoebeek, Maex, Davey, Adams,
@@ -1530,6 +1554,12 @@ class Cav1p2_MA2020_GoC(OhmicHH):
     computes ``g_max * m h n * (E - V)``, the same current under
     BrainCell's repo-wide inward-positive convention.
 
+    :math:`\alpha_m` is evaluated as
+    :math:`39800 \cdot 9.005 / \operatorname{exprel}((V' + 8.124) / 9.005)`
+    with :math:`\operatorname{exprel}(x) = (\exp(x) - 1) / x`: the same
+    value as the mod file's form, which is 0/0 at -8.124 mV, and its
+    limit there.
+
     ``g_max``'s default is the ``gbar`` of the cell-model deposit this
     mechanism was imported from -- a value tuned for that model, not a
     conductance reported by either origin paper.
@@ -1591,7 +1621,8 @@ class Cav1p2_MA2020_GoC(OhmicHH):
 
     def f_m_tau(self, V, Ca: IonInfo):
         V = V.to_decimal(u.mV)
-        m_alpha = 39800.0 * (V + 8.124) / (u.math.exp((V + 8.124) / 9.005) - 1.0)
+        # 39800 (V + 8.124) / (exp((V + 8.124) / 9.005) - 1), finite at -8.124 mV.
+        m_alpha = 39800.0 * 9.005 / u.math.exprel((V + 8.124) / 9.005)
         m_beta = 990.0 * u.math.exp(V / 31.4)
         return 1.0 / (m_alpha + m_beta)
 

@@ -1194,6 +1194,18 @@ class Kca1p1_MA2020_GoC(OhmicMarkov):
     removed, since removing an assigned-but-unused attribute is a
     behavior change out of scope for a documentation pass.
 
+    **Solver accuracy** (this class and its cell-model variants). With
+    the Cell's default ``backward_euler`` and one substep at
+    ``dt = 0.025 ms``, the voltage-clamp current is off by about 2 %
+    of its peak (``vc_steps``) and the error falls at first order in
+    ``dt``; four substeps bring it to about 0.6 %. ``exp_euler`` is
+    exact while the voltage is constant over a step; declare
+    ``bc.mech.Channel("Kca1p1_MA2020_GoC", solver="exp_euler", substeps=1)``
+    to use it for this channel. The transition matrix reaches a spectral
+    radius of about 200 /ms (at -100 mV), so the channel is stiff at
+    ``dt = 0.025 ms``: use ``backward_euler`` or ``exp_euler``, not an
+    explicit method.
+
     References
     ----------
     .. [1] Cox, D. H., Cui, J., & Aldrich, R. W. (1997). Allosteric

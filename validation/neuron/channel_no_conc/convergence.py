@@ -85,27 +85,188 @@ CONFIGS = (
     ConfigEntry("ma20_goc/kv3p4_ma20_goc", cv.EXACT),
     # backward_euler x 1, measured 7.8e-2 / 3.2e-2 at 0.025 ms (order 0.90 / 0.95).
     ConfigEntry("ma20_goc/nav1p6_ma20_goc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 2e-1, "e_s": 5e-2}),
+    # calcium.py and potassium_calcium.py: HH channels on ind_exp_euler are exact (<= 2.9e-14 at every dt).
+    ConfigEntry("ma20_goc/cahva_ma20_goc", cv.EXACT),
+    ConfigEntry("ma20_goc/cav1p2_ma20_goc", cv.EXACT),
+    ConfigEntry("ma20_goc/cav1p3_ma20_goc", cv.EXACT),
+    ConfigEntry("ma20_goc/cav2p3_ma20_goc", cv.EXACT),
+    ConfigEntry("ma20_goc/cav3p1_ma20_goc", cv.EXACT),
+    ConfigEntry("ma20_goc/cav3p1_ma20_goc_frozen", cv.EXACT),
+    # backward_euler x 1, measured 2.208e-02 / 1.175e-04 at 0.025 ms (order 0.97 / 0.97).
+    ConfigEntry("ma20_goc/kca1p1_ma20_goc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 5e-2, "e_s": 2e-4}),
+    # Relaxation, backward_euler x 1, measured e_s 6.258e-05 at 0.025 ms (order 0.98).
+    ConfigEntry("ma20_goc/kca2p2_ma20_goc", cv.CONVERGENT, protocol=cv.RELAXATION, limits={"e_s": 1e-4}),
+    ConfigEntry("ma20_goc/kca3p1_ma20_goc", cv.EXACT),
+    ConfigEntry("ma20_grc/cahva_ma20_grc", cv.EXACT),
+    # backward_euler x 1, measured 2.208e-02 / 1.175e-04 at 0.025 ms (order 0.97 / 0.97).
+    ConfigEntry("ma20_grc/kca1p1_ma20_grc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 5e-2, "e_s": 2e-4}),
+    # Relaxation, backward_euler x 1, measured e_s 6.258e-05 at 0.025 ms (order 0.98).
+    ConfigEntry("ma20_grc/kca2p2_ma20_grc", cv.CONVERGENT, protocol=cv.RELAXATION, limits={"e_s": 1e-4}),
+    ConfigEntry("ma24_pc/cav2p1_ma24_pc", cv.EXACT),
+    ConfigEntry("ma24_pc/cav2p1_ma24_pc_frozen", cv.EXACT),
+    ConfigEntry("ma24_pc/cav3p1_ma24_pc", cv.EXACT),
+    ConfigEntry("ma24_pc/cav3p1_ma24_pc_frozen", cv.EXACT),
+    ConfigEntry("ma24_pc/cav3p1_test2_pc24", cv.EXACT),
+    ConfigEntry("ma24_pc/cav3p1_test_pc24", cv.EXACT),
+    ConfigEntry("ma24_pc/cav3p2_ma24_pc", cv.EXACT),
+    ConfigEntry("ma24_pc/cav3p3_ma24_pc", cv.EXACT),
+    ConfigEntry("ma24_pc/cav3p3_ma24_pc_frozen", cv.EXACT),
+    # backward_euler x 1, measured 2.208e-02 / 1.175e-04 at 0.025 ms (order 0.97 / 0.97).
+    ConfigEntry("ma24_pc/kca1p1_ma24_pc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 5e-2, "e_s": 2e-4}),
+    # Relaxation, backward_euler x 1, measured e_s 6.258e-05 at 0.025 ms (order 0.98).
+    ConfigEntry("ma24_pc/kca2p2_ma24_pc", cv.CONVERGENT, protocol=cv.RELAXATION, limits={"e_s": 1e-4}),
+    # Relaxation, backward_euler x 1, measured e_s 6.258e-05 at 0.025 ms (order 0.98).
+    ConfigEntry("ma24_pc/kca2p2_ma24_pc_dep_o1", cv.CONVERGENT, protocol=cv.RELAXATION, limits={"e_s": 1e-4}),
+    ConfigEntry("ma24_pc/kca3p1_ma24_pc", cv.EXACT),
+    ConfigEntry("ma25_bc/cav1p2_ma25_bc", cv.EXACT),
+    ConfigEntry("ma25_bc/cav1p3_ma25_bc", cv.EXACT),
+    ConfigEntry("ma25_bc/cav2p1_ma25_bc", cv.EXACT),
+    ConfigEntry("ma25_bc/cav2p1_ma25_bc_frozen", cv.EXACT),
+    ConfigEntry("ma25_bc/cav3p2_ma25_bc", cv.EXACT),
+    # backward_euler x 1, measured 2.208e-02 / 1.175e-04 at 0.025 ms (order 0.97 / 0.97).
+    ConfigEntry("ma25_bc/kca1p1_ma25_bc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 5e-2, "e_s": 2e-4}),
+    # Relaxation, backward_euler x 1, measured e_s 6.258e-05 at 0.025 ms (order 0.98).
+    ConfigEntry("ma25_bc/kca2p2_ma25_bc", cv.CONVERGENT, protocol=cv.RELAXATION, limits={"e_s": 1e-4}),
+    ConfigEntry("ma25_bc/kca3p1_ma25_bc", cv.EXACT),
+    ConfigEntry("ri21_sc/cav2p1_ri21_sc", cv.EXACT),
+    ConfigEntry("ri21_sc/cav2p1_ri21_sc_frozen", cv.EXACT),
+    ConfigEntry("ri21_sc/cav3p2_ri21_sc", cv.EXACT),
+    ConfigEntry("ri21_sc/cav3p3_ri21_sc", cv.EXACT),
+    # backward_euler x 1, measured 2.208e-02 / 1.175e-04 at 0.025 ms (order 0.97 / 0.97).
+    ConfigEntry("ri21_sc/kca1p1_ri21_sc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 5e-2, "e_s": 2e-4}),
+    # Relaxation, backward_euler x 1, measured e_s 6.258e-05 at 0.025 ms (order 0.98).
+    ConfigEntry("ri21_sc/kca2p2_ri21_sc", cv.CONVERGENT, protocol=cv.RELAXATION, limits={"e_s": 1e-4}),
+    ConfigEntry("su15_dcn/cahva_su15_dcn", cv.EXACT),
+    ConfigEntry("su15_dcn/cal_su15_dcn", cv.EXACT),
+    ConfigEntry("su15_dcn/calva_su15_dcn", cv.EXACT),
+    ConfigEntry("su15_dcn/sk_su15_dcn", cv.EXACT, protocol=cv.RELAXATION),
+    ConfigEntry("zh19_io/ca_zh19_io", cv.EXACT),
+    ConfigEntry("zh19_io/ca_zh19_io_frozen", cv.EXACT),
 )
 
 CLASSES = (
     ClassEntry("Kv3p4_MA2020_GoC", 0, False),  # 6.88 /ms, m gate at +60 mV
     ClassEntry("Nav1p6_MA2020_GoC", 5, True),  # 1.96e5 /ms at +60 mV
+    # calcium.py and potassium_calcium.py (Ci = the placeholder ion's, 36 degC).
+    ClassEntry("AHP_De1994", -2, False),  # 0.09 /ms, p gate at -100 mV
+    ClassEntry("CaHT_HM1992", 0, False),  # 6.83 /ms, p gate at +60 mV
+    ClassEntry("CaHT_Re1993", 1, False),  # 14.1 /ms, p gate at +60 mV
+    ClassEntry("CaHVA_MA2020_GoC", 1, False),  # 78.4 /ms, s gate at +60 mV
+    ClassEntry("CaHVA_MA2020_GrC", 1, False),  # 78.4 /ms, s gate at +60 mV
+    ClassEntry("CaHVA_SU2015_DCN", 1, False),  # 31.2 /ms, m gate at +60 mV
+    ClassEntry("CaLVA_SU2015_DCN", 0, False),  # 4.78 /ms, m gate at +60 mV
+    ClassEntry("CaL_IS2008", 1, False),  # 11.4 /ms, p gate at -100 mV
+    ClassEntry("CaL_SU2015_DCN", 0, False),  # 4.78 /ms, m gate at +60 mV
+    ClassEntry("CaN_IS2008", -1, False),  # 0.625 /ms, p gate at +60 mV
+    ClassEntry("CaT_HM1992", 0, False),  # 7.32 /ms, p gate at +60 mV
+    ClassEntry("CaT_HP1992", 0, False),  # 2.3 /ms, p gate at +60 mV
+    ClassEntry("Ca_ZH2019_IO", -2, False),  # 0.025 /ms, h gate at +60 mV
+    ClassEntry("Ca_ZH2019_IO_Frozen", -2, False),  # 0.025 /ms, h gate at +60 mV
+    ClassEntry("Cav1p2_MA2020_GoC", 6, True),  # 3.66e6 /ms, m gate at -100 mV
+    ClassEntry("Cav1p2_MA2025_BC", 6, True),  # 3.66e6 /ms, m gate at -100 mV
+    ClassEntry("Cav1p3_MA2020_GoC", 6, True),  # 1.47e6 /ms, m gate at -100 mV
+    ClassEntry("Cav1p3_MA2025_BC", 6, True),  # 1.47e6 /ms, m gate at -100 mV
+    ClassEntry("Cav2p1_MA2024_PC", 1, False),  # 15.4 /ms, m gate at +52.5 mV
+    ClassEntry("Cav2p1_MA2024_PC_Frozen", 1, False),  # 15.4 /ms, m gate at +52.5 mV
+    ClassEntry("Cav2p1_MA2025_BC", 1, False),  # 15.4 /ms, m gate at +52.5 mV
+    ClassEntry("Cav2p1_MA2025_BC_Frozen", 1, False),  # 15.4 /ms, m gate at +52.5 mV
+    ClassEntry("Cav2p1_RI2021_SC", 1, False),  # 15.4 /ms, m gate at +52.5 mV
+    ClassEntry("Cav2p1_RI2021_SC_Frozen", 1, False),  # 15.4 /ms, m gate at +52.5 mV
+    ClassEntry("Cav2p3_MA2020_GoC", -1, False),  # 0.2 /ms, h gate at -100 mV
+    ClassEntry("Cav3p1Test_PC24", 0, False),  # 1 /ms, p gate at -100 mV
+    ClassEntry("Cav3p1_MA2020_GoC", 0, False),  # 1 /ms, p gate at -100 mV
+    ClassEntry("Cav3p1_MA2020_GoC_Frozen", 0, False),  # 1 /ms, p gate at -100 mV
+    ClassEntry("Cav3p1_MA2024_PC", 0, False),  # 1 /ms, p gate at -100 mV
+    ClassEntry("Cav3p1_MA2024_PC_Frozen", 0, False),  # 1 /ms, p gate at -100 mV
+    ClassEntry("Cav3p2_MA2024_PC", 0, False),  # 3.63 /ms, m gate at +60 mV
+    ClassEntry("Cav3p2_MA2025_BC", 0, False),  # 3.63 /ms, m gate at +60 mV
+    ClassEntry("Cav3p2_RI2021_SC", 0, False),  # 3.63 /ms, m gate at +60 mV
+    ClassEntry("Cav3p3_MA2024_PC", 0, False),  # 1.37 /ms, n gate at -100 mV
+    ClassEntry("Cav3p3_MA2024_PC_Frozen", 0, False),  # 1.37 /ms, n gate at -100 mV
+    ClassEntry("Cav3p3_RI2021_SC", 0, False),  # 1.37 /ms, n gate at -100 mV
+    ClassEntry("Kca1p1_MA2020_GoC", 2, True),  # 204 /ms, at -100 mV
+    ClassEntry("Kca1p1_MA2020_GrC", 2, True),  # 204 /ms, at -100 mV
+    ClassEntry("Kca1p1_MA2024_PC", 2, True),  # 204 /ms, at -100 mV
+    ClassEntry("Kca1p1_MA2025_BC", 2, True),  # 204 /ms, at -100 mV
+    ClassEntry("Kca1p1_RI2021_SC", 2, True),  # 204 /ms, at -100 mV
+    ClassEntry("Kca2p2_MA2020_GoC", 0, False),  # 6.2 /ms, at -100 mV
+    ClassEntry("Kca2p2_MA2020_GrC", 0, False),  # 6.2 /ms, at -100 mV
+    ClassEntry("Kca2p2_MA2024_PC", 0, False),  # 6.2 /ms, at -100 mV
+    ClassEntry("Kca2p2_MA2025_BC", 0, False),  # 6.2 /ms, at -100 mV
+    ClassEntry("Kca2p2_RI2021_SC", 0, False),  # 6.2 /ms, at -100 mV
+    ClassEntry("Kca3p1_MA2020_GoC", -2, False),  # 0.0593 /ms, p gate at +60 mV
+    ClassEntry("Kca3p1_MA2024_PC", -2, False),  # 0.0593 /ms, p gate at +60 mV
+    ClassEntry("Kca3p1_MA2025_BC", -2, False),  # 0.0593 /ms, p gate at +60 mV
+    ClassEntry("SK_SU2015_DCN", 0, False),  # 1.01 /ms, z gate at -100 mV
 )
 
 KNOWN_SINGULARITIES = {
-    "CaHT_Re1993": {"p.value": (-27.0,), "p.derivative": (-27.0,), "current": (-27.0,)},
-    "CaHVA_SU2015_DCN": {"m.derivative": (-8.9,), "current": (0.0,)},
-    "CaLVA_SU2015_DCN": {"current": (0.0,)},
-    "Cav1p2_MA2020_GoC": {"m.derivative": (-8.124,)},
-    "Cav1p2_MA2025_BC": {"m.derivative": (-8.124,)},
     "K_Kv_test": {"n.derivative": (25.0,)},
 }
 """Removable 0/0 singularities, each to be replaced by its analytic limit."""
 
+CALCIUM_FAMILY_CONFIGS = (
+    "ma20_goc/cahva_ma20_goc", "ma20_goc/cav1p2_ma20_goc", "ma20_goc/cav1p3_ma20_goc",
+    "ma20_goc/cav2p3_ma20_goc", "ma20_goc/cav3p1_ma20_goc", "ma20_goc/cav3p1_ma20_goc_frozen",
+    "ma20_goc/kca1p1_ma20_goc", "ma20_goc/kca2p2_ma20_goc", "ma20_goc/kca3p1_ma20_goc",
+    "ma20_grc/cahva_ma20_grc", "ma20_grc/kca1p1_ma20_grc", "ma20_grc/kca2p2_ma20_grc", "ma24_pc/cav2p1_ma24_pc",
+    "ma24_pc/cav2p1_ma24_pc_frozen", "ma24_pc/cav3p1_ma24_pc", "ma24_pc/cav3p1_ma24_pc_frozen",
+    "ma24_pc/cav3p1_test2_pc24", "ma24_pc/cav3p1_test_pc24", "ma24_pc/cav3p2_ma24_pc", "ma24_pc/cav3p3_ma24_pc",
+    "ma24_pc/cav3p3_ma24_pc_frozen", "ma24_pc/kca1p1_ma24_pc", "ma24_pc/kca2p2_ma24_pc",
+    "ma24_pc/kca2p2_ma24_pc_dep_o1", "ma24_pc/kca3p1_ma24_pc", "ma25_bc/cav1p2_ma25_bc",
+    "ma25_bc/cav1p3_ma25_bc", "ma25_bc/cav2p1_ma25_bc", "ma25_bc/cav2p1_ma25_bc_frozen",
+    "ma25_bc/cav3p2_ma25_bc", "ma25_bc/kca1p1_ma25_bc", "ma25_bc/kca2p2_ma25_bc", "ma25_bc/kca3p1_ma25_bc",
+    "ri21_sc/cav2p1_ri21_sc", "ri21_sc/cav2p1_ri21_sc_frozen", "ri21_sc/cav3p2_ri21_sc",
+    "ri21_sc/cav3p3_ri21_sc", "ri21_sc/kca1p1_ri21_sc", "ri21_sc/kca2p2_ri21_sc", "su15_dcn/cahva_su15_dcn",
+    "su15_dcn/cal_su15_dcn", "su15_dcn/calva_su15_dcn", "su15_dcn/sk_su15_dcn", "zh19_io/ca_zh19_io",
+    "zh19_io/ca_zh19_io_frozen",
+)
+"""The configurations of the classes in ``calcium.py`` and ``potassium_calcium.py``."""
+CALCIUM_FAMILY_CLASSES = (
+    "AHP_De1994", "CaHT_HM1992", "CaHT_Re1993", "CaHVA_MA2020_GoC", "CaHVA_MA2020_GrC", "CaHVA_SU2015_DCN",
+    "CaLVA_SU2015_DCN", "CaL_IS2008", "CaL_SU2015_DCN", "CaN_IS2008", "CaT_HM1992", "CaT_HP1992",
+    "Ca_ZH2019_IO", "Ca_ZH2019_IO_Frozen", "Cav1p2_MA2020_GoC", "Cav1p2_MA2025_BC", "Cav1p3_MA2020_GoC",
+    "Cav1p3_MA2025_BC", "Cav2p1_MA2024_PC", "Cav2p1_MA2024_PC_Frozen", "Cav2p1_MA2025_BC",
+    "Cav2p1_MA2025_BC_Frozen", "Cav2p1_RI2021_SC", "Cav2p1_RI2021_SC_Frozen", "Cav2p3_MA2020_GoC",
+    "Cav3p1Test_PC24", "Cav3p1_MA2020_GoC", "Cav3p1_MA2020_GoC_Frozen", "Cav3p1_MA2024_PC",
+    "Cav3p1_MA2024_PC_Frozen", "Cav3p2_MA2024_PC", "Cav3p2_MA2025_BC", "Cav3p2_RI2021_SC", "Cav3p3_MA2024_PC",
+    "Cav3p3_MA2024_PC_Frozen", "Cav3p3_RI2021_SC", "Kca1p1_MA2020_GoC", "Kca1p1_MA2020_GrC", "Kca1p1_MA2024_PC",
+    "Kca1p1_MA2025_BC", "Kca1p1_RI2021_SC", "Kca2p2_MA2020_GoC", "Kca2p2_MA2020_GrC", "Kca2p2_MA2024_PC",
+    "Kca2p2_MA2025_BC", "Kca2p2_RI2021_SC", "Kca3p1_MA2020_GoC", "Kca3p1_MA2024_PC", "Kca3p1_MA2025_BC",
+    "SK_SU2015_DCN",
+)
+"""The registered channel classes defined in ``calcium.py`` and ``potassium_calcium.py``."""
+
 COVERAGE_SCOPE = {
-    "configs": ("ma20_goc/kv3p4_ma20_goc", "ma20_goc/nav1p6_ma20_goc"),
-    "classes": ("Kv3p4_MA2020_GoC", "Nav1p6_MA2020_GoC"),
+    "configs": ("ma20_goc/kv3p4_ma20_goc", "ma20_goc/nav1p6_ma20_goc", *CALCIUM_FAMILY_CONFIGS),
+    "classes": ("Kv3p4_MA2020_GoC", "Nav1p6_MA2020_GoC", *CALCIUM_FAMILY_CLASSES),
 }
+
+
+def assert_matches(report: cv.ConvergenceReport, entry: ConfigEntry) -> None:
+    """Raise ``AssertionError`` unless ``report`` has the protocol, classification and limits of ``entry``.
+
+    An exact entry needs every error at every ``dt`` within 1e-10; a
+    convergent one needs its fitted orders in the step window and its errors
+    at 0.025 ms within the entry's limits.
+    """
+    if report.protocol != entry.protocol:
+        raise AssertionError(f"{entry.config}: protocol {report.protocol!r}, table {entry.protocol!r}")
+    if report.classification != entry.classification:
+        raise AssertionError(f"{entry.config}: {report.classification!r}, table {entry.classification!r}; errors {report.errors}")
+    if entry.classification == cv.EXACT:
+        for dt, values in report.errors.items():
+            for metric, value in values.items():
+                if value is not None and not value <= cv.EXACT_LIMIT:
+                    raise AssertionError(f"{entry.config} dt = {dt} {metric}: {value:.3e} > {cv.EXACT_LIMIT}")
+        return
+    low, high = cv.STEP_ORDER_WINDOW
+    for metric, order in report.orders.items():
+        if not low <= order <= high:
+            raise AssertionError(f"{entry.config} {metric}: order {order:.3f} outside [{low}, {high}]")
+    for metric, limit in entry.limits.items():
+        if not report.error(metric) <= limit:
+            raise AssertionError(f"{entry.config} {metric}: {report.error(metric):.3e} > {limit}")
 
 
 def config_names() -> tuple[str, ...]:

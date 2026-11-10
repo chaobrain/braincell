@@ -84,6 +84,9 @@ report.classification, report.errors[0.025], report.orders
 cv.stiffness(cv.channel_class(cv.load_case("ma20_goc/nav1p6_ma20_goc", "vc_steps")[0])).rho_max
 ```
 
-表的覆盖检查（`COVERAGE_SCOPE`）现在只要求两个代表配置与类；
+限值取实测的 1.5 倍，上取整到 1、2 或 5 乘 10 的幂（`cv.rounded_limit`）。
+表的覆盖检查（`COVERAGE_SCOPE`）现在要求两个代表配置与类，以及钙家族
+（`calcium.py`、`potassium_calcium.py` 的 50 个类、45 个配置）；
 `validation/neuron/_convergence_test.py` 在每个 PR 运行，并对 registry 的全部
-通道类做奇点扫描。
+通道类做奇点扫描。按家族的收敛测试标 `slow`：
+`tests/test_convergence_calcium.py`（本机约 1.7 分钟）。

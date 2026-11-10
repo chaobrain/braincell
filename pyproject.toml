@@ -200,9 +200,9 @@ ini_options.python_files = [ "*_test.py", "test_*.py" ]
 # and are only valid once combined with TestCase in a concrete subclass.
 ini_options.python_functions = [ "test_*" ]
 # Out-of-package suites (validation/optim, benchmarks,
-# validation/neuron/channel_no_conc/tests) are split into two CI tiers: every
-# pull request runs `-m "not slow"`, the daily run adds `-m slow` (and also
-# runs the slow tests under validation/neuron/ion).
+# validation/neuron/channel_no_conc/tests, validation/neuron/ion) are split
+# into two CI tiers: every pull request runs `-m "not slow"`, the daily run
+# adds `-m slow`.
 # Mark a module slow (`pytestmark = pytest.mark.slow`) when it takes more than
 # about 25 s on its own.
 ini_options.markers = [

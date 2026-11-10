@@ -65,12 +65,14 @@ so a new slow module needs no workflow change.
 - **Every pull request** (jobs in `ci-ok`, each its own process):
   `cable/tests`; and, after compiling the eight channel models,
   `channel_no_conc/tests` with `_clamp_test.py`, `_tolerance_test.py`,
-  `_convergence_test.py` and `_mechanisms_test.py`, all with `-m "not slow"`.
+  `_convergence_test.py` and `_mechanisms_test.py`, all with `-m "not slow"`;
+  then `ion -m "not slow"` in a separate process (`ion/chloride_test.py`
+  skips unless `BRAINCELL_JE2011_MOD_DIR` is set).
 - **Daily** (job `slow_tests_neuron`, not in `ci-ok`; a red run opens a
   `main is red` issue): after compiling the same models,
   `channel_no_conc/tests -m slow` (the per-family `dt` convergence tests),
   then `ion -m slow` in a separate process. `ion` has no slow module yet;
-  pytest's exit code 5 (nothing collected) does not fail the job.
+  pytest's exit code 5 (nothing collected) fails neither tier.
 
 Reproduce both tiers locally after compiling the channel models as above:
 
@@ -78,6 +80,7 @@ Reproduce both tiers locally after compiling the channel models as above:
 pytest -q validation/neuron/channel_no_conc/tests \
     validation/neuron/_clamp_test.py validation/neuron/_tolerance_test.py \
     validation/neuron/_convergence_test.py validation/neuron/_mechanisms_test.py -m "not slow"
+pytest -q validation/neuron/ion -m "not slow"
 pytest -q validation/neuron/channel_no_conc/tests -m slow
 pytest -q validation/neuron/ion -m slow
 ```

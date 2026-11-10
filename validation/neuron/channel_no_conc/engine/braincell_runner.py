@@ -140,13 +140,12 @@ def build_cell(
     probe_loc = at("soma", 0.5)
     cell.place(probe_loc, build_braincell_stimulus(case.stimulus))
     cell.place(probe_loc, StateProbe())
-    cell.place(
-        probe_loc,
-        *(
-            MechanismProbe(mechanism=mapping_spec.braincell.class_name, field=gate_name)
-            for gate_name in mapping_spec.braincell.gate_names
-        ),
-    )
+    gate_probes = [
+        MechanismProbe(mechanism=mapping_spec.braincell.class_name, field=gate_name)
+        for gate_name in mapping_spec.braincell.gate_names
+    ]
+    if gate_probes:  # a leak has no gates
+        cell.place(probe_loc, *gate_probes)
     ion_probe_fields = _resolve_ion_probe_fields(mapping_spec)
     if len(ion_probe_fields) > 0:
         ion_name = mapping_spec.current_source.ion_name
@@ -308,6 +307,7 @@ def _build_init_nernst_ion(*, ion_name: str, case: ChannelNoConcCase):
         "cal": "CalciumInitNernst",
         "na": "SodiumInitNernst",
         "k": "PotassiumInitNernst",
+        "cl": "ChlorideInitNernst",
     }[ion_name]
     return Ion(
         class_name,

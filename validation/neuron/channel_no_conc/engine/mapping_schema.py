@@ -271,8 +271,9 @@ def _resolve_braincell_parameter_name(value: Any, *, name: str) -> str:
 
 
 def _require_gate_list(value: Any, *, name: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or len(value) == 0:
-        raise ValueError(f"{name} must be a non-empty list of strings.")
+    # Empty for a channel without gates (a leak such as Cl_Leak).
+    if not isinstance(value, list):
+        raise ValueError(f"{name} must be a list of strings.")
     return tuple(require_str(item, name=f"{name}[]") for item in value)
 
 
@@ -290,6 +291,7 @@ def _infer_ion_name_from_current(current_var: str) -> str | None:
         "ik": "k",
         "ica": "ca",
         "ical": "cal",
+        "icl": "cl",
     }.get(current_var)
 
 

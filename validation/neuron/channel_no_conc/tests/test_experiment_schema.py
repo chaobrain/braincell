@@ -56,8 +56,8 @@ class ExperimentSchemaTest(unittest.TestCase):
         config_root = CHANNEL_NO_CONC_ROOT / "configs"
 
         mod_suffixes = set()
-        testing_kv = DATA_ROOT / "mechanisms" / "testing" / "kv.mod"
-        for mod_path in [*sorted(mod_root.glob("*/mechanisms/channel/*.mod")), testing_kv]:
+        testing = [DATA_ROOT / "mechanisms" / "testing" / name for name in ("kv.mod", "clleak.mod")]
+        for mod_path in [*sorted(mod_root.glob("*/mechanisms/channel/*.mod")), *testing]:
             suffix = None
             for line in mod_path.read_text(errors="ignore").splitlines():
                 stripped = line.strip()
@@ -72,8 +72,8 @@ class ExperimentSchemaTest(unittest.TestCase):
             model_config = experiment_schema.load_model_config(config_path)
             config_suffixes.add(model_config.mapping_spec.neuron.mechanism_name)
 
-        self.assertEqual(len(mod_suffixes), 85)
-        self.assertEqual(len(config_suffixes), 85)
+        self.assertEqual(len(mod_suffixes), 86)
+        self.assertEqual(len(config_suffixes), 86)
         self.assertEqual(config_suffixes, mod_suffixes)
 
     def test_repo_all_configs_load_and_expand_templates(self) -> None:

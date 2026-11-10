@@ -83,13 +83,7 @@ def run_case(case: ChannelNoConcCase) -> dict[str, Any]:
     mapping_spec = case.mapping_spec
     h, section, segment = _build_neuron_model(case, mapping_spec=mapping_spec)
 
-    h.cvode_active(0)
-    h.dt = float(case.simulation.dt_ms)
-    h.steps_per_ms = 1.0 / float(case.simulation.dt_ms)
-    h.celsius = float(case.simulation.temperature_celsius)
-    h.v_init = float(case.simulation.v_init_mV)
-    h.finitialize(h.v_init)
-    _initialize_neuron_ion_state(h=h, section=section, segment=segment, case=case, mapping_spec=mapping_spec)
+    initialize_neuron(h=h, section=section, segment=segment, case=case)
     sample_times_ms, amp_values = stimulus_samples(case)
 
     stim = h.IClamp(segment)
@@ -140,6 +134,21 @@ def run_case(case: ChannelNoConcCase) -> dict[str, Any]:
     }
 
 
+def initialize_neuron(*, h, section, segment, case: ChannelNoConcCase) -> None:
+    """Initialize the fixed-step run of a model built by :func:`_build_neuron_model`.
+
+    Sets ``dt``, ``celsius`` and ``v_init``, calls ``finitialize`` and then
+    writes the case's ion concentrations.
+    """
+    h.cvode_active(0)
+    h.dt = float(case.simulation.dt_ms)
+    h.steps_per_ms = 1.0 / float(case.simulation.dt_ms)
+    h.celsius = float(case.simulation.temperature_celsius)
+    h.v_init = float(case.simulation.v_init_mV)
+    h.finitialize(h.v_init)
+    _initialize_neuron_ion_state(h=h, section=section, segment=segment, case=case, mapping_spec=case.mapping_spec)
+
+
 def _build_neuron_model(case: ChannelNoConcCase, *, mapping_spec: MappingSpec):
     from neuron import h, load_mechanisms
 
@@ -172,6 +181,8 @@ def _build_neuron_model(case: ChannelNoConcCase, *, mapping_spec: MappingSpec):
                 _resolve_neuron_erev_field(ion_name),
                 float(case.ion_state.E_mV),
             )
+        elif ion_name in _NERNST_STYLE_IONS and case.ion_state.has_concentrations:
+            _use_nernst_reversal(h, soma, ion_name=ion_name, Ci_mM=case.ion_state.Ci_mM, Co_mM=case.ion_state.Co_mM)
 
     for seg in soma:
         mech_obj = getattr(seg, mapping_spec.neuron.mechanism_name)
@@ -194,7 +205,27 @@ def _resolve_neuron_erev_field(ion_name: str) -> str:
         "k": "ek",
         "ca": "eca",
         "cal": "ecal",
+        "cl": "ecl",
     }[ion_name]
+
+
+#: Ions whose mechanisms only READ the reversal potential: NEURON keeps it a
+#: parameter (0 mV for chloride, with cli = clo = 1 mM) unless ion_style says
+#: to compute it from the concentrations.
+_NERNST_STYLE_IONS = frozenset({"cl"})
+
+
+def _use_nernst_reversal(h, section, *, ion_name: str, Ci_mM: float, Co_mM: float) -> None:
+    """Make NEURON compute the reversal potential of ``ion_name`` from fixed concentrations.
+
+    ``ion_style(c_style=1, e_style=2, einit=1, eadvance=1, cinit=1)``: the
+    concentrations are parameters, initialized at ``finitialize`` from the
+    global ``<ion>i0_<ion>_ion`` / ``<ion>o0_<ion>_ion``, which are set here,
+    and the Nernst potential is computed at ``finitialize`` and every step.
+    """
+    h.ion_style(f"{ion_name}_ion", 1, 2, 1, 1, 1, sec=section)
+    setattr(h, f"{ion_name}i0_{ion_name}_ion", float(Ci_mM))
+    setattr(h, f"{ion_name}o0_{ion_name}_ion", float(Co_mM))
 
 
 def _initialize_neuron_ion_state(*, h, section, segment, case: ChannelNoConcCase, mapping_spec: MappingSpec) -> None:
@@ -216,6 +247,7 @@ def _resolve_neuron_concentration_fields(ion_name: str) -> tuple[str, str]:
         "k": ("ki", "ko"),
         "ca": ("cai", "cao"),
         "cal": ("cali", "calo"),
+        "cl": ("cli", "clo"),
     }[ion_name]
 
 

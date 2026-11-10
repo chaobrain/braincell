@@ -379,15 +379,17 @@ def channel_ion_infos(cls, case=None) -> tuple:
     As in channel_no_conc: the ion of a case whose ``ion_state`` has
     concentrations is its ``InitNernst`` ion; a case's reversal potential
     overrides that ion's; every other ion family is the Cell's placeholder.
+    Chloride has no placeholder (a Cell without a declared chloride ion
+    raises ``KeyError``), so it is ``ChlorideFixed`` unless the case sets it.
     """
     import brainunit as u
 
     from braincell._compute.bindings import _channel_family_slots
-    from braincell.ion import build_placeholder_ions
+    from braincell.ion import ChlorideFixed, build_placeholder_ions
     from braincell.mech import get_registry
 
     braincell_runner, _ = _engine()
-    ions = build_placeholder_ions(size=(1,))
+    ions = {**build_placeholder_ions(size=(1,)), "cl": ChlorideFixed(size=(1,))}
     family = None
     if case is not None and case.ion_state is not None:
         ion_name = case.mapping_spec.current_source.ion_name

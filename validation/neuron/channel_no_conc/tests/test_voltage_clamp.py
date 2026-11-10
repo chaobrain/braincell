@@ -45,6 +45,7 @@ T0_CONFIGS = (
     "ma20_goc/cav1p2_ma20_goc",
     "ma24_pc/cav2p1_ma24_pc",
     "testing/kv_testing",
+    "testing/cl_leak_testing",
 )
 
 
@@ -78,7 +79,9 @@ class VoltageClampAgreementTest(unittest.TestCase):
                 with self.subTest(config=config, protocol=protocol):
                     result = voltage_clamp.compare_protocol(*_paths(config, protocol))
                     self.assertLessEqual(result["clamp_error_mV"], 1e-7)
-                    for metric in ("e_I", "e_s"):
+                    if result["e_s"] is None:  # a leak has no states to compare
+                        self.assertEqual(result["case"].mapping_spec.gate_map, (), config)
+                    for metric in ("e_I", "e_s") if result["e_s"] is not None else ("e_I",):
                         limit = TABLE.limit(config, protocol, metric)
                         self.assertLessEqual(result[metric], limit, f"{config} {protocol} {metric}: {result[metric]:.3e}")
 

@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "label": "Testing chloride leak (clleak.mod)"
+  },
+  "identity": {
+    "mod_dir": "../../../artifacts/mechanisms/testing/channel"
+  },
+  "defaults": {
+    "ion_state": {
+      "Ci_mM": 5.0,
+      "Co_mM": 133.5
+    },
+    "channel_params": {
+      "g_S_cm2": 0.0001
+    }
+  },
+  "mapping": {
+    "current": "icl",
+    "impl_name": {
+      "neuron": "clleak",
+      "braincell": "Cl_Leak"
+    },
+    "gate_names": {
+      "common": []
+    },
+    "channel_params": {
+      "g_S_cm2": {
+        "neuron": "g",
+        "braincell": "g_max"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

@@ -181,6 +181,15 @@
   diffusion along the cable is not ported. `cl` is not a placeholder ion: a
   chloride channel or synapse needs a declared chloride ion.
 
+- **Chloride leak channel `Cl_Leak`** (MECH-31). `braincell.channel.Cl_Leak`
+  is a passive chloride conductance, `I = g_max (E_Cl - V)` with `g_max`
+  0.1 mS/cm² by default; `E_Cl` comes from the attached chloride ion and the
+  current is that ion's, so it drives `Cldif_JE2011`. A tonic GABA_A current
+  with bicarbonate share `P` is `Cl_Leak(g_max=(1 - P) g_t)` plus
+  `IL(g_max=P g_t, E=E_HCO3)`. It matches NEURON (a `clleak` testing
+  mechanism) with a fixed-concentration chloride ion and with `Cldif_JE2011`
+  under current clamp.
+
 ### Changes & Improvements
 
 - **Parameter unit errors name the mechanism, the value and the declaring

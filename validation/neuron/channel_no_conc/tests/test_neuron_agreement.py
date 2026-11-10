@@ -14,7 +14,7 @@
 # ==============================================================================
 
 """Voltage agreement with NEURON for the configurations the full sweep singled out
-and the testing Kv configuration.
+and the testing Kv and chloride-leak configurations.
 
 Each configuration's limit under one template bounds the largest absolute
 voltage difference (``e_V``) over every case of that template. The limits
@@ -69,6 +69,7 @@ CONFIGS = (
     "ma25_bc/kca2p2_ma25_bc",
     "ri21_sc/kca2p2_ri21_sc",
     "testing/kv_testing",
+    "testing/cl_leak_testing",
 )
 """Configurations asserted under every current-clamp template they declare."""
 

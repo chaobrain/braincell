@@ -50,6 +50,9 @@ T0（`e_V ≤ 1e-6 mV`；`e_I`、`e_s ≤ 1e-10`）；每个 T1 项写明偏差�
 时失败。`configs/testing/kv_testing.json` 对照 `data/mechanisms/testing/kv.mod`
 （先运行 `python -m validation.neuron._mechanisms testing --kind channel`），也是
 转换器示例 `examples/convert_mod/mod_validate/channel_validate.ipynb` 运行的配置。
+`configs/testing/cl_leak_testing.json` 对照同一库中的 `clleak.mod`：没有门变量
+（`gate_names` 为空列表，电压钳只比较 `e_I`）；`clleak` 只读 `ecl`，NEURON 侧由
+runner 对 `cl_ion` 设 `ion_style`，使 `ecl` 按 `ion_state` 的浓度取 Nernst 值。
 
 当前推荐的 `MA24_PC` batch 配置目录为：
 

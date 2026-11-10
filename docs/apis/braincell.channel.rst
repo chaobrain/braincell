@@ -78,6 +78,17 @@ Calcium Channels
    Cav3p3_RI2021_SC
 
 
+Chloride Channels
+-----------------
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+   Cl_Leak
+
+
 Hyperpolarization-Activated Channels
 ------------------------------------
 

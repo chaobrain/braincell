@@ -35,6 +35,8 @@ from braincell.ion.calcium import (
     CdpLVA_SU2015_DCN,
 )
 from braincell.ion.calcium import __all__ as _calcium_all
+from braincell.ion.chloride import Chloride, ChlorideFixed, ChlorideInitNernst, Cldif_JE2011
+from braincell.ion.chloride import __all__ as _chloride_all
 from braincell.ion.nonspecific import NonSpecific, NonSpecificFixed
 from braincell.ion.nonspecific import __all__ as _nonspecific_all
 from braincell.ion.potassium import Potassium, PotassiumFixed, PotassiumInitNernst
@@ -43,7 +45,9 @@ from braincell.ion.sodium import Sodium, SodiumFixed, SodiumInitNernst
 from braincell.ion.sodium import __all__ as _sodium_all
 
 # ASCII-sorted; see ``__init___test.IonReExportTest``.
-__all__ = sorted(_calcium_all + _nonspecific_all + _potassium_all + _sodium_all + ["build_placeholder_ions"])
+__all__ = sorted(
+    _calcium_all + _chloride_all + _nonspecific_all + _potassium_all + _sodium_all + ["build_placeholder_ions"]
+)
 
 
 def build_placeholder_ions(size=(1,)) -> dict[str, object]:

@@ -25,6 +25,12 @@
 - `CdpStC_MA20_GoC + Cav3p1_MA20_GoC` 的 NEURON-vs-BrainCell 耦合轨迹
 - 若干 DCN toy kinetic ion，用于隔离验证 binding/source/pump/factor/geometry 行为
 
+`chloride_test.py` 在单段上对照 `Cldif_JE2011` 与 ModelDB 148253 的 `cldifus`（零电流弛豫，T0）。`cldif.mod` 没有许可声明，是否入库待维护者决定；在此之前测试只在 `BRAINCELL_JE2011_MOD_DIR` 指向含该文件（`ModelDBRepository/148253@1d737a0`，SHA-256 由测试核对）的目录时运行，否则跳过：
+
+```bash
+BRAINCELL_JE2011_MOD_DIR=/path/to/148253 pytest -q validation/neuron/ion/chloride_test.py
+```
+
 当前刻意不做：
 
 - 通用 JSON config / batch workflow

@@ -171,6 +171,16 @@
   a unit declares it, e.g. `parameter_units = {"g_max": u.mS / u.cm**2}` on a
   channel with `g_max=None`; such values were unchecked before.
 
+- **Chloride ions** (MECH-30). `braincell.ion` gains the `Chloride` family
+  (family key `"cl"`, valence -1, default `Ci` 5 mM and `Co` 133.5 mM),
+  `ChlorideFixed` (`E = -87.5 mV`), `ChlorideInitNernst` (36 °C) and
+  `Cldif_JE2011`, the four-shell radial chloride pool of Jedlicka et al.
+  (2011), ModelDB 148253 (`cldifus`), driven by the chloride current (an
+  inward current lowers `Ci`); its relaxation to `cli0` is explicit, as
+  NMODL's `<<` flux is. It matches NEURON on one segment; the `.mod`'s
+  diffusion along the cable is not ported. `cl` is not a placeholder ion: a
+  chloride channel or synapse needs a declared chloride ion.
+
 ### Changes & Improvements
 
 - **Parameter unit errors name the mechanism, the value and the declaring

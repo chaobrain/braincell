@@ -739,6 +739,9 @@ def _mod_shell_rate(k, depth):
     return k.to_decimal(u.coulomb**-1) / depth.to_decimal(u.um) * 1e4 * (u.mM / u.ms) / (u.mA / u.cm**2)
 
 
+_CLDIF_VRAT0 = 0.239982772  # outermost-shell volume per diameter**2, cldif.mod's factors()
+
+
 def _radial_shell_rate(ion):
     """Influx ``I * pi * diam / (2 F)`` into the outer shell of volume ``diam**2 * vrat``."""
     return u.math.pi / (2.0 * _F * ion.diam_arc_mean * ion.vrat)
@@ -764,6 +767,8 @@ _CURRENT_TO_CI_RATE = {
         ),
         _radial_shell_rate,
     ),
+    # z = -1: an inward current is a Cl- efflux, ``-pi d I / F`` into the outer shell.
+    "Cldif_JE2011": lambda ion: -u.math.pi / (_F * ion.diam_arc_mean * _CLDIF_VRAT0),
 }
 
 #: Dynamic ions with ``uses_total_current = False``, and why.

@@ -109,6 +109,18 @@ Not addressed: the current (`ix`) traces of the two runners are one step
 apart, and NEURON's sample `k + 1` matches BrainCell's sample `k`. This affects
 the current metrics only, not voltage or gates.
 
+## Ion pool differences
+
+### Cldif_JE2011 longitudinal diffusion
+
+Class (d), `Cldif_JE2011`: ModelDB 148253's `cldif.mod` also diffuses chloride
+along the cable (`LONGITUDINAL_DIFFUSION`); BrainCell has no ion flux between
+control volumes, so only the radial shells are ported. On one segment the two
+agree to T0 ([`chloride_test.py`](ion/chloride_test.py): `1.1e-12`). On a
+200 um x 1 um dendrite (21 segments) with a 40 Hz GABA_A input at its middle
+for 1 s, NEURON gives `cli = 5.277 mM` at the synapse, and `6.981 mM` without
+that line; multi-compartment comparisons use the `.mod` without it.
+
 ## Locating a difference with the voltage clamp
 
 The `channel_no_conc` voltage-clamp templates (`vc_steps`, `vc_ramp`) clamp

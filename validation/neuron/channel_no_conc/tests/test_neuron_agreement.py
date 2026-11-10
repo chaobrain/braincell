@@ -13,7 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Voltage agreement with NEURON for the configurations the full sweep singled out.
+"""Voltage agreement with NEURON for the configurations the full sweep singled out
+and the testing Kv configuration.
 
 Each configuration's limit under one template bounds the largest absolute
 voltage difference (``e_V``) over every case of that template. The limits
@@ -65,6 +66,7 @@ CONFIGS = (
     "ma20_grc/kca2p2_ma20_grc",
     "ma25_bc/kca2p2_ma25_bc",
     "ri21_sc/kca2p2_ri21_sc",
+    "testing/kv_testing",
 )
 """Configurations asserted under every current-clamp template they declare."""
 

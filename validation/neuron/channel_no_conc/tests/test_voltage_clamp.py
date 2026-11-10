@@ -44,6 +44,7 @@ T0_CONFIGS = (
     "ma20_goc/cav3p1_ma20_goc_frozen",
     "ma20_goc/cav1p2_ma20_goc",
     "ma24_pc/cav2p1_ma24_pc",
+    "testing/kv_testing",
 )
 
 

@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Tolerance table of the channel_no_conc comparisons against NEURON.
+"""Tolerance table and coverage list of the channel_no_conc comparisons against NEURON.
 
 Every configuration and protocol not listed here is T0 (``_tolerance.T0_LIMITS``).
 Each entry is T1: a limit about 1.5-2x the measured value, rounded up to 1, 2
@@ -22,6 +22,11 @@ or 5 times a power of ten, with the deviation class and the heading of
 needs the root cause and a patch that brings it to T0; raising a limit or
 moving a T0 configuration here loosens a tolerance and needs the lead's
 approval.
+
+``UNCOVERED`` lists the registry channels that have no configuration under
+``configs/``, each with its reason. ``tests/test_coverage.py`` fails when a
+registered channel has neither, and when a listed name is not registered or
+already has a configuration.
 """
 
 from pathlib import Path
@@ -67,3 +72,30 @@ ENTRIES = [
 ]
 
 TABLE = ToleranceTable(ENTRIES)
+
+_NO_MOD = "no .mod reference in the repository"
+
+UNCOVERED = {
+    "AHP_De1994": _NO_MOD,
+    "CaHT_HM1992": _NO_MOD,
+    "CaHT_Re1993": _NO_MOD,
+    "CaL_IS2008": _NO_MOD,
+    "CaN_IS2008": _NO_MOD,
+    "CaT_HM1992": _NO_MOD,
+    "CaT_HP1992": _NO_MOD,
+    "HCN_HM1992": _NO_MOD,
+    "IL": f"{_NO_MOD}; NEURON's built-in pas is a candidate reference (MECH-19c)",
+    "KA1_HM1992": _NO_MOD,
+    "KA2_HM1992": _NO_MOD,
+    "KDR_Ba2002": _NO_MOD,
+    "KK2A_HM1992": _NO_MOD,
+    "KK2B_HM1992": _NO_MOD,
+    "KNI_Ya1989": _NO_MOD,
+    "K_HH1952": f"{_NO_MOD}; NEURON's built-in hh is a candidate reference (MECH-19b)",
+    "K_Leak": _NO_MOD,
+    "K_TM1991": _NO_MOD,
+    "Na_Ba2002": _NO_MOD,
+    "Na_HH1952": f"{_NO_MOD}; NEURON's built-in hh is a candidate reference (MECH-19b)",
+    "Na_TM1991": _NO_MOD,
+}
+"""Registry name -> why the channel has no NEURON comparison configuration."""

@@ -732,6 +732,7 @@ HCN 就是这样。
 - `configs/su15_dcn/`
 - `configs/ri21_sc/`
 - `configs/su15_dcn/`
+- `configs/testing/`（`kv_testing.json`：`data/mechanisms/testing/kv.mod` 的 `Kv` 对 `K_Kv_test`）
 
 `ma24_pc/` 目前放了 PC 里已经可直接从 `braincell.channel` 导入、且适合走 `channel_no_conc` compare 的 7 个 channel：
 

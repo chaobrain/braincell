@@ -16,7 +16,7 @@
 import json
 import os
 from pathlib import Path
-from validation.neuron._paths import CEREBELLUM_ROOT, model_dir, mechanism_build_dir
+from validation.neuron._paths import CEREBELLUM_ROOT, DATA_ROOT, model_dir, mechanism_build_dir
 import math
 import tempfile
 import unittest
@@ -56,7 +56,8 @@ class ExperimentSchemaTest(unittest.TestCase):
         config_root = CHANNEL_NO_CONC_ROOT / "configs"
 
         mod_suffixes = set()
-        for mod_path in sorted(mod_root.glob("*/mechanisms/channel/*.mod")):
+        testing_kv = DATA_ROOT / "mechanisms" / "testing" / "kv.mod"
+        for mod_path in [*sorted(mod_root.glob("*/mechanisms/channel/*.mod")), testing_kv]:
             suffix = None
             for line in mod_path.read_text(errors="ignore").splitlines():
                 stripped = line.strip()
@@ -71,8 +72,8 @@ class ExperimentSchemaTest(unittest.TestCase):
             model_config = experiment_schema.load_model_config(config_path)
             config_suffixes.add(model_config.mapping_spec.neuron.mechanism_name)
 
-        self.assertEqual(len(mod_suffixes), 84)
-        self.assertEqual(len(config_suffixes), 84)
+        self.assertEqual(len(mod_suffixes), 85)
+        self.assertEqual(len(config_suffixes), 85)
         self.assertEqual(config_suffixes, mod_suffixes)
 
     def test_repo_all_configs_load_and_expand_templates(self) -> None:

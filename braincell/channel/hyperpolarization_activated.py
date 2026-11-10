@@ -571,9 +571,11 @@ class HCN1_RI2021_SC(HCN1_MA2025_BC):
     this stellate-cell channel, and not repeated here as though it
     were.
     The default ``temp = 23`` degrees Celsius comes from the
-    ``.mod``'s unused ``rec_temp``; the ``.mod``'s temperature factor
-    is ``qt = 3^((celsius - 37)/10)``, so the defaults run with
-    ``qt = 0.215`` (see :class:`HCN1_MA2025_BC`).
+    ``.mod``'s unused ``rec_temp``, the porter's assumed recording
+    temperature (Angelo et al. (2007) [1]_ did not report one); the
+    ``.mod``'s temperature factor is ``qt = 3^((celsius - 37)/10)``,
+    so the defaults run with ``qt = 0.215`` (see
+    :class:`HCN1_MA2025_BC`).
 
     References
     ----------

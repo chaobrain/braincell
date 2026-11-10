@@ -7,7 +7,7 @@
   },
   "defaults": {
     "channel_params": {
-      "g_max_S_cm2": 0.0
+      "g_max_S_cm2": 0.001
     }
   },
   "mapping": {

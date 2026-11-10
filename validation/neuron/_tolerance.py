@@ -20,7 +20,7 @@ absolute voltage difference (mV, current clamp); ``e_s``, the largest
 absolute difference over all compared states; ``e_I``, the largest absolute
 current difference over the largest NEURON current magnitude of the whole
 protocol (voltage clamp), so that commands that barely activate a channel do
-not amplify rounding.
+not amplify rounding. A non-finite sample on either side raises ``ValueError``.
 
 Tier T0 (the class integrates the ``.mod`` equations, constants and initial
 values) has the limits :data:`T0_LIMITS`. T1 is an explained difference of
@@ -59,6 +59,10 @@ def _pairs(pairs: Iterable[tuple[object, object]]) -> list[tuple[np.ndarray, np.
         braincell, neuron = np.asarray(braincell, dtype=float), np.asarray(neuron, dtype=float)
         if braincell.shape != neuron.shape:
             raise ValueError(f"trace shapes differ: {braincell.shape!r} vs {neuron.shape!r}.")
+        for side, trace in (("BrainCell", braincell), ("NEURON", neuron)):
+            if not np.all(np.isfinite(trace)):
+                count = int(np.size(trace) - np.count_nonzero(np.isfinite(trace)))
+                raise ValueError(f"pair {len(resolved)}: the {side} trace has {count} non-finite samples.")
         resolved.append((braincell, neuron))
     if not resolved:
         raise ValueError("at least one (braincell, neuron) trace pair is required.")

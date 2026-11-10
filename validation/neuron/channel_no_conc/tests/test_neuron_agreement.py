@@ -27,8 +27,10 @@ import os
 from pathlib import Path
 import unittest
 
+import numpy as np
+
 from validation.neuron._tolerance import CURRENT_CLAMP_PROTOCOLS
-from validation.neuron.channel_no_conc.tolerances import KNOWN_DIFFERENCES, TABLE
+from validation.neuron.channel_no_conc.tolerances import KNOWN_DIFFERENCES, TABLE, VARIANTS
 
 from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, load_module
 
@@ -73,12 +75,11 @@ CONFIGS = (
 
 def _max_voltage_difference(config_path: Path, template_path: Path) -> float:
     config = experiment_schema.load_sweep_config(config_path, template_path)
-    worst = 0.0
-    for payload in experiment_schema.expand_cases(config):
-        case = experiment_schema.ChannelNoConcCase.from_dict(payload)
-        metrics = compare_module.compare_case(case)["metrics"]
-        worst = max(worst, float(metrics["voltage"]["max_abs"]))
-    return worst
+    errors = [
+        compare_module.compare_case(experiment_schema.ChannelNoConcCase.from_dict(payload))["metrics"]["voltage"]["max_abs"]
+        for payload in experiment_schema.expand_cases(config)
+    ]
+    return float(np.max(errors))  # NaN propagates; max() would drop one that is not first
 
 
 class ToleranceTableTest(unittest.TestCase):
@@ -86,8 +87,12 @@ class ToleranceTableTest(unittest.TestCase):
         for entry in TABLE.entries:
             if entry.protocol not in CURRENT_CLAMP_PROTOCOLS:
                 continue
-            self.assertIn(entry.config, CONFIGS)
-            model_config = experiment_schema.load_model_config(CHANNEL_NO_CONC_ROOT / "configs" / f"{entry.config}.json")
+            if entry.config in VARIANTS:  # asserted by the catalogue test of its family
+                config = VARIANTS[entry.config][0]
+            else:
+                config = entry.config
+                self.assertIn(config, CONFIGS)
+            model_config = experiment_schema.load_model_config(CHANNEL_NO_CONC_ROOT / "configs" / f"{config}.json")
             self.assertIn(entry.protocol, {Path(path).stem for path in model_config.template_paths}, entry.config)
 
     def test_every_asserted_configuration_declares_the_current_clamp_templates(self) -> None:

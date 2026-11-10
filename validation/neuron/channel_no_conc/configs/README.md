@@ -778,7 +778,7 @@ PC 其余机制不在这个目录的原因：
 
 - NMODL 同时声明 `ik` 和 `ino`
 - `ino` 由 `gnonspec` 控制，但 `gnonspec` 默认是 `0`
-- 当前 BrainCell 实现只转换默认 `ik` path，不支持非零 `gnonspec / ino`
+- 本目录的配置只比较默认 `ik` path；非零 `gnonspec` 的 `ino` 由 `current_components()["no"]` 给出，按 mod 的写法计算反转电位（`z = R*(celsius+273.15)/F` 以伏为单位的数值当作毫伏用）
 
 GrC 其余机制不在这个目录的原因：
 

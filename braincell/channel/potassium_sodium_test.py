@@ -15,6 +15,7 @@
 # ==============================================================================
 
 
+import math
 import unittest
 
 import brainunit as u
@@ -102,7 +103,10 @@ class Kv1p5MA20GrCTest(unittest.TestCase):
 
         conductance_factor = (0.2**3) * 0.3 * 0.4
         voltage_factor = ch._voltage_factor(V)
-        eno = u.gas_constant * ch.temp / u.faraday_constant * u.math.log((na.Co + k.Co) / (na.Ci + k.Ci))
+        # The mod's ``z = R*(celsius + 273.15)/F`` is a number in volts that
+        # its ``v - z*log(...)`` uses as millivolts.
+        z = (u.gas_constant * ch.temp / u.faraday_constant).to_decimal(u.volt)
+        eno = z * u.math.log((na.Co + k.Co) / (na.Ci + k.Ci)) * u.mV
         expected_no = ch.gnonspec * voltage_factor * conductance_factor * (eno - V)
         components = ch.current_components(V, k, na, no)
         total = ch.current(V, k, na, no)
@@ -122,3 +126,34 @@ class Kv1p5MA20GrCTest(unittest.TestCase):
                 atol=1e-6,
             )
         )
+
+    def test_nonspecific_current_matches_mod_arithmetic(self) -> None:
+        # Counter-example: the mod's reversal ``z*log((nao+ko)/(nai+ki))`` with
+        # ``z = R*(celsius+273.15)/F`` in NEURON units (joule/degC, coulombs)
+        # is about 1/1000 of the Nernst-like value in mV; reading it as a
+        # united voltage gave a reversal 1000 times too far from 0 mV.
+        celsius, v = 30.0, -20.0
+        ki, ko, nai, nao = 140.0, 5.0, 10.0, 140.0
+        m, n, uu = 0.2, 0.3, 0.4
+        gnonspec = 1e-4
+        ch = Kv1p5_MA2020_GrC(size=1, temp=u.celsius2kelvin(celsius), gnonspec=gnonspec * (u.siemens / u.cm**2))
+        V = voltage([v])
+        k = k_info(Ci=ki, Co=ko)
+        na = na_info(1, Ci=nai, Co=nao)
+        no = nonspecific_info()
+        ch.init_state(V, k, na, no)
+        ch.m.value = jnp.array([m])
+        ch.n.value = jnp.array([n])
+        ch.u.value = jnp.array([uu])
+
+        z = 8.31446261815324 * (celsius + 273.15) / 96485.33212331001
+        ino = (
+            gnonspec
+            * (0.1 + 1 / (1 + math.exp(-(v - 15) / 13)))
+            * m**3
+            * n
+            * uu
+            * (v - z * math.log((nao + ko) / (nai + ki)))
+        )
+        got = ch.current_components(V, k, na, no)["no"].to_decimal(u.mA / u.cm**2)
+        self.assertTrue(jnp.allclose(got, jnp.array([-ino]), rtol=1e-5, atol=0.0), msg=f"{got} vs {-ino}")

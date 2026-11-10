@@ -218,7 +218,7 @@ Fit labels:
 
 | SUFFIX | Fit | Special notes |
 |---|---|---|
-| `Kv1p5_MA20_GrC` | `default_ik_only` | The source mod enables `ino`, but `gnonspec` defaults to zero and no repo config sets it nonzero; BrainCell converts the default `ik` path and intentionally does not expose nonzero `ino`. |
+| `Kv1p5_MA20_GrC` | `default_ik_only` | The source mod enables `ino`, but `gnonspec` defaults to zero and no repo config sets it nonzero; BrainCell exposes `gnonspec` and returns `ino` from `current_components()`; its reversal follows the mod literally (`z = R*(celsius+273.15)/F` is a number in volts used as millivolts). |
 
 ## HH_conc inherited variants
 

@@ -1,0 +1,16 @@
+{
+  "meta": {"label": "Voltage-clamp ramp"},
+  "base": {
+    "morphology": {"length_um": 10.0, "diam_um": 31.830988618379067, "cm_uF_cm2": 1.0},
+    "simulation": {"dt_ms": 0.025, "duration_ms": 170.0, "v_init_mV": -100.0, "temperature_celsius": 36.0},
+    "stimulus": {"kind": "dc", "delay_ms": 0.0, "dur_ms": 170.0, "amp_nA": 0.0},
+    "leak": {"enabled": false, "g_S_cm2": 0.0, "e_mV": -65.0}
+  },
+  "voltage_clamp": {"kind": "ramp", "start_mV": -100.0, "hold_ms": 5.0, "slope_mV_per_ms": 1.0, "stop_mV": 60.0, "final_hold_ms": 5.0},
+  "group": {
+    "group_id": "vc_ramp",
+    "description": "SEClamp ramp from -100 to +60 mV at 1 mV/ms; BrainCell replays NEURON's voltage.",
+    "sweep_axes": {}
+  },
+  "outputs": {"plot": false}
+}

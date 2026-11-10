@@ -25,9 +25,23 @@
 
 当前内置的通用模板为：
 
-- `templates/vinit_celsius.json`
-- `templates/dc.json`
-- `templates/ac.json`
+- 电流钳：`templates/vinit_celsius.json`、`templates/dc.json`、`templates/ac.json`
+- 电压钳：`templates/vc_steps.json`、`templates/vc_ramp.json`
+
+电压钳模板由 `engine/voltage_clamp.py` 运行：NEURON 用 `SEClamp`（`rs = 1e-9 MΩ`）
+钳住 soma，braincell 用同一个 Cell、以回放 NEURON 电压的 solver 只推进通道状态
+（共享模块 `validation/neuron/_clamp.py`）。观测量为电流 `ix`（按协议内最大
+NEURON 电流归一，`e_I`）与 `gates.*`（`e_s`）。这两个模板暂不写进各配置的
+`templates` 列表，只由 `tests/test_voltage_clamp.py` 对代表配置显式运行：
+
+```python
+compare_protocol("configs/ma20_goc/kv3p4_ma20_goc.json", "templates/vc_steps.json")
+```
+
+全部限值来自容差表 [`tolerances.py`](tolerances.py)：表中没有的配置与协议为
+T0（`e_V ≤ 1e-6 mV`；`e_I`、`e_s ≤ 1e-10`）；每个 T1 项写明偏差类别与
+[已知差异](../known-differences.md)中的小节。`tests/test_neuron_agreement.py`
+（电流钳）与 `tests/test_voltage_clamp.py`（电压钳）都从这张表读限值。
 
 当前推荐的 `MA24_PC` batch 配置目录为：
 

@@ -200,6 +200,19 @@
 
 ### Bug Fixes
 
+- The optional gating current of `Nav1p1_MA2025_BC` and `Nav1p1_RI2021_SC`
+  (`gateCurrent != 0`) was 1e18 times too large, for the same reason as the
+  Kv entry below: the `(1e12)` and `(1e6)` factors of the `.mod` formula are
+  NEURON's unit conversions and were applied again to quantities that carry
+  units (MECH-6c). It is now `g_max / gunit * e0 * zgate * dq/dt` and matches
+  NEURON to 2.8e-15 relative along a voltage-clamp trace. The default
+  `gateCurrent = 0` is unaffected. The docstrings of `Na_HH1952` (the defaults
+  run Hodgkin-Huxley's 6.3 degC rates unscaled; `temp_ref` = 6.3 degC
+  reproduces NEURON's `hh`), `HCN1_MA2025_BC`, `HCN1_MA2024_PC`,
+  `HCN1_RI2021_SC` (the `.mod` Q10 reference is 37 degC; the 23 degC `temp`
+  default is an operating temperature) and `HCN_HM1992` (its `+43 mV`
+  default is unchecked) are corrected.
+
 - The optional gating current of `Kv1p1_MA2025_BC`, `Kv1p1_MA2024_PC`,
   `Kv1p1_RI2021_SC`, `Kv1p1_MA2020_GoC`, `Kv1p1_MA2020_GrC` and
   `Kv3p3_MA2024_PC` (`gateCurrent != 0`) was 1e18 times too large: the

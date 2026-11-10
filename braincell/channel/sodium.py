@@ -340,10 +340,15 @@ class Na_HH1952(OhmicHH):
     Notes
     -----
     (Hodgkin & Huxley, 1952) [1]_ measured these rates at 6.3 degrees
-    Celsius, not this class's ``temp_ref = 36`` degrees Celsius
+    Celsius, not at this class's ``temp_ref = 36`` degrees Celsius
     default. Because ``temp`` and ``temp_ref`` are equal by default,
-    the Q10 correction is a no-op at construction time; the defaults
-    do **not** reproduce the original 6.3-degree-Celsius kinetics.
+    the Q10 factor is 1 and the gates run at the published rates: the
+    defaults reproduce the 6.3-degree-Celsius kinetics even though
+    ``temp`` reads 36 degrees Celsius. NEURON's ``hh`` mechanism
+    scales the rates by :math:`3^{(T - 6.3)/10}`; pass
+    ``temp_ref=u.celsius2kelvin(6.3)`` to do the same, which makes the
+    rates at 36 degrees Celsius :math:`3^{2.97} \approx 26` times
+    faster than the defaults.
 
     References
     ----------
@@ -1213,22 +1218,25 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
         \begin{aligned}
         I &= g_{max}\, O\, (E_{Na} - V) - \mathbb{1}[\text{gateCurrent}
              \neq 0]\, I_{gate} \\
-        I_{gate} &= n_c \times 10^6\, e_0\, z_{gate}\,
-                     \dot{q} \\
+        I_{gate} &= n_c\, e_0\, z_{gate}\, \dot{q} \\
         \dot{q} &= f_{01} C_1 + (f_{02}{-}b_{01}) C_2
                     + (f_{03}{-}b_{02}) C_3
                     + (f_{04}{-}b_{03}) C_4 - b_{04} C_5 \\
                  &\ + f_{11} I_1 + (f_{12}{-}b_{11}) I_2
                     + (f_{13}{-}b_{12}) I_3
                     + (f_{14}{-}b_{13}) I_4 - b_{14} I_5 \\
-        n_c &= 10^{12}\, g_{max} / g_{unit}
+        n_c &= g_{max} / g_{unit}
         \end{aligned}
 
     where :math:`\dot{q}` is the net probability flux through the
     activation/inactivation ladders (excluding ``O``, ``B`` and
-    ``I6``), :math:`n_c` estimates the channel count from ``g_max``
+    ``I6``), :math:`n_c` estimates the channel density from ``g_max``
     and a fixed unitary conductance ``gunit``, and :math:`e_0` is the
-    elementary charge.
+    elementary charge. The ``.mod`` writes
+    ``nc = (1e12)*gbar/gunit`` and ``igate = nc*(1e6)*e0*zgate*gateFlip()``;
+    those two factors are its unit conversions (pS to S, C/ms to mA) on
+    bare numbers, so they do not appear above, where every quantity
+    carries its unit.
 
     Parameters
     ----------
@@ -1342,8 +1350,12 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
             + (self.f14(V) - self.b13(V)) * self.I4.value
             - self.b14(V) * self.I5.value
         ) / u.ms
-        nc = 1e12 * self.g_max / self.gunit
-        igate = nc * 1e6 * self.e0 * self.zgate * gate_flip
+        # The ``.mod`` writes ``nc = (1e12)*gbar/gunit`` and
+        # ``igate = nc*(1e6)*e0*zgate*gateFlip()``: the two factors convert
+        # pS to S and C/ms to mA on bare numbers. The quantities here carry
+        # their units, so the factors must not be applied again.
+        nc = self.g_max / self.gunit
+        igate = nc * self.e0 * self.zgate * gate_flip
         return conductive - u.math.where(self.gateCurrent != 0, igate, 0.0 * igate)
 
 

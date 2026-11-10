@@ -93,6 +93,12 @@ class HCN_HM1992(OhmicHH):
     to the fixed ``E`` parameter: the current is
     ``g_max * p * (E - V)``.
 
+    The default ``E = +43 mV`` has not been checked against the
+    paper's methods. :class:`HCN_ZH2019_IO`, whose gate functions are
+    the same up to rounding (``14.6`` and ``0.07`` for ``14.59`` and
+    ``0.0701``), takes ``E = -43 mV`` from its ``.mod`` source; pass
+    ``E=-43.0 * u.mV`` for that reversal potential.
+
     References
     ----------
     .. [1] Huguenard, J. R., & McCormick, D. A. (1992). Simulation of
@@ -338,10 +344,14 @@ class HCN1_MA2025_BC(OhmicHH):
     "We call it HCN1 as PC express only HCN1 Santoro et al. 2000",
     whose origin is the subunit-identity paper [2]_ -- a claim about
     Purkinje cells, not this basket-cell channel, and not repeated
-    here as though it were. The default ``temp = 23`` degrees
-    Celsius is likewise carried over unchanged: Angelo et al. (2007)
-    [1]_ did not report a recording temperature, so 23 degrees
-    Celsius is the porter's assumption, not a value from that paper.
+    here as though it were. The ``.mod`` declares ``rec_temp = 23``
+    degrees Celsius, the porter's assumed recording temperature
+    (Angelo et al. (2007) [1]_ did not report one), but never uses it:
+    its temperature factor is ``qt = 3^((celsius - 37)/10)``, which
+    this class reproduces with ``temp_ref = 37`` degrees Celsius. The
+    default ``temp = 23`` degrees Celsius is the operating temperature
+    (NEURON's ``celsius``), so the defaults run with ``qt = 0.215``,
+    i.e. ``tau_h`` 4.66 times its 37-degree value.
 
     References
     ----------
@@ -467,10 +477,10 @@ class HCN1_MA2024_PC(HCN1_MA2025_BC):
     express only HCN1 Santoro et al. 2000" -- correctly describing
     this Purkinje-cell channel, and the origin of that "PC" claim is
     the subunit-identity paper [2]_, not the kinetics paper [1]_. The
-    default ``temp = 23`` degrees Celsius is carried over unchanged
-    from the ``.mod`` file: Angelo et al. (2007) [1]_ did not report
-    a recording temperature, so 23 degrees Celsius is the porter's
-    assumption, not a value from that paper.
+    default ``temp = 23`` degrees Celsius comes from the ``.mod``'s
+    unused ``rec_temp``; the ``.mod``'s temperature factor is
+    ``qt = 3^((celsius - 37)/10)``, so the defaults run with
+    ``qt = 0.215`` (see :class:`HCN1_MA2025_BC`).
 
     References
     ----------
@@ -560,10 +570,10 @@ class HCN1_RI2021_SC(HCN1_MA2025_BC):
     Santoro et al. 2000" [2]_ -- a claim about Purkinje cells, not
     this stellate-cell channel, and not repeated here as though it
     were.
-    The default ``temp = 23`` degrees Celsius is carried over
-    unchanged from the ``.mod`` file: Angelo et al. (2007) [1]_ did
-    not report a recording temperature, so 23 degrees Celsius is the
-    porter's assumption, not a value from that paper.
+    The default ``temp = 23`` degrees Celsius comes from the
+    ``.mod``'s unused ``rec_temp``; the ``.mod``'s temperature factor
+    is ``qt = 3^((celsius - 37)/10)``, so the defaults run with
+    ``qt = 0.215`` (see :class:`HCN1_MA2025_BC`).
 
     References
     ----------

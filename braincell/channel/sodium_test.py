@@ -21,6 +21,7 @@ import brainstate
 import brainunit as u
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 from braincell.channel._base import HH, Markov
@@ -251,6 +252,15 @@ class Na_TM1991Test(_HHNaMixin, unittest.TestCase):
 
 class Na_HH1952Test(_HHNaMixin, unittest.TestCase):
     CLS = Na_HH1952
+
+    def test_default_rates_are_unscaled_and_hh_reference_scales_them(self) -> None:
+        # The docstring's claim: defaults run the published (6.3 degC) rates,
+        # and ``temp_ref = 6.3 degC`` reproduces NEURON hh's 3**((T - 6.3)/10).
+        default = self._make(size=1)
+        hh_like = self._make(size=1, temp_ref=u.celsius2kelvin(6.3))
+        for gate in default._iter_gates():
+            np.testing.assert_allclose(np.asarray(default.gate_phi(gate)), [1.0], rtol=1e-12)
+            np.testing.assert_allclose(np.asarray(hh_like.gate_phi(gate)), [3.0**2.97], rtol=1e-12)
 
 
 class NaFSU15DCNTest(unittest.TestCase):
@@ -827,47 +837,55 @@ class _Nav1p1Mixin:
             )
         )
 
-    def test_gate_current_path_matches_manual_formula(self) -> None:
-        ch = self._make(size=1, gateCurrent=1.0)
+    def _set_gate_flip_states(self, ch) -> None:
+        for name, value in (
+            ("C1", 0.12),
+            ("C2", 0.08),
+            ("C3", 0.05),
+            ("C4", 0.03),
+            ("C5", 0.02),
+            ("I1", 0.07),
+            ("I2", 0.06),
+            ("I3", 0.04),
+            ("I4", 0.03),
+            ("I5", 0.02),
+            ("O", 0.1),
+        ):
+            getattr(ch, name).value = jnp.array([value])
+
+    def test_gate_current_matches_mod_formula(self) -> None:
         V = voltage([-60.0])
         na = na_info()
-        ch.init_state(V, na)
-        ch.C1.value = jnp.array([0.12])
-        ch.C2.value = jnp.array([0.08])
-        ch.C3.value = jnp.array([0.05])
-        ch.C4.value = jnp.array([0.03])
-        ch.C5.value = jnp.array([0.02])
-        ch.I1.value = jnp.array([0.07])
-        ch.I2.value = jnp.array([0.06])
-        ch.I3.value = jnp.array([0.04])
-        ch.I4.value = jnp.array([0.03])
-        ch.I5.value = jnp.array([0.02])
-        ch.O.value = jnp.array([0.1])
+        on = self._make(size=1, gateCurrent=1.0)
+        off = self._make(size=1, gateCurrent=0.0)
+        for ch in (on, off):
+            ch.init_state(V, na)
+            self._set_gate_flip_states(ch)
 
-        conductive = ch.g_max * ch.O.value * (na.E - V)
-        gate_flip = (
-            ch.f01(V) * ch.C1.value
-            + (ch.f02(V) - ch.b01(V)) * ch.C2.value
-            + (ch.f03(V) - ch.b02(V)) * ch.C3.value
-            + (ch.f04(V) - ch.b03(V)) * ch.C4.value
-            - ch.b04(V) * ch.C5.value
-            + ch.f11(V) * ch.I1.value
-            + (ch.f12(V) - ch.b11(V)) * ch.I2.value
-            + (ch.f13(V) - ch.b12(V)) * ch.I3.value
-            + (ch.f14(V) - ch.b13(V)) * ch.I4.value
-            - ch.b14(V) * ch.I5.value
-        ) / u.ms
-        nc = 1e12 * ch.g_max / ch.gunit
-        igate = nc * 1e6 * ch.e0 * ch.zgate * gate_flip
-        expected = conductive - igate
-        current = ch.current(V, na)
-        self.assertTrue(
-            u.math.allclose(
-                current.to_decimal(DENSITY_UNIT),
-                expected.to_decimal(DENSITY_UNIT),
-                atol=1e-6,
-            )
+        ch = on
+        gate_flip = float(
+            (
+                ch.f01(V) * ch.C1.value
+                + (ch.f02(V) - ch.b01(V)) * ch.C2.value
+                + (ch.f03(V) - ch.b02(V)) * ch.C3.value
+                + (ch.f04(V) - ch.b03(V)) * ch.C4.value
+                - ch.b04(V) * ch.C5.value
+                + ch.f11(V) * ch.I1.value
+                + (ch.f12(V) - ch.b11(V)) * ch.I2.value
+                + (ch.f13(V) - ch.b12(V)) * ch.I3.value
+                + (ch.f14(V) - ch.b13(V)) * ch.I4.value
+                - ch.b14(V) * ch.I5.value
+            )[0]
         )
+        # The .mod evaluates on bare numbers: gbar in S/cm2, gunit = 15 pS,
+        # nc = (1e12)*gbar/gunit, igate = nc*(1e6)*e0*zgate*gateFlip() in mA/cm2.
+        gbar = float(ch.g_max.to_decimal(u.siemens / u.cm**2))
+        igate_mod = (1e12 * gbar / 15.0) * 1e6 * 1.60217646e-19 * 2.5435 * gate_flip
+
+        gating = (on.current(V, na) - off.current(V, na)).to_decimal(u.mA / u.cm**2)
+        self.assertGreater(abs(igate_mod), 1e-6)
+        # BrainCell currents are inward-positive; NEURON's ``i = igate`` is outward.
+        np.testing.assert_allclose(np.asarray(gating), [-igate_mod], rtol=1e-12)
 
     def test_compute_derivative_is_inherited_from_markov_template(self) -> None:
         proto = self._make(size=1)

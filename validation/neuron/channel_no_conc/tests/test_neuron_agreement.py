@@ -15,14 +15,19 @@
 
 """Voltage agreement with NEURON for the configurations the full sweep singled out.
 
-Each entry bounds the largest absolute voltage difference over every case of
-one template. Root causes and the reasoning behind each limit are in
-``validation/neuron/known-differences.md`` ("Channel sweep differences").
+Each configuration's limit under one template bounds the largest absolute
+voltage difference (``e_V``) over every case of that template. The limits
+come from the suite's tolerance table (``tolerances.py``): T0 unless a T1
+entry, whose root cause is in ``validation/neuron/known-differences.md``,
+raises it.
 """
 
 import os
 from pathlib import Path
 import unittest
+
+from validation.neuron._tolerance import CURRENT_CLAMP_PROTOCOLS
+from validation.neuron.channel_no_conc.tolerances import KNOWN_DIFFERENCES, TABLE
 
 from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, load_module
 
@@ -39,51 +44,29 @@ compare_module = load_module(
     "channel_no_conc_compare_for_agreement_test",
 )
 
-_PARITY = 1e-6
-"""Bound for configurations whose BrainCell class integrates like the ``.mod``."""
-
-
-def _limits(vinit: float, dc: float, ac: float) -> dict[str, float]:
-    return {"vinit_celsius": vinit, "dc": dc, "ac": ac}
-
-
-_FROZEN_PARITY = _limits(_PARITY, _PARITY, _PARITY)
-
-# Unfrozen GHK classes differentiate the drive in the implicit voltage step;
-# the ``.mod`` computes it in the state block, so NEURON treats it as constant.
-_CAV2P1_UNFROZEN = _limits(5e-4, 1.0, 2e-4)
-_CAV3P1_UNFROZEN = _limits(0.06, 0.25, 0.25)
-# Same cause, but the Cav3.3 current is small enough to stay within parity.
-_CAV3P3_UNFROZEN = _limits(_PARITY, _PARITY, _PARITY)
-# NEURON's forward-difference conductance on a stiff GHK current.
-_CALVA = _limits(5e-4, 2e-4, 2e-4)
-# The ``.mod``'s ``v + 50.000001`` branch at the vinit case ``v_init = -50 mV``.
-_NA_ZH19 = _limits(5e-5, _PARITY, _PARITY)
-# ``SOLVE kin STEADYSTATE sparse`` leaves NEURON's initial state 6e-9 off steady state.
-_KCA2P2_STEADYSTATE_SPARSE = _limits(1e-5, 1e-5, 1e-5)
-
-VOLTAGE_LIMITS_MV: dict[str, dict[str, float]] = {
-    "ma24_pc/cav2p1_ma24_pc_frozen": _FROZEN_PARITY,
-    "ma25_bc/cav2p1_ma25_bc_frozen": _FROZEN_PARITY,
-    "ri21_sc/cav2p1_ri21_sc_frozen": _FROZEN_PARITY,
-    "ma20_goc/cav3p1_ma20_goc_frozen": _FROZEN_PARITY,
-    "ma24_pc/cav3p1_ma24_pc_frozen": _FROZEN_PARITY,
-    "ma24_pc/cav3p3_ma24_pc_frozen": _FROZEN_PARITY,
-    "ma24_pc/cav2p1_ma24_pc": _CAV2P1_UNFROZEN,
-    "ma25_bc/cav2p1_ma25_bc": _CAV2P1_UNFROZEN,
-    "ri21_sc/cav2p1_ri21_sc": _CAV2P1_UNFROZEN,
-    "ma20_goc/cav3p1_ma20_goc": _CAV3P1_UNFROZEN,
-    "ma24_pc/cav3p1_ma24_pc": _CAV3P1_UNFROZEN,
-    "ma24_pc/cav3p1_test2_pc24": _CAV3P1_UNFROZEN,
-    "ma24_pc/cav3p3_ma24_pc": _CAV3P3_UNFROZEN,
-    "ri21_sc/cav3p3_ri21_sc": _CAV3P3_UNFROZEN,
-    "su15_dcn/calva_su15_dcn": _CALVA,
-    "zh19_io/na_zh19_io": _NA_ZH19,
-    "ma20_goc/kca2p2_ma20_goc": _KCA2P2_STEADYSTATE_SPARSE,
-    "ma20_grc/kca2p2_ma20_grc": _KCA2P2_STEADYSTATE_SPARSE,
-    "ma25_bc/kca2p2_ma25_bc": _KCA2P2_STEADYSTATE_SPARSE,
-    "ri21_sc/kca2p2_ri21_sc": _KCA2P2_STEADYSTATE_SPARSE,
-}
+CONFIGS = (
+    "ma24_pc/cav2p1_ma24_pc_frozen",
+    "ma25_bc/cav2p1_ma25_bc_frozen",
+    "ri21_sc/cav2p1_ri21_sc_frozen",
+    "ma20_goc/cav3p1_ma20_goc_frozen",
+    "ma24_pc/cav3p1_ma24_pc_frozen",
+    "ma24_pc/cav3p3_ma24_pc_frozen",
+    "ma24_pc/cav2p1_ma24_pc",
+    "ma25_bc/cav2p1_ma25_bc",
+    "ri21_sc/cav2p1_ri21_sc",
+    "ma20_goc/cav3p1_ma20_goc",
+    "ma24_pc/cav3p1_ma24_pc",
+    "ma24_pc/cav3p1_test2_pc24",
+    "ma24_pc/cav3p3_ma24_pc",
+    "ri21_sc/cav3p3_ri21_sc",
+    "su15_dcn/calva_su15_dcn",
+    "zh19_io/na_zh19_io",
+    "ma20_goc/kca2p2_ma20_goc",
+    "ma20_grc/kca2p2_ma20_grc",
+    "ma25_bc/kca2p2_ma25_bc",
+    "ri21_sc/kca2p2_ri21_sc",
+)
+"""Configurations asserted under every current-clamp template they declare."""
 
 
 def _max_voltage_difference(config_path: Path, template_path: Path) -> float:
@@ -96,24 +79,37 @@ def _max_voltage_difference(config_path: Path, template_path: Path) -> float:
     return worst
 
 
-class NeuronVoltageAgreementTest(unittest.TestCase):
-    def test_limits_cover_every_declared_template(self) -> None:
-        for name, limits in VOLTAGE_LIMITS_MV.items():
-            model_config = experiment_schema.load_model_config(CHANNEL_NO_CONC_ROOT / "configs" / f"{name}.json")
-            declared = {Path(path).stem for path in model_config.template_paths}
-            self.assertEqual(declared, set(limits), name)
+class ToleranceTableTest(unittest.TestCase):
+    def test_current_clamp_entries_name_asserted_templates(self) -> None:
+        for entry in TABLE.entries:
+            if entry.protocol not in CURRENT_CLAMP_PROTOCOLS:
+                continue
+            self.assertIn(entry.config, CONFIGS)
+            model_config = experiment_schema.load_model_config(CHANNEL_NO_CONC_ROOT / "configs" / f"{entry.config}.json")
+            self.assertIn(entry.protocol, {Path(path).stem for path in model_config.template_paths}, entry.config)
 
+    def test_every_asserted_configuration_declares_the_current_clamp_templates(self) -> None:
+        for name in CONFIGS:
+            model_config = experiment_schema.load_model_config(CHANNEL_NO_CONC_ROOT / "configs" / f"{name}.json")
+            self.assertEqual({Path(path).stem for path in model_config.template_paths}, set(CURRENT_CLAMP_PROTOCOLS), name)
+
+    def test_every_t1_entry_names_a_known_differences_heading(self) -> None:
+        self.assertEqual(TABLE.missing_sections(KNOWN_DIFFERENCES.read_text()), [])
+
+
+class NeuronVoltageAgreementTest(unittest.TestCase):
     def test_voltage_difference_stays_within_limit(self) -> None:
-        for name, limits in VOLTAGE_LIMITS_MV.items():
+        for name in CONFIGS:
             config_path = CHANNEL_NO_CONC_ROOT / "configs" / f"{name}.json"
             model_config = experiment_schema.load_model_config(config_path)
             if not (Path(model_config.mod_dir) / "x86_64" / "libnrnmech.so").resolve().exists():
                 self.skipTest(f"NEURON mechanisms for {name} are not compiled into libnrnmech.so.")
             for template_path in model_config.template_paths:
                 template = Path(template_path).stem
+                limit = TABLE.limit(name, template, "e_V")
                 with self.subTest(config=name, template=template):
                     observed = _max_voltage_difference(config_path, Path(template_path))
-                    self.assertLessEqual(observed, limits[template], f"{name} {template}: {observed:.3e} mV")
+                    self.assertLessEqual(observed, limit, f"{name} {template}: {observed:.3e} mV")
 
 
 if __name__ == "__main__":

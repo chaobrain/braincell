@@ -658,7 +658,7 @@ HCN 就是这样。
 
 ## 14. 通用模板和 channel 专属默认值
 
-当前内置 3 个通用模板：
+当前内置 3 个通用电流钳模板（电压钳模板见第 15 节）：
 
 - [vinit_celsius.json](../templates/vinit_celsius.json)
 - [dc.json](../templates/dc.json)
@@ -673,7 +673,28 @@ HCN 就是这样。
 
 优先写到 `config.defaults`，不要写死进通用模板。
 
-## 15. 两个可直接仿写的例子
+## 15. 电压钳模板
+
+[vc_steps.json](../templates/vc_steps.json) 与 [vc_ramp.json](../templates/vc_ramp.json)
+在 `base` 之外多一个 `voltage_clamp` 块，定义钳位命令（dt 0.025 ms，36 °C）：
+
+- `vc_steps`（`kind = "steps"`）：−80 mV 保持 5 ms → 测试电位 −100、−80、…、+40 mV
+  （8 条）20 ms → −80 mV 10 ms，每条 1400 步；
+- `vc_ramp`（`kind = "ramp"`）：−100 mV 保持 5 ms → 以 1 mV/ms 升到 +60 mV →
+  保持 5 ms，共 6800 步。
+
+`base.simulation` 的 `duration_ms` 与 `v_init_mV` 必须与命令一致（命令从
+`v_init_mV` 开始），`sweep_axes` 为空；`stimulus` 只为通过 schema，不参与钳位。
+观测量是电流 `ix` 与 `gate_names` 中的全部状态，不比较电压（braincell 回放的
+就是 NEURON 的电压）。度量：
+
+- `e_I = max |I_bc − I_nrn| / max |I_nrn|`，分母取同一协议全部命令的最大电流；
+- `e_s = max |s_bc − s_nrn|`，所有比较的状态。
+
+限值从 [`tolerances.py`](../tolerances.py) 读取；表中没有的为 T0（两者都
+`≤ 1e-10`）。电流钳模板的 `e_V` 也从同一张表读取。
+
+## 16. 两个可直接仿写的例子
 
 ### K channel
 
@@ -700,7 +721,7 @@ HCN 就是这样。
 - `defaults.channel_params.E_mV = -34.4`
 - 不需要显式声明 `section`
 
-## 16. BC / PC / GoC 现成批次
+## 17. BC / PC / GoC 现成批次
 
 当前已经整理好的 compare config 目录有：
 
@@ -904,7 +925,7 @@ DCN 其余机制不在这个目录的原因：
 - `CaHVA_SU15_DCN`、`CaLVA_SU15_DCN` 属于 `HH_conc`
 - `CdpHVA_SU15_DCN`、`CdpLVA_SU15_DCN` 属于 `Ion_dyn`
 
-## 17. 常见错误
+## 18. 常见错误
 
 ### 错误 1：把运行值写进 `mapping.channel_params`
 
@@ -952,7 +973,7 @@ HCN 这种 pure-channel 应该写：
 
 所以参数名必须真的对应 NEURON 侧字段。
 
-## 18. 最后检查清单
+## 19. 最后检查清单
 
 写完一个新 `config + template` 后，至少自查这些：
 

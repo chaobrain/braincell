@@ -24,6 +24,8 @@ This module owns the declaration-side mechanism pipeline:
 """
 
 from dataclasses import dataclass, field, replace
+import os
+import sys
 from typing import Literal
 
 import brainunit as u
@@ -67,10 +69,14 @@ class PaintRule:
         Region expression being painted.
     mechanism : CableProperty or Density
         Mechanism declaration applied over that region.
+    origin : str or None
+        ``<file>:<line>`` of the user code that called ``paint``, for error
+        messages; ``None`` when unknown. Ignored by equality and hashing.
     """
 
     region: RegionExpr
     mechanism: CableProperty | Density
+    origin: str | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -85,6 +91,9 @@ class PlaceRule:
         Point-mechanism declarations applied at each resolved location.
     site : {"mid"}, optional
         Reserved placement-site tag used by the current lowering model.
+    origin : str or None
+        ``<file>:<line>`` of the user code that called ``place``, for error
+        messages; ``None`` when unknown. Ignored by equality and hashing.
     """
 
     locset: LocsetExpr | LocsetMask | LocsetBatch
@@ -92,6 +101,27 @@ class PlaceRule:
     site: Literal["mid"] = "mid"
     population_indices: tuple[int, ...] | None = None
     aligned: bool = False
+    origin: str | None = field(default=None, compare=False, repr=False)
+
+
+_PACKAGE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + os.sep
+
+
+def caller_origin() -> str | None:
+    """Return ``<file>:<line>`` of the nearest caller outside braincell's own code.
+
+    Frames in the braincell package are skipped, except its ``*_test.py``
+    files, which call ``paint``/``place`` as users do. Returns ``None``
+    where frames are unavailable (``sys._getframe`` is CPython-specific).
+    """
+    getframe = getattr(sys, "_getframe", None)
+    frame = getframe(1) if getframe is not None else None
+    while frame is not None:
+        filename = frame.f_code.co_filename
+        if not filename.startswith(_PACKAGE_DIR) or filename.endswith("_test.py"):
+            return f"{os.path.basename(filename)}:{frame.f_lineno}"
+        frame = frame.f_back
+    return None
 
 
 @dataclass
@@ -210,10 +240,11 @@ def normalize_paint_rules(
     if len(mechanisms) == 0:
         raise ValueError("Cell.paint(...) expects at least one mechanism.")
 
+    origin = caller_origin()
     rules: list[PaintRule] = []
     for mechanism in mechanisms:
         if isinstance(mechanism, (CableProperty, Density)):
-            rules.append(PaintRule(region=region, mechanism=mechanism))
+            rules.append(PaintRule(region=region, mechanism=mechanism, origin=origin))
             continue
         raise TypeError(
             "Cell.paint(...) mechanisms must be CableProperty or Density "
@@ -273,6 +304,7 @@ def normalize_place_rule(
         site="mid",
         population_indices=population_indices,
         aligned=aligned,
+        origin=caller_origin(),
     )
 
 

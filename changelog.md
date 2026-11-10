@@ -163,7 +163,26 @@
   `braincell.quad.get_integrator` except `"staggered"` and `"dhs_voltage"`,
   which raise `ValueError`.
 
+- **`parameter_info()` on every runtime Channel, Ion and Synapse, and
+  `parameter_units` for parameters without a unit default** (MECH-25).
+  `bc.Channel.parameter_info()` and `bc.Ion.parameter_info()` return each
+  constructor parameter's default and unit prototype, as
+  `Synapse.parameter_info()` already did. A class whose default cannot carry
+  a unit declares it, e.g. `parameter_units = {"g_max": u.mS / u.cm**2}` on a
+  channel with `g_max=None`; such values were unchecked before.
+
 ### Changes & Improvements
+
+- **Parameter unit errors name the mechanism, the value and the declaring
+  line** (MECH-25). `init_state()` errors now read like `Channel 'leak' (IL)
+  parameter 'g_max' has units incompatible with mS / cm^2; got 0.1 mV.
+  Painted on AllRegion() at model.py:12.`, and name the spatial callable a
+  value came from. `View.set` and trainable registration errors also name
+  the mechanism and the parameter. The exception types and the phrases
+  `requires a quantity compatible with`, `has units incompatible with` and
+  `must be dimensionless` are unchanged. A braintools initializer passed as a
+  Channel parameter in a Cell now says initializers are not supported there,
+  instead of asking for a quantity.
 
 - **`Cell.run` costs less per call.** Each call now dispatches one cached
   compiled program: segment start / stop times and the selection of

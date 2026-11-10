@@ -15,7 +15,11 @@
 
 """Tests for :mod:`braincell._discretization.mechanism`."""
 
+import inspect
+import os
+import sys
 import unittest
+from unittest import mock
 
 import brainunit as u
 import numpy as np
@@ -33,6 +37,7 @@ from braincell._discretization.geometry import (
     _build_frusta,
 )
 from braincell._discretization.mechanism import (
+    _PACKAGE_DIR,
     PaintRule,
     PlaceRule,
     _MechBucket,
@@ -42,6 +47,7 @@ from braincell._discretization.mechanism import (
     _coverage_fraction,
     _resolve_point_name,
     build_cv_mechanisms,
+    caller_origin,
     default_paint_rules,
     merge_paint_rules,
     merge_place_rules,
@@ -89,6 +95,35 @@ class PaintAndPlaceRuleTest(unittest.TestCase):
         self.assertEqual(r1, r2)
         with self.assertRaises(Exception):
             r1.region = AllRegion()  # type: ignore[misc]
+
+    def test_origin_is_ignored_by_equality_hashing_and_repr(self) -> None:
+        c = make_cable()
+        r1 = PaintRule(region=AllRegion(), mechanism=c, origin="a.py:1")
+        r2 = PaintRule(region=AllRegion(), mechanism=c, origin="b.py:2")
+        self.assertEqual(r1, r2)
+        self.assertEqual(hash(r1), hash(r2))
+        self.assertNotIn("a.py", repr(r1))
+        clamp = CurrentClamp(durations=10 * u.ms, amplitudes=0.2 * u.nA)
+        p1 = PlaceRule(locset=AtLocation(branch=0, x=0.5), mechanisms=(clamp,), origin="a.py:1")
+        p2 = PlaceRule(locset=AtLocation(branch=0, x=0.5), mechanisms=(clamp,))
+        self.assertEqual(p1, p2)
+        self.assertEqual(hash(p1), hash(p2))
+
+    def test_normalized_rules_record_the_calling_line(self) -> None:
+        line = inspect.currentframe().f_lineno
+        (paint,) = normalize_paint_rules(AllRegion(), (make_cable(),))
+        place = normalize_place_rule(AtLocation(branch=0, x=0.5), (CurrentClamp(),))
+        self.assertEqual(paint.origin, f"mechanism_test.py:{line + 1}")
+        self.assertEqual(place.origin, f"mechanism_test.py:{line + 2}")
+
+    def test_caller_origin_skips_package_frames_and_needs_frames(self) -> None:
+        exec_globals = {"caller_origin": caller_origin}
+        exec(compile("result = caller_origin()", os.path.join(_PACKAGE_DIR, "fake.py"), "exec"), exec_globals)
+        self.assertEqual(exec_globals["result"], f"mechanism_test.py:{inspect.currentframe().f_lineno - 1}")
+        with mock.patch.object(sys, "_getframe", None):
+            self.assertIsNone(caller_origin())
+        with mock.patch.object(sys, "_getframe", lambda depth: None):
+            self.assertIsNone(caller_origin())
 
     def test_place_rule_default_site_is_mid(self) -> None:
         rule = PlaceRule(

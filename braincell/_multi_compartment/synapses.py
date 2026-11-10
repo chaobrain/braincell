@@ -33,6 +33,7 @@ import numpy as np
 from braincell._compute.layouts import _stack_synapse_values
 from braincell._multi_compartment.lifecycle import DiscreteView
 from braincell.mech import Synapse, get_registry
+from braincell.mech._synapse_schema import describe_mechanism, unit_error_message
 
 __all__ = ["SynapseView"]
 
@@ -123,7 +124,19 @@ class _SynapseStore:
     def _validate_name_types(self) -> None:
         raise_on_name_type_conflict(zip(self.name.tolist(), self.synapse_type.tolist()))
 
+    def _error_contexts(self) -> dict[int, tuple[str, str | None]]:
+        """Map each declaration (by identity) to its error owner and ``place`` source."""
+        contexts = {}
+        for rule in self.cell.place_rules:
+            at = f" at {rule.origin}" if rule.origin else ""
+            for mechanism in rule.mechanisms:
+                if isinstance(mechanism, Synapse) and id(mechanism) not in contexts:
+                    owner = describe_mechanism("synapse", mechanism.synapse_type, mechanism.instance_name)
+                    contexts[id(mechanism)] = (owner, f"placed on {rule.locset!r}{at}.")
+        return contexts
+
     def _build_parameter_columns(self) -> None:
+        contexts = self._error_contexts()
         for raw_type in dict.fromkeys(self.synapse_type.tolist()):
             synapse_type = str(raw_type)
             runtime_cls = get_registry().get("synapse", synapse_type)
@@ -150,7 +163,8 @@ class _SynapseStore:
                         )
                     else:
                         value = spec.default
-                    spec.validate(value, parameter)
+                    owner, source = contexts.get(id(mechanism), (None, None))
+                    spec.validate(value, parameter, owner=owner, source=source)
                     values.append(value)
                 columns[parameter] = _stack_synapse_values(values, parameter=parameter)
             runtime_cls.validate_parameter_values(columns)
@@ -566,6 +580,8 @@ class SynapseView(DiscreteView):
         for field in parameters:
             require_unbound(self._cell, "synapse", synapse_type, self.id, field)
         valid = self._parameter_names(synapse_type)
+        names = set(self.name.tolist())
+        owner = describe_mechanism("synapse", synapse_type, names.pop() if len(names) == 1 else None)
         normalized_updates = {}
         for parameter, value in parameters.items():
             if parameter not in valid:
@@ -576,7 +592,7 @@ class SynapseView(DiscreteView):
                         raise KeyError(f"Synapse field {parameter!r} is a dynamic state; use set_state().")
                 raise KeyError(f"Synapse type {synapse_type!r} has no parameter {parameter!r}.")
             normalized_updates[parameter] = _normalize_selected_value(
-                value, template=self.get(parameter), count=len(self)
+                value, template=self.get(parameter), count=len(self), name=parameter, owner=owner
             )
 
         layout_id = self._store.layout_id(synapse_type)
@@ -589,7 +605,7 @@ class SynapseView(DiscreteView):
         for parameter, normalized in normalized_updates.items():
             proposed[parameter] = _set_last_axis(proposed[parameter], rows, normalized)
         for parameter in normalized_updates:
-            type(node).parameter_info()[parameter].validate(proposed[parameter], parameter)
+            type(node).parameter_info()[parameter].validate(proposed[parameter], parameter, owner=owner)
         type(node).validate_parameter_values(proposed)
 
         for parameter, updated in proposed.items():
@@ -835,14 +851,24 @@ def _set_vector_items(value, indices: np.ndarray, selected):
     return array
 
 
-def _normalize_selected_value(value, *, template, count: int):
+def _normalize_selected_value(value, *, template, count: int, name=None, owner=None):
+    def message(problem: str, legacy: str) -> str:
+        return legacy if name is None else unit_error_message(name, problem, owner=owner, value=value)
+
     if isinstance(template, u.Quantity):
         if not isinstance(value, u.Quantity):
-            raise TypeError("Synapse field requires a quantity with compatible units.")
+            raise TypeError(
+                message(
+                    f"requires a quantity compatible with {template.unit}",
+                    "Synapse field requires a quantity with compatible units.",
+                )
+            )
         try:
             array = np.asarray(value.to_decimal(template.unit))
         except Exception as exc:
-            raise ValueError("Synapse field has incompatible units.") from exc
+            raise ValueError(
+                message(f"has units incompatible with {template.unit}", "Synapse field has incompatible units.")
+            ) from exc
         if array.shape == ():
             array = np.broadcast_to(array, (count,)).copy()
         elif array.shape != (count,):

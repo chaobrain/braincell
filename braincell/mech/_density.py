@@ -320,6 +320,20 @@ class Channel(Density):
         callable accepting one :class:`braincell.mech.CVContext`; it is
         resolved once per active CV during ``Cell.init_state()``.
 
+    Notes
+    -----
+    Each value must have the unit of the runtime class's prototype: the
+    signature default, or the class attribute ``parameter_units`` for a
+    parameter whose default cannot carry a unit (see
+    :meth:`braincell.IonChannel.parameter_info`). The check runs in
+    ``Cell.init_state()``, on a callable's result once it is evaluated: a
+    bare number for a dimensioned parameter raises ``TypeError`` and
+    incompatible units raise ``ValueError``. The message names the channel, the parameter, the
+    expected unit, the value, the painted region and the ``paint`` line, for
+    example ``Channel 'leak' (IL) parameter 'g_max' has units incompatible
+    with mS / cm^2; got 0.1 mV. Painted on AllRegion() at model.py:12.``
+    A ``braintools`` initializer is rejected with ``TypeError``.
+
     See Also
     --------
     Ion : Ion-species counterpart.
@@ -409,6 +423,14 @@ class Ion(Density):
         Ion parameters, passed as keyword arguments. A parameter may also
         be a callable accepting one :class:`braincell.mech.CVContext`; it is
         resolved once per active CV during ``Cell.init_state()``.
+
+    Notes
+    -----
+    Units are checked in ``Cell.init_state()`` as for :class:`Channel`.
+    The prototypes of ``Ci``, ``Co``, ``Ci_initializer`` and ``valence``
+    whose default is ``None`` are the class's ``default_Ci``,
+    ``default_Co`` and ``default_valence``; ``parameter_units`` on the
+    runtime class declares any other.
 
     See Also
     --------

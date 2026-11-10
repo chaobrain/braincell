@@ -33,7 +33,7 @@ import numpy as np
 import brainunit as u
 
 from braincell._typing import ArrayLike, Size
-from braincell._parameter_schema import RuntimeParameterState, constructor_parameters
+from braincell._parameter_schema import RuntimeParameterState, SignatureParameterSpec, constructor_parameters
 from braincell._misc import TreeNode
 from braincell.mech import NoEventInput, StateSpec
 from braincell.quad.protocol import DiffEqModule, DiffEqSingleState, IndependentIntegration
@@ -133,6 +133,10 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
 
     __module__ = 'braincell'
 
+    #: Units of constructor parameters whose default cannot carry one, such
+    #: as ``g_max=None``; merged along the MRO, see :meth:`parameter_info`.
+    parameter_units: Mapping[str, u.Unit] = {}
+
     def __init__(
         self,
         size: Size,
@@ -140,6 +144,79 @@ class IonChannel(brainstate.graph.Node, TreeNode, DiffEqModule):
     ):
         self.size = _normalize_size(size)
         self.name = name
+
+    @classmethod
+    def parameter_info(cls) -> dict:
+        """Return each constructor parameter's default and unit prototype.
+
+        A value passed through a Cell (``bc.mech.Channel``, ``Ion`` or
+        ``Synapse``), set with ``View.set`` or produced by a trainable source
+        must have the unit of the prototype. The prototype is, in order, the
+        unit in the class attribute ``parameter_units`` (merged along the
+        MRO, subclasses winning), the signature default, and otherwise the
+        supplied value itself, so a parameter whose default is ``None`` is
+        unchecked unless ``parameter_units`` names it.
+
+        Returns
+        -------
+        dict
+            Parameter name mapped to a :class:`braincell.mech.ParameterSpec`
+            whose ``default`` is the signature default and whose
+            ``validate(value, name)`` performs the unit check. Channel and
+            Ion include every constructor parameter (``size`` and ``name``
+            too); Synapse omits ``size`` and ``name``.
+
+        Raises
+        ------
+        TypeError
+            If ``parameter_units`` names a parameter missing from the
+            constructor signature.
+
+        Examples
+        --------
+        >>> import brainunit as u
+        >>> import braincell as bc
+        >>> class Leak(bc.Channel):
+        ...     parameter_units = {"g_max": u.mS / u.cm**2}
+        ...     def __init__(self, size, g_max=None, name=None):
+        ...         super().__init__(size, name=name)
+        ...         self.g_max = g_max
+        >>> spec = Leak.parameter_info()["g_max"]
+        >>> spec.default is None
+        True
+        >>> spec.validate(0.1 * u.mS / u.cm**2, "g_max")
+        >>> spec.validate(0.1 * u.mV, "g_max")
+        Traceback (most recent call last):
+        ...
+        ValueError: Mechanism field 'g_max' has units incompatible with mS / cm^2 (declared in Leak.parameter_units).
+        """
+        units = {}
+        for klass in reversed(cls.__mro__):
+            for name, unit in vars(klass).get("parameter_units", {}).items():
+                units[name] = (unit, klass.__qualname__)
+        parameters = constructor_parameters(cls)
+        unknown = sorted(set(units).difference(parameters))
+        if unknown:
+            raise TypeError(f"{cls.__qualname__}.parameter_units names unknown constructor parameters {unknown!r}.")
+        result = {}
+        for name, parameter in parameters.items():
+            if name in units:
+                unit, owner = units[name]
+                prototype = u.Quantity(1.0, unit) if isinstance(unit, u.Unit) else unit
+                result[name] = SignatureParameterSpec(
+                    parameter.default, prototype=prototype, declared_in=f"{owner}.parameter_units"
+                )
+            else:
+                result[name] = SignatureParameterSpec(
+                    parameter.default, prototype=cls._default_unit_prototype(name, parameter.default)
+                )
+        return result
+
+    @classmethod
+    def _default_unit_prototype(cls, name: str, default):
+        """Return the unit prototype of a parameter not in ``parameter_units``."""
+        _ = name
+        return default
 
     @property
     def varshape(self):
@@ -318,6 +395,15 @@ class Channel(IonChannel):
     :meth:`compute_derivative`; every lifecycle method receives an
     :class:`IonInfo` for each ion named in the subclass's ``root_type``.
 
+    Constructor defaults give the parameters their units. A parameter whose
+    default cannot carry one (``g_max=None``, or no default) is declared in
+    the class attribute ``parameter_units``, such as ``parameter_units =
+    {"g_max": u.mS / u.cm**2}``; otherwise any unit passes. Values reaching
+    the channel through a Cell are checked against these units in
+    ``Cell.init_state()``, by ``View.set`` and when a trainable source is
+    registered (see :meth:`IonChannel.parameter_info`); direct construction
+    does not check them.
+
     Examples
     --------
 
@@ -389,15 +475,11 @@ class Synapse(IonChannel):
         Returns
         -------
         dict
-            Parameter names mapped to default-value and unit metadata.
+            Parameter names, without ``size`` and ``name``, mapped to their
+            default and unit prototype; see :meth:`IonChannel.parameter_info`.
         """
-        from braincell._parameter_schema import SignatureParameterSpec
-
-        return {
-            name: SignatureParameterSpec(param.default)
-            for name, param in constructor_parameters(cls).items()
-            if name not in {"size", "name"}
-        }
+        info = super().parameter_info()
+        return {name: spec for name, spec in info.items() if name not in {"size", "name"}}
 
     def _init_parameters(self, **parameters):
         schema = self.parameter_info()

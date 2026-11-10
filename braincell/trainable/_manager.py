@@ -29,6 +29,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._compute.parameters import RuntimeParameterState, density_parameter_schema
+from braincell.mech._synapse_schema import describe_mechanism
 from braincell.mech import Density
 from braincell.trainable._parameters import ParameterSet
 from braincell.trainable._sources import DirectSource, ParameterizedSource, ParameterSource, ScaleSource
@@ -400,8 +401,19 @@ class TrainableManager(brainstate.nn.Module):
                 f"Trainable source for {target_field!r} must produce one scalar per selected row; "
                 f"got shape {getattr(sample, 'shape', ())!r}."
             )
+        first = view.rows[0]
+        owner = (
+            describe_mechanism(first.category, first.mechanism_type, first.name)
+            if first.category in {"channel", "ion", "synapse"}
+            else None
+        )
+        context = (
+            f"The value came from the trainable source registered with trainable({target_field}=...)."
+            if owner is not None
+            else None
+        )
         for index in range(len(rows)):
-            schema[target_field].validate(sample[index], target_field)
+            schema[target_field].validate(sample[index], target_field, owner=owner, source=context)
         unit = sample.unit if isinstance(sample, u.Quantity) else None
         binding = ParameterBinding(
             name=base_name,

@@ -333,6 +333,14 @@ class Synapse(Point):
     **params
         Synapse parameters.
 
+    Notes
+    -----
+    Units are checked in ``Cell.init_state()`` against the runtime class's
+    prototypes (signature defaults, or its ``parameter_units``): a bare
+    number for a dimensioned parameter raises ``TypeError``, incompatible
+    units raise ``ValueError``. The message names the synapse, the parameter,
+    the expected unit, the value, the locset and the ``place`` line.
+
     Examples
     --------
 

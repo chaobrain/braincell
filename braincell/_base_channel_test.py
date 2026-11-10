@@ -57,6 +57,59 @@ class BaseChannelExportTest(unittest.TestCase):
         node = ExpSyn(2, tau=lambda shape: np.full(shape, 3.0) * u.ms)
         np.testing.assert_allclose(node.tau.to_decimal(u.ms), [3.0, 3.0])
 
+    def test_parameter_units_check_a_custom_channel_painted_on_a_cell(self):
+        import brainunit as u
+        import braincell
+        from braincell.filter import AllRegion
+
+        def build(with_units):
+            class CustomLeak(braincell.Channel):
+                root_type = braincell.HHTypedNeuron
+
+                def __init__(self, size, g_max=None, name=None):
+                    super().__init__(size, name=name)
+                    self.g_max = g_max
+
+                def current(self, V):
+                    return self.g_max * (V - -65.0 * u.mV)
+
+            if with_units:
+                CustomLeak.parameter_units = {"g_max": u.mS / u.cm**2}
+            branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[5.0, 5.0] * u.um)
+            cell = braincell.Cell(braincell.Morphology.from_root(branch), cv_policy=braincell.CVPerBranch(1))
+            cell.paint(AllRegion(), braincell.mech.Channel(CustomLeak, g_max=0.1 * u.mV))
+            return cell
+
+        with self.assertRaisesRegex(ValueError, r"\(declared in .*CustomLeak.parameter_units\); got 0.1 mV"):
+            build(with_units=True).init_state()
+        build(with_units=False).init_state()
+
+    def test_parameter_units_merge_along_the_mro_and_name_real_parameters(self):
+        import brainunit as u
+        from braincell import Channel
+
+        class Base(Channel):
+            parameter_units = {"g_max": u.mS / u.cm**2, "tau": u.ms}
+
+            def __init__(self, size, g_max=None, tau=None, name=None):
+                super().__init__(size, name=name)
+
+        class Child(Base):
+            parameter_units = {"tau": u.second}
+
+        info = Child.parameter_info()
+        self.assertEqual(info["g_max"].declared_in, f"{Base.__qualname__}.parameter_units")
+        self.assertEqual(info["tau"].declared_in, f"{Child.__qualname__}.parameter_units")
+        self.assertEqual(info["tau"].prototype.unit, u.second)
+        self.assertIsNone(info["tau"].default)
+        self.assertIn("size", info)
+
+        class Typo(Channel):
+            parameter_units = {"gmax": u.mS / u.cm**2}
+
+        with self.assertRaisesRegex(TypeError, r"Typo.parameter_units names unknown constructor parameters \['gmax'\]"):
+            Typo.parameter_info()
+
     def test_public_namespace_reexports_this_module(self) -> None:
         import braincell
         import braincell._base_channel as channel_mod

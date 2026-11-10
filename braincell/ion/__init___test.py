@@ -24,11 +24,11 @@ import unittest
 
 import braincell.ion as ion
 from braincell._testing import DocstringConformanceTests, ReExportTests
-from braincell.ion import _base, calcium, nonspecific, potassium, sodium
+from braincell.ion import _base, calcium, chloride, nonspecific, potassium, sodium
 
 # Extended by one module per docstring task. A module is listed only once
 # every one of its public symbols satisfies the shared assertions.
-_COVERED_MODULES = (_base, calcium, nonspecific, potassium, sodium)
+_COVERED_MODULES = (_base, calcium, chloride, nonspecific, potassium, sodium)
 
 # Public symbols with no primary literature source. Membership must be a
 # deliberate decision: a new ion that lands undocumented fails instead of
@@ -55,6 +55,9 @@ _NO_PRIMARY_SOURCE = frozenset(
         "CalciumFixed",
         "CalciumInitNernst",
         "CalciumFirstOrder",
+        "Chloride",
+        "ChlorideFixed",
+        "ChlorideInitNernst",
         "ToyCaBindingKinetic_SU2015_DCN",
         "ToyCaBindingSourceKinetic_SU2015_DCN",
         "ToyCaBindingIcaSourceKinetic_SU2015_DCN",
@@ -81,7 +84,7 @@ class IonReExportTest(ReExportTests, unittest.TestCase):
     """
 
     package = ion
-    reexport_sources = (calcium, nonspecific, potassium, sodium)
+    reexport_sources = (calcium, chloride, nonspecific, potassium, sodium)
     require_sorted_all = True
 
 

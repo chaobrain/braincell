@@ -33,6 +33,20 @@ Calcium Ions & Dynamics
    ToyDiamFactorKinetic_SU2015_DCN
 
 
+Chloride Ions & Dynamics
+------------------------
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+   Chloride
+   ChlorideFixed
+   ChlorideInitNernst
+   Cldif_JE2011
+
+
 Potassium Ions
 --------------
 

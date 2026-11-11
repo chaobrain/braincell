@@ -621,6 +621,25 @@
   Unedited morphologies behave as before. `Morphology.remove` and
   `Morphology.reattach` are the public edits that move them.
 
+- Editing a Cell's morphology after `init_state()` no longer makes `run` and
+  `reset()` fail (MORPH-14). Before, attaching a branch to the tree a Cell
+  was declared with made `cell.run`, `cell.n_cv`, `cell.cvs` and `cell.reset()`
+  itself raise "Initialized morphology has changed; reset() before changing
+  declarations.", so the Cell could not be recovered; a `Network` of such
+  Cells failed in `Network.run` the same way. This held on cable, lumped and
+  reduced Cells. `init_state` now copies the tree into a read-only snapshot
+  and the Cell runs on it, on the grid already built (no second
+  discretization). Editing the declaration tree leaves the run unchanged, and
+  `Cell.run` and `Network.run` emit one `RuntimeWarning` per edit. On a Cell,
+  the edit applies after `reset()` and `init_state()`. Editing the snapshot
+  (`cell.morpho` after `init_state`) raises `RuntimeError` before anything is
+  written. After `init_state`, `cell.morpho` is the snapshot (it equals the
+  declaration tree but `cell.morpho is tree` is now false); after `reset()`,
+  and when `init_state` fails, it is the declaration tree again. A
+  `VoltageCrossingSource` located by a `LocsetMask` still raises when a
+  removal before `init_state` (or before `reset()`, for a mask made on the
+  snapshot) moved its indices.
+
 - A current input registered with `Cell.add_current_input` after a
   `Cell.run` is now included by the next `run` (CELL-23). `run` reuses its
   compiled loop for the same `dt`, step count and recordings, and the loop

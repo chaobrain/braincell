@@ -41,6 +41,7 @@ convenience. Subsequent ``run`` calls never re-initialize.
 """
 
 import operator
+import warnings
 import weakref
 from types import MappingProxyType
 from typing import Callable, ClassVar, Mapping, Optional
@@ -97,7 +98,7 @@ from braincell.network.recording import (
 )
 from braincell.reduction import ReductionOutput, ReductionViewCollection
 from braincell.reduction.runtime import ReductionInputRuntime, build_reduction_input_runtime
-from braincell.morph.morphology import Morphology
+from braincell.morph.morphology import Morphology, frozen_snapshot
 from braincell.quad import get_integrator, ind_exp_euler_step, integrator_info, list_integrators
 from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
@@ -503,7 +504,7 @@ class CellView(DiscreteView, _CellFacade):
 
     @property
     def morpho(self) -> Morphology:
-        """Return the shared root morphology without copying it."""
+        """Return the root Cell's :attr:`Cell.morpho`, without copying it."""
         return self._cell.morpho
 
     @property
@@ -1189,6 +1190,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._discretization_cache: Discretization | None = None
         self._cv_collection_cache = None
         self._discretization_cache_key: object = None
+        # Set by init_state when the Cell starts running on a frozen copy of
+        # its declaration tree (MORPH-14): the tree's revision and index
+        # watermark at the copy, and the last revision run() warned about.
+        self._snapshot_source_revision: int | None = None
+        self._snapshot_reindex_revision: int | None = None
+        self._snapshot_warned_revision: int | None = None
         self._view_generation = 0
         self._runtime_generation = 0
         self._runtime_V_init = None
@@ -1278,6 +1285,33 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     @property
     def morpho(self) -> Morphology:
+        """The morphology this Cell discretizes and runs on.
+
+        Before :meth:`init_state` it is the tree the Cell was declared with,
+        shared and not copied: an edit of that tree is seen at the next grid
+        read. :meth:`init_state` replaces it with a read-only snapshot of
+        that tree, which the Cell runs on until :meth:`reset`. Editing the
+        snapshot raises :class:`RuntimeError` before writing anything;
+        editing the declaration tree leaves the run unchanged (:meth:`run`
+        warns once per edit), and the edit applies at the next
+        :meth:`reset` and :meth:`init_state`.
+
+        Examples
+        --------
+        >>> import brainunit as u
+        >>> from braincell import Branch, Cell, Morphology
+        >>> soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
+        >>> tree = Morphology.from_root(soma, name="soma")
+        >>> cell = Cell(tree)
+        >>> cell.morpho is tree
+        True
+        >>> cell.init_state()
+        >>> cell.morpho is tree, cell.morpho == tree
+        (False, True)
+        >>> cell.reset()
+        >>> cell.morpho is tree
+        True
+        """
         return self._morpho
 
     @morpho.setter
@@ -1286,7 +1320,7 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     @property
     def morphology(self) -> Morphology:
-        """Return the declaration morphology (``morpho`` compatibility alias)."""
+        """Alias of :attr:`morpho`: the declaration tree, or its snapshot once initialized."""
         return self._morpho
 
     @morphology.setter
@@ -1868,17 +1902,19 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._run_loop_cache.clear()
 
     def _discretization_key(self) -> tuple[object, ...]:
-        # ``Morphology`` is mutable and shared -- ``cell.morpho`` hands the
-        # caller the very tree this cell discretizes -- so identity alone
-        # cannot say whether it still looks the way it did when the cache
-        # was filled. ``revision`` advances on every structural change;
-        # pairing it with the identity is the same test
-        # ``braincell.filter.SelectionCache`` applies.
+        # ``Morphology`` is mutable and shared -- before initialization
+        # ``cell.morpho`` hands the caller the very tree this cell
+        # discretizes -- so identity alone cannot say whether it still looks
+        # the way it did when the cache was filled. ``revision`` advances by
+        # one on every successful edit; pairing it with the identity is the
+        # same test ``braincell.filter.SelectionCache`` applies.
         #
         # The ``id()`` is sound here, unlike for a temporary whose address
         # can be recycled: this cell holds ``self._morpho`` alive for as
-        # long as the key it appears in, and both sites that reassign the
-        # attribute invalidate the cache outright.
+        # long as the key it appears in. The morphology setter and reset()
+        # invalidate the cache when they reassign the attribute; init_state
+        # swaps in a frozen copy of the same structure and re-keys the cache
+        # to it, and a failed init_state restores the previous key.
         return (
             id(self._morpho),
             self._morpho.revision,
@@ -1953,9 +1989,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         RuntimeError
             Naming the first such declaration.
         """
-        morpho = self._morpho
         for rule in self._place_rules:
-            if _branch_indices_moved(rule._index_basis, morpho):
+            if self._held_indices_moved(rule._index_basis):
                 where = "" if rule.origin is None else f" at {rule.origin}"
                 raise RuntimeError(
                     f"Cell.place(...){where} was given a resolved {type(rule.locset).__name__}, whose branch "
@@ -1963,7 +1998,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                     "removed or moved, so they no longer name the same branches. Place a location expression "
                     'such as at("axon", 0.5) instead of an evaluated mask, on a newly declared Cell.'
                 )
-        if _branch_indices_moved(self._cv_policy_index_basis, morpho):
+        if self._held_indices_moved(self._cv_policy_index_basis):
             raise RuntimeError(
                 f"cv_policy {self._discretization_policy!r} lists CV counts by default branch index, as of "
                 f"morphology revision {self._cv_policy_index_basis[1]}; a branch has since been removed or "
@@ -2411,6 +2446,12 @@ class Cell(_CellFacade, HHTypedNeuron):
     def init_state(self, batch_size=None) -> None:
         """Lower the declaration into runtime state and allocate V / spike.
 
+        The Cell then runs on a read-only snapshot of the morphology it was
+        declared with (:attr:`morpho`), on the grid already built from it.
+        Later edits of the declaration tree apply at the next :meth:`reset`
+        and ``init_state()``. If initialization fails, :attr:`morpho` is
+        the declaration tree again.
+
         Raises
         ------
         RuntimeError
@@ -2438,6 +2479,76 @@ class Cell(_CellFacade, HHTypedNeuron):
         # Initialization consumes that snapshot; it must never silently rerun a
         # policy or create a second grid generation.
         _ = self._discretization
+        declaration_key = self._discretization_cache_key
+        self._take_morphology_snapshot()
+        try:
+            self._init_runtime(batch_size)
+        except BaseException:
+            self._morpho = self._declaration_morpho
+            self._discretization_cache_key = declaration_key
+            self._snapshot_source_revision = self._snapshot_reindex_revision = None
+            self._snapshot_warned_revision = None
+            raise
+
+    def _take_morphology_snapshot(self) -> None:
+        """Run on a frozen copy of the declaration tree from here to :meth:`reset` (MORPH-14).
+
+        The copy has the structure the grid was just built from, so the
+        cached discretization stays valid and is re-keyed to the copy rather
+        than rebuilt: no second grid generation.
+        """
+        declaration = self._declaration_morpho
+        self._morpho = frozen_snapshot(declaration)
+        self._snapshot_source_revision = declaration.revision
+        self._snapshot_reindex_revision = declaration._reindex_revision
+        self._snapshot_warned_revision = declaration.revision
+        self._discretization_cache_key = self._discretization_key()
+
+    def _unannounced_declaration_edit(self) -> bool:
+        """Whether the declaration tree was edited after init_state, unannounced so far.
+
+        True once per new revision of the declaration tree, which the
+        running snapshot does not have; :meth:`run` and ``Network.run`` warn
+        when it is.
+        """
+        if not self._initialized or self._snapshot_source_revision is None:
+            return False
+        revision = self._declaration_morpho.revision
+        if revision == self._snapshot_warned_revision:
+            return False
+        self._snapshot_warned_revision = revision
+        return True
+
+    def _index_basis(self) -> tuple[Morphology, int]:
+        """``(tree, revision)`` whose default branch indices ``self.morpho`` has now.
+
+        Once initialized that is the declaration tree at the snapshot, so
+        indices resolved on the snapshot are still checked after
+        :meth:`reset` (see :meth:`_held_indices_moved`).
+        """
+        if self._snapshot_source_revision is not None:
+            return self._declaration_morpho, self._snapshot_source_revision
+        return self._morpho, self._morpho.revision
+
+    def _held_indices_moved(self, basis: tuple[Morphology, int] | None) -> bool:
+        """Whether default branch indices held on ``basis = (tree, revision)`` moved.
+
+        The indices are compared with the tree this Cell runs: the
+        declaration tree, or once initialized the snapshot of it, whose
+        indices are those of the declaration tree at the snapshot. A basis
+        on any other tree is not checked.
+        """
+        if basis is None:
+            return False
+        tree, revision = basis
+        if tree is self._morpho:
+            return tree._reindexed_after(revision)
+        if tree is self._declaration_morpho and self._snapshot_reindex_revision is not None:
+            return self._snapshot_reindex_revision > revision
+        return False
+
+    def _init_runtime(self, batch_size) -> None:
+        """Lower the declaration into runtime state on the cable, lumped or reduction path."""
         self._boundary_rows_cache = None
         self._runtime_batch_size = None if batch_size is None else int(batch_size)
         store = self._get_connection_store()
@@ -2599,7 +2710,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         runtime.reset_state(batch_size)
         # CELL-29: an explicit solver on a stiff HH gate returns NaN at every
         # practical dt; say so here rather than leave a silent NaN to the run.
-        warn_stiff_gates(runtime, channels, solver=self._solver_fn, solver_name=self._solver_name, stacklevel=3)
+        warn_stiff_gates(runtime, channels, solver=self._solver_fn, solver_name=self._solver_name, stacklevel=4)
         self.V = runtime.V
         self.spike = runtime.spike
         self._event_previous_V = brainstate.ShortTermState(self.V.value)
@@ -2645,7 +2756,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         reseeds ``V`` / ``spike`` / ``current_time`` in place and stays
         in the INITIALIZED phase. ``reset()`` fully tears down the
         runtime and returns to DECLARING so ``paint`` / ``place`` can
-        run again.
+        run again. :attr:`morpho` is the declaration tree again, with any
+        edit made to it since :meth:`init_state`; the next grid read
+        rebuilds the grid from it.
         """
         self._raise_if_network_owned("reset()")
         self._raise_if_not_initialized("reset()")
@@ -2705,6 +2818,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._compiled_recording_cache.clear()
 
         self._morpho = self._declaration_morpho
+        self._snapshot_source_revision = self._snapshot_reindex_revision = None
+        self._snapshot_warned_revision = None
         self._invalidate_discretization_cache()
         self._V_init_materialized = None
 
@@ -4235,6 +4350,14 @@ class Cell(_CellFacade, HHTypedNeuron):
         :meth:`update`) continues from where the last one stopped, so
         splitting a run into segments, at event times included, gives the
         same trajectory as one run.
+
+        Warns
+        -----
+        RuntimeWarning
+            Once per edit of the declaration morphology made after
+            :meth:`init_state`: the run uses the snapshot taken at
+            initialization, and the edit applies after :meth:`reset` and
+            :meth:`init_state`.
         """
         owner = self.network_owner
         if owner is not None:
@@ -4244,6 +4367,14 @@ class Cell(_CellFacade, HHTypedNeuron):
             self.init_state()
         elif not self._uses_reduction and self.trainables.bindings():
             self.trainables.materialize()
+        if self._unannounced_declaration_edit():
+            warnings.warn(
+                "This Cell runs on the snapshot of its morphology taken at init_state(); the morphology it "
+                "was declared with has been edited since, and the edit does not apply to this run. Call "
+                "reset() and then init_state() to run the edited morphology.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
         return run_module.run(self, dt=dt, duration=duration)
 
 
@@ -4257,11 +4388,6 @@ MultiCompartment = Cell
 
 # ----------------------------------------------------------------------
 # Helpers
-
-
-def _branch_indices_moved(basis: tuple[Morphology, int] | None, morpho: Morphology) -> bool:
-    """Whether indices declared on ``basis = (tree, revision)`` no longer hold for ``morpho``."""
-    return basis is not None and basis[0] is morpho and morpho._reindexed_after(basis[1])
 
 
 def _lists_branch_indices(policy: CVPolicy) -> bool:

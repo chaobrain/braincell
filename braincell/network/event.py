@@ -661,8 +661,7 @@ class VoltageCrossingSource(EventSource):
         self._grid_generation = root._view_generation
         # A resolved mask holds default branch indices of the Cell's tree at
         # this revision; an expression is evaluated again on every refresh.
-        morpho = root.morpho
-        self._index_basis = None if hasattr(location, "evaluate") else (morpho, morpho.revision)
+        self._index_basis = None if hasattr(location, "evaluate") else root._index_basis()
 
     @property
     def size(self) -> int:
@@ -697,8 +696,8 @@ class VoltageCrossingSource(EventSource):
         # A detector is a continuous location declaration, not a saved CV View.
         _ = self.cells._discretization
         if self._grid_generation != self.cells._view_generation:
-            basis, morpho = self._index_basis, self.cells.morpho
-            if basis is not None and basis[0] is morpho and morpho._reindexed_after(basis[1]):
+            basis = self._index_basis
+            if self.cells._held_indices_moved(basis):
                 raise RuntimeError(
                     f"VoltageCrossingSource location is a resolved {type(self.location).__name__}, whose branch "
                     f"indices are those of morphology revision {basis[1]}; a branch has since been removed or "

@@ -19,6 +19,7 @@ import dataclasses
 import re
 import sys
 import unittest
+import warnings
 from unittest import mock
 
 import brainstate
@@ -46,6 +47,7 @@ from braincell import (
     NetStim,
     connect,
 )
+from braincell._compute.state import CellRuntimeState
 from braincell._multi_compartment import cell as cell_module
 from braincell.filter import AllRegion, BranchSlice, LocsetBatch, LocsetMask, RootLocation, Terminals, at
 from braincell.mech import StateProbe
@@ -1831,10 +1833,10 @@ class CellGenericSolverTest(unittest.TestCase):
 
 
 class DiscretizationTracksAMutatedMorphologyTest(unittest.TestCase):
-    """A ``Cell`` shares its ``Morphology``, so it must notice edits to it.
+    """A declaring ``Cell`` shares its ``Morphology``, so it must notice edits to it.
 
-    ``Cell.morpho`` is documented as returning the tree "without copying
-    it", and ``Morphology`` is mutable -- it maintains a revision counter
+    Before ``init_state`` ``Cell.morpho`` is the declaration tree itself, not
+    a copy, and ``Morphology`` is mutable -- it maintains a revision counter
     precisely so consumers can tell that it changed. The discretization
     cache has to consult that counter; the object's identity alone cannot
     distinguish a tree that has grown a branch from one that has not.
@@ -1870,6 +1872,207 @@ class DiscretizationTracksAMutatedMorphologyTest(unittest.TestCase):
         # the unrestricted scope must still see both CVs.
         self.assertEqual(len(cell.cvs), 2)
         self.assertEqual(cell.cv.ids.tolist(), [0, 1])
+
+
+def _snapshot_tree() -> Morphology:
+    """Soma 20 um (r 5 um) and a 100 um dendrite (r 1 um): two CVs under CVPerBranch."""
+    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
+    tree = Morphology.from_root(soma, name="soma")
+    tree.soma.dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite")
+    return tree
+
+
+def _extra_dendrite() -> Branch:
+    return Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite")
+
+
+def _run_briefly(cell: Cell):
+    return cell.run(dt=0.025 * u.ms, duration=0.1 * u.ms)
+
+
+def _record_clamped_voltage(cell: Cell) -> Cell:
+    """Drive the soma so the recorded voltage depends on the whole tree's geometry."""
+    cell.place(at("soma", 0.5), CurrentClamp(delay=0.0 * u.ms, durations=1.0 * u.ms, amplitudes=0.5 * u.nA))
+    cell.record("v", braincell.observe.state("v"))
+    return cell
+
+
+def _recorded_mv(result) -> np.ndarray:
+    return np.asarray(result.samples["v"].values.to_decimal(u.mV))
+
+
+def _snapshot_warnings(caught) -> list:
+    return [w for w in caught if issubclass(w.category, RuntimeWarning) and "snapshot" in str(w.message)]
+
+
+def _run_counting_snapshot_warnings(cell: Cell):
+    """Run ``cell`` briefly; return the result and its snapshot warnings."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = _run_briefly(cell)
+    return result, _snapshot_warnings(caught)
+
+
+class InitSnapshotTest(unittest.TestCase):
+    """MORPH-14: an initialized Cell runs on a frozen copy of its morphology.
+
+    Editing the tree a Cell was declared with after ``init_state()`` used to
+    make every grid read, ``run`` and ``reset()`` itself raise, so the Cell
+    could not be recovered. The Cell now copies the tree at initialization:
+    the declaration stays editable, the edit applies at the next
+    ``reset()`` and ``init_state()``, and ``run`` says so once per edit.
+    """
+
+    def test_init_takes_a_frozen_copy_without_rediscretizing(self):
+        tree = _snapshot_tree()
+        cell = Cell(tree)
+        generation = cell._view_generation
+        with mock.patch.object(cell_module, "build_discretization", wraps=cell_module.build_discretization) as build:
+            cell.init_state()
+        self.assertEqual(build.call_count, 0)
+        self.assertEqual(cell._view_generation - generation, 1)
+        self.assertIsNot(cell.morpho, tree)
+        self.assertEqual(cell.morpho, tree)
+        self.assertIs(cell.morphology, cell.morpho)
+        self.assertIs(cell[0].morpho, cell.morpho)
+        self.assertEqual(cell.n_cv, 2)
+
+    def test_editing_the_declaration_after_init_does_not_change_the_run(self):
+        edited_tree = _snapshot_tree()
+        edited = _record_clamped_voltage(Cell(edited_tree))
+        unedited = _record_clamped_voltage(Cell(_snapshot_tree()))
+        for cell in (edited, unedited):
+            cell.init_state()
+
+        edited_tree.soma.extra = _extra_dendrite()
+
+        got, warned = _run_counting_snapshot_warnings(edited)
+        expected, _ = _run_counting_snapshot_warnings(unedited)
+        np.testing.assert_array_equal(_recorded_mv(got), _recorded_mv(expected))
+        self.assertGreater(np.ptp(_recorded_mv(got)), 0.0)
+        self.assertEqual(len(warned), 1)
+        self.assertRegex(str(warned[0].message), r"snapshot.*reset\(\).*init_state\(\)")
+        self.assertEqual(edited.n_cv, 2)
+
+        again, warned = _run_counting_snapshot_warnings(edited)
+        expected, _ = _run_counting_snapshot_warnings(unedited)
+        np.testing.assert_array_equal(_recorded_mv(again), _recorded_mv(expected))
+        self.assertEqual(warned, [])
+
+    def test_each_new_edit_warns_once(self):
+        tree = _snapshot_tree()
+        cell = Cell(tree)
+        cell.init_state()
+        self.assertEqual(_run_counting_snapshot_warnings(cell)[1], [])
+        tree.soma.extra = _extra_dendrite()
+        self.assertEqual(len(_run_counting_snapshot_warnings(cell)[1]), 1)
+        self.assertEqual(_run_counting_snapshot_warnings(cell)[1], [])
+        tree.extra.tip = _extra_dendrite()
+        self.assertEqual(len(_run_counting_snapshot_warnings(cell)[1]), 1)
+
+    def test_reset_after_an_edit_applies_it_at_the_next_init(self):
+        tree = _snapshot_tree()
+        cell = Cell(tree)
+        cell.init_state()
+        tree.soma.extra = _extra_dendrite()
+
+        cell.reset()
+
+        self.assertIs(cell.morpho, tree)
+        self.assertEqual(cell.n_cv, 3)
+        cell.init_state()
+        self.assertEqual(cell.n_cv, 3)
+        self.assertIsNot(cell.morpho, tree)
+        self.assertEqual(cell.morpho, tree)
+        self.assertEqual(_run_counting_snapshot_warnings(cell)[1], [])
+
+    def test_editing_the_snapshot_raises_before_writing(self):
+        cell = Cell(_snapshot_tree())
+        cell.init_state()
+        with self.assertRaisesRegex(RuntimeError, r"read-only snapshot.*reset\(\)"):
+            cell.morpho.soma.more = _extra_dendrite()
+        self.assertEqual(cell.morpho.n_branches, 2)
+        self.assertEqual(_run_counting_snapshot_warnings(cell)[1], [])
+        cell.reset()
+        self.assertEqual(cell.n_cv, 2)
+
+    def test_lumped_cell_runs_on_the_snapshot(self):
+        tree = Morphology.from_root(_snapshot_tree().soma.branch, name="soma")
+        cell = Cell(tree, cv_policy=braincell.Lumped())
+        cell.init_state()
+        self.assertIsNot(cell.morpho, tree)
+        tree.soma.extra = _extra_dendrite()
+
+        self.assertEqual(len(_run_counting_snapshot_warnings(cell)[1]), 1)
+        cell.reset()
+
+        self.assertIs(cell.morpho, tree)
+        # The edit applies: the tree now has two branches, which Lumped() rejects.
+        with self.assertRaisesRegex(ValueError, "Lumped"):
+            cell.init_state()
+
+    def test_reduction_cell_runs_on_the_snapshot(self):
+        tree = _snapshot_tree()
+        cell = Cell(tree)
+        cell.add_reduction("acc", braincell.reduction.EventAccumulatorReduction(threshold=2.0))
+        cell.use_model("acc")
+        cell.init_state()
+        self.assertIsNot(cell.morpho, tree)
+        tree.soma.extra = _extra_dendrite()
+
+        self.assertEqual(len(_run_counting_snapshot_warnings(cell)[1]), 1)
+        cell.reset()
+
+        self.assertIs(cell.morpho, tree)
+        cell.init_state()
+        self.assertEqual(cell.n_cv, 3)
+
+    def test_a_failed_init_leaves_the_declaration_in_place(self):
+        tree = _snapshot_tree()
+        cell = Cell(tree)
+        generation = cell._view_generation
+        with mock.patch.object(CellRuntimeState, "from_cell", side_effect=RuntimeError("injected")):
+            with self.assertRaisesRegex(RuntimeError, "injected"):
+                cell.init_state()
+        self.assertFalse(cell._initialized)
+        self.assertIs(cell.morpho, tree)
+        self.assertEqual(cell._view_generation, generation)
+        cell.init_state()
+        self.assertEqual(cell.n_cv, 2)
+        self.assertIsNot(cell.morpho, tree)
+
+
+def _snapshot_probe_cell(morpho: Morphology) -> Cell:
+    return _record_clamped_voltage(_edit_probe_cell(morpho))
+
+
+class InitSnapshotEditTableTest(unittest.TestCase):
+    """Cell layer of the edit table after ``init_state``.
+
+    Every edit of the declaration tree leaves the running Cell as it was;
+    after ``reset()`` and ``init_state()`` the Cell matches one declared from
+    scratch on the cold rebuild of the edited tree.
+    """
+
+    def test_every_edit_case_waits_for_reset(self):
+        reference = _snapshot_probe_cell(make_tree_t())
+        expected = _recorded_mv(_run_briefly(reference))
+        self.assertGreater(np.ptp(expected), 0.0)
+        for case in EDIT_CASES:
+            with self.subTest(case.name):
+                morpho = make_tree_t()
+                cell = _snapshot_probe_cell(morpho)
+                cell.init_state()
+                before = _declaration_fingerprint(cell)
+                case.edit(morpho)
+                result, warned = _run_counting_snapshot_warnings(cell)
+                np.testing.assert_array_equal(_recorded_mv(result), expected)
+                self.assertEqual(len(warned), 1)
+                self.assertEqual(_declaration_fingerprint(cell), before)
+                cell.reset()
+                cell.init_state()
+                fresh = _snapshot_probe_cell(cold_rebuild(morpho))
+                self.assertEqual(_declaration_fingerprint(cell), _declaration_fingerprint(fresh))
 
 
 class CellDoesNotAllocatePlaceholderIonsEagerlyTest(unittest.TestCase):

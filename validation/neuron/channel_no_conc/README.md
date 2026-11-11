@@ -86,7 +86,7 @@ runner 对 `cl_ion` 设 `ion_style`，使 `ecl` 按 `ion_state` 的浓度取 Ner
 - 刚性：`rho_max` 为 −100…60 mV（0.25 mV 步长）、36 °C 下 Markov 转移矩阵
   的谱半径或 HH 门的 α + β（含温度倍率），`rho_max · 0.025 > 2` 为刚性（显式
   solver 在该 `dt` 下不可用）。奇点扫描在 0.001 mV 网格上检查门值、门导数与
-  电流都有限，已知的可去奇点列在 `KNOWN_SINGULARITIES`。
+  电流都有限，已知的可去奇点列在 `KNOWN_SINGULARITIES`（现在为空）。
 
 ```python
 from validation.neuron import _convergence as cv
@@ -97,10 +97,12 @@ cv.stiffness(cv.channel_class(cv.load_case("ma20_goc/nav1p6_ma20_goc", "vc_steps
 ```
 
 限值取实测的 1.5 倍，上取整到 1、2 或 5 乘 10 的幂（`cv.rounded_limit`）。
-表的覆盖检查（`COVERAGE_SCOPE`）现在要求两个代表配置与类，以及钙家族
-（`calcium.py`、`potassium_calcium.py` 的 50 个类、45 个配置）；
+表的覆盖检查（`COVERAGE_SCOPE`）现在要求代表配置 `nav1p6_ma20_goc` 与其类、钙家族
+（`calcium.py`、`potassium_calcium.py` 的 50 个类、45 个配置），以及钾家族
+（`potassium.py`、`potassium_sodium.py` 的 39 个类、31 个配置）；
 `validation/neuron/_convergence_test.py` 在每个 PR 运行，并对 registry 的全部
 通道类做奇点扫描。按家族的收敛测试标 `slow`：
-`tests/test_convergence_calcium.py`（本机约 1.7 分钟）。标 `slow` 的模块（按家族的
+`tests/test_convergence_calcium.py`（本机约 1.7 分钟）、
+`tests/test_convergence_potassium.py`（本机约 TIMING）。标 `slow` 的模块（按家族的
 收敛测试与 `tests/test_catalogue_*.py`）只在每日 CI 的 `slow_tests_neuron` job 中
 运行（`pytest tests -m slow`），PR 的 channel job 用 `-m "not slow"` 跳过它们。

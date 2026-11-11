@@ -142,6 +142,37 @@ CONFIGS = (
     ConfigEntry("su15_dcn/sk_su15_dcn", cv.EXACT, protocol=cv.RELAXATION),
     ConfigEntry("zh19_io/ca_zh19_io", cv.EXACT),
     ConfigEntry("zh19_io/ca_zh19_io_frozen", cv.EXACT),
+    # potassium.py and potassium_sodium.py: HH channels on ind_exp_euler are exact (<= 1.8e-14 at every dt).
+    ConfigEntry("builtin/k_hh1952_hh", cv.EXACT),
+    ConfigEntry("ma20_goc/km_ma20_goc", cv.EXACT),
+    ConfigEntry("ma20_goc/kv1p1_ma20_goc", cv.EXACT),
+    ConfigEntry("ma20_goc/kv4p3_ma20_goc", cv.EXACT),
+    ConfigEntry("ma20_grc/kir2p3_ma20_grc", cv.EXACT),
+    ConfigEntry("ma20_grc/km_ma20_grc", cv.EXACT),
+    ConfigEntry("ma20_grc/kv1p1_ma20_grc", cv.EXACT),
+    ConfigEntry("ma20_grc/kv1p5_ma20_grc", cv.EXACT),
+    ConfigEntry("ma20_grc/kv2p2_0010_ma20_grc", cv.EXACT),
+    ConfigEntry("ma20_grc/kv3p4_ma20_grc", cv.EXACT),
+    ConfigEntry("ma20_grc/kv4p3_ma20_grc", cv.EXACT),
+    ConfigEntry("ma24_pc/kir2p3_ma24_pc", cv.EXACT),
+    ConfigEntry("ma24_pc/kv1p1_ma24_pc", cv.EXACT),
+    ConfigEntry("ma24_pc/kv1p5_ma24_pc", cv.EXACT),
+    ConfigEntry("ma24_pc/kv3p3_ma24_pc", cv.EXACT),
+    ConfigEntry("ma24_pc/kv3p4_ma24_pc", cv.EXACT),
+    ConfigEntry("ma24_pc/kv4p3_ma24_pc", cv.EXACT),
+    ConfigEntry("ma25_bc/kir2p3_ma25_bc", cv.EXACT),
+    ConfigEntry("ma25_bc/kv1p1_ma25_bc", cv.EXACT),
+    ConfigEntry("ma25_bc/kv3p4_ma25_bc", cv.EXACT),
+    ConfigEntry("ma25_bc/kv4p3_ma25_bc", cv.EXACT),
+    ConfigEntry("ri21_sc/kir2p3_ri21_sc", cv.EXACT),
+    ConfigEntry("ri21_sc/km_ri21_sc", cv.EXACT),
+    ConfigEntry("ri21_sc/kv1p1_ri21_sc", cv.EXACT),
+    ConfigEntry("ri21_sc/kv3p4_ri21_sc", cv.EXACT),
+    ConfigEntry("ri21_sc/kv4p3_ri21_sc", cv.EXACT),
+    ConfigEntry("su15_dcn/fkdr_su15_dcn", cv.EXACT),
+    ConfigEntry("su15_dcn/skdr_su15_dcn", cv.EXACT),
+    ConfigEntry("testing/kv_testing", cv.EXACT),
+    ConfigEntry("zh19_io/kdr_zh19_io", cv.EXACT),
 )
 
 CLASSES = (
@@ -199,12 +230,49 @@ CLASSES = (
     ClassEntry("Kca3p1_MA2024_PC", -2, False),  # 0.0593 /ms, p gate at +60 mV
     ClassEntry("Kca3p1_MA2025_BC", -2, False),  # 0.0593 /ms, p gate at +60 mV
     ClassEntry("SK_SU2015_DCN", 0, False),  # 1.01 /ms, z gate at -100 mV
+    # potassium.py and potassium_sodium.py (36 degC).
+    ClassEntry("KA1_HM1992", 0, False),  # 2.65 /ms, p gate at +60 mV
+    ClassEntry("KA2_HM1992", 0, False),  # 2.65 /ms, p gate at +60 mV
+    ClassEntry("KDR_Ba2002", 0, False),  # 3.08 /ms, p gate at +60 mV
+    ClassEntry("KK2A_HM1992", -2, False),  # 0.0822 /ms, p gate at +60 mV
+    ClassEntry("KK2B_HM1992", -1, False),  # 0.112 /ms, q gate at -55.5 mV
+    ClassEntry("KM_MA2020_GoC", -1, False),  # 0.511 /ms, n gate at -100 mV
+    ClassEntry("KM_MA2020_GrC", -1, False),  # 0.511 /ms, n gate at -100 mV
+    ClassEntry("KM_RI2021_SC", -1, False),  # 0.511 /ms, n gate at -100 mV
+    ClassEntry("KNI_Ya1989", -2, False),  # 0.0954 /ms, p gate at +60 mV
+    ClassEntry("K_HH1952", 0, False),  # 1.18 /ms, p gate at +60 mV
+    ClassEntry("K_Kv_test", -1, False),  # 0.75 /ms, n gate at -100 mV
+    ClassEntry("K_Leak", None, False),  # stateless
+    ClassEntry("K_TM1991", 0, False),  # 3.39 /ms, p gate at +60 mV
+    ClassEntry("Kdr_ZH2019_IO", 1, False),  # 10.4 /ms, n gate at +60 mV
+    ClassEntry("Kir2p3_MA2020_GrC", 1, False),  # 55.5 /ms, d gate at +60 mV
+    ClassEntry("Kir2p3_MA2024_PC", 1, False),  # 55.5 /ms, d gate at +60 mV
+    ClassEntry("Kir2p3_MA2025_BC", 1, False),  # 55.5 /ms, d gate at +60 mV
+    ClassEntry("Kir2p3_RI2021_SC", 1, False),  # 55.5 /ms, d gate at +60 mV
+    ClassEntry("Kv1p1_MA2020_GoC", 1, False),  # 43.5 /ms, n gate at -100 mV
+    ClassEntry("Kv1p1_MA2020_GrC", 1, False),  # 43.5 /ms, n gate at -100 mV
+    ClassEntry("Kv1p1_MA2024_PC", 1, False),  # 43.5 /ms, n gate at -100 mV
+    ClassEntry("Kv1p1_MA2025_BC", 1, False),  # 43.5 /ms, n gate at -100 mV
+    ClassEntry("Kv1p1_RI2021_SC", 1, False),  # 43.5 /ms, n gate at -100 mV
+    ClassEntry("Kv1p5_MA2020_GrC", 0, False),  # 3 /ms, m gate at +60 mV
+    ClassEntry("Kv1p5_MA2024_PC", 0, False),  # 3 /ms, m gate at +60 mV
+    ClassEntry("Kv2p2_0010_MA2020_GrC", -2, False),  # 0.0335 /ms, m gate at -100 mV
+    ClassEntry("Kv3p3_MA2024_PC", 1, False),  # 21.1 /ms, n gate at -100 mV
+    ClassEntry("Kv3p4_MA2020_GrC", 0, False),  # 6.88 /ms, m gate at +60 mV
+    ClassEntry("Kv3p4_MA2024_PC", 0, False),  # 6.88 /ms, m gate at +60 mV
+    ClassEntry("Kv3p4_MA2025_BC", 0, False),  # 6.88 /ms, m gate at +60 mV
+    ClassEntry("Kv3p4_RI2021_SC", 0, False),  # 6.88 /ms, m gate at +60 mV
+    ClassEntry("Kv4p3_MA2020_GoC", 1, False),  # 34.9 /ms, a gate at -100 mV
+    ClassEntry("Kv4p3_MA2020_GrC", 1, False),  # 34.9 /ms, a gate at -100 mV
+    ClassEntry("Kv4p3_MA2024_PC", 1, False),  # 34.9 /ms, a gate at -100 mV
+    ClassEntry("Kv4p3_MA2025_BC", 1, False),  # 34.9 /ms, a gate at -100 mV
+    ClassEntry("Kv4p3_RI2021_SC", 1, False),  # 34.9 /ms, a gate at -100 mV
+    ClassEntry("fKdr_SU2015_DCN", 0, False),  # 9.68 /ms, m gate at +60 mV
+    ClassEntry("sKdr_SU2015_DCN", 0, False),  # 6.9 /ms, m gate at +60 mV
 )
 
-KNOWN_SINGULARITIES = {
-    "K_Kv_test": {"n.derivative": (25.0,)},
-}
-"""Removable 0/0 singularities, each to be replaced by its analytic limit."""
+KNOWN_SINGULARITIES: dict[str, dict[str, tuple[float, ...]]] = {}
+"""Removable 0/0 singularities, each to be replaced by its analytic limit; none is left."""
 
 CALCIUM_FAMILY_CONFIGS = (
     "ma20_goc/cahva_ma20_goc", "ma20_goc/cav1p2_ma20_goc", "ma20_goc/cav1p3_ma20_goc",
@@ -238,9 +306,31 @@ CALCIUM_FAMILY_CLASSES = (
 )
 """The registered channel classes defined in ``calcium.py`` and ``potassium_calcium.py``."""
 
+POTASSIUM_FAMILY_CONFIGS = (
+    "builtin/k_hh1952_hh", "ma20_goc/km_ma20_goc", "ma20_goc/kv1p1_ma20_goc", "ma20_goc/kv3p4_ma20_goc",
+    "ma20_goc/kv4p3_ma20_goc", "ma20_grc/kir2p3_ma20_grc", "ma20_grc/km_ma20_grc", "ma20_grc/kv1p1_ma20_grc",
+    "ma20_grc/kv1p5_ma20_grc", "ma20_grc/kv2p2_0010_ma20_grc", "ma20_grc/kv3p4_ma20_grc", "ma20_grc/kv4p3_ma20_grc",
+    "ma24_pc/kir2p3_ma24_pc", "ma24_pc/kv1p1_ma24_pc", "ma24_pc/kv1p5_ma24_pc", "ma24_pc/kv3p3_ma24_pc",
+    "ma24_pc/kv3p4_ma24_pc", "ma24_pc/kv4p3_ma24_pc", "ma25_bc/kir2p3_ma25_bc", "ma25_bc/kv1p1_ma25_bc",
+    "ma25_bc/kv3p4_ma25_bc", "ma25_bc/kv4p3_ma25_bc", "ri21_sc/kir2p3_ri21_sc", "ri21_sc/km_ri21_sc",
+    "ri21_sc/kv1p1_ri21_sc", "ri21_sc/kv3p4_ri21_sc", "ri21_sc/kv4p3_ri21_sc", "su15_dcn/fkdr_su15_dcn",
+    "su15_dcn/skdr_su15_dcn", "testing/kv_testing", "zh19_io/kdr_zh19_io",
+)
+"""The configurations of the classes in ``potassium.py`` and ``potassium_sodium.py``."""
+POTASSIUM_FAMILY_CLASSES = (
+    "KA1_HM1992", "KA2_HM1992", "KDR_Ba2002", "KK2A_HM1992", "KK2B_HM1992", "KM_MA2020_GoC", "KM_MA2020_GrC",
+    "KM_RI2021_SC", "KNI_Ya1989", "K_HH1952", "K_Kv_test", "K_Leak", "K_TM1991", "Kdr_ZH2019_IO",
+    "Kir2p3_MA2020_GrC", "Kir2p3_MA2024_PC", "Kir2p3_MA2025_BC", "Kir2p3_RI2021_SC", "Kv1p1_MA2020_GoC",
+    "Kv1p1_MA2020_GrC", "Kv1p1_MA2024_PC", "Kv1p1_MA2025_BC", "Kv1p1_RI2021_SC", "Kv1p5_MA2020_GrC",
+    "Kv1p5_MA2024_PC", "Kv2p2_0010_MA2020_GrC", "Kv3p3_MA2024_PC", "Kv3p4_MA2020_GoC", "Kv3p4_MA2020_GrC",
+    "Kv3p4_MA2024_PC", "Kv3p4_MA2025_BC", "Kv3p4_RI2021_SC", "Kv4p3_MA2020_GoC", "Kv4p3_MA2020_GrC",
+    "Kv4p3_MA2024_PC", "Kv4p3_MA2025_BC", "Kv4p3_RI2021_SC", "fKdr_SU2015_DCN", "sKdr_SU2015_DCN",
+)
+"""The registered channel classes defined in ``potassium.py`` and ``potassium_sodium.py``."""
+
 COVERAGE_SCOPE = {
-    "configs": ("ma20_goc/kv3p4_ma20_goc", "ma20_goc/nav1p6_ma20_goc", *CALCIUM_FAMILY_CONFIGS),
-    "classes": ("Kv3p4_MA2020_GoC", "Nav1p6_MA2020_GoC", *CALCIUM_FAMILY_CLASSES),
+    "configs": ("ma20_goc/nav1p6_ma20_goc", *CALCIUM_FAMILY_CONFIGS, *POTASSIUM_FAMILY_CONFIGS),
+    "classes": ("Nav1p6_MA2020_GoC", *CALCIUM_FAMILY_CLASSES, *POTASSIUM_FAMILY_CLASSES),
 }
 
 

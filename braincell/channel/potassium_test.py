@@ -17,9 +17,13 @@
 
 import math
 import unittest
+from unittest import mock
 
+import brainstate
 import brainunit as u
+import jax
 import jax.numpy as jnp
+import numpy as np
 
 from braincell.channel._base import HH
 from braincell.channel.potassium import (
@@ -1290,6 +1294,81 @@ class KdrZH19IOTest(unittest.TestCase):
         offsets = jnp.array([-1.0e-3, -1.0e-5, 1.0e-5, 1.0e-3])
         n_alpha = ch._n_alpha(voltage(-41.0 + offsets))
         self.assertTrue(u.math.allclose(n_alpha, 10.0 * (1.0 + (offsets / 10.0) / 2.0), atol=1e-5))
+
+
+# ``K_Kv_test.f_n_tau`` as written before its removable 0/0 singularity at
+# ``V' = v12`` was replaced by the analytic limit, verbatim; the tests below
+# compare against it away from that voltage.
+def _prefix_kv_test_n_tau(self, V, K):
+    V = (V - self.V_sh).to_decimal(u.mV)
+    Ra = self.Ra / (1 / u.mV / u.ms)
+    Rb = self.Rb / (1 / u.mV / u.ms)
+    q = self.q.to_decimal(u.mV) if hasattr(self.q, "to_decimal") else self.q
+    v12 = self.v12.to_decimal(u.mV) if hasattr(self.v12, "to_decimal") else self.v12
+    denom = Ra * (V - v12) / (1.0 - u.math.exp(-(V - v12) / q)) + (-Rb) * (V - v12) / (
+        1.0 - u.math.exp(-(V - v12) / (-q))
+    )
+    return 1.0 / denom
+
+
+_KV_TEST_V_STAR_MV = 25.0
+_GRID_MV = np.arange(-100_000, 60_001) / 1000.0
+
+
+def _kv_test_quantities(V_mV) -> dict:
+    """``K_Kv_test``'s steady-state gate, its derivative at state 0 and the current at the steady state, in float64."""
+    V_mV = np.asarray(V_mV, dtype=float)
+    V = jnp.asarray(V_mV) * u.mV
+    k = k_info(V_mV.size)
+    ch = K_Kv_test(size=V_mV.size, g_max=0.01 * (u.siemens / u.cm**2))
+    ch.init_state(V, k)
+    ch.reset_state(V, k)
+    found = {"n.value": ch.n.value, "current": ch.current(V, k).to_decimal(DENSITY_UNIT)}
+    ch.n.value = jnp.zeros(V_mV.size)
+    ch.compute_derivative(V, k)
+    found["n.derivative"] = ch.n.derivative.to_decimal(u.ms**-1)
+    return {
+        key: np.broadcast_to(np.asarray(u.get_magnitude(value), dtype=float), V_mV.shape)
+        for key, value in found.items()
+    }
+
+
+class K_Kv_testSingularityTest(unittest.TestCase):
+    """The ``n`` rate is 0/0 at ``V' = v12`` (25 mV by default) and uses its analytic limit there.
+
+    Away from 25 mV the result is the source expression's; at 25 mV it is
+    the limit, so a Cell clamped at, or ramped through, 25 mV no longer
+    integrates NaN.
+    """
+
+    def test_finite_on_the_grid_and_equal_to_the_source_expression_away_from_V_star(self):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            fixed = _kv_test_quantities(_GRID_MV)
+            for key, values in fixed.items():
+                self.assertTrue(np.all(np.isfinite(values)), f"{key} at {_GRID_MV[~np.isfinite(values)]}")
+            away = np.abs(_GRID_MV - _KV_TEST_V_STAR_MV) >= 0.01 - 1e-9
+            with mock.patch.object(K_Kv_test, "f_n_tau", _prefix_kv_test_n_tau):
+                source = _kv_test_quantities(_GRID_MV[away])
+            for key, values in source.items():
+                np.testing.assert_allclose(fixed[key][away], values, rtol=1e-10, atol=0.0, err_msg=key)
+
+    def test_the_value_at_V_star_is_the_limit_of_its_neighbours(self):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            at, below, above = (_kv_test_quantities([_KV_TEST_V_STAR_MV + h]) for h in (0.0, -1e-4, 1e-4))
+            for key, value in at.items():
+                mean = 0.5 * (below[key] + above[key])
+                self.assertLessEqual(float(np.abs(value - mean)[0]), 1e-6 * float(np.abs(value)[0]), key)
+            # tau_n = 1 / (q (Ra + Rb)) there, about 4.27 ms with the defaults.
+            ch = K_Kv_test(size=1)
+            tau = ch.f_n_tau(voltage([_KV_TEST_V_STAR_MV]), k_info())
+            np.testing.assert_allclose(np.asarray(tau), [1.0 / (9.0 * (0.02 + 0.006))], rtol=1e-12)
+
+    def test_the_source_expression_is_not_finite_at_V_star(self):
+        # Counter-example: with the pre-fix expression, the n derivative is NaN at 25 mV.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            self.assertTrue(np.isfinite(_kv_test_quantities([_KV_TEST_V_STAR_MV])["n.derivative"]).all())
+            with mock.patch.object(K_Kv_test, "f_n_tau", _prefix_kv_test_n_tau):
+                self.assertFalse(np.isfinite(_kv_test_quantities([_KV_TEST_V_STAR_MV])["n.derivative"]).all())
 
 
 if __name__ == "__main__":

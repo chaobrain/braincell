@@ -281,6 +281,13 @@
   to 1e-13 relative at least 0.01 mV away from those voltages and takes the
   limit at them.
 
+- `K_Kv_test` no longer returns NaN at `V - V_sh = v12` (25 mV by default),
+  where both quotients of its `n` time constant are 0/0 (MECH-23b). Its `n`
+  derivative was NaN there, so a voltage clamp at, or a ramp through, 25 mV
+  gave NaN states and currents. The rate now uses `exprel`, which equals the
+  previous expression to 1e-13 relative at least 0.01 mV away from `v12` and
+  takes the limit `tau_n = 1 / (q (Ra + Rb))` there.
+
 - The optional gating current of `Nav1p1_MA2025_BC` and `Nav1p1_RI2021_SC`
   (`gateCurrent != 0`) was 1e18 times too large, for the same reason as the
   Kv entry below: the `(1e12)` and `(1e6)` factors of the `.mod` formula are

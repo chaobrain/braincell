@@ -65,7 +65,9 @@ def _cable_cell(solver):
         ),
         braincell.mech.Channel("IL", name="leak", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV),
     )
-    cell.place(RootLocation(x=0.5), braincell.CurrentClamp(delay=0.02 * u.ms, durations=1.0 * u.ms, amplitudes=0.05 * u.nA))
+    cell.place(
+        RootLocation(x=0.5), braincell.CurrentClamp(delay=0.02 * u.ms, durations=1.0 * u.ms, amplitudes=0.05 * u.nA)
+    )
     cell.init_state()
     return cell
 
@@ -80,7 +82,9 @@ def _lumped_cell(solver):
         solver=solver,
     )
     cell.paint(AllRegion(), braincell.mech.Channel("IL", name="leak", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
-    cell.place(RootLocation(x=0.5), braincell.CurrentClamp(delay=0.0 * u.ms, durations=1.0 * u.ms, amplitudes=0.05 * u.nA))
+    cell.place(
+        RootLocation(x=0.5), braincell.CurrentClamp(delay=0.0 * u.ms, durations=1.0 * u.ms, amplitudes=0.05 * u.nA)
+    )
     cell.init_state()
     return cell
 

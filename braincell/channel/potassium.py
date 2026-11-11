@@ -1302,14 +1302,14 @@ class K_Kv_test(OhmicHH):
     ``Q10_n`` that factor is 1 at every temperature, so changing
     ``temp`` has no effect on this channel.
 
-    **Numerical caveat.** Unlike the sibling classes in this module,
-    which route their linoids through ``exprel`` or an explicit
-    ``where`` guard, :meth:`f_n_tau` evaluates the two quotients
-    directly. At exactly :math:`V' = v_{12}` both are ``0/0`` and the
-    method returns ``nan``, although the limit is finite --
-    :math:`1 / (q (R_a + R_b))`, about 4.3 ms with the shipped
-    defaults. Away from that single point the expression is
-    well-behaved.
+    :meth:`f_n_tau` evaluates the two quotients as
+    :math:`R_a q / \operatorname{exprel}(-x) + R_b q / \operatorname{exprel}(x)`
+    with :math:`x = (V' - v_{12}) / q` and
+    :math:`\operatorname{exprel}(x) = (\exp(x) - 1) / x`: the same
+    value as the ``rateconst`` form of ``kv.mod``, which is ``0/0`` at
+    :math:`V' = v_{12}`, and its limit there,
+    :math:`\tau_n = 1 / (q (R_a + R_b))` (about 4.3 ms with the shipped
+    defaults).
     """
 
     __module__ = "braincell.channel"
@@ -1351,9 +1351,10 @@ class K_Kv_test(OhmicHH):
         Rb = self.Rb / (1 / u.mV / u.ms)
         q = self.q.to_decimal(u.mV) if hasattr(self.q, "to_decimal") else self.q
         v12 = self.v12.to_decimal(u.mV) if hasattr(self.v12, "to_decimal") else self.v12
-        denom = Ra * (V - v12) / (1.0 - u.math.exp(-(V - v12) / q)) + (-Rb) * (V - v12) / (
-            1.0 - u.math.exp(-(V - v12) / (-q))
-        )
+        # Ra (V - v12) / (1 - exp(-x)) + Rb (V - v12) / (exp(x) - 1) with x = (V - v12) / q,
+        # finite at V = v12, where both quotients are 0/0.
+        x = (V - v12) / q
+        denom = q * (Ra / u.math.exprel(-x) + Rb / u.math.exprel(x))
         return 1.0 / denom
 
 

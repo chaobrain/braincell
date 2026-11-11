@@ -3732,8 +3732,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         2. Advance membrane voltage with the DHS voltage solver.
         3. Integrate runtime synapse continuous dynamics.
         4. Update ion and channel states.
-        5. Clear temporary current caches.
-        6. Detect threshold crossing and write ``self.spike``.
+        5. Add the delta inputs (:meth:`add_delta_input`) to the voltage.
+        6. Clear temporary current caches.
+        7. Detect threshold crossing and write ``self.spike``.
         """
         self._raise_if_not_initialized("_update_dynamics()")
 

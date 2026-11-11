@@ -514,6 +514,38 @@
   Ralston's second-order method; use braincell.quad.ralston2_step (same
   numbers), or heun2_step for Heun's method."
 
+- A delta input registered with `Cell.add_delta_input`, the entry of
+  brainpy's `DeltaProj`, now moves V on a lumped cell (`Cell.point(...)`,
+  `cv_policy=Lumped()`) under every solver, and on a cable cell under
+  `"staggered"` (the default) and `"dhs_voltage"` (CELL-33). These paths
+  ignored it, and a value input stayed registered: a 5 mV input left a
+  one-CV cell at rest at -65 mV after one step, where `SingleCompartment`
+  and the other cable solvers give -60 mV. Every solver now adds the inputs
+  to V at the end of the step, after the voltage and the mechanism states
+  have advanced, as `SingleCompartment` does. The inputs take no part in the
+  step they end, and the spike test of that step sees them. A `DeltaProj`
+  driving a lumped HH cell matches it driving `SingleCompartment` within
+  1e-10 mV over 800 steps (float64; `rk4`, `euler`, `ralston2`; 1e-9 mV for
+  `exp_euler`). Two cases now raise `ValueError` instead of misbehaving:
+  - inputs that do not broadcast to `V.value.shape`, naming them. Before, a
+    cable cell's V took the broadcast shape: one value per member on a
+    one-CV cell of 3 members turned V from (3, 1) into (3, 3). On a cable
+    cell, one value per member has shape `pop_size + (1,)`;
+  - delta inputs on a cell running a reduction model, which has no
+    membrane voltage (at `init_state`, or at the step for an input
+    registered later). Before, they were ignored.
+
+  Without delta inputs, every path is bit-identical to before.
+
+- A current or delta input registered after a compiled run is now included
+  by the next one (CELL-33). `Network.run` and `Network.update` trace their
+  loop once and kept the inputs of that trace: an input added to a member
+  cell between two `Network.run` calls was ignored, and a `DeltaProj`
+  driving `Network.update` in a second `for_loop` raised
+  `UnexpectedTracerError`. `Cell.run` had the same problem for delta inputs
+  (CELL-23 fixed it for current inputs). Registering an input now drops
+  these loops, so the next call traces again.
+
 - A `Cell.run` that continues an earlier `run` or `update()` no longer
   delivers the events on its first step twice (CELL-34). Each step prepares
   the synaptic input of the next boundary, and `run` prepared its first

@@ -22,5 +22,35 @@ from braincell.morph.morphology import Morphology
 
 @dataclass(frozen=True)
 class NeuroMlReader:
+    """Placeholder for a NeuroML2 morphology reader; not yet supported.
+
+    NeuroML2 import is planned. Until it lands, :meth:`read` raises
+    ``NotImplementedError`` for every path. Load SWC or Neurolucida ASC
+    reconstructions with ``Morphology.from_swc`` or ``Morphology.from_asc``.
+
+    Examples
+    --------
+    >>> from braincell.io import NeuroMlReader
+    >>> NeuroMlReader().read("cell.nml")
+    Traceback (most recent call last):
+        ...
+    NotImplementedError: NeuroML2 import is not supported yet. ...
+    """
+
     def read(self, path: FilePath) -> Morphology:
-        raise NotImplementedError("Parse NeuroML2 into an editable Morpho tree.")
+        """Read a NeuroML2 cell morphology (not supported yet).
+
+        Parameters
+        ----------
+        path : str or os.PathLike
+            Path to a NeuroML2 document. It is not opened.
+
+        Raises
+        ------
+        NotImplementedError
+            Always; NeuroML2 import is planned but not implemented.
+        """
+        raise NotImplementedError(
+            "NeuroML2 import is not supported yet. Load SWC or Neurolucida ASC "
+            "reconstructions with Morphology.from_swc or Morphology.from_asc."
+        )

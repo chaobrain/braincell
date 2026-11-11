@@ -31,7 +31,7 @@ It is built on top of [JAX](https://github.com/jax-ml/jax) and [brainstate](http
 - **Single-compartment neurons** — `braincell.SingleCompartment` with a rich library of ion channels (Na, K, Ca, HCN, K-Ca) and numerical integrators.
 - **Multi-compartment cells** — `braincell.Cell` with declarative mechanism painting (`cell.paint`) and point-process placement (`cell.place`) onto morphological regions.
 - **Morphology system** — `braincell.morph`: immutable `Branch` geometry, typed subclasses (`Soma`, `Dendrite`, `Axon`, `BasalDendrite`, `ApicalDendrite`), and the mutable `Morphology` tree.
-- **IO readers** — SWC, ASC, and NeuroML2 file readers; a full [NeuroMorpho.Org](https://neuromorpho.org) client with search, download, and local caching.
+- **IO readers** — SWC and ASC file readers; a full [NeuroMorpho.Org](https://neuromorpho.org) client with search, download, and local caching. NeuroML2 import is planned but not yet supported: `braincell.io.NeuroMlReader.read` raises `NotImplementedError`.
 - **Visualization** — `Morphology.vis2d` / `vis3d` and the plots in [`braintools.visualize.morphology`](https://github.com/chaobrain/braintools): 2D tree layouts (matplotlib) and 3D rendering (PyVista / Plotly), color-by-values, morphometry plots, topology graphs and movie export. braincell objects convert with `Morphology.to_vis_data()`, `Cell.topology_data()` and `NodeTree.to_topology_data()`, and every plot accepts a `Morphology` directly.
 - **Integrator registry** — `braincell.quad`: explicit (Euler, RK2/3/4), implicit, exponential-Euler, and staggered cable solve, all selectable by name.
 - **Declarative mechanisms** — `braincell.mech`: `Channel`, `Ion`, `CableProperty`, `CurrentClamp`, `Synapse`, `Junction` specs for the `Cell` frontend.

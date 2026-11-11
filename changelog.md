@@ -537,6 +537,16 @@
   at roundoff (relative 1e-12 or less over 50 ms) and are closer to the
   exact implicit-Euler solution.
 
+- The README, the documentation home page and the File Formats pages no
+  longer say braincell reads NeuroML2 (API-8). `braincell.io.NeuroMlReader`
+  has been a placeholder since 0.1.0: `read()` raises `NotImplementedError`
+  for every file. The docs now call NeuroML2 import planned, and the
+  NeuroML2 page no longer shows a loading example that cannot run. The error
+  message, which read `Parse NeuroML2 into an editable Morpho tree.`, now
+  says NeuroML2 import is not supported yet and points to
+  `Morphology.from_swc` and `Morphology.from_asc`; the exception type is
+  unchanged.
+
 ### Deprecations
 
 - **Constructing an invalid mechanism declaration** (MECH-26).

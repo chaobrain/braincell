@@ -41,7 +41,8 @@ It is built on `JAX <https://github.com/jax-ml/jax>`_ and
       :link: file_formats/index
       :link-type: doc
 
-      Load morphologies from SWC, ASC, NeuroML2, and NeuroMorpho.Org.
+      Load morphologies from SWC, ASC, and NeuroMorpho.Org (NeuroML2 is
+      planned).
 
    .. grid-item-card:: 🔧 API Reference
       :link: apis/braincell
@@ -90,8 +91,9 @@ Feature highlights
        geometry and typed sections (:class:`~braincell.Soma`,
        :class:`~braincell.Dendrite`, :class:`~braincell.Axon`, …).
    * - **File-format readers**
-     - SWC, Neurolucida ASC, and NeuroML2 readers, plus a full
+     - SWC and Neurolucida ASC readers, plus a full
        `NeuroMorpho.Org <https://neuromorpho.org>`_ client with caching.
+       NeuroML2 import is planned but not yet supported.
    * - **Visualization**
      - ``Morphology.vis2d`` / ``vis3d`` and adapters for
        ``braintools.visualize.morphology``: 2-D tree layouts (matplotlib),

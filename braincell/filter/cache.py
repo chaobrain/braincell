@@ -38,10 +38,14 @@ class SelectionCache:
 
     Notes
     -----
-    Memoized entries are valid only for the morphology and structural
-    revision they were produced from. Handing the same cache to a second
-    morphology, or reusing it after :meth:`Morphology.attach`, drops the
-    stored masks rather than returning a stale answer.
+    Memoized entries are valid only for the morphology object and the
+    :attr:`~braincell.Morphology.revision` they were produced from, and
+    every edit of a morphology -- an attach, and any removal, replacement
+    or transform -- advances its revision by exactly one. Handing the same
+    cache to a second morphology, or reusing it after any edit, therefore
+    drops the stored masks rather than returning a stale answer. The cache
+    holds a strong reference to the last morphology it saw, so an identity
+    check cannot be fooled by a new tree reusing a freed address.
 
     This class previously also carried ``tree_distance_to_root``,
     ``euclidean_distance_to_root``, and ``branch_radius_summary``, reserved

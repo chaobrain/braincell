@@ -46,7 +46,34 @@ __all__ = [
 
 @dataclass(frozen=True)
 class RegionMask:
-    """Materialized region selection as `(branch, prox, dist)` intervals."""
+    """Materialized region selection as ``(branch, prox, dist)`` intervals.
+
+    Parameters
+    ----------
+    intervals : tuple of tuple of (int, float, float)
+        One ``(branch_id, prox, dist)`` row per selected interval, with
+        ``prox`` and ``dist`` normalized branch coordinates in ``[0, 1]``.
+
+    Notes
+    -----
+    A mask is a value: it does not record the morphology it came from. Each
+    ``branch_id`` is the default-order index of a branch in the morphology
+    at the :attr:`~braincell.Morphology.revision` the mask was evaluated
+    on. Attaching a branch, or replacing or transforming one in place,
+    keeps every existing default index, so the integers still name the same
+    branches (though evaluating the expression again may select other
+    intervals). Removing a branch, or replacing a whole subtree, shifts the
+    indices after it: evaluate the expression again rather than reuse the
+    mask. Keep the expression, not the mask, wherever the tree may change.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> from braincell.filter import RegionMask
+        >>> RegionMask(((0, 0.0, 1.0), (1, 0.0, 0.5))).intervals
+        ((0, 0.0, 1.0), (1, 0.0, 0.5))
+    """
 
     intervals: tuple[tuple[int, float, float], ...]
 

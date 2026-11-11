@@ -22,7 +22,8 @@ Three things are live and tested here:
 * *sub-expression memoization* — an operand that appears more than once in
   one tree is evaluated once;
 * *invalidation* — a memoized mask is dropped when the cache meets a
-  different morphology, or the same morphology after a structural change.
+  different morphology, or the same morphology after any edit; every row
+  of the morphology edit table is checked against a cold rebuild.
 
 The reserved surface is pinned too, so implementing one of the five
 without wiring the cache up fails loudly.
@@ -31,16 +32,25 @@ without wiring the cache up fails loudly.
 import unittest
 
 import brainunit as u
+import numpy as np
 
 from braincell import Branch, Morphology
-from braincell.filter._testing import make_soma_dend_tree
-from braincell.filter import AllRegion, SelectionCache
+from braincell.filter._testing import SELECTION_BATTERY, assert_selection_fresh, make_soma_dend_tree
+from braincell.filter import AllRegion, SelectionCache, at
 from braincell.filter.locset import (
     LocsetExpr,
     LocsetMask,
     LocsetSetOp,
     StepSamples,
     UniformSamples,
+)
+from braincell.morph._testing import (
+    EDIT_CASES,
+    SABOTAGE_CASES,
+    make_tree_s,
+    make_tree_t,
+    simulate_replace_geometry,
+    stretched,
 )
 from braincell.filter.region import (
     EuclideanDistanceRegion,
@@ -251,6 +261,51 @@ class SubExpressionMemoizationTest(unittest.TestCase):
 
         self.assertEqual(len(unhashable.seen), 1)
         self.assertIsInstance(mask, RegionMask)
+
+
+class SelectionCacheEditTableTest(unittest.TestCase):
+    """A cache warmed before an edit answers like no cache on the edited tree."""
+
+    def test_every_edit_case_matches_no_cache_on_the_cold_rebuild(self) -> None:
+        for case in EDIT_CASES:
+            with self.subTest(case.name):
+                assert_selection_fresh(self, case)
+
+    def test_every_sabotage_case_is_reported(self) -> None:
+        # An edit that skips the gate leaves the revision alone, so the warm
+        # cache replays the operand masks of the shorter dend; the check must
+        # see that, or a passing row above proves nothing.
+        for case in SABOTAGE_CASES:
+            with self.subTest(case.name):
+                with self.assertRaisesRegex(AssertionError, r"selection cache: .*\n  lengths"):
+                    assert_selection_fresh(self, case)
+
+    def test_every_battery_expression_memoizes_its_operands(self) -> None:
+        # The cache never stores a top-level expression, so a battery entry
+        # whose operands were not memoized could not go stale and would make
+        # its row of the check vacuous.
+        tree = make_tree_t()
+        for label, expr in SELECTION_BATTERY:
+            with self.subTest(label):
+                cache = SelectionCache()
+                tree.select(expr, cache=cache)
+                self.assertGreaterEqual(len(cache._masks), 2)
+
+    def test_a_warm_cache_follows_an_in_place_replacement(self) -> None:
+        # Tree S, dend stretched from 100 um to 200 um through the edit gate.
+        # Skipping the gate, the same cache returns the warm-up rows.
+        tree = make_tree_s()
+        cache = SelectionCache()
+        expr = UniformSamples(AllRegion(), 4) + at("soma", 0.5)
+
+        warm = tree.select(expr, cache=cache)
+        simulate_replace_geometry(tree, "dend", stretched(tree.dend.branch))
+        edited = tree.select(expr, cache=cache)
+
+        np.testing.assert_array_equal(warm.branch_id, [0, 1, 1, 2, 0])
+        np.testing.assert_allclose(warm.branch_x, [0.9375, 0.3625, 0.7375, 0.375, 0.5], rtol=0, atol=1e-12)
+        np.testing.assert_array_equal(edited.branch_id, [1, 1, 1, 1, 0])
+        np.testing.assert_allclose(edited.branch_x, [0.05625, 0.36875, 0.68125, 0.99375, 0.5], rtol=0, atol=1e-12)
 
 
 class ReservedCacheConsumersTest(unittest.TestCase):

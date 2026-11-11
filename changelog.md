@@ -1269,6 +1269,23 @@
   `Morphology.from_swc` and `Morphology.from_asc`; the exception type is
   unchanged.
 
+### Documentation
+
+- The getting-started pages, the foundation tutorials and the concept pages
+  build point neurons with `braincell.Cell.point(...)` and `paint` instead of
+  subclassing `SingleCompartment` (CELL-27a). They are `README.md`, the docs
+  home page, First Steps, Overview & Roadmap, the Overview, Single-Compartment
+  Neurons, Channels and Ions tutorials, and the Cells, Integration and
+  Architecture concept pages. The Cells page also translates a
+  `SingleCompartment` model line by line. Every changed notebook was run
+  again and stores its outputs. Traces change at the start: a `Cell` starts
+  every gate at its steady state, while a `SingleCompartment` started them at 0
+  after `init_state()` alone. For example, the first volley of the Overview's
+  E–I network comes at about 14 ms instead of 18 ms. Three of these notebooks
+  failed on `main` and run again. The Ions tutorial converted a per-member
+  array to a float. The Cells page read a `neuron.swc` that does not exist and
+  used `u.S`. The Integration page used an undefined `size`.
+
 ### Deprecations
 
 - **`braincell.mech.StateProbe`, `braincell.mech.MechanismProbe`,

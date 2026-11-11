@@ -28,8 +28,8 @@ It is built on top of [JAX](https://github.com/jax-ml/jax) and [brainstate](http
 
 ## Features
 
-- **Single-compartment neurons** — `braincell.SingleCompartment` with a rich library of ion channels (Na, K, Ca, HCN, K-Ca) and numerical integrators.
-- **Multi-compartment cells** — `braincell.Cell` with declarative mechanism painting (`cell.paint`) and point-process placement (`cell.place`) onto morphological regions.
+- **Point neurons** — `braincell.Cell.point(...)`, a `Cell` with one isopotential compartment, with a rich library of ion channels (Na, K, Ca, HCN, K-Ca) and numerical integrators.
+- **Multi-compartment cells** — `braincell.Cell` on a morphology, with declarative mechanism painting (`cell.paint`) and point-process placement (`cell.place`) onto morphological regions.
 - **Morphology system** — `braincell.morph`: immutable `Branch` geometry, typed subclasses (`Soma`, `Dendrite`, `Axon`, `BasalDendrite`, `ApicalDendrite`), and the mutable `Morphology` tree.
 - **IO readers** — SWC, Neurolucida ASC and NeuroML2 morphology readers; a full [NeuroMorpho.Org](https://neuromorpho.org) client with search, download, and local caching.
 - **Visualization** — `Morphology.vis2d` / `vis3d` and the plots in [`braintools.visualize.morphology`](https://github.com/chaobrain/braintools): 2D tree layouts (matplotlib) and 3D rendering (PyVista / Plotly), color-by-values, morphometry plots, topology graphs and movie export. braincell objects convert with `Morphology.to_vis_data()`, `Cell.topology_data()` and `NodeTree.to_topology_data()`, and every plot accepts a `Morphology` directly.
@@ -41,34 +41,42 @@ It is built on top of [JAX](https://github.com/jax-ml/jax) and [brainstate](http
 
 ## Quick start
 
-### Single-compartment neuron
+### Point neuron
+
+Declare a thalamocortical relay neuron as a point neuron, then stimulate and run it:
 
 ```python
 import braincell
-import brainstate
-import braintools
 import brainunit as u
+from braincell import mech
 
-class HTC(braincell.SingleCompartment):
-    def __init__(self, size, solver: str = 'ind_exp_euler'):
-        super().__init__(size, V_initializer=braintools.init.Constant(-65. * u.mV), V_th=20. * u.mV, solver=solver)
 
-        self.na = braincell.ion.SodiumFixed(size, E=50. * u.mV)
-        self.na.add(INa=braincell.channel.Na_Ba2002(size, V_sh=-30 * u.mV))
+def HTC(size, solver: str = 'ind_exp_euler'):
+    cell = braincell.Cell.point(size, V_init=-65. * u.mV, V_th=20. * u.mV, solver=solver)
+    cell.paint(
+        mech.Ion('SodiumFixed', E=50. * u.mV),
+        mech.Channel('Na_Ba2002', V_sh=-30 * u.mV),
 
-        self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
-        self.k.add(IKL=braincell.channel.K_Leak(size, g_max=0.01 * (u.mS / u.cm ** 2)))
-        self.k.add(IDR=braincell.channel.KDR_Ba2002(size, V_sh=-30. * u.mV, q10=2.0, temp=u.celsius2kelvin(16.)))
+        mech.Ion('PotassiumFixed', E=-90. * u.mV),
+        mech.Channel('K_Leak', g_max=0.01 * (u.mS / u.cm ** 2)),
+        mech.Channel('KDR_Ba2002', V_sh=-30. * u.mV, q10=2.0, temp=u.celsius2kelvin(16.)),
 
-        self.ca = braincell.ion.CalciumDetailed(size, C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um)
-        self.ca.add(ICaL=braincell.channel.CaL_IS2008(size, g_max=0.5 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaT=braincell.channel.CaT_HM1992(size, g_max=2.1 * (u.mS / u.cm ** 2)))
+        mech.Ion('CalciumDetailed', C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um),
+        mech.Channel('CaL_IS2008', g_max=0.5 * (u.mS / u.cm ** 2)),
+        mech.Channel('CaT_HM1992', g_max=2.1 * (u.mS / u.cm ** 2)),
 
-        self.kca = braincell.MixIons(self.k, self.ca)
-        self.kca.add(IAHP=braincell.channel.AHP_De1994(size, g_max=0.3 * (u.mS / u.cm ** 2)))
+        mech.Channel('AHP_De1994', g_max=0.3 * (u.mS / u.cm ** 2)),  # uses K and Ca
+        mech.Channel('HCN_HM1992', g_max=0.01 * (u.mS / u.cm ** 2), E=-43 * u.mV),
+        mech.Channel('IL', g_max=0.0075 * (u.mS / u.cm ** 2), E=-70 * u.mV),
+    )
+    return cell
 
-        self.Ih = braincell.channel.HCN_HM1992(size, g_max=0.01 * (u.mS / u.cm ** 2), E=-43 * u.mV)
-        self.IL = braincell.channel.IL(size, g_max=0.0075 * (u.mS / u.cm ** 2), E=-70 * u.mV)
+
+cell = HTC(10)
+cell.place(mech.CurrentClamp(delay=10. * u.ms, durations=100. * u.ms, amplitudes=0.01 * u.nA))
+cell.record('v', braincell.observe.state('v'))
+result = cell.run(dt=0.025 * u.ms, duration=200. * u.ms)
+result.samples['v'].values.shape  # (8000, 10)
 ```
 
 ### Multi-compartment cell

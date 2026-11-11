@@ -18,32 +18,33 @@ provides this in a way that is:
 - **Differentiable** — gradients flow through whole simulations, so you can fit
   parameters with gradient descent.
 
-## The two kinds of cell
+## One cell class, two regimes
 
-Almost everything in `braincell` is organized around two cell classes:
+Almost everything in `braincell` is organized around one cell class,
+{class}`braincell.Cell`, used in two regimes:
 
 ```{list-table}
 :header-rows: 1
 :widths: 22 38 40
 
-* - Class
+* - Regime
   - Use it when…
   - Built from
-* - {class}`braincell.SingleCompartment`
+* - Point neuron, {meth}`braincell.Cell.point`
   - the neuron can be treated as a single isopotential point (a "ball"), or you
     are prototyping channel dynamics.
-  - ion species ({mod}`braincell.ion`) + ion channels ({mod}`braincell.channel`)
-    added imperatively in `__init__`.
-* - {class}`braincell.Cell`
+  - ion species and channels from {mod}`braincell.mech`, painted onto its one
+    compartment.
+* - Morphological cell, `braincell.Cell(morphology)`
   - dendritic geometry matters — voltage attenuation, distributed channels,
     synaptic integration.
   - a {class}`~braincell.Morphology` decorated declaratively with
     {mod}`braincell.mech` mechanisms via `paint` / `place`.
 ```
 
-Both inherit from {class}`braincell.HHTypedNeuron` and share the same ion,
-channel, and integrator machinery — so concepts you learn for one transfer to
-the other.
+Both are declared with `paint` and `place` and share the same ion, channel,
+and integrator machinery (`Cell` derives from {class}`braincell.HHTypedNeuron`)
+— so concepts you learn for one transfer to the other.
 
 ## The pipeline
 
@@ -68,8 +69,8 @@ this pipeline makes the rest of the docs click into place:
    time, producing a `RunResult` of probe traces. See
    {doc}`../concepts/integration`.
 
-Single-compartment models skip the morphology and discretization stages: the
-cell *is* one compartment.
+A point neuron skips the morphology and discretization stages: the cell *is*
+one compartment.
 
 ## Where to go next
 

@@ -78,13 +78,14 @@ Feature highlights
 
    * - Capability
      - What you get
-   * - **Single-compartment neurons**
-     - :class:`braincell.SingleCompartment` with a large library of Na, K, Ca,
-       HCN, and K-Ca channels and selectable integrators.
+   * - **Point neurons**
+     - :meth:`braincell.Cell.point`, a cell with one isopotential compartment,
+       with a large library of Na, K, Ca, HCN, and K-Ca channels and
+       selectable integrators.
    * - **Multi-compartment cells**
-     - :class:`braincell.Cell` with declarative mechanism painting
-       (``cell.paint``) and point-process placement (``cell.place``) onto
-       morphological regions.
+     - :class:`braincell.Cell` on a morphology, with declarative mechanism
+       painting (``cell.paint``) and point-process placement (``cell.place``)
+       onto morphological regions.
    * - **Morphology system**
      - :class:`braincell.Morphology` with an immutable :class:`~braincell.Branch`
        geometry and typed sections (:class:`~braincell.Soma`,
@@ -107,33 +108,29 @@ Feature highlights
 A first taste
 -------------
 
-A single-compartment thalamic relay (HTC) neuron, assembled from ion species
-and channels:
+A thalamic relay (HTC) point neuron, assembled from ion species and channels:
 
 .. code-block:: python
 
    import braincell
-   import braintools
    import brainunit as u
+   from braincell import mech
 
-   class HTC(braincell.SingleCompartment):
-       def __init__(self, size, solver: str = 'ind_exp_euler'):
-           super().__init__(size, V_initializer=braintools.init.Constant(-65. * u.mV),
-                            V_th=20. * u.mV, solver=solver)
+   def HTC(size, solver: str = 'ind_exp_euler'):
+       cell = braincell.Cell.point(size, V_init=-65. * u.mV, V_th=20. * u.mV, solver=solver)
+       cell.paint(
+           mech.Ion('SodiumFixed', E=50. * u.mV),
+           mech.Channel('Na_Ba2002', V_sh=-30 * u.mV),
+           mech.Ion('PotassiumFixed', E=-90. * u.mV),
+           mech.Channel('KDR_Ba2002', V_sh=-30. * u.mV),
+           mech.Ion('CalciumDetailed', C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um),
+           mech.Channel('CaL_IS2008', g_max=0.5 * (u.mS / u.cm ** 2)),
+           mech.Channel('HCN_HM1992', g_max=0.01 * (u.mS / u.cm ** 2), E=-43 * u.mV),
+           mech.Channel('IL', g_max=0.0075 * (u.mS / u.cm ** 2), E=-70 * u.mV),
+       )
+       return cell
 
-           self.na = braincell.ion.SodiumFixed(size, E=50. * u.mV)
-           self.na.add(INa=braincell.channel.Na_Ba2002(size, V_sh=-30 * u.mV))
-
-           self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
-           self.k.add(IDR=braincell.channel.KDR_Ba2002(size, V_sh=-30. * u.mV))
-
-           self.ca = braincell.ion.CalciumDetailed(size, C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um)
-           self.ca.add(ICaL=braincell.channel.CaL_IS2008(size, g_max=0.5 * (u.mS / u.cm ** 2)))
-
-           self.Ih = braincell.channel.HCN_HM1992(size, g_max=0.01 * (u.mS / u.cm ** 2), E=-43 * u.mV)
-           self.IL = braincell.channel.IL(size, g_max=0.0075 * (u.mS / u.cm ** 2), E=-70 * u.mV)
-
-See :doc:`getting_started/first_steps` to run this model and plot a spike train,
+See :doc:`getting_started/first_steps` to run a point neuron and plot a spike train,
 or :doc:`concepts/architecture` to understand each piece.
 
 

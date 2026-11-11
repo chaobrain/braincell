@@ -15,6 +15,7 @@
 
 """Declaration, discretization, parameter ownership and deinitialization."""
 
+import re
 import unittest
 from unittest.mock import patch
 
@@ -23,7 +24,7 @@ import brainunit as u
 import numpy as np
 
 import braincell as bc
-from braincell.filter import AllRegion, BranchSlice, at
+from braincell.filter import AllRegion, BranchSlice, RootLocation, at
 from braincell._multi_compartment import cell as cell_module
 
 
@@ -32,6 +33,24 @@ def make_cell(policy=None, pop_size=1):
     cell = bc.Cell(bc.Morphology.from_root(branch), cv_policy=policy or bc.CVPerBranch(2), pop_size=pop_size)
     cell.paint(AllRegion(), bc.mech.Channel("IL", name="leak", g_max=0.1 * u.mS / u.cm**2, E=-65 * u.mV))
     return cell
+
+
+def make_clamp():
+    return bc.CurrentClamp(delay=0.0 * u.ms, durations=[1.0] * u.ms, amplitudes=[0.1] * u.nA)
+
+
+def make_clamped_cell(policy=None):
+    cell = make_cell(policy)
+    cell.place(RootLocation(0.5), make_clamp())
+    return cell
+
+
+def final_voltage(cell):
+    return np.asarray(cell.V.value.to_decimal(u.mV)).copy()
+
+
+#: A ``Network.<method>()`` a lifecycle message tells the user to call.
+_NETWORK_METHOD = re.compile(r"Network\.(\w+)\(\)")
 
 
 class LifecycleTest(unittest.TestCase):
@@ -131,10 +150,13 @@ class LifecycleTest(unittest.TestCase):
             cell.cv_policy = bc.CVPerBranch(4)
             self.assertEqual(build.call_count, 1)
             self.assertEqual(cell.n_cv, 4)
+            preview = cell.cvs
             with self.assertRaises(ValueError):
                 cell.cv_policy = bc.CVPerBranch(0)
             self.assertEqual(cell.cv_policy, bc.CVPerBranch(4))
             self.assertEqual(cell.n_cv, 4)
+            self.assertIs(cell.cvs, preview)
+            self.assertEqual(build.call_count, 2)
         cell.init_state()
         with self.assertRaises(RuntimeError):
             cell.discretize()
@@ -252,6 +274,128 @@ class LifecycleTest(unittest.TestCase):
         np.testing.assert_array_equal(
             cell.channels["leak"].g_max.to_decimal(u.mS / u.cm**2), before.to_decimal(u.mS / u.cm**2)
         )
+
+    def test_repeated_reset_and_init_compile_the_current_declarations(self):
+        # Each reset() + init_state() builds and compiles the runtime again from
+        # the declarations; nothing compiled for an earlier grid is reused.
+        cell = make_clamped_cell()
+
+        def cycle(policy):
+            cell.cv_policy = policy
+            cell.init_state()
+            cell.run(dt=0.025 * u.ms, duration=0.5 * u.ms)
+            final = final_voltage(cell)
+            cell.reset()
+            return final
+
+        first = cycle(bc.CVPerBranch(2))
+        self.assertEqual(first.shape, (1, 2))
+        self.assertFalse(np.allclose(first, -65.0))
+        self.assertEqual(cycle(bc.CVPerBranch(4)).shape, (1, 4))
+        for _ in range(2):
+            np.testing.assert_array_equal(cycle(bc.CVPerBranch(2)), first)
+
+
+class NetworkOwnedLifecycleTest(unittest.TestCase):
+    """A Cell that a Network runs cannot reset(): its messages say what works instead."""
+
+    def assert_names_existing_network_methods(self, message):
+        named = _NETWORK_METHOD.findall(message)
+        for name in named:
+            self.assertTrue(callable(getattr(bc.Network, name, None)), f"{message!r} names a missing Network.{name}()")
+        return named
+
+    def run_network(self, net):
+        net.run(dt=0.025 * u.ms, duration=0.5 * u.ms)
+
+    def test_lifecycle_messages_name_only_network_methods_that_exist(self):
+        self.assertFalse(hasattr(bc.Network, "reset"))
+        cell = make_cell()
+        net = bc.Network("n")
+        net.add_population("p", cell)
+        for initialized in (False, True):
+            if initialized:
+                net.init_state()
+            for call, suggested in (
+                (cell.init_state, ["init_state"]),
+                (cell.reset_state, ["reset_state"]),
+                (cell.reset, ["reset_state"]),
+            ):
+                with self.subTest(call=call.__name__, initialized=initialized):
+                    with self.assertRaisesRegex(RuntimeError, "Cell belongs to Network 'n'") as caught:
+                        call()
+                    self.assertEqual(self.assert_names_existing_network_methods(str(caught.exception)), suggested)
+
+    def test_the_recoveries_the_reset_message_names_work(self):
+        cell = make_clamped_cell()
+        net = bc.Network("n")
+        net.add_population("p", cell)
+        net.init_state()
+        initial = final_voltage(cell)
+        self.run_network(net)
+        first = final_voltage(cell)
+        with self.assertRaisesRegex(
+            RuntimeError, r"no reset\(\).*Network\.reset_state\(\).*declare a new Cell and a new Network"
+        ):
+            cell.reset()
+        self.assertTrue(cell._initialized)
+
+        # Network.reset_state() starts the run again from the initial state.
+        net.reset_state()
+        self.assertEqual(cell.current_time, 0.0 * u.ms)
+        np.testing.assert_array_equal(final_voltage(cell), initial)
+        self.run_network(net)
+        np.testing.assert_array_equal(final_voltage(cell), first)
+
+        # A new Cell in a new Network takes changed declarations.
+        new_cell = make_clamped_cell(bc.CVPerBranch(4))
+        new_net = bc.Network("n")
+        new_net.add_population("p", new_cell)
+        new_net.init_state()
+        self.run_network(new_net)
+        self.assertEqual(final_voltage(new_cell).shape, (1, 4))
+
+    def test_an_initialized_cell_in_a_network_is_not_told_to_reset(self):
+        # A Cell initialized before it joined the Network (or one that a failed
+        # Network.init_state left initialized) cannot reset() either.
+        cell = make_cell()
+        cell.init_state()
+        net = bc.Network("n")
+        net.add_population("p", cell)
+        cable = bc.mech.CableProperty(
+            resting_potential=-65 * u.mV,
+            axial_resistivity=1200 * u.ohm * u.cm,
+            membrane_capacitance=10 * u.uF / u.cm**2,
+        )
+        for action, call in (
+            ("paint()", lambda: cell.paint(AllRegion(), cable)),
+            ("place()", lambda: cell.place(RootLocation(0.5), make_clamp())),
+            ("discretize()", cell.discretize),
+            ("assign cv_policy", lambda: setattr(cell, "cv_policy", bc.CVPerBranch(4))),
+        ):
+            with self.subTest(action):
+                with self.assertRaises(RuntimeError) as caught:
+                    call()
+                message = str(caught.exception)
+                self.assertIn(f"Cannot {action} after init_state()", message)
+                self.assertIn("belongs to Network 'n'", message)
+                self.assertIn("declare a new Cell and a new Network", message)
+                self.assertNotIn("call reset()", message)
+                self.assert_names_existing_network_methods(message)
+
+        # The Network runs the Cell as it was initialized; a new Cell in a new
+        # Network takes the change.
+        net.init_state()
+        self.run_network(net)
+        self.assertEqual(final_voltage(cell).shape, (1, 2))
+        with self.assertRaisesRegex(RuntimeError, "owning Network 'n' has been initialized"):
+            cell.paint(AllRegion(), cable)
+        new_cell = make_cell()
+        new_cell.paint(AllRegion(), cable)
+        new_net = bc.Network("n")
+        new_net.add_population("p", new_cell)
+        new_net.init_state()
+        self.run_network(new_net)
 
 
 if __name__ == "__main__":

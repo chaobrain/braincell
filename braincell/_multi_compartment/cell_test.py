@@ -16,7 +16,11 @@
 """Unit tests for :class:`braincell.Cell`."""
 
 import dataclasses
+import functools
+import json
+import os
 import re
+import subprocess
 import sys
 import unittest
 import warnings
@@ -1650,6 +1654,119 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
         for _, ions in channel_args:
             self.assertEqual(len(ions), 1)
             self.assertFalse(any(isinstance(arg, bool) for arg in ions))
+
+
+def _kinetic_calcium_cell(order, solver="staggered"):
+    """Soma 20 um x 10 um: leak 0.1 mS/cm^2 at -70 mV, kinetic Ca pool, CaHVA 0.5 mS/cm^2 under it."""
+    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    cell = Cell(
+        Morphology.from_root(soma, name="soma"),
+        cv_policy=CVPerBranch(),
+        solver=solver,
+        ion_channel_update_order=order,
+    )
+    cell.paint(mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV))
+    cell.paint(mech.Ion("CdpStC_MA2020_GoC", name="ca"))
+    cell.paint(mech.Channel("CaHVA_MA2020_GoC", g_max=0.5 * u.mS / u.cm**2, ion_name="ca"))
+    return cell
+
+
+def _cahva_gates(cell):
+    gates = {}
+    for path, state in cell.states(brainstate.HiddenState).items():
+        names = [str(part) for part in path]
+        if any("CaHVA" in name for name in names) and names[-1] in ("s", "u"):
+            gates[names[-1]] = float(np.asarray(u.get_mantissa(state.value)).reshape(-1)[0])
+    return gates
+
+
+def _kinetic_integration_report() -> dict:
+    """The CELL-32 measurements; run in a float64 subprocess by :func:`_kinetic_integration_numbers`."""
+
+    def run(order, solver, dt_ms):
+        cell = _kinetic_calcium_cell(order, solver)
+        cell.init_state()
+        cell.run(dt=dt_ms * u.ms, duration=1.0 * u.ms)
+        return {"V": float(np.asarray(cell.V.value.to_decimal(u.mV)).reshape(-1)[0]), **_cahva_gates(cell)}
+
+    initial = _kinetic_calcium_cell("integration")
+    initial.init_state()
+    report = {"initial": _cahva_gates(initial)}
+    for order, solver in (("integration", "staggered"), ("family", "staggered"), ("integration", "ralston2")):
+        for dt_ms in (0.005, 0.001):
+            report[f"{order}/{solver}/{dt_ms}"] = run(order, solver, dt_ms)
+    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    sodium = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch(), ion_channel_update_order="integration")
+    sodium.paint(mech.Ion("SodiumFixed", name="na", E=50.0 * u.mV))
+    sodium.paint(mech.Channel("Nav_MA2020_GrC", g_max=20.0 * u.mS / u.cm**2, ion_name="na"))
+    for name, cell in (("sodium", sodium), ("kinetic", _kinetic_calcium_cell("integration"))):
+        cell.init_state()
+        hand_on = getattr(cell, "_integrate_dependent_child_channels", None)
+        if hand_on is None:
+            report[f"calls/{name}"] = None
+            continue
+        with mock.patch.object(cell, "_integrate_dependent_child_channels", wraps=hand_on) as spy:
+            with brainstate.environ.context(t=0.0 * u.ms, dt=0.005 * u.ms):
+                cell.update()
+        report[f"calls/{name}"] = spy.call_count
+    return report
+
+
+@functools.cache
+def _kinetic_integration_numbers() -> dict:
+    # In a subprocess: in one process, a kinetic-ion Cell stepped under
+    # "integration" at one precision makes the next one fail at the other
+    # (JaxRuntimeError at init_state; on main too), which would break the
+    # float32 tests that follow.
+    code = (
+        "import json; from braincell._multi_compartment.cell_test import _kinetic_integration_report; "
+        "print(json.dumps(_kinetic_integration_report()))"
+    )
+    env = dict(os.environ, JAX_ENABLE_X64="1", JAX_PLATFORMS="cpu")
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
+    if result.returncode != 0:
+        raise AssertionError(result.stderr)
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+class IntegrationOrderAdvancesKineticIonChannelsTest(unittest.TestCase):
+    """CELL-32: under ``"integration"``, the dependent channels of a kinetic ion advance."""
+
+    def test_channels_under_a_kinetic_ion_advance_as_in_family_order(self) -> None:
+        # Acceptance 1. On main, staggered + "integration" left CaHVA's s and
+        # u at their initial 0.01005754343517934 and 0.7574863259922417, and
+        # V stayed 1.31e-4 mV from "family" at dt 0.005 and 0.001 ms.
+        report = _kinetic_integration_numbers()
+        start = report["initial"]
+        self.assertEqual(set(start), {"s", "u"})
+        differences = []
+        for dt_ms in (0.005, 0.001):
+            integration = report[f"integration/staggered/{dt_ms}"]
+            family = report[f"family/staggered/{dt_ms}"]
+            for name in ("s", "u"):
+                self.assertNotEqual(integration[name], start[name])
+                self.assertAlmostEqual(integration[name], family[name], delta=1e-12)
+            differences.append(abs(integration["V"] - family["V"]))
+        self.assertLessEqual(differences[0], 1e-3)
+        # The CaHVA gates read V only, so the two orders agree here.
+        self.assertLessEqual(max(differences), 1e-12)
+
+    def test_generic_solver_converges_to_staggered_integration_order(self) -> None:
+        # Acceptance 1. On main the gap shrank 1.58x (2.42e-4 -> 1.53e-4 mV).
+        report = _kinetic_integration_numbers()
+        gaps = [
+            abs(report[f"integration/ralston2/{dt_ms}"]["V"] - report[f"integration/staggered/{dt_ms}"]["V"])
+            for dt_ms in (0.005, 0.001)
+        ]
+        self.assertLessEqual(gaps[0], 1e-3)
+        self.assertGreaterEqual(gaps[0] / gaps[1], 3.0)
+
+    def test_dependent_ion_keeps_its_one_integration_step(self) -> None:
+        # Acceptance 2: an ion integrated with its channels (SodiumFixed) is
+        # untouched; only a self-integrating ion hands its channels on.
+        report = _kinetic_integration_numbers()
+        self.assertEqual(report["calls/sodium"], 0)
+        self.assertEqual(report["calls/kinetic"], 1)
 
 
 class CellIonTotalCurrentSnapshotTest(unittest.TestCase):

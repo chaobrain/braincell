@@ -201,7 +201,7 @@ class Branch:
         >>> b.n_segments
         3
         >>> b.length
-        45.0 * umetre
+        Quantity(45., "um")
 
     Create a branch from 3-D coordinates:
 

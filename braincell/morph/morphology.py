@@ -259,7 +259,7 @@ class Morphology:
         >>> morph.n_branches
         2
         >>> morph.total_length
-        110.0 * umetre
+        Quantity(110., "um")
 
     Load from an SWC file:
 
@@ -1293,6 +1293,7 @@ class Morphology:
             ...     ),
             ...     child_name="dend",
             ... )
+            MorphoBranch(name='dend', type='basal_dendrite', index=1)
             >>> data = tree.to_vis_data()
             >>> [branch.name for branch in data.branches]
             ['soma', 'dend']
@@ -2459,7 +2460,7 @@ class MorphoBranch:
         >>> morph.soma.n_children
         1
         >>> morph.soma.dend.length
-        50.0 * umetre
+        Quantity(50., "um")
     """
 
     def __init__(

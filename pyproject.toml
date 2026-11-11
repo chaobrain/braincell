@@ -91,6 +91,7 @@ optional-dependencies.testing = [
   "hypothesis",
   "pytest",
   "pytest-benchmark",
+  "pytest-xdist",
 ]
 optional-dependencies.tpu = [ "jax[tpu]>=0.11" ]
 # Visualization lives in braintools.visualize.morphology; this extra installs

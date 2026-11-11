@@ -24,9 +24,12 @@ For shared behavior spanning several modules, expand testing to the relevant pac
 
 ```bash
 python -m pytest braincell/ -q
+python -m pytest braincell/ -q -n auto --dist loadfile   # in parallel (pytest-xdist), as CI runs it
 ```
 
 The root `conftest.py` forces CPU JAX (`JAX_PLATFORMS=cpu`) and headless Matplotlib (`MPLBACKEND=Agg`).
+It also collects garbage around a switch of `jax_enable_x64` between tests: jaxlib reuses a numpy constant's float64 (or float32) device form while a jaxpr from the other precision still holds it, so a float32 test after a float64 one (or the reverse) could fail with `RuntimeProgramInputMismatch` depending on test order.
+A test that needs float64 after float32 work in the same test runs the float64 part in a child process (`run_float64` in `braincell/ion/_testing.py`).
 GPU performance and large numerical comparisons require separate workflows; unit tests do not establish those results.
 
 ## Validation and performance workflows
@@ -52,7 +55,7 @@ A draft pull request runs no tests: its `ci-ok` fails until you mark it ready fo
 | `benchmarks/` or another directory of `validation/` | `checks`, the `validation/optim` and benchmarks step of `validation` |
 | anything else (`docs/`, `examples/`, `changelog.md`, ...) | `checks` |
 
-`checks` (pre-commit, the package build and the documentation build) always runs. `coverage` runs `pytest braincell/` on the latest JAX. Every job uses Python 3.13; the JAX floor (0.11.0), macOS and Windows run only in the daily workflow, which runs every job and also tests `main` (there is no run on `main` after a merge). To add a rule, edit `RUN_ALL` or `jobs()` in `ci_changes.py` and its `CASES`; the `changes` job runs `ci_changes.py --self-test` first.
+`checks` (pre-commit, the package build and the documentation build) always runs. `coverage` runs `pytest braincell/` on the latest JAX, in parallel with pytest-xdist. Every job uses Python 3.13; the JAX floor (0.11.0), macOS and Windows run only in the daily workflow, which runs every job and also tests `main` (there is no run on `main` after a merge). To add a rule, edit `RUN_ALL` or `jobs()` in `ci_changes.py` and its `CASES`; the `changes` job runs `ci_changes.py --self-test` first.
 
 The NEURON comparison suites are tiered the same way, each suite in its own pytest process (one `validation` job on a pull request):
 
@@ -106,7 +109,7 @@ Shared behavior changes also need validation through the Cell or Network path th
 
 ## Meet the coverage gates
 
-The `coverage` job in CI runs `pytest braincell/ --cov=braincell --cov-report=xml` on the latest JAX and enforces two tiers:
+The `coverage` job in CI runs `pytest braincell/ -n auto --dist loadfile --cov=braincell --cov-report=xml` on the latest JAX and enforces two tiers:
 
 1. **Total floor.** Total coverage of `braincell/` (branch coverage on; `*_test.py` and `braincell/_version.py` omitted, see `[tool.coverage]` in `pyproject.toml`) must not fall below `report.fail_under`. The floor started at the total measured on `main` when the gate was introduced, rounded down; before each minor release it is raised to the current total, rounded down.
 2. **Changed lines.** On a pull request, the lines it adds or changes must be at least 90 % covered, checked by `diff-cover coverage.xml --compare-branch=origin/main --fail-under=90`.
@@ -114,8 +117,8 @@ The `coverage` job in CI runs `pytest braincell/ --cov=braincell --cov-report=xm
 Reach coverage by testing edge cases and critical paths, not trivial lines. To check a change locally before pushing:
 
 ```bash
-pip install pytest-cov diff-cover
-pytest braincell/ --cov=braincell --cov-report=xml
+pip install pytest-cov pytest-xdist diff-cover
+pytest braincell/ -n auto --dist loadfile --cov=braincell --cov-report=xml
 diff-cover coverage.xml --compare-branch=origin/main --fail-under=90
 ```
 

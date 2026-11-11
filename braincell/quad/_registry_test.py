@@ -137,10 +137,13 @@ class RemovedNamesTest(unittest.TestCase):
             ("register_integrator", "register_method"),
             ("IntegratorRegistry", "integrator_info"),
             ("IntegratorEntry", "MethodInfo"),
+            ("implicit_euler_step", "crank_nicolson_step"),
         ):
             with self.subTest(name=name):
-                with self.assertRaisesRegex(AttributeError, hint):
+                with self.assertRaisesRegex(AttributeError, hint) as caught:
                     getattr(quad, name)
+                # The message names the removed attribute once, in its prefix.
+                self.assertEqual(str(caught.exception).count(f"braincell.quad.{name}"), 1, str(caught.exception))
         with self.assertRaisesRegex(AttributeError, "no attribute"):
             quad.not_a_name
 

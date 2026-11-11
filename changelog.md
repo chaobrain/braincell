@@ -368,6 +368,11 @@
 
 ### Bug Fixes
 
+- The `AttributeError` for the removed `braincell.quad.rk2_step` no longer
+  names it twice. It now reads: "braincell.quad.rk2_step was removed; it was
+  Ralston's second-order method; use braincell.quad.ralston2_step (same
+  numbers), or heun2_step for Heun's method."
+
 - A population-view `place` (`cell[[0]].place(...)`, or
   `cell[[0]].loc(mask).place(...)`) that fails now leaves the Cell as it was,
   as `Cell.place` and per-member placement already did. Before, the failed

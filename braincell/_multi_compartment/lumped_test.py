@@ -15,6 +15,7 @@
 
 """Lumped (point) Cells: ``Cell.point`` and ``cv_policy=Lumped()``."""
 
+import gc
 import unittest
 import warnings
 from unittest import mock
@@ -211,13 +212,17 @@ class LumpedShapeLifecycleTest(unittest.TestCase):
             hooked.V.derivative.to_decimal(u.mV / u.ms), reference.V.derivative.to_decimal(u.mV / u.ms)
         )
 
-    def test_cable_runtime_views_raise(self) -> None:
+    def test_point_tree_views_raise(self) -> None:
         cell = _point_cell()
         cell.init_state()
-        for name in ("runtime", "n_point", "layouts"):
+        for name in ("n_point", "layouts"):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(RuntimeError, "lumped Cell"):
                     getattr(cell, name)
+        # CELL-24: the lumped nodes run on the layouts of the one-CV twin.
+        self.assertEqual(cell.runtime.n_cv, 1)
+        self.assertEqual(cell.runtime.voltage_shape, (N, 1))
+        self.assertTrue(cell.runtime.is_lumped)
 
     def test_batch_axis_and_reset_state(self) -> None:
         cell = _point_cell(clamp=True)
@@ -439,6 +444,12 @@ class LumpedKineticIonTest(unittest.TestCase):
                 self.assertTrue(np.all(np.isfinite(cell.V.value.to_decimal(u.mV))))
 
     def test_matches_the_cable_twin_under_staggered(self) -> None:
+        # JAX 0.12 reuses a NumPy constant (here ``u.gas_constant``) that a live
+        # float32 program captured as a float32 buffer in a later float64 eager
+        # op, which fails with RuntimeProgramInputMismatch. Earlier tests' Cells
+        # hold such programs; free them and start the float64 run clean.
+        gc.collect()
+        jax.clear_caches()
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
             reference = {dt: _final_values(_kinetic_pool_cell("staggered"), dt) for dt in (0.005, 0.001)}
             for name in (None, "rk4", "ind_exp_euler", "exp_euler", "backward_euler"):
@@ -707,7 +718,9 @@ class LumpedCounterexampleTest(unittest.TestCase):
             cable.cv_policy = bc.Lumped()
         self.assertIsInstance(cable.cv_policy, bc.CVPerBranch)
 
-    def test_unsupported_uses_raise_not_implemented(self) -> None:
+    def test_cable_uses_work(self) -> None:
+        # CELL-21b raised NotImplementedError for each; the values are checked
+        # against the one-CV twin in lumped_twin_test.py.
         cell = _point_cell()
         cell.init_state()
         cases = {
@@ -722,24 +735,22 @@ class LumpedCounterexampleTest(unittest.TestCase):
         }
         for name, use in cases.items():
             with self.subTest(use=name):
-                with self.assertRaisesRegex(NotImplementedError, "lumped Cell"):
-                    use()
+                self.assertIsNotNone(use())
 
-    def test_unsupported_declarations_raise_not_implemented(self) -> None:
+    def test_cable_declarations_are_accepted(self) -> None:
         cell = bc.Cell.point(N)
-        with self.assertRaisesRegex(NotImplementedError, "lumped Cell"):
-            cell.place(bc.mech.Synapse("Exp2Syn", name="syn"))
-        with self.assertRaisesRegex(NotImplementedError, "lumped Cell"):
-            cell.add_reduction("reduced", object())
-        with self.assertRaisesRegex(NotImplementedError, "lumped Cell"):
-            cell.record("i", bc.observe.membrane_current())
-            cell.init_state()
-            cell.run(dt=DT, duration=DT)
+        cell.paint(AllRegion(), *_mechanisms(False))
+        cell.place(bc.mech.Synapse("Exp2Syn", name="syn"))
+        cell.add_reduction("reduced", _NoopReduction())
+        cell.record("i", bc.observe.membrane_current())
+        cell.init_state()
+        result = cell.run(dt=DT, duration=2 * DT)
+        self.assertEqual(result.samples["i"].values.shape, (2, N))
+        self.assertEqual(len(cell.synapses["syn"]), N)
         cable = bc.Cell(bc.Morphology.from_soma())
         cable.place(RootLocation(0.5), bc.mech.Synapse("Exp2Syn", name="syn"))
-        with self.assertRaisesRegex(NotImplementedError, "lumped Cell"):
-            cable.cv_policy = bc.Lumped()
-        self.assertIsInstance(cable.cv_policy, bc.CVPerBranch)
+        cable.cv_policy = bc.Lumped()
+        self.assertIsInstance(cable.cv_policy, bc.Lumped)
 
     def test_bad_spatial_parameters_raise_at_init_state(self) -> None:
         cases = (
@@ -815,21 +826,21 @@ class LumpedCounterexampleTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     cell.init_state()
 
-    def test_switching_to_lumped_rejects_cable_only_declarations(self) -> None:
+    def test_switching_to_lumped_keeps_cable_declarations(self) -> None:
         with_reduction = bc.Cell(bc.Morphology.from_soma())
         with_reduction.add_reduction("reduced", _NoopReduction())
         with_junction = bc.Cell(bc.Morphology.from_soma())
-        with_junction.place(RootLocation(0.5), bc.mech.Junction())
+        with_junction.place(RootLocation(0.5), bc.mech.Junction(params={"g": 1.0}))
         for name, cell in (("reduction", with_reduction), ("junction", with_junction)):
             with self.subTest(declaration=name):
-                with self.assertRaisesRegex(NotImplementedError, "lumped Cell"):
-                    cell.cv_policy = bc.Lumped()
-                self.assertIsInstance(cell.cv_policy, bc.CVPerBranch)
+                cell.cv_policy = bc.Lumped()
+                self.assertIsInstance(cell.cv_policy, bc.Lumped)
+                cell.init_state()
 
-    def test_network_rejects_lumped_cell(self) -> None:
+    def test_network_accepts_lumped_cell(self) -> None:
         network = bc.Network("lumped")
-        with self.assertRaisesRegex(NotImplementedError, "lumped Cell"):
-            network.add_population("points", bc.Cell.point(N))
+        population = network.add_population("points", bc.Cell.point(N))
+        self.assertEqual(population.size, N)
 
 
 # ---------------------------------------------------------------------------

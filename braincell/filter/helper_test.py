@@ -35,6 +35,8 @@ from braincell.filter.helper import (
     EPSILON,
     _length_scalar_um,
     _linear_piece_select,
+    _quadratic_sublevel,
+    _segment_distance_sublevel,
     _value_in_range,
     complement_region_intervals,
     difference_region_intervals,
@@ -284,6 +286,123 @@ class LinearPieceSelectTest(unittest.TestCase):
         self.assertTrue(_value_in_range(0.0, 0.0, None, "both"))
         self.assertFalse(_value_in_range(0.0, 0.0, None, "neither"))
         self.assertFalse(_value_in_range(4.0, None, 3.0, "both"))
+
+
+def _sublevel(a, b, c, t_lo=-10.0, t_hi=10.0, *, strict=False, scale=1.0):
+    lo, hi = _quadratic_sublevel(
+        np.array([a], dtype=float),
+        np.array([b], dtype=float),
+        np.array([c], dtype=float),
+        t_lo,
+        t_hi,
+        strict=strict,
+        scale=np.array([scale], dtype=float),
+    )
+    return float(lo[0]), float(hi[0])
+
+
+class QuadraticSublevelTest(unittest.TestCase):
+    """The solve behind EuclideanDistanceRegion: where a t^2 + b t + c <= 0 on [t_lo, t_hi]."""
+
+    def test_two_roots_bound_the_set_and_the_domain_clips_it(self) -> None:
+        self.assertEqual(_sublevel(1.0, 0.0, -1.0), (-1.0, 1.0))
+        self.assertEqual(_sublevel(1.0, 0.0, -1.0, 0.0, 0.5), (0.0, 0.5))
+        self.assertEqual(_sublevel(4.0, -4.0, 0.75), (0.25, 0.75))
+
+    def test_no_real_root_or_a_single_touching_point_is_empty(self) -> None:
+        lo, hi = _sublevel(1.0, 0.0, 1.0)
+        self.assertGreater(lo, hi)
+        lo, hi = _sublevel(1.0, 0.0, 0.0)  # touches 0 at t = 0 only
+        self.assertEqual((lo, hi), (0.0, 0.0))
+
+    def test_the_small_root_keeps_its_precision(self) -> None:
+        # Roots 1e-8 and 1e8: the textbook formula loses the small one to cancellation.
+        lo, hi = _sublevel(1.0, -(1e8 + 1e-8), 1.0, 0.0, 1.0)
+        self.assertEqual(hi, 1.0)
+        self.assertAlmostEqual(lo / 1e-8, 1.0, places=14)
+
+    def test_a_negligible_leading_coefficient_is_solved_as_a_line(self) -> None:
+        self.assertEqual(_sublevel(1e-14, 2.0, -1.0, 0.0, 1.0), (0.0, 0.5))
+        self.assertEqual(_sublevel(0.0, -2.0, 1.0, 0.0, 1.0), (0.5, 1.0))
+        # The threshold is relative: the same coefficient is a real quadratic at a small scale.
+        lo, hi = _sublevel(1e-14, 0.0, -1e-14, scale=1e-6)
+        self.assertEqual((lo, hi), (-1.0, 1.0))
+
+    def test_a_constant_is_all_in_or_all_out_and_strict_decides_zero(self) -> None:
+        self.assertEqual(_sublevel(0.0, 0.0, -1.0, 0.0, 1.0), (0.0, 1.0))
+        self.assertEqual(_sublevel(0.0, 0.0, 0.0, 0.0, 1.0), (0.0, 1.0))
+        lo, hi = _sublevel(0.0, 0.0, 0.0, 0.0, 1.0, strict=True)
+        self.assertGreater(lo, hi)
+        lo, hi = _sublevel(0.0, 1e-13, 1.0, 0.0, 1.0)
+        self.assertGreater(lo, hi)
+
+
+def _segment_point_distance(points, a, b):
+    w = b - a
+    ww = float(w @ w)
+    t = np.zeros(len(points)) if ww == 0.0 else np.clip((points - a) @ w / ww, 0.0, 1.0)
+    return np.linalg.norm(points - (a + t[:, None] * w), axis=1)
+
+
+class SegmentDistanceSublevelTest(unittest.TestCase):
+    """Where each segment p(t) = start + t * step is within a radius of a reference segment [a, b]."""
+
+    def assertMatchesSampling(self, starts, steps, a, b, radius) -> None:
+        ts = np.linspace(0.0, 1.0, 2001)
+        for strict in (False, True):
+            lo, hi = _segment_distance_sublevel(starts, steps, a, b, radius, strict=strict)
+            for i in range(len(starts)):
+                f = _segment_point_distance(starts[i] + ts[:, None] * steps[i], a, b)
+                want = (f < radius) if strict else (f <= radius)
+                got = (ts >= lo[i]) & (ts <= hi[i])
+                # Samples next to a crossing may fall either way.
+                near = (np.abs(f - radius) <= 1e-9) | (np.minimum(np.abs(ts - lo[i]), np.abs(ts - hi[i])) <= 1e-9)
+                with self.subTest(i=i, strict=strict):
+                    self.assertFalse(np.any((want != got) & ~near), (lo[i], hi[i]))
+
+    def test_random_segments_match_sampling(self) -> None:
+        rng = np.random.default_rng(0)
+        starts = rng.uniform(-20.0, 20.0, (300, 3))
+        steps = rng.uniform(-30.0, 30.0, (300, 3))
+        for a, b in (
+            (np.zeros(3), np.array([10.0, 0.0, 0.0])),
+            (np.array([1.0, 2.0, 3.0]), np.array([-4.0, 8.0, 1.0])),
+        ):
+            self.assertMatchesSampling(starts, steps, a, b, 15.0)
+
+    def test_a_zero_length_reference_is_a_point(self) -> None:
+        a = np.array([1.0, 1.0, 0.0])
+        lo, hi = _segment_distance_sublevel(
+            np.array([[-4.0, 4.0, 0.0]]), np.array([[10.0, 0.0, 0.0]]), a, a, 5.0, strict=False
+        )
+        np.testing.assert_allclose((lo[0], hi[0]), (0.1, 0.9), rtol=0.0, atol=1e-15)
+        rng = np.random.default_rng(1)
+        self.assertMatchesSampling(rng.uniform(-10.0, 10.0, (50, 3)), rng.uniform(-20.0, 20.0, (50, 3)), a, a, 6.0)
+
+    def test_a_segment_parallel_or_perpendicular_to_the_reference(self) -> None:
+        a, b = np.zeros(3), np.array([10.0, 0.0, 0.0])
+        # Perpendicular (the nearest point does not move) beside, before and past the reference.
+        starts = np.array([[5.0, -3.0, 4.0], [-3.0, 0.0, -10.0], [14.0, 0.0, -10.0], [5.0, 6.0, 0.0]])
+        steps = np.array([[0.0, 0.0, -8.0], [0.0, 0.0, 20.0], [0.0, 0.0, 20.0], [0.0, 0.0, 1.0]])
+        lo, hi = _segment_distance_sublevel(starts, steps, a, b, 5.0, strict=False)
+        np.testing.assert_allclose(lo[:3], (0.0, 0.5 - 0.2, 0.5 - 0.15), rtol=0.0, atol=1e-15)
+        np.testing.assert_allclose(hi[:3], (1.0, 0.5 + 0.2, 0.5 + 0.15), rtol=0.0, atol=1e-15)
+        self.assertGreater(lo[3], hi[3])  # 6 um away all along
+        # Parallel at 4 um, running past both ends: within 5 um from x = -3 to 13.
+        lo, hi = _segment_distance_sublevel(
+            np.array([[-10.0, 4.0, 0.0]]), np.array([[30.0, 0.0, 0.0]]), a, b, 5.0, strict=False
+        )
+        np.testing.assert_allclose((lo[0], hi[0]), (7 / 30, 23 / 30), rtol=0.0, atol=1e-15)
+        self.assertMatchesSampling(starts, steps, a, b, 5.0)
+
+    def test_strict_drops_a_tangency_and_keeps_the_rest(self) -> None:
+        a, b = np.zeros(3), np.array([10.0, 0.0, 0.0])
+        starts, steps = np.array([[0.0, 5.0, 0.0]]), np.array([[10.0, 0.0, 0.0]])  # 5 um all along
+        self.assertEqual(
+            tuple(map(float, np.ravel(_segment_distance_sublevel(starts, steps, a, b, 5.0, strict=False)))), (0.0, 1.0)
+        )
+        lo, hi = _segment_distance_sublevel(starts, steps, a, b, 5.0, strict=True)
+        self.assertGreater(lo[0], hi[0])
 
 
 if __name__ == "__main__":

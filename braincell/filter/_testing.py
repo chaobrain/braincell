@@ -49,6 +49,7 @@ from braincell.filter.locset import (
 from braincell.filter.region import (
     AllRegion,
     EmptyRegion,
+    EuclideanDistanceRegion,
     RadiusRangeRegion,
     RegionMask,
     SubtreeRegion,
@@ -56,7 +57,7 @@ from braincell.filter.region import (
     branch_in,
 )
 from braincell.io._testing import FIXTURE_DIR
-from braincell.morph._spatial import MorphologySpatialGeometry
+from braincell.morph._spatial import MorphologySpatialGeometry, interpolate_branch
 from braincell.morph._testing import EditCase, assert_layer_fresh, make_tree_t
 
 # Re-exported so the filter tests keep a single import site for fixtures.
@@ -238,6 +239,38 @@ def path_distance_metric(morpho: Morphology) -> Metric:
     return metric
 
 
+def euclidean_distance_metric(morpho: Morphology) -> Metric:
+    """A :data:`Metric` for the straight-line distance (um) from the soma's centre lines on ``morpho``.
+
+    Points come from ``interpolate_branch``, sample by sample; the distance
+    is the smallest to every segment of every soma branch (the root branch
+    if there is none), each projected and clamped on its own, and 0 on those
+    branches. The reference segments are read once, so the metric is valid
+    only until ``morpho`` is edited.
+    """
+    soma_ids = [view.index for view in morpho.branches if str(view.type) == "soma"] or [morpho.root.index]
+    ends = []
+    for index in soma_ids:
+        branch = morpho.branches[index].branch
+        ends += list(zip(branch.points_proximal.to_decimal(u.um), branch.points_distal.to_decimal(u.um)))
+
+    def metric(tree: Morphology, index: int, xs: np.ndarray) -> np.ndarray:
+        assert tree is morpho, "a Euclidean-distance metric belongs to one morphology"
+        xs = np.asarray(xs, dtype=float)
+        if index in soma_ids:
+            return np.zeros(xs.shape)
+        points = np.asarray(interpolate_branch(tree, index, xs)[1].to_decimal(u.um), dtype=float)
+        best = np.full(xs.shape, np.inf)
+        for a, b in ends:
+            w = np.asarray(b, dtype=float) - np.asarray(a, dtype=float)
+            ww = float(w @ w)
+            t = np.zeros(xs.shape) if ww == 0.0 else np.clip((points - a) @ w / ww, 0.0, 1.0)
+            best = np.minimum(best, np.linalg.norm(points - (a + t[:, None] * w), axis=1))
+        return best
+
+    return metric
+
+
 def _in_range(f: np.ndarray, lo: float | None, hi: float | None, closed: str) -> np.ndarray:
     keep = np.ones(f.shape, dtype=bool)
     if lo is not None:
@@ -346,10 +379,10 @@ def crossing_errors(
 #: Expressions a ``SelectionCache`` serves after an edit, one per thing a mask
 #: can depend on: segment lengths, topology, branch type, the name -> index
 #: mapping, subtree membership by index and by name, the intervals a region
-#: resolves to, a fixed physical step, the local radius, and the path
-#: distance from the soma. Each is a composite whose operands are all
-#: hashable, because the cache memoizes operands only; a top-level leaf would
-#: never be cached and could not go stale.
+#: resolves to, a fixed physical step, the local radius, the path distance
+#: from the soma, and the straight-line distance from it. Each is a composite
+#: whose operands are all hashable, because the cache memoizes operands only;
+#: a top-level leaf would never be cached and could not go stale.
 SELECTION_BATTERY: tuple[tuple[str, object], ...] = (
     ("lengths", UniformSamples(AllRegion(), 5) + RootLocation(0.5)),
     ("topology", Terminals() + BranchPoints()),
@@ -370,6 +403,9 @@ SELECTION_BATTERY: tuple[tuple[str, object], ...] = (
     ("radius", RadiusRangeRegion(maximum=1.5 * u.um) & AllRegion()),
     # Path distance from the soma: moves with lengths and with topology.
     ("path distance", TreeDistanceRegion(maximum=100 * u.um) | EmptyRegion()),
+    # Straight-line distance from the soma: moves with any edit that moves a
+    # point relative to the soma, but not with a rigid motion of the tree.
+    ("euclidean distance", EuclideanDistanceRegion(minimum=40 * u.um) | EuclideanDistanceRegion(maximum=10 * u.um)),
 )
 
 

@@ -80,6 +80,30 @@
 
 ### New Features
 
+- **`braincell.filter.RadiusRangeRegion(minimum, maximum, closed="both")`
+  selects the cable whose local radius lies in a range** (MORPH-8a). It was
+  exported but raised `NotImplementedError`. The radius is linear along each
+  segment, so a tapered branch is cut where it crosses a bound; a jump in
+  radius (a zero-length segment, or a change between one segment's distal and
+  the next one's proximal radius) has no length, is not selected by itself,
+  and can end an interval. It reads the segment radii only, so it needs no
+  3-D points and is unchanged by moving or rotating the tree. The three range
+  regions (`RadiusRangeRegion`, `TreeDistanceRegion`,
+  `EuclideanDistanceRegion`) now share their arguments: `minimum` and
+  `maximum` default to `None` (no bound on that side), so
+  `RadiusRangeRegion(maximum=1 * u.um)` is enough, and a new `closed`
+  argument takes the same values as `branch_range` but defaults to `"both"`;
+  it matters only where the measured value equals a bound over a stretch of
+  cable, such as a cylinder. The bounds are checked at construction: a bare
+  number or a non-length raises `TypeError`; a non-scalar, negative, NaN or
+  infinite bound (use `None` for no bound), `minimum > maximum`, or an
+  unknown `closed` raises `ValueError`. The three compare and hash by their
+  bounds in micrometres and `closed`, so
+  `RadiusRangeRegion(maximum=1.5 * u.um) == RadiusRangeRegion(maximum=0.0015 * u.mmeter)`
+  and they can key a `SelectionCache`; before, any `Quantity` bound made them
+  unhashable. The two distance regions still raise `NotImplementedError` when
+  evaluated. The concepts page now says that `branch_range` selects whole
+  branches.
 - **`braincell.filter.StepSamples(region, step)` places locations a fixed
   physical step apart** (MORPH-10b). It was exported but raised
   `NotImplementedError`. The region's intervals are joined in the same order

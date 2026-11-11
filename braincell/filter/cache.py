@@ -47,13 +47,16 @@ class SelectionCache:
     holds a strong reference to the last morphology it saw, so an identity
     check cannot be fooled by a new tree reusing a freed address.
 
-    This class previously also carried ``tree_distance_to_root``,
-    ``euclidean_distance_to_root``, and ``branch_radius_summary``, reserved
-    for the region types that still raise ``NotImplementedError``. Nothing
-    ever wrote them. Whoever implements one of those types should add the
-    field it actually needs rather than inherit three guesses -- note that
-    per-node tree distance is already computed by
+    This class previously also carried ``tree_distance_to_root`` and
+    ``euclidean_distance_to_root``, reserved for the distance region types
+    that still raise ``NotImplementedError``. Nothing ever wrote them.
+    Whoever implements one of those types should add the field it actually
+    needs rather than inherit a guess -- note that per-node tree distance is
+    already computed by
     :class:`braincell.morph._spatial.MorphologySpatialGeometry`.
+    :class:`~braincell.filter.RadiusRangeRegion` needs no field: it reads
+    each branch's segment radii directly, and its mask is memoized like any
+    other expression's.
     """
 
     _masks: dict[object, object] = field(default_factory=dict, repr=False, compare=False)

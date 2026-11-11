@@ -34,6 +34,8 @@ from braincell.filter import helper as helper_mod
 from braincell.filter.helper import (
     EPSILON,
     _length_scalar_um,
+    _linear_piece_select,
+    _value_in_range,
     complement_region_intervals,
     difference_region_intervals,
     intersect_region_intervals,
@@ -236,8 +238,52 @@ class LengthScalarUmTest(unittest.TestCase):
     def test_a_non_positive_check_still_rejects_negative_lengths(self) -> None:
         with self.assertRaisesRegex(ValueError, "minimum must be >= 0"):
             _length_scalar_um(-1 * u.um, name="minimum")
-        with self.assertRaisesRegex(ValueError, "minimum must be finite"):
+        with self.assertRaisesRegex(ValueError, "minimum must be finite; use None for no bound"):
             _length_scalar_um(np.inf * u.um, name="minimum", allow_none=True)
+
+
+class LinearPieceSelectTest(unittest.TestCase):
+    """The crossing solve behind the range regions: f linear from f0 at x0 to f1 at x1."""
+
+    def test_a_rising_piece_is_cut_where_it_crosses_each_bound(self) -> None:
+        self.assertEqual(_linear_piece_select(0.0, 1.0, 0.0, 4.0, 1.0, 3.0, "both"), (0.25, 0.75))
+        self.assertEqual(_linear_piece_select(0.0, 1.0, 0.0, 4.0, 1.0, None, "both"), (0.25, 1.0))
+        self.assertEqual(_linear_piece_select(0.0, 1.0, 0.0, 4.0, None, 3.0, "both"), (0.0, 0.75))
+        self.assertEqual(_linear_piece_select(0.2, 0.6, 0.0, 4.0, None, None, "both"), (0.2, 0.6))
+
+    def test_a_falling_piece_is_cut_from_the_other_side(self) -> None:
+        self.assertEqual(_linear_piece_select(0.0, 1.0, 4.0, 0.0, 1.0, 3.0, "both"), (0.25, 0.75))
+        self.assertEqual(_linear_piece_select(0.5, 1.0, 4.0, 0.0, 3.0, None, "both"), (0.5, 0.625))
+
+    def test_closed_does_not_matter_where_f_varies(self) -> None:
+        for closed in ("both", "left", "right", "neither"):
+            with self.subTest(closed=closed):
+                self.assertEqual(_linear_piece_select(0.0, 1.0, 0.0, 4.0, 1.0, 3.0, closed), (0.25, 0.75))
+
+    def test_a_piece_outside_or_touching_at_one_point_selects_nothing(self) -> None:
+        self.assertIsNone(_linear_piece_select(0.0, 1.0, 0.0, 1.0, 2.0, 3.0, "both"))
+        self.assertIsNone(_linear_piece_select(0.0, 1.0, 0.0, 1.0, 1.0, 3.0, "both"))
+        self.assertIsNone(_linear_piece_select(0.0, 1.0, 2.0, 4.0, 1.0, 2.0, "both"))
+
+    def test_a_plateau_is_all_in_or_all_out_by_closed(self) -> None:
+        cases = (
+            ("both", (0.0, 1.0), (0.0, 1.0)),
+            ("left", (0.0, 1.0), None),
+            ("right", None, (0.0, 1.0)),
+            ("neither", None, None),
+        )
+        for closed, at_lower, at_upper in cases:
+            with self.subTest(closed=closed):
+                self.assertEqual(_linear_piece_select(0.0, 1.0, 1.0, 1.0, 1.0, 3.0, closed), at_lower)
+                self.assertEqual(_linear_piece_select(0.0, 1.0, 3.0, 3.0, 1.0, 3.0, closed), at_upper)
+        self.assertEqual(_linear_piece_select(0.0, 1.0, 2.0, 2.0, 1.0, 3.0, "neither"), (0.0, 1.0))
+        self.assertIsNone(_linear_piece_select(0.0, 1.0, 5.0, 5.0, 1.0, 3.0, "both"))
+
+    def test_value_in_range_treats_none_as_unbounded(self) -> None:
+        self.assertTrue(_value_in_range(1e9, None, None, "neither"))
+        self.assertTrue(_value_in_range(0.0, 0.0, None, "both"))
+        self.assertFalse(_value_in_range(0.0, 0.0, None, "neither"))
+        self.assertFalse(_value_in_range(4.0, None, 3.0, "both"))
 
 
 if __name__ == "__main__":

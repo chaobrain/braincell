@@ -718,7 +718,7 @@ class _SelfIntegratingPools(SingleCompartment):
     """A Markov sodium channel and a kinetic calcium pool with an HH channel of its own."""
 
     def __init__(self, solver):
-        super().__init__(1, solver=solver)
+        super().__init__(1, solver=solver, V_initializer=braintools.init.Constant(-65.0 * u.mV))
         self.IL = IL(1, g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV)
         self.na = SodiumFixed(1, E=55.0 * u.mV)
         self.na.add(nav=braincell.channel.Nav_MA2020_GrC(1, g_max=10.0 * u.mS / u.cm**2))
@@ -737,10 +737,15 @@ class SingleCompartmentSelfIntegratingPoolTest(unittest.TestCase):
     """
 
     def test_one_step_advances_every_state(self) -> None:
+        # ``init_state`` puts every gate at its steady state for V_init, so one
+        # 0.025 ms step moves the Markov ``O`` (about 1e-5) only by rounding:
+        # 251 float32 ulps from -70 mV, 2 from -65 mV, none from -60 mV.
+        # Stepping from a depolarized V moves every checked state by far more.
         for solver in ("ralston2", "rk4", "ind_exp_euler", "exp_euler", "backward_euler"):
             with self.subTest(solver=solver):
                 model = _SelfIntegratingPools(solver)
                 model.init_state()
+                model.V.value = jnp.full(model.varshape, -20.0) * u.mV
                 before = {key: st.value for key, st in model.states(DiffEqState).items()}
                 with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms):
                     model.update(0.0 * u.nA / u.cm**2)

@@ -494,8 +494,15 @@ class LumpedStiffGateTest(unittest.TestCase):
         cell = _stiff_gate_cell(_cav1p2())
         (warning,) = _stiff_warnings(cell)
         message = str(warning.message)
-        for part in ("'ralston2'", "Cav1p2_MA2020_GoC", "gate 'm'", "3.66e+06 /ms at -100 mV", "5.5e-07 ms",
-                     "'ind_exp_euler'", "'exp_euler'"):
+        for part in (
+            "'ralston2'",
+            "Cav1p2_MA2020_GoC",
+            "gate 'm'",
+            "3.66e+06 /ms at -100 mV",
+            "5.5e-07 ms",
+            "'ind_exp_euler'",
+            "'exp_euler'",
+        ):
             self.assertIn(part, message)
         self.assertEqual(warning.filename, __file__)
 
@@ -537,8 +544,11 @@ class LumpedStiffGateTest(unittest.TestCase):
                 self.assertIn(expected, str(warning.message))
 
     def test_one_warning_names_every_stiff_channel_once(self) -> None:
-        cell = _stiff_gate_cell(_cav1p2(name="cav12"), bc.mech.Channel("Cav1p3_MA2020_GoC", ion_name="ca"),
-                                bc.mech.Channel("Kv3p4_MA2020_GoC"))
+        cell = _stiff_gate_cell(
+            _cav1p2(name="cav12"),
+            bc.mech.Channel("Cav1p3_MA2020_GoC", ion_name="ca"),
+            bc.mech.Channel("Kv3p4_MA2020_GoC"),
+        )
         (warning,) = _stiff_warnings(cell)
         message = str(warning.message)
         self.assertIn("'cav12' (Cav1p2_MA2020_GoC)", message)
@@ -593,8 +603,9 @@ class LumpedStiffGateTest(unittest.TestCase):
                     np.testing.assert_array_equal(np.unique(layout), grid)
                 # ... and each member meets one distinct voltage per round.
                 per_member = voltages.reshape(rounds, -1)
-                self.assertEqual(min(len(np.unique(per_member[:, i])) for i in range(0, per_member.shape[1], 97)),
-                                 rounds)
+                self.assertEqual(
+                    min(len(np.unique(per_member[:, i])) for i in range(0, per_member.shape[1], 97)), rounds
+                )
 
     def test_a_rate_that_cannot_be_scanned_is_skipped(self) -> None:
         # The scan evaluates the rates on a voltage grid; a class whose rates cannot be

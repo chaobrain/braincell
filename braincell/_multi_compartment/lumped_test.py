@@ -26,7 +26,7 @@ import jax
 import numpy as np
 
 import braincell as bc
-from braincell._multi_compartment import cell as cell_module
+from braincell._multi_compartment import cell as cell_module, lumped
 from braincell.filter import AllRegion, RootLocation
 
 LENGTH = 20.0 * u.um
@@ -553,6 +553,9 @@ class LumpedStiffGateTest(unittest.TestCase):
     def test_population_batch_and_kinetic_ion(self) -> None:
         with self.subTest(case="pop_size (2, 3), batch 2"):
             self.assertEqual(len(_stiff_warnings(_stiff_gate_cell(_cav1p2(), pop_size=(2, 3)), batch_size=2)), 1)
+        with self.subTest(case="pop_size 2000, scanned in rounds"):
+            (warning,) = _stiff_warnings(_stiff_gate_cell(_cav1p2(), pop_size=2000))
+            self.assertIn("3.66e+06 /ms at -100 mV", str(warning.message))
         with self.subTest(case="dependent channel of a kinetic ion"):
             cell = _stiff_gate_cell(_cav1p2(), ion=("CdpStC_MA2020_GoC", "ca"))
             self.assertEqual(len(_stiff_warnings(cell)), 1)
@@ -576,6 +579,22 @@ class LumpedStiffGateTest(unittest.TestCase):
                     checked.run(dt=DT, duration=DURATION).samples["v"].values.to_decimal(u.mV),
                     unchecked.run(dt=DT, duration=DURATION).samples["v"].values.to_decimal(u.mV),
                 )
+
+    def test_large_populations_cover_the_grid_in_rounds(self) -> None:
+        grid = lumped.STIFFNESS_GRID_MV
+        self.assertEqual(lumped._voltage_grid((817,)).shape, (grid.size, 1))
+        self.assertEqual(lumped._voltage_grid((2, 3)).shape, (grid.size, 1, 1))
+        for shape, rounds in (((818,), 160), ((2, 1000), 65), ((200_000,), 1)):
+            with self.subTest(shape=shape):
+                voltages = lumped._voltage_grid(shape)
+                self.assertEqual(voltages.shape, (rounds,) + shape)
+                for layout in voltages:
+                    # Every round covers the whole grid ...
+                    np.testing.assert_array_equal(np.unique(layout), grid)
+                # ... and each member meets one distinct voltage per round.
+                per_member = voltages.reshape(rounds, -1)
+                self.assertEqual(min(len(np.unique(per_member[:, i])) for i in range(0, per_member.shape[1], 97)),
+                                 rounds)
 
     def test_a_rate_that_cannot_be_scanned_is_skipped(self) -> None:
         # The scan evaluates the rates on a voltage grid; a class whose rates cannot be

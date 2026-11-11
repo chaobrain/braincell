@@ -111,8 +111,13 @@ STIFFNESS_DT_MS = 0.025
 #: decaying mode: 2 for Euler and the two-stage methods, 2.51 for three stages,
 #: 2.79 for four; the check uses the smallest.
 EXPLICIT_STABILITY_LIMIT = 2.0
-#: Grid points times members evaluated at once, which bounds the scan's memory.
-_SCAN_ELEMENTS = 1 << 20
+#: Members times grid points up to which every member meets every grid voltage
+#: (817 members); see :func:`stiff_gates`. The voltage grid then broadcasts
+#: against the members, so most of the arithmetic runs on the 641 voltages only.
+_FULL_GRID_ELEMENTS = 1 << 19
+#: Voltages evaluated per gate for a larger population, where each one costs
+#: full-size arithmetic; see :func:`stiff_gates`.
+_ROUND_ELEMENTS = 1 << 17
 
 
 class LumpedRuntime(SingleCompartment):
@@ -311,7 +316,7 @@ def _is_explicit_step(fn) -> bool:
     return any(fn is get_integrator(name) for name in list_integrators() if integrator_info(name).kind == "ode")
 
 
-def stiff_gates(channels, *, n_members: int, ndim: int) -> list[StiffGate]:
+def stiff_gates(channels, *, shape: tuple[int, ...]) -> list[StiffGate]:
     """Return the HH gates that an explicit solver cannot step at :data:`STIFFNESS_DT_MS`.
 
     For each dependent HH channel (the main solver integrates its gates; a
@@ -323,28 +328,35 @@ def stiff_gates(channels, *, n_members: int, ndim: int) -> list[StiffGate]:
     cannot be evaluated on the grid (for example, rates that do not
     broadcast): the check is advisory and must not fail ``init_state``.
 
+    Every member meets every grid voltage up to 817 members
+    (:data:`_FULL_GRID_ELEMENTS`). A larger population is evaluated in
+    ``R = max(1, _ROUND_ELEMENTS // members)`` rounds stacked on a leading
+    axis, each placing the members on successive grid voltages: each round
+    covers the whole grid, so every voltage is evaluated on about
+    ``R * members / 641`` members, and each member at ``R`` voltages spread
+    over the range. A population whose members share their parameters gets
+    the exact maximum either way.
+
     Parameters
     ----------
     channels : sequence of LumpedChannel
         Channels of an initialized runtime.
-    n_members : int
-        Elements of the voltage state (batch times population); with ``ndim``
-        it shapes the voltage grid.
-    ndim : int
-        Number of axes of the voltage state.
+    shape : tuple of int
+        Shape of the voltage state (batch and population axes).
 
     Returns
     -------
     list of StiffGate
         In channel and gate declaration order.
     """
+    grid = _voltage_grid(tuple(shape))
     found = []
     for channel in channels:
         node = channel.node
         if not isinstance(node, HH) or isinstance(node, IndependentIntegration):
             continue
         try:
-            rates = _max_relaxation_rates(node, channel.ions, n_members=n_members, ndim=ndim)
+            rates = _max_relaxation_rates(node, channel.ions, grid)
         except Exception:  # noqa: BLE001 - advisory check; see the docstring
             continue
         for gate, (rate, V) in rates.items():
@@ -353,23 +365,30 @@ def stiff_gates(channels, *, n_members: int, ndim: int) -> list[StiffGate]:
     return found
 
 
-def _max_relaxation_rates(node, ions, *, n_members: int, ndim: int) -> dict[str, tuple[float, float]]:
-    """Largest relaxation rate (1/ms) of each gate of ``node`` over the grid, and its voltage (mV)."""
+def _voltage_grid(shape: tuple[int, ...]) -> np.ndarray:
+    """Voltages (mV) that broadcast with the members of ``shape``; see :func:`stiff_gates`."""
+    n_grid = STIFFNESS_GRID_MV.size
+    n_members = int(np.prod(shape, dtype=int))
+    if n_members * n_grid <= _FULL_GRID_ELEMENTS:
+        return STIFFNESS_GRID_MV.reshape((-1,) + (1,) * len(shape))
+    # Here n_members > _FULL_GRID_ELEMENTS / n_grid > n_grid, so each round covers the whole grid.
+    rounds = max(1, _ROUND_ELEMENTS // n_members)
+    shifts = (np.arange(rounds) * n_grid // rounds).reshape((-1,) + (1,) * len(shape))
+    return STIFFNESS_GRID_MV[(np.arange(n_members).reshape(shape) + shifts) % n_grid]
+
+
+def _max_relaxation_rates(node, ions, grid) -> dict[str, tuple[float, float]]:
+    """Largest relaxation rate (1/ms) of each gate of ``node`` over ``grid``, and its voltage (mV)."""
     infos = tuple(ion.pack_info() for ion in ions)
-    chunk = max(1, _SCAN_ELEMENTS // max(1, n_members))
-    best: dict[str, tuple[float, float]] = {}
-    for start in range(0, STIFFNESS_GRID_MV.size, chunk):
-        grid = STIFFNESS_GRID_MV[start : start + chunk]
-        V = u.Quantity(grid.reshape((-1,) + (1,) * ndim), u.mV)
-        for gate, rate in node._gate_relaxation_rates(V, *infos).items():
-            if is_traced_value(rate):
-                raise TypeError("the rates are traced")
-            values = np.asarray(u.Quantity(rate).to_decimal(u.ms**-1), dtype=float)
-            values = np.broadcast_to(values, np.broadcast_shapes(values.shape, V.shape))
-            values = np.where(np.isfinite(values), values, -np.inf).reshape(grid.size, -1).max(axis=1)
-            index = int(np.argmax(values))
-            if gate not in best or values[index] > best[gate][0]:
-                best[gate] = (float(values[index]), float(grid[index]))
+    best = {}
+    for gate, rate in node._gate_relaxation_rates(u.Quantity(grid, u.mV), *infos).items():
+        if is_traced_value(rate):
+            raise TypeError("the rates are traced")
+        values = np.asarray(u.Quantity(rate).to_decimal(u.ms**-1), dtype=float)
+        values = np.broadcast_to(values, np.broadcast_shapes(values.shape, grid.shape))
+        values = np.where(np.isfinite(values), values, -np.inf)
+        index = int(np.argmax(values))
+        best[gate] = (float(values.flat[index]), float(np.broadcast_to(grid, values.shape).flat[index]))
     return best
 
 
@@ -389,7 +408,8 @@ def warn_stiff_gates(runtime: LumpedRuntime, channels, *, solver, solver_name: s
     solver_name : str
         The Cell's ``solver_name``, quoted in the message.
     stacklevel : int
-        Passed to :func:`warnings.warn`.
+        As for :func:`warnings.warn` called by the caller: 2 attributes the
+        warning to the caller's caller.
 
     Warns
     -----
@@ -399,8 +419,7 @@ def warn_stiff_gates(runtime: LumpedRuntime, channels, *, solver, solver_name: s
     """
     if not _is_explicit_step(solver):
         return
-    value = runtime.V.value
-    found = stiff_gates(channels, n_members=int(np.size(u.get_mantissa(value))), ndim=int(np.ndim(value)))
+    found = stiff_gates(channels, shape=tuple(np.shape(u.get_mantissa(runtime.V.value))))
     if not found:
         return
     gates = "; ".join(

@@ -262,6 +262,17 @@ class GabaACellTest(unittest.TestCase):
             np.testing.assert_array_equal(traces[0][key], traces[1][key])
 
 
+class GabaAFloat32CellTest(unittest.TestCase):
+    def test_chloride_accumulates_and_the_current_is_recorded(self) -> None:
+        cell = _cell((0.5, bc.mech.Synapse("GabaA_JE2011", name="s")), ion="Cldif_JE2011")
+        cell.record("ci", bc.observe.ion(name="cl").state("Ci"))
+        cell.record("i", bc.observe.synapse(name="s").current())
+        samples = _samples(_network(cell, ("s", 0.0005)), 40.0)
+        self.assertTrue(np.all(np.isfinite(samples["ci"])))
+        self.assertGreater(samples["ci"][-1, 0], 5.0 + 1e-3)
+        self.assertLess(np.min(samples["i"]), 0.0)  # outward at V > E_GABA
+
+
 class GabaAGuardTest(unittest.TestCase):
     """Missing or ambiguous chloride, a missing snapshot, and lumped Cells."""
 

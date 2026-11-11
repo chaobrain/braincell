@@ -205,9 +205,7 @@ def synapse_current(runtime: CellRuntimeState, layout, syn, local_voltage):
 
 def _synapse_row_selector(layout) -> tuple:
     """Index of each synapse row's owning ``(population, CV)`` entry in CV space."""
-    if layout.is_packed:
-        return (Ellipsis, layout.population_index, layout.cv_index)
-    return (Ellipsis, layout.cv_index)
+    return (Ellipsis, layout.population_index, layout.cv_index) if layout.is_packed else (Ellipsis, layout.cv_index)
 
 
 def _synapse_row_ion_info(layout, ion_info: IonInfo) -> IonInfo:

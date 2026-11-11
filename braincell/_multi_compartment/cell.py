@@ -1273,9 +1273,16 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     def _raise_if_initialized(self, action: str) -> None:
         owner = self.network_owner
+        owner_name = None if owner is None else (owner.name if owner.name is not None else "<unnamed>")
         if owner is not None and owner._initialized and not getattr(owner, "_cell_lifecycle_active", False):
-            owner_name = owner.name if owner.name is not None else "<unnamed>"
             raise RuntimeError(f"Cannot {action} after owning Network {owner_name!r} has been initialized.")
+        if self._initialized and owner is not None:
+            # Initialized before it joined the Network, or left initialized by a
+            # failed Network.init_state(): it cannot reset() either.
+            raise RuntimeError(
+                f"Cannot {action} after init_state(); this Cell belongs to Network {owner_name!r} and cannot "
+                "reset() back to declaring, so declare a new Cell and a new Network to change it."
+            )
         if self._initialized:
             raise RuntimeError(f"Cannot {action} after init_state(); call reset() first.")
 
@@ -1302,6 +1309,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         if owner is None or getattr(owner, "_cell_lifecycle_active", False):
             return
         owner_name = owner.name if owner.name is not None else "<unnamed>"
+        if action == "reset()":
+            raise RuntimeError(
+                f"Cell belongs to Network {owner_name!r}, and a Network has no reset(): its Cells do not go "
+                "back to declaring. Use Network.reset_state() to start the run again from the initial state, "
+                "or declare a new Cell and a new Network to change the declarations."
+            )
         raise RuntimeError(f"Cell belongs to Network {owner_name!r}; use Network.{action} instead.")
 
     # ------------------------------------------------------------------
@@ -2638,6 +2651,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         ------
         RuntimeError
             If the cell is already initialized. Call :meth:`reset` first.
+            If the cell belongs to a :class:`~braincell.Network`, which
+            initializes it: call ``Network.init_state()`` instead.
 
         Warns
         -----
@@ -2928,7 +2943,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         Raises
         ------
         RuntimeError
-            If the cell is not initialized.
+            If the cell is not initialized. If the cell belongs to a
+            :class:`~braincell.Network`, which has no ``reset()``: use
+            ``Network.reset_state()`` to start the run again, or declare a
+            new Cell and a new Network to change the declarations.
 
         Notes
         -----

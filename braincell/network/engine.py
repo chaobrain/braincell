@@ -109,7 +109,7 @@ class Network:
 
         ``Cell`` consults ``_cell_lifecycle_active`` to tell a network-driven
         transition from a user calling ``cell.init_state()`` directly
-        (``_multi_compartment/cell.py:862``, ``:888``). Both
+        (``Cell._raise_if_network_owned``, ``Cell._raise_if_initialized``). Both
         :meth:`init_state` and :meth:`reset_state` need the flag cleared even
         when a cell raises, so the ``try``/``finally`` lives here once.
         """

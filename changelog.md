@@ -885,6 +885,16 @@
   removal before `init_state` (or before `reset()`, for a mask made on the
   snapshot) moved its indices.
 
+- A Cell that belongs to a `Network` no longer suggests a recovery that
+  fails (CELL-1). `cell.reset()` said "use Network.reset() instead", but a
+  `Network` has no `reset()`: its Cells do not go back to declaring. The
+  message now suggests `Network.reset_state()` to start the run again from
+  the initial state, or a new Cell in a new Network to change the
+  declarations. A Cell initialized before `Network.add_population`, or left
+  initialized by a failed `Network.init_state()`, said "call reset() first"
+  on `paint`, `place`, `discretize()` and the declaration setters, and
+  `reset()` then raised; it now says to declare a new Cell and a new Network.
+
 - A recording declared before the grid or the morphology changed now records
   what it was declared on (MORPH-15). It used to keep the CVs it selected
   when declared: on a soma with `dend` and an `axon` on its proximal end,
@@ -1482,6 +1492,19 @@ one correction.
   `IKA1_HM1992`, `IKA2_HM1992`, `IKK2A_HM1992`, `IKK2B_HM1992`,
   `ICaN_IS2008`, `ICaL_IS2008`, `ICaT_HM1992`, `ICaT_HP1992`, `ICaHT_HM1992`,
   `ICaHT_Re1993` and `IAHP_De1994` (e.g. `braincell.channel.Na_HH1952`).
+- **The Cell lifecycle was reworked (braincell#157).** A `Cell` rebuilds its
+  grid when a declaration changes (`cv_policy`, `paint`, `place`, the
+  morphology), so `n_cv`, `cvs` and `cv_tree` show the grid that
+  `init_state()` then uses without dividing the tree again; `discretize()`
+  is new and rarely needed. Assigning a `cv_policy` that cannot divide the
+  tree raises at once and keeps the previous policy and grid; 0.1.0 accepted
+  `CVPerBranch(0)` and raised `ValueError` at `init_state()`. After
+  `init_state()`, `discretize()` and assigning `cv_policy` raise
+  `RuntimeError`. The views `cell.channels[...]` and `cell.cv[...]` are new:
+  read-only before `init_state()`, and a view selected before a rebuild,
+  `init_state()` or `reset()` raises `RuntimeError` ("stale"). Parameter
+  values set through views after `init_state()` are kept by `reset_state()`
+  and cleared, with the trainable parameters, by `reset()`.
 - **Correction to Deprecations:** a `Markov` subclass that does not declare
   `dependent_state` does not warn; 0.2.0 raises `ValueError` when the class is
   created.

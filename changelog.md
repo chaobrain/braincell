@@ -242,6 +242,20 @@
 
 ### Changes & Improvements
 
+- **A lumped Cell warns at `init_state` when its explicit solver meets a
+  stiff HH gate** (CELL-29). An explicit Runge-Kutta solver (the default
+  `ralston2` included) integrates the gates with `V`, and is stable on a
+  gate only while `dt` times the gate's rate stays below about 2. The m gate
+  of `Cav1p2_MA2020_GoC` relaxes at 2.27e6 /ms at -65 mV, so a lumped Cell
+  with it returned NaN at every `dt` from 0.025 down to 1e-6 ms without a
+  word. `init_state` now scans each HH gate's rate between -100 and 60 mV
+  and, where `0.025 ms * rate > 2`, raises a `UserWarning` naming the
+  channel, the gate, its largest rate and the `dt` the solver would need,
+  and suggesting `solver="exp_euler"` (second order on HH cells, about 20
+  times the cost per step) or `"ind_exp_euler"` (first order, the cost of
+  `ralston2`). In the catalogue this flags `Cav1p2_*`, `Cav1p3_*`, `HCN1_*`
+  and `Na_ZH2019_IO`. The default solver and all results are unchanged.
+
 - **Parameter unit errors name the mechanism, the value and the declaring
   line** (MECH-25). `init_state()` errors now read like `Channel 'leak' (IL)
   parameter 'g_max' has units incompatible with mS / cm^2; got 0.1 mV.

@@ -111,7 +111,13 @@ from braincell._multi_compartment.selection import BranchSelector, CVSelector, _
 from braincell._multi_compartment.lifecycle import DiscreteView
 from braincell._multi_compartment.density_views import ChannelView, IonView
 from braincell._multi_compartment.geometry import GeometryView
-from braincell._multi_compartment.lumped import CABLE_ONLY_SOLVERS, CLAMP_TYPES, LumpedClamps, build_lumped_runtime
+from braincell._multi_compartment.lumped import (
+    CABLE_ONLY_SOLVERS,
+    CLAMP_TYPES,
+    LumpedClamps,
+    build_lumped_runtime,
+    warn_stiff_gates,
+)
 from braincell.morph.morphology import Morphology as _Morphology
 
 __all__ = ["Cell", "CellView", "MultiCompartment"]
@@ -1048,7 +1054,14 @@ class Cell(_CellFacade, HHTypedNeuron):
         all states as one block per cell and reject point synapses at
         :meth:`init_state` with ``ValueError``. ``"dhs_voltage"`` advances
         ``V`` only. A callable is called as ``solver(cell)`` and owns the
-        whole step.
+        whole step. On a lumped cell an explicit Runge-Kutta solver (the
+        default ``"ralston2"`` included) integrates the HH gates with ``V``;
+        a gate faster than about 80 /ms somewhere between -100 and 60 mV
+        makes it diverge at ``dt = 0.025 ms`` (the catalogue's
+        ``Cav1p2_*``, ``Cav1p3_*``, ``HCN1_*`` and ``Na_ZH2019_IO``), and
+        :meth:`init_state` warns naming the gate. ``"exp_euler"`` (second
+        order, about 20 times the cost per step) and ``"ind_exp_euler"``
+        (first order, about the cost of ``"ralston2"``) are stable on them.
     subsolver : str or Callable or None
         Integrator for Markov channels and kinetic ions. Together with
         ``substeps=None``, ``None`` selects ``"backward_euler"``. A
@@ -1348,7 +1361,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         solver : str or Callable or None, optional
             Any single-step integrator of :func:`braincell.quad.get_integrator`
             except ``"staggered"`` and ``"dhs_voltage"``. Default ``None``
-            selects ``"ralston2"``.
+            selects ``"ralston2"``, which :meth:`init_state` warns about when
+            an HH gate is too fast for it (see :class:`Cell`'s ``solver``).
 
         Returns
         -------
@@ -2341,6 +2355,15 @@ class Cell(_CellFacade, HHTypedNeuron):
         ------
         RuntimeError
             If the cell is already initialized. Call :meth:`reset` first.
+
+        Warns
+        -----
+        UserWarning
+            On a lumped cell with an explicit Runge-Kutta solver, when an HH
+            gate relaxes faster than ``2 / 0.025 ms`` somewhere between -100
+            and 60 mV, so that the run would return NaN. The message names
+            each such gate and the ``dt`` below which the solver is stable on
+            it, and suggests ``"exp_euler"`` or ``"ind_exp_euler"``.
         """
         self._raise_if_network_owned("init_state()")
         self._raise_if_initialized("init_state()")
@@ -2487,7 +2510,7 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         self._V_init_materialized = RuntimeParameterState(V_init)
         self._V_th = V_th
-        runtime = build_lumped_runtime(self, V_init=V_init, V_th=V_th)
+        runtime, channels = build_lumped_runtime(self, V_init=V_init, V_th=V_th)
         self._lumped_runtime = runtime
         self._lumped_clamps = LumpedClamps(
             self,
@@ -2500,6 +2523,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         # Channel init hooks allocate gates; reset hooks put them at steady
         # state for V_init, as on a cable Cell.
         runtime.reset_state(batch_size)
+        # CELL-29: an explicit solver on a stiff HH gate returns NaN at every
+        # practical dt; say so here rather than leave a silent NaN to the run.
+        warn_stiff_gates(runtime, channels, solver=self._solver_fn, solver_name=self._solver_name, stacklevel=3)
         self.V = runtime.V
         self.spike = runtime.spike
         self._lumped_I_ext = brainstate.ShortTermState(self._zero_lumped_current())

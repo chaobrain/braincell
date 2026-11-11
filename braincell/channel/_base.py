@@ -914,6 +914,39 @@ class HH(Channel):
                 derivative = phi * (alpha * (1.0 - value) - beta * value)
             self._gate_state(gate).derivative = _check_derivative(derivative, f"Gate {gate.name!r}")
 
+    def _gate_relaxation_rates(self, V, *ions) -> dict[str, Any]:
+        """Return the rate at which each gate relaxes at ``V``: ``phi / tau`` or ``phi (alpha + beta)``.
+
+        It is ``-d(dx/dt)/dx`` of :meth:`compute_derivative`, the gate's own
+        entry on the Jacobian diagonal, read from the same rate methods. An
+        explicit Runge-Kutta step is stable on the gate only while
+        ``dt * rate`` stays below about 2.
+
+        Parameters
+        ----------
+        V : Quantity
+            Membrane potential; any shape that broadcasts with the channel's
+            parameters and ``ions``.
+        *ions : IonInfo
+            As for :meth:`compute_derivative`.
+
+        Returns
+        -------
+        dict of str to Quantity
+            Inverse-time rate of each gate, in declaration order.
+        """
+        rates = {}
+        for gate in self._iter_gates():
+            phi = self.gate_phi(gate)
+            if self._gate_form(gate) == "inf_tau":
+                rate = phi / _as_time(self._call_rate(f"f_{gate.name}_tau", V, *ions), gate, "tau")
+            else:
+                alpha = _as_rate(self._call_rate(f"f_{gate.name}_alpha", V, *ions), gate, "alpha")
+                beta = _as_rate(self._call_rate(f"f_{gate.name}_beta", V, *ions), gate, "beta")
+                rate = phi * (alpha + beta)
+            rates[gate.name] = rate
+        return rates
+
 
 class _OhmicCurrent:
     r"""Mixin supplying :math:`g \cdot \text{conductance factor} \cdot (E - V)`.

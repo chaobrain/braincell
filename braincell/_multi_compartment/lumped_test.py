@@ -17,6 +17,7 @@
 
 import unittest
 import warnings
+from unittest import mock
 
 import brainstate
 import braintools
@@ -25,6 +26,7 @@ import jax
 import numpy as np
 
 import braincell as bc
+from braincell._multi_compartment import cell as cell_module, lumped
 from braincell.filter import AllRegion, RootLocation
 
 LENGTH = 20.0 * u.um
@@ -448,6 +450,173 @@ class LumpedKineticIonTest(unittest.TestCase):
                             np.testing.assert_allclose(states[key], ref_states[key], rtol=0, atol=1e-3, err_msg=key)
                     self.assertLessEqual(gap[0.005], 1e-3)
                     self.assertGreaterEqual(gap[0.005] / gap[0.001], 3.0)
+
+
+#: Explicit Runge-Kutta names: the ``'ode'`` kind of braintools, wrapped by braincell.
+EXPLICIT_SOLVERS = tuple(n for n in bc.quad.list_integrators() if bc.quad.integrator_info(n).kind == "ode")
+STIFF_WARNING = "stiff for an explicit solver"
+
+
+def _stiff_gate_cell(*channels, solver=None, pop_size=1, ion=("CalciumFixed", "ca"), leak=True):
+    """A lumped soma with a leak, one ion and ``channels`` (declarations), at -65 mV."""
+    cell = bc.Cell.point(pop_size, length=LENGTH, radius=RADIUS, V_init=-65.0 * u.mV, solver=solver)
+    if leak:
+        cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    if ion is not None:
+        cell.paint(AllRegion(), bc.mech.Ion(ion[0], name=ion[1]))
+    cell.paint(AllRegion(), *channels)
+    if np.ndim(pop_size) == 0:
+        # Recording needs a one-dimensional population.
+        cell.record("v", bc.observe.state("v"))
+    return cell
+
+
+def _cav1p2(**kwargs):
+    return bc.mech.Channel("Cav1p2_MA2020_GoC", ion_name="ca", **kwargs)
+
+
+def _stiff_warnings(cell, batch_size=None):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cell.init_state(batch_size)
+    return [w for w in caught if issubclass(w.category, UserWarning) and STIFF_WARNING in str(w.message)]
+
+
+class LumpedStiffGateTest(unittest.TestCase):
+    """CELL-29: an HH gate too fast for an explicit solver warns at init_state.
+
+    ``Cav1p2_MA2020_GoC``'s m gate relaxes at 2.27e6 /ms at -65 mV, so the
+    default ``ralston2`` is stable only for dt below 2 / 2.27e6 = 8.8e-7 ms;
+    every practical dt gives NaN within a few steps (dt 0.025 ms: step 4).
+    """
+
+    def test_default_solver_names_the_channel_and_the_stable_solvers(self) -> None:
+        cell = _stiff_gate_cell(_cav1p2())
+        (warning,) = _stiff_warnings(cell)
+        message = str(warning.message)
+        for part in (
+            "'ralston2'",
+            "Cav1p2_MA2020_GoC",
+            "gate 'm'",
+            "3.66e+06 /ms at -100 mV",
+            "5.5e-07 ms",
+            "'ind_exp_euler'",
+            "'exp_euler'",
+        ):
+            self.assertIn(part, message)
+        self.assertEqual(warning.filename, __file__)
+
+    def test_the_suggested_solvers_run_without_a_warning(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for solver in ("ind_exp_euler", "exp_euler"):
+                with self.subTest(solver=solver):
+                    cell = _stiff_gate_cell(_cav1p2(), solver=solver)
+                    self.assertEqual(_stiff_warnings(cell), [])
+                    v = cell.run(dt=DT, duration=DURATION).samples["v"].values.to_decimal(u.mV)
+                    self.assertAlmostEqual(float(v[-1, 0]), -64.9349, places=3)
+
+    def test_every_explicit_solver_warns_and_no_other_does(self) -> None:
+        self.assertGreater(len(EXPLICIT_SOLVERS), 15)
+        for name in bc.quad.list_integrators():
+            if name in ("staggered", "dhs_voltage"):
+                continue
+            with self.subTest(solver=name):
+                found = _stiff_warnings(_stiff_gate_cell(_cav1p2(), solver=name))
+                self.assertEqual(len(found), 1 if name in EXPLICIT_SOLVERS else 0)
+        with self.subTest(solver="callable"):
+            # A user step owns the whole step; the Cell cannot tell how it integrates.
+            self.assertEqual(_stiff_warnings(_stiff_gate_cell(_cav1p2(), solver=lambda cell: None)), [])
+        with self.subTest(solver="rk4_step"):
+            self.assertEqual(len(_stiff_warnings(_stiff_gate_cell(_cav1p2(), solver=bc.quad.rk4_step))), 1)
+
+    def test_the_rate_is_scanned_over_the_voltage_range(self) -> None:
+        # HCN1's h gate (class defaults) relaxes at 2.4e-3 /ms at -65 mV and 8.7e4 /ms at +60 mV: a
+        # lumped cell at rest stays finite under ralston2, and diverges once it spikes.
+        cases = (
+            ("HCN1_MA2024_PC", None, "8.68e+04 /ms at 60 mV"),
+            ("Na_ZH2019_IO", ("SodiumFixed", "na"), "1e+03 /ms at"),
+            ("Cav1p3_MA2020_GoC", ("CalciumFixed", "ca"), "1.47e+06 /ms at -100 mV"),
+        )
+        for name, ion, expected in cases:
+            with self.subTest(channel=name):
+                (warning,) = _stiff_warnings(_stiff_gate_cell(bc.mech.Channel(name), ion=ion))
+                self.assertIn(name, str(warning.message))
+                self.assertIn(expected, str(warning.message))
+
+    def test_one_warning_names_every_stiff_channel_once(self) -> None:
+        cell = _stiff_gate_cell(
+            _cav1p2(name="cav12"),
+            bc.mech.Channel("Cav1p3_MA2020_GoC", ion_name="ca"),
+            bc.mech.Channel("Kv3p4_MA2020_GoC"),
+        )
+        (warning,) = _stiff_warnings(cell)
+        message = str(warning.message)
+        self.assertIn("'cav12' (Cav1p2_MA2020_GoC)", message)
+        self.assertIn("Cav1p3_MA2020_GoC", message)
+        self.assertNotIn("Kv3p4", message)
+        # reset_state does not repeat the check.
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cell.reset_state()
+        self.assertEqual([w for w in caught if STIFF_WARNING in str(w.message)], [])
+
+    def test_population_batch_and_kinetic_ion(self) -> None:
+        with self.subTest(case="pop_size (2, 3), batch 2"):
+            self.assertEqual(len(_stiff_warnings(_stiff_gate_cell(_cav1p2(), pop_size=(2, 3)), batch_size=2)), 1)
+        with self.subTest(case="pop_size 2000, scanned in rounds"):
+            (warning,) = _stiff_warnings(_stiff_gate_cell(_cav1p2(), pop_size=2000))
+            self.assertIn("3.66e+06 /ms at -100 mV", str(warning.message))
+        with self.subTest(case="dependent channel of a kinetic ion"):
+            cell = _stiff_gate_cell(_cav1p2(), ion=("CdpStC_MA2020_GoC", "ca"))
+            self.assertEqual(len(_stiff_warnings(cell)), 1)
+
+    def test_non_stiff_channels_do_not_warn_and_are_unchanged(self) -> None:
+        # CaHVA_MA2020_GoC's s gate reaches 78.4 /ms (at +60 mV): 78.4 * 0.025 = 1.96, just inside the bound.
+        cases = (
+            ("Kv3p4_MA2020_GoC", (bc.mech.Channel("Kv3p4_MA2020_GoC"),), None, True),
+            ("CaHVA_MA2020_GoC", (bc.mech.Channel("CaHVA_MA2020_GoC", ion_name="ca"),), ("CalciumFixed", "ca"), True),
+            ("HH1952", _mechanisms(True), None, False),
+        )
+        for name, channels, ion, leak in cases:
+            with self.subTest(channel=name):
+                checked = _stiff_gate_cell(*channels, ion=ion, leak=leak)
+                self.assertEqual(_stiff_warnings(checked), [])
+                unchecked = _stiff_gate_cell(*channels, ion=ion, leak=leak)
+                with mock.patch.object(cell_module, "warn_stiff_gates") as check:
+                    unchecked.init_state()
+                check.assert_called_once()
+                np.testing.assert_array_equal(
+                    checked.run(dt=DT, duration=DURATION).samples["v"].values.to_decimal(u.mV),
+                    unchecked.run(dt=DT, duration=DURATION).samples["v"].values.to_decimal(u.mV),
+                )
+
+    def test_large_populations_cover_the_grid_in_rounds(self) -> None:
+        grid = lumped.STIFFNESS_GRID_MV
+        self.assertEqual(lumped._voltage_grid((817,)).shape, (grid.size, 1))
+        self.assertEqual(lumped._voltage_grid((2, 3)).shape, (grid.size, 1, 1))
+        for shape, rounds in (((818,), 160), ((2, 1000), 65), ((200_000,), 1)):
+            with self.subTest(shape=shape):
+                voltages = lumped._voltage_grid(shape)
+                self.assertEqual(voltages.shape, (rounds,) + shape)
+                for layout in voltages:
+                    # Every round covers the whole grid ...
+                    np.testing.assert_array_equal(np.unique(layout), grid)
+                # ... and each member meets one distinct voltage per round.
+                per_member = voltages.reshape(rounds, -1)
+                self.assertEqual(
+                    min(len(np.unique(per_member[:, i])) for i in range(0, per_member.shape[1], 97)), rounds
+                )
+
+    def test_a_rate_that_cannot_be_scanned_is_skipped(self) -> None:
+        # The scan evaluates the rates on a voltage grid; a class whose rates cannot be
+        # evaluated there must not break init_state, so its gates are left out of the check.
+        cav1p2 = bc.channel.Cav1p2_MA2020_GoC
+        with mock.patch.object(cav1p2, "_gate_relaxation_rates", side_effect=ValueError("no grid")) as rates:
+            cell = _stiff_gate_cell(_cav1p2(), bc.mech.Channel("Cav1p3_MA2020_GoC", ion_name="ca"))
+            (warning,) = _stiff_warnings(cell)
+        rates.assert_called_once()
+        self.assertNotIn("Cav1p2", str(warning.message))
+        self.assertIn("Cav1p3_MA2020_GoC", str(warning.message))
 
 
 class LumpedSiteTest(unittest.TestCase):

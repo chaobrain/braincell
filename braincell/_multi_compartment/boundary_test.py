@@ -777,7 +777,7 @@ class StateProbeTest(_Float64Case):
 
 
 class VdepExpSyn(ExpSyn):
-    """Test-only ExpSyn whose decay slows with depolarization: tau (V + 65 mV) / 20 mV, exponentiated."""
+    """Test-only ExpSyn whose decay slows with depolarization: tau_eff = tau exp((V + 65 mV) / 20 mV)."""
 
     def compute_derivative(self, V_post=None):
         self.g.derivative = -self.g.value / (self.tau * u.math.exp((V_post.to_decimal(u.mV) + 65.0) / 20.0))

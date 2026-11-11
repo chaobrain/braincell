@@ -194,6 +194,8 @@ UNCOVERED = {
     "K_Leak": f"{_NO_MOD}; no source model: an ohmic leak at E_K with a placeholder default",
     "K_TM1991": f"{_MODELDB} ModelDB 3670 HH2.mod, whose rate factor tadj = 3^((celsius - 36)/10) is 1 at 36 degC",
     "Na_Ba2002": f"{_MODELDB} ModelDB 3670 HH2.mod: Traub-Miles rates with V_sh = -50 mV and q10 = 3 (MECH-6c)",
+    "Na_Leak": f"{_NO_MOD}; no source model: an ohmic leak at E_Na with a placeholder default; "
+    "compared with a dynamic sodium ion under validation/neuron/ion (MECH-35)",
     "Na_TM1991": f"{_MODELDB} ModelDB 3670 HH2.mod, which scales the rates by 3^((celsius - 36)/10); the class defaults to q10 = 1 (MECH-6c)",
 }
 """Registry name -> why the channel has no NEURON comparison configuration."""

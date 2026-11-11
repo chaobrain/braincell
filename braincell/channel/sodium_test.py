@@ -24,10 +24,12 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from braincell.channel._base import HH, Markov
+from braincell._base_channel import IonInfo
+from braincell.channel._base import HH, Markov, OhmicHH
 from braincell.channel.sodium import (
     Na_Ba2002,
     Na_HH1952,
+    Na_Leak,
     Na_TM1991,
     NaF_SU2015_DCN,
     NaFHF_MA2020_GrC,
@@ -1279,6 +1281,43 @@ class NaFHFMA20GrCTest(unittest.TestCase):
         for name in reset.state_names + (reset.redundant_state,):
             self.assertTrue(u.math.allclose(reset_states[name], steady_states[name], atol=1e-6))
         _assert_markov_stationary(self, reset, V, na, 2)
+
+
+class NaLeakTest(unittest.TestCase):
+    """Ohm's law with the reversal potential of the attached sodium ion."""
+
+    def test_template_and_root_type(self) -> None:
+        self.assertTrue(issubclass(Na_Leak, OhmicHH))
+        self.assertIs(Na_Leak.root_type, Sodium)
+        self.assertEqual(Na_Leak.gates, ())
+        np.testing.assert_allclose(np.asarray(Na_Leak(size=1).g_max.to_decimal(u.mS / u.cm**2)), 0.005)
+
+    def test_current_is_inward_positive_at_the_ion_reversal(self) -> None:
+        ch = Na_Leak(size=1, g_max=0.04 * (u.mS / u.cm**2))
+        V = jnp.full((1,), -60.0) * u.mV
+        na = IonInfo(
+            Ci=jnp.full((1,), 4.0) * u.mM,
+            Co=jnp.full((1,), 145.0) * u.mM,
+            E=jnp.full((1,), 95.341649) * u.mV,
+            valence=1,
+        )
+        # 0.04 mS/cm2 * (95.341649 + 60) mV, the sodium half of Canavier's leak.mod.
+        np.testing.assert_allclose(np.asarray(ch.current(V, na).to_decimal(u.uA / u.cm**2)), [6.21366596], rtol=1e-6)
+        self.assertIsNone(ch.compute_derivative(V, na))
+
+    def test_current_enters_a_dynamic_sodium_ion(self) -> None:
+        import braincell as bc
+
+        branch = bc.Branch.from_lengths(lengths=[15.0] * u.um, radii=[7.5, 7.5] * u.um)
+        cell = bc.Cell(bc.Morphology.from_root(branch), cv_policy=bc.CVPerBranch(1), V_init=-65.0 * u.mV)
+        cell.paint(bc.mech.Ion("SodiumDetailed", name="na"))
+        cell.paint(bc.mech.Channel("Na_Leak", g_max=0.04 * (u.mS / u.cm**2)))
+        cell.init_state()
+        ion = cell.get_ion("na")
+        self.assertEqual(list(ion.channels), ["Na_Leak"])
+        expected = 0.04 * (float(np.asarray(ion.E.to_decimal(u.mV)).reshape(-1)[0]) + 65.0)
+        current = np.asarray(ion.current(cell.V.value).to_decimal(u.uA / u.cm**2)).reshape(-1)
+        np.testing.assert_allclose(current, [expected], rtol=1e-5)
 
 
 if __name__ == "__main__":

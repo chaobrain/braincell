@@ -28,6 +28,7 @@ from braincell._base_channel import Channel
 from braincell._base_channel import IonInfo
 from braincell.ion import Calcium
 from braincell.ion import CalciumDetailed
+from braincell.ion import SodiumDetailed
 from braincell.ion import _base as ionbase
 from braincell.ion._base import Conserve
 from braincell.ion._base import DynamicNernstIon
@@ -780,9 +781,16 @@ def _radial_shell_rate(ion):
     return u.math.pi / (2.0 * _F * ion.diam_arc_mean * ion.vrat)
 
 
+def _shell_rate(ion):
+    """``1 / (z F d)``: the unrectified single-shell influx of the sodium and potassium pools."""
+    return 1.0 / (ion.valence * _F * ion.d)
+
+
 #: ``d(dCi/dt) / dI`` for an inward (positive) current density ``I``.
 _CURRENT_TO_CI_RATE = {
     "CalciumDetailed": lambda ion: 1.0 / (2.0 * _F * ion.d),
+    "PotassiumDetailed": _shell_rate,
+    "SodiumDetailed": _shell_rate,
     "CalciumFirstOrder": lambda ion: ion.alpha,
     "CdpHVA_SU2015_DCN": lambda ion: _mod_shell_rate(ion.kCa, ion.depth),
     "CdpLVA_SU2015_DCN": lambda ion: _mod_shell_rate(ion.kCal, ion.depth),
@@ -869,6 +877,34 @@ def _check_current_units(cls):
         _assert_rate_close(derivative, derivatives[0])
 
 
+#: Pools whose influx is not rectified: an outward current lowers ``Ci`` at the same rate.
+_UNRECTIFIED = ("PotassiumDetailed", "SodiumDetailed")
+_OUTWARD_I = -_EXTERNAL_I
+
+
+def _check_outward_current(cls, rate):
+    """(d) An outward current (a pump's) lowers ``dCi/dt`` by ``rate * |I|``."""
+    ion = _make_contract_ion(cls)
+    baseline = _ci_derivative(ion)
+    ion._cached_total_current = _OUTWARD_I
+    _assert_rate_close(_ci_derivative(ion) - baseline, rate(ion) * _OUTWARD_I)
+
+
+class _DivalentShell(SodiumDetailed):
+    """Counter-example: the influx written ``I / (2 F d)``, as in Botta's ``Na_conc.mod``."""
+
+    def derivative(self, Ci, V, total_current=None):
+        return self._drive_current(total_current) / (2 * _F * self.d) + self.beta * (self.C_rest - Ci)
+
+
+class _RectifiedShell(SodiumDetailed):
+    """Counter-example: the influx clamped at zero, as in ``CalciumDetailed``."""
+
+    def derivative(self, Ci, V, total_current=None):
+        influx = self._drive_current(total_current) / (self.valence * _F * self.d)
+        return u.math.maximum(influx, u.math.zeros_like(influx)) + self.beta * (self.C_rest - Ci)
+
+
 class _IgnoresTotalCurrent(CalciumDetailed):
     """Counter-example: a pool that drops the current it is handed."""
 
@@ -896,6 +932,21 @@ class IonCurrentInputContractTest(unittest.TestCase):
                 _check_snapshot(cls, rate)
             with self.subTest(ion=name, check="units"):
                 _check_current_units(cls)
+
+    def test_unrectified_pools_fall_with_an_outward_current(self) -> None:
+        for name in _UNRECTIFIED:
+            with self.subTest(ion=name):
+                _check_outward_current(get_registry().get("ion", name), _CURRENT_TO_CI_RATE[name])
+
+    def test_counter_examples_of_the_shell_influx_fail(self) -> None:
+        rate = _CURRENT_TO_CI_RATE["SodiumDetailed"]
+        with self.assertRaises(AssertionError):
+            _check_external_current(_DivalentShell, rate)
+        _check_outward_current(_DivalentShell, lambda ion: 0.5 * rate(ion))  # it is the 2F rate
+        _check_external_current(_RectifiedShell, rate)  # inward current is unaffected
+        with self.assertRaises(AssertionError):
+            _check_outward_current(_RectifiedShell, rate)
+        _check_outward_current(SodiumDetailed, rate)  # the unmodified parent passes
 
     def test_pools_without_current_input_never_evaluate_it(self) -> None:
         def forbidden(V, info):

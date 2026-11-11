@@ -97,6 +97,50 @@ class PoolConfigurationTest(unittest.TestCase):
         self.assertEqual(dict(cc.current_clamp), {"delay_ms": 5.0, "dur_ms": 20.0, "amp_nA": 0.5})
 
 
+class ExternalSourcesTest(unittest.TestCase):
+    """Configurations whose ``.mod`` files are outside the repository."""
+
+    def test_external_configurations_resolve_from_their_directory(self):
+        import os
+        import tempfile
+
+        from braincell.mech import get_registry
+
+        self.assertEqual(runner.external_config_names(), ["ca1999/sodium_detailed_pump_off"])
+        registry = get_registry()
+        for config in runner.external_config_names():
+            spec = runner.load_config(config)["identity"]["external_mod_files"]
+            with tempfile.TemporaryDirectory() as directory, self.subTest(config=config):
+                with mock.patch.dict(os.environ, {spec["env"]: ""}):
+                    with self.assertRaisesRegex(runner.SourcesUnavailable, "maintainers' decision"):
+                        runner.load_case(config, "pool_cc")
+                for name in spec["sha256"]:
+                    (Path(directory) / name).write_text("not the recorded file")
+                with mock.patch.dict(os.environ, {spec["env"]: directory}):
+                    with self.assertRaisesRegex(ValueError, "SHA-256"):
+                        runner.load_case(config, "pool_cc")
+                    with mock.patch.object(runner.hashlib, "sha256") as digest:
+                        digest.return_value.hexdigest.side_effect = [spec["sha256"][n] for n in sorted(spec["sha256"])]
+                        case = runner.load_case(config, "pool_cc")
+                self.assertEqual(sorted(p.name for p in case.mod_files), sorted(spec["sha256"]))
+                registry.get("ion", case.pool[1])
+                registry.get("channel", case.channel.braincell)
+                for kind, name, params in case.braincell_mechanisms:
+                    registry.get(kind, name)
+                # The BrainCell conductances conduct (L32).
+                conductances = [p for p in case.channel.params if p.braincell == "g_max"]
+                self.assertTrue(conductances and all(p.value > 0 for p in conductances))
+                self.assertEqual(case.n_steps * case.simulation["dt_ms"], case.simulation["duration_ms"])
+
+    def test_a_diameter_fraction_is_a_spatial_callable(self):
+        from types import SimpleNamespace
+
+        import brainunit as u
+
+        d = runner.Parameter(None, "d", runner.DIAM_FRACTION, 0.25).quantity()
+        self.assertEqual(d(SimpleNamespace(diam_mid=15.0 * u.um)), 3.75 * u.um)
+
+
 class PoolToleranceTableTest(unittest.TestCase):
     def test_entries_name_listed_protocols_and_documented_causes(self):
         listed = {(case.config, case.protocol) for case in _cases()}

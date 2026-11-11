@@ -24,8 +24,8 @@ from braincell._base_ion import Ion
 from braincell._base_neuron import HHTypedNeuron
 from braincell.channel.sodium import Na_TM1991
 from braincell.ion._base import InitNernstIon
-from braincell.ion._testing import V as _V, FixedIonContractTests
-from braincell.ion.sodium import Sodium, SodiumFixed, SodiumInitNernst
+from braincell.ion._testing import V as _V, DynamicShellIonContractTests, FixedIonContractTests, run_float64
+from braincell.ion.sodium import Sodium, SodiumDetailed, SodiumFixed, SodiumInitNernst
 
 
 class SodiumBaseTest(unittest.TestCase):
@@ -167,6 +167,50 @@ class SodiumFixedContractTest(FixedIonContractTests, unittest.TestCase):
     DEFAULT_CI = 10.0 * u.mM
     DEFAULT_CO = 140.0 * u.mM
     DEFAULT_VALENCE = 1
+
+
+def _x64_points() -> list:
+    """Float64 ``dCi/dt`` with relaxation, and E and ``dCi/dt`` of Canavier's soma at t = 0."""
+    import brainstate
+
+    brainstate.environ.set(precision=64)
+    relaxing = SodiumDetailed(size=1, beta=0.5 / u.ms, C_rest=12.0 * u.mM)
+    relaxing.init_state(_V([-65.0]))
+    rate = relaxing.derivative(jnp.full(1, 10.0) * u.mM, _V([-65.0]), total_current=jnp.full(1, -2.0) * u.uA / u.cm**2)
+    soma = SodiumDetailed(
+        size=1, temp=u.celsius2kelvin(35.0), d=3.75 * u.um, Co=145.0 * u.mM, Ci_initializer=4.0 * u.mM
+    )
+    soma.init_state(_V([-60.0]))
+    # Net sodium current of the soma at -60 mV: 3 I_pump plus the Na leak, outward.
+    soma_rate = soma.derivative(
+        soma.Ci.value, _V([-60.0]), total_current=jnp.full(1, -1.0548806805e-3) * u.mA / u.cm**2
+    )
+    values = (rate.to_decimal(u.mM / u.ms), soma.E.to_decimal(u.mV), soma_rate.to_decimal(u.mM / u.ms))
+    return [float(jnp.reshape(v, -1)[0]) for v in values]
+
+
+class SodiumDetailedTest(DynamicShellIonContractTests, unittest.TestCase):
+    """``SodiumDetailed``: the shared shell-ion tests and two hand-computed points."""
+
+    ION_CLASS = SodiumDetailed
+    LEAK = "Na_Leak"
+    INWARD_V_INIT = -65.0 * u.mV
+
+    def test_relaxation_and_canavier_soma_in_float64(self) -> None:
+        rate, E, soma_rate = run_float64(
+            "import json; from braincell.ion.sodium_test import _x64_points; print(json.dumps(_x64_points()))"
+        )
+        # 0.5/ms * (12 - 10) mM - 2 uA/cm2 / (F * 1 um).
+        self.assertAlmostEqual(rate / 0.99979271, 1.0, delta=1e-6)
+        # (RT/F) ln(145/4) at 35 degC; -1.0548806805e-3 mA/cm2 * 4 / (F * 15 um).
+        self.assertAlmostEqual(E / 95.341649, 1.0, delta=1e-7)
+        self.assertAlmostEqual(soma_rate / -2.9154848e-5, 1.0, delta=1e-7)
+
+    def test_defaults(self) -> None:
+        ion = SodiumDetailed(size=1)
+        self.assertTrue(u.math.allclose(ion.Co, 140.0 * u.mM))
+        self.assertTrue(u.math.allclose(ion.C_rest, 10.0 * u.mM))
+        self.assertTrue(u.math.allclose(ion.d, 1.0 * u.um))
 
 
 if __name__ == "__main__":

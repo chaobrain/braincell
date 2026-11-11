@@ -24,8 +24,8 @@ from braincell._base_ion import Ion
 from braincell._base_neuron import HHTypedNeuron
 from braincell.channel.potassium import K_TM1991
 from braincell.ion._base import InitNernstIon
-from braincell.ion._testing import V as _V, FixedIonContractTests
-from braincell.ion.potassium import Potassium, PotassiumFixed, PotassiumInitNernst
+from braincell.ion._testing import V as _V, DynamicShellIonContractTests, FixedIonContractTests
+from braincell.ion.potassium import Potassium, PotassiumDetailed, PotassiumFixed, PotassiumInitNernst
 
 
 class PotassiumBaseTest(unittest.TestCase):
@@ -164,6 +164,21 @@ class PotassiumFixedContractTest(FixedIonContractTests, unittest.TestCase):
     DEFAULT_CI = 54.4 * u.mM
     DEFAULT_CO = 2.5 * u.mM
     DEFAULT_VALENCE = 1
+
+
+class PotassiumDetailedTest(DynamicShellIonContractTests, unittest.TestCase):
+    """``PotassiumDetailed``: the shared shell-ion tests and its family defaults."""
+
+    ION_CLASS = PotassiumDetailed
+    LEAK = "K_Leak"
+    INWARD_V_INIT = -100.0 * u.mV  # below E_K (-82 mV at the defaults)
+
+    def test_defaults(self) -> None:
+        ion = PotassiumDetailed(size=1)
+        self.assertTrue(u.math.allclose(ion.Co, 2.5 * u.mM))
+        self.assertTrue(u.math.allclose(ion.C_rest, 54.4 * u.mM))
+        ion.init_state(_V([-65.0]))
+        self.assertTrue(u.math.allclose(ion.Ci.value, 54.4 * u.mM))
 
 
 if __name__ == "__main__":

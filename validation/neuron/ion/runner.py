@@ -13,12 +13,13 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Calcium-pool comparisons against NEURON: configurations, protocols and runner.
+"""Ion-pool comparisons against NEURON: configurations, protocols and runner.
 
-A configuration under ``configs/`` names one pool (optionally with one calcium
-channel), its ``.mod`` sources under ``data/`` and the NEURON <-> BrainCell
-names of its parameters and states. A template under ``templates/`` defines a
-protocol on a single soma:
+A configuration under ``configs/`` names one pool (optionally with one channel
+of the pool's ion), its ``.mod`` sources under ``data/`` and the NEURON <->
+BrainCell names of its parameters and states. The pool's ion is calcium unless
+``mapping.ion`` names another family (``"na"``: NEURON's ``nai`` and ``ina``).
+A template under ``templates/`` defines a protocol on a single soma:
 
 - ``pool_zero_current``: no channel, membrane held at ``v_init``; the pool
   relaxes from its initial (or configured) state.
@@ -26,6 +27,17 @@ protocol on a single soma:
   BrainCell replays NEURON's voltage (``_clamp.voltage_replay_solver``), so the
   calcium current drives both pools from the same voltage.
 - ``pool_cc``: current clamp with an ``IClamp`` pulse; both sides solve V.
+
+Optional configuration keys: ``defaults.concentrations`` (``Ci``, ``Co`` in mM:
+NEURON's ``<ion>i``/``<ion>o`` written before ``finitialize``, BrainCell's
+``Ci_initializer``/``Co``), channel parameters mapped on one side only, and
+``defaults.braincell_mechanisms`` (further ions and channels, ``[kind, class,
+{parameter: [value, unit]}]``) for what NEURON's channel mechanism computes
+beyond the pool's ion. ``identity.external_mod_files`` names sources outside
+the repository: an environment variable holding their directory and each
+file's SHA-256; such configurations are not in :func:`config_names` and
+:func:`load_case` raises :class:`SourcesUnavailable` while the variable is
+unset.
 
 Sample ``i`` of both sides is the state at ``t = i dt``. Metrics (see
 ``_tolerance``): ``e_Ci`` (``Ci`` over the protocol's largest NEURON ``cai``),
@@ -38,9 +50,12 @@ process; do not load another suite's channel libraries in the same process.
 """
 
 from collections.abc import Callable, Mapping
+import dataclasses
 from dataclasses import dataclass
+import hashlib
 import inspect
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -60,9 +75,19 @@ UNITS = {
     "mM*um": lambda u: u.mM * u.um,
     "mol/cm2": lambda u: u.mol / u.cm**2,
     "S/cm2": lambda u: u.siemens / u.cm**2,
+    "uS/cm2": lambda u: u.usiemens / u.cm**2,
     "cm/s": lambda u: u.cm / u.second,
+    "mV": lambda u: u.mV,
+    "um": lambda u: u.um,
 }
 """Units a configuration may give a BrainCell parameter or state (NEURON's units)."""
+
+DIAM_FRACTION = "diam_mid"
+"""Unit of a BrainCell length given as a fraction of each CV's mid diameter (a spatial callable)."""
+
+
+class SourcesUnavailable(Exception):
+    """A configuration's external ``.mod`` files are not available; the message says why."""
 
 
 def _pairs(names: Mapping[str, list[str]], what: str) -> tuple[tuple[str, str], ...]:
@@ -86,12 +111,14 @@ class Parameter:
     def quantity(self):
         import brainunit as u
 
+        if self.unit == DIAM_FRACTION:
+            return lambda ctx, fraction=self.value: fraction * ctx.diam_mid
         return self.value * UNITS[self.unit](u)
 
 
 @dataclass(frozen=True)
 class Channel:
-    """The calcium channel that drives the pool under ``pool_vc`` and ``pool_cc``."""
+    """The channel of the pool's ion that drives the pool under ``pool_vc`` and ``pool_cc``."""
 
     neuron: str
     braincell: str
@@ -120,6 +147,9 @@ class PoolCase:
     voltage_clamp: Mapping[str, Any] | None = None
     current_clamp: Mapping[str, float] | None = None
     protocols: tuple[str, ...] = PROTOCOLS
+    ion: str = "ca"
+    concentrations: Mapping[str, float] = dataclasses.field(default_factory=dict)
+    braincell_mechanisms: tuple[tuple[str, str, tuple[Parameter, ...]], ...] = ()
 
     @property
     def n_steps(self) -> int:
@@ -133,9 +163,39 @@ def _merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, An
     return merged
 
 
-def config_names() -> list[str]:
-    """Every configuration under ``configs/``, as ``<model>/<name>``."""
+def _all_config_names() -> list[str]:
     return sorted(str(p.relative_to(CONFIGS_ROOT).with_suffix("")) for p in CONFIGS_ROOT.glob("*/*.json"))
+
+
+def config_names() -> list[str]:
+    """Every configuration under ``configs/`` whose sources are in the repository, as ``<model>/<name>``."""
+    return [name for name in _all_config_names() if "external_mod_files" not in load_config(name)["identity"]]
+
+
+def external_config_names() -> list[str]:
+    """The configurations with ``identity.external_mod_files``."""
+    return [name for name in _all_config_names() if "external_mod_files" in load_config(name)["identity"]]
+
+
+def external_mod_files(config: str) -> tuple[Path, ...]:
+    """Resolve ``config``'s external ``.mod`` files and check their SHA-256.
+
+    Raises :class:`SourcesUnavailable` when the environment variable is unset
+    and ``ValueError`` when a file differs from its recorded hash.
+    """
+    spec = load_config(config)["identity"].get("external_mod_files")
+    if spec is None:
+        return ()
+    directory = os.environ.get(spec["env"])
+    if not directory:
+        raise SourcesUnavailable(f"{config}: {spec['reason']}; set {spec['env']} to a directory holding {sorted(spec['sha256'])}.")
+    files = []
+    for name, digest in sorted(spec["sha256"].items()):
+        path = Path(directory) / name
+        if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise ValueError(f"{config}: {path} does not have the SHA-256 recorded for {name} ({spec['source']}).")
+        files.append(path)
+    return tuple(files)
 
 
 def load_config(config: str) -> dict[str, Any]:
@@ -162,6 +222,11 @@ def load_case(config: str, protocol: str) -> PoolCase:
     defaults, mapping = raw.get("defaults", {}), raw["mapping"]
     base = _merge(template["base"], {k: defaults[k] for k in ("simulation", "morphology") if k in defaults})
 
+    def checked_unit(unit: str, key: str) -> str:
+        if unit not in UNITS and unit != DIAM_FRACTION:
+            raise ValueError(f"{config}: unknown unit {unit!r} of {key!r}.")
+        return unit
+
     def params(kind: str, values: Mapping[str, float]) -> tuple[Parameter, ...]:
         names = mapping.get(kind, {})
         unknown = set(values) - set(names)
@@ -170,10 +235,14 @@ def load_case(config: str, protocol: str) -> PoolCase:
         resolved = []
         for key, value in values.items():
             spec = names[key]
-            if spec["unit"] not in UNITS:
-                raise ValueError(f"{config}: unknown unit {spec['unit']!r} of {key!r}.")
-            resolved.append(Parameter(spec.get("neuron"), spec.get("braincell"), spec["unit"], float(value)))
+            unit = checked_unit(spec["unit"], key)
+            resolved.append(Parameter(spec.get("neuron"), spec.get("braincell"), unit, float(value)))
         return tuple(resolved)
+
+    extra = tuple(
+        (kind, cls, tuple(Parameter(None, key, checked_unit(unit, key), float(value)) for key, (value, unit) in values.items()))
+        for kind, cls, values in defaults.get("braincell_mechanisms", [])
+    )
 
     channel = None
     if "impl_name" in mapping and protocol != "pool_zero_current":
@@ -190,7 +259,7 @@ def load_case(config: str, protocol: str) -> PoolCase:
     return PoolCase(
         config=config,
         protocol=protocol,
-        mod_files=tuple(DATA_ROOT / path for path in raw["identity"]["mod_files"]),
+        mod_files=tuple(DATA_ROOT / path for path in raw["identity"]["mod_files"]) + external_mod_files(config),
         pool=(mapping["pool_name"]["neuron"], mapping["pool_name"]["braincell"]),
         pool_params=params("pool_params", defaults.get("pool_params", {})),
         states=_pairs({k: v for k, v in pool_states.items() if k != "units"} or {"common": []}, f"{config} pool_states"),
@@ -207,6 +276,9 @@ def load_case(config: str, protocol: str) -> PoolCase:
         if "current_clamp" in template
         else None,
         protocols=protocols,
+        ion=mapping.get("ion", "ca"),
+        concentrations=dict(defaults.get("concentrations", {})),
+        braincell_mechanisms=extra,
     )
 
 
@@ -216,13 +288,23 @@ _LOADED: list[Path] = []
 
 
 def mechanism_library() -> Path:
-    """Compile every configuration's sources into one library and load it once."""
+    """Compile every configuration's sources into one library and load it once.
+
+    External sources join the library when their environment variable is
+    set, so a process builds the same library whichever comparison runs first.
+    """
     from neuron import h
 
     from validation.neuron._mechanisms import compile_mechanisms
     from validation.neuron.cell._nrnmech import nrnmech_path
 
-    files = sorted({DATA_ROOT / p for name in config_names() for p in load_config(name)["identity"]["mod_files"]})
+    files = {DATA_ROOT / p for name in _all_config_names() for p in load_config(name)["identity"]["mod_files"]}
+    for name in external_config_names():
+        try:
+            files.update(external_mod_files(name))
+        except SourcesUnavailable:
+            pass
+    files = sorted(files)
     library = nrnmech_path(compile_mechanisms("testing", files=files) / "x86_64")
     if not _LOADED:
         h.nrn_load_dll(str(library))
@@ -248,7 +330,9 @@ def _set(h, section, mechanism: str, name: str, value: float) -> Callable[[], No
 def run_neuron(case: PoolCase, *, initialize=None) -> dict[str, np.ndarray]:
     """Run ``case`` in NEURON; return ``v``, ``cai``, pool states, ``ica`` and gates from ``t = 0``.
 
-    ``ica`` is inward-positive, like BrainCell's channel current.
+    ``cai`` and ``ica`` are the pool ion's concentration and current
+    (``nai`` and ``ina`` for sodium); ``ica`` is inward-positive, like
+    BrainCell's channel current.
     """
     mechanism_library()
     from neuron import h
@@ -261,21 +345,30 @@ def run_neuron(case: PoolCase, *, initialize=None) -> dict[str, np.ndarray]:
         section.insert(case.pool[0])
         pool = getattr(segment, case.pool[0])
         restore += [_set(h, section, case.pool[0], p.neuron, p.value) for p in case.pool_params if p.neuron]
-        observables = {"cai": lambda: segment.cai}
+        ci_name, current_name = f"{case.ion}i", f"i{case.ion}"
+        concentrations = {f"{case.ion}{side}": case.concentrations[f"C{side}"] for side in "io" if f"C{side}" in case.concentrations}
+        for name, value in concentrations.items():
+            # A concentration a mechanism WRITEs is a state that finitialize
+            # resets to the ion's global default, not to the segment's value.
+            default = f"{name}0_{case.ion}_ion"
+            restore.append(lambda default=default, old=getattr(h, default): setattr(h, default, old))
+            setattr(h, default, value)
+        observables = {"cai": lambda: getattr(segment, ci_name)}
         observables.update({f"pool:{b}": (lambda n=n: getattr(pool, n)) for n, b in case.states})
         if case.channel is not None:
             section.insert(case.channel.neuron)
             mechanism = getattr(segment, case.channel.neuron)
-            restore += [_set(h, section, case.channel.neuron, p.neuron, p.value) for p in case.channel.params]
-            observables["ica"] = lambda: -segment.ica
+            restore += [_set(h, section, case.channel.neuron, p.neuron, p.value) for p in case.channel.params if p.neuron]
+            observables["ica"] = lambda: -getattr(segment, current_name)
             observables.update({f"gate:{b}": (lambda n=n: getattr(mechanism, n)) for n, b in case.channel.gates})
 
         def set_initial_states(h, segment, **kwargs):
+            kwargs["concentrations"] = {**(kwargs.get("concentrations") or {}), **concentrations} or None
             (initialize or _clamp.initialize_neuron)(h, segment, **kwargs)
             neuron_names = {b: n for n, b in case.states}
             for name, value in case.initial.items():
                 if name == "Ci":
-                    segment.cai = value
+                    setattr(segment, ci_name, value)
                     if case.ci_state:
                         setattr(pool, case.ci_state, value)
                 else:
@@ -360,6 +453,10 @@ def run_braincell(case: PoolCase, voltages_mV=None, *, pool_solver=None) -> dict
     )
     pool_cls = registry.get("ion", case.pool[1])
     kwargs = {p.braincell: p.quantity() for p in case.pool_params if p.braincell}
+    if "Ci" in case.concentrations:
+        kwargs["Ci_initializer"] = case.concentrations["Ci"] * u.mM
+    if "Co" in case.concentrations:
+        kwargs["Co"] = case.concentrations["Co"] * u.mM
     accepted = inspect.signature(pool_cls.__init__).parameters
     for name, value in case.initial.items():
         value = value * UNITS[case.state_units.get(name, "mM")](u)
@@ -372,14 +469,19 @@ def run_braincell(case: PoolCase, voltages_mV=None, *, pool_solver=None) -> dict
     solver = pool_solver if pool_solver is not None else case.braincell_solver
     if solver is not None:
         kwargs.update(solver=solver, substeps=1)
-    cell.paint(AllRegion(), bc.mech.Ion(case.pool[1], name="ca", **_with_temperature(pool_cls, kwargs, sim["temperature_celsius"])))
+    cell.paint(AllRegion(), bc.mech.Ion(case.pool[1], name=case.ion, **_with_temperature(pool_cls, kwargs, sim["temperature_celsius"])))
+    for index, (kind, name, params) in enumerate(case.braincell_mechanisms):
+        mechanism = {"ion": bc.mech.Ion, "channel": bc.mech.Channel}[kind]
+        params = _with_temperature(registry.get(kind, name), {p.braincell: p.quantity() for p in params}, sim["temperature_celsius"])
+        cell.paint(AllRegion(), mechanism(name, name=f"extra{index}", **params))
     cell.record("v", bc.observe.state("v"))
-    cell.record("cai", bc.observe.ion(name="ca").state("Ci"))
+    cell.record("cai", bc.observe.ion(name=case.ion).state("Ci"))
     for _, name in case.states:
-        cell.record(f"pool:{name}", bc.observe.ion(name="ca").state(name))
+        cell.record(f"pool:{name}", bc.observe.ion(name=case.ion).state(name))
     if case.channel is not None:
         channel_cls = registry.get("channel", case.channel.braincell)
-        kwargs = _with_temperature(channel_cls, {p.braincell: p.quantity() for p in case.channel.params}, sim["temperature_celsius"])
+        params = {p.braincell: p.quantity() for p in case.channel.params if p.braincell}
+        kwargs = _with_temperature(channel_cls, params, sim["temperature_celsius"])
         cell.paint(AllRegion(), bc.mech.Channel(case.channel.braincell, name="chan", **kwargs))
         cell.record("ica", bc.observe.channel(name="chan").current())
         for _, name in case.channel.gates:

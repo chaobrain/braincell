@@ -525,6 +525,16 @@ def _total_current_input(ion, V):
     return ion.current(V, include_external=True)
 
 
+def _shell_influx(ion, total_current):
+    """Return ``I / (z F d)``: the ``dCi/dt`` an inward current density ``I`` drives.
+
+    ``z`` is ``ion.valence`` and ``d`` the volume-to-membrane-area ratio
+    ``ion.d``. Not rectified, and the sign follows the valence: an inward
+    current raises a cation's ``Ci`` and lowers an anion's.
+    """
+    return ion._drive_current(total_current) / (ion.valence * u.faraday_constant * ion.d)
+
+
 class DynamicNernstIon(brainstate.mixin.Mixin):
     r"""Mixin for ions with a dynamic ``Ci`` state and Nernst-computed ``E``.
 

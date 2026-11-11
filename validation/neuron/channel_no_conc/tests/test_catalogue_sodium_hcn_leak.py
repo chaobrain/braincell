@@ -107,10 +107,10 @@ class SodiumHcnLeakCatalogueTest(CatalogueAssertions, unittest.TestCase):
     def test_family_is_configured_or_listed(self):
         configured = {class_name(config) for config in CONFIGS}
         uncovered = FAMILY & set(UNCOVERED)
-        self.assertEqual(len(FAMILY), 23)
+        self.assertEqual(len(FAMILY), 24)
         self.assertEqual(len(CONFIGS), 20)
         self.assertEqual(configured | uncovered, FAMILY)
-        self.assertEqual(uncovered, {"Na_Ba2002", "Na_TM1991", "HCN_HM1992"})
+        self.assertEqual(uncovered, {"Na_Ba2002", "Na_Leak", "Na_TM1991", "HCN_HM1992"})
         self.assertEqual({config for config in CONFIGS if config.startswith("builtin/")}, {HH, PAS})
 
     def test_every_configuration_stays_within_its_limits(self):

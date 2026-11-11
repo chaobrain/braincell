@@ -205,6 +205,7 @@ Sodium Channels
    Na_TM1991
    Na_Ba2002
    Na_ZH2019_IO
+   Na_Leak
    NaF_SU2015_DCN
    NaP_SU2015_DCN
    NaFHF_MA2020_GrC

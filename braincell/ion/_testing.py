@@ -33,14 +33,22 @@ A contract mixin is parameterized by class attributes on the concrete
 suite by declaring those attributes rather than by copying the methods.
 """
 
+import json
+import os
+import subprocess
+import sys
+
 import brainunit as u
 import jax.numpy as jnp
+import numpy as np
 
 __all__ = [
     "V",
     "make_shell_ion",
+    "run_float64",
     "FixedIonContractTests",
     "KineticPumpContractTests",
+    "DynamicShellIonContractTests",
 ]
 
 
@@ -183,6 +191,120 @@ class FixedIonContractTests:
         self.assertIn("ext", ion.external_currents)
         with self.assertRaises(ValueError):
             ion.register_external_current("ext", external)
+
+
+def run_float64(code: str):
+    """Run ``code`` in a fresh float64 process; return the JSON its last line prints.
+
+    After a float32 ``Cell.run``, switching to x64 in the same process can
+    feed a float32 device copy of brainunit's constants to a float64
+    program, so float64 checks run in a child process.
+    """
+    env = dict(os.environ, JAX_ENABLE_X64="1", JAX_PLATFORMS="cpu")
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
+    if result.returncode != 0:
+        raise AssertionError(result.stderr)
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+def shell_ion_rates(name: str) -> list:
+    """``dCi/dt`` (mM/ms) of the registered ion ``name`` at its defaults.
+
+    For +1 uA/cm2 given in uA/cm2, A/m2 and mA/cm2, then for no current.
+    """
+    from braincell.mech import get_registry
+
+    ion = get_registry().get("ion", name)(size=1)
+    ion.init_state(V([-65.0]))
+    current = jnp.ones(1) * u.uA / u.cm**2
+    rates = []
+    for value in (current, current.to(u.amp / u.meter**2), current.in_unit(u.mA / u.cm**2), None):
+        rate = ion.derivative(ion.Ci.value, V([-65.0]), total_current=value)
+        assert u.get_unit(rate).dim == (u.mM / u.ms).dim, u.get_unit(rate)
+        rates.append(float(np.asarray(rate.to_decimal(u.mM / u.ms))[0]))
+    return rates
+
+
+class DynamicShellIonContractTests:
+    """Shared tests of a ``dCi/dt = I/(zFd) + beta (C_rest - Ci)`` ion.
+
+    The concrete ``TestCase`` sets ``ION_CLASS``, ``LEAK`` (the registry
+    name of a leak channel of the same family) and ``INWARD_V_INIT``, a
+    membrane potential below the family's reversal potential, so that the
+    leak current is inward.
+    """
+
+    ION_CLASS = None
+    LEAK = None
+    INWARD_V_INIT = None
+
+    def _cable_cell(self, V_init, **ion_kwargs):
+        """A one-CV cable Cell, L = diam = 15 um, with this ion."""
+        import braincell as bc
+
+        branch = bc.Branch.from_lengths(lengths=[15.0] * u.um, radii=[7.5, 7.5] * u.um)
+        cell = bc.Cell(bc.Morphology.from_root(branch), cv_policy=bc.CVPerBranch(1), V_init=V_init)
+        cell.paint(bc.mech.Ion(self.ION_CLASS.__name__, name="ion", **ion_kwargs))
+        return cell
+
+    def _cell(self, *channels, V_init):
+        import braincell as bc
+
+        cell = self._cable_cell(V_init)
+        for name, kwargs in channels:
+            cell.paint(bc.mech.Channel(name, **kwargs))
+        cell.record("ci", bc.observe.ion(name="ion").state("Ci"))
+        cell.record("E", bc.observe.ion(name="ion").state("E"))
+        result = cell.run(dt=0.025 * u.ms, duration=10.0 * u.ms)
+        return (
+            np.asarray(result.samples["ci"].values.to_decimal(u.mM))[:, 0],
+            np.asarray(result.samples["E"].values.to_decimal(u.mV))[:, 0],
+        )
+
+    def test_rate_is_one_over_zFd_in_any_current_unit(self):
+        rates = run_float64(
+            "import json; from braincell.ion._testing import shell_ion_rates; "
+            f"print(json.dumps(shell_ion_rates({self.ION_CLASS.__name__!r})))"
+        )
+        # 1 uA/cm2 / (F * 1 um), z = 1.
+        np.testing.assert_allclose(rates[:3], [1.036427e-4] * 3, rtol=1e-6)
+        self.assertEqual(rates[3], 0.0)
+
+    def test_inward_current_raises_ci_and_lowers_e_in_a_cell(self):
+        # IL at V_init holds V between V_init and E, so the leak current stays inward.
+        g_max = 1.0 * u.mS / u.cm**2
+        ci, E = self._cell(
+            (self.LEAK, {"g_max": g_max}), ("IL", {"g_max": g_max, "E": self.INWARD_V_INIT}), V_init=self.INWARD_V_INIT
+        )
+        self.assertTrue(np.all(np.isfinite(ci)))
+        # Monotonic; a float32 step of E can round to zero.
+        self.assertTrue(np.all(np.diff(ci) >= 0.0) and ci[-1] > ci[0])
+        self.assertTrue(np.all(np.diff(E) <= 0.0) and E[-1] < E[0])
+
+    def test_ci_is_constant_without_a_channel_of_its_family(self):
+        ci, _ = self._cell(("IL", {}), V_init=self.INWARD_V_INIT)
+        np.testing.assert_array_equal(ci, np.full_like(ci, ci[0]))
+
+    def test_lumped_cell_runs_with_the_default_initializer(self):
+        import braincell as bc
+
+        cell = bc.Cell.point(1, length=15.0 * u.um, radius=7.5 * u.um, V_init=-65.0 * u.mV)
+        cell.paint(bc.mech.Ion(self.ION_CLASS.__name__, name="ion"))
+        cell.paint(bc.mech.Channel(self.LEAK))
+        cell.record("v", bc.observe.state("v"))
+        result = cell.run(dt=0.025 * u.ms, duration=10.0 * u.ms)
+        self.assertTrue(np.all(np.isfinite(np.asarray(result.samples["v"].values.to_decimal(u.mV)))))
+
+    def test_parameter_without_or_with_wrong_unit_fails_at_init_state(self):
+        import warnings
+
+        for d, error, message in ((1.0, TypeError, "no unit"), (1.0 * u.mV, ValueError, "incompatible with um")):
+            with self.subTest(d=d):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", FutureWarning)  # warned at declaration in 0.3
+                    cell = self._cable_cell(-65.0 * u.mV, d=d)
+                with self.assertRaisesRegex(error, f"parameter 'd' .*{message}"):
+                    cell.init_state()
 
 
 class KineticPumpContractTests:

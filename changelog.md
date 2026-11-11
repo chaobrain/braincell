@@ -204,6 +204,18 @@
   with such a synapse writing into a dynamic ion raises `ValueError` in
   `init_state` when `cache_ion_total_current=False`.
 
+- **Dynamic sodium and potassium, `SodiumDetailed`, `PotassiumDetailed`, and
+  the sodium leak `Na_Leak`** (MECH-35). The two ions make `Ci` a state,
+  `dCi/dt = I/(zFd) + beta (C_rest - Ci)` with `I` the family's inward
+  current and `E` from Nernst; the influx is not rectified, so an outward
+  current lowers `Ci`. Defaults: `d` 1 µm, `beta` 0 (pure accumulation), and
+  the family concentrations (Na 10 / 140 mM, K 54.4 / 2.5 mM); for the whole
+  compartment volume pass `d=lambda ctx: ctx.diam_mid / 4`.
+  `braincell.channel.Na_Leak` is `I = g_max (E_Na - V)` (`g_max` 0.005
+  mS/cm²) with `E_Na` from the attached sodium ion, like `K_Leak`. A
+  Canavier (1999) soma with the pump off matches NEURON (`nadifl.mod` and
+  `leak.mod`, ModelDB 6763).
+
 ### Changes & Improvements
 
 - **Parameter unit errors name the mechanism, the value and the declaring

@@ -70,7 +70,6 @@ __all__ = [
     "make_tree_u",
     "make_tree_w",
     "morph_fingerprint",
-    "simulate_replace_geometry",
     "stretched",
 ]
 
@@ -205,40 +204,6 @@ def make_deep_chain_tree(n_branches: int = 1200) -> Morphology:
         tree.attach(parent=parent, child_branch=child, child_name=name, parent_x=1.0)
         parent = name
     return tree
-
-
-def simulate_replace_geometry(morpho: Morphology, name: str, branch: Branch) -> None:
-    """Replace the geometry of branch ``name`` in place through the edit gate.
-
-    There is no public in-place replace yet (MORPH-2). This stand-in swaps
-    the :class:`Branch` a view wraps inside ``Morphology._edit()``: names,
-    parents and default indices stay, the revision advances by one and
-    every derived cache is dropped. Replace it with the public method once
-    that lands.
-
-    Parameters
-    ----------
-    morpho : Morphology
-        Tree to edit in place.
-    name : str
-        Name of the branch whose geometry is replaced.
-    branch : Branch
-        New geometry.
-
-    Raises
-    ------
-    KeyError
-        If no branch is called ``name``.
-    TypeError
-        If ``branch`` is not a :class:`Branch`.
-    RuntimeError
-        If ``morpho`` is frozen.
-    """
-    view = morpho._nodes[morpho._name_to_id[name]]
-    if not isinstance(branch, Branch):
-        raise TypeError(f"branch must be a Branch, got {type(branch).__name__}.")
-    with morpho._edit():
-        object.__setattr__(view, "_branch", branch)
 
 
 def stretched(branch: Branch, factor: float = 2.0) -> Branch:
@@ -453,7 +418,11 @@ def _attach_by_attribute(morpho: Morphology) -> None:
 
 
 def _stretch_dend(morpho: Morphology) -> None:
-    simulate_replace_geometry(morpho, "dend", stretched(morpho.dend.branch))
+    morpho.replace("dend", stretched(morpho.dend.branch))
+
+
+def _retype_d1(morpho: Morphology) -> None:
+    morpho.replace("d1", _point_branch([[120, 0, 5], [150, 30, 5]], (0.8, 0.6), "apical_dendrite"))
 
 
 def _remove_d2(morpho: Morphology) -> None:
@@ -474,6 +443,7 @@ EDIT_CASES: tuple[EditCase, ...] = (
     EditCase("attach at the soma's proximal end", "append", _attach_at_soma_proximal_end),
     EditCase("attach by attribute", "append", _attach_by_attribute),
     EditCase("replace dend's geometry in place", "replace", _stretch_dend),
+    EditCase("replace d1 with an apical branch", "replace", _retype_d1),
     EditCase("remove the leaf d2", "delete", _remove_d2, reindex=True),
     EditCase("remove the subtree at dend", "delete", _remove_dend_subtree, reindex=True),
 )

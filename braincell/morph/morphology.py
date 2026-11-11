@@ -727,9 +727,9 @@ class Morphology:
         still valid.
 
         Each successful edit call (:meth:`attach`, ``morpho.soma.dend =
-        branch``, ``morpho.soma[0.5].dend = branch``, :meth:`remove`)
-        advances it by exactly one, whether it changes the structure or only
-        the geometry. Reads
+        branch``, ``morpho.soma[0.5].dend = branch``, :meth:`remove`,
+        :meth:`replace`) advances it by exactly one, whether it changes the
+        structure or only the geometry. Reads
         never advance it, and an edit that raises leaves it, the tree and
         :meth:`naming_state` unchanged.
 
@@ -1993,6 +1993,105 @@ class Morphology:
         with self._edit(reindex=True):
             self._unregister_subtree(node_ids)
         return removed
+
+    def replace(self, target: ParentRef, new_branch: Branch) -> "MorphoBranch":
+        """Replace the geometry of one branch in place.
+
+        Only the geometry changes: the branch keeps its name, its view, its
+        parent and its own attachment point, and every child stays attached
+        at the same end (``parent_x`` is a normalized position, ``0``, ``0.5``
+        or ``1``). The new geometry may have another length, another number
+        of segments or another type.
+
+        Parameters
+        ----------
+        target : str or MorphoBranch
+            A branch of this tree, by name or by a view that is still in it.
+        new_branch : Branch
+            The new geometry.
+
+        Returns
+        -------
+        MorphoBranch
+            The view of ``target``: the same object as before the call, now
+            wrapping ``new_branch``.
+
+        Raises
+        ------
+        RuntimeError
+            If this morphology is the read-only snapshot of an initialized
+            Cell (checked first), or ``target`` is a view of a branch that
+            an edit removed.
+        KeyError
+            If no branch is called ``target``.
+        TypeError
+            If ``target`` is neither a ``str`` nor a :class:`MorphoBranch`,
+            or ``new_branch`` is not a :class:`Branch`.
+        ValueError
+            If ``target`` is a view of another morphology's branch; if
+            ``new_branch`` is a :class:`MorphoBranch` (pass its ``.branch``);
+            or if ``new_branch`` is not a soma while ``target`` has children
+            at ``parent_x=0.5``, which only a soma allows.
+
+        See Also
+        --------
+        attach : Add a branch.
+        remove : Remove a branch and its descendants.
+
+        Notes
+        -----
+        :attr:`revision` advances by one, also when ``new_branch`` is the
+        geometry the branch already has. Default indices do not change, so
+        integer branch indices held by a Cell stay valid; a new type can
+        change the type order. No other branch moves: if the new geometry
+        ends somewhere else, the children's 3-D points no longer meet it.
+        The cable model only reads lengths, radii and topology and is not
+        affected, but :meth:`to_swc` then raises ``ValueError`` naming the
+        first child that does not connect. A call that raises changes
+        nothing.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch, Morphology
+            >>> soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+            >>> dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+            >>> tree = Morphology.from_root(soma, name="soma")
+            >>> tree.soma.dend = dend
+            >>> view = tree.dend
+            >>> longer = Branch.from_lengths(lengths=[150.0, 50.0] * u.um, radii=[2.0, 1.5, 1.0] * u.um,
+            ...                              type="basal_dendrite")
+            >>> tree.replace("dend", longer) is view
+            True
+            >>> float(tree.total_length.to_decimal(u.um))
+            220.0
+        """
+        self._require_editable()
+        node_id = self._resolve_branch_ref(target, what="replace()")
+        if isinstance(new_branch, MorphoBranch):
+            raise ValueError(
+                "replace() takes the new geometry as a Branch, not a MorphoBranch view; "
+                f"pass its geometry instead, e.g. view.branch for {new_branch._name!r}."
+            )
+        if not isinstance(new_branch, Branch):
+            raise TypeError(f"replace() expects new_branch to be a Branch, got {type(new_branch).__name__}.")
+        view = self._nodes[node_id]
+        if new_branch.type != "soma":
+            at_midpoint = [
+                self._nodes[child_id]._name
+                for child_id in view._children.values()
+                if float(self._nodes[child_id]._parent_x) == 0.5
+            ]
+            if at_midpoint:
+                raise ValueError(
+                    f"Cannot replace {view._name!r} with a branch of type {new_branch.type!r}: its children "
+                    f"{at_midpoint} attach at parent_x=0.5, which only a soma parent allows."
+                )
+        with self._edit():
+            object.__setattr__(view, "_branch", new_branch)
+        return view
 
     def __getattr__(self, name: str) -> object:
         # Underscore-prefixed names never name a branch. Failing fast avoids

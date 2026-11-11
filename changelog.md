@@ -80,6 +80,24 @@
 
 ### New Features
 
+- **`Morphology.replace(target, new_branch)` swaps one branch's geometry in
+  place** (MORPH-2c). The new `Branch` may have another length, number of
+  segments or type. The branch keeps its name, its view (`replace` returns the
+  same object), its parent and its attachment point, and its children stay
+  attached at the same end (`parent_x` is a normalized position), so on tree
+  `soma -> dend -> d1, d2` a longer `dend` moves the path distance of `d1`
+  and `d2` with it. No default index changes, so Cell inputs held by branch
+  index stay valid; a new type can change the type order. No other branch's
+  3-D points move: when the new geometry ends elsewhere, the cable model is
+  unaffected, but `to_swc` raises `ValueError` naming the first child that no
+  longer connects. A `MorphoBranch` as `new_branch` raises `ValueError` (pass
+  `view.branch`), any other non-`Branch` raises `TypeError`, and a non-soma
+  type for a branch with children at `parent_x=0.5` raises `ValueError`
+  listing them. Assigning to an existing name (`morpho.soma.dend = branch`)
+  still raises. `replace` is now a reserved branch name: a checkpoint that
+  holds a branch named `replace` no longer loads. No branch in this
+  repository uses that name.
+
 - **`Morphology.remove(target)` removes a branch and all its descendants**
   (MORPH-2b). It returns the removed part as a new tree, equal to what
   `subtree(target)` returned before the call, so it can be inspected or

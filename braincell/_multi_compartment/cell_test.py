@@ -58,7 +58,6 @@ from braincell.morph._testing import (
     make_tree_s,
     make_tree_t,
     make_tree_u,
-    simulate_replace_geometry,
     stretched,
 )
 from braincell.quad import DiffEqSingleState, DiffEqState, get_integrator
@@ -621,7 +620,7 @@ class CellDeclarationEditTableTest(unittest.TestCase):
             return sum(float(cv.length.to_decimal(u.um)) for cv in cell.cvs)
 
         np.testing.assert_allclose(total_cv_length(), 150.0, rtol=1e-12)
-        simulate_replace_geometry(morpho, "dend", stretched(morpho.dend.branch))
+        morpho.replace("dend", stretched(morpho.dend.branch))
         np.testing.assert_allclose(total_cv_length(), 250.0, rtol=1e-12)
 
 
@@ -744,8 +743,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         cell = Cell(morpho)
         cell.place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
 
-        simulate_replace_geometry(
-            morpho,
+        morpho.replace(
             "dend",
             Branch.from_lengths(lengths=[200.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite"),
         )
@@ -892,8 +890,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         morpho = make_tree_u()
         cell = Cell(morpho, cv_policy=CVPerBranchList((1, 2, 1, 1)))
 
-        simulate_replace_geometry(
-            morpho,
+        morpho.replace(
             "dend",
             Branch.from_lengths(lengths=[200.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite"),
         )

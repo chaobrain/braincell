@@ -48,9 +48,9 @@ from braincell.morph._testing import (
     make_soma,
     make_tree_s,
     make_tree_t,
+    make_tree_u,
     make_tree_w,
     morph_fingerprint,
-    simulate_replace_geometry,
     stretched,
 )
 
@@ -808,10 +808,7 @@ class MorphoEditGateTest(unittest.TestCase):
             radii=[2.0, 1.5, 1.0] * u.um,
             type="apical_dendrite",
         )
-        # Stand-in for an in-place geometry replacement (MORPH-2): a
-        # non-failing write inside the gate.
-        with tree._edit():
-            object.__setattr__(tree.dend, "_branch", longer)
+        tree.replace("dend", longer)
 
         self.assertEqual(tree.total_length, 220.0 * u.um)
         self.assertEqual(tree.y_range, 200.0 * u.um)
@@ -1048,7 +1045,7 @@ class MorphoEditTableTest(unittest.TestCase):
         np.testing.assert_allclose(tree.total_length.to_decimal(u.um), 150.0, rtol=1e-12)
         np.testing.assert_allclose(tree.x_range.to_decimal(u.um), 150.0, rtol=1e-12)
 
-        simulate_replace_geometry(tree, "dend", stretched(tree.dend.branch))
+        tree.replace("dend", stretched(tree.dend.branch))
 
         np.testing.assert_allclose(tree.total_length.to_decimal(u.um), 250.0, rtol=1e-12)
         np.testing.assert_allclose(tree.x_range.to_decimal(u.um), 250.0, rtol=1e-12)
@@ -1131,20 +1128,7 @@ class MorphoEditTableTest(unittest.TestCase):
         self.assertEqual(cold_rebuild(tree), tree)
         self.assertEqual(morph_fingerprint(cold_rebuild(tree)), morph_fingerprint(tree))
 
-    def test_simulate_replace_geometry_rejects_without_a_trace(self) -> None:
-        tree = make_tree_s()
-        frozen = frozen_snapshot(tree)
-        for label, target, call, error in (
-            ("unknown name", tree, lambda t: simulate_replace_geometry(t, "nope", make_basal()), KeyError),
-            ("not a Branch", tree, lambda t: simulate_replace_geometry(t, "dend", 1.0), TypeError),
-            ("frozen", frozen, lambda t: simulate_replace_geometry(t, "dend", make_basal()), RuntimeError),
-        ):
-            with self.subTest(label):
-                before = (target.revision, target.dend.branch)
-                with self.assertRaises(error):
-                    call(target)
-                self.assertEqual(target.revision, before[0])
-                self.assertIs(target.dend.branch, before[1])
+    def test_stretched_needs_3d_points(self) -> None:
         with self.assertRaisesRegex(ValueError, "3-D points"):
             stretched(make_basal())
 
@@ -1511,6 +1495,166 @@ class MorphoRemoveTest(_RoundTripMixin, unittest.TestCase):
         self.assertEqual(tree.n_branches, 1)
 
 
+_W_D1_LONG = _pb([[110, 40, 0], [170, 120, 0]], (1.0, 0.5), "basal_dendrite")  # 100 um
+_W_D1_APICAL = _pb([[110, 40, 0], [140, 80, 0]], (1.0, 0.5), "apical_dendrite")
+_W_DEND_LONG = _pb([[20, 0, 0], [80, 80, 0], [200, 80, 0]], (2.0, 1.5, 1.0), "basal_dendrite")  # 100 + 120 um
+
+
+def _w_with(**replaced: Branch) -> Morphology:
+    """Tree W attached directly, with the named branches' geometry replaced."""
+    geometry = {"soma": _W_SOMA, "dend": _W_DEND, "d1": _W_D1, "d2": _W_D2, "axon": _W_AXON, **replaced}
+    return _build(
+        ("soma", geometry["soma"], None, None, None),
+        ("dend", geometry["dend"], "soma", 1.0, 0.0),
+        ("d1", geometry["d1"], "dend", 1.0, 0.0),
+        ("d2", geometry["d2"], "dend", 1.0, 0.0),
+        ("axon", geometry["axon"], "soma", 0.0, 0.0),
+    )
+
+
+def _cv_length_um(cell: Cell) -> float:
+    return sum(float(cv.length.to_decimal(u.um)) for cv in cell.cvs)
+
+
+class MorphoReplaceTest(_RoundTripMixin, unittest.TestCase):
+    """``Morphology.replace(target, branch)`` swaps one branch's geometry; names, edges and children stay."""
+
+    @staticmethod
+    def _indices(tree: Morphology) -> dict:
+        return {order: [b.name for b in tree.branch_by_order(order=order)] for order in ("default", "type")}
+
+    def test_a_longer_leaf(self) -> None:
+        tree = make_tree_w()
+        cell = Cell(tree)
+        np.testing.assert_allclose(_cv_length_um(cell), 260.0, rtol=1e-6)
+        held = tree.d1
+        indices = self._indices(tree)
+        revision = tree.revision
+
+        returned = tree.replace("d1", _W_D1_LONG)
+
+        self.assertIs(returned, held)
+        self.assertIs(held.branch, _W_D1_LONG)
+        self.assertEqual(self._indices(tree), indices)
+        self.assertFalse(tree._reindexed_after(revision))
+        self.assertEqual(tree.revision, revision + 1)
+        np.testing.assert_allclose(_um(tree.total_length), 310.0, rtol=1e-12)
+        np.testing.assert_allclose(_cv_length_um(cell), 310.0, rtol=1e-6)
+        self.assert_round_trips(tree, _w_with(d1=_W_D1_LONG))
+
+    def test_children_stay_on_the_same_end_of_a_longer_parent(self) -> None:
+        tree = make_tree_w()
+        cell = Cell(tree)
+        np.testing.assert_allclose(_um(tree.max_path_distance), 180.0, rtol=1e-12)
+
+        tree.replace("dend", _W_DEND_LONG)
+
+        for name in ("d1", "d2"):
+            with self.subTest(name):
+                child = getattr(tree, name)
+                self.assertEqual((child.parent.name, child.parent_x, child.child_x), ("dend", 1.0, 0.0))
+        np.testing.assert_allclose(_um(tree.total_length), 370.0, rtol=1e-12)
+        np.testing.assert_allclose(_um(tree.max_path_distance), 290.0, rtol=1e-12)
+        np.testing.assert_allclose(_cv_length_um(cell), 370.0, rtol=1e-6)
+        # The children's points stay where they were, off the new end of dend.
+        with self.assertRaisesRegex(ValueError, "cannot connect branch 'd1'"):
+            tree.to_swc(self.tmp / "gap.swc")
+        self.assertEqual(cold_rebuild(tree), tree)
+
+    def test_a_length_only_tree(self) -> None:
+        tree = make_tree_u()
+        tree.soma.dend.tip = Branch.from_lengths(lengths=[10.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite")
+        cell = Cell(tree)
+        np.testing.assert_allclose(_cv_length_um(cell), 240.0, rtol=1e-6)
+
+        tree.replace(
+            "dend",
+            Branch.from_lengths(lengths=[150.0, 50.0] * u.um, radii=[1.0, 1.0, 1.0] * u.um, type="basal_dendrite"),
+        )
+
+        np.testing.assert_allclose(_cv_length_um(cell), 340.0, rtol=1e-6)
+        self.assertEqual(tree.tip.parent_x, 1.0)
+        np.testing.assert_allclose(_um(tree.max_path_distance), 230.0, rtol=1e-12)
+
+    def test_a_new_type_changes_the_type_order_only(self) -> None:
+        tree = make_tree_w()
+        default = [b.name for b in tree.branches]
+
+        tree.replace("d1", _W_D1_APICAL)
+
+        self.assertEqual([b.name for b in tree.branch_by_order(order="type")], ["soma", "axon", "d2", "dend", "d1"])
+        self.assertEqual([b.name for b in tree.branches], default)
+        self.assert_round_trips(tree, _w_with(d1=_W_D1_APICAL))
+        # d1's samples are written with SWC type 4 (apical dendrite).
+        self.assertRegex((self.tmp / "tree-edited.swc").read_text(), r"(?m)^\d+ 4 140 80 0 0\.5 \d+$")
+
+    def test_a_soma_with_midpoint_children_keeps_the_soma_type(self) -> None:
+        tree = make_tree_w()
+        tree.attach(
+            parent="soma",
+            child_branch=_pb([[10, 0, 0], [10, 30, 0]], (1.0, 1.0), "apical_dendrite"),
+            child_name="ap",
+            parent_x=0.5,
+        )
+        before = _edit_state(tree)
+        with self.assertRaisesRegex(ValueError, r"\['ap'\].*parent_x=0\.5"):
+            tree.replace("soma", _pb([[0, 0, 0], [20, 0, 0]], (5.0, 5.0), "custom"))
+        self.assertEqual(_edit_state(tree), before)
+
+        tree.replace("soma", _pb([[0, 0, 0], [10, 0, 0], [40, 0, 0]], (5.0, 5.0, 5.0), "soma"))
+
+        self.assertEqual(tree.ap.parent_x, 0.5)
+        np.testing.assert_allclose(_um(tree.soma.length), 40.0, rtol=1e-12)
+
+    def test_bad_arguments_are_rejected_without_a_trace(self) -> None:
+        tree = make_tree_w()
+        geometry = tree.d1.branch
+        for label, call, error, pattern in (
+            ("not a Branch", lambda: tree.replace("d1", 1.0), TypeError, r"replace\(\) expects new_branch"),
+            ("a view", lambda: tree.replace("d1", tree.d2), ValueError, r"not a MorphoBranch.*\.branch"),
+            ("unknown name", lambda: tree.replace("nope", _W_D1_LONG), KeyError, "nope"),
+            ("not a name or view", lambda: tree.replace(2, _W_D1_LONG), TypeError, "got int"),
+            ("view of another tree", lambda: tree.replace(make_tree_w().d1, _W_D1_LONG), ValueError, "different"),
+        ):
+            with self.subTest(label):
+                before = _edit_state(tree)
+                with self.assertRaisesRegex(error, pattern):
+                    call()
+                self.assertEqual(_edit_state(tree), before)
+                self.assertIs(tree.d1.branch, geometry)
+
+    def test_a_frozen_tree_rejects_before_checking_arguments(self) -> None:
+        snapshot = frozen_snapshot(make_tree_w())
+        geometry = snapshot.d1.branch
+        before = _edit_state(snapshot)
+        for label, call in (
+            ("valid", lambda: snapshot.replace("d1", _W_D1_LONG)),
+            ("unknown name", lambda: snapshot.replace("nope", _W_D1_LONG)),
+            ("not a Branch", lambda: snapshot.replace("d1", 1.0)),
+        ):
+            with self.subTest(label):
+                with self.assertRaisesRegex(RuntimeError, "read-only snapshot"):
+                    call()
+                self.assertEqual(_edit_state(snapshot), before)
+        self.assertIs(snapshot.d1.branch, geometry)
+
+    def test_a_detached_view_is_rejected(self) -> None:
+        tree = make_tree_w()
+        held = tree.d2
+        tree.remove("d2")
+        before = _edit_state(tree)
+        with self.assertRaisesRegex(RuntimeError, r"'d2'.*detached.*replace\(\).*by name"):
+            tree.replace(held, _W_D1_LONG)
+        self.assertEqual(_edit_state(tree), before)
+
+    def test_the_same_geometry_again_is_still_an_edit(self) -> None:
+        tree = make_tree_w()
+        revision = tree.revision
+        tree.replace("d1", tree.d1.branch)
+        self.assertEqual(tree.revision, revision + 1)
+        self.assertEqual(tree, make_tree_w())
+
+
 class MorphoBranchDerivedPropertyTest(unittest.TestCase):
     """``branch_id`` / ``branch_order`` / ``n_tapers`` published by MorphoBranch.
 
@@ -1602,7 +1746,7 @@ class MorphoReservedNameTest(unittest.TestCase):
     def test_copy_and_edit_method_names_are_reserved(self) -> None:
         # Each new public method takes a name away from branches: a tree or a
         # checkpoint that used it can no longer be built (the changelog says so).
-        for name in ("clone", "subtree", "remove"):
+        for name in ("clone", "subtree", "remove", "replace"):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(ValueError, "reserved by the Morphology API"):
                     self._attach_named(self._tree(), name)

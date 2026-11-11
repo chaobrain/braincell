@@ -175,6 +175,7 @@ _GAP_FIXTURES = {
 """,
 }
 
+
 class _AscTestMixin:
     def _write_asc(self, body: str) -> Path:
         temp_dir = tempfile.TemporaryDirectory()

@@ -296,6 +296,9 @@ def normalize_place_rule(
         not a point declaration.
     ValueError
         If no mechanisms are supplied.
+    IndexError
+        If ``morpho`` is given and ``locset`` is a resolved mask naming a
+        branch that ``morpho`` does not have.
     """
     if not isinstance(locset, (LocsetExpr, LocsetMask, LocsetBatch)):
         raise TypeError(
@@ -315,6 +318,7 @@ def normalize_place_rule(
         normalized.append(mechanism)
     index_basis = None
     if morpho is not None and isinstance(locset, (LocsetMask, LocsetBatch)):
+        require_existing_branches(locset, morpho)
         index_basis = (morpho, morpho.revision)
     return PlaceRule(
         locset=locset,
@@ -325,6 +329,25 @@ def normalize_place_rule(
         origin=caller_origin(),
         _index_basis=index_basis,
     )
+
+
+def require_existing_branches(locset: LocsetMask | LocsetBatch, morpho: Morphology) -> None:
+    """Reject a resolved mask that names a branch ``morpho`` does not have.
+
+    Raises
+    ------
+    IndexError
+        Naming the first missing branch index and the valid range.
+    """
+    n_branches = len(morpho.branches)
+    branch_id = np.asarray(locset.branch_id)
+    missing = branch_id[(branch_id < 0) | (branch_id >= n_branches)]
+    if missing.size:
+        raise IndexError(
+            f"This {type(locset).__name__} names branch {int(missing[0])}, but the Cell's morphology has "
+            f"{n_branches} branches (indices 0 to {n_branches - 1}). Resolve the mask on the Cell's "
+            "morphology, e.g. at(\"axon\", 0.5).evaluate(cell.morpho)."
+        )
 
 
 def _paint_key(rule: PaintRule) -> tuple[object, str, str, object]:

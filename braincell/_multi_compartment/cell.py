@@ -817,6 +817,10 @@ class CellView(DiscreteView, _CellFacade):
             If the view selects a region or control volumes rather than
             locations, or nests a location selection inside another spatial
             selection.
+        IndexError
+            If a resolved mask names a branch the morphology does not have.
+
+        A call that raises leaves the Cell's declarations as they were.
         """
         scope = self._scope
         if not scope.spatially_restricted:
@@ -1525,8 +1529,9 @@ class Cell(_CellFacade, HHTypedNeuron):
                 "LocsetBatch batch rows must match the selected population size, "
                 f"got {len(locset)!r} rows for {len(normalized_indices)!r} cells."
             )
+        previous_rules = self._place_rules
         self._place_rules = merge_place_rules(
-            self._place_rules,
+            previous_rules,
             (
                 normalize_place_rule(
                     locset,
@@ -1537,7 +1542,11 @@ class Cell(_CellFacade, HHTypedNeuron):
                 ),
             ),
         )
-        self.discretize()
+        try:
+            self.discretize()
+        except Exception:
+            self._place_rules = previous_rules
+            raise
 
     def _place_per_cell(self, population_indices, locsets, mechanisms) -> None:
         """Append one independently sized locset row per selected cell."""
@@ -1737,9 +1746,15 @@ class Cell(_CellFacade, HHTypedNeuron):
         NotImplementedError
             On a lumped cell, for a synapse or any point mechanism other than
             a current clamp.
+        IndexError
+            If a :class:`~braincell.filter.LocsetMask` or
+            :class:`~braincell.filter.LocsetBatch` names a branch the
+            morphology does not have.
         RuntimeError
             If an earlier declaration holds branch indices that an edit has
             since shifted (see Notes).
+
+        A call that raises leaves the Cell's declarations as they were.
 
         Notes
         -----

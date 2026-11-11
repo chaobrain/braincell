@@ -368,6 +368,15 @@
 
 ### Bug Fixes
 
+- A population-view `place` (`cell[[0]].place(...)`, or
+  `cell[[0]].loc(mask).place(...)`) that fails now leaves the Cell as it was,
+  as `Cell.place` and per-member placement already did. Before, the failed
+  rule stayed, and every later grid read (`n_cv`, `init_state`) raised the
+  same error again. A `LocsetMask` or `LocsetBatch` that names a branch the
+  morphology does not have now raises an `IndexError` naming that branch and
+  the valid range, from `place` and `cell.loc`. Before it was a bare
+  `IndexError: tuple index out of range` from deep in the rebuild.
+
 - Cell inputs given as resolved branch indices no longer land silently on
   other branches after an edit shifts those indices (MORPH-16). There are
   three such inputs:

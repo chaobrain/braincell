@@ -47,7 +47,7 @@ from braincell import (
     connect,
 )
 from braincell._multi_compartment import cell as cell_module
-from braincell.filter import AllRegion, BranchSlice, LocsetBatch, RootLocation, Terminals, at
+from braincell.filter import AllRegion, BranchSlice, LocsetBatch, LocsetMask, RootLocation, Terminals, at
 from braincell.mech import StateProbe
 from braincell.morph._testing import (
     EDIT_CASES,
@@ -901,6 +901,72 @@ class IndexHeldDeclarationTest(unittest.TestCase):
                 else:
                     expected = _declaration_fingerprint(declare(cold_rebuild(morpho), mask))
                     self.assertEqual(_declaration_fingerprint(cell), expected)
+
+
+def _first_member(locset):
+    """Each way of calling place() for member 0 of a two-member Cell."""
+    return (
+        ("cell.place", lambda cell: cell.place(locset, _index_probe_synapse())),
+        ("population view", lambda cell: cell[[0]].place(locset, _index_probe_synapse())),
+        ("location view", lambda cell: cell[[0]].loc(locset).place(_index_probe_synapse())),
+        ("per member", lambda cell: cell.place([locset, at("axon", 0.5)], _index_probe_synapse())),
+    )
+
+
+class FailedPlaceKeepsTheDeclarationTest(unittest.TestCase):
+    """A place() that fails leaves the Cell's rules and grid as they were.
+
+    The population-view path (``cell[[0]].place``) used to keep the new rule
+    after a failed rebuild, so every later grid read raised the same error.
+    """
+
+    def _cell(self) -> Cell:
+        cell = Cell(make_tree_u(), pop_size=2)
+        cell.place(at("soma", 0.5), mech.Synapse("ExpSyn", name="kept", tau=2.0 * u.ms, e=0.0 * u.mV))
+        return cell
+
+    def test_a_failed_rebuild_rolls_back_on_every_path(self):
+        for name, place in _first_member(at("no_such_branch", 0.5)):
+            with self.subTest(name):
+                cell = self._cell()
+                rules, n_cv, placed = cell.place_rules, cell.n_cv, _placed_branches(cell)
+                with self.assertRaisesRegex(KeyError, "no_such_branch"):
+                    place(cell)
+                self.assertEqual(cell.place_rules, rules)
+                self.assertEqual(cell.n_cv, n_cv)
+                self.assertEqual(_placed_branches(cell), placed)
+
+    def test_a_mask_naming_a_missing_branch_is_rejected_on_every_path(self):
+        missing = r"LocsetMask names branch 9, but the Cell's morphology has 4 branches \(indices 0 to 3\)"
+        for name, place in _first_member(LocsetMask(points=((9, 0.5),))):
+            with self.subTest(name):
+                cell = self._cell()
+                rules, n_cv = cell.place_rules, cell.n_cv
+                with self.assertRaisesRegex(IndexError, missing):
+                    place(cell)
+                self.assertEqual(cell.place_rules, rules)
+                self.assertEqual(cell.n_cv, n_cv)
+
+    def test_a_named_mask_or_a_batch_naming_a_missing_branch_is_rejected(self):
+        named = LocsetMask(points=((0, 0.5), (4, 0.5)), display_names=("soma", "gone"))
+        batch = LocsetBatch.from_columns(np.asarray([[0], [7]], dtype=np.int64), np.asarray([[0.5], [0.5]]))
+        cases = (
+            ("named mask", lambda cell: cell[[0]].place(named, _index_probe_synapse()), "LocsetMask names branch 4"),
+            ("batch", lambda cell: cell.place(batch, _index_probe_synapse()), "LocsetBatch names branch 7"),
+            (
+                "batch on a view",
+                lambda cell: cell[[0, 1]].place(batch, _index_probe_synapse()),
+                "LocsetBatch names branch 7",
+            ),
+            ("batch location view", lambda cell: cell.loc(batch).place(_index_probe_synapse()), "LocsetBatch"),
+        )
+        for name, place, message in cases:
+            with self.subTest(name):
+                cell = self._cell()
+                rules = cell.place_rules
+                with self.assertRaisesRegex(IndexError, message):
+                    place(cell)
+                self.assertEqual(cell.place_rules, rules)
 
 
 class TestCellLifecycle(unittest.TestCase):

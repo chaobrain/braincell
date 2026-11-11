@@ -72,18 +72,20 @@ otherwise:
     from small, reusable declarations.
 ```
 
-## Two front ends, one engine
+## One cell class, two regimes
 
-Both cell classes share the layers above:
+{class}`braincell.Cell` is the one model class, and both regimes share the
+layers above:
 
-- {class}`braincell.SingleCompartment` collapses the morphology and
-  discretization layers — there is exactly one compartment — and exposes ions
-  and channels added imperatively in `__init__`.
-- {class}`braincell.Cell` uses the full pipeline: a {class}`~braincell.Morphology`
+- A morphological cell uses the full pipeline: a {class}`~braincell.Morphology`
   decorated with {mod}`braincell.mech` declarations through `paint` and `place`.
+- A point neuron, {meth}`braincell.Cell.point` (`cv_policy=Lumped()`), collapses
+  the morphology and discretization layers: there is exactly one compartment
+  and its state has no control-volume axis. It is declared with the same
+  `paint` and `place`.
 
-They both subclass {class}`braincell.HHTypedNeuron`, so the integrator, ion, and
-channel abstractions are identical. Learn one and the other is familiar.
+`Cell` subclasses {class}`braincell.HHTypedNeuron`, so the integrator, ion, and
+channel abstractions are the same in both. Learn one and the other is familiar.
 
 ## Where the code lives
 
@@ -92,11 +94,11 @@ re-exported through the top-level namespace):
 
 | Layer | Package |
 |-------|---------|
-| Declaration — cells | `braincell._single_compartment`, `braincell._multi_compartment` |
+| Declaration — cells | `braincell._multi_compartment` (point-neuron runtime in `braincell._single_compartment`) |
 | Declaration — mechanisms | `braincell.mech` |
 | Declaration — selection | `braincell.filter` |
 | Geometry | `braincell.morph` |
-| Discretization | `braincell._cv` |
+| Discretization | `braincell._discretization` |
 | Runtime | `braincell._compute` |
 | Integration | `braincell.quad` |
 

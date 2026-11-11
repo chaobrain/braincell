@@ -31,6 +31,7 @@ from typing import Any
 import brainstate
 import brainunit as u
 import jax
+import jax.numpy as jnp
 import numpy as np
 from braincell._parameter_schema import RuntimeParameterState
 
@@ -283,13 +284,19 @@ class EventSequence(EventSource):
         return True
 
     def event_count(self, source_index, *, t, delay, dt):
-        return _flat_event_count(
-            self.events,
-            source_index=np.asarray(source_index, dtype=np.int64),
+        source_index = np.asarray(source_index, dtype=np.int64).reshape(-1)
+        plan = _ArrivalPlan.build(
+            event_source=self.events.source_index,
+            event_time_ms=np.asarray(self.events.time.to_decimal(u.ms), dtype=np.float64),
+            source_index=source_index,
             t=t,
             delay=delay,
             dt=dt,
+            one_dimensional=True,
         )
+        if plan is not None:
+            return plan.count(t=t, dt=dt)
+        return _flat_event_count(self.events, source_index=source_index, t=t, delay=delay, dt=dt)
 
 
 @dataclass(frozen=True)
@@ -413,10 +420,24 @@ class NetStim(EventSource):
 
         Inside ``Cell.run`` and ``Network.run`` it reads the events up to
         the end of the run; elsewhere it generates every event (see the
-        class Notes).
+        class Notes). With a fixed ``delay`` and ``dt`` the arrival steps
+        are computed once, when a compiled loop is traced, and each step
+        looks its arrivals up in them.
         """
         self._ensure_schedule(until_ms=brainstate.environ.get(_SCHEDULE_HORIZON_KEY, None))
         source_index = np.asarray(source_index, dtype=np.int32)
+        event_source, event_column = np.nonzero(self._event_mask)
+        plan = _ArrivalPlan.build(
+            event_source=event_source,
+            event_time_ms=self._event_times_ms[event_source, event_column],
+            # Index as the matrix below does: negative entries wrap, others raise.
+            source_index=np.arange(self.size)[source_index],
+            t=t,
+            delay=delay,
+            dt=dt,
+        )
+        if plan is not None:
+            return plan.count(t=t, dt=dt)
         times = u.math.asarray(self._event_times_ms[source_index])
         mask = u.math.asarray(self._event_mask[source_index])
         delay_ms = u.math.asarray(delay.to_decimal(u.ms))
@@ -928,6 +949,128 @@ def _round_half_up_steps(values):
     ulp = u.math.nextafter(magnitude, toward_positive) - magnitude
     snapped = u.math.where(u.math.abs(values - half) <= 4.0 * ulp, half, values)
     return u.math.floor(snapped + 0.5)
+
+
+@jax.jit
+def _arrival_steps(time_ms, delay_ms, dt_ms):
+    """Rounded arrival steps of (event time, delay) pairs.
+
+    The arithmetic of the arrival matrix in ``event_count``, compiled with
+    its operands as arguments, as they are inside a compiled run loop: XLA
+    may evaluate ``x / dt`` there as ``x * (1 / dt)``, which can round a
+    step ratio a few ulp from a half-step tie to the other step, and a
+    host computation would not reproduce that.
+    """
+    return _round_half_up_steps((time_ms + delay_ms) / dt_ms)
+
+
+def _padded_size(size: int) -> int:
+    """Next power of two, so that few operand shapes compile."""
+    return 1 << max(int(size) - 1, 0).bit_length()
+
+
+@dataclass(frozen=True)
+class _ArrivalPlan:
+    """Arrival steps of a fixed schedule, sorted for a per-step lookup.
+
+    ``event_count`` used to rebuild the full ``(rows, events)`` arrival
+    matrix and compare it with the current step on every step (CELL-18a).
+    The arrival steps do not depend on ``t``, so they are computed once,
+    when the step is traced, and sorted. Rows that share a source and a
+    delay share their arrivals (a group). A step then costs one binary
+    search for the first arrival at that step, a read of at most
+    ``window`` arrivals (the most that share any step), and one gather
+    from groups to rows.
+    """
+
+    steps: np.ndarray
+    group: np.ndarray
+    window: int
+    row_group: np.ndarray
+    n_groups: int
+    shape: tuple[int, ...]
+
+    @classmethod
+    def build(cls, *, event_source, event_time_ms, source_index, t, delay, dt, one_dimensional=False):
+        """Return a plan, or ``None`` when the matrix path must run instead.
+
+        That is when ``delay`` or ``dt`` is traced, ``t`` or ``dt`` is not
+        a scalar, or the delays do not broadcast as the matrix path does.
+        """
+        if not all(isinstance(value, u.Quantity) for value in (t, delay, dt)):
+            return None
+        with jax.ensure_compile_time_eval():
+            delay_ms = u.math.asarray(delay.to_decimal(u.ms))
+            dt_ms = u.math.asarray(dt.to_decimal(u.ms))
+        if isinstance(delay_ms, jax.core.Tracer) or isinstance(dt_ms, jax.core.Tracer):
+            return None
+        if np.ndim(dt_ms) != 0 or np.ndim(t.mantissa) != 0:
+            return None
+        delay_ms = np.asarray(delay_ms)
+        if delay_ms.ndim == 0:
+            shape = source_index.shape
+        elif one_dimensional and delay_ms.shape != source_index.shape:
+            return None
+        else:
+            try:
+                shape = np.broadcast_shapes(source_index.shape, delay_ms.shape)
+            except ValueError:
+                return None
+        rows = np.broadcast_to(source_index, shape).reshape(-1).astype(np.int64)
+        row_delay = np.broadcast_to(delay_ms, shape).reshape(-1)
+
+        # Groups: distinct (source, delay bit pattern) pairs.
+        delay_bits = row_delay.view(np.dtype(f"u{row_delay.dtype.itemsize}")).astype(np.int64)
+        keys, row_group = np.unique(np.stack([rows, delay_bits], axis=1), axis=0, return_inverse=True)
+        row_group = row_group.reshape(-1).astype(np.int32)
+        _, first_row = np.unique(row_group, return_index=True)
+        group_source = keys[:, 0]
+        group_delay = row_delay[first_row]
+
+        # Pairs: every event of each group's source.
+        order = np.argsort(event_source, kind="stable")
+        sorted_source = np.asarray(event_source, dtype=np.int64)[order]
+        sorted_time = np.asarray(event_time_ms, dtype=np.float64)[order]
+        lo = np.searchsorted(sorted_source, group_source, side="left")
+        per_group = np.searchsorted(sorted_source, group_source, side="right") - lo
+        n_pairs = int(per_group.sum())
+        if n_pairs == 0:
+            return cls(np.zeros(0), np.zeros(0, np.int32), 0, row_group, len(keys), shape)
+        pair_group = np.repeat(np.arange(len(keys), dtype=np.int32), per_group)
+        pair_event = np.arange(n_pairs) + np.repeat(lo - (np.cumsum(per_group) - per_group), per_group)
+
+        padded = _padded_size(n_pairs)
+        pair_time = np.zeros(padded, dtype=np.float64)
+        pair_time[:n_pairs] = sorted_time[pair_event]
+        pair_delay = np.zeros(padded, dtype=row_delay.dtype)
+        pair_delay[:n_pairs] = group_delay[pair_group]
+        with jax.ensure_compile_time_eval():
+            steps = _arrival_steps(u.math.asarray(pair_time), jnp.asarray(pair_delay), dt_ms)
+            steps = np.asarray(steps)[:n_pairs]
+        by_step = np.argsort(steps, kind="stable")
+        steps, pair_group = steps[by_step], pair_group[by_step]
+        boundaries = np.flatnonzero(np.diff(steps) != 0)
+        window = int(np.max(np.diff(np.concatenate([[-1], boundaries, [n_pairs - 1]]))))
+        return cls(steps, pair_group, window, row_group, len(keys), shape)
+
+    def count(self, *, t, dt):
+        """Arrivals at the step of ``t``, one count per row."""
+        count_dtype = jax.dtypes.canonicalize_dtype(np.int64)
+        t_ms = u.math.asarray(t.to_decimal(u.ms))
+        dt_ms = u.math.asarray(dt.to_decimal(u.ms))
+        current_step = _round_half_up_steps(t_ms / dt_ms)
+        if self.window == 0:
+            return jnp.zeros(self.shape, dtype=count_dtype)
+        steps = jnp.asarray(self.steps)
+        # Unrolled: a compiled ``while`` costs a device round trip per
+        # iteration on GPU, where this search then took ~80 us per step.
+        first = jnp.searchsorted(steps, current_step, side="left", method="scan_unrolled")
+        position = first + jnp.arange(self.window)
+        within = jnp.minimum(position, self.steps.size - 1)
+        due = (position < self.steps.size) & (steps[within] == current_step)
+        group_count = jnp.zeros(self.n_groups, dtype=count_dtype)
+        group_count = group_count.at[jnp.asarray(self.group)[within]].add(due.astype(count_dtype))
+        return group_count[jnp.asarray(self.row_group)].reshape(self.shape)
 
 
 def _flat_event_count(table: EventTable, *, source_index, t, delay, dt):

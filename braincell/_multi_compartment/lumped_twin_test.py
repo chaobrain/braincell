@@ -149,9 +149,7 @@ class LumpedViewTwinTest(LumpedTwinTestCase):
                 out[kind] = reads, _mv(cell.run(dt=DT, duration=10.0 * u.ms).samples["v"])
             for index, (lumped, cable) in enumerate(zip(out["lumped"][0], out["cable"][0])):
                 self.assertTwin(lumped, cable, 0.0, msg=f"read {index}")
-            np.testing.assert_array_equal(
-                _pair(out["lumped"][0][1], 0)[0], np.asarray([100.0, 110.0, 120.0])
-            )
+            np.testing.assert_array_equal(_pair(out["lumped"][0][1], 0)[0], np.asarray([100.0, 110.0, 120.0]))
             self.assertTwin(out["lumped"][1], out["cable"][1], 1e-9)
 
     def test_ion_initializer_write(self) -> None:
@@ -277,7 +275,9 @@ class LumpedTrainableTwinTest(LumpedTwinTestCase):
             for kind in KINDS:
                 cell = _hh(kind, clamp=_clamp())
                 cell.init_state()
-                cell.event_outputs["spike"].trainable(threshold=bc.trainable.parameter(group_by="population", name="th"))
+                cell.event_outputs["spike"].trainable(
+                    threshold=bc.trainable.parameter(group_by="population", name="th")
+                )
                 loss = _mean_voltage_loss(cell, 6.0 * u.ms, reduce="sum")
                 grad, _ = _gradient(cell, loss)
                 out[kind] = grad, float(loss())
@@ -399,7 +399,9 @@ class LumpedNetworkTwinTest(LumpedTwinTestCase):
                 post_cell = _hh("cable" if kind == "lumped" else "lumped", synapse=True)
                 post_cell.record("v", bc.observe.state("v"))
                 post = network.add_population("post", post_cell)
-                network.connect("drive", source=pre.event_outputs["spike"], synapse=post.synapses["ampa"], weight=0.03 * u.uS)
+                network.connect(
+                    "drive", source=pre.event_outputs["spike"], synapse=post.synapses["ampa"], weight=0.03 * u.uS
+                )
                 out[kind] = network.run(dt=DT, duration=12.0 * u.ms)
         # lumped -> cable against cable -> lumped: each side is the other's twin.
         self.assertSameEvents(out["lumped"].events["pre"]["spike"], out["cable"].events["pre"]["spike"])
@@ -421,9 +423,15 @@ class LumpedNetworkTwinTest(LumpedTwinTestCase):
                 network = bc.Network(f"subset_{kind}")
                 source = network.add_population("src", bc.EventSequence(size=2, events=events))
                 post = network.add_population("post", cell)
-                network.connect("drive", source=source.event_outputs["event"], synapse=post.synapses["ampa"], weight=0.01 * u.uS)
+                network.connect(
+                    "drive", source=source.event_outputs["event"], synapse=post.synapses["ampa"], weight=0.01 * u.uS
+                )
                 samples = network.run(dt=DT, duration=5.0 * u.ms).samples["post"]
-                out[kind] = len(cell.synapses["ampa"]), _mv(samples["v"]), np.asarray(samples["g"].values.to_decimal(u.uS))
+                out[kind] = (
+                    len(cell.synapses["ampa"]),
+                    _mv(samples["v"]),
+                    np.asarray(samples["g"].values.to_decimal(u.uS)),
+                )
         self.assertEqual(out["lumped"][0], 2)
         self.assertEqual(out["cable"][0], 2)
         self.assertTwin(out["lumped"][1], out["cable"][1], 1e-9)
@@ -434,7 +442,9 @@ class LumpedNetworkTwinTest(LumpedTwinTestCase):
         with _float64():
             out = {}
             for kind in KINDS:
-                events = bc.EventTable(source_index=np.asarray([0, 1, 2, 0]), time=np.asarray([1.0, 2.0, 2.5, 3.0]) * u.ms)
+                events = bc.EventTable(
+                    source_index=np.asarray([0, 1, 2, 0]), time=np.asarray([1.0, 2.0, 2.5, 3.0]) * u.ms
+                )
                 cell = _hh(kind, synapse=True)
                 cell.add_reduction("acc", bc.EventAccumulatorReduction(alpha=0.5, threshold=0.05))
                 cell.use_model("acc")
@@ -442,8 +452,12 @@ class LumpedNetworkTwinTest(LumpedTwinTestCase):
                 network = bc.Network(f"reduced_{kind}")
                 source = network.add_population("src", bc.EventSequence(size=3, events=events))
                 target = network.add_population("tgt", cell)
-                network.connect("drive", source=source.event_outputs["event"], synapse=target.synapses["ampa"], weight=0.03 * u.uS)
-                out[kind] = np.asarray(u.get_mantissa(network.run(dt=DT, duration=4.0 * u.ms).samples["tgt"]["out"].values))
+                network.connect(
+                    "drive", source=source.event_outputs["event"], synapse=target.synapses["ampa"], weight=0.03 * u.uS
+                )
+                out[kind] = np.asarray(
+                    u.get_mantissa(network.run(dt=DT, duration=4.0 * u.ms).samples["tgt"]["out"].values)
+                )
         np.testing.assert_array_equal(out["lumped"], out["cable"])
         self.assertGreater(float(np.max(out["lumped"])), 0.0)
 
@@ -496,7 +510,12 @@ class LumpedSynapseTwinTest(LumpedTwinTestCase):
             warnings.simplefilter("ignore", DeprecationWarning)
             traces = {}
             for kind in KINDS:
-                cell = _hh(kind, 2, synapse=True, clamp=_clamp(delay=0.5, duration=3.0, amplitudes=np.asarray([0.1, 0.12]) * u.nA))
+                cell = _hh(
+                    kind,
+                    2,
+                    synapse=True,
+                    clamp=_clamp(delay=0.5, duration=3.0, amplitudes=np.asarray([0.1, 0.12]) * u.nA),
+                )
                 cell.place(RootLocation(0.5), bc.mech.StateProbe(name="pv"))
                 cell.place(RootLocation(0.5), bc.mech.MechanismProbe(mechanism="na", field="p", name="pp"))
                 cell.place(RootLocation(0.5), bc.mech.CurrentProbe(mechanism="na", name="pi"))

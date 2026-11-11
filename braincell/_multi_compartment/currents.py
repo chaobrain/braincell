@@ -273,7 +273,9 @@ class _SynapseIonCurrent:
     def __call__(self, V, ion_info):
         runtime = self.host._runtime
         local_voltage = self.layout.gather_points(self.host._point_voltage_for_mechanisms(V))
-        rows = self.syn.ion_current(local_voltage, _synapse_row_ion_info(self.layout, ion_info, lumped=runtime.is_lumped))
+        rows = self.syn.ion_current(
+            local_voltage, _synapse_row_ion_info(self.layout, ion_info, lumped=runtime.is_lumped)
+        )
         # A lumped Cell's V has no CV axis; its one CV is index 0.
         shape = u.math.shape(V) + ((1,) if runtime.is_lumped else ())
         total = u.Quantity(jnp.zeros(shape, dtype=u.get_mantissa(rows).dtype), rows.unit)

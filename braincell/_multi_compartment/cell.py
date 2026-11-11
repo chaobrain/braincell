@@ -741,7 +741,9 @@ class CellView(DiscreteView, _CellFacade):
         self._cell._raise_if_not_initialized("CellView.V")
         if self._cell._is_lumped:
             # No CV axis: a spatial selection reads the member of each pair.
-            populations = self._scope.pair_population_index if self._scope.spatially_restricted else self._population_indices
+            populations = (
+                self._scope.pair_population_index if self._scope.spatially_restricted else self._population_indices
+            )
             return self._cell.V.value[..., np.asarray(populations, dtype=np.int32)]
         if self._scope.spatially_restricted:
             if len(self._cell.pop_size) == 0:
@@ -3537,9 +3539,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                 return
             step_t = self._resolve_t() if t is None else t
             step_dt = brainstate.environ.get_dt() if dt is None else dt
-            density, components = self._lumped_clamps.evaluate(
-                step_t + 0.5 * step_dt, area=self._lumped_runtime.area
-            )
+            density, components = self._lumped_clamps.evaluate(step_t + 0.5 * step_dt, area=self._lumped_runtime.area)
             self._lumped_I_ext.value = density
             if components is not None:
                 self._step_clamp_components.value = components

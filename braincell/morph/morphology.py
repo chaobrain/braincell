@@ -741,7 +741,7 @@ class Morphology:
             >>> tree.soma.dend = Branch.from_lengths(lengths=[100.0] * u.um,
             ...                                      radii=[2.0, 1.0] * u.um,
             ...                                      type="basal_dendrite")
-            >>> tree.revision > before
+            >>> tree.revision == before + 1
             True
         """
         return self._revision
@@ -2027,9 +2027,7 @@ class Morphology:
             raise TypeError("Only Branch values participate in morphology syntax sugar.")
         return value
 
-    def _resolve_node_name(
-        self, branch: Branch, *, explicit_name: str | None
-    ) -> tuple[str, Optional[tuple[str, int]]]:
+    def _resolve_node_name(self, branch: Branch, *, explicit_name: str | None) -> tuple[str, Optional[tuple[str, int]]]:
         """Validate the name a new node will get, without writing anything.
 
         Returns the name and, for an auto-generated one, the
@@ -2227,10 +2225,10 @@ class MorphoBranch:
     branch up again by name on the current tree.  Names are the stable way
     to refer to a branch across edits.
 
-    The view's own attributes are read-only: assigning to (or deleting) a
-    name starting with ``_`` raises :class:`AttributeError`, because a
-    change made that way would bypass the morphology's :attr:`~Morphology.revision`
-    and leave cached results stale.
+    The view's own attributes are read-only: assigning to a name starting
+    with ``_``, or deleting any attribute, raises :class:`AttributeError`,
+    because a change made that way would bypass the morphology's
+    :attr:`~Morphology.revision` and leave cached results stale.
 
     Examples
     --------

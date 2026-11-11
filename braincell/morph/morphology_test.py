@@ -722,7 +722,11 @@ class MorphoEditGateTest(unittest.TestCase):
             ("attribute, duplicate name", lambda t: setattr(t.soma, "dend", _short_axon()), ValueError),
             ("attribute, reserved name", lambda t: setattr(t.soma, "length", _short_axon()), ValueError),
             ("attribute, not a Branch", lambda t: setattr(t.soma, "x", 1.0), TypeError),
-            ("subscript, midpoint on a non-soma parent", lambda t: setattr(t.dend[0.5], "y", _short_axon()), ValueError),
+            (
+                "subscript, midpoint on a non-soma parent",
+                lambda t: setattr(t.dend[0.5], "y", _short_axon()),
+                ValueError,
+            ),
         ]
         for label, edit, error in cases:
             with self.subTest(label):
@@ -965,6 +969,7 @@ class MorphoDetachedViewTest(unittest.TestCase):
     def test_views_of_remaining_branches_follow_the_new_indices(self) -> None:
         self.assertEqual(self.axon.index, 1)
         self.assertEqual(self.apical.index, 2)
+        self.assertEqual(repr(self.axon), "MorphoBranch(name='axon', type='axon', index=1)")
         self.assertEqual(self.axon.parent.name, "soma")
         self.assertEqual([b.name for b in self.tree.soma.children], ["axon", "apical"])
         self.assertEqual(self.tree.total_length, 130.0 * u.um)

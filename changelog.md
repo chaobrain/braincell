@@ -671,6 +671,23 @@
 
 ### Bug Fixes
 
+- The ASC reader no longer drops a tree that has no `(Axon)`, `(Dendrite)` or
+  `(Apical)` marker, and finds the soma contour by name as NEURON does
+  (MORPH-5c). A top-level block that starts with `(` and holds points is a
+  tree; without a type marker, its branches are now `custom`, with a
+  `topology.untyped_tree` report warning naming the line, where it used to be
+  dropped without a trace. A text label `( (Font ...) (x y z d) "text" )` is
+  still not geometry. A contour named exactly `"CellBody"`, `"Cell Body"` or
+  `"Soma"` is the soma even without a `(CellBody)` marker. Before, such a file
+  got a soma synthesized at the first tree's root. Affected files now match
+  NEURON 9.0: a soma contour plus one untyped and one typed 10 µm tree reads
+  to 3 branches and a total length of 27.63631 µm (was 2 branches, 17.63631),
+  and a `"Soma"` contour without a marker gives total area 88.218759 µm²
+  (was a synthesized soma, total length 11.0 µm). The `topology.synthetic_soma`
+  warning now gives the number of trees and the distance to the farthest root
+  point, and the error for several CellBody groups asks for one cell per file.
+  The shipped ASC files read as before.
+
 - A single CellBody contour that does not lie in one plane is now turned
   into a soma along its 3D principal axis, as NEURON 9.0's `Import3d` does
   (MORPH-5d). The importer used to take the principal axes of the x and y

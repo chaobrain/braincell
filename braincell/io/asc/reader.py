@@ -41,6 +41,10 @@ _NEURITE_TYPE_MAP = {
     "apicaldend": "apical_dendrite",
 }
 _IGNORED_SYMBOLS = {"normal"}
+#: Contour names NEURON's Import3d takes as a soma, matched exactly (read_nlcda3.hoc).
+_SOMA_CONTOUR_NAMES = frozenset({"CellBody", "Cell Body", "Soma"})
+#: Branch type of a tree that carries no (Axon), (Dendrite) or (Apical) marker.
+_UNTYPED_TREE_TYPE = "custom"
 _ANNOTATION_KEYS = {
     "cellbody",
     "color",
@@ -298,7 +302,15 @@ class AscReader:
             if block_kind is None:
                 continue
 
-            for segment in self._parse_segments(expr, branch_type=block_kind, report=report):
+            segments = self._parse_segments(expr, branch_type=block_kind, report=report)
+            if block_kind == _UNTYPED_TREE_TYPE and segments:
+                report.add_warning(
+                    "topology.untyped_tree",
+                    f"ASC tree at line {expr.line_number} has no (Axon), (Dendrite) or (Apical) marker; "
+                    f"imported it as {_UNTYPED_TREE_TYPE} branches.",
+                    line_number=expr.line_number,
+                )
+            for segment in segments:
                 normalized = self._normalize_segment(segment)
                 if normalized is not None:
                     neurites.append(normalized)
@@ -306,6 +318,16 @@ class AscReader:
         return tuple(contours), tuple(neurites)
 
     def _block_kind(self, expr: tuple[object, ...]) -> str | None:
+        """Return ``"soma"``, a branch type, or ``None`` for a block that is not geometry.
+
+        As in NEURON's grammar, a block that starts with a string is a contour
+        (or a marker or property) and one that starts with ``(`` is a tree or a
+        text label. A contour is the soma when it has a ``(CellBody)`` marker
+        or one of NEURON's soma names; a tree without a type marker is
+        ``custom``.
+        """
+        if expr and isinstance(expr[0], str) and expr[0] in _SOMA_CONTOUR_NAMES:
+            return "soma"
         for item in expr:
             if not isinstance(item, tuple):
                 continue
@@ -314,7 +336,18 @@ class AscReader:
                 return "soma"
             if key in _NEURITE_TYPE_MAP:
                 return _NEURITE_TYPE_MAP[key]
+        if expr and isinstance(expr[0], tuple) and not self._is_text_block(expr):
+            return _UNTYPED_TREE_TYPE
         return None
+
+    def _is_text_block(self, expr: tuple[object, ...]) -> bool:
+        """Return whether *expr* is a text label: ``( Properties Point "text" )``."""
+        return (
+            len(expr) >= 2
+            and isinstance(expr[-1], str)
+            and self._is_point_candidate(expr[-2])
+            and all(self._is_property_expr(item) for item in expr[:-2])
+        )
 
     def _parse_segments(
         self,
@@ -490,7 +523,7 @@ class AscReader:
             if len(stacks) != 1:
                 raise ValueError(
                     f"ASC import failed for {path}: found {len(stacks)} disjoint CellBody contour groups; "
-                    "Braincell currently supports exactly one soma."
+                    "Braincell currently supports exactly one soma. Split the file into one cell per file."
                 )
             stack = stacks[0]
             # One stack holds every contour in file order, so stack[0] is contours[0].
@@ -504,9 +537,13 @@ class AscReader:
                 raise ValueError(f"ASC import failed for {path}: no geometry points were found.")
             center = first_point.xyz
             radius = max(float(first_point.radius), MIN_SYNTHETIC_LENGTH_UM)
+            roots = [point for point in (self._first_point((neurite,)) for neurite in neurites) if point is not None]
+            farthest = max(float(np.linalg.norm(point.xyz - center)) for point in roots)
             report.add_warning(
                 "topology.synthetic_soma",
-                "ASC file has no CellBody contour; synthesized a soma from the first neurite root point.",
+                "ASC file has no CellBody contour; synthesized a soma at the first root point and attached "
+                f"{len(roots)} tree{'' if len(roots) == 1 else 's'} to it; the farthest root point is "
+                f"{farthest:.6g} um from it.",
             )
             points, radii = _geometry.synthetic_soma_geometry(center, radius)
             soma_branch = Soma.from_points(points=points * u.um, radii=radii * u.um)

@@ -202,6 +202,124 @@ _GAP_FIXTURES = {
   (0 10 0 1)
 )
 """,
+    "untyped_tree": """\
+("CellBody"
+  (CellBody)
+  (0 0 0 0)
+  (4 0 0 0)
+  (0 4 0 0)
+  (-4 0 0 0)
+)
+( (Color Red)
+  (0 0 0 1)
+  (5 0 0 1)
+  (10 0 0 1)
+)
+( (Dendrite)
+  (0 0 0 1)
+  (0 5 0 1)
+  (0 10 0 1)
+)
+""",
+    "soma_name_no_tag": """\
+("Soma"
+  (Closed)
+  (0 0 0 0)
+  (4 0 0 0)
+  (0 4 0 0)
+  (-4 0 0 0)
+)
+( (Dendrite)
+  (0 0 0 1)
+  (0 5 0 1)
+  (0 10 0 1)
+)
+""",
+    "cellbody_space_name_no_tag": """\
+("Cell Body"
+  (Closed)
+  (0 0 0 0)
+  (4 0 0 0)
+  (0 4 0 0)
+  (-4 0 0 0)
+)
+( (Dendrite)
+  (0 0 0 1)
+  (0 5 0 1)
+  (0 10 0 1)
+)
+""",
+    "tag_other_name": """\
+("Outline"
+  (CellBody)
+  (0 0 0 0)
+  (4 0 0 0)
+  (0 4 0 0)
+  (-4 0 0 0)
+)
+( (Dendrite)
+  (0 0 0 1)
+  (0 5 0 1)
+  (0 10 0 1)
+)
+""",
+    "no_soma_two_trees": """\
+( (Dendrite)
+  (0 0 0 1)
+  (0 5 0 1)
+  (0 10 0 1)
+)
+( (Axon)
+  (50 0 0 1)
+  (50 -5 0 1)
+  (50 -10 0 1)
+)
+""",
+    "two_cellbody_groups": """\
+("CellBody"
+  (CellBody)
+  (0 0 0 0)
+  (4 0 0 0)
+  (0 4 0 0)
+  (-4 0 0 0)
+)
+("CellBody"
+  (CellBody)
+  (100 0 0 0)
+  (104 0 0 0)
+  (100 4 0 0)
+  (96 0 0 0)
+)
+( (Dendrite)
+  (0 0 0 1)
+  (0 5 0 1)
+  (0 10 0 1)
+)
+( (Dendrite)
+  (100 0 0 1)
+  (100 5 0 1)
+  (100 10 0 1)
+)
+""",
+    "text_label": """\
+("CellBody"
+  (CellBody)
+  (0 0 0 0)
+  (4 0 0 0)
+  (0 4 0 0)
+  (-4 0 0 0)
+)
+( (Color Red)
+  (Font "Arial" 10)
+  (20 20 0 1)
+  "label"
+)
+( (Dendrite)
+  (0 0 0 1)
+  (0 5 0 1)
+  (0 10 0 1)
+)
+""",
 }
 
 
@@ -731,6 +849,76 @@ class AscMalformedInputTest(_AscTestMixin, unittest.TestCase):
                 np.testing.assert_allclose(float(tree.total_length.to_decimal(u.um)), total_length, rtol=1e-12)
                 np.testing.assert_allclose(float(tree.total_area.to_decimal(u.um**2)), total_area, rtol=1e-12)
                 self.assertEqual({issue.code for issue in report.issues}, codes)
+
+
+class AscStructureTest(_AscTestMixin, unittest.TestCase):
+    """Untyped trees, soma contours found by name, and the no-soma and many-soma messages (MORPH-5c)."""
+
+    @staticmethod
+    def _types(tree) -> list[str]:
+        return [branch.type for branch in tree.branches]
+
+    def test_untyped_tree_is_imported_as_custom_and_reported(self) -> None:
+        tree, report = AscReader().read(self._write_asc(_GAP_FIXTURES["untyped_tree"]), return_report=True)
+
+        self.assertEqual(self._types(tree), ["soma", "custom", "dendrite"])
+        untyped = [issue for issue in report.issues if issue.code == "topology.untyped_tree"]
+        self.assertEqual(len(untyped), 1)
+        self.assertEqual(untyped[0].level, "warning")
+        self.assertEqual(untyped[0].line_number, 8)
+        self.assertEqual([issue.code for issue in report.issues], ["topology.untyped_tree"])
+        # NEURON 9.0.2: 3 sections, total_length 27.63631.
+        self.assertAlmostEqual(float(tree.total_length.to_decimal(u.um)), 27.63631, places=5)
+
+    def test_text_label_is_not_a_tree(self) -> None:
+        # ( Properties Point "text" ) is Neurolucida's text label, as in NEURON's grammar.
+        tree, report = AscReader().read(self._write_asc(_GAP_FIXTURES["text_label"]), return_report=True)
+
+        self.assertEqual(self._types(tree), ["soma", "dendrite"])
+        self.assertEqual(report.issues, [])
+        self.assertIn("label", report.metadata.source_labels)
+
+    def test_contour_named_like_a_soma_is_the_soma_without_a_marker(self) -> None:
+        for name in ("soma_name_no_tag", "cellbody_space_name_no_tag"):
+            with self.subTest(fixture=name):
+                tree, report = AscReader().read(self._write_asc(_GAP_FIXTURES[name]), return_report=True)
+
+                self.assertEqual(tree.root.type, "soma")
+                self.assertEqual(tree.root.branch.points.shape[0], 21)
+                self.assertNotIn("topology.synthetic_soma", [issue.code for issue in report.issues])
+                # NEURON 9.0.2: total_length 17.63631, total_area 88.218759.
+                self.assertAlmostEqual(float(tree.total_length.to_decimal(u.um)), 17.63631, places=5)
+                self.assertAlmostEqual(float(tree.total_area.to_decimal(u.um**2)), 88.218759, places=6)
+
+    def test_soma_names_are_matched_exactly(self) -> None:
+        for name in ('"soma"', '"Cell body"', '"CellBody "'):
+            with self.subTest(name=name):
+                text = _GAP_FIXTURES["soma_name_no_tag"].replace('"Soma"', name)
+                _, report = AscReader().read(self._write_asc(text), return_report=True)
+
+                self.assertIn("topology.synthetic_soma", [issue.code for issue in report.issues])
+
+    def test_cellbody_marker_with_another_name_still_makes_the_soma(self) -> None:
+        # A known difference: NEURON only goes by the name and drops this soma.
+        tree = AscReader().read(self._write_asc(_GAP_FIXTURES["tag_other_name"]))
+
+        self.assertEqual(tree.root.type, "soma")
+        self.assertEqual(round(float(tree.total_area.to_decimal(u.um**2)), 6), 88.218759)
+
+    def test_synthetic_soma_message_counts_the_trees_and_the_farthest_root(self) -> None:
+        tree, report = AscReader().read(self._write_asc(_GAP_FIXTURES["no_soma_two_trees"]), return_report=True)
+
+        synthetic = [issue for issue in report.issues if issue.code == "topology.synthetic_soma"]
+        self.assertEqual(len(synthetic), 1)
+        self.assertIn("2 trees", synthetic[0].message)
+        self.assertIn("50 um", synthetic[0].message)
+        self.assertEqual(float(tree.total_length.to_decimal(u.um)), 21.0)
+
+    def test_two_cellbody_groups_ask_for_one_cell_per_file(self) -> None:
+        path = self._write_asc(_GAP_FIXTURES["two_cellbody_groups"])
+
+        with self.assertRaisesRegex(ValueError, "found 2 disjoint CellBody contour groups.*one cell per file"):
+            AscReader().read(path)
 
 
 class AscContourPrincipalAxisTest(_AscTestMixin, unittest.TestCase):

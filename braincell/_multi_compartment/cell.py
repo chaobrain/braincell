@@ -111,7 +111,13 @@ from braincell._multi_compartment.selection import BranchSelector, CVSelector, _
 from braincell._multi_compartment.lifecycle import DiscreteView
 from braincell._multi_compartment.density_views import ChannelView, IonView
 from braincell._multi_compartment.geometry import GeometryView
-from braincell._multi_compartment.lumped import CABLE_ONLY_SOLVERS, CLAMP_TYPES, LumpedClamps, build_lumped_runtime
+from braincell._multi_compartment.lumped import (
+    CABLE_ONLY_SOLVERS,
+    CLAMP_TYPES,
+    LumpedClamps,
+    build_lumped_runtime,
+    warn_stiff_gates,
+)
 from braincell.morph.morphology import Morphology as _Morphology
 
 __all__ = ["Cell", "CellView", "MultiCompartment"]
@@ -2487,7 +2493,7 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         self._V_init_materialized = RuntimeParameterState(V_init)
         self._V_th = V_th
-        runtime = build_lumped_runtime(self, V_init=V_init, V_th=V_th)
+        runtime, channels = build_lumped_runtime(self, V_init=V_init, V_th=V_th)
         self._lumped_runtime = runtime
         self._lumped_clamps = LumpedClamps(
             self,
@@ -2500,6 +2506,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         # Channel init hooks allocate gates; reset hooks put them at steady
         # state for V_init, as on a cable Cell.
         runtime.reset_state(batch_size)
+        # CELL-29: an explicit solver on a stiff HH gate returns NaN at every
+        # practical dt; say so here rather than leave a silent NaN to the run.
+        warn_stiff_gates(runtime, channels, solver=self._solver_fn, solver_name=self._solver_name, stacklevel=3)
         self.V = runtime.V
         self.spike = runtime.spike
         self._lumped_I_ext = brainstate.ShortTermState(self._zero_lumped_current())

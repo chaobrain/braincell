@@ -31,11 +31,17 @@ sampled once) and checked against the same unit prototypes, with the same
 error messages, as on a cable Cell. Channels are bound to ions by the same
 code as the cable runtime (``root_type``, ``ion_name`` / ``ion_names``,
 placeholder ions).
+
+At ``init_state`` an explicit Cell solver is checked against the HH gates it
+integrates (:func:`warn_stiff_gates`): a gate that relaxes faster than the
+solver's stability bound turns every practical ``dt`` into NaN, so the Cell
+warns, naming the channel and the solvers that are stable for it.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import warnings
+from typing import TYPE_CHECKING, NamedTuple
 
 import braintools
 import brainunit as u
@@ -68,20 +74,45 @@ from braincell._compute.parameters import (
     density_parameter_value,
     spatial_callable_source,
 )
+from braincell._misc import is_traced_value
 from braincell._single_compartment import SingleCompartment
+from braincell.channel._base import HH
 from braincell.ion import build_placeholder_ions
 from braincell.mech import CurrentClamp, Density, FunctionClamp, SineClamp, get_registry
+from braincell.quad import get_integrator, integrator_info, list_integrators
+from braincell.quad.protocol import IndependentIntegration
 
 if TYPE_CHECKING:
     from braincell._multi_compartment.cell import Cell
 
-__all__ = ["CLAMP_TYPES", "LumpedClamps", "LumpedRuntime", "build_lumped_runtime"]
+__all__ = [
+    "CLAMP_TYPES",
+    "LumpedChannel",
+    "LumpedClamps",
+    "LumpedRuntime",
+    "StiffGate",
+    "build_lumped_runtime",
+    "stiff_gates",
+    "warn_stiff_gates",
+]
 
 #: Point mechanisms a lumped Cell accepts in ``place``.
 CLAMP_TYPES = (CurrentClamp, SineClamp, FunctionClamp)
 
 #: Solvers that need the cable point tree and so cannot step a lumped Cell.
 CABLE_ONLY_SOLVERS = frozenset({"staggered", "dhs_voltage"})
+
+#: Voltages (mV) over which :func:`stiff_gates` scans a gate's relaxation rate:
+#: -100 to 60 mV in 0.25 mV steps, the grid of the channel catalogue's stiffness table.
+STIFFNESS_GRID_MV = np.linspace(-100.0, 60.0, 641)
+#: The ``dt`` (ms) the check assumes: NEURON's default and the one the docs use.
+STIFFNESS_DT_MS = 0.025
+#: Largest ``dt * rate`` an explicit Runge-Kutta step stays stable at on a
+#: decaying mode: 2 for Euler and the two-stage methods, 2.51 for three stages,
+#: 2.79 for four; the check uses the smallest.
+EXPLICIT_STABILITY_LIMIT = 2.0
+#: Grid points times members evaluated at once, which bounds the scan's memory.
+_SCAN_ELEMENTS = 1 << 20
 
 
 class LumpedRuntime(SingleCompartment):
@@ -131,7 +162,35 @@ class LumpedRuntime(SingleCompartment):
         return self._cv_area
 
 
-def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> LumpedRuntime:
+class LumpedChannel(NamedTuple):
+    """A channel of a lumped runtime with the ions it reads.
+
+    Kept outside the runtime module so that the node is reachable through one
+    graph path only.
+    """
+
+    #: The declaration's name, quoted with its class when they differ.
+    label: str
+    #: The runtime channel node.
+    node: object
+    #: The runtime ions the channel reads, in its ``root_type`` order.
+    ions: tuple
+
+
+class StiffGate(NamedTuple):
+    """An HH gate whose relaxation rate exceeds an explicit solver's stability bound."""
+
+    #: :attr:`LumpedChannel.label` of the channel.
+    channel: str
+    #: Gate name.
+    gate: str
+    #: Largest relaxation rate over :data:`STIFFNESS_GRID_MV` and the population, in 1/ms.
+    rate: float
+    #: Voltage of that rate, in mV.
+    V: float
+
+
+def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> tuple[LumpedRuntime, tuple[LumpedChannel, ...]]:
     """Lower the one CV of a lumped ``cell`` into a :class:`LumpedRuntime`.
 
     Parameters
@@ -143,8 +202,10 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> LumpedRuntime:
 
     Returns
     -------
-    LumpedRuntime
+    runtime : LumpedRuntime
         Engine with mechanisms of size ``cell.pop_size``.
+    channels : tuple of LumpedChannel
+        Its channels in declaration order, with the ions each reads.
 
     Raises
     ------
@@ -209,10 +270,11 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> LumpedRuntime:
     _attach_ion_geometry(ions, cv=cv, pop_size=pop_size)
 
     root_channels: dict[str, object] = {}
+    channels: list[LumpedChannel] = []
     for index, declaration in enumerate(channel_declarations):
         runtime_cls = registry.get("channel", declaration.class_name)
         node = runtime_cls(size=pop_size, **_resolve_params(declaration, context, cell.paint_rules))
-        _, owner = install_channel_on_ions(
+        bound_keys, owner = install_channel_on_ions(
             node,
             runtime_cls=runtime_cls,
             mechanism=declaration,
@@ -224,10 +286,14 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> LumpedRuntime:
         if owner is None:
             root_channels[_unique_key(root_channels, ions, declaration.instance_name)] = node
         schedule_pairs.append((declaration, node))
+        label = declaration.class_name
+        if declaration.instance_name != declaration.class_name:
+            label = f"{declaration.instance_name!r} ({declaration.class_name})"
+        channels.append(LumpedChannel(label, node, tuple(ions[key] for key in bound_keys)))
 
     apply_subsolver_schedule(schedule_pairs, solver=cell.subsolver, substeps=cell.substeps)
 
-    return LumpedRuntime(
+    runtime = LumpedRuntime(
         pop_size,
         area=cv.area,
         C=cv.cm,
@@ -236,6 +302,120 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> LumpedRuntime:
         spk_fun=cell.spk_fun,
         solver=cell.solver,
         ion_channels={**ions, **root_channels},
+    )
+    return runtime, tuple(channels)
+
+
+def _is_explicit_step(fn) -> bool:
+    """Whether ``fn`` is the module step of a braintools explicit Runge-Kutta method (``'ode'`` kind)."""
+    return any(fn is get_integrator(name) for name in list_integrators() if integrator_info(name).kind == "ode")
+
+
+def stiff_gates(channels, *, n_members: int, ndim: int) -> list[StiffGate]:
+    """Return the HH gates that an explicit solver cannot step at :data:`STIFFNESS_DT_MS`.
+
+    For each dependent HH channel (the main solver integrates its gates; a
+    self-integrating channel advances in ``ind_update`` instead), the rate at
+    which each gate relaxes is evaluated on :data:`STIFFNESS_GRID_MV` with the
+    channel's own parameters and current ion state. A gate is stiff when
+    ``STIFFNESS_DT_MS * rate > EXPLICIT_STABILITY_LIMIT`` somewhere on the grid.
+    Channels without HH gates are not checked, nor is a channel whose rates
+    cannot be evaluated on the grid (for example, rates that do not
+    broadcast): the check is advisory and must not fail ``init_state``.
+
+    Parameters
+    ----------
+    channels : sequence of LumpedChannel
+        Channels of an initialized runtime.
+    n_members : int
+        Elements of the voltage state (batch times population); with ``ndim``
+        it shapes the voltage grid.
+    ndim : int
+        Number of axes of the voltage state.
+
+    Returns
+    -------
+    list of StiffGate
+        In channel and gate declaration order.
+    """
+    found = []
+    for channel in channels:
+        node = channel.node
+        if not isinstance(node, HH) or isinstance(node, IndependentIntegration):
+            continue
+        try:
+            rates = _max_relaxation_rates(node, channel.ions, n_members=n_members, ndim=ndim)
+        except Exception:  # noqa: BLE001 - advisory check; see the docstring
+            continue
+        for gate, (rate, V) in rates.items():
+            if STIFFNESS_DT_MS * rate > EXPLICIT_STABILITY_LIMIT:
+                found.append(StiffGate(channel.label, gate, rate, V))
+    return found
+
+
+def _max_relaxation_rates(node, ions, *, n_members: int, ndim: int) -> dict[str, tuple[float, float]]:
+    """Largest relaxation rate (1/ms) of each gate of ``node`` over the grid, and its voltage (mV)."""
+    infos = tuple(ion.pack_info() for ion in ions)
+    chunk = max(1, _SCAN_ELEMENTS // max(1, n_members))
+    best: dict[str, tuple[float, float]] = {}
+    for start in range(0, STIFFNESS_GRID_MV.size, chunk):
+        grid = STIFFNESS_GRID_MV[start : start + chunk]
+        V = u.Quantity(grid.reshape((-1,) + (1,) * ndim), u.mV)
+        for gate, rate in node._gate_relaxation_rates(V, *infos).items():
+            if is_traced_value(rate):
+                raise TypeError("the rates are traced")
+            values = np.asarray(u.Quantity(rate).to_decimal(u.ms**-1), dtype=float)
+            values = np.broadcast_to(values, np.broadcast_shapes(values.shape, V.shape))
+            values = np.where(np.isfinite(values), values, -np.inf).reshape(grid.size, -1).max(axis=1)
+            index = int(np.argmax(values))
+            if gate not in best or values[index] > best[gate][0]:
+                best[gate] = (float(values[index]), float(grid[index]))
+    return best
+
+
+def warn_stiff_gates(runtime: LumpedRuntime, channels, *, solver, solver_name: str, stacklevel: int = 2) -> None:
+    """Warn when ``solver`` is explicit and some HH gate of ``runtime`` is stiff for it.
+
+    Parameters
+    ----------
+    runtime : LumpedRuntime
+        An initialized runtime: the gates' rates read the ions' state.
+    channels : sequence of LumpedChannel
+        The runtime's channels, from :func:`build_lumped_runtime`.
+    solver : callable
+        The Cell's step function. Only the module steps of the explicit
+        Runge-Kutta methods are checked; ``ind_exp_euler``, ``exp_euler``,
+        ``backward_euler``, ``crank_nicolson`` and user callables are not.
+    solver_name : str
+        The Cell's ``solver_name``, quoted in the message.
+    stacklevel : int
+        Passed to :func:`warnings.warn`.
+
+    Warns
+    -----
+    UserWarning
+        Naming each stiff gate, its largest rate and the ``dt`` below which an
+        explicit step is stable on it, and the stable solvers.
+    """
+    if not _is_explicit_step(solver):
+        return
+    value = runtime.V.value
+    found = stiff_gates(channels, n_members=int(np.size(u.get_mantissa(value))), ndim=int(np.ndim(value)))
+    if not found:
+        return
+    gates = "; ".join(
+        f"{gate.channel} gate {gate.gate!r} relaxes at up to {gate.rate:.3g} /ms at {gate.V:g} mV "
+        f"(stable for dt < {EXPLICIT_STABILITY_LIMIT / gate.rate:.2g} ms)"
+        for gate in found
+    )
+    warnings.warn(
+        f"Cell solver {solver_name!r} is an explicit Runge-Kutta method, and these HH gates are stiff for an "
+        f"explicit solver at dt = {STIFFNESS_DT_MS} ms (rates scanned between {STIFFNESS_GRID_MV[0]:g} and "
+        f"{STIFFNESS_GRID_MV[-1]:g} mV): {gates}. Larger steps grow without bound and the run returns NaN. "
+        "Use solver='exp_euler' (second order on HH cells, about 20 times the cost per step) or "
+        "solver='ind_exp_euler' (first order, about the cost of 'ralston2'); both are stable on these gates.",
+        UserWarning,
+        stacklevel=stacklevel + 1,
     )
 
 

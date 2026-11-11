@@ -506,8 +506,6 @@ def _plain(value: object) -> object:
         return {key: _plain(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return tuple(_plain(item) for item in value)
-    if isinstance(value, float) and value != value:
-        return "nan"
     return value
 
 

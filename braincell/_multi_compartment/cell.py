@@ -3509,7 +3509,8 @@ class Cell(_CellFacade, HHTypedNeuron):
             ``None`` (default) adds nothing. Current inputs registered with
             :meth:`add_current_input` (brainpy projections) follow the same
             unit rule but are evaluated at every stage with the stage
-            voltage.
+            voltage; a registered value acts on this step only, in every
+            stage.
 
         Returns
         -------
@@ -3627,7 +3628,7 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         ``brainpy.state.AlignPostProj`` and ``CurrentProj`` call this on
         their ``post`` model with their synaptic output (e.g. ``COBA``), a
-        callable of the membrane voltage. Registering an input also drops
+        callable of the membrane voltage. Registering a callable also drops
         the compiled loops of :meth:`run` (and of the owning
         :class:`~braincell.Network`), so the next run includes it.
 
@@ -3636,8 +3637,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         key : str
             Unique name of the input.
         inp : callable or Quantity
-            A callable of the voltage, evaluated at every solver stage, or a
-            value, added once and then removed (brainpy's rule).
+            A callable of the voltage, evaluated at every solver stage of
+            every step, or a value, which drives the next step only: every
+            stage of that step adds it, and the step removes it.
         label : str, optional
             brainpy's grouping label.
 
@@ -3648,6 +3650,14 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         Notes
         -----
+        A value is consumed by the next :meth:`update`, or by the first step
+        of the next :meth:`run` (or ``Network.run``, ``Network.update``),
+        which passes it into its compiled loop. A loop of your own that
+        traces ``update()`` once (``brainstate.transform.for_loop``) reads a
+        value registered before it as a constant and adds it on every
+        iteration; register the value inside the loop body, as brainpy
+        projections do, or use :meth:`run`.
+
         On a lumped cell the input may return a current (e.g. nA), divided
         by the membrane area, or a current density (e.g. uA/cm^2), as
         :meth:`update`'s ``I_ext``; it is called with the voltage shaped
@@ -3672,7 +3682,8 @@ class Cell(_CellFacade, HHTypedNeuron):
             True
         """
         super().add_current_input(key, inp, label=label)
-        self._drop_compiled_loops()
+        if callable(inp):
+            self._drop_compiled_loops()
 
     def add_delta_input(self, key, inp, label=None):
         """Register a voltage increment, the entry brainpy's ``DeltaProj`` uses.
@@ -3680,18 +3691,19 @@ class Cell(_CellFacade, HHTypedNeuron):
         Every solver adds the registered inputs to ``V`` at the end of each
         step, after the voltage and the mechanism states have advanced, as
         ``SingleCompartment`` does; the spike test of the step sees them.
-        Registering an input also drops the compiled loops of :meth:`run`
+        Registering a callable also drops the compiled loops of :meth:`run`
         (and of the owning :class:`~braincell.Network`), so the next run
-        includes it.
+        includes it; a value is passed into the loop, as for
+        :meth:`add_current_input`.
 
         Parameters
         ----------
         key : str
             Unique name of the input.
         inp : callable or Quantity
-            A voltage (e.g. ``1.0 * u.mV``), added once and then removed
-            (brainpy's rule), or a callable without arguments returning one,
-            called at every step.
+            A voltage (e.g. ``1.0 * u.mV``), added at the end of the next
+            step only (the first step of the next :meth:`run`), or a
+            callable without arguments returning one, called at every step.
         label : str, optional
             brainpy's grouping label.
 
@@ -3728,18 +3740,26 @@ class Cell(_CellFacade, HHTypedNeuron):
             Quantity([-60. -60.], "mV")
         """
         super().add_delta_input(key, inp, label=label)
-        self._drop_compiled_loops()
+        if callable(inp):
+            self._drop_compiled_loops()
 
     def _drop_compiled_loops(self) -> None:
         """Drop the compiled loops of :meth:`run` and of the owning Network.
 
-        They trace the input tables (``add_current_input``,
+        They trace the callable inputs (``add_current_input``,
         ``add_delta_input``) once, so a later registration would be missed.
+        Value inputs are arguments of the loops (:meth:`_take_value_inputs`).
         """
         self._run_loop_cache.clear()
         owner = self.network_owner
         if owner is not None:
             owner._drop_compiled_loops()
+
+    def _take_value_inputs(self) -> tuple:
+        """Take the value inputs for a compiled loop; none on a reduction model, which has no membrane."""
+        if self._uses_reduction:
+            return {}, {}
+        return super()._take_value_inputs()
 
     def _begin_step(self):
         """Apply prepared discrete synaptic events at step start.
@@ -3848,6 +3868,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         5. Add the delta inputs (:meth:`add_delta_input`) to the voltage.
         6. Clear temporary current caches.
         7. Detect threshold crossing and write ``self.spike``.
+
+        The value inputs registered for the step are read by every stage
+        and removed when the step ends (:meth:`_value_input_step`).
         """
         self._raise_if_not_initialized("_update_dynamics()")
 
@@ -3858,6 +3881,13 @@ class Cell(_CellFacade, HHTypedNeuron):
             output = self._reduction_models[self._selected_model_name].update(self._pending_reduction_inputs)
             self._publish_reduction_output(output)
             return self.spike.value
+        # A value input (add_current_input, add_delta_input) acts on this
+        # step only: every solver stage reads it, and the step removes it.
+        with self._value_input_step():
+            return self._advance_membrane(external)
+
+    def _advance_membrane(self, external):
+        """The solver step and spike test of :meth:`_update_dynamics` (not reduction)."""
         if self._is_lumped:
             I_ext = self._lumped_I_ext.value
             if external is not None:

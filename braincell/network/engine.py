@@ -24,6 +24,7 @@ from dataclasses import dataclass
 import brainstate
 import brainunit as u
 import jax
+import jax.numpy as jnp
 import numpy as np
 
 from braincell._misc import freeze_array, normalize_loop_outputs, scalar_decimal, validate_time_quantity
@@ -121,9 +122,10 @@ class Network:
     def _drop_compiled_loops(self) -> None:
         """Drop the compiled run and update loops, keeping the delivery buffers.
 
-        A member Cell calls this when it registers a current or delta input
-        (brainpy projections): the loops traced its input tables once, so
-        they would miss the new input.
+        A member Cell calls this when it registers a callable current or
+        delta input (brainpy projections): the loops traced its input tables
+        once, so they would miss the new input. Value inputs are arguments
+        of the loops (:meth:`_take_value_inputs`).
         """
         self._network_run_loop_cache.clear()
         if self._prepared_run is not None:
@@ -446,8 +448,13 @@ class Network:
             n_steps=int(relative_times.shape[0]),
             schedule_key=self._prepare_netstim_schedules(until_ms=until_ms),
         )
-        with _schedule_horizon(until_ms):
-            times, samples_over_time = cached_loop.runner(start_t, relative_times)
+        values = self._take_value_inputs(ordered_population_names)
+        try:
+            with _schedule_horizon(until_ms):
+                times, samples_over_time = cached_loop.runner(start_t, relative_times, values)
+        except BaseException:
+            self._restore_value_inputs(values)
+            raise
 
         samples_tuple = normalize_loop_outputs(
             samples_over_time,
@@ -604,8 +611,38 @@ class Network:
             self._prepared_run = (setup, cached, dt)
         self.trainables.materialize()
         first = self.populations[setup.ordered_population_names[0]].cell
-        cached.runner(first.current_time, u.math.zeros((1,)) * dt)
+        values = self._take_value_inputs(setup.ordered_population_names)
+        try:
+            cached.runner(first.current_time, u.math.zeros((1,)) * dt, values)
+        except BaseException:
+            self._restore_value_inputs(values)
+            raise
         return {name: self.populations[name].cell.spike.value for name in setup.ordered_population_names}
+
+    def _take_value_inputs(self, names) -> dict:
+        """Take the value inputs of the Cells named ``names`` for one call of a compiled loop.
+
+        They are arguments of the loop, which applies them to its first
+        step (``Cell._take_value_inputs``); as constants of its trace they
+        would act on every step, and on every later call.
+
+        Returns
+        -------
+        dict
+            ``{population name: (current, delta)}`` for the Cells that have
+            any.
+        """
+        values = {}
+        for name in names:
+            taken = self.populations[name].cell._take_value_inputs()
+            if any(taken):
+                values[name] = taken
+        return values
+
+    def _restore_value_inputs(self, values) -> None:
+        """Put back the inputs :meth:`_take_value_inputs` took, for a loop that failed."""
+        for name, taken in values.items():
+            self.populations[name].cell._restore_value_inputs(taken)
 
     def _run_setup(
         self,
@@ -752,7 +789,7 @@ class Network:
         compiled_recordings = setup.compiled_recordings
         event_sources = setup.event_sources
 
-        def _run_loop(start_t, relative_times):
+        def _run_loop(start_t, relative_times, values):
             times = start_t + relative_times
             with brainstate.environ.context(dt=dt):
 
@@ -816,7 +853,21 @@ class Network:
                             )
                         return recording_snapshots + traces + events
 
-                samples_over_time = brainstate.transform.for_loop(_step, times)
+                if values:
+
+                    def _step_with_values(index, t):
+                        # The value inputs act on the first step only.
+                        with contextlib.ExitStack() as stack:
+                            for name, taken in values.items():
+                                cell = self.populations[name].cell
+                                stack.enter_context(cell._value_input_step(taken, first=index == 0))
+                            return _step(t)
+
+                    samples_over_time = brainstate.transform.for_loop(
+                        _step_with_values, jnp.arange(times.shape[0]), times
+                    )
+                else:
+                    samples_over_time = brainstate.transform.for_loop(_step, times)
 
             end_t = start_t + int(times.shape[0]) * dt
             for population in self._cell_populations().values():

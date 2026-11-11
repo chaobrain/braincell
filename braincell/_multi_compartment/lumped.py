@@ -429,7 +429,8 @@ class LumpedRuntime(SingleCompartment):
             shaped like ``V``; a cable Cell's ``observe.membrane_current()``.
         """
         V = self.V.value
-        total = self.sum_current_inputs(I_ext, V)
+        # A recording reads the value inputs without consuming them.
+        total = self.sum_current_inputs(I_ext, V, pop=False)
         for channel in self._ion_channels().values():
             contribution = channel.current(V)
             if contribution is not None:
@@ -457,7 +458,7 @@ class LumpedRuntime(SingleCompartment):
             for node in snapshot:
                 del node._cached_total_current
 
-    def sum_current_inputs(self, init, *args, **kwargs):
+    def sum_current_inputs(self, init, *args, pop=True, **kwargs):
         """Add the owning Cell's current inputs, each as a current density.
 
         ``compute_derivative`` calls this at every solver stage with the
@@ -465,7 +466,9 @@ class LumpedRuntime(SingleCompartment):
         input -- a brainpy projection's output such as ``COBA``, or any
         callable registered with ``Cell.add_current_input`` -- may return a
         current or a current density (:func:`as_current_density`). A
-        non-callable input is added once and removed, as in brainpy.
+        non-callable input acts on one step: within the Cell's step every
+        stage adds it and the step removes it; outside a step it is removed
+        once added, as in brainpy.
 
         Parameters
         ----------
@@ -474,6 +477,9 @@ class LumpedRuntime(SingleCompartment):
         *args, **kwargs
             Passed to each callable input; ``compute_derivative`` passes the
             voltage.
+        pop : bool, default True
+            Remove each value input once added; ignored within the Cell's
+            step.
 
         Returns
         -------
@@ -494,12 +500,13 @@ class LumpedRuntime(SingleCompartment):
         inputs = None if owner is None else owner.current_inputs
         if not inputs:
             return init
+        pop = pop and not owner._in_value_input_step()
         shape = self.V.value.shape
         for key in tuple(inputs):
             item = inputs[key]
             value = item(*args, **kwargs) if callable(item) else item
             init = init + as_current_density(value, area=self.area, shape=shape, what=f"Current input {key!r}")
-            if not callable(item):
+            if pop and not callable(item):
                 del inputs[key]
         return init
 

@@ -35,7 +35,9 @@ import unittest
 import brainstate
 import braintools
 import brainunit as u
+import jax
 import jax.numpy as jnp
+import numpy as np
 
 import braincell
 from braincell import Channel, HHTypedNeuron, SingleCompartment
@@ -841,6 +843,86 @@ class SingleCompartmentHiddenStatesAreNotGroupedTest(unittest.TestCase):
             neuron.init_state()
         self._assert_none_grouped(neuron)
         self.assertIs(type(neuron.V), DiffEqSingleState)
+
+
+def _resting_leaky(solver, size=1):
+    """Soma 20 um x 10 um, leak 0.3 mS/cm^2 at its reversal -65 mV."""
+    neuron = SingleCompartment(
+        size,
+        length=20.0 * u.um,
+        radius=10.0 * u.um,
+        V_initializer=braintools.init.Constant(-65.0 * u.mV),
+        solver=solver,
+    )
+    neuron.IL = IL(size, g_max=0.3 * u.mS / u.cm**2, E=-65.0 * u.mV)
+    neuron.init_state()
+    neuron.reset_state()
+    return neuron
+
+
+class SingleCompartmentValueInputTest(unittest.TestCase):
+    """CELL-36: a value input acts on one step and every stage of that step reads it."""
+
+    # 10 uA/cm^2 for one 0.025 ms step against the leak: I / g * (1 - exp(-0.0075)).
+    _EXACT = 100.0 / 3.0 * -float(np.expm1(-0.0075))
+
+    def test_one_step_pulse_on_multi_stage_solvers(self) -> None:
+        # Acceptance 5. On main brainpy removed the value at the first stage:
+        # ralston2 0.061562 and rk4 0.041355 mV.
+        expected = {"ralston2": 0.25 * (1.0 - 0.0075 / 2.0), "rk4": self._EXACT, "euler": 0.25}
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for solver, value in expected.items():
+                with self.subTest(solver=solver):
+                    neuron = _resting_leaky(solver)
+                    neuron.add_current_input("pulse", 10.0 * u.uA / u.cm**2)
+                    with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms):
+                        neuron.update()
+                    dv = float(neuron.V.value.to_decimal(u.mV)[0]) + 65.0
+                    self.assertAlmostEqual(dv, value, places=10)
+                    self.assertLessEqual(abs(dv - self._EXACT), 1e-3)
+                    self.assertNotIn("pulse", neuron.current_inputs)
+                    # Consumed by that step: the next relaxes towards rest.
+                    with brainstate.environ.context(t=0.025 * u.ms, dt=0.025 * u.ms):
+                        neuron.update()
+                    self.assertLess(float(neuron.V.value.to_decimal(u.mV)[0]) + 65.0, dv)
+
+    def test_overridden_compute_derivative_reads_the_value_at_every_stage(self) -> None:
+        # A subclass that sums its inputs itself, with brainpy's default pop.
+        seen = []
+
+        class Custom(SingleCompartment):
+            def compute_derivative(self, I_ext=0.0 * u.nA / u.cm**2):
+                total = self.sum_current_inputs(I_ext, self.V.value)
+                seen.append(float(np.asarray(total.to_decimal(u.uA / u.cm**2)).reshape(-1)[0]))
+                self.V.derivative = total / self.C
+
+        neuron = Custom(1, V_initializer=braintools.init.Constant(-65.0 * u.mV), solver="rk4")
+        neuron.init_state()
+        neuron.add_current_input("pulse", 10.0 * u.uA / u.cm**2)
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms):
+            neuron.update()
+        self.assertEqual(seen, [10.0] * 4)
+        self.assertNotIn("pulse", neuron.current_inputs)
+
+    def test_labels_and_callables_keep_brainpy_rules(self) -> None:
+        neuron = _resting_leaky("euler")
+        neuron.add_current_input("a", 1.0 * u.uA / u.cm**2, label="x")
+        neuron.add_current_input("b", 2.0 * u.uA / u.cm**2, label="y")
+        neuron.add_current_input("c", lambda: 4.0 * u.uA / u.cm**2, label="x")
+        zero = 0.0 * u.uA / u.cm**2
+        with neuron._value_input_step():
+            for _ in range(2):
+                self.assertEqual(neuron.sum_current_inputs(zero, label="x").to_decimal(u.uA / u.cm**2), 5.0)
+                self.assertEqual(neuron.sum_current_inputs(zero).to_decimal(u.uA / u.cm**2), 7.0)
+        # The step removed the values; the callable stays.
+        self.assertEqual(tuple(neuron.current_inputs), ("x // c",))
+        # Outside a step brainpy's rule applies: a value is removed once summed.
+        neuron.add_current_input("d", 8.0 * u.uA / u.cm**2)
+        self.assertEqual(neuron.sum_current_inputs(zero).to_decimal(u.uA / u.cm**2), 12.0)
+        self.assertEqual(neuron.sum_current_inputs(zero).to_decimal(u.uA / u.cm**2), 4.0)
+        neuron.add_delta_input("e", 1.0 * u.mV)
+        self.assertEqual(neuron.sum_delta_inputs(0.0 * u.mV, pop=False).to_decimal(u.mV), 1.0)
+        self.assertIn("e", neuron.delta_inputs)
 
 
 if __name__ == "__main__":

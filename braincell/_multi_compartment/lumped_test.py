@@ -1479,5 +1479,200 @@ class DeltaInputTest(unittest.TestCase):
                 cell.update()
 
 
+_PULSE = 10.0 * u.uA / u.cm**2
+# The leak relaxes at g / C = 0.3 / ms; one 0.025 ms step of the pulse moves
+# V by I / g * (1 - exp(-z)), z = g dt / C = 0.0075.
+_PULSE_Z = 0.0075
+_PULSE_DV = 100.0 / 3.0 * -np.expm1(-_PULSE_Z)
+
+
+def _v_mV(cell):
+    return float(np.asarray(cell.V.value.to_decimal(u.mV)).reshape(-1)[0])
+
+
+def _add_value(cell, entry):
+    if entry == "delta":
+        cell.add_delta_input("kick", _KICK)
+    else:
+        cell.add_current_input("pulse", _PULSE)
+
+
+def _update_loop(cell, n_steps, start=0, register=None):
+    """``n_steps`` eager ``update()`` calls; ``register(step)`` runs before each."""
+    with brainstate.environ.context(dt=DT):
+        for step in range(start, start + n_steps):
+            if register is not None:
+                register(step)
+            with brainstate.environ.context(t=step * DT):
+                cell.update()
+    return _v_mV(cell)
+
+
+class ValueInputStepTest(unittest.TestCase):
+    """CELL-36: a value (non-callable) input acts on one step, in every stage and in every loop."""
+
+    def test_one_step_pulse_charge_does_not_depend_on_the_solver(self) -> None:
+        # Acceptance 1. On main brainpy removed the value at its first sum,
+        # so a multi-stage solver counted it in its first stage only:
+        # ralston2 0.061562, rk4 0.041355 mV instead of 0.249065.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            checked = {}
+            for kind in ("lumped", "cable"):
+                for solver, cell in _runnable_one_cv_cells(kind):
+                    with self.subTest(kind=kind, solver=solver):
+                        cell.init_state()
+                        cell.add_current_input("pulse", _PULSE)
+                        with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                            cell.update()
+                        dv = _v_mV(cell) + 65.0
+                        self.assertLessEqual(abs(dv - _PULSE_DV), 1e-3)
+                        if solver in ("rk4", "exp_euler"):
+                            self.assertLessEqual(abs(dv - _PULSE_DV), 1e-6)
+                        if solver == "ralston2":
+                            # Both stages count the pulse: the two-stage
+                            # Taylor value; its distance to the exact
+                            # 0.2490648 mV, 2.3e-6 mV, is the method's error.
+                            self.assertAlmostEqual(dv, 0.25 * (1.0 - _PULSE_Z / 2.0), places=12)
+                        self.assertNotIn("pulse", cell.current_inputs)
+                        checked.setdefault(kind, []).append(solver)
+            self.assertEqual(len(checked["cable"]), len(bc.quad.list_integrators()))
+            self.assertEqual(len(checked["lumped"]), len(bc.quad.list_integrators()) - 2)
+
+    def test_run_matches_an_update_loop(self) -> None:
+        # Acceptance 2. On main the loop of run() added the value at every
+        # step, as a constant of its trace, and so did the next run that
+        # reused the loop: the delta gave -45.22 and -26.03 mV.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for kind, solver in (("cable", "rk4"), ("cable", "staggered"), ("lumped", "rk4")):
+                for entry in ("delta", "current"):
+                    with self.subTest(kind=kind, solver=solver, input=entry):
+                        expected = []
+                        looped = _one_cv_cell(kind, solver)
+                        looped.init_state()
+                        _add_value(looped, entry)
+                        expected.append(_update_loop(looped, 4))
+                        expected.append(_update_loop(looped, 4, start=4))
+                        cell = _one_cv_cell(kind, solver)
+                        cell.init_state()
+                        _add_value(cell, entry)
+                        actual = []
+                        for _ in range(2):
+                            cell.run(dt=DT, duration=4 * DT)
+                            actual.append(_v_mV(cell))
+                        np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=0.0)
+                        if entry == "delta":
+                            self.assertAlmostEqual(actual[0], -60.11, places=1)
+
+    def test_value_registered_between_runs_acts_on_the_first_step_of_the_next(self) -> None:
+        # Acceptance 3: the value is an argument of the compiled loop, not a
+        # constant of its trace, so registering one does not retrace it.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for kind, solver in (("cable", "rk4"), ("cable", "staggered"), ("lumped", "rk4")):
+                with self.subTest(kind=kind, solver=solver):
+                    looped = _one_cv_cell(kind, solver)
+                    looped.init_state()
+                    _update_loop(looped, 4)
+                    looped.add_current_input("pulse", _PULSE)
+                    expected = _update_loop(looped, 4, start=4)
+                    cell = _one_cv_cell(kind, solver)
+                    cell.init_state()
+                    cell.run(dt=DT, duration=4 * DT)
+                    plans = dict(cell._run_loop_cache)
+                    cell.add_current_input("pulse", _PULSE)
+                    self.assertEqual(dict(cell._run_loop_cache), plans)
+                    cell.run(dt=DT, duration=4 * DT)
+                    self.assertAlmostEqual(_v_mV(cell), expected, delta=1e-12 * abs(expected))
+                    self.assertGreater(_v_mV(cell), -65.0 + 0.2)
+                    # Consumed: a third run relaxes back towards rest.
+                    cell.run(dt=DT, duration=4 * DT)
+                    self.assertLess(_v_mV(cell), expected)
+
+    def test_callable_input_is_still_evaluated_at_every_step(self) -> None:
+        # Acceptance 3: a callable acts on every step of every run.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for kind, solver in (("cable", "rk4"), ("lumped", "rk4")):
+                with self.subTest(kind=kind, solver=solver):
+                    looped = _one_cv_cell(kind, solver)
+                    looped.init_state()
+                    looped.add_current_input("drive", lambda V: _PULSE)
+                    expected = _update_loop(looped, 8)
+                    cell = _one_cv_cell(kind, solver)
+                    cell.init_state()
+                    cell.add_current_input("drive", lambda V: _PULSE)
+                    cell.run(dt=DT, duration=4 * DT)
+                    cell.run(dt=DT, duration=4 * DT)
+                    self.assertAlmostEqual(_v_mV(cell), expected, delta=1e-12 * abs(expected))
+                    # Eight steps of 0.249 mV, less the leak.
+                    self.assertGreater(_v_mV(cell), -65.0 + 1.9)
+
+    def test_value_registered_in_a_loop_body_acts_on_every_iteration(self) -> None:
+        # A projection that registers a value at every step (brainpy's
+        # DeltaProj, gap junctions) inside a traced loop: each step gets its
+        # own value, as in an eager loop.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for kind, solver in (("cable", "rk4"), ("lumped", "rk4")):
+                with self.subTest(kind=kind, solver=solver):
+                    looped = _one_cv_cell(kind, solver)
+                    looped.init_state()
+                    expected = _update_loop(looped, 8, register=lambda step: looped.add_current_input("p", _PULSE))
+                    cell = _one_cv_cell(kind, solver)
+                    cell.init_state()
+
+                    def body(t, cell=cell):
+                        cell.add_current_input("p", _PULSE)
+                        with brainstate.environ.context(t=t):
+                            cell.update()
+
+                    with brainstate.environ.context(dt=DT):
+                        brainstate.transform.for_loop(body, np.arange(8) * DT)
+                    self.assertAlmostEqual(_v_mV(cell), expected, delta=1e-12 * abs(expected))
+                    self.assertNotIn("p", cell.current_inputs)
+
+    def test_membrane_current_recording_reads_a_value_without_consuming_it(self) -> None:
+        # On main compiling the recording evaluated it once, which removed
+        # the value: run() never applied it (V stayed at -65 mV).
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for kind, solver in (("cable", "rk4"), ("cable", "staggered"), ("lumped", "rk4")):
+                with self.subTest(kind=kind, solver=solver):
+                    plain = _one_cv_cell(kind, solver)
+                    plain.init_state()
+                    plain.add_current_input("pulse", _PULSE)
+                    plain.run(dt=DT, duration=4 * DT)
+                    cell = _one_cv_cell(kind, solver)
+                    cell.record("im", bc.observe.membrane_current())
+                    cell.init_state()
+                    cell.add_current_input("pulse", _PULSE)
+                    result = cell.run(dt=DT, duration=4 * DT)
+                    self.assertEqual(_v_mV(cell), _v_mV(plain))
+                    self.assertGreater(_v_mV(cell), -65.0 + 0.2)
+                    current = np.asarray(result.samples["im"].values.to_decimal(u.uA / u.cm**2)).reshape(4)
+                    # Sampled before each step: the first holds the pulse
+                    # (the leak is zero at rest), the others only the leak.
+                    self.assertAlmostEqual(current[0], 10.0, places=9)
+                    self.assertLess(np.max(np.abs(current[1:])), 0.1)
+
+    def test_a_run_that_fails_keeps_its_value_inputs(self) -> None:
+        cell = _one_cv_cell("lumped", "rk4", pop_size=N)
+        cell.init_state()
+        cell.add_current_input("pulse", np.ones((N + 1,)) * _PULSE)
+        with self.assertRaisesRegex(ValueError, "pulse"):
+            cell.run(dt=DT, duration=4 * DT)
+        self.assertIn("pulse", cell.current_inputs)
+        del cell.current_inputs["pulse"]
+        cell.run(dt=DT, duration=4 * DT)
+        np.testing.assert_allclose(cell.V.value.to_decimal(u.mV), -65.0)
+
+    def test_reduction_model_leaves_value_inputs_registered(self) -> None:
+        # A reduction has no membrane: its run neither applies nor takes a
+        # current value, as before.
+        cell = bc.Cell(bc.Morphology.from_soma())
+        cell.add_reduction("reduced", bc.EventAccumulatorReduction(alpha=0.5, threshold=0.05))
+        cell.use_model("reduced")
+        cell.init_state()
+        cell.add_current_input("pulse", _PULSE)
+        cell.run(dt=DT, duration=4 * DT)
+        self.assertIn("pulse", cell.current_inputs)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -20,9 +20,11 @@ import unittest
 import brainunit as u
 import numpy as np
 
+import braincell
 from braincell import Branch, Morphology
 from braincell.filter._testing import make_soma, make_soma_dend_tree
 from braincell.filter import (
+    AllRegion,
     AtLocation,
     BranchPoints,
     BranchSlice,
@@ -34,10 +36,12 @@ from braincell.filter import (
     LocsetSetOp,
     LocsetUniqueOp,
     RandomSamples,
+    RegionAnchors,
     RootLocation,
     Terminals,
     UniformSamples,
     at,
+    branch_in,
 )
 from braincell.filter import locset as locset_mod
 
@@ -345,6 +349,102 @@ class RegionSamplingLocsetTest(unittest.TestCase):
             UniformSamples(region=EmptyRegion(), count=1).evaluate(tree)
         with self.assertRaises(ValueError):
             RandomSamples(region=EmptyRegion(), count=1, seed=1).evaluate(tree)
+
+
+def _tree_d() -> Morphology:
+    """Soma (20 um, index 0) and dend (40 + 60 um, index 1) on the soma's distal end; T = 120 um."""
+    soma = Branch.from_lengths(lengths=np.array([20.0]) * u.um, radii=np.array([5.0, 5.0]) * u.um, type="soma")
+    dend = Branch.from_lengths(
+        lengths=np.array([40.0, 60.0]) * u.um, radii=np.array([2.0, 1.5, 1.0]) * u.um, type="basal_dendrite"
+    )
+    tree = Morphology.from_root(soma, name="soma")
+    tree.attach(parent="soma", child_branch=dend, child_name="dend")
+    return tree
+
+
+class RegionAnchorsTest(unittest.TestCase):
+    """MORPH-10a: one location per normalized interval, at a relative position inside it."""
+
+    def setUp(self) -> None:
+        self.tree = _tree_d()
+
+    def select(self, expr):
+        mask = self.tree.select(expr)
+        return mask.points, mask.display_names
+
+    def test_one_location_per_interval_at_the_relative_position(self) -> None:
+        for x, label in ((0.0, "0"), (0.25, "0.25"), (0.5, "0.5"), (1.0, "1")):
+            with self.subTest(x=x):
+                self.assertEqual(
+                    self.select(RegionAnchors(AllRegion(), x)),
+                    (((0, x), (1, x)), (f"soma({label})", f"dend({label})")),
+                )
+
+    def test_rows_follow_the_normalized_intervals(self) -> None:
+        expected = (((0, 0.75), (1, 0.4)), ("soma(0.75)", "dend(0.4)"))
+        self.assertEqual(self.select(RegionAnchors(BranchSlice(1, 0.2, 0.6) | BranchSlice(0, 0.5, 1.0), 0.5)), expected)
+        # A multi-branch leaf slice keeps its input order until normalized.
+        leaf = BranchSlice([1, 0], [0.2, 0.5], [0.6, 1.0])
+        self.assertEqual(self.tree.select(leaf).intervals, ((1, 0.2, 0.6), (0, 0.5, 1.0)))
+        self.assertEqual(self.select(RegionAnchors(leaf, 0.5)), expected)
+        # Touching intervals on one branch merge into one, so one location.
+        self.assertEqual(
+            self.select(RegionAnchors(BranchSlice(1, 0.0, 0.5) | BranchSlice(1, 0.5, 1.0), 0.5)),
+            (((1, 0.5),), ("dend(0.5)",)),
+        )
+
+    def test_concatenation_keeps_order_and_junction_rows(self) -> None:
+        self.assertEqual(
+            self.tree.select(RegionAnchors(AllRegion(), 1.0) + RegionAnchors(AllRegion(), 0.0)).points,
+            ((0, 1.0), (1, 1.0), (0, 0.0), (1, 0.0)),
+        )
+        # (soma, 1) and (dend, 0) are one physical point; unique() keeps both rows.
+        both_ends = self.tree.select((RegionAnchors(AllRegion(), 1.0) + RegionAnchors(AllRegion(), 0.0)).unique())
+        self.assertEqual(both_ends.points, ((0, 1.0), (1, 1.0), (0, 0.0), (1, 0.0)))
+
+    def test_one_branch_region_equals_at(self) -> None:
+        self.assertEqual(
+            self.tree.select(RegionAnchors(branch_in("name", "dend"), 0.3)),
+            self.tree.select(at("dend", 0.3)),
+        )
+
+    def test_x_within_the_tolerance_is_clipped(self) -> None:
+        self.assertEqual(self.tree.select(RegionAnchors(AllRegion(), 1 + 1e-13)).points, ((0, 1.0), (1, 1.0)))
+        self.assertEqual(self.tree.select(RegionAnchors(AllRegion(), -1e-13)).points, ((0, 0.0), (1, 0.0)))
+        self.assertEqual(self.tree.select(RegionAnchors(AllRegion(), np.float64(0.5))).points, ((0, 0.5), (1, 0.5)))
+        self.assertEqual(self.tree.select(RegionAnchors(AllRegion(), 1)).points, ((0, 1.0), (1, 1.0)))
+
+    def test_construction_rejects_bad_arguments(self) -> None:
+        for x in (1.5, -0.1, float("nan"), float("inf")):
+            with self.subTest(x=x), self.assertRaisesRegex(ValueError, r"RegionAnchors\.x must be within \[0, 1\]"):
+                RegionAnchors(AllRegion(), x)
+        for x, message in (
+            (True, "real number"),
+            (None, "real number"),
+            ("0.5", "real number"),
+            (0.5 * u.um, "not a length"),
+        ):
+            with self.subTest(x=x), self.assertRaisesRegex(TypeError, message):
+                RegionAnchors(AllRegion(), x)
+        with self.assertRaisesRegex(TypeError, "RegionAnchors.region expects RegionExpr, got str"):
+            RegionAnchors("dend", 0.5)
+
+    def test_an_empty_region_raises_at_select_and_at_place(self) -> None:
+        synapse = braincell.mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms, e=0.0 * u.mV)
+        for region in (EmptyRegion(), AllRegion() - AllRegion(), BranchSlice(1, 0.3, 0.3 + 1e-13)):
+            expr = RegionAnchors(region, 0.5)
+            with self.subTest(region=region, step="select"), self.assertRaisesRegex(ValueError, "empty region"):
+                self.tree.select(expr)
+            cell = braincell.Cell(_tree_d(), cv_policy=braincell.CVPerBranch())
+            with self.subTest(region=region, step="place"), self.assertRaisesRegex(ValueError, "empty region"):
+                cell.place(expr, synapse)
+
+    def test_value_semantics(self) -> None:
+        expr = RegionAnchors(branch_in("type", "axon"), 0.5)
+        self.assertEqual(expr, RegionAnchors(branch_in("type", "axon"), 0.5))
+        self.assertEqual(hash(expr), hash(RegionAnchors(branch_in("type", "axon"), 0.5)))
+        self.assertNotEqual(expr, RegionAnchors(branch_in("type", "axon"), 0.25))
+        self.assertEqual(pickle.loads(pickle.dumps(expr)), expr)
 
 
 class LocsetSetOpValidationTest(unittest.TestCase):

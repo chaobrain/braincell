@@ -35,7 +35,15 @@ import brainunit as u
 
 from braincell import Branch, Morphology
 from braincell.filter.cache import SelectionCache
-from braincell.filter.locset import BranchPoints, LocsetMask, RootLocation, Terminals, UniformSamples, at
+from braincell.filter.locset import (
+    BranchPoints,
+    LocsetMask,
+    RegionAnchors,
+    RootLocation,
+    Terminals,
+    UniformSamples,
+    at,
+)
 from braincell.filter.region import AllRegion, EmptyRegion, SubtreeRegion, branch_in
 from braincell.io._testing import FIXTURE_DIR
 from braincell.morph._testing import EditCase, assert_layer_fresh, make_tree_t
@@ -88,9 +96,10 @@ def fixture_morphologies() -> list[tuple[str, Morphology]]:
 
 #: Expressions a ``SelectionCache`` serves after an edit, one per thing a mask
 #: can depend on: segment lengths, topology, branch type, the name -> index
-#: mapping, and subtree membership by index and by name. Each is a composite whose operands are all hashable, because
-#: the cache memoizes operands only; a top-level leaf would never be cached
-#: and could not go stale.
+#: mapping, subtree membership by index and by name, and the intervals a
+#: region resolves to. Each is a composite whose operands are all hashable,
+#: because the cache memoizes operands only; a top-level leaf would never be
+#: cached and could not go stale.
 SELECTION_BATTERY: tuple[tuple[str, object], ...] = (
     ("lengths", UniformSamples(AllRegion(), 5) + RootLocation(0.5)),
     ("topology", Terminals() + BranchPoints()),
@@ -100,6 +109,9 @@ SELECTION_BATTERY: tuple[tuple[str, object], ...] = (
     # one subtree to the other, and a union of both would not change.
     ("subtree by index", SubtreeRegion(1) | EmptyRegion()),
     ("subtree by name", SubtreeRegion("axon") | EmptyRegion()),
+    # The axon survives every edit; a basal region would be empty after
+    # "remove the subtree at dend", and RegionAnchors raises on that.
+    ("region anchors", RegionAnchors(AllRegion(), 0.5) + RegionAnchors(branch_in("type", "axon"), 1.0)),
 )
 
 

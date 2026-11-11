@@ -16,6 +16,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from numbers import Real
 
 import numpy as np
 
@@ -562,15 +563,109 @@ class Terminals(LocsetExpr):
 
 @dataclass(frozen=True)
 class RegionAnchors(LocsetExpr):
+    """Place one location in each interval of a region, at a relative position.
+
+    Parameters
+    ----------
+    region : RegionExpr
+        The region whose intervals receive a location each.
+    x : float
+        Relative position inside each interval, in ``[0, 1]``: the fraction
+        of the interval's arc length from its proximal end, measured along
+        the branch's own ``x`` direction. ``0`` is the interval's ``prox``,
+        ``1`` its ``dist``. Values within ``1e-12`` of ``[0, 1]`` are clipped
+        to it, as in :func:`at`.
+
+    Returns
+    -------
+    LocsetMask
+        From :meth:`~LocsetExpr.evaluate`: for each interval ``(b, p, d)`` of
+        the normalized region, in ascending branch index and then ``p``, one
+        row ``(b, p + x * (d - p))``. The number of rows equals the number of
+        normalized intervals, and rows are never merged.
+
+    Raises
+    ------
+    TypeError
+        At construction, if ``region`` is not a :class:`RegionExpr`, or ``x``
+        is a ``bool``, a :class:`~brainunit.Quantity` or not a real number.
+    ValueError
+        At construction, if ``x`` is NaN or outside ``[0, 1]``. At evaluation
+        (``select``, ``Cell.place``), if the region is empty once normalized.
+
+    See Also
+    --------
+    at : One location on one named branch.
+    UniformSamples : A given number of locations spread over a region.
+
+    Notes
+    -----
+    Normalization sorts the region's intervals by branch index and merges
+    the ones that touch or overlap on the same branch, so
+    ``BranchSlice(1, 0.0, 0.5) | BranchSlice(1, 0.5, 1.0)`` is one interval
+    and gives one location. ``RegionAnchors(branch_in("name", ["dend"]), x)``
+    gives the same location as ``at("dend", x)``.
+
+    Intervals on two branches that meet at a junction can give two rows for
+    the same physical point when ``x`` is ``0`` or ``1``: ``(soma, 1.0)``
+    and ``(dend, 0.0)`` for a dendrite attached at the soma's distal end.
+    :meth:`~LocsetExpr.unique` removes only identical rows, so it keeps
+    both. ``Cell.place`` puts both at the same junction point, each on its
+    own branch.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> import numpy as np
+        >>> from braincell import Branch, Morphology
+        >>> from braincell.filter import AllRegion, BranchSlice, RegionAnchors
+        >>> soma = Branch.from_lengths(lengths=np.array([20.0]) * u.um, radii=np.array([5.0, 5.0]) * u.um, type="soma")
+        >>> dend = Branch.from_lengths(
+        ...     lengths=np.array([40.0, 60.0]) * u.um, radii=np.array([2.0, 1.5, 1.0]) * u.um, type="basal_dendrite"
+        ... )
+        >>> tree = Morphology.from_root(soma, name="soma")
+        >>> tree.soma.dend = dend
+        >>> tree.select(RegionAnchors(AllRegion(), 0.25)).points
+        ((0, 0.25), (1, 0.25))
+        >>> tree.select(RegionAnchors(AllRegion(), 0.25)).display_names
+        ('soma(0.25)', 'dend(0.25)')
+        >>> tree.select(RegionAnchors(BranchSlice(1, 0.2, 0.6) | BranchSlice(0, 0.5, 1.0), 0.5)).points
+        ((0, 0.75), (1, 0.4))
+    """
+
     region: RegionExpr
     x: float
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.region, RegionExpr):
+            raise TypeError(f"RegionAnchors.region expects RegionExpr, got {type(self.region).__name__!s}.")
+        x = self.x
+        if isinstance(x, Quantity):
+            raise TypeError(f"RegionAnchors.x is a relative position in [0, 1], not a length; got {x!r}.")
+        if isinstance(x, bool) or not isinstance(x, Real):
+            raise TypeError(f"RegionAnchors.x must be a real number in [0, 1], got {x!r}.")
+        if not (-helper.EPSILON <= float(x) <= 1.0 + helper.EPSILON):
+            # NaN fails both comparisons and lands here too.
+            raise ValueError(f"RegionAnchors.x must be within [0, 1], got {x!r}.")
 
     def _evaluate(
         self,
         morpho: Morphology,
         cache: SelectionCache | None = None,
     ) -> LocsetMask:
-        raise NotImplementedError("RegionAnchors is not implemented in this version.")
+        mask = evaluate_cached(self.region, morpho, cache)
+        # Leaf masks (e.g. a multi-branch BranchSlice) keep their input order,
+        # and a slice shorter than the tolerance survives until normalized.
+        intervals = helper.normalize_region_intervals(mask.intervals)
+        if not intervals:
+            raise ValueError(f"RegionAnchors cannot anchor on an empty region: {self.region!r} selects nothing.")
+        x = min(1.0, max(0.0, float(self.x)))
+        points = helper.normalize_locset_points(
+            tuple((branch, prox + x * (dist - prox)) for branch, prox, dist in intervals)
+        )
+        return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
 
 
 @dataclass(frozen=True)

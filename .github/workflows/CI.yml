@@ -295,7 +295,12 @@ jobs:
           fi
           exit "$status"
 
+  # macOS and Windows run only in the daily workflow (like `slow_tests`), to
+  # keep pull requests within the account's concurrent-job limit (macOS runners
+  # are the scarcest). They are not in ci-ok's `needs`; a failure fails the
+  # daily run, which opens the red issue.
   test_macos:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     strategy:
       fail-fast: false
@@ -326,6 +331,7 @@ jobs:
 
 
   test_windows:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -476,8 +482,6 @@ jobs:
       - test_linux_neuron_compare_cable
       - test_linux_neuron_compare_channel
       - test_linux_validation_benchmarks
-      - test_macos
-      - test_windows
       - coverage
     runs-on: ubuntu-latest
     steps:

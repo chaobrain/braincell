@@ -14,6 +14,7 @@
 # ==============================================================================
 
 
+import dataclasses
 from dataclasses import is_dataclass
 import pathlib
 import re
@@ -26,6 +27,7 @@ import warnings
 import brainunit as u
 import numpy as np
 
+import braincell.morph
 from braincell import Branch, Cell, MaxCVLen, Morphology, SingleCompartment
 from braincell.filter import (
     AllRegion,
@@ -38,7 +40,7 @@ from braincell.filter import (
     sample,
 )
 from braincell.io._testing import ALLOWED_TYPES, FIXTURE_DIR, VALID_SWC_FIXTURES
-from braincell.morph import MorphoBranch, MorphoMetric
+from braincell.morph import MorphoBranch, MorphoMetric, PrincipalAxes
 from braincell.morph.branch import _ALLOWED_BRANCH_TYPES
 from braincell.morph.morphology import frozen_snapshot
 from braincell.morph._testing import (
@@ -2662,6 +2664,187 @@ class MorphoScaleFixtureTest(unittest.TestCase):
         self.assertEqual(exact, 30)
 
 
+def _split_every_segment(tree: Morphology) -> Morphology:
+    """A copy of ``tree`` with every segment cut in two at its midpoint: same lines, twice the samples."""
+
+    def split(branch: Branch) -> Branch:
+        a = _branch_arrays(branch)
+        mid_point = 0.5 * (a["points_proximal"] + a["points_distal"])
+        mid_radius = 0.5 * (a["radii_proximal"] + a["radii_distal"])
+        return dataclasses.replace(
+            branch,
+            lengths=np.repeat(a["lengths"] / 2, 2) * u.um,
+            radii_proximal=np.column_stack([a["radii_proximal"], mid_radius]).ravel() * u.um,
+            radii_distal=np.column_stack([mid_radius, a["radii_distal"]]).ravel() * u.um,
+            points_proximal=np.stack([a["points_proximal"], mid_point], axis=1).reshape(-1, 3) * u.um,
+            points_distal=np.stack([mid_point, a["points_distal"]], axis=1).reshape(-1, 3) * u.um,
+        )
+
+    copy = tree.clone()
+    for view in copy.branches:
+        copy.replace(view, split(view.branch))
+    return copy
+
+
+def _all_points_um(tree: Morphology) -> np.ndarray:
+    return np.concatenate(
+        [
+            np.concatenate([_um_array(b.branch.points_proximal), _um_array(b.branch.points_distal)])
+            for b in tree.branches
+        ]
+    )
+
+
+class MorphoPrincipalAxesTest(unittest.TestCase):
+    """``Morphology.principal_axes()`` and ``align_principal_axes()`` on trees W, T and S."""
+
+    def assert_axes(self, pa: PrincipalAxes, origin, axes, variances) -> None:
+        np.testing.assert_allclose(_um_array(pa.origin), origin, rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(pa.axes, axes, rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(pa.variances.to_decimal(u.um**2), variances, rtol=1e-12, atol=1e-12)
+
+    def test_tree_w(self) -> None:
+        tree = make_tree_w()
+        revision = tree.revision
+
+        pa = tree.principal_axes()
+
+        self.assertIsInstance(pa, PrincipalAxes)
+        self.assertIs(PrincipalAxes, braincell.morph.PrincipalAxes)
+        self.assertEqual(pa._fields, ("origin", "axes", "variances"))
+        self.assert_axes(
+            pa,
+            [10, 0, 0],
+            [[0.954113340953361, 0.29944570896043154, 0], [-0.29944570896043154, 0.954113340953361, 0], [0, 0, 1]],
+            [3019.7904390693775, 206.36833805093872, 0],
+        )
+        self.assertEqual(pa.axes.dtype, np.float64)
+        self.assertEqual(tree.revision, revision)
+
+    def test_aligning_tree_w(self) -> None:
+        tree = make_tree_w()
+        metrics = _mantissas(tree, _RIGID_INVARIANTS)
+        lengths = {b.name: _branch_arrays(b.branch)["lengths"] for b in tree.branches}
+        revision = tree.revision
+
+        self.assertIsNone(tree.align_principal_axes())
+
+        self.assertEqual(tree.revision, revision + 1)
+        self.assertFalse(tree._reindexed_after(revision))
+        soma = _branch_arrays(tree.soma.branch)
+        np.testing.assert_allclose(
+            soma["points_proximal"], [[-9.541133409533609, 2.9944570896043157, 0]], rtol=0, atol=1e-12
+        )
+        np.testing.assert_allclose(
+            soma["points_distal"], [[9.541133409533609, -2.9944570896043157, 0]], rtol=0, atol=1e-12
+        )
+        self.assertEqual(_mantissas(tree, _RIGID_INVARIANTS), metrics)
+        for name, array in lengths.items():
+            np.testing.assert_array_equal(_branch_arrays(tree.branch(name=name).branch)["lengths"], array)
+
+    def test_tree_t(self) -> None:
+        pa = make_tree_t().principal_axes()
+        np.testing.assert_allclose(_um_array(pa.origin), [10, 0, 0], rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(
+            pa.variances.to_decimal(u.um**2), [3078.952716992732, 116.93833031313825, 0.626922330142492], rtol=1e-12
+        )
+
+    def test_a_collinear_tree(self) -> None:
+        # All of S lies on the x axis: two variances are 0 and their axes come from y and z.
+        tree = make_tree_s()
+        self.assert_axes(tree.principal_axes(), [10, 0, 0], np.eye(3), [1875, 0, 0])
+
+        tree.align_principal_axes()
+
+        np.testing.assert_allclose(_um_array(tree.soma.branch.points), [[-10, 0, 0], [10, 0, 0]], rtol=0, atol=1e-12)
+        np.testing.assert_allclose(_tip_um(tree, "dend"), [110, 0, 0], rtol=0, atol=1e-12)
+        np.testing.assert_allclose(_tip_um(tree, "axon"), [-40, 0, 0], rtol=0, atol=1e-12)
+
+    def test_a_tree_without_a_soma_uses_its_root(self) -> None:
+        tree = Morphology.from_root(_pb([[0, 0, 0], [0, 40, 0]], (1.0, 1.0), "basal_dendrite"), name="trunk")
+        tree.attach(
+            parent="trunk", child_branch=_pb([[0, 40, 0], [0, 100, 0]], (1.0, 1.0), "basal_dendrite"), child_name="tip"
+        )
+        pa = tree.principal_axes()
+        np.testing.assert_allclose(_um_array(pa.origin), [0, 20, 0], rtol=0, atol=1e-12)
+        np.testing.assert_allclose(pa.axes[0], [0, 1, 0], rtol=0, atol=1e-12)
+
+    def test_trees_without_full_points_are_rejected(self) -> None:
+        for label, build, pattern in (
+            ("tree U", make_tree_u, r"4 branch\(es\).*'soma', 'dend', 'axon', 'apical'\. Use the part that has points"),
+            ("tree W with a stub", _w_with_stub, r"1 branch\(es\).*'stub'"),
+        ):
+            tree = build()
+            before = _edit_state(tree)
+            for method in ("principal_axes", "align_principal_axes"):
+                with self.subTest(f"{label}: {method}"):
+                    with self.assertRaisesRegex(ValueError, rf"{method}\(\) needs 3-D points, .*{pattern}"):
+                        getattr(tree, method)()
+                    self.assertEqual(_edit_state(tree), before)
+
+    def test_a_frozen_tree_reads_but_does_not_align(self) -> None:
+        snapshot = frozen_snapshot(make_tree_w())
+        before = _edit_state(snapshot)
+        with self.assertRaisesRegex(RuntimeError, "read-only snapshot"):
+            snapshot.align_principal_axes()
+        self.assertEqual(_edit_state(snapshot), before)
+
+        pa = snapshot.principal_axes()
+
+        expected = make_tree_w().principal_axes()
+        np.testing.assert_array_equal(_um_array(pa.origin), _um_array(expected.origin))
+        np.testing.assert_array_equal(pa.axes, expected.axes)
+
+
+class MorphoPrincipalAxesFixtureTest(unittest.TestCase):
+    """A1-A4 on every repository morphology, in float64.
+
+    Three of the fifteen are collinear (``branched_soma_1``,
+    ``single_point_soma``, ``three_points_soma``): two variances are 0 and
+    the rule for equal variances picks their axes.
+    """
+
+    def test_alignment_is_exact_pose_independent_idempotent_and_resampling_free(self) -> None:
+        rng = np.random.default_rng(20261111)
+        trees = _fixture_morphologies()
+        self.assertEqual(len(trees), 15)
+        collinear = []
+        for name, tree in trees:
+            with self.subTest(name):
+                pa = tree.principal_axes()
+                variances = np.asarray(pa.variances.to_decimal(u.um**2))
+                if variances[1] <= 1e-9 * variances[0]:
+                    collinear.append(name)
+                aligned = tree.clone()
+                aligned.align_principal_axes()
+
+                # A1: after alignment the axes are the identity at the origin.
+                again = aligned.principal_axes()
+                self.assertLessEqual(float(np.max(np.abs(again.axes - np.eye(3)))), 1e-12)
+                self.assertLessEqual(float(np.linalg.norm(_um_array(again.origin))), 1e-9)
+                after = np.asarray(again.variances.to_decimal(u.um**2))
+                self.assertLessEqual(float(np.max(np.abs(after - variances))) / variances[0], 1e-12)
+
+                # A2: any rigid pose first gives the same aligned coordinates.
+                posed = tree.clone()
+                posed.rotate(matrix=_quaternion_matrix(rng.normal(size=4)))
+                posed.translate(rng.uniform(-500, 500, 3) * u.um)
+                posed.align_principal_axes()
+                self.assertLessEqual(float(np.max(np.abs(_all_points_um(posed) - _all_points_um(aligned)))), 1e-9)
+
+                # A3: aligning twice moves nothing.
+                twice = aligned.clone()
+                twice.align_principal_axes()
+                self.assertLessEqual(float(np.max(np.abs(_all_points_um(twice) - _all_points_um(aligned)))), 1e-9)
+
+                # A4: splitting every segment in two changes nothing.
+                split = _split_every_segment(tree).principal_axes()
+                self.assertLessEqual(float(np.max(np.abs(split.axes - pa.axes))), 1e-12)
+                resampled = np.asarray(split.variances.to_decimal(u.um**2))
+                self.assertLessEqual(float(np.max(np.abs(resampled - variances))) / variances[0], 1e-12)
+        self.assertEqual(collinear, ["branched_soma_1.swc", "single_point_soma.swc", "three_points_soma.swc"])
+
+
 class MorphoBranchDerivedPropertyTest(unittest.TestCase):
     """``branch_id`` / ``branch_order`` / ``n_tapers`` published by MorphoBranch.
 
@@ -2753,7 +2936,19 @@ class MorphoReservedNameTest(unittest.TestCase):
     def test_copy_and_edit_method_names_are_reserved(self) -> None:
         # Each new public method takes a name away from branches: a tree or a
         # checkpoint that used it can no longer be built (the changelog says so).
-        for name in ("clone", "subtree", "remove", "replace", "graft", "reattach", "translate", "rotate", "scale"):
+        for name in (
+            "clone",
+            "subtree",
+            "remove",
+            "replace",
+            "graft",
+            "reattach",
+            "translate",
+            "rotate",
+            "scale",
+            "principal_axes",
+            "align_principal_axes",
+        ):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(ValueError, "reserved by the Morphology API"):
                     self._attach_named(self._tree(), name)

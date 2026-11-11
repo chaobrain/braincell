@@ -19,6 +19,7 @@ User-facing entry points:
 - `Morphology`: the whole mutable tree
 - `MorphoBranch`: a tree-local branch node view
 - `MorphoEdge`: read-only branch-to-branch topology edges
+- `PrincipalAxes`: what `Morphology.principal_axes()` returns
 
 In normal use, users only need `Morphology` and `MorphoBranch`.
 """
@@ -191,6 +192,35 @@ class MorphoMetric:
             f"{'max_path_dist':<16} | {self._format_value(self.max_path_distance)}\n"
             f"{'-' * 35}\n"
         )
+
+
+class PrincipalAxes(NamedTuple):
+    """Principal axes of a morphology's 3-D points, from :meth:`Morphology.principal_axes`.
+
+    The axes are those of the length-weighted second moments of all
+    segments, each taken as a uniform line, about their length-weighted
+    centroid. :meth:`Morphology.align_principal_axes` moves every point
+    ``p`` to ``axes @ (p - origin)``.
+
+    Attributes
+    ----------
+    origin : Quantity
+        Length-weighted centroid of the soma (every ``"soma"`` branch
+        together; the root branch if there is none), shape ``(3,)``, um.
+        Alignment puts it at ``(0, 0, 0)``.
+    axes : numpy.ndarray
+        ``(3, 3)`` float64; row ``i`` is the unit vector of the ``i``-th
+        axis, by decreasing variance. The first two point to the side of the
+        soma on which the tree's centroid lies; the third is their cross
+        product, so ``det(axes) = +1`` and alignment never mirrors.
+    variances : Quantity
+        Length-weighted variance of the points along each axis, shape
+        ``(3,)``, um**2, decreasing and ``>= 0``.
+    """
+
+    origin: Quantity
+    axes: np.ndarray
+    variances: Quantity
 
 
 class Morphology:
@@ -733,10 +763,10 @@ class Morphology:
         Each successful edit call (:meth:`attach`, ``morpho.soma.dend =
         branch``, ``morpho.soma[0.5].dend = branch``, :meth:`remove`,
         :meth:`replace`, :meth:`graft`, :meth:`reattach`, :meth:`translate`,
-        :meth:`rotate`, :meth:`scale`) advances it by exactly one, whether it
-        changes the structure or only the geometry. Reads never advance it,
-        and an edit that raises leaves it, the tree and :meth:`naming_state`
-        unchanged.
+        :meth:`rotate`, :meth:`scale`, :meth:`align_principal_axes`) advances
+        it by exactly one, whether it changes the structure or only the
+        geometry. Reads never advance it, and an edit that raises leaves it,
+        the tree and :meth:`naming_state` unchanged.
 
         The absolute value carries no meaning, is not stable across
         processes, and cannot be compared between two trees; only comparison
@@ -2631,13 +2661,180 @@ class Morphology:
             node_ids, "scale()", lambda points: origin_um + factor * (points - origin_um), factor=factor
         )
 
+    def principal_axes(self) -> PrincipalAxes:
+        """Return the principal axes of the tree's 3-D points.
+
+        Every segment counts as a uniform line from its proximal to its
+        distal point, weighted by its length, so the result does not depend
+        on how densely a reconstruction is sampled; a zero-length segment
+        (a radius jump) counts for nothing. The covariance is taken about
+        the length-weighted centroid of the whole tree; the returned
+        ``origin`` is that of the soma.
+
+        Returns
+        -------
+        PrincipalAxes
+            ``origin`` (um), ``axes`` (rows, by decreasing variance) and
+            ``variances`` (um**2). See :class:`PrincipalAxes`.
+
+        Raises
+        ------
+        ValueError
+            If a branch has no 3-D points (built with
+            :meth:`Branch.from_lengths`); the message names up to five.
+
+        See Also
+        --------
+        align_principal_axes : Move the tree onto these axes.
+
+        Notes
+        -----
+        The axes are sorted by decreasing variance. The sign of the first
+        two makes the tree's centroid ``c`` lie on their positive side,
+        ``(c - origin) . a > 0``; for a pyramidal cell the first axis then
+        points to the apical side. If ``|(c - origin) . a|`` is at most
+        ``1e-9 * sqrt(variances[0])``, the component of ``a`` with the
+        largest magnitude is made positive instead (the first one on a
+        tie). The third axis is the cross product of the first two. Where
+        two variances differ by at most ``1e-9 * variances[0]`` the axes in
+        their plane are not unique; the projections of x, y and z onto that
+        plane, orthonormalized in that order, are used. Rotating or moving
+        the tree first rotates or moves the result with it, except in that
+        case.
+
+        Reading only: :attr:`revision` does not advance, and a frozen tree
+        accepts the call. For part of a tree, use
+        ``morpho.subtree(name).principal_axes()``.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> import numpy as np
+            >>> from braincell import Branch, Morphology
+            >>> def branch(points, radii, type):
+            ...     return Branch.from_points(points=np.array(points) * u.um, radii=np.array(radii) * u.um,
+            ...                               type=type)
+            >>> tree = Morphology.from_root(branch([[0.0, 0, 0], [0, 20, 0]], [5.0, 5.0], "soma"), name="soma")
+            >>> tree.soma.dend = branch([[0.0, 20, 0], [0, 120, 0]], [2.0, 1.0], "basal_dendrite")
+            >>> pa = tree.principal_axes()
+            >>> pa.origin.to_decimal(u.um).tolist()
+            [0.0, 10.0, 0.0]
+            >>> pa.axes[0].tolist()
+            [0.0, 1.0, 0.0]
+        """
+        origin_um, axes, variances_um2 = self._principal_axes_um(what="principal_axes()")
+        return PrincipalAxes(Quantity(origin_um, u.um), axes, Quantity(variances_um2, u.um**2))
+
+    def align_principal_axes(self) -> None:
+        """Move the tree onto its principal axes, the soma at the origin.
+
+        Every 3-D point ``p`` becomes ``axes @ (p - origin)``, with
+        ``origin`` and ``axes`` from :meth:`principal_axes` before the
+        call: the soma's centroid goes to ``(0, 0, 0)`` and the axes of
+        largest, middle and smallest variance to x, y and z. Afterwards
+        :meth:`principal_axes` gives the origin ``(0, 0, 0)``, the identity
+        matrix and the same variances. Segment lengths and radii are kept as
+        they are, as for :meth:`rotate`.
+
+        Raises
+        ------
+        RuntimeError
+            If this morphology is the read-only snapshot of an initialized
+            Cell (checked first).
+        ValueError
+            If a branch has no 3-D points; the message names up to five.
+
+        See Also
+        --------
+        principal_axes : The origin and axes this applies.
+        rotate : Turn the tree afterwards, e.g. the first axis onto y.
+
+        Notes
+        -----
+        The axis signs (:meth:`principal_axes`) make the result independent
+        of how the tree was posed before, so two reconstructions of similar
+        cells end up facing the same way. To point the first axis along y
+        instead of x, follow with ``rotate(90 * u.degree, axis="z")``.
+
+        The whole tree moves in one edit: the call returns ``None`` and
+        :attr:`revision` advances by one. A call that raises changes
+        nothing.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> import numpy as np
+            >>> from braincell import Branch, Morphology
+            >>> def branch(points, radii, type):
+            ...     return Branch.from_points(points=np.array(points) * u.um, radii=np.array(radii) * u.um,
+            ...                               type=type)
+            >>> tree = Morphology.from_root(branch([[0.0, 0, 0], [0, 20, 0]], [5.0, 5.0], "soma"), name="soma")
+            >>> tree.soma.dend = branch([[0.0, 20, 0], [0, 120, 0]], [2.0, 1.0], "basal_dendrite")
+            >>> tree.align_principal_axes()
+            >>> tree.dend.points_distal[-1].to_decimal(u.um).tolist()
+            [110.0, 0.0, 0.0]
+        """
+        self._require_editable()
+        origin_um, axes, _ = self._principal_axes_um(what="align_principal_axes()")
+        self._write_geometry(
+            sorted(self._nodes), "align_principal_axes()", lambda points: (points - origin_um) @ axes.T
+        )
+
+    def _principal_axes_um(self, *, what: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """:meth:`principal_axes` as float64 arrays (um, -, um**2); ``what`` names the caller in errors."""
+        self._require_points_in(
+            sorted(self._nodes),
+            what=what,
+            hint="Use the part that has points, e.g. morpho.subtree(name).principal_axes(), or rebuild "
+            "these branches with Branch.from_points.",
+        )
+        views = self.branches
+        proximal, distal, lengths = _segment_points_um(views)
+        weights = lengths / lengths.sum()
+        midpoints = 0.5 * (proximal + distal)
+        chords = distal - proximal
+        centroid = weights @ midpoints
+        centred = midpoints - centroid
+        # Second moment of a uniform segment about the centroid: L (m m^T + d d^T / 12).
+        covariance = (centred * weights[:, None]).T @ centred + (chords * weights[:, None]).T @ chords / 12.0
+        variances, vectors = np.linalg.eigh(covariance)
+        order = np.argsort(variances)[::-1]
+        variances, vectors = variances[order], _settle_degenerate_axes(variances[order], vectors[:, order])
+
+        soma = [view for view in views if view.type == "soma"] or [self.root]
+        soma_proximal, soma_distal, soma_lengths = _segment_points_um(soma)
+        origin = (soma_lengths / soma_lengths.sum()) @ (0.5 * (soma_proximal + soma_distal))
+        offset = centroid - origin
+        tie = _PRINCIPAL_TIE_RTOL * np.sqrt(max(float(variances[0]), 0.0))
+        axes = []
+        for vector in vectors[:, :2].T:
+            projection = float(offset @ vector)
+            if abs(projection) > tie:
+                axes.append(vector * np.sign(projection))
+            else:
+                axes.append(vector * np.sign(vector[int(np.argmax(np.abs(vector)))]))
+        axes.append(np.cross(axes[0], axes[1]))
+        # Adding 0.0 turns the -0.0 entries a sign flip or cross product leaves into 0.0.
+        return origin, np.vstack(axes) + 0.0, np.clip(variances, 0.0, None)
+
     def _transform_scope(self, subtree: Optional[ParentRef], *, what: str) -> list[int]:
         """Node ids a transform acts on, ascending: the whole tree, or ``subtree`` and its descendants."""
         if subtree is None:
             return sorted(self._nodes)
         return self._subtree_node_ids(self._resolve_branch_ref(subtree, what=what, role="subtree"))
 
-    def _require_points_in(self, node_ids: list[int], *, what: str) -> None:
+    def _require_points_in(
+        self,
+        node_ids: list[int],
+        *,
+        what: str,
+        hint: str = "Pass subtree= to transform only a part that has points, or rebuild these branches "
+        "with Branch.from_points.",
+    ) -> None:
         """Raise ``ValueError`` naming up to five branches in ``node_ids`` that have no 3-D points."""
         missing = [
             self._nodes[node_id]._name for node_id in node_ids if self._nodes[node_id]._branch.points_proximal is None
@@ -2648,8 +2845,7 @@ class Morphology:
                 shown += f" and {len(missing) - 5} more"
             raise ValueError(
                 f"{what} needs 3-D points, but {len(missing)} branch(es) in its scope have none "
-                f"(built from lengths only): {shown}. Pass subtree= to transform only a part that has "
-                "points, or rebuild these branches with Branch.from_points."
+                f"(built from lengths only): {shown}. {hint}"
             )
 
     def _write_geometry(
@@ -3730,6 +3926,54 @@ def _check_scale_factor(factor: np.ndarray) -> float:
     if not (np.isfinite(value) and value > 0.0):
         raise ValueError(f"factor must be finite and > 0, got {value!r}.")
     return value
+
+
+#: Relative tolerance of :meth:`Morphology.principal_axes` for equal variances and an unbiased sign.
+_PRINCIPAL_TIE_RTOL = 1e-9
+
+
+def _segment_points_um(views) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Proximal points, distal points and lengths of every segment of ``views``, in um."""
+    proximal = np.concatenate([np.asarray(v._branch.points_proximal.to_decimal(u.um), dtype=float) for v in views])
+    distal = np.concatenate([np.asarray(v._branch.points_distal.to_decimal(u.um), dtype=float) for v in views])
+    lengths = np.concatenate([np.asarray(v._branch.lengths.to_decimal(u.um), dtype=float) for v in views])
+    return proximal, distal, lengths
+
+
+def _settle_degenerate_axes(variances: np.ndarray, vectors: np.ndarray) -> np.ndarray:
+    """Fix the eigenvectors (columns) of numerically equal variances.
+
+    Within a run of variances that differ by at most
+    ``_PRINCIPAL_TIE_RTOL * variances[0]``, any orthonormal basis of the
+    eigenspace is valid, and which one ``numpy.linalg.eigh`` returns depends
+    on the implementation; aligning twice could then swap axes. The basis
+    used is the projections of x, y and z onto the eigenspace,
+    orthonormalized in that order (Gram-Schmidt), skipping any that
+    vanish.
+    """
+    settled = vectors.copy()
+    tolerance = _PRINCIPAL_TIE_RTOL * max(float(variances[0]), 0.0)
+    start = 0
+    while start < 3:
+        stop = start
+        while stop + 1 < 3 and variances[stop] - variances[stop + 1] <= tolerance:
+            stop += 1
+        if stop > start:
+            space = vectors[:, start : stop + 1]
+            projector = space @ space.T
+            basis = []
+            for unit in np.eye(3):
+                candidate = projector @ unit
+                for chosen in basis:
+                    candidate = candidate - (chosen @ candidate) * chosen
+                norm = float(np.linalg.norm(candidate))
+                if norm > 1e-6:
+                    basis.append(candidate / norm)
+                if len(basis) == stop - start + 1:
+                    break
+            settled[:, start : stop + 1] = np.column_stack(basis)
+        start = stop + 1
+    return settled
 
 
 def _moved_branch(

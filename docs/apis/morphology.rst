@@ -22,6 +22,7 @@ Morphology Representation
     MorphoBranch
     MorphoEdge
     MorphoMetric
+    PrincipalAxes
 
 
 Helpers

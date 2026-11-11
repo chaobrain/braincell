@@ -466,6 +466,10 @@ def _scale_tree_by_2(morpho: Morphology) -> None:
     morpho.scale(2.0)
 
 
+def _align_principal_axes(morpho: Morphology) -> None:
+    morpho.align_principal_axes()
+
+
 def _stretch_dend_bypassing_the_gate(morpho: Morphology) -> None:
     object.__setattr__(morpho.dend, "_branch", stretched(morpho.dend.branch))
 
@@ -485,6 +489,7 @@ EDIT_CASES: tuple[EditCase, ...] = (
     EditCase("rotate the tree about z", "transform", _rotate_tree_about_z),
     EditCase("rotate the subtree at dend about its base", "transform", _rotate_dend_about_its_base),
     EditCase("scale the tree by 2", "transform", _scale_tree_by_2),
+    EditCase("align the principal axes", "transform", _align_principal_axes),
 )
 
 #: Edits that skip the gate on purpose: every layer's check must fail on them.

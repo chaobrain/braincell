@@ -25,7 +25,7 @@ Three things are live and tested here:
   different morphology, or the same morphology after any edit; every row
   of the morphology edit table is checked against a cold rebuild.
 
-The reserved surface is pinned too, so implementing one of the three
+The reserved surface is pinned too, so implementing one of the two
 without wiring the cache up fails loudly.
 """
 
@@ -54,7 +54,6 @@ from braincell.morph._testing import (
 from braincell.filter.region import (
     EmptyRegion,
     EuclideanDistanceRegion,
-    RadiusRangeRegion,
     RegionExpr,
     RegionMask,
     RegionSetOp,
@@ -368,7 +367,7 @@ class SelectionCacheEditTableTest(unittest.TestCase):
 
 
 class ReservedCacheConsumersTest(unittest.TestCase):
-    """The three expressions that would populate the cache are unimplemented.
+    """The two expressions that would populate the cache are unimplemented.
 
     When any of them grows a real implementation it must also start filling
     the matching ``SelectionCache`` dict — these assertions turn that into a
@@ -377,10 +376,6 @@ class ReservedCacheConsumersTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tree = _soma_dend_tree()
-
-    def test_radius_range_region_is_reserved(self) -> None:
-        with self.assertRaises(NotImplementedError):
-            RadiusRangeRegion(minimum=1.0 * u.um, maximum=2.0 * u.um).evaluate(self.tree)
 
     def test_tree_distance_region_is_reserved(self) -> None:
         with self.assertRaises(NotImplementedError):

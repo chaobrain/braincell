@@ -157,6 +157,49 @@ def _parse_closed(closed: object) -> str:
     return closed
 
 
+def _value_in_range(value: float, lo: float | None, hi: float | None, closed: str) -> bool:
+    """Whether ``value`` lies within ``[lo, hi]``, each end open or closed per ``closed``; ``None`` is unbounded."""
+    if lo is not None and not (value >= lo if _left_closed(closed) else value > lo):
+        return False
+    if hi is not None and not (value <= hi if _right_closed(closed) else value < hi):
+        return False
+    return True
+
+
+def _linear_piece_select(
+    x0: float,
+    x1: float,
+    f0: float,
+    f1: float,
+    lo: float | None,
+    hi: float | None,
+    closed: str,
+) -> tuple[float, float] | None:
+    """The part of ``[x0, x1]`` where ``f``, linear from ``f0`` to ``f1``, lies within the bounds.
+
+    Returns ``(start, end)`` or ``None``. Where ``f`` varies, a bound is met
+    at a single point, so ``closed`` matters only when ``f0 == f1``: the
+    whole piece is then in or out, decided by :func:`_value_in_range`. A
+    piece that touches the range at one point is ``None``.
+    """
+    if f0 == f1:
+        return (x0, x1) if _value_in_range(f0, lo, hi, closed) else None
+    slope = f1 - f0
+    t_start, t_end = 0.0, 1.0
+    for bound, is_lower in ((lo, True), (hi, False)):
+        if bound is None:
+            continue
+        t = (bound - f0) / slope
+        # Rising f enters the range at a lower bound and leaves at an upper one.
+        if (slope > 0.0) == is_lower:
+            t_start = max(t_start, t)
+        else:
+            t_end = min(t_end, t)
+    if t_end <= t_start:
+        return None
+    return (x0 + t_start * (x1 - x0), x0 + t_end * (x1 - x0))
+
+
 def _left_closed(closed: str) -> bool:
     return closed in ("left", "both")
 
@@ -732,7 +775,8 @@ def _length_scalar_um(
     quantity = normalize_param(value, name=name, unit=u.um, shape=())
     length_um = float(np.asarray(quantity.to_decimal(u.um)).reshape(()))
     if not np.isfinite(length_um):
-        raise ValueError(f"{name} must be finite, got {value!r}.")
+        hint = "; use None for no bound" if allow_none else ""
+        raise ValueError(f"{name} must be finite{hint}, got {value!r}.")
     if positive and length_um <= 0.0:
         raise ValueError(f"{name} must be > 0, got {value!r}.")
     if length_um < 0.0:

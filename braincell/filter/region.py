@@ -19,6 +19,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from numbers import Integral
 
+import brainunit as u
+import numpy as np
 from brainunit import Quantity
 
 from braincell.morph.morphology import MorphoBranch, Morphology
@@ -225,11 +227,160 @@ class BranchRangeFilter(RegionExpr):
         )
 
 
-@dataclass(frozen=True)
-class RadiusRangeRegion(RegionExpr):
-    minimum: Quantity
-    maximum: Quantity
+@dataclass(frozen=True, eq=False)
+class _LengthRangeRegion(RegionExpr):
+    """Shared bounds of the regions that select where a length-valued ``f(x)`` lies in a range.
 
+    On every branch the region is ``{x : minimum <= f(x) <= maximum}``; each
+    subclass defines ``f``. ``minimum`` and ``maximum`` are scalar lengths
+    (e.g. ``1 * u.um``) or ``None`` for no bound on that side; ``closed`` is
+    ``"both"`` (default), ``"left"``, ``"right"`` or ``"neither"``, as in
+    :func:`branch_range`. Where ``f`` varies, a bound is met at a single point
+    and selects no length either way, so ``closed`` matters only where ``f``
+    is constant over a stretch of cable: a cylinder whose radius equals a
+    bound, or the soma at distance 0.
+
+    The bounds are checked at construction: a bare number or a quantity that
+    is not a length raises ``TypeError``; a non-scalar, negative, infinite or
+    NaN bound, ``minimum > maximum`` or an unknown ``closed`` raises
+    ``ValueError``. The fields keep the quantities as given, but equality and
+    hashing use the bounds in micrometres and ``closed``, so
+    ``RadiusRangeRegion(maximum=1.5 * u.um)`` equals
+    ``RadiusRangeRegion(maximum=0.0015 * u.mmeter)`` and either can key a
+    :class:`SelectionCache`.
+    """
+
+    minimum: Quantity | None = None
+    maximum: Quantity | None = None
+    closed: str = "both"
+
+    def __post_init__(self) -> None:
+        name = type(self).__name__
+        lo = helper._length_scalar_um(self.minimum, name=f"{name}.minimum", allow_none=True)
+        hi = helper._length_scalar_um(self.maximum, name=f"{name}.maximum", allow_none=True)
+        closed = helper._parse_closed(self.closed)
+        if lo is not None and hi is not None and lo > hi:
+            raise ValueError(f"{name}: minimum must be <= maximum, got {self.minimum!r} > {self.maximum!r}.")
+        object.__setattr__(self, "_bounds_um", (lo, hi, closed))
+
+    def __eq__(self, other: object) -> bool:
+        if type(other) is not type(self):
+            return NotImplemented
+        return self._bounds_um == other._bounds_um
+
+    def __hash__(self) -> int:
+        return hash((type(self), self._bounds_um))
+
+    def _accepts(self, value_um: float) -> bool:
+        """Whether a constant ``f`` of ``value_um`` (a plateau) is selected."""
+        return helper._value_in_range(value_um, *self._bounds_um)
+
+    def _select_linear_piece(self, x0: float, x1: float, f0: float, f1: float) -> tuple[float, float] | None:
+        """The selected part of ``[x0, x1]`` where ``f`` runs linearly from ``f0`` to ``f1`` (um)."""
+        return helper._linear_piece_select(x0, x1, f0, f1, *self._bounds_um)
+
+
+@dataclass(frozen=True, eq=False)
+class RadiusRangeRegion(_LengthRangeRegion):
+    """Select the cable whose local radius lies in a range.
+
+    Parameters
+    ----------
+    minimum : brainunit.Quantity or None, optional
+        Smallest radius selected, a scalar length; ``None`` (default) for no
+        lower bound.
+    maximum : brainunit.Quantity or None, optional
+        Largest radius selected; ``None`` (default) for no upper bound.
+    closed : {'both', 'left', 'right', 'neither'}, optional
+        Which bounds are inclusive. The default ``"both"`` differs from
+        :func:`branch_range`'s ``"neither"``: it matters only on cable whose
+        radius is constant at a bound (a cylinder), and "radius 0.6 to 1 um"
+        should include a 0.6 um cylinder.
+
+    Returns
+    -------
+    RegionMask
+        From :meth:`~RegionExpr.evaluate`: on every branch, the stretches
+        where the radius is within the range, normalized. With no bounds the
+        region is the whole tree, like :class:`AllRegion`.
+
+    Raises
+    ------
+    TypeError
+        At construction, if a bound is a bare number or not a length.
+    ValueError
+        At construction, if a bound is not a scalar, is negative, infinite
+        (use ``None`` for no bound) or NaN, if ``minimum > maximum``, or if
+        ``closed`` is not one of the four values.
+
+    See Also
+    --------
+    branch_range : Select whole branches by a property such as
+        ``mean_radius``.
+
+    Notes
+    -----
+    The radius is linear in arc length along each segment, from the
+    segment's proximal to its distal radius, so a tapered branch is cut
+    where the radius crosses a bound. A zero-length segment, or a change of
+    radius between one segment's distal end and the next one's proximal end,
+    is a jump: it has no length and is not selected by itself; the segments
+    on either side are judged separately, and the jump's ``x`` can end an
+    interval. The radius is read from each branch's segment arrays, so the
+    region needs no 3-D points, and moving or rotating the tree does not
+    change it (scaling does). ``minimum == maximum`` selects only cable of
+    exactly that radius.
+
+    The radius is in the branch's own direction, whichever end faces its
+    parent.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> import numpy as np
+        >>> from braincell import Branch, Morphology
+        >>> from braincell.filter import RadiusRangeRegion
+        >>> soma = Branch.from_lengths(lengths=np.array([20.0]) * u.um, radii=np.array([5.0, 5.0]) * u.um, type="soma")
+        >>> dend = Branch.from_lengths(
+        ...     lengths=np.array([40.0, 40.0]) * u.um, radii=np.array([2.0, 1.0, 1.0]) * u.um, type="basal_dendrite"
+        ... )
+        >>> tree = Morphology.from_root(soma, name="soma")
+        >>> tree.soma.dend = dend
+        >>> tree.select(RadiusRangeRegion(maximum=1.5 * u.um)).intervals
+        ((1, 0.25, 1.0),)
+        >>> tree.select(RadiusRangeRegion(maximum=1.0 * u.um, closed="neither")).intervals
+        ()
+    """
+
+    def _evaluate(
+        self,
+        morpho: Morphology,
+        cache: SelectionCache | None = None,
+    ) -> RegionMask:
+        intervals: list[tuple[int, float, float]] = []
+        for index, view in enumerate(morpho.branches):
+            branch = view.branch
+            lengths = np.asarray(branch.lengths.to_decimal(u.um), dtype=float)
+            proximal = np.asarray(branch.radii_proximal.to_decimal(u.um), dtype=float)
+            distal = np.asarray(branch.radii_distal.to_decimal(u.um), dtype=float)
+            cumulative = np.cumsum(lengths)
+            starts = np.concatenate(([0.0], cumulative[:-1])) / cumulative[-1]
+            ends = cumulative / cumulative[-1]
+            ends[-1] = 1.0
+            for i in np.flatnonzero(lengths > 0.0):
+                # A zero-length segment is a radius jump: no length to select.
+                piece = self._select_linear_piece(
+                    float(starts[i]), float(ends[i]), float(proximal[i]), float(distal[i])
+                )
+                if piece is not None:
+                    intervals.append((index, *piece))
+        return RegionMask(helper.normalize_region_intervals(intervals))
+
+
+@dataclass(frozen=True, eq=False)
+class TreeDistanceRegion(_LengthRangeRegion):
     def _evaluate(
         self,
         morpho: Morphology,
@@ -238,24 +389,8 @@ class RadiusRangeRegion(RegionExpr):
         raise NotImplementedError
 
 
-@dataclass(frozen=True)
-class TreeDistanceRegion(RegionExpr):
-    minimum: Quantity
-    maximum: Quantity
-
-    def _evaluate(
-        self,
-        morpho: Morphology,
-        cache: SelectionCache | None = None,
-    ) -> RegionMask:
-        raise NotImplementedError
-
-
-@dataclass(frozen=True)
-class EuclideanDistanceRegion(RegionExpr):
-    minimum: Quantity
-    maximum: Quantity
-
+@dataclass(frozen=True, eq=False)
+class EuclideanDistanceRegion(_LengthRangeRegion):
     def _evaluate(
         self,
         morpho: Morphology,

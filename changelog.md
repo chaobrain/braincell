@@ -303,6 +303,17 @@
 
 ### Bug Fixes
 
+- A lumped Cell (`cv_policy=Lumped()`, `Cell.point`) now checks the units of
+  declared Channel and Ion parameters at `init_state`, with the same exception
+  type and message as a cable Cell (MECH-41): the mechanism, the parameter, the
+  expected unit, the value and the `paint` call site. Before, the lumped build
+  passed the values to the runtime classes unchecked, so
+  `Ion("SodiumDetailed", d=1.0)`, `Ion("SodiumFixed", E=50.0)` or
+  `Channel("IL", g_max=0.1 * u.mV)` failed on the first step of `run` that
+  used the value, with a `UnitMismatchError` that named no parameter. A
+  braintools initializer for a Channel parameter is still accepted on a lumped
+  Cell.
+
 - A lumped Cell (`cv_policy=Lumped()`, `Cell.point`) with a declared
   `Ci_initializer` on a `DynamicNernstIon` (`CalciumDetailed`,
   `CalciumFirstOrder`, `CdpHVA_SU2015_DCN`, `CdpLVA_SU2015_DCN`) now runs

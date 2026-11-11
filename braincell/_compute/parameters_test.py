@@ -116,9 +116,10 @@ class RuntimeParameterStateTest(unittest.TestCase):
         self.assertEqual(state.value[1, 2], -60.0 * u.mV)
 
 
-def _one_cv_cell():
+def _one_cv_cell(lumped=False):
     branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[5.0, 5.0] * u.um)
-    return braincell.Cell(braincell.Morphology.from_root(branch), cv_policy=braincell.CVPerBranch(1))
+    cv_policy = braincell.Lumped() if lumped else braincell.CVPerBranch(1)
+    return braincell.Cell(braincell.Morphology.from_root(branch), cv_policy=cv_policy)
 
 
 def _next_line() -> str:
@@ -130,8 +131,8 @@ def _next_line() -> str:
 class ParameterUnitMessageTest(unittest.TestCase):
     """MECH-25: init_state unit errors name the mechanism, value and paint/place call."""
 
-    def _init_error(self, declaration, expected_type, *, place=False):
-        cell = _one_cv_cell()
+    def _init_error(self, declaration, expected_type, *, place=False, lumped=False):
+        cell = _one_cv_cell(lumped)
         if place:
             site = _next_line()
             cell.place(RootLocation(0.5), declaration)
@@ -182,10 +183,13 @@ class ParameterUnitMessageTest(unittest.TestCase):
         with self.assertWarns(FutureWarning) as warned:
             cases = self._literal_cases(no_unit)
         self.assertEqual(len(warned.warnings), 6)
-        for declaration, expected_type, owner, field, unit, got in cases:
-            with self.subTest(declaration=declaration):
+        # MECH-41: a lumped Cell reports the same errors; it accepts no synapses.
+        variants = [(case, False) for case in cases]
+        variants += [(case, True) for case in cases if not isinstance(case[0], Synapse)]
+        for (declaration, expected_type, owner, field, unit, got), lumped in variants:
+            with self.subTest(declaration=declaration, lumped=lumped):
                 place = isinstance(declaration, Synapse)
-                message, site = self._init_error(declaration, expected_type, place=place)
+                message, site = self._init_error(declaration, expected_type, place=place, lumped=lumped)
                 self.assertIn(f"{owner} parameter '{field}'", message)
                 self.assertIn(
                     f"compatible with {unit};" if expected_type is TypeError else f"incompatible with {unit};", message

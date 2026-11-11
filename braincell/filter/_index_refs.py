@@ -27,6 +27,7 @@ the declaration (MORPH-17).
 
 from collections.abc import Callable, Iterable
 from dataclasses import fields, is_dataclass
+import functools
 from numbers import Integral, Real
 
 import numpy as np
@@ -119,9 +120,25 @@ def held_branch_indices(expression: object) -> tuple[int | float, ...]:
     -----
     Leaves are recognized by type, so a user subclass of ``RegionExpr`` or
     ``LocsetExpr`` that holds indices in fields of its own is not seen.
+
+    Results are memoized by expression value: per-member placement asks
+    once per member, often with equal expressions. An expression with an
+    unhashable field (a list, an array) is walked every time.
     """
     if not isinstance(expression, (RegionExpr, LocsetExpr)):
         return ()
+    try:
+        return _held_by_value(expression)
+    except TypeError:  # unhashable: BranchSlice([1, 2], ...), Quantity fields
+        return _walk(expression)
+
+
+@functools.lru_cache(maxsize=4096)
+def _held_by_value(expression: RegionExpr | LocsetExpr) -> tuple[int | float, ...]:
+    return _walk(expression)
+
+
+def _walk(expression: RegionExpr | LocsetExpr) -> tuple[int | float, ...]:
     found: dict[int | float, None] = {}
     stack = [expression]
     while stack:

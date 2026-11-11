@@ -832,7 +832,6 @@ class LumpedCounterexampleTest(unittest.TestCase):
             network.add_population("points", bc.Cell.point(N))
 
 
-
 # ---------------------------------------------------------------------------
 # CELL-23: external input -- update(I_ext) and brainpy projections.
 # ---------------------------------------------------------------------------
@@ -975,9 +974,7 @@ class ExternalInputEquivalenceTest(unittest.TestCase):
             model.init_state(batch_size=2)
             model.reset_state(batch_size=2)
             area = model.area
-            expected = _voltage_before_each_step(
-                model, lambda i, t: model.update(_drive(t + 0.5 * DT) * rows / area)
-            )
+            expected = _voltage_before_each_step(model, lambda i, t: model.update(_drive(t + 0.5 * DT) * rows / area))
             cell = _point_cell(solver=solver)
             cell.init_state(batch_size=2)
             actual = _voltage_before_each_step(cell, lambda i, t: cell.update(_drive(t + 0.5 * DT) * rows))

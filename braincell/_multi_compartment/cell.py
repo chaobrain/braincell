@@ -2945,17 +2945,18 @@ class Cell(_CellFacade, HHTypedNeuron):
         except KeyError:
             return self.current_time
 
-    def _run_integrated_hook(self, hook: str, cv_V) -> None:
+    def _run_integrated_hook(self, hook: str, cv_V, stage_point_V=None) -> None:
         """Call one integration hook on every mechanism a generic solver advances.
 
         A node marked :class:`~braincell.quad.IndependentIntegration` advances
         itself in ``ind_update``. The dependent channels under such an ion (a
         kinetic ion's HH calcium channel) are still the solver's, as in the
-        staggered schedule.
+        staggered schedule. ``stage_point_V`` is the point voltage of the stage
+        being evaluated (see :meth:`_runtime_node_phase_args`).
         """
         for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(node, IndependentIntegration):
-                args = self._runtime_node_phase_args(path, node, cv_V)
+                args = self._runtime_node_phase_args(path, node, cv_V, stage_point_V=stage_point_V)
                 getattr(node, hook)(*args)
             elif isinstance(node, Ion):
                 node._run_on_dependent_children(node._channels(), hook, cv_V)
@@ -2986,8 +2987,11 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._raise_if_not_initialized("compute_derivative()")
         if self._is_lumped:
             return self._lumped_runtime.compute_derivative(self._lumped_I_ext.value)
-        self.V.derivative = self.compute_voltage_derivative(self.V.value)
-        self._run_integrated_hook("compute_derivative", self.V.value)
+        # One boundary solve per stage: its voltages enter both the voltage
+        # derivative and the point mechanisms' arguments (CELL-2b).
+        derivative, stage_point_V = self._voltage_derivative_and_point_voltage(self.V.value)
+        self.V.derivative = derivative
+        self._run_integrated_hook("compute_derivative", self.V.value, stage_point_V=stage_point_V)
 
     def compute_membrane_derivative(self, V):
         self._raise_if_not_initialized("compute_membrane_derivative()")
@@ -3062,13 +3066,23 @@ class Cell(_CellFacade, HHTypedNeuron):
         return -u.math.matmul(axial_operator, V_mv[..., None])[..., 0]
 
     def compute_voltage_derivative(self, V):
+        return self._voltage_derivative_and_point_voltage(V)[0]
+
+    def _voltage_derivative_and_point_voltage(self, V):
+        """Return the voltage derivative at ``V`` and the point voltage it solved.
+
+        The point voltage is ``None`` when no boundary carries an input;
+        otherwise midpoints carry ``V`` and every boundary with an input the
+        voltage its row solves to at ``V``.
+        """
         derivative = self.compute_membrane_derivative(V) + self.compute_axial_derivative(V)
         # The axial operator eliminates the boundary rows as if they had no
         # input; add what their clamps and synapses change.
         solved = self._solve_boundary_rows(V)
         if solved is None:
-            return derivative
-        return derivative + solved[0]
+            return derivative, None
+        correction, V_b = solved
+        return derivative + correction, boundary.stage_point_voltage(self._boundary_rows(), V, V_b)
 
     def _top_level_ion_channel_nodes(self):
         return tuple(self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items())
@@ -3258,13 +3272,21 @@ class Cell(_CellFacade, HHTypedNeuron):
                 return (cv_V, *infos)
         return (cv_V,)
 
-    def _runtime_node_phase_args(self, path, node, cv_V):
+    def _runtime_node_phase_args(self, path, node, cv_V, stage_point_V=None):
+        """Return the arguments of a runtime node's integration hooks.
+
+        A synapse reads the voltage of its points: ``stage_point_V`` when the
+        caller evaluates a derivative stage that solved the boundary rows
+        (each stage passes its own; nothing is stored between calls),
+        otherwise the voltage :meth:`_point_voltage_for_mechanisms` gives for
+        ``cv_V``.
+        """
         if isinstance(node, RuntimeSynapse):
             layout_id = layout_id_from_key(path)
             layout = self._runtime.layouts[layout_id]
             if layout.point_index is None:
                 raise ValueError(f"Synapse layout {layout.id!r} is missing point_index.")
-            point_V = self._point_voltage_for_mechanisms(cv_V)
+            point_V = self._point_voltage_for_mechanisms(cv_V) if stage_point_V is None else stage_point_V
             return (layout.gather_points(point_V),)
         return self._channel_update_args(path, node, cv_V)
 

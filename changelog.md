@@ -576,6 +576,20 @@
   delivery to a synapse at a branch end also passes that voltage instead of
   0 mV, under every solver; the built-in synapses do not read it.
 
+- A synapse on a branch end or a branch point now reads, in its
+  `compute_derivative`, the voltage each Runge-Kutta stage solves for that
+  point (CELL-2b). The solvers built on `Cell.compute_derivative()` (the
+  explicit Runge-Kutta solvers, `"ind_exp_euler"`, ...) handed it the voltage
+  solved at the step start, so a synapse whose dynamics depend on the voltage
+  lost the solver's order there. An ExpSyn whose decay time grows as
+  exp((V + 65 mV) / 20 mV), at x = 0 of a 600 um dendrite in 3 CVs, was off
+  by 1.3e-2 mV after 5 ms with `"rk4"` at dt = 0.025 ms (first order); it is
+  now off by 6.2e-9 mV (fourth order), and `"staggered"` converges to the same
+  values. Each stage solves the point once and hands the same voltage to the
+  cable equation and to the synapse. The built-in synapses do not read the
+  voltage in `compute_derivative`: their results, and those of models with
+  nothing on a branch end or branch point, are bitwise unchanged.
+
 - A solver step called directly on a `Cell` now samples the current clamps
   as `update()` does (CELL-2c): once per main step, at `t + dt / 2`, with every
   Runge-Kutta stage reading that value. Before, `braincell.quad.rk4_step(cell)`

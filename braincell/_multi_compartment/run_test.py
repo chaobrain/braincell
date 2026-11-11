@@ -279,8 +279,11 @@ class UpdateLoopTest(unittest.TestCase):
         return cell
 
     @staticmethod
-    def _updates(cell, first, last):
-        """``(g in uS, V in mV)`` before each ``update()`` of steps ``[first, last)``."""
+    def _updates(cell, first, last, *, traced=True):
+        """``(g in uS, V in mV)`` before each ``update()`` of steps ``[first, last)``.
+
+        ``traced=False`` calls ``update()`` eagerly, one step at a time.
+        """
 
         def step(index):
             with brainstate.environ.context(t=index * DT):
@@ -289,7 +292,10 @@ class UpdateLoopTest(unittest.TestCase):
             return state
 
         with brainstate.environ.context(dt=DT):
-            g, v = brainstate.transform.for_loop(step, np.arange(first, last))
+            if traced:
+                g, v = brainstate.transform.for_loop(step, np.arange(first, last))
+            else:
+                g, v = zip(*(step(index) for index in range(first, last)))
         return np.asarray(g), np.asarray(v)
 
     def test_update_loop_matches_run_with_an_event_at_the_start(self):
@@ -321,6 +327,10 @@ class UpdateLoopTest(unittest.TestCase):
         self.assertGreater(float(first[0][1, 0]), 0.0)
         for actual, expected in zip(again, first):
             np.testing.assert_array_equal(actual, expected)
+        # Eager calls decide outside a trace and deliver the event once too.
+        cell.reset_state()
+        for actual, expected in zip(self._updates(cell, 0, 4, traced=False), first):
+            np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=0.0)
 
     def test_update_and_run_continue_each_other_without_redelivery(self):
         # Events at 0 ms and 1 ms (step 40); the first segment starts with an

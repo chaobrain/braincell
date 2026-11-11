@@ -3688,11 +3688,14 @@ class Cell(_CellFacade, HHTypedNeuron):
         delivered once whichever drives that step (CELL-35). The test is on a
         state, not a Python flag, so it holds inside jitted loops.
         """
-        brainstate.transform.cond(
-            self._next_synapse_inputs_prepared.value,
-            lambda: None,
-            lambda: self._prepare_next_synapse_inputs(t=t),
-        )
+        prepared = self._next_synapse_inputs_prepared.value
+        if not is_traced_value(prepared):
+            # An eager call: decide here, since ``cond`` would trace the
+            # preparation on every call, taken or not.
+            if not bool(prepared):
+                self._prepare_next_synapse_inputs(t=t)
+            return
+        brainstate.transform.cond(prepared, lambda: None, lambda: self._prepare_next_synapse_inputs(t=t))
 
     def _apply_runtime_synapse_events(self, point_V):
         """Apply bound discrete events to all runtime synapses.

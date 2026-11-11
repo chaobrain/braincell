@@ -1454,7 +1454,7 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
             cell.update()
             # The first update after init_state prepares its own boundary
-            # first (CELL-35); the next finds it prepared.
+            # first (CELL-35); the next, eager, finds it prepared.
             cell.update()
 
         self.assertEqual(calls, ["prepare", "solver", "integration", "prepare", "solver", "integration", "prepare"])

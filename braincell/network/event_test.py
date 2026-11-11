@@ -13,15 +13,27 @@
 # limitations under the License.
 # ==============================================================================
 
+import json
+import os
+import subprocess
+import sys
 import unittest
 
 import brainstate
 import braintools
 import brainunit as u
+import jax
 import numpy as np
 
+import braincell as bc
 from braincell import Branch, CVPerBranch, Cell, EventSequence, EventTable, Morphology, NetStim
-from braincell.network.event import EventSourceView, VoltageCrossingSource, _resolve_cell_location_cv
+from braincell.network.event import (
+    EventSourceView,
+    VoltageCrossingSource,
+    _build_event_schedule,
+    _counter_draws_supported,
+    _resolve_cell_location_cv,
+)
 from braincell.filter import RootLocation, at
 
 
@@ -124,6 +136,199 @@ class NetStimTest(unittest.TestCase):
             NetStim(noise=1.1)
         with self.assertRaises(TypeError):
             NetStim(start=1.0)
+
+
+def _exp_syn_cell():
+    """One-CV passive Cell with one ``ExpSyn``, recording ``v``."""
+    branch = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    cell = Cell(Morphology.from_root(branch, name="soma"), cv_policy=CVPerBranch(1), V_init=-65.0 * u.mV)
+    cell.paint(bc.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    cell.place(RootLocation(0.5), bc.mech.Synapse("ExpSyn", name="syn", tau=2.0 * u.ms, e=0.0 * u.mV))
+    cell.record("v", bc.observe.state("v"))
+    return cell
+
+
+def _cell_run_v(stim, *, durations, dt=0.1 * u.ms):
+    """Voltage of a standalone ``Cell.run`` split into ``durations``."""
+    cell = _exp_syn_cell()
+    bc.connect("in", source=stim, synapse=cell.synapses["syn"], weight=0.01 * u.uS, delay=1.0 * u.ms)
+    runs = [cell.run(dt=dt, duration=duration) for duration in durations]
+    return np.concatenate([np.asarray(run.samples["v"].values.to_decimal(u.mV)) for run in runs])
+
+
+def _network_run(stim, *, duration=200.0 * u.ms, dt=0.1 * u.ms):
+    """Voltage and NetStim event times of one ``Network.run``."""
+    net = bc.Network("large_number")
+    source = net.add_population("stim", stim)
+    post = net.add_population("post", _exp_syn_cell())
+    net.connect("in", source=source, synapse=post.synapses["syn"], weight=0.01 * u.uS)
+    result = net.run(dt=dt, duration=duration)
+    return (
+        np.asarray(result.samples["post"]["v"].values.to_decimal(u.mV)),
+        np.asarray(result.events["stim"]["spike"].time.to_decimal(u.ms)),
+    )
+
+
+def _large_number_memory_report() -> dict:
+    """Peak-RSS growth of a 200 ms ``Cell.run`` and ``Network.run`` at ``number=10**9``.
+
+    Run in a fresh process so that other tests do not set the peak.
+    """
+    import resource
+
+    scale = 1 if sys.platform == "darwin" else 1024  # ru_maxrss: bytes on macOS, KiB on Linux
+    _exp_syn_cell()
+    before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
+    stim = NetStim(number=10**9, interval=25.0 * u.ms)
+    _cell_run_v(stim, durations=[200.0 * u.ms], dt=0.025 * u.ms)
+    _, events = _network_run(NetStim(number=10**9, interval=25.0 * u.ms), dt=0.025 * u.ms)
+    after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
+    return dict(
+        growth_mb=(after - before) / 2**20,
+        peak_mb=after / 2**20,
+        width=int(stim._event_times_ms.shape[1]),
+        events=events.tolist(),
+    )
+
+
+class NetStimLargeNumberTest(unittest.TestCase):
+    """``number`` far beyond the run: memory independent of it, events unchanged."""
+
+    @unittest.skipIf(sys.platform == "win32", "resource.getrusage is POSIX only")
+    def test_run_memory_does_not_grow_with_number(self) -> None:
+        code = (
+            "import json; from braincell.network.event_test import _large_number_memory_report; "
+            "print(json.dumps(_large_number_memory_report()))"
+        )
+        env = dict(os.environ, JAX_PLATFORMS="cpu")
+        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout.strip().splitlines()[-1])
+        # A full (1, 10**9) schedule needs tens of GB; 10**7 already adds 1.2 GB.
+        self.assertLess(report["growth_mb"], 512.0, report)
+        self.assertLessEqual(report["width"], 16)
+        self.assertEqual(report["events"], [0.0, 25.0, 50.0, 75.0, 100.0, 125.0, 150.0, 175.0])
+
+    def test_cell_and_network_runs_match_finite_number_bit_for_bit(self) -> None:
+        def stim(number):
+            return NetStim(number=number, interval=25.0 * u.ms)
+
+        expected = _cell_run_v(stim(8), durations=[200.0 * u.ms])
+        large = stim(10**9)
+        np.testing.assert_array_equal(_cell_run_v(large, durations=[200.0 * u.ms]), expected)
+        self.assertFalse(large._schedule_complete)
+        self.assertLessEqual(large._event_times_ms.shape[1], 16)
+        # Split runs extend the schedule, doubling its width.
+        np.testing.assert_array_equal(_cell_run_v(stim(10**9), durations=[50.0 * u.ms] * 4), expected)
+
+        v_small, events_small = _network_run(stim(8))
+        v_large, events_large = _network_run(stim(10**9))
+        np.testing.assert_array_equal(v_large, v_small)
+        np.testing.assert_array_equal(events_large, events_small)
+        self.assertEqual(events_large.tolist(), [0.0, 25.0, 50.0, 75.0, 100.0, 125.0, 150.0, 175.0])
+
+    def test_noisy_events_are_a_prefix_of_the_full_schedule(self) -> None:
+        # One source: the full draw of a (1, n) matrix is the same for every n.
+        small = NetStim(number=8, interval=25.0 * u.ms, noise=0.5, seed=5)
+        large = NetStim(number=10**9, interval=25.0 * u.ms, noise=0.5, seed=5)
+        table = large._event_table(until_ms=400.0)
+        np.testing.assert_array_equal(table.time.to_decimal(u.ms)[:8], small.event_times.to_decimal(u.ms)[0])
+
+        # Several sources: rows after the first depend on max(number), so
+        # compare against the full draw of the same shape.
+        kwargs = dict(
+            size=3,
+            start=np.asarray([0.0, 5.0, 10.0]) * u.ms,
+            number=np.asarray([400_000, 350_000, 3]),
+            interval=np.asarray([25.0, 10.0, 5.0]) * u.ms,
+            noise=np.asarray([0.0, 0.5, 1.0]),
+            seed=11,
+        )
+        for precision in (32, 64):
+            with self.subTest(precision=precision), brainstate.environ.context(precision=precision):
+                self.assertTrue(_counter_draws_supported(np.dtype(brainstate.environ.dftype()).name))
+                source = NetStim(**kwargs)
+                self.assertFalse(source._schedule_complete)
+                source._ensure_schedule(until_ms=200.0)
+                width = source._event_times_ms.shape[1]
+                self.assertLess(width, 100)
+                full_times, full_mask = _build_event_schedule(
+                    start_ms=np.asarray([0.0, 5.0, 10.0]),
+                    number=source.number,
+                    interval_ms=np.asarray([25.0, 10.0, 5.0]),
+                    noise=source.noise,
+                    seed=11,
+                )
+                np.testing.assert_array_equal(source._event_times_ms, full_times[:, :width])
+                np.testing.assert_array_equal(source._event_mask, full_mask[:, :width])
+                self.assertTrue(np.all(source._event_times_ms[:2, -1] > 200.0))
+
+    def test_entries_without_a_run_end_generate_every_event(self) -> None:
+        def lazy():
+            return NetStim(size=2, number=600_000, interval=1.0 * u.ms, noise=0.25, seed=3)
+
+        expected = lazy().event_times.to_decimal(u.ms)
+        self.assertEqual(expected.shape, (2, 600_000))
+
+        source = lazy()
+        count = source.event_count(
+            np.asarray([0, 1]),
+            t=u.math.asarray(expected[:, -1][0]) * u.ms,
+            delay=0.0 * u.ms,
+            dt=0.025 * u.ms,
+        )
+        self.assertTrue(source._schedule_complete)
+        self.assertGreaterEqual(int(np.asarray(count)[0]), 1)
+        np.testing.assert_array_equal(source._event_times_ms, expected)
+        self.assertEqual(len(lazy().events), 1_200_000)
+
+        net = bc.Network("prepared")
+        stim = net.add_population("stim", NetStim(number=2_000_000, interval=1.0 * u.ms))
+        post = net.add_population("post", _exp_syn_cell())
+        net.connect("in", source=stim, synapse=post.synapses["syn"], weight=0.01 * u.uS)
+        net.prepare_run(dt=0.1 * u.ms)
+        self.assertTrue(stim.model._schedule_complete)
+
+    def test_scheduled_sources_only_network_reads_events_up_to_the_end(self) -> None:
+        net = bc.Network("sources")
+        stim = net.add_population("stim", NetStim(number=10**9, interval=25.0 * u.ms))
+        first = net.run(dt=0.1 * u.ms, duration=200.0 * u.ms)
+        second = net.run(dt=0.1 * u.ms, duration=100.0 * u.ms)
+        np.testing.assert_array_equal(first.events["stim"]["spike"].time.to_decimal(u.ms), np.arange(8) * 25.0)
+        np.testing.assert_array_equal(second.events["stim"]["spike"].time.to_decimal(u.ms), 200.0 + np.arange(4) * 25.0)
+        self.assertFalse(stim.model._schedule_complete)
+
+    def test_noisy_draws_fall_back_to_the_full_matrix_without_partitionable_threefry(self) -> None:
+        previous = jax.config.jax_threefry_partitionable
+        jax.config.update("jax_threefry_partitionable", False)
+        try:
+            self.assertFalse(_counter_draws_supported("float32"))
+            source = NetStim(size=2, number=600_000, interval=1.0 * u.ms, noise=1.0, seed=2)
+            source._ensure_schedule(until_ms=20.0)
+            width = source._event_times_ms.shape[1]
+            full_times, _ = _build_event_schedule(
+                start_ms=np.zeros(2),
+                number=source.number,
+                interval_ms=np.ones(2),
+                noise=source.noise,
+                seed=2,
+            )
+            np.testing.assert_array_equal(source._event_times_ms, full_times[:, :width])
+        finally:
+            jax.config.update("jax_threefry_partitionable", previous)
+
+    def test_network_seed_binding_restarts_a_lazy_schedule(self) -> None:
+        source = NetStim(number=10**9, interval=25.0 * u.ms, noise=1.0)
+        source._ensure_schedule(until_ms=100.0)
+        net = bc.Network("bound")
+        net.add_population("stim", source)
+        self.assertEqual(source._event_times_ms.shape, (1, 0))
+        self.assertNotEqual(source._schedule_seed, 0)
+        reference = NetStim(number=8, interval=25.0 * u.ms, noise=1.0, seed=source._schedule_seed)
+        np.testing.assert_array_equal(
+            source._event_table(until_ms=1000.0).time.to_decimal(u.ms)[:8],
+            reference.event_times.to_decimal(u.ms)[0],
+        )
 
 
 class EventSourceTest(unittest.TestCase):

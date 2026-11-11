@@ -334,6 +334,20 @@
   a cable Cell under a generic solver: no hook stepped them, and the block
   solvers failed with `UnexpectedTracerError`.
 
+- `NetStim(number=10**9)`, NEURON's idiom for an unlimited train, no longer
+  exhausts memory (CELL-30). `NetStim` generated all `size * max(number)`
+  event times at construction, and every run compiled the whole matrix into
+  its loop: about 120 bytes per event, so a 200 ms single-synapse run took
+  1.9 GB at `number=10**7` and tens of GB at `10**9`. A schedule above
+  `2**20` entries is now generated on demand: `Cell.run` and `Network.run`
+  generate events only as far as the end of the run, and a later run extends
+  them. The same run at `number=10**9` peaks at 0.85 GB, as at `number=8`. The
+  events are unchanged bit for bit, noisy ones included (the random numbers
+  of the full draw are reproduced for the columns needed), and smaller
+  schedules are generated as before. `NetStim.event_times`, `NetStim.events`,
+  `event_count` outside a run, `Cell.run` under `jax.jit` and
+  `Network.prepare_run` still generate every event.
+
 - A lumped Cell (`cv_policy=Lumped()`, `Cell.point`) now checks the units of
   declared Channel and Ion parameters at `init_state`, with the same exception
   type and message as a cable Cell (MECH-41): the mechanism, the parameter, the

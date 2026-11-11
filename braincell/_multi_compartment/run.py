@@ -131,10 +131,24 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     the cache lookup and wrapping the outputs, so short repeated runs are not
     dominated by eager array operations.
     """
+    from braincell.network.event import _prepare_netstim_schedules, _schedule_horizon
+
     _validate_time_quantity(dt, name="dt")
     _validate_time_quantity(duration, name="duration")
     n_steps = _duration_steps(duration, dt)
     rcell.connections.prepare_runtime(dt)
+
+    # A scheduled source needs its events up to the last step's next-input
+    # boundary, ``stop``; one more step bounds every rounding. A traced start
+    # leaves the end unknown, so such a run generates every event.
+    start = rcell.current_time
+    until_ms = None
+    if not is_traced_value(start):
+        until_ms = _scalar_decimal(start, u.ms) + (n_steps + 1) * _scalar_decimal(dt, u.ms)
+    schedule_key = _prepare_netstim_schedules(
+        (view.source for view in rcell.connections._call_views(scheduled=True)),
+        until_ms=until_ms,
+    )
 
     compiled_recordings = rcell._compiled_recordings(dt)
     ordered_probe_names = () if rcell._uses_reduction or rcell._is_lumped else tuple(sorted(probes.probe_names(rcell)))
@@ -144,9 +158,10 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
         n_steps=n_steps,
         compiled_recordings=compiled_recordings,
         ordered_probe_names=ordered_probe_names,
+        schedule_key=schedule_key,
     )
 
-    with brainstate.environ.context(dt=dt):
+    with brainstate.environ.context(dt=dt), _schedule_horizon(until_ms):
         times, start_time, stop_time, recorded, probe_values = plan.loop()
 
     traced = is_traced_value(times)
@@ -209,6 +224,7 @@ def _cached_run_plan(
     n_steps: int,
     compiled_recordings: tuple,
     ordered_probe_names: tuple[str, ...],
+    schedule_key: tuple = (),
 ) -> _RunPlan:
     """Return the persistent plan for one run shape.
 
@@ -218,7 +234,9 @@ def _cached_run_plan(
     from a new Python closure. Caching the enclosing jitted function avoids
     paying XLA compile time on repeated ``Cell.run`` calls with the same
     timestep, step count, and probe layout. The schedule checks depend on
-    the same key, so they are computed once here as well.
+    the same key, so they are computed once here as well. ``schedule_key``
+    names the NetStim events the loop bakes in, so a run that needed more
+    of them compiles a new loop.
     """
     cache = rcell._run_loop_cache
     key = (
@@ -227,6 +245,7 @@ def _cached_run_plan(
         tuple((item.spec.name, item.schema.size) for item in compiled_recordings),
         tuple(ordered_probe_names),
         int(brainstate.environ.get_precision()),
+        schedule_key,
     )
     cached = cache.get(key)
     if cached is None:

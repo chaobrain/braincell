@@ -16,6 +16,7 @@
 """Lumped (point) Cells: ``Cell.point`` and ``cv_policy=Lumped()``."""
 
 import unittest
+import warnings
 
 import brainstate
 import braintools
@@ -517,6 +518,52 @@ class LumpedCounterexampleTest(unittest.TestCase):
                 cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=g_max, E=-54.3 * u.mV))
                 with self.assertRaisesRegex(error, message):
                     cell.init_state()
+
+    def test_declared_parameter_units_raise_at_init_state_as_on_a_cable_cell(self) -> None:
+        # MECH-41: the lumped build passed declared values to the runtime
+        # classes unchecked. A wrong dimension failed on the first step with
+        # a UnitMismatchError naming no parameter, and a bare reversal
+        # potential (``SodiumFixed`` ``E=50.0``) ran without any error.
+        def init_error(declaration, cv_policy):
+            cell = bc.Cell(bc.Morphology.from_soma(length=15.0 * u.um, radius=7.5 * u.um), cv_policy=cv_policy)
+            cell.paint(AllRegion(), declaration)
+            with self.assertRaises((TypeError, ValueError)) as caught:
+                cell.init_state()
+            return caught.exception
+
+        with warnings.catch_warnings():
+            # MECH-26 warns at each literal declaration; init_state must raise.
+            warnings.simplefilter("ignore", FutureWarning)
+            cases = (
+                ("d", bc.mech.Ion("SodiumDetailed", name="na", d=1.0)),
+                ("d", bc.mech.Ion("SodiumDetailed", name="na", d=1.0 * u.mV)),
+                ("tau", bc.mech.Ion("CalciumDetailed", name="ca", tau=5.0 * u.mV)),
+                ("E", bc.mech.Ion("SodiumFixed", name="na", E=50.0)),
+                ("g_max", bc.mech.Channel("IL", name="leak", g_max=0.1 * u.mV)),
+                ("g_max", bc.mech.Channel("IL", name="leak", g_max=0.1)),
+                ("g_max", bc.mech.Channel("IL", name="leak", g_max=lambda ctx: 0.1)),
+            )
+        for index, (field, declaration) in enumerate(cases):
+            with self.subTest(case=index, parameter=field):
+                cable = init_error(declaration, bc.CVPerBranch(1))
+                lumped = init_error(declaration, bc.Lumped())
+                self.assertIs(type(lumped), type(cable))
+                self.assertEqual(str(lumped), str(cable))
+                self.assertIn(f"parameter '{field}'", str(lumped))
+                # "Painted on", or "painted on" after the spatial callable's sentence.
+                self.assertIn("ainted on AllRegion() at lumped_test.py:", str(lumped))
+
+    def test_channel_initializer_is_still_sampled_by_the_channel(self) -> None:
+        # MECH-41 checks values, not braintools initializers; the lumped build
+        # hands a Channel initializer to the class, which samples it.
+        traces = []
+        for g_max in (0.3 * u.mS / u.cm**2, braintools.init.Constant(0.3 * u.mS / u.cm**2)):
+            cell = bc.Cell.point(N, V_init=-60.0 * u.mV)
+            cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=g_max, E=-54.3 * u.mV))
+            cell.record("v", bc.observe.state("v"))
+            cell.init_state()
+            traces.append(cell.run(dt=DT, duration=1.0 * u.ms).samples["v"].values.to_decimal(u.mV))
+        np.testing.assert_array_equal(traces[0], traces[1])
 
     def test_bad_ion_declarations_raise_at_init_state(self) -> None:
         # MECH-26: the unknown parameter warns at the declaration first.

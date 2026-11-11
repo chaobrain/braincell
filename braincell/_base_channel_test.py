@@ -62,7 +62,7 @@ class BaseChannelExportTest(unittest.TestCase):
         import braincell
         from braincell.filter import AllRegion
 
-        def build(with_units):
+        def build(with_units, lumped=False):
             class CustomLeak(braincell.Channel):
                 root_type = braincell.HHTypedNeuron
 
@@ -76,15 +76,19 @@ class BaseChannelExportTest(unittest.TestCase):
             if with_units:
                 CustomLeak.parameter_units = {"g_max": u.mS / u.cm**2}
             branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[5.0, 5.0] * u.um)
-            cell = braincell.Cell(braincell.Morphology.from_root(branch), cv_policy=braincell.CVPerBranch(1))
+            cv_policy = braincell.Lumped() if lumped else braincell.CVPerBranch(1)
+            cell = braincell.Cell(braincell.Morphology.from_root(branch), cv_policy=cv_policy)
             cell.paint(AllRegion(), braincell.mech.Channel(CustomLeak, g_max=0.1 * u.mV))
             return cell
 
-        with self.assertWarnsRegex(FutureWarning, r"declared in .*CustomLeak.parameter_units"):
-            cell = build(with_units=True)
-        with self.assertRaisesRegex(ValueError, r"\(declared in .*CustomLeak.parameter_units\); got 0.1 mV"):
-            cell.init_state()
-        build(with_units=False).init_state()
+        # MECH-41: a lumped Cell checks the declared units too.
+        for lumped in (False, True):
+            with self.subTest(lumped=lumped):
+                with self.assertWarnsRegex(FutureWarning, r"declared in .*CustomLeak.parameter_units"):
+                    cell = build(with_units=True, lumped=lumped)
+                with self.assertRaisesRegex(ValueError, r"\(declared in .*CustomLeak.parameter_units\); got 0.1 mV"):
+                    cell.init_state()
+                build(with_units=False, lumped=lumped).init_state()
 
     def test_parameter_units_merge_along_the_mro_and_name_real_parameters(self):
         import brainunit as u

@@ -15,6 +15,7 @@
 # ==============================================================================
 
 
+import itertools
 import types
 import unittest
 
@@ -1690,10 +1691,11 @@ _CURRENT_DENSITY = u.uA / u.cm**2
 _ALPHA_UNIT = u.mM / u.ms / _CURRENT_DENSITY
 
 
-def _first_order_cell(with_channel: bool, **ion_params):
+def _first_order_cell(with_channel: bool, lumped: bool = False, **ion_params):
     """Build a one-CV cell carrying a ``CalciumFirstOrder`` pool named ``ca``."""
     branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[5.0, 5.0] * u.um)
-    cell = braincell.Cell(braincell.Morphology.from_root(branch), cv_policy=braincell.CVPerBranch(1))
+    cv_policy = braincell.Lumped() if lumped else braincell.CVPerBranch(1)
+    cell = braincell.Cell(braincell.Morphology.from_root(branch), cv_policy=cv_policy)
     cell.paint(AllRegion(), braincell.mech.Ion("CalciumFirstOrder", name="ca", **ion_params))
     if with_channel:
         cell.paint(AllRegion(), braincell.mech.Channel("CaT_HM1992", name="cat", g_max=0.5 * u.mS / u.cm**2))
@@ -1784,11 +1786,12 @@ class CalciumFirstOrderTest(unittest.TestCase):
             ("beta", {"beta": 0.075 * u.mM}),
             ("beta", {"beta": 0.075}),
         )
-        for field, params in cases:
-            with self.subTest(**{field: params[field]}):
+        # MECH-41: a lumped Cell raises at init_state too.
+        for (field, params), lumped in itertools.product(cases, (False, True)):
+            with self.subTest(**{field: params[field]}, lumped=lumped):
                 # MECH-26: the declaration warns first; init_state still raises.
                 with self.assertWarnsRegex(FutureWarning, f"'{field}'"):
-                    cell = _first_order_cell(with_channel=False, **params)
+                    cell = _first_order_cell(with_channel=False, lumped=lumped, **params)
                 with self.assertRaisesRegex((TypeError, ValueError), f"'{field}'"):
                     cell.init_state()
 

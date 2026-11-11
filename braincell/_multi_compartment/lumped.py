@@ -27,8 +27,10 @@ the one-CV discretization, ``cvs``) and replaces only the runtime. At
 
 Parameters are resolved on the one CV by the cable rules (callables of
 :class:`~braincell.mech.CVContext` evaluated at the CV, ion initializers
-sampled once), and channels are bound to ions by the same code as the cable
-runtime (``root_type``, ``ion_name`` / ``ion_names``, placeholder ions).
+sampled once) and checked against the same unit prototypes, with the same
+error messages, as on a cable Cell. Channels are bound to ions by the same
+code as the cable runtime (``root_type``, ``ion_name`` / ``ion_names``,
+placeholder ions).
 """
 
 from __future__ import annotations
@@ -59,7 +61,13 @@ from braincell._compute.layouts import (
     _time_ge,
     _time_lt,
 )
-from braincell._compute.parameters import density_parameter_value
+from braincell._compute.parameters import (
+    density_error_context,
+    density_parameter_names,
+    density_parameter_schema,
+    density_parameter_value,
+    spatial_callable_source,
+)
 from braincell._single_compartment import SingleCompartment
 from braincell.ion import build_placeholder_ions
 from braincell.mech import CurrentClamp, Density, FunctionClamp, SineClamp, get_registry
@@ -143,7 +151,11 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> LumpedRuntime:
     ValueError
         On the same declaration errors as the cable runtime: unsupported ion
         parameters, ion instance names that clash, an ion binding that cannot
-        be resolved, a callable parameter that does not return a scalar.
+        be resolved, a callable parameter that does not return a scalar, a
+        parameter whose units do not match its prototype.
+    TypeError
+        A parameter without units where the prototype has them, as on the
+        cable runtime.
     """
     (cv,) = cell.cvs
     (context,) = cell.cv_contexts
@@ -175,7 +187,7 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> LumpedRuntime:
                 f"Ion instance {name!r} uses unsupported runtime ion params {sorted(invalid)!r} "
                 f"on {runtime_cls.__name__!r}."
             )
-        node = runtime_cls(size=pop_size, name=name, **_resolve_params(declaration, context))
+        node = runtime_cls(size=pop_size, name=name, **_resolve_params(declaration, context, cell.paint_rules))
         ions[name] = node
         family_candidates.setdefault(species_key, []).append(name)
         class_candidates.setdefault(runtime_cls.__name__, []).append(name)
@@ -199,7 +211,7 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> LumpedRuntime:
     root_channels: dict[str, object] = {}
     for index, declaration in enumerate(channel_declarations):
         runtime_cls = registry.get("channel", declaration.class_name)
-        node = runtime_cls(size=pop_size, **_resolve_params(declaration, context))
+        node = runtime_cls(size=pop_size, **_resolve_params(declaration, context, cell.paint_rules))
         _, owner = install_channel_on_ions(
             node,
             runtime_cls=runtime_cls,
@@ -227,13 +239,23 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> LumpedRuntime:
     )
 
 
-def _resolve_params(declaration: Density, context) -> dict[str, object]:
-    """Resolve declared parameters on the one CV, as the cable runtime does."""
+def _resolve_params(declaration: Density, context, paint_rules) -> dict[str, object]:
+    """Resolve and check declared parameters on the one CV, as the cable runtime does."""
+    schema = density_parameter_schema(declaration)
+    # The cable runtime checks the parameters it stores as numeric buffers;
+    # configuration such as ``species_initializers`` is passed through.
+    checked = set(density_parameter_names(declaration)) & set(schema)
+    owner, source = density_error_context(declaration, paint_rules)
     params = {}
     for name in declaration.params:
         value = density_parameter_value(declaration, name)
+        value_source = source
         if callable(value) and not isinstance(value, braintools.init.Initialization):
+            value_source = spatial_callable_source(value) + (f"; {source}" if source else ".")
             value = _evaluate_spatial_param(declaration, name, value, context)
+        # A Channel initializer is sampled by the runtime class itself.
+        if name in checked and not isinstance(value, braintools.init.Initialization):
+            schema[name].validate(value, name, owner=owner, source=value_source)
         params[name] = value
     return params
 

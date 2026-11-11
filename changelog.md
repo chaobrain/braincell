@@ -483,6 +483,19 @@
   split run matches one run to 1e-12. One run is bit-identical to before.
   `Network.run` was not affected.
 
+- The first `Cell.update()` after `init_state()` or `reset_state()` now
+  delivers the events at the start time, as `Cell.run` does (CELL-35). `run`
+  prepares the synaptic input of its first boundary when no step has, but
+  `update()` only prepared the boundary after its step, so an `update()` loop
+  never delivered an event at t = 0: one 600 um x 0.5 um CV with an ExpSyn
+  (tau 2 ms) driven by `NetStim(start=0 ms, number=1)` at 0.005 uS stayed at
+  g = 0 and -65 mV, where `run` gives g = 0.001839 uS and -56.89 mV at 2 ms.
+  Bound synapse inputs missed their first boundary in the same way.
+  `update()` now prepares that boundary under the same condition as `run`, so
+  an `update()` loop matches `run` to 1e-12 and neither delivers an event
+  twice when one continues the other. Loops whose events all fall after the
+  first step are bit-identical to before.
+
 - A population-view `place` (`cell[[0]].place(...)`, or
   `cell[[0]].loc(mask).place(...)`) that fails now leaves the Cell as it was,
   as `Cell.place` and per-member placement already did. Before, the failed

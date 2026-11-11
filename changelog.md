@@ -1286,6 +1286,26 @@
   array to a float. The Cells page read a `neuron.swc` that does not exist and
   used `u.S`. The Integration page used an undefined `size`.
 
+- The example notebooks (`docs/examples`) and the integration pages build
+  point neurons with `braincell.Cell.point(...)` and `paint` (CELL-27b). The
+  thalamic neurons no longer subclass `SingleCompartment` to scale their
+  input by `area_factor`. Each is a point neuron with its membrane area
+  (2.9e-4, 1.7e-4 or 1.43e-4 cm²), and its step input is 0.05 nA, a total
+  current that the cell divides by that area. The page used to say 0.05 µA,
+  which `area_factor` scaled down by 1e3; the model is the same. The `Hidden-State
+  Classes by Host` section of the `braincell.quad` API page now names point
+  neurons and morphological cells. The notebooks were run again. Every gate
+  now starts at its steady state; a `SingleCompartment` started them at 0
+  after `init_state()` alone. The HH examples set no initial voltage, so they
+  start at -65 mV instead of a random voltage between -70 and -60 mV.
+  Effects:
+  - Spike-frequency adaptation opens with a T-current burst: 27 spikes in
+    500 ms instead of 25, with ISIs from 6.6 ms rising to 20 ms.
+  - Both solvers of Integration Methods start from the same state.
+  - The F–I curve counts change by at most one spike.
+  - The rebound burst is unchanged.
+  - The E–I network's first volley comes at about 14 ms instead of 18 ms.
+
 ### Deprecations
 
 - **`braincell.mech.StateProbe`, `braincell.mech.MechanismProbe`,

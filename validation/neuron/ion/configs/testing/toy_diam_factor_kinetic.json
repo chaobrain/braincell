@@ -1,0 +1,14 @@
+{
+  "meta": {"label": "DCN toy pool: membrane pump scaled by the segment perimeter"},
+  "identity": {"mod_files": ["mechanisms/testing/ToyDiamFactorKinetic_SU15_DCN.mod"]},
+  "defaults": {
+    "simulation": {"temperature_celsius": 36.0},
+    "initial_states": {"Ci": 0.2, "PumpBound": 0.0},
+    "neuron_initial_states": {"pumpfree": 1.0}
+  },
+  "mapping": {
+    "pool_name": {"neuron": "ToyDiamFactorKinetic_SU15_DCN", "braincell": "ToyDiamFactorKinetic_SU2015_DCN"},
+    "pool_states": {"neuron": ["pumpfree", "pumpbound"], "braincell": ["PumpFree", "PumpBound"], "units": {"PumpFree": "mM*um", "PumpBound": "mM*um"}}
+  },
+  "templates": ["../../templates/pool_zero_current.json"]
+}

@@ -1,0 +1,8 @@
+{
+  "meta": {"label": "Current clamp: an IClamp pulse (5-25 ms) on the soma; both sides solve V."},
+  "base": {
+    "morphology": {"length_um": 20.0, "diam_um": 20.0},
+    "simulation": {"dt_ms": 0.025, "duration_ms": 40.0, "v_init_mV": -60.0, "temperature_celsius": 25.0}
+  },
+  "current_clamp": {"delay_ms": 5.0, "dur_ms": 20.0, "amp_nA": 0.005}
+}

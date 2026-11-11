@@ -1,0 +1,22 @@
+{
+  "meta": {"label": "DCN toy pool: membrane pump with compartment factors, driven by CaHVA SU15"},
+  "identity": {
+    "mod_files": ["mechanisms/testing/ToyCaPumpFactorKinetic_SU15_DCN.mod", "cerebellum/dcn_su2015/mechanisms/channel/CaHVA_SU15_DCN.mod"]
+  },
+  "defaults": {
+    "simulation": {"temperature_celsius": 36.0},
+    "pool_solver": "backward_euler",
+    "channel_params": {"perm_cm_s": 7.5e-06},
+    "current_clamp": {"amp_nA": 0.05},
+    "initial_states": {"Ci": 0.2, "PumpBound": 0.3},
+    "neuron_initial_states": {"pumpfree": 0.7}
+  },
+  "mapping": {
+    "pool_name": {"neuron": "ToyCaPumpFactorKinetic_SU15_DCN", "braincell": "ToyCaPumpFactorKinetic_SU2015_DCN"},
+    "pool_states": {"neuron": ["pumpfree", "pumpbound"], "braincell": ["PumpFree", "PumpBound"], "units": {"PumpFree": "mM*um", "PumpBound": "mM*um"}},
+    "impl_name": {"neuron": "CaHVA_SU15_DCN", "braincell": "CaHVA_SU2015_DCN"},
+    "gate_names": {"common": ["m"]},
+    "channel_params": {"perm_cm_s": {"neuron": "perm", "braincell": "perm", "unit": "cm/s"}}
+  },
+  "templates": ["../../templates/pool_zero_current.json", "../../templates/pool_vc.json", "../../templates/pool_cc.json"]
+}

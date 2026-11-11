@@ -46,7 +46,7 @@ The NEURON comparison suites are tiered the same way, each suite in its own job 
 | --- | --- | --- |
 | Every pull request (in `ci-ok`) | `test_linux_neuron_compare_cable` | `validation/neuron/cable/tests` |
 | Every pull request (in `ci-ok`) | `test_linux_neuron_compare_channel` | `validation/neuron/channel_no_conc/tests` and the shared `_clamp_test.py`, `_tolerance_test.py`, `_convergence_test.py`, `_mechanisms_test.py` under `validation/neuron/`, with `-m "not slow"`; then `validation/neuron/ion` with `-m "not slow"` in a separate process |
-| Daily run only | `slow_tests_neuron` | `-m slow` of `validation/neuron/channel_no_conc/tests` (the per-family `dt` convergence tests), then of `validation/neuron/ion` in a separate process; an empty selection there passes |
+| Daily run only | `slow_tests_neuron` | `-m slow` of `validation/neuron/channel_no_conc/tests` (the per-family `dt` convergence tests), then of `validation/neuron/ion` (the pool comparisons) in a separate process |
 
 Both tiers compile the eight channel models first. To reproduce them locally:
 
@@ -61,7 +61,7 @@ python -m pytest validation/neuron/channel_no_conc/tests \
 python -m pytest validation/neuron/ion -m "not slow" -q
 # Daily tier.
 python -m pytest validation/neuron/channel_no_conc/tests -m slow -q
-python -m pytest validation/neuron/ion -m slow -q   # exit code 5: no slow module yet
+python -m pytest validation/neuron/ion -m slow -q
 ```
 
 A NEURON comparison module that takes more than about 25 s on its own gets `pytestmark = pytest.mark.slow` and so moves to the daily run; the daily job selects by marker, so it needs no workflow change. A red daily run opens a `main is red` issue, and fixing it is the first task of the day. To run the daily jobs on a branch, dispatch the daily workflow on it (`gh workflow run CI-daily.yml --ref <branch>`); a red run there opens an issue titled `<branch> is red`.

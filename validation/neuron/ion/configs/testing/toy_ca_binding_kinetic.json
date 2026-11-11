@@ -1,0 +1,15 @@
+{
+  "meta": {"label": "DCN toy pool: Ci + B <-> BC"},
+  "identity": {"mod_files": ["mechanisms/testing/ToyCaBindingKinetic_SU15_DCN.mod"]},
+  "defaults": {
+    "simulation": {"temperature_celsius": 36.0},
+    "pool_solver": "backward_euler",
+    "initial_states": {"Ci": 0.2, "BC": 0.3},
+    "neuron_initial_states": {"b": 0.7}
+  },
+  "mapping": {
+    "pool_name": {"neuron": "ToyCaBindingKinetic_SU15_DCN", "braincell": "ToyCaBindingKinetic_SU2015_DCN"},
+    "pool_states": {"neuron": ["b", "bc"], "braincell": ["B", "BC"]}
+  },
+  "templates": ["../../templates/pool_zero_current.json"]
+}

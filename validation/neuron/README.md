@@ -71,8 +71,8 @@ so a new slow module needs no workflow change.
 - **Daily** (job `slow_tests_neuron`, not in `ci-ok`; a red run opens a
   `main is red` issue): after compiling the same models,
   `channel_no_conc/tests -m slow` (the per-family `dt` convergence tests),
-  then `ion -m slow` in a separate process. `ion` has no slow module yet;
-  pytest's exit code 5 (nothing collected) fails neither tier.
+  then `ion -m slow` in a separate process (the pool comparisons,
+  `ion/tolerances_test.py`).
 
 Reproduce both tiers locally after compiling the channel models as above:
 

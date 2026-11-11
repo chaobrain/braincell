@@ -103,6 +103,13 @@ enter and the unfrozen classes are T0 (`cav3p1_ma20_goc`: `vc_steps`
 since MECH-6a gave the unfrozen Cav2.1 classes the `.mod` constants; before
 that, the CODATA constants alone gave `e_I = 1.39e-4`; MECH-17, 2026-11-11).
 
+The same linearization drives the ion-pool current clamps with an unfrozen
+Cav2.1 or Cav3.1 class (`ion/tolerances.py`): `e_V = 1.02 mV`
+(`cdpstc_ma20_goc_cav2p1_ri21_sc`, 0.5 nA) and `0.207 mV`
+(`cdpstc_ma20_goc_cav3p1`, `cdpcam_ma24_pc`), with `Ci` following the voltage
+(`e_Ci` up to `2.5e-2`). The `_Frozen` class together with NEURON's kinetic
+iteration (below) gives `e_V <= 2.2e-11 mV` and `e_Ci <= 6.5e-14` (MECH-20).
+
 ### CaLVA forward-difference conductance
 
 Class (c), `calva_su15_dcn`: NEURON computes the membrane conductance as
@@ -237,6 +244,56 @@ agree to T0 ([`chloride_test.py`](ion/chloride_test.py): `1.1e-12`). On a
 for 1 s, NEURON gives `cli = 5.277 mM` at the synapse, and `6.981 mM` without
 that line; multi-compartment comparisons use the `.mod` without it.
 
+### Kinetic pools: one linearized implicit Euler step
+
+Class (d), every `KineticIon` pool configuration in `ion/`: NEURON solves a
+  `KINETIC ... METHOD sparse` block by Newton iteration from the previous
+  state and stops once one iteration's summed absolute correction is at most
+  `1e-6` (`CONVERGE` in `sparse_thread.hpp`; negative states are clamped to
+  0). BrainCell's default `backward_euler` takes the first of these
+  iterations only (its docstring: a linearized, Rosenbrock-type step). The
+  second iteration matters where a step changes the pool most: the first
+  step, when calmodulin starts unbound, and calcium entry under the clamp.
+  `cdpstc_ma20_goc` (25 degC, L = diam = 20 um, dt = 0.025 ms) gives
+  `e_Ci = 4.3e-6` / `3.8e-6` / `4.1e-6` (zero current / voltage clamp /
+  current clamp; MECH-4 measured `3.8e-6` and `4.1e-6` with one-off scripts),
+  with the sparsely occupied calmodulin states up to `7.9e-3` of their own
+  maxima; GHK channels, whose larger current moves the pool further, give up
+  to `e_Ci = 2.0e-4` (`cdpstc_ma20_goc_cav2p1_ri21_sc`, voltage clamp).
+  Integrating BrainCell's pool with NEURON's rule
+  (`runner.neuron_sparse_solver`) gives `e_Ci <= 2.7e-13` and
+  `e_pool <= 3.3e-13` in every zero-current and voltage-clamp run of these
+  configurations (`cdpstc_ma20_goc` voltage clamp: `2.0e-14`, `e_I = 2.4e-14`);
+  iterating to convergence instead gives `3.1e-10`, NEURON's own stopping
+  error. With that rule a pump binding rate (`kpmp1`) off by 0.1 % gives
+  `e_Ci = 6.2e-6`; under the default solver the same change gives `6.9e-6`,
+  inside the T1 limit `1e-5`, so the tests check sensitivity on the patched
+  run.
+
+### CdpHVA_SU15_DCN explicit Euler update
+
+Class (c), `cdphva_su15_dcn`: the `.mod` asks for `METHOD cnexp`, but its
+  `DERIVATIVE` block assigns `C` and `D` from `cai` before `cai' = D - C`, so
+  NEURON's translation does not see a linear equation and emits an explicit
+  Euler step (`cai = cai - dt*(-(D - C))`). BrainCell's exponential Euler step
+  is exact for this linear relaxation (`1.3e-14` from the exponential
+  solution). The relaxation from 80 nM gives `e_Ci = 2.2e-5`; with the
+  current, `1.5e-4` (voltage clamp, `e_I = 1.0e-8` through the GHK drive) and
+  `1.4e-4` (current clamp). Freezing `Ci` in BrainCell's derivative, which
+  makes its step explicit as well, gives `0`, `3.2e-16` (`e_I = 8.7e-16`) and
+  `2.4e-8`; the remaining current-clamp difference is the next heading.
+
+### CaHVA_SU15_DCN forward-difference conductance
+
+Class (c), the current clamps of `cdphva_su15_dcn` and
+  `toy_ca_pump_factor_kinetic`: the 0.05 nA pulse takes the soma to `+48 mV`,
+  where NEURON's conductance `(i(v + 0.001) - i(v)) / 0.001` of the GHK
+  current differs from BrainCell's autodiff slope, as for CaLVA above. With
+  `Ci` held constant the difference is still `e_V = 1.25e-6 mV`, and
+  `4.9e-11 mV` at 0.005 nA (`-52 mV` peak). The same forward difference in
+  BrainCell's linearization, together with the cause above (or NEURON's
+  kinetic iteration for the toy pool), gives `e_V = 4.9e-13` and `5.2e-13 mV`.
+
 ## Locating a difference with the voltage clamp
 
 The `channel_no_conc` voltage-clamp templates (`vc_steps`, `vc_ramp`) clamp
@@ -266,6 +323,7 @@ separate build directories preserve each workflow's mechanism selection.
 pytest -q validation/neuron/cable/tests
 pytest -q validation/neuron/cell
 pytest -q validation/neuron/channel_no_conc/tests
+pytest -q validation/neuron/ion
 pytest -q validation/neuron/morph
 ```
 

@@ -64,7 +64,7 @@ class ToleranceTableTest(unittest.TestCase):
         self.assertEqual(table.limit("a/x", "vc_steps", "e_s"), T0_LIMITS["e_s"])
         self.assertEqual(table.tier("a/x", "vc_ramp"), "T0")
         self.assertEqual(table.limit("a/y", "dc", "e_V"), 1e-6)
-        self.assertEqual(T0_LIMITS, {"e_V": 1e-6, "e_I": 1e-10, "e_s": 1e-10})
+        self.assertEqual(T0_LIMITS, {"e_V": 1e-6, "e_I": 1e-10, "e_s": 1e-10, "e_Ci": 1e-10, "e_pool": 1e-10})
         with self.assertRaises(ValueError):
             table.limit("a/x", "dc", "e_I")
 
@@ -87,6 +87,15 @@ class ToleranceTableTest(unittest.TestCase):
         entry = ToleranceEntry(**valid)
         with self.assertRaises(ValueError):
             ToleranceTable([entry, entry])
+
+    def test_two_causes_of_one_protocol_list_different_metrics(self):
+        first = ToleranceEntry("a/x", "pool_cc", {"e_Ci": 1e-5}, "d", "First cause")
+        second = ToleranceEntry("a/x", "pool_cc", {"e_V": 1e-5}, "c", "Second cause")
+        table = ToleranceTable([first, second])
+        self.assertEqual((table.limit("a/x", "pool_cc", "e_Ci"), table.limit("a/x", "pool_cc", "e_V")), (1e-5, 1e-5))
+        self.assertEqual(table.limit("a/x", "pool_cc", "e_pool"), T0_LIMITS["e_pool"])
+        with self.assertRaises(ValueError):
+            ToleranceTable([first, second, ToleranceEntry("a/x", "pool_cc", {"e_Ci": 2e-5}, "c", "Third cause")])
 
     def test_missing_sections(self):
         table = ToleranceTable(

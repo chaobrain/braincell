@@ -323,6 +323,7 @@ CLASSES = (
     ClassEntry("NaP_SU2015_DCN", -2, False),  # 0.02 /ms, m gate at -100 mV
     ClassEntry("Na_Ba2002", 1, False),  # 31 /ms, p gate at +60 mV
     ClassEntry("Na_HH1952", 1, False),  # 28 /ms, p gate at -100 mV
+    ClassEntry("Na_Leak", None, False),  # stateless
     ClassEntry("Na_TM1991", 1, False),  # 35.2 /ms, p gate at +60 mV
     ClassEntry("Na_ZH2019_IO", 3, True),  # 1e3 /ms, m gate at -99.5 mV
     ClassEntry("Nav1p1_MA2025_BC", 5, True),  # 2.24e5 /ms at +60 mV
@@ -401,7 +402,7 @@ SODIUM_HCN_LEAK_FAMILY_CONFIGS = (
 SODIUM_HCN_LEAK_FAMILY_CLASSES = (
     "HCN1_MA2020_GoC", "HCN1_MA2024_PC", "HCN1_MA2025_BC", "HCN1_RI2021_SC", "HCN2_MA2020_GoC", "HCN_HM1992",
     "HCN_SU2015_DCN", "HCN_ZH2019_IO", "IL", "NaFHF_MA2020_GrC", "NaF_SU2015_DCN", "NaP_SU2015_DCN", "Na_Ba2002",
-    "Na_HH1952", "Na_TM1991", "Na_ZH2019_IO", "Nav1p1_MA2025_BC", "Nav1p1_RI2021_SC", "Nav1p6_MA2020_GoC",
+    "Na_HH1952", "Na_Leak", "Na_TM1991", "Na_ZH2019_IO", "Nav1p1_MA2025_BC", "Nav1p1_RI2021_SC", "Nav1p6_MA2020_GoC",
     "Nav1p6_MA2024_PC", "Nav1p6_MA2025_BC", "Nav1p6_RI2021_SC", "Nav_MA2020_GrC",
 )
 """The registered channel classes defined in ``sodium.py``, ``hyperpolarization_activated.py`` and ``leaky.py``."""

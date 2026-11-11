@@ -326,7 +326,7 @@ class CoverageTest(unittest.TestCase):
         self.assertEqual(table.COVERAGE_SCOPE, {"configs": None, "classes": None})
         self.assertEqual({entry.config for entry in table.CONFIGS}, set(table.config_names()))
         self.assertEqual({entry.name for entry in table.CLASSES}, set(table.class_names()))
-        self.assertGreaterEqual(len(table.CLASSES), 113)
+        self.assertGreaterEqual(len(table.CLASSES), 114)
         self.assertGreaterEqual(len(table.CONFIGS), 97)
 
     def test_a_new_channel_class_or_configuration_fails(self):

@@ -18,7 +18,8 @@
 Every configuration of a class defined in ``braincell/channel/sodium.py``,
 ``hyperpolarization_activated.py`` or ``leaky.py`` runs on the Cell's default
 path and is checked against its ``convergence.CONFIGS`` entry: HH channels
-are exact under voltage steps, ``IL`` has no state; the eight sodium Markov
+are exact under voltage steps, ``IL`` has no state (``Na_Leak``, also
+stateless, has no configuration); the eight sodium Markov
 channels converge at first order on ``backward_euler`` x 1 with errors above
 the guide line, and ``exp_euler`` is exact. Every ramp is finite and its
 non-zero differences converge at the window's order (``Na_HH1952`` on finer
@@ -85,7 +86,7 @@ ENTRIES = {entry.config: entry for entry in table.CONFIGS if entry.config in FAM
 class FamilyTableTest(unittest.TestCase):
     def test_the_family_is_in_the_tables(self):
         classes = family_classes()
-        self.assertEqual((len(classes), len(FAMILY_CONFIGS)), (23, 20))
+        self.assertEqual((len(classes), len(FAMILY_CONFIGS)), (24, 20))
         self.assertIn("IL", classes)  # leaky.py
         self.assertEqual(set(ENTRIES), set(FAMILY_CONFIGS))
         # A class or configuration added to the family must join the family's tuples.

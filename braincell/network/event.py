@@ -511,11 +511,9 @@ class NetStim(EventSource):
     def _covers(self, until_ms: float) -> bool:
         """Whether every source has all its events, or one after ``until_ms``."""
         width = int(self._event_times_ms.shape[1])
-        pending = self.number > width
-        if not np.any(pending):
-            return True
         if width == 0:
             return False
+        pending = self.number > width
         return bool(np.all(self._event_times_ms[pending, width - 1] > until_ms))
 
     def _bind_network_seed(self, network_seed: int, population_name: str) -> None:

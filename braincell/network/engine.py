@@ -45,7 +45,6 @@ from braincell.network.delivery import (
     resolve_event_backend,
     write_arrivals,
 )
-from braincell.network.event import _prepare_netstim_schedules, _schedule_horizon
 from braincell.network.lowering import lower_direct_connections
 from braincell.mech import Synapse
 
@@ -376,6 +375,8 @@ class Network:
         brainevent_backend: str | None = "jax_raw",
     ) -> NetworkResult:
         """Run the network for ``duration`` at fixed step ``dt``."""
+        from braincell.network.event import _schedule_horizon
+
         validate_time_quantity(dt, name="dt", prefix="Network.run(...)")
         validate_time_quantity(duration, name="duration", prefix="Network.run(...)")
         event_backend = normalize_event_backend(event_backend)
@@ -779,6 +780,8 @@ class Network:
 
     def _prepare_netstim_schedules(self, *, until_ms: float | None) -> tuple:
         """Generate NetStim events up to ``until_ms``; return the loop-cache token."""
+        from braincell.network.event import _prepare_netstim_schedules
+
         return _prepare_netstim_schedules(
             (population.model for population in self.populations.values() if population.kind == "netstim"),
             until_ms=until_ms,

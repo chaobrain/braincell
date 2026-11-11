@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 import brainstate
 import braintools
@@ -31,6 +32,7 @@ from braincell.network.event import (
     EventSourceView,
     VoltageCrossingSource,
     _build_event_schedule,
+    _counter_draws_check,
     _counter_draws_supported,
     _resolve_cell_location_cv,
 )
@@ -148,10 +150,11 @@ def _exp_syn_cell():
     return cell
 
 
-def _cell_run_v(stim, *, durations, dt=0.1 * u.ms):
+def _cell_run_v(stim, *, durations, dt=0.1 * u.ms, extra_sources=()):
     """Voltage of a standalone ``Cell.run`` split into ``durations``."""
     cell = _exp_syn_cell()
-    bc.connect("in", source=stim, synapse=cell.synapses["syn"], weight=0.01 * u.uS, delay=1.0 * u.ms)
+    for index, source in enumerate((stim, *extra_sources)):
+        bc.connect(f"in{index}", source=source, synapse=cell.synapses["syn"], weight=0.01 * u.uS, delay=1.0 * u.ms)
     runs = [cell.run(dt=dt, duration=duration) for duration in durations]
     return np.concatenate([np.asarray(run.samples["v"].values.to_decimal(u.mV)) for run in runs])
 
@@ -226,6 +229,41 @@ class NetStimLargeNumberTest(unittest.TestCase):
         np.testing.assert_array_equal(v_large, v_small)
         np.testing.assert_array_equal(events_large, events_small)
         self.assertEqual(events_large.tolist(), [0.0, 25.0, 50.0, 75.0, 100.0, 125.0, 150.0, 175.0])
+
+    def test_cell_run_prepares_each_netstim_once_beside_other_sources(self) -> None:
+        def v(number):
+            stim = NetStim(number=number, interval=25.0 * u.ms)
+            sequence = EventSequence.from_times([np.asarray([12.5, 60.0]) * u.ms])
+            return _cell_run_v(stim, durations=[100.0 * u.ms], extra_sources=(stim, sequence)), stim
+
+        expected, _ = v(8)
+        actual, large = v(10**9)
+        np.testing.assert_array_equal(actual, expected)
+        self.assertLessEqual(large._event_times_ms.shape[1], 16)
+
+    def test_traced_cell_run_generates_every_event(self) -> None:
+        number = (1 << 20) + 1
+        cell = _exp_syn_cell()
+        stim = NetStim(number=number, interval=25.0 * u.ms)
+        bc.connect("in", source=stim, synapse=cell.synapses["syn"], weight=0.01 * u.uS, delay=1.0 * u.ms)
+        cell.init_state()
+
+        @brainstate.transform.jit
+        def run():
+            return cell.run(dt=0.1 * u.ms, duration=60.0 * u.ms).samples["v"].values.to_decimal(u.mV)
+
+        traced = np.asarray(run())
+        self.assertTrue(stim._schedule_complete)
+        self.assertEqual(stim._event_times_ms.shape, (1, number))
+        eager = _cell_run_v(NetStim(number=8, interval=25.0 * u.ms), durations=[60.0 * u.ms])
+        np.testing.assert_allclose(traced, eager, rtol=1e-6, atol=1e-6)
+
+    def test_schedule_width_doubles_until_it_passes_the_horizon(self) -> None:
+        source = NetStim(number=10**9, interval=25.0 * u.ms)
+        with mock.patch("braincell.network.event._estimated_width", return_value=1):
+            source._ensure_schedule(until_ms=200.0)
+        self.assertEqual(source._event_times_ms.shape, (1, 16))
+        np.testing.assert_array_equal(source._event_times_ms[0], np.arange(16) * 25.0)
 
     def test_noisy_events_are_a_prefix_of_the_full_schedule(self) -> None:
         # One source: the full draw of a (1, n) matrix is the same for every n.
@@ -303,6 +341,7 @@ class NetStimLargeNumberTest(unittest.TestCase):
         jax.config.update("jax_threefry_partitionable", False)
         try:
             self.assertFalse(_counter_draws_supported("float32"))
+            self.assertFalse(_counter_draws_check("float64", "threefry2x32", True, False))
             source = NetStim(size=2, number=600_000, interval=1.0 * u.ms, noise=1.0, seed=2)
             source._ensure_schedule(until_ms=20.0)
             width = source._event_times_ms.shape[1]

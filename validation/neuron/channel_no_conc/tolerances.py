@@ -52,7 +52,10 @@ _GHK_ZERO = "GHK drive near 0 mV in mod files without a limit branch"
 _CA_ZH19_M_INF = "Ca_ZH2019_IO with freeze_m_inf=False"
 _KDR_ZH19 = "Kdr_ZH2019_IO limit branch"
 _GATE_CURRENT = "Kv1.1 and Kv3.3 gating current"
+_NAV1P1_INIT = "Nav1.1 steady-state initialization"
+_NAV1P1_GATE_CURRENT = "Nav1.1 gating current"
 _KV1P1 = tuple(f"{model}/kv1p1_{model}" for model in ("ma20_goc", "ma20_grc", "ma24_pc", "ma25_bc", "ri21_sc"))
+_NAV1P1 = ("ma25_bc/nav1p1_ma25_bc", "ri21_sc/nav1p1_ri21_sc")
 _CAV3P3 = ("ma24_pc/cav3p3_ma24_pc", "ma24_pc/cav3p3_ma24_pc_frozen", "ri21_sc/cav3p3_ri21_sc")
 
 
@@ -78,6 +81,7 @@ VARIANTS = {
         for config in (*_KV1P1, "ma24_pc/kv3p3_ma24_pc")
     },
     "ma20_grc/kv1p5_ma20_grc:gnonspec": Variant("ma20_grc/kv1p5_ma20_grc", {"gnonspec_S_cm2": 1.3195e-4}, ("ino",)),
+    **{f"{config}:gateCurrent=1": Variant(config, {"gate_current": 1.0}, ("i",)) for config in _NAV1P1},
 }
 """Name (the table key of the variant) -> variant."""
 
@@ -118,6 +122,12 @@ ENTRIES = [
         for entry in _current_clamp(f"{config}:gateCurrent=1", 1e-3, 1e-2, 5e-3, "d", _GATE_CURRENT)
     ),
     *_current_clamp("ma24_pc/kv3p3_ma24_pc:gateCurrent=1", 5e-6, 5e-3, 1e-3, "d", _GATE_CURRENT),
+    # Current clamp, e_V in mV (MECH-19c).
+    *(
+        entry
+        for config in _NAV1P1
+        for entry in _current_clamp(f"{config}:gateCurrent=1", 0.2, 10.0, 20.0, "d", _NAV1P1_GATE_CURRENT)
+    ),
     # Voltage clamp, e_I and e_s (MECH-19a).
     *(
         ToleranceEntry(config, protocol, {"e_I": e_I, "e_s": 5e-9}, "c", _KCA2P2)
@@ -136,6 +146,19 @@ ENTRIES = [
     ToleranceEntry("su15_dcn/calva_su15_dcn", "vc_steps", {"e_I": 1e-9}, "c", _GHK_ZERO),
     # Voltage clamp (MECH-19b).
     ToleranceEntry("zh19_io/kdr_zh19_io", "vc_ramp", {"e_I": 2e-9, "e_s": 1e-8}, "c", _KDR_ZH19),
+    # Voltage clamp (MECH-19c).
+    ToleranceEntry("zh19_io/na_zh19_io", "vc_ramp", {"e_I": 1e-7, "e_s": 2e-8}, "c", _NA_ZH19),
+    *(
+        ToleranceEntry(name, protocol, limits, "c", _NAV1P1_INIT)
+        for config in _NAV1P1
+        for name, protocol, limits in (
+            (config, "vc_steps", {"e_s": 2e-9}),
+            (config, "vc_ramp", {"e_s": 1e-9}),
+            (f"{config}:gateCurrent=1", "vc_steps", {"e_s": 2e-9}),
+            # The gating current weighs the states with rates up to 150 /ms.
+            (f"{config}:gateCurrent=1", "vc_ramp", {"e_I": 2e-10, "e_s": 1e-9}),
+        )
+    ),
 ]
 
 TABLE = ToleranceTable(ENTRIES)
@@ -161,8 +184,7 @@ UNCOVERED = {
     "CaN_IS2008": f"{_NO_MOD}; port of BrainPy ICaN_IS2008, original model unresolved (MECH-6a)",
     "CaT_HM1992": f"{_MODELDB} ModelDB 279 ITGHK.mod, which uses a GHK drive (MECH-6a)",
     "CaT_HP1992": f"{_MODELDB} ModelDB 3670 IT2.mod",
-    "HCN_HM1992": _NO_MOD,
-    "IL": f"{_NO_MOD}; NEURON's built-in pas is a candidate reference (MECH-19c)",
+    "HCN_HM1992": f"{_NO_MOD}; {_HM1992}; its +43 mV reversal default is unchecked (MECH-6c)",
     "KA1_HM1992": f"{_NO_MOD}; {_HM1992}",
     "KA2_HM1992": f"{_NO_MOD}; {_HM1992}",
     "KDR_Ba2002": f"{_MODELDB} ModelDB 3670 HH2.mod: the rates of K_TM1991 with V_sh = -50 mV and q10 = 3",
@@ -171,8 +193,7 @@ UNCOVERED = {
     "KNI_Ya1989": f"{_MODELDB} ModelDB 3817 IM.mod, which ships taumax = 1000 ms and gkbar = 1e-6 S/cm2",
     "K_Leak": f"{_NO_MOD}; no source model: an ohmic leak at E_K with a placeholder default",
     "K_TM1991": f"{_MODELDB} ModelDB 3670 HH2.mod, whose rate factor tadj = 3^((celsius - 36)/10) is 1 at 36 degC",
-    "Na_Ba2002": _NO_MOD,
-    "Na_HH1952": f"{_NO_MOD}; NEURON's built-in hh is a candidate reference: K_HH1952 matches it (MECH-19c)",
-    "Na_TM1991": _NO_MOD,
+    "Na_Ba2002": f"{_MODELDB} ModelDB 3670 HH2.mod: Traub-Miles rates with V_sh = -50 mV and q10 = 3 (MECH-6c)",
+    "Na_TM1991": f"{_MODELDB} ModelDB 3670 HH2.mod, which scales the rates by 3^((celsius - 36)/10); the class defaults to q10 = 1 (MECH-6c)",
 }
 """Registry name -> why the channel has no NEURON comparison configuration."""

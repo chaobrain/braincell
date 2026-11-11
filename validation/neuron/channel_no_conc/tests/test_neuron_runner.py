@@ -15,6 +15,7 @@
 
 import math
 import os
+from pathlib import Path
 from validation.neuron._paths import mechanism_build_dir
 import unittest
 from unittest import mock
@@ -92,6 +93,40 @@ class NeuronRunnerTest(unittest.TestCase):
             self.assertEqual(h.usetable_hh, 0)
         finally:
             h.delete_section(sec=section)
+
+    def test_global_channel_param_is_set_on_h(self) -> None:
+        # Nav1.1's gateCurrent is a GLOBAL: NEURON exposes it only as h.gateCurrent_<mechanism>.
+        config = CHANNEL_NO_CONC_ROOT / "configs" / "ma25_bc" / "nav1p1_ma25_bc.json"
+        model_config = experiment_schema.load_model_config(config)
+        if not (Path(model_config.mod_dir) / "x86_64" / "libnrnmech.so").exists():
+            self.skipTest("bc_ma2025 channel mechanisms are not compiled.")
+        sweep = experiment_schema.load_sweep_config(config, CHANNEL_NO_CONC_ROOT / "templates" / "dc.json")
+        payload = next(iter(experiment_schema.expand_cases(sweep)))
+        for value in (1.0, 0.0):
+            case = experiment_schema.ChannelNoConcCase.from_dict(
+                {**payload, "channel_params": {**payload["channel_params"], "gate_current": value}}
+            )
+            h, section, _ = neuron_runner._build_neuron_model(case, mapping_spec=case.mapping_spec)
+            try:
+                self.assertEqual(h.gateCurrent_Nav1p1_MA25_BC, value)
+            finally:
+                h.delete_section(sec=section)
+
+    def test_template_leak_with_pas_channel_raises(self) -> None:
+        mapping = build_mapping_payload(
+            current="i",
+            impl_name={"neuron": "pas", "braincell": "IL"},
+            gate_names={"common": []},
+            channel_params={"g_max_S_cm2": {"neuron": "g", "braincell": "g_max"}},
+        )
+        payload = {
+            **build_case_payload(mapping=mapping),
+            "channel_params": {"g_max_S_cm2": 1e-4},
+            "leak": {"enabled": True, "g_S_cm2": 1e-4, "e_mV": -65.0},
+        }
+        case = experiment_schema.ChannelNoConcCase.from_dict(payload)
+        with self.assertRaisesRegex(ValueError, "pas channel under comparison"):
+            neuron_runner._build_neuron_model(case, mapping_spec=case.mapping_spec)
 
     def test_sine_stimulus_runs(self) -> None:
         case = experiment_schema.ChannelNoConcCase.from_dict(

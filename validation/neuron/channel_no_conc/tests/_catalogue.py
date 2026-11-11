@@ -117,6 +117,9 @@ class CatalogueAssertions:
                 # BrainCell replays NEURON's voltage, so this does not enter e_I or e_s.
                 self.assertLessEqual(result["clamp_error_mV"], 1e-5)
                 for metric in ("e_I", "e_s"):
+                    if result[metric] is None:  # e_s of a channel without gates (IL)
+                        self.assertEqual(len(result["case"].mapping_spec.gate_map), 0, config)
+                        continue
                     self.assertLessEqual(result[metric], TABLE.limit(name, protocol, metric), f"{metric}: {result[metric]:.3e}")
         return measured
 

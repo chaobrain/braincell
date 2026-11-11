@@ -152,6 +152,9 @@ def initialize_neuron(*, h, section, segment, case: ChannelNoConcCase) -> None:
 def _build_neuron_model(case: ChannelNoConcCase, *, mapping_spec: MappingSpec):
     from neuron import h, load_mechanisms
 
+    if case.leak.enabled and mapping_spec.neuron.mechanism_name == "pas":
+        # NEURON has one pas per section: the channel's parameters would overwrite the leak's.
+        raise ValueError("A template leak cannot be combined with the pas channel under comparison.")
     mechanism_dir = str(Path(case.mod_dir).resolve())
     if mechanism_dir not in _LOADED_MECHANISM_DIRS:
         load_mechanisms(mechanism_dir)
@@ -195,6 +198,13 @@ def _build_neuron_model(case: ChannelNoConcCase, *, mapping_spec: MappingSpec):
                     f"channel_params contains unsupported param for mapping: {key!r}."
                 ) from exc
             if attr_name is None:
+                continue
+            global_name = f"{attr_name}_{mapping_spec.neuron.mechanism_name}"
+            if not hasattr(mech_obj, attr_name) and not hasattr(soma, attr_name) and hasattr(h, global_name):
+                # A GLOBAL (Nav1.1's gateCurrent) is shared by every instance and
+                # keeps its value for later models in this process; a configuration
+                # that varies one sets it in its defaults.
+                setattr(h, global_name, float(value))
                 continue
             target = _resolve_neuron_parameter_target(soma=soma, mech_obj=mech_obj, attr_name=attr_name)
             setattr(target, attr_name, float(value))

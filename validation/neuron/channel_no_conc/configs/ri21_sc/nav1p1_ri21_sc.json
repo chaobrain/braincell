@@ -7,7 +7,8 @@
   },
   "defaults": {
     "channel_params": {
-      "g_max_S_cm2": 0.008
+      "g_max_S_cm2": 0.008,
+      "gate_current": 0.0
     }
   },
   "mapping": {
@@ -36,6 +37,9 @@
       "g_max_S_cm2": {
         "neuron": "gbar",
         "braincell": "g_max"
+      },
+      "gate_current": {
+        "common": "gateCurrent"
       }
     }
   },

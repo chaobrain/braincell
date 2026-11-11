@@ -29,7 +29,7 @@ from pathlib import Path
 
 from braincell.morph.branch import BRANCH_TYPES
 
-__all__ = ["ALLOWED_TYPES", "CEREBELLUM_FIXTURES", "FIXTURE_DIR", "VALID_SWC_FIXTURES"]
+__all__ = ["ALLOWED_TYPES", "CEREBELLUM_FIXTURES", "FIXTURE_DIR", "LATIN1_ASC_FIXTURE", "VALID_SWC_FIXTURES"]
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "data" / "morphology"
 """SWC and ASC fixtures shipped in the repository checkout.
@@ -60,3 +60,11 @@ CEREBELLUM_FIXTURES = {
     "PC": FIXTURE_DIR.parent / "cerebellum/pc_ma2024/morphology/PC.asc",
     "SC": FIXTURE_DIR.parent / "cerebellum/sc_ma2021/morphology/io_fixture/SC.asc",
 }
+
+LATIN1_ASC_FIXTURE = FIXTURE_DIR.parent / "cerebellum/sc_ma2021/reference/morphology/stellate.ASC"
+"""The stellate-cell reference ASC, the only shipped file that is not UTF-8.
+
+It is the original Neurolucida export of the ``SC`` reconstruction above. Its
+header has one Latin-1 byte (``0xE9``) in an ``ImageCoords`` path string, and
+it must read to the same geometry as ``SC``.
+"""

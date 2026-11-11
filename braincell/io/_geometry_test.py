@@ -206,6 +206,21 @@ class ConstantZTest(unittest.TestCase):
         self.assertEqual(_geometry.constant_z(contour), 0.0)
 
 
+class ContourIsCollinearTest(unittest.TestCase):
+    def test_points_on_a_line_in_any_direction_are_collinear(self) -> None:
+        steps = np.arange(4.0)[:, None]
+        for direction in ([1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [1.0, 2.0, 1.0]):
+            with self.subTest(direction=direction):
+                self.assertTrue(_geometry.contour_is_collinear(steps * np.asarray(direction) + 5.0))
+
+    def test_coincident_points_are_collinear(self) -> None:
+        self.assertTrue(_geometry.contour_is_collinear(np.ones((4, 3))))
+
+    def test_a_thin_but_real_outline_is_not_collinear(self) -> None:
+        self.assertFalse(_geometry.contour_is_collinear(_ellipse(10.0, 1e-3)))
+        self.assertFalse(_geometry.contour_is_collinear(np.array([[0.0, 0, 0], [4, 0, 1], [0, 4, 2], [-4, 0, 1]])))
+
+
 class ContourCenterTest(unittest.TestCase):
     def test_a_circle_centroid_sits_at_its_centre(self) -> None:
         # Contours are stored open, as NEURON expects, so the fixed 101

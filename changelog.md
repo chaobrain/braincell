@@ -627,6 +627,26 @@
 
 ### Bug Fixes
 
+- The ASC reader rejects malformed input with a `ValueError` that names the
+  line, instead of importing a truncated tree (MORPH-5b). In a tree, a group
+  that starts with a number is a point and must be four finite numbers
+  `(x y z diameter)` with diameter > 0, optionally followed by one label
+  (`(0 5 0 1 S1)`, ignored). Before, `(0 abc 0 1)` cut its branch short and
+  `(0 0 0)` dropped the rest of it; a point after a branch's child branches
+  was dropped. Each was only a `syntax.point_after_children` report warning,
+  which is gone. A coordinate `nan`, a diameter of 0 or less, and a CellBody
+  contour with fewer than 3 points or with collinear points failed later with
+  `radii_proximal must satisfy > array(0).` or a similar message. They now
+  read, for example, `ASC import failed for <path>: invalid point at line 10:
+  expected 4 numbers (x y z diameter), found 'abc' at position 2`, `point at
+  line 16 follows child branches`, `CellBody contour at line 1 has 2 points;
+  a contour needs at least 3`. An ASC file that is not valid UTF-8 is read as
+  Latin-1, with one `syntax.encoding_fallback` report warning naming the first
+  invalid byte; a UTF-8 byte-order mark is skipped. The stellate-cell
+  reference `stellate.ASC`, which failed with a `UnicodeDecodeError` message,
+  now reads to the same geometry as `SC.asc`. The 13 shipped ASC files that
+  read before give bit-identical geometry and the same report.
+
 - With `ion_channel_update_order="integration"`, the `"staggered"` solver
   now advances the dependent channels under a kinetic ion (CELL-32). The
   ion's own update integrates its species only, and the dependent-node pass

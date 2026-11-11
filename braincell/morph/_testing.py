@@ -285,7 +285,8 @@ def stretched(branch: Branch, factor: float = 2.0) -> Branch:
     Parameters
     ----------
     branch : Branch
-        Geometry with 3-D points.
+        Geometry with 3-D points whose segments form one polyline, as
+        :meth:`Branch.from_points` builds them.
     factor : float
         Scale factor for every segment length.
 

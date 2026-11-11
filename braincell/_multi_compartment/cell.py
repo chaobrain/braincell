@@ -344,6 +344,17 @@ class _CellFacade:
         -------
         RecordingSpec
             Frozen declaration owned by the root Cell.
+
+        Notes
+        -----
+        The recording is a declaration, like ``paint`` and ``place``. If the
+        grid or the morphology changes before :meth:`Cell.init_state` (a new
+        ``cv_policy``, or an edit of the tree), ``init_state`` selects it
+        again from the same population members and region or locations, so
+        it records the branches it named: a region recording declared before
+        a branch was appended includes that branch. A selection of CVs
+        (``cv[...]``) cannot be made again on other CVs, and
+        ``init_state`` raises ``RuntimeError`` naming the recording.
         """
         return self._view_root._add_recording(
             RecordingSpec(

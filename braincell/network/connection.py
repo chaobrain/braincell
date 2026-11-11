@@ -776,6 +776,24 @@ def connect(
     -------
     ConnectionView
         The concrete routing rows created by this call.
+
+    Raises
+    ------
+    RuntimeError
+        At the destination Cell's ``init_state`` (or ``Network.init_state``,
+        before any Cell initializes), if the grid was rebuilt after this call
+        and the ``Cell.place`` rule of the connected synapses now resolves to
+        other sites (an edit gave it a site more or less). The rows could not
+        all reach the synapses they were made for.
+
+    Notes
+    -----
+    Each row remembers its synapse by place rule, mechanism, population
+    member, branch name and ``branch_x``. When the grid is rebuilt before
+    initialization -- an edit of the morphology, or a later ``place`` -- the
+    logical synapse ids can shift, and ``init_state`` moves each row to the
+    id its synapse has now. A branch removed and attached again under the
+    same name keeps its synapses' rows.
     """
     return _connect_with_pairing_seed(
         name,

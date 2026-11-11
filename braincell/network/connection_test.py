@@ -642,7 +642,9 @@ class ConnectionFollowsItsSynapseTest(unittest.TestCase):
 
         morpho.soma.extra = _extra_basal()
 
-        pattern = r"Connection 'drive' .*'a'.*3 sites \(axon\(1\), dend\(1\), extra\(1\)\).*when connected it resolved to 2"
+        pattern = (
+            r"Connection 'drive' .*'a'.*3 sites \(axon\(1\), dend\(1\), extra\(1\)\).*when connected it resolved to 2"
+        )
         with self.assertRaisesRegex(RuntimeError, pattern):
             network.init_state()
         # The check runs before any Cell of the Network initializes.

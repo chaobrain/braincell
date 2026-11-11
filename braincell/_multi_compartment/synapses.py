@@ -42,6 +42,10 @@ __all__ = ["SynapseView"]
 #: they still refer to the store it took them from.
 _STORE_SERIALS = itertools.count()
 
+#: Branch name -> process-wide code, so synapse identities compare as integers
+#: across stores (MORPH-15).
+_BRANCH_NAME_CODES: dict[str, int] = {}
+
 
 @dataclass(frozen=True)
 class _SynapseRecord:
@@ -69,7 +73,7 @@ class _SynapseStore:
         "cv_id",
         "branch_id",
         "branch_x",
-        "branch_name",
+        "branch_name_code",
         "rule_index",
         "mechanism_index",
         "repeat_index",
@@ -106,15 +110,15 @@ class _SynapseStore:
         # and mechanism there, branch name, x, and which repeat of that
         # location it is. ``sites`` lists each rule-mechanism's locations.
         repeats: dict[tuple, int] = {}
-        repeat_of: dict[int, int] = {}
+        placement_repeat = []
         sites: dict[tuple[int, int], list] = {}
         for placement in synapse_placements:
             mechanism = placement.mechanism
             rule_key = (placement._rule_index, placement._mechanism_index)
-            site = (-1 if placement.population_index is None else int(placement.population_index),
-                    placement.branch_name, float(placement.branch_x))
-            repeat_of[int(placement.id)] = repeats.get(rule_key + site, 0)
-            repeats[rule_key + site] = repeat_of[int(placement.id)] + 1
+            member = -1 if placement.population_index is None else int(placement.population_index)
+            site = (member, placement.branch_name, float(placement.branch_x))
+            placement_repeat.append(repeats.get(rule_key + site, 0))
+            repeats[rule_key + site] = placement_repeat[-1] + 1
             sites.setdefault(rule_key, []).append(site)
             owners = (
                 range(population_size) if placement.population_index is None else (int(placement.population_index),)
@@ -133,10 +137,19 @@ class _SynapseStore:
         self.cv_id = np.asarray([row[2].cv_id for row in rows], dtype=np.int64)
         self.branch_id = np.asarray([row[2].branch_id for row in rows], dtype=np.int64)
         self.branch_x = np.asarray([row[2].branch_x for row in rows], dtype=float)
-        self.branch_name = np.asarray([row[2].branch_name for row in rows], dtype=object)
-        self.rule_index = np.asarray([row[2]._rule_index for row in rows], dtype=np.int64)
-        self.mechanism_index = np.asarray([row[2]._mechanism_index for row in rows], dtype=np.int64)
-        self.repeat_index = np.asarray([repeat_of[row[1]] for row in rows], dtype=np.int64)
+        # Per placement, then per row: ``point_placements`` is in id order.
+        placement_of_row = np.searchsorted(
+            np.asarray([placement.id for placement in synapse_placements], dtype=np.int64), self.placement_id
+        )
+        self.branch_name_code = np.asarray(
+            [_BRANCH_NAME_CODES.setdefault(p.branch_name, len(_BRANCH_NAME_CODES)) for p in synapse_placements],
+            dtype=np.int64,
+        )[placement_of_row]
+        self.rule_index = np.asarray([p._rule_index for p in synapse_placements], dtype=np.int64)[placement_of_row]
+        self.mechanism_index = np.asarray([p._mechanism_index for p in synapse_placements], dtype=np.int64)[
+            placement_of_row
+        ]
+        self.repeat_index = np.asarray(placement_repeat, dtype=np.int64)[placement_of_row]
         self.mechanism = tuple(row[3] for row in rows)
         origins = getattr(cell, "_synapse_origins", {})
         self.declaration = tuple(origins.get(id(item), item) for item in self.mechanism)
@@ -343,7 +356,7 @@ class _SynapseStore:
         return (order[position] if len(sorted_ids) else position), found
 
     def identity(self, rows) -> tuple[np.ndarray, ...]:
-        """``(rule, mechanism, population, branch name, x, repeat)`` of ``rows``.
+        """``(rule, mechanism, population, branch name code, x, repeat)`` of ``rows``.
 
         This names a logical synapse across rebuilds of the grid: its place
         rule and the mechanism within that rule, its population member, its
@@ -356,7 +369,7 @@ class _SynapseStore:
             self.rule_index[rows],
             self.mechanism_index[rows],
             self.population_index[rows],
-            self.branch_name[rows],
+            self.branch_name_code[rows],
             self.branch_x[rows],
             self.repeat_index[rows],
         )
@@ -368,25 +381,24 @@ class _SynapseStore:
         for key in dict.fromkeys(zip(rule.tolist(), mechanism.tolist())):
             candidates |= (self.rule_index == key[0]) & (self.mechanism_index == key[1])
         table_rows = np.flatnonzero(candidates)
-        table = self.identity(table_rows)
         n_table = len(table_rows)
-        _, name_codes = np.unique(np.concatenate((table[3], identity[3])).astype(str), return_inverse=True)
-        keys = np.concatenate(
-            (_identity_keys(table, name_codes[:n_table]), _identity_keys(identity, name_codes[n_table:]))
-        )
-        _, inverse = np.unique(keys, return_inverse=True)
-        lookup = np.full(int(inverse.max(initial=-1)) + 1, -1, dtype=np.int64)
-        lookup[inverse[:n_table]] = self.id[table_rows]
-        return lookup[inverse[n_table:]]
+        group = _identity_groups([np.concatenate(pair) for pair in zip(self.identity(table_rows), identity)])
+        lookup = np.full(int(group.max(initial=-1)) + 1, -1, dtype=np.int64)
+        lookup[group[:n_table]] = self.id[table_rows]
+        return lookup[group[n_table:]]
 
 
-def _identity_keys(identity, name_codes) -> np.ndarray:
-    """One sortable record per synapse identity, its branch name replaced by ``name_codes``."""
-    rule, mechanism, population, _, x, repeat = identity
-    keys = np.empty(len(rule), dtype=[("r", "i8"), ("m", "i8"), ("p", "i8"), ("n", "i8"), ("x", "f8"), ("k", "i8")])
-    keys["r"], keys["m"], keys["p"] = rule, mechanism, population
-    keys["n"], keys["x"], keys["k"] = name_codes, x, repeat
-    return keys
+def _identity_groups(columns) -> np.ndarray:
+    """Number equal rows of ``columns`` alike: one group number per row."""
+    order = np.lexsort(columns[::-1])
+    starts = np.zeros(len(order), dtype=bool)
+    starts[:1] = True
+    for column in columns:
+        ordered = column[order]
+        starts[1:] |= ordered[1:] != ordered[:-1]
+    group = np.empty(len(order), dtype=np.int64)
+    group[order] = np.cumsum(starts) - 1
+    return group
 
 
 class SynapseView(DiscreteView):

@@ -712,6 +712,36 @@
   removal before `init_state` (or before `reset()`, for a mask made on the
   snapshot) moved its indices.
 
+- A recording declared before the grid or the morphology changed now records
+  what it was declared on (MORPH-15). It used to keep the CVs it selected
+  when declared: on a soma with `dend` and an `axon` on its proximal end,
+  `cell.on(branch_in("type", "axon")).record(...)` followed by
+  `cell.cv_policy = MaxCVLen(40 um)` recorded CV 2, which is now on `dend`
+  (the axon is CV 4), and a branch appended after a region recording was
+  left out. `init_state` now selects such a recording again from its
+  population members and region or locations, so it records the axon's CV,
+  and a region recording includes branches appended later -- as `paint` and
+  `place` already did. Recordings on an unchanged grid and tree are kept as
+  they are. A recording made on CVs (`cell.cv[...]`) cannot be selected again
+  on other CVs: `init_state` raises `RuntimeError` naming it, where it used to
+  record whatever CV now has that id. One made on a resolved `LocsetMask`
+  raises once a removal or move shifted its indices, and one naming a branch
+  that an edit removed raises `KeyError` naming the recording.
+
+- A connection made before the grid was rebuilt now reaches the synapses it
+  was made to (MORPH-15). Logical synapse ids number the placements of every
+  `place` rule in turn, so when an edit gave an earlier rule another site the
+  later ids shifted and the connection rows kept the old ids: with ExpSyn
+  `a` on `Terminals()` and `b` at `soma(0.5)`, a connection to `b` delivered
+  to the new terminal's `a` after a branch was attached, and
+  `Network.init_state()` said nothing. Each row now remembers its synapse by
+  place rule, mechanism, member, branch name and `branch_x`, and `init_state`
+  moves it to that synapse's current id. If the connected rule itself now
+  resolves to other sites (connected to `a`, then a terminal attached),
+  `init_state` raises `RuntimeError` naming the connection and the sites
+  before and after; `Network.init_state` checks every Cell before
+  initializing any.
+
 - A current input registered with `Cell.add_current_input` after a
   `Cell.run` is now included by the next `run` (CELL-23). `run` reuses its
   compiled loop for the same `dt`, step count and recordings, and the loop

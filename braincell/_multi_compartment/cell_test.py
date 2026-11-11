@@ -1696,7 +1696,9 @@ def _kinetic_integration_report() -> dict:
         for dt_ms in (0.005, 0.001):
             report[f"{order}/{solver}/{dt_ms}"] = run(order, solver, dt_ms)
     soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-    sodium = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch(), ion_channel_update_order="integration")
+    sodium = Cell(
+        Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch(), ion_channel_update_order="integration"
+    )
     sodium.paint(mech.Ion("SodiumFixed", name="na", E=50.0 * u.mV))
     sodium.paint(mech.Channel("Nav_MA2020_GrC", g_max=20.0 * u.mS / u.cm**2, ion_name="na"))
     for name, cell in (("sodium", sodium), ("kinetic", _kinetic_calcium_cell("integration"))):

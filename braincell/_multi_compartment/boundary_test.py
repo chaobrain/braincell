@@ -33,6 +33,7 @@ side, written here in numpy, with the braintools kernel braincell wraps.
 """
 
 import contextlib
+import types
 import unittest
 import warnings
 from unittest import mock
@@ -128,7 +129,18 @@ def _synapse_node(cell):
     return nodes[0]
 
 
-def _build(model, case="both", solver="rk4", *, pop_size=None, batch_size=None, synapse=ExpSyn, Ra=100.0, netstim=None):
+def _build(
+    model,
+    case="both",
+    solver="rk4",
+    *,
+    pop_size=None,
+    batch_size=None,
+    synapse=ExpSyn,
+    Ra=100.0,
+    netstim=None,
+    autapse=False,
+):
     kwargs = {} if pop_size is None else {"pop_size": pop_size}
     cell = braincell.Cell(
         _morphology(model),
@@ -164,6 +176,10 @@ def _build(model, case="both", solver="rk4", *, pop_size=None, batch_size=None, 
             source=braincell.NetStim(start=start * u.ms, number=1),
             synapse=cell.synapses[declaration],
             weight=weight * u.uS,
+        )
+    if autapse:
+        braincell.connect(
+            "self", source=cell.event_outputs["spike"], synapse=cell.synapses[declaration], weight=G0 * u.uS
         )
     cell.init_state(batch_size=batch_size)
     if g0:
@@ -636,6 +652,19 @@ class NoBoundaryInputTest(_Float64Case):
         self.assertEqual(len(rows.synapse_layout_ids), 1)
         self.assertFalse(_build("M1", "mid_clamp")._boundary_rows().has_inputs)
 
+    def test_adjacent_algebraic_points_are_rejected(self):
+        # Points 2 and 3 are both outside the one CV midpoint (point 1).
+        edges = [types.SimpleNamespace(id=i, parent_node_id=i, child_node_id=i + 1) for i in range(3)]
+        runtime = types.SimpleNamespace(
+            node_tree=types.SimpleNamespace(cv_to_mid_node_id=np.asarray([1]), edges=edges),
+            n_point=4,
+            point_to_representative_cv_np=np.zeros(4, dtype=np.int32),
+            clamp_routing_table=types.SimpleNamespace(boundary_ids=np.asarray([3])),
+            iter_synapse_layouts=lambda: iter(()),
+        )
+        with self.assertRaisesRegex(RuntimeError, "joins two algebraic points"):
+            boundary.build_boundary_rows(runtime, cvs=())
+
 
 class OtherSolversTest(_Float64Case):
     """Acceptance 14: the block and exponential solvers read the same derivative."""
@@ -664,6 +693,60 @@ class OtherSolversTest(_Float64Case):
             with self.subTest(solver=solver):
                 with self.assertRaisesRegex(ValueError, "point synapses"):
                     _build("M1", "syn", solver)
+
+
+class EventVoltageTest(_Float64Case):
+    """Event delivery hands a boundary synapse its point's voltage, not 0 mV."""
+
+    def test_both_delivery_paths_pass_the_boundary_voltage(self):
+        cell = _build("M1", "both", "rk4", autapse=True)
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms):
+            cell.update()
+        expected = float(cell._point_voltage_for_mechanisms()[0, 0].to_decimal(u.mV))
+        self.assertGreater(expected, -60.0)  # moved away from V_init by the inputs
+        node = _synapse_node(cell)
+        seen = []
+
+        def apply_events(payload, V_post=None):
+            seen.append(float(np.ravel(V_post.to_decimal(u.mV))[0]))
+
+        layout_id = cell.synapses["syn"]._store.layout_id("ExpSyn")
+        with mock.patch.object(node, "apply_events", side_effect=apply_events):
+            with brainstate.environ.context(t=0.025 * u.ms, dt=0.025 * u.ms):
+                cell._apply_direct_live_connection_events()
+                cell._apply_synapse_layout_event_drive(layout_id, u.Quantity(jnp.zeros((1,)), u.uS))
+        self.assertEqual(seen, [expected, expected])
+
+
+class SynapseLayoutFilterTest(_Float64Case):
+    """The boundary solve evaluates only synapse layouts with a row on a boundary."""
+
+    def test_midpoint_layout_is_skipped(self):
+        reference = _cached_run("M1", "both", "rk4", 0.025)[0]
+        cell = braincell.Cell(
+            _morphology("M1"), cv_policy=braincell.CVPerBranch(cv_per_branch=3), V_init=-65.0 * u.mV, solver="rk4"
+        )
+        cell.paint(
+            AllRegion(),
+            mech.CableProperty(
+                resting_potential=-65.0 * u.mV,
+                membrane_capacitance=1.0 * u.uF / u.cm**2,
+                axial_resistivity=100.0 * u.ohm * u.cm,
+            ),
+            mech.Channel("IL", name="leak", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV),
+        )
+        cell.place(RootLocation(0.0), mech.Synapse("ExpSyn", name="syn", tau=2.0 * u.ms, e=0.0 * u.mV))
+        cell.place(
+            RootLocation(0.0), braincell.CurrentClamp(delay=0.0 * u.ms, durations=100.0 * u.ms, amplitudes=CLAMP * u.nA)
+        )
+        cell.place(RootLocation(0.5), mech.Synapse("Exp2Syn", name="mid", tau1=0.5 * u.ms, tau2=2.0 * u.ms))
+        cell.init_state()
+        node = _synapse_node(cell)
+        node.g.value = u.Quantity(jnp.full(node.g.value.shape, G0), u.uS)
+        rows = cell._boundary_rows()
+        self.assertEqual(len(rows.synapse_layout_ids), 1)
+        # The midpoint synapse carries no conductance, so the run is M1's.
+        np.testing.assert_allclose(_run(cell, 0.025)[:, 0, :], reference, rtol=0, atol=1e-12)
 
 
 def _state_probe():

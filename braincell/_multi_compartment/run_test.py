@@ -332,6 +332,28 @@ class UpdateLoopTest(unittest.TestCase):
         for actual, expected in zip(self._updates(cell, 0, 4, traced=False), first):
             np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=0.0)
 
+    def test_lumped_cell_update_loop_delivers_the_start_event(self):
+        def cell():
+            model = braincell.Cell.point(1, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, solver="rk4")
+            model.paint(AllRegion(), mech.Channel("IL", name="leak", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+            model.place(mech.Synapse(ExpSyn, name="syn", tau=2.0 * u.ms, e=0.0 * u.mV))
+            braincell.connect(
+                "drive",
+                source=braincell.NetStim(start=0.0 * u.ms, number=1),
+                synapse=model.synapses["syn"],
+                weight=WEIGHT,
+            )
+            model.init_state()
+            return model
+
+        looped = cell()
+        self._updates(looped, 0, self.N)
+        ran = cell()
+        ran.run(dt=DT, duration=self.N * DT)
+        for actual, expected in ((looped, ran), (_synapse(looped), _synapse(ran))):
+            np.testing.assert_allclose(_state(actual), _state(expected), rtol=1e-12, atol=0.0)
+        np.testing.assert_allclose(_state(_synapse(ran)), 0.005 * np.exp(-2.0 / 2.0), rtol=1e-9)
+
     def test_update_and_run_continue_each_other_without_redelivery(self):
         # Events at 0 ms and 1 ms (step 40); the first segment starts with an
         # event, the second at one.
@@ -358,7 +380,9 @@ class UpdateLoopTest(unittest.TestCase):
 
 
 def _synapse(cell):
-    return next(iter(cell.runtime_objects(ExpSyn, allowed_hierarchy=(1, 1)).values()))
+    """The one runtime ExpSyn of a cable or lumped cell."""
+    (synapse,) = cell.runtime_objects(ExpSyn).values()
+    return synapse
 
 
 def _state(model):

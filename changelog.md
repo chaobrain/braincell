@@ -490,7 +490,8 @@
   never delivered an event at t = 0: one 600 um x 0.5 um CV with an ExpSyn
   (tau 2 ms) driven by `NetStim(start=0 ms, number=1)` at 0.005 uS stayed at
   g = 0 and -65 mV, where `run` gives g = 0.001839 uS and -56.89 mV at 2 ms.
-  Bound synapse inputs missed their first boundary in the same way.
+  Bound synapse inputs missed their first boundary in the same way, and so
+  did the synapses of a lumped Cell (`Cell.point`).
   `update()` now prepares that boundary under the same condition as `run`, so
   an `update()` loop matches `run` to 1e-12 and neither delivers an event
   twice when one continues the other. Loops whose events all fall after the

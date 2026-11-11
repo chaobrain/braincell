@@ -31,7 +31,7 @@ from braincell._multi_compartment.run_test import (
     make_event_cell,
     split_steps,
 )
-from braincell.filter import AllRegion
+from braincell.filter import AllRegion, at
 from braincell.network import Network
 from braincell.network._testing import make_runtime_network, make_threshold_cell
 
@@ -390,6 +390,119 @@ class NetworkInitSnapshotTest(unittest.TestCase):
         self.assertRegex(message, r"populations 'first', 'second' run on the snapshot.*new Network")
         self.assertEqual(snapshot_warnings(), [])
         self.assertEqual((first.n_cv, second.n_cv), (2, 2))
+
+
+def _leak(name="leak"):
+    return braincell.mech.Channel("IL", name=name, g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV)
+
+
+def _leak_cell(kind="cable"):
+    """A 40 um branch named soma, radius 2 um, two CVs (one on a lumped Cell), with a leak."""
+    branch = braincell.Branch.from_lengths(lengths=[40.0] * u.um, radii=[2.0, 2.0] * u.um)
+    policy = braincell.Lumped() if kind == "lumped" else braincell.CVPerBranch(2)
+    cell = braincell.Cell(braincell.Morphology.from_root(branch, name="soma"), cv_policy=policy)
+    cell.paint(AllRegion(), _leak())
+    return cell
+
+
+def _failing_cell():
+    """A Cell whose init_state raises: a Junction placed without its conductance."""
+    cell = _leak_cell()
+    cell.place(at("soma", 0.5), braincell.mech.Junction())
+    return cell
+
+
+_JUNCTION_ERROR = "Mechanism Junction has no attribute 'conductance'"
+
+
+class NetworkInitRollbackTest(unittest.TestCase):
+    """CELL-37: when a Cell fails init_state, the Cells this call initialized go back to declaring."""
+
+    @staticmethod
+    def _declaration(cell):
+        # What the Cell is before Network.init_state: its declaration tree,
+        # rules, the grid built from them and the selections made on it.
+        return (cell.morpho, cell._paint_rules, cell._place_rules, cell._discretization, cell._view_generation)
+
+    def test_the_cells_before_a_failing_cell_are_declaring_as_before(self):
+        for kind in ("cable", "lumped"):
+            with self.subTest(kind=kind):
+                a, b = _leak_cell(kind), _failing_cell()
+                net = Network("n")
+                net.add_population("a", a)
+                net.add_population("b", b)
+                declared = a.morpho
+                before = self._declaration(a)
+                leak = a.channels["leak"]
+
+                with self.assertRaisesRegex(KeyError, _JUNCTION_ERROR):
+                    net.init_state()
+
+                self.assertEqual((a._initialized, b._initialized, net._initialized), (False, False, False))
+                self.assertIs(a.morpho, declared)
+                for now, then in zip(self._declaration(a), before):
+                    self.assertIs(now, then)
+                self.assertEqual(leak.names, ("leak",))  # a selection made before the call is still live
+                # The recovery: a declares again, and the Network takes new connections onto it.
+                a.paint(AllRegion(), _leak("extra"))
+                net.connect(
+                    "c",
+                    source=net.populations["b"].event_outputs["spike"],
+                    target=net.populations["a"],
+                    synapse=braincell.mech.Synapse("ExpSyn", name="s"),
+                    locations=at("soma", 0.5),
+                )
+                self.assertFalse(a._initialized)
+
+    def test_a_retry_after_the_failure_initializes_and_runs(self):
+        a, b = _leak_cell(), _leak_cell()
+        net = Network("n")
+        net.add_population("a", a)
+        net.add_population("b", b)
+        boom = RuntimeError("boom")
+        init_runtime = braincell.Cell._init_runtime
+        failed = []
+
+        def fail_once(cell, batch_size):
+            if cell is b and not failed:
+                failed.append(cell)
+                raise boom
+            return init_runtime(cell, batch_size)
+
+        with patch.object(braincell.Cell, "_init_runtime", autospec=True, side_effect=fail_once):
+            with self.assertRaises(RuntimeError) as caught:
+                net.init_state()
+            self.assertIs(caught.exception, boom)  # the original error, not wrapped
+            self.assertEqual((a._initialized, b._initialized, net._initialized), (False, False, False))
+            net.init_state()
+        self.assertEqual((a._initialized, b._initialized, net._initialized), (True, True, True))
+        result = net.run(dt=0.025 * u.ms, duration=0.1 * u.ms)
+        self.assertIsNotNone(result)
+        np.testing.assert_allclose(_voltages(a), -65.0, atol=1e-6)
+
+    def test_rolls_back_in_reverse_order_and_leaves_cells_initialized_earlier(self):
+        early = _leak_cell()
+        early.init_state()
+        early_snapshot = early.morpho
+        first, second, failing = _leak_cell(), _leak_cell(), _failing_cell()
+        net = Network("n")
+        for name, cell in (("first", first), ("early", early), ("second", second), ("failing", failing)):
+            net.add_population(name, cell)
+        reset = braincell.Cell.reset
+        order = []
+
+        def tracked(cell):
+            order.append(cell)
+            return reset(cell)
+
+        with patch.object(braincell.Cell, "reset", autospec=True, side_effect=tracked):
+            with self.assertRaisesRegex(KeyError, _JUNCTION_ERROR):
+                net.init_state()
+
+        self.assertEqual([id(cell) for cell in order], [id(second), id(first)])
+        self.assertTrue(early._initialized)  # not initialized by this call: left as it was
+        self.assertIs(early.morpho, early_snapshot)
+        self.assertEqual((first._initialized, second._initialized), (False, False))
 
 
 def _add_value(cell, entry):

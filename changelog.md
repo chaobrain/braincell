@@ -80,6 +80,23 @@
 
 ### New Features
 
+- **`Morphology.clone()` and `Morphology.subtree(target)`** (MORPH-2a).
+  `tree.clone()` returns an independent copy that compares equal to `tree`
+  and has the same auto-naming counters (`naming_state()`).
+  `tree.subtree("dend")` returns a new tree rooted at `dend` with all its
+  descendants; names and attachment points inside it are unchanged, and
+  `dend`'s own attachment to its parent is dropped. `target` is a branch
+  name or a view of a branch in the tree. Both copies share the immutable
+  `Branch` geometry and have their own views and `revision`, so editing one
+  tree leaves the other unchanged. Both only read the source, which may be
+  frozen; a copy is never frozen. Because the geometry is shared, `clone()`
+  is about 15 times faster than `copy.deepcopy`: 1.5 ms against 23 ms on a
+  681-branch reconstruction. `clone` and `subtree` are now reserved branch
+  names, like every public `Morphology` attribute:
+  `attach(child_name="clone")` raises `ValueError`, and a checkpoint that
+  holds a branch of either name no longer loads. No branch in this
+  repository uses either name.
+
 - **External input for lumped cells: `update(I_ext)` and brainpy projections**
   (CELL-23). A lumped cell (`Cell.point(...)`, `cv_policy=Lumped()`) can be
   driven from a user loop and by `brainpy.state` projections, with the same

@@ -15,7 +15,9 @@
 
 
 from dataclasses import is_dataclass
+import pathlib
 import re
+import tempfile
 import unittest
 from unittest import mock
 from unittest.mock import patch
@@ -46,6 +48,7 @@ from braincell.morph._testing import (
     make_soma,
     make_tree_s,
     make_tree_t,
+    make_tree_w,
     morph_fingerprint,
     simulate_remove_leaf,
     simulate_replace_geometry,
@@ -1148,6 +1151,206 @@ class MorphoEditTableTest(unittest.TestCase):
             stretched(make_basal())
 
 
+def _pb(points, radii, type: str) -> Branch:
+    """A branch through 3-D ``points`` (um) with ``radii`` (um) at each point."""
+    return Branch.from_points(points=np.asarray(points, dtype=float) * u.um, radii=list(radii) * u.um, type=type)
+
+
+def _um(quantity) -> float:
+    return float(quantity.to_decimal(u.um))
+
+
+class _RoundTripMixin:
+    """Round trips of an edited tree against ``expected``, a tree attached directly in the edited default order.
+
+    SWC keeps neither names nor branch boundaries, so it is compared through
+    the written text and the trees read back, not through ``from_swc(to_swc(m))
+    == m``.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.tmp = pathlib.Path(directory.name)
+
+    def assert_round_trips(self, edited: Morphology, expected: Morphology, label: str = "tree") -> None:
+        self.assertEqual(edited, expected)
+        loaded = Morphology.load_checkpoint(edited.save_checkpoint(self.tmp / f"{label}.bcm"))
+        self.assertEqual(loaded, edited)
+        self.assertEqual(loaded.naming_state(), edited.naming_state())
+        written = edited.to_swc(self.tmp / f"{label}-edited.swc")
+        reference = expected.to_swc(self.tmp / f"{label}-expected.swc")
+        self.assertEqual(written.read_text(), reference.read_text())
+        self.assertEqual(Morphology.from_swc(written), Morphology.from_swc(reference))
+        self.assertEqual(cold_rebuild(edited), edited)
+
+
+def _build(*records) -> Morphology:
+    """``records`` are (name, branch, parent, parent_x, child_x); the first is the root."""
+    name, branch, *_ = records[0]
+    tree = Morphology.from_root(branch, name=name)
+    for name, branch, parent, parent_x, child_x in records[1:]:
+        tree.attach(parent=parent, child_branch=branch, child_name=name, parent_x=parent_x, child_x=child_x)
+    return tree
+
+
+class MorphoTreeWTest(unittest.TestCase):
+    """Tree W, the edit tests' tree that exports to SWC."""
+
+    def test_indices_orders_and_length(self) -> None:
+        tree = make_tree_w()
+        self.assertEqual(
+            [(b.name, b.index) for b in tree.branches], [("soma", 0), ("dend", 1), ("d1", 2), ("d2", 3), ("axon", 4)]
+        )
+        self.assertEqual([b.name for b in tree.branch_by_order(order="type")], ["soma", "axon", "d1", "d2", "dend"])
+        np.testing.assert_allclose(_um(tree.total_length), 260.0, rtol=1e-12)
+        self.assertEqual(
+            [(e.parent.name, e.child.name, e.parent_x, e.child_x) for e in tree.edges],
+            [
+                ("soma", "dend", 1.0, 0.0),
+                ("dend", "d1", 1.0, 0.0),
+                ("dend", "d2", 1.0, 0.0),
+                ("soma", "axon", 0.0, 0.0),
+            ],
+        )
+
+    def test_exports_to_swc(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            read_back = Morphology.from_swc(make_tree_w().to_swc(pathlib.Path(directory) / "w.swc"))
+        self.assertEqual(read_back.n_branches, 5)
+        np.testing.assert_allclose(_um(read_back.total_length), 260.0, rtol=1e-12)
+
+
+class MorphoCloneTest(_RoundTripMixin, unittest.TestCase):
+    """``Morphology.clone()``: an equal, independent tree that shares the Branch geometry."""
+
+    def _tree(self) -> Morphology:
+        tree = make_tree_w()
+        # Auto-named, so the clone has a counter to copy; built from points so the tree still exports to SWC.
+        tree.attach(parent="axon", child_branch=_pb([[-30, 0, 0], [-40, 0, 0]], (0.5, 0.5), "axon"))
+        return tree
+
+    def test_the_clone_equals_the_tree_and_shares_its_geometry(self) -> None:
+        tree = self._tree()
+        revision = tree.revision
+        clone = tree.clone()
+
+        self.assertIsNot(clone, tree)
+        self.assertEqual(clone, tree)
+        self.assertEqual(tree.naming_state(), {"axon": 1})
+        self.assertEqual(clone.naming_state(), {"axon": 1})
+        for name in ("soma", "dend", "d1", "d2", "axon", "axon_0"):
+            with self.subTest(name):
+                self.assertIs(getattr(clone, name).branch, getattr(tree, name).branch)
+                self.assertIsNot(getattr(clone, name), getattr(tree, name))
+        self.assertEqual(tree.revision, revision)
+        self.assertFalse(clone._frozen)
+        self.assert_round_trips(clone, tree)
+
+    def test_editing_one_tree_leaves_the_other_unchanged(self) -> None:
+        tree = self._tree()
+        clone = tree.clone()
+
+        clone.attach(parent="d1", child_branch=make_apical(), child_name="tip")
+        self.assertEqual((tree.n_branches, clone.n_branches), (6, 7))
+        tree.attach(parent="d2", child_branch=make_apical(), child_name="tip")
+        self.assertEqual(tree.tip.parent.name, "d2")
+        self.assertEqual(clone.tip.parent.name, "d1")
+        # The copied counter continues the sequence instead of restarting it.
+        self.assertEqual(clone.attach(parent="soma", child_branch=make_axon()).name, "axon_1")
+
+    def test_a_frozen_tree_clones_into_an_editable_one(self) -> None:
+        snapshot = frozen_snapshot(make_tree_w())
+        clone = snapshot.clone()
+        self.assertEqual(clone, snapshot)
+        self.assertFalse(clone._frozen)
+        clone.attach(parent="d1", child_branch=make_apical(), child_name="tip")
+        self.assertEqual(clone.n_branches, 6)
+        self.assertEqual(snapshot.n_branches, 5)
+
+    def test_a_deep_chain_clones_without_recursion(self) -> None:
+        tree = make_deep_chain_tree(1200)
+        self.assertEqual(tree.clone(), tree)
+
+    def test_an_unpickled_tree_with_a_name_reserved_since_is_rejected(self) -> None:
+        tree = make_tree_w()
+        # A tree pickled before a method of that name existed: rename d1 behind the gate's back.
+        node = tree._nodes[tree._name_to_id.pop("d1")]
+        object.__setattr__(node, "_name", "clone")
+        tree._name_to_id["clone"] = node._node_id
+        with self.assertRaisesRegex(ValueError, "'clone' is reserved by the Morphology API"):
+            tree.clone()
+
+
+class MorphoSubtreeTest(unittest.TestCase):
+    """``Morphology.subtree(target)``: a new tree rooted at ``target``."""
+
+    def test_the_subtree_at_dend(self) -> None:
+        tree = make_tree_w()
+        revision = tree.revision
+        part = tree.subtree("dend")
+
+        self.assertEqual([b.name for b in part.branches], ["dend", "d1", "d2"])
+        self.assertIsNone(part.root.parent)
+        self.assertEqual(
+            [(e.parent.name, e.child.name, e.parent_x, e.child_x) for e in part.edges],
+            [("dend", "d1", 1.0, 0.0), ("dend", "d2", 1.0, 0.0)],
+        )
+        self.assertEqual(part.n_branches, 3)
+        np.testing.assert_allclose(_um(part.total_length), 210.0, rtol=1e-12)
+        self.assertEqual(part.naming_state(), {})
+        self.assertIs(part.d1.branch, tree.d1.branch)
+        self.assertEqual(tree.revision, revision)
+        self.assertEqual(tree, make_tree_w())
+
+    def test_a_view_or_the_root_selects_the_same_subtree(self) -> None:
+        tree = make_tree_w()
+        self.assertEqual(tree.subtree(tree.dend), tree.subtree("dend"))
+        self.assertEqual(tree.subtree(tree.root), tree)
+        self.assertEqual(tree.subtree("d2"), Morphology.from_root(tree.d2.branch, name="d2"))
+
+    def test_the_subtree_drops_the_target_s_own_attachment(self) -> None:
+        tree = make_tree_w()
+        part = tree.subtree("axon")  # attached at the soma's proximal end
+        self.assertEqual(part, Morphology.from_root(tree.axon.branch, name="axon"))
+
+    def test_a_frozen_tree_gives_an_editable_subtree(self) -> None:
+        snapshot = frozen_snapshot(make_tree_w())
+        part = snapshot.subtree(snapshot.dend)
+        self.assertEqual(part, make_tree_w().subtree("dend"))
+        part.attach(parent="d1", child_branch=make_apical(), child_name="tip")
+        self.assertEqual(snapshot.n_branches, 5)
+
+    def test_a_deep_chain_subtree_without_recursion(self) -> None:
+        tree = make_deep_chain_tree(1200)
+        part = tree.subtree("seg_0")
+        self.assertEqual(part.n_branches, 1199)
+        self.assertEqual(part.root.name, "seg_0")
+
+    def test_bad_targets_are_rejected_without_a_trace(self) -> None:
+        tree = make_tree_w()
+        other = make_tree_w()
+        for label, target, error, pattern in (
+            ("unknown name", "nope", KeyError, "nope"),
+            ("not a name or view", 1, TypeError, "target must be a branch name or MorphoBranch, got int"),
+            ("view of another tree", other.dend, ValueError, "different Morphology"),
+        ):
+            with self.subTest(label):
+                before = (tree.revision, morph_fingerprint(tree))
+                with self.assertRaisesRegex(error, pattern):
+                    tree.subtree(target)
+                self.assertEqual((tree.revision, morph_fingerprint(tree)), before)
+        self.assertEqual(other, make_tree_w())
+
+    def test_a_detached_view_is_rejected(self) -> None:
+        tree = make_tree_w()
+        view = tree.d2
+        simulate_remove_leaf(tree, "d2")
+        with self.assertRaisesRegex(RuntimeError, r"'d2'.*detached.*subtree\(\).*by name"):
+            tree.subtree(view)
+
+
 class MorphoBranchDerivedPropertyTest(unittest.TestCase):
     """``branch_id`` / ``branch_order`` / ``n_tapers`` published by MorphoBranch.
 
@@ -1232,6 +1435,14 @@ class MorphoReservedNameTest(unittest.TestCase):
         public |= {n for n in dir(MorphoBranch) if not n.startswith("_")}
         self.assertIn("topo", public)
         for name in sorted(public):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, "reserved by the Morphology API"):
+                    self._attach_named(self._tree(), name)
+
+    def test_copy_and_edit_method_names_are_reserved(self) -> None:
+        # Each new public method takes a name away from branches: a tree or a
+        # checkpoint that used it can no longer be built (the changelog says so).
+        for name in ("clone", "subtree"):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(ValueError, "reserved by the Morphology API"):
                     self._attach_named(self._tree(), name)

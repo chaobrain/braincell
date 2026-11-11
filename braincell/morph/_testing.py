@@ -68,6 +68,7 @@ __all__ = [
     "make_tree_s",
     "make_tree_t",
     "make_tree_u",
+    "make_tree_w",
     "morph_fingerprint",
     "simulate_remove_leaf",
     "simulate_replace_geometry",
@@ -393,6 +394,48 @@ def make_tree_u() -> Morphology:
     return tree
 
 
+def make_tree_w() -> Morphology:
+    """Tree T with SWC-exportable joints and integer segment lengths, for round trips.
+
+    Every branch is built with :meth:`Branch.from_points` (micrometres):
+
+    ========  =============================  ===========  ==============  ===================  ========
+    branch    points                         radii        type            parent, x, child x   length
+    ========  =============================  ===========  ==============  ===================  ========
+    soma      (0,0,0)-(20,0,0)               5/5          soma            --                   20
+    dend      (20,0,0)-(50,40,0)-(110,40,0)  2/1.5/1      basal_dendrite  soma, 1, 0           50 + 60
+    d1        (110,40,0)-(140,80,0)          1/0.5        basal_dendrite  dend, 1, 0           50
+    d2        (110,40,0)-(150,10,0)          1/0.5        basal_dendrite  dend, 1, 0           50
+    axon      (0,0,0)-(-30,0,0)              0.5/0.5      axon            soma, 0, 0           30
+    ========  =============================  ===========  ==============  ===================  ========
+
+    Default indices are soma 0, dend 1, d1 2, d2 3, axon 4; the type order
+    is soma, axon, d1, d2, dend. The total length is 260 um. Unlike
+    :func:`make_tree_t`, each child starts on its parent's attachment
+    sample with the same radius, so :meth:`Morphology.to_swc` accepts it,
+    and every segment length is a whole number, exact in float32.
+    """
+    tree = Morphology.from_root(_point_branch([[0, 0, 0], [20, 0, 0]], (5.0, 5.0), "soma"), name="soma")
+    tree.attach(
+        parent="soma",
+        child_branch=_point_branch([[20, 0, 0], [50, 40, 0], [110, 40, 0]], (2.0, 1.5, 1.0), "basal_dendrite"),
+        child_name="dend",
+    )
+    for name, tip in (("d1", [140, 80, 0]), ("d2", [150, 10, 0])):
+        tree.attach(
+            parent="dend",
+            child_branch=_point_branch([[110, 40, 0], tip], (1.0, 0.5), "basal_dendrite"),
+            child_name=name,
+        )
+    tree.attach(
+        parent="soma",
+        child_branch=_point_branch([[0, 0, 0], [-30, 0, 0]], (0.5, 0.5), "axon"),
+        child_name="axon",
+        parent_x=0.0,
+    )
+    return tree
+
+
 #: The kinds of edit a row can stand for.
 EDIT_KINDS = ("append", "delete", "replace", "splice", "transform")
 
@@ -484,9 +527,11 @@ def cold_rebuild(morpho: Morphology) -> Morphology:
     new tree in node-id order, which is creation order and lists every
     parent before its children (a branch's parent never changes). It never
     reads ``branches``, ``branch_by_order``, ``index``, ``parent`` or any
-    other cached view: ``clone_morpho`` iterates ``branches``, so after a
-    structural write that skipped the gate it would copy the stale view
-    tuple into the reference.
+    other cached view, so a structural write that skipped the gate cannot
+    leak a stale view tuple into the reference. It attaches one branch at a
+    time through the public :meth:`Morphology.attach` rather than calling
+    :meth:`Morphology.clone`, so the reference does not share the copying
+    code that the edits under test reuse.
 
     The new tree shares the immutable :class:`Branch` objects, so every
     value derived from it comes from the same code on the same inputs as

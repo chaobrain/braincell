@@ -26,7 +26,7 @@ In normal use, users only need `Morphology` and `MorphoBranch`.
 import contextlib
 from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass
-from typing import Callable, Optional, Union
+from typing import Callable, NamedTuple, Optional, Union
 
 import brainunit as u
 import numpy as np
@@ -38,6 +38,20 @@ from braincell.morph.branch import Branch, frustum_areas_um2, frustum_volumes_um
 _BRANCH_RESERVED_NAMES = set(Branch.__dataclass_fields__) | {name for name in dir(Branch) if not name.startswith("_")}
 
 ParentRef = Union[str, "MorphoBranch"]
+
+
+class _BranchRecord(NamedTuple):
+    """One branch of a subtree read out of the node tables, in node-id order.
+
+    ``parent_name`` is ``None`` for the subtree's root, whose own edge is not
+    part of the subtree; ``parent_x`` and ``child_x`` are then unused.
+    """
+
+    name: str
+    branch: Branch
+    parent_name: Optional[str]
+    parent_x: float
+    child_x: float
 
 
 @dataclass(frozen=True)
@@ -214,6 +228,10 @@ class Morphology:
 
     Whole-morphology metrics (``total_length``, ``n_branches``, etc.)
     are exposed directly on the ``Morphology`` instance.
+
+    Edits change the tree in place. :meth:`clone` returns an independent
+    copy to edit instead, and :meth:`subtree` a copy of one branch with its
+    descendants.
 
     Examples
     --------
@@ -1774,6 +1792,119 @@ class Morphology:
             child_x=child_x,
         )
 
+    def clone(self) -> "Morphology":
+        """Return an independent copy of this morphology.
+
+        The copy compares equal to this tree, has the same auto-naming
+        counters (:meth:`naming_state`) and shares its immutable
+        :class:`Branch` geometry objects; its branch views and its
+        :attr:`revision` are its own. Editing either tree leaves the other
+        unchanged. The copy is never frozen, even when this tree is the
+        read-only snapshot of an initialized Cell.
+
+        Returns
+        -------
+        Morphology
+            A new tree equal to this one.
+
+        See Also
+        --------
+        subtree : Copy one branch and its descendants.
+
+        Notes
+        -----
+        Reading only: :attr:`revision` does not advance. Sharing the
+        geometry makes this much cheaper than ``copy.deepcopy``, which copies
+        every array of every branch: on a 681-branch reconstruction a clone
+        takes about 1.5 ms and a deep copy about 23 ms.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch, Morphology
+            >>> soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+            >>> tree = Morphology.from_root(soma, name="soma")
+            >>> tree.soma.dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um,
+            ...                                      type="basal_dendrite")
+            >>> copy = tree.clone()
+            >>> copy == tree
+            True
+            >>> copy.dend.branch is tree.dend.branch
+            True
+            >>> copy.dend.tip = Branch.from_lengths(lengths=[10.0] * u.um, radii=[1.0, 1.0] * u.um,
+            ...                                     type="basal_dendrite")
+            >>> tree.n_branches, copy.n_branches
+            (2, 3)
+        """
+        copy = _morpho_from_records(self._subtree_records(self._root_id))
+        copy._type_name_counters = dict(self._type_name_counters)
+        return copy
+
+    def subtree(self, target: ParentRef) -> "Morphology":
+        """Return a new morphology rooted at ``target``, with all its descendants.
+
+        The new tree's root is ``target``'s geometry and name; its
+        descendants follow in default order with their names, geometry and
+        attachment points (``parent_x``, ``child_x``) unchanged. ``target``'s
+        own attachment to its parent is not kept, and the new tree's
+        :meth:`naming_state` is empty. Geometry objects are shared, as in
+        :meth:`clone`.
+
+        Parameters
+        ----------
+        target : str or MorphoBranch
+            A branch of this tree, by name or by a view that is still in it.
+
+        Returns
+        -------
+        Morphology
+            An independent tree; editing it leaves this one unchanged.
+
+        Raises
+        ------
+        KeyError
+            If no branch is called ``target``.
+        TypeError
+            If ``target`` is neither a ``str`` nor a :class:`MorphoBranch`.
+        ValueError
+            If ``target`` is a view of a branch of another morphology.
+        RuntimeError
+            If ``target`` is a view of a branch that an edit removed from
+            this tree; look the branch up again by name.
+
+        See Also
+        --------
+        clone : Copy the whole tree, auto-naming counters included.
+
+        Notes
+        -----
+        Reading only: :attr:`revision` does not advance, and a frozen tree
+        accepts the call. ``subtree(root)`` equals :meth:`clone` except for
+        the auto-naming counters.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch, Morphology
+            >>> soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+            >>> dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+            >>> tree = Morphology.from_root(soma, name="soma")
+            >>> tree.soma.dend = dend
+            >>> tree.dend.tip = dend
+            >>> part = tree.subtree("dend")
+            >>> [branch.name for branch in part.branches]
+            ['dend', 'tip']
+            >>> part.root.parent is None
+            True
+            >>> tree.n_branches
+            3
+        """
+        return _morpho_from_records(self._subtree_records(self._resolve_branch_ref(target, what="subtree()")))
+
     def __getattr__(self, name: str) -> object:
         # Underscore-prefixed names never name a branch. Failing fast avoids
         # unbounded recursion when pickle / copy.deepcopy probe for
@@ -1990,16 +2121,92 @@ class Morphology:
         return self._nodes[node_id]
 
     def _resolve_parent(self, parent: ParentRef) -> int:
-        if isinstance(parent, MorphoBranch):
-            if parent._owner is not self:
-                raise ValueError("Parent MorphoBranch belongs to a different Morphology.")
-            parent._require_attached("attaching to it")
-            return parent._node_id
-        if isinstance(parent, str):
-            if parent not in self._name_to_id:
-                raise KeyError(parent)
-            return self._name_to_id[parent]
-        raise TypeError("parent must be a branch name or MorphoBranch.")
+        return self._resolve_branch_ref(parent, what="attaching to it", role="parent")
+
+    def _resolve_branch_ref(self, ref: ParentRef, *, what: str, role: str = "target") -> int:
+        """Node id of a branch of this tree given by name or by view; writes nothing.
+
+        Raises ``KeyError`` for an unknown name, ``TypeError`` for anything
+        but a ``str`` or :class:`MorphoBranch`, ``ValueError`` for a view of
+        another tree and ``RuntimeError`` (naming ``what``) for a view that
+        an edit detached from this one.
+        """
+        if isinstance(ref, MorphoBranch):
+            if ref._owner is not self:
+                raise ValueError(f"{role.capitalize()} MorphoBranch belongs to a different Morphology.")
+            ref._require_attached(what)
+            return ref._node_id
+        if isinstance(ref, str):
+            if ref not in self._name_to_id:
+                raise KeyError(ref)
+            return self._name_to_id[ref]
+        raise TypeError(f"{role} must be a branch name or MorphoBranch, got {type(ref).__name__}.")
+
+    def _subtree_node_ids(self, node_id: int) -> list[int]:
+        """Node ids of ``node_id`` and all its descendants, ascending.
+
+        Iterative: a recursive walk overflows on reconstructions a few
+        hundred branches deep. Ascending node id is creation order, which
+        lists every parent before its children.
+        """
+        found = []
+        stack = [node_id]
+        while stack:
+            current = stack.pop()
+            found.append(current)
+            stack.extend(self._nodes[current]._children.values())
+        found.sort()
+        return found
+
+    def _subtree_records(self, node_id: int) -> list[_BranchRecord]:
+        """Read the subtree at ``node_id`` out of the node tables, root first, in node-id order.
+
+        Reads only ``_nodes`` and the nodes' own fields, never a cache, and
+        writes nothing, so the records stay valid while the tree is edited.
+        """
+        records = []
+        for current in self._subtree_node_ids(node_id):
+            node = self._nodes[current]
+            if current == node_id:
+                records.append(_BranchRecord(node._name, node._branch, None, 1.0, 0.0))
+            else:
+                parent_name = self._nodes[node._parent_id]._name
+                records.append(
+                    _BranchRecord(node._name, node._branch, parent_name, float(node._parent_x), float(node._child_x))
+                )
+        return records
+
+    def _register_records(
+        self,
+        records: list[_BranchRecord],
+        *,
+        names: list[str],
+        parent_ids: dict[Optional[str], int],
+    ) -> list[int]:
+        """Add ``records`` as new nodes; the caller has checked everything and holds the gate.
+
+        ``names[i]`` is the name ``records[i]`` gets in this tree.
+        ``parent_ids`` maps a record's ``parent_name`` to the node id of its
+        parent here; it is extended with every node added, so a record's
+        parent may be an earlier record. Each new node takes the next node id
+        and goes last in its parent's children, which keeps every child table
+        in node-id order. Returns the new node ids, in the order of
+        ``records``.
+        """
+        new_ids = []
+        for record, name in zip(records, names):
+            parent_id = parent_ids[record.parent_name]
+            node_id = self._register_node(
+                name=name,
+                branch=record.branch,
+                parent_id=parent_id,
+                parent_x=record.parent_x,
+                child_x=record.child_x,
+            )
+            self._nodes[parent_id]._children[name] = node_id
+            parent_ids[record.name] = node_id
+            new_ids.append(node_id)
+        return new_ids
 
     def _validate_parent_x(self, parent: "MorphoBranch", parent_x: float) -> None:
         _check_parent_x_value(parent_x)
@@ -2578,28 +2785,24 @@ def _parse_attachment_key(key: object) -> tuple[float, float]:
     return parent_x, 0.0
 
 
-def clone_morpho(morpho: "Morphology") -> "Morphology":
-    """Return a structurally identical, editable copy of ``morpho``.
+def _morpho_from_records(records: list[_BranchRecord]) -> "Morphology":
+    """Build a new tree from subtree records (root first, node-id order).
 
-    Preserves branch names, geometry objects, parent/child topology and
-    attachment points, so the copy compares equal to ``morpho``; the copy
-    has fresh views, its own revision, and is never frozen. Branches are
-    re-attached in default order, which lists every parent before its
-    children. Auto-naming counters are not copied.
+    The one copying path: :meth:`Morphology.clone`,
+    :meth:`Morphology.subtree` and :func:`frozen_snapshot` all build through
+    it. Names are checked against the reserved set (a tree unpickled from
+    an older release may hold a name a newer method has since reserved)
+    before the branches are added under one edit gate. The new tree's
+    auto-naming counters are empty.
     """
-    cloned = Morphology.from_root(morpho.root.branch, name=morpho.root.name)
-    for branch in morpho.branches[1:]:
-        parent = branch.parent
-        if parent is None:
-            continue
-        cloned.attach(
-            parent=parent.name,
-            child_branch=branch.branch,
-            child_name=branch.name,
-            parent_x=float(branch.parent_x),
-            child_x=float(branch.child_x),
-        )
-    return cloned
+    root = records[0]
+    tree = Morphology.from_root(root.branch, name=root.name)
+    names = [record.name for record in records[1:]]
+    for name in names:
+        tree._validate_public_name(name)
+    with tree._edit():
+        tree._register_records(records[1:], names=names, parent_ids={root.name: tree._root_id})
+    return tree
 
 
 def frozen_snapshot(morpho: "Morphology") -> "Morphology":
@@ -2609,10 +2812,11 @@ def frozen_snapshot(morpho: "Morphology") -> "Morphology":
     works on it, but every edit -- :meth:`Morphology.attach`,
     :meth:`MorphoBranch.attach`, attribute and subscript attachment --
     raises :class:`RuntimeError` before writing anything. ``morpho`` itself
-    stays editable. ``copy.deepcopy`` or pickling the snapshot gives an
-    ordinary, editable tree.
+    stays editable. Its auto-naming counters are not copied.
+    :meth:`Morphology.clone`, ``copy.deepcopy`` or pickling the snapshot
+    gives an ordinary, editable tree.
     """
-    snapshot = clone_morpho(morpho)
+    snapshot = _morpho_from_records(morpho._subtree_records(morpho._root_id))
     snapshot._frozen = True
     return snapshot
 

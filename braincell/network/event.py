@@ -553,7 +553,12 @@ class VoltageCrossingSource(EventSource):
     cells : Cell or CellView
         Cell endpoints whose voltages are observed.
     location : location expression, optional
-        Morphology locations; defaults to the root midpoint.
+        Morphology locations; defaults to the root midpoint. An expression
+        such as ``at("axon", 0.5)`` follows edits of the Cell's morphology.
+        A resolved ``LocsetMask`` holds default branch indices: they stay
+        valid when branches are appended, but once a branch is removed or a
+        subtree replaced, :attr:`cv_id` raises ``RuntimeError`` rather than
+        watch another branch.
     threshold : brainunit.Quantity, optional
         Explicit voltage threshold, or the owning Cell's V_th when omitted.
     direction : str, optional
@@ -577,6 +582,7 @@ class VoltageCrossingSource(EventSource):
         "_location_indices",
         "_cv_ids",
         "_grid_generation",
+        "_index_basis",
         "spk_fun",
         "_training_id",
     )
@@ -653,6 +659,10 @@ class VoltageCrossingSource(EventSource):
         self._location_indices = np.tile(np.arange(n_location, dtype=np.int64), n_population)
         self._cv_ids = np.tile(location_cv_ids, n_population)
         self._grid_generation = root._view_generation
+        # A resolved mask holds default branch indices of the Cell's tree at
+        # this revision; an expression is evaluated again on every refresh.
+        morpho = root.morpho
+        self._index_basis = None if hasattr(location, "evaluate") else (morpho, morpho.revision)
 
     @property
     def size(self) -> int:
@@ -687,6 +697,14 @@ class VoltageCrossingSource(EventSource):
         # A detector is a continuous location declaration, not a saved CV View.
         _ = self.cells._discretization
         if self._grid_generation != self.cells._view_generation:
+            basis, morpho = self._index_basis, self.cells.morpho
+            if basis is not None and basis[0] is morpho and morpho._reindexed_after(basis[1]):
+                raise RuntimeError(
+                    f"VoltageCrossingSource location is a resolved {type(self.location).__name__}, whose branch "
+                    f"indices are those of morphology revision {basis[1]}; a branch has since been removed or "
+                    "replaced, so they no longer name the same branches. Recreate the detector with a location "
+                    'expression such as at("axon", 0.5).'
+                )
             cv_ids = _resolve_cell_location_cvs(self.cells, self.location)
             n_location = int(np.max(self._location_indices)) + 1
             if len(cv_ids) != n_location:

@@ -37,6 +37,7 @@ from braincell.network.event import (
     _resolve_cell_location_cv,
 )
 from braincell.filter import RootLocation, at
+from braincell.morph._testing import make_tree_u, simulate_remove_leaf
 
 
 def _two_cv_population(size=2):
@@ -525,6 +526,59 @@ class EventSourceTest(unittest.TestCase):
         np.testing.assert_array_equal(source.source_id, [1])
         with self.assertRaisesRegex(RuntimeError, "init_state"):
             source.owner.current_event_count(source.source_id)
+
+
+class VoltageCrossingIndexHeldLocationTest(unittest.TestCase):
+    """A detector located by a resolved mask raises once a removal shifts its indices.
+
+    Tree U: soma 0, dend 1, axon 2, apical 3, one CV per branch. Removing
+    ``dend`` puts apical on index 2, so the axon mask ``(2, 0.5)`` would
+    silently watch apical's CV.
+    """
+
+    def test_a_mask_location_raises_at_the_next_cv_read_after_a_removal(self) -> None:
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        detector = VoltageCrossingSource(cell, location=at("axon", 0.5).evaluate(morpho))
+        np.testing.assert_array_equal(detector.cv_id, [2])
+
+        simulate_remove_leaf(morpho, "dend")
+
+        pattern = r"VoltageCrossingSource location .*LocsetMask.*revision \d+.*at\(\"axon\", 0\.5\)"
+        with self.assertRaisesRegex(RuntimeError, pattern):
+            detector.cv_id
+        with self.assertRaisesRegex(RuntimeError, pattern):
+            detector.cv_id
+
+    def test_an_expression_location_follows_a_removal(self) -> None:
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        detector = VoltageCrossingSource(cell, location=at("axon", 0.5))
+
+        simulate_remove_leaf(morpho, "dend")
+
+        (cv_id,) = detector.cv_id
+        self.assertEqual(morpho.branch(index=cell.cvs[cv_id].branch_id).name, "axon")
+
+    def test_a_mask_location_survives_an_append(self) -> None:
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        detector = VoltageCrossingSource(cell, location=at("axon", 0.5).evaluate(morpho))
+
+        morpho.soma.extra = Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite")
+
+        np.testing.assert_array_equal(detector.cv_id, [2])
+        self.assertEqual(cell.n_cv, 5)
+
+    def test_a_mask_on_a_morphology_reassigned_away_is_not_checked(self) -> None:
+        first = make_tree_u()
+        cell = Cell(first)
+        detector = VoltageCrossingSource(cell, location=at("axon", 0.5).evaluate(first))
+        cell.morphology = make_tree_u()
+
+        simulate_remove_leaf(first, "dend")
+
+        np.testing.assert_array_equal(detector.cv_id, [2])
 
 
 class ResolveCellLocationCvTest(unittest.TestCase):

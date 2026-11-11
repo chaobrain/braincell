@@ -95,6 +95,14 @@ class PlaceRule:
     origin : str or None
         ``<file>:<line>`` of the user code that called ``place``, for error
         messages; ``None`` when unknown. Ignored by equality and hashing.
+    _index_basis : tuple of (Morphology, int) or None
+        For a resolved ``LocsetMask``/``LocsetBatch``, the morphology and
+        revision at ``place`` time. The mask holds default branch indices,
+        which a removal shifts; the Cell compares this revision with the
+        morphology's index watermark before every rebuild. ``None`` for a
+        locset expression, which is evaluated again at each rebuild.
+        Ignored by equality and hashing, so it never changes the
+        discretization key.
     """
 
     locset: LocsetExpr | LocsetMask | LocsetBatch
@@ -103,6 +111,7 @@ class PlaceRule:
     population_indices: tuple[int, ...] | None = None
     aligned: bool = False
     origin: str | None = field(default=None, compare=False, repr=False)
+    _index_basis: tuple[Morphology, int] | None = field(default=None, compare=False, repr=False)
 
 
 def caller_origin() -> str | None:
@@ -256,6 +265,7 @@ def normalize_place_rule(
     *,
     population_indices: tuple[int, ...] | None = None,
     aligned: bool = False,
+    morpho: Morphology | None = None,
 ) -> PlaceRule:
     """Normalize one ``Cell.place(...)`` call into a place rule.
 
@@ -265,6 +275,14 @@ def normalize_place_rule(
         Location expression being targeted.
     mechanisms : tuple of object
         Candidate point-mechanism declarations.
+    population_indices : tuple of int or None, optional
+        Population members the rule applies to; ``None`` for all.
+    aligned : bool, optional
+        Whether ``locset`` is a :class:`LocsetBatch` with one row per member.
+    morpho : Morphology or None, optional
+        The Cell's morphology at declaration time. When given and
+        ``locset`` is a resolved mask, the rule records it with its current
+        revision (``PlaceRule._index_basis``).
 
     Returns
     -------
@@ -295,6 +313,9 @@ def normalize_place_rule(
         if not isinstance(mechanism, Point):
             raise TypeError(f"Cell.place(...) mechanisms must be Point instances, got {type(mechanism).__name__!s}.")
         normalized.append(mechanism)
+    index_basis = None
+    if morpho is not None and isinstance(locset, (LocsetMask, LocsetBatch)):
+        index_basis = (morpho, morpho.revision)
     return PlaceRule(
         locset=locset,
         mechanisms=tuple(normalized),
@@ -302,6 +323,7 @@ def normalize_place_rule(
         population_indices=population_indices,
         aligned=aligned,
         origin=caller_origin(),
+        _index_basis=index_basis,
     )
 
 

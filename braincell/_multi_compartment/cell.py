@@ -78,7 +78,7 @@ from braincell._discretization.mechanism import (
     normalize_paint_rules,
     normalize_place_rule,
 )
-from braincell._discretization.policy import CVPerBranch, CVPolicy, Lumped
+from braincell._discretization.policy import CompositeByTypePolicy, CVPerBranch, CVPerBranchList, CVPolicy, Lumped
 from braincell._discretization.base import (
     CV,
     CVTree,
@@ -1130,6 +1130,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._discretization_policy: CVPolicy = CVPerBranch() if cv_policy is None else cv_policy
         if not isinstance(self._discretization_policy, CVPolicy):
             raise TypeError(f"cv_policy must be CVPolicy, got {type(self._discretization_policy).__name__!s}.")
+        self._cv_policy_index_basis = _cv_policy_index_basis(self._discretization_policy, morpho)
 
         self._paint_rules: tuple[PaintRule, ...] = default_paint_rules()
         self._place_rules: tuple[PlaceRule, ...] = ()
@@ -1284,12 +1285,13 @@ class Cell(_CellFacade, HHTypedNeuron):
         if lumped:
             self._raise_if_lumped_unsupported_declarations()
         solver = _resolve_cell_solver(self._solver_declaration, lumped=lumped)
-        previous = self._discretization_policy
+        previous = self._discretization_policy, self._cv_policy_index_basis
         self._discretization_policy = value
+        self._cv_policy_index_basis = _cv_policy_index_basis(value, self._morpho)
         try:
             self.discretize()
         except Exception:
-            self._discretization_policy = previous
+            self._discretization_policy, self._cv_policy_index_basis = previous
             raise
         self._solver_name, self._solver_fn = solver
         self._run_loop_cache.clear()
@@ -1521,6 +1523,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                     mechanisms,
                     population_indices=normalized_indices,
                     aligned=aligned,
+                    morpho=self._morpho,
                 ),
             ),
         )
@@ -1551,6 +1554,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                     row_mechanisms,
                     population_indices=(int(population_index),),
                     aligned=False,
+                    morpho=self._morpho,
                 )
             )
         previous_rules = self._place_rules
@@ -1723,9 +1727,28 @@ class Cell(_CellFacade, HHTypedNeuron):
         NotImplementedError
             On a lumped cell, for a synapse or any point mechanism other than
             a current clamp.
+        RuntimeError
+            If an earlier declaration holds branch indices that an edit has
+            since shifted (see Notes).
+
+        Notes
+        -----
+        A resolved :class:`~braincell.filter.LocsetMask` or
+        :class:`~braincell.filter.LocsetBatch` holds the default branch
+        indices of the morphology as it is at this call. They stay valid
+        when branches are appended or replaced in place; once a branch is
+        removed or a subtree replaced, the next rebuild (the first grid read,
+        or ``init_state``) raises ``RuntimeError`` rather than place the
+        mechanisms on other branches. A location expression such as
+        ``at("axon", 0.5)`` is evaluated again at every rebuild and follows
+        the edit.
         """
         self._raise_if_initialized("place()")
+        # A user-supplied mask holds branch indices the Cell must watch; the
+        # lumped default below is the Cell's own single CV midpoint.
+        index_morpho = self._morpho
         if locset is None or isinstance(locset, Point):
+            index_morpho = None
             mechanisms = (() if locset is None else (locset,)) + tuple(mechanisms)
             if not self._is_lumped:
                 raise TypeError(
@@ -1768,6 +1791,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                     mechanisms,
                     population_indices=population_indices,
                     aligned=aligned,
+                    morpho=index_morpho,
                 ),
             ),
         )
@@ -1881,8 +1905,14 @@ class Cell(_CellFacade, HHTypedNeuron):
         ------
         RuntimeError
             If already initialized. Call ``reset()`` before editing declarations.
+            Also if a declaration holding branch indices -- a resolved
+            ``LocsetMask``/``LocsetBatch`` given to :meth:`place`, or a
+            :class:`~braincell.CVPerBranchList` policy -- was made before an
+            edit of this morphology that shifted those indices (a branch
+            removal or subtree replacement).
         """
         self._raise_if_initialized("discretize()")
+        self._raise_if_branch_indices_moved()
         discretization = build_discretization(
             self._morpho,
             policy=self._discretization_policy,
@@ -1894,6 +1924,42 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._discretization_cache_key = self._discretization_key()
         self._view_generation += 1
         return self
+
+    def _raise_if_branch_indices_moved(self) -> None:
+        """Refuse to rebuild from branch indices that an edit has since shifted.
+
+        A ``LocsetMask``/``LocsetBatch`` place rule and a policy listing CV
+        counts per branch (:class:`CVPerBranchList`) hold default branch
+        indices of ``self._morpho`` at the revision they were declared.
+        Appending a branch, or replacing or transforming one in place, keeps
+        every existing index; removing a branch or replacing a subtree moves
+        the morphology's index watermark past that revision, and replaying
+        the integers would put the declaration on other branches without a
+        word. Declarations made on another morphology object are not
+        checked.
+
+        Raises
+        ------
+        RuntimeError
+            Naming the first such declaration.
+        """
+        morpho = self._morpho
+        for rule in self._place_rules:
+            if _branch_indices_moved(rule._index_basis, morpho):
+                where = "" if rule.origin is None else f" at {rule.origin}"
+                raise RuntimeError(
+                    f"Cell.place(...){where} was given a resolved {type(rule.locset).__name__}, whose branch "
+                    f"indices are those of morphology revision {rule._index_basis[1]}; a branch has since been "
+                    "removed or replaced, so they no longer name the same branches. Place a location expression "
+                    'such as at("axon", 0.5) instead of an evaluated mask, on a newly declared Cell.'
+                )
+        if _branch_indices_moved(self._cv_policy_index_basis, morpho):
+            raise RuntimeError(
+                f"cv_policy {self._discretization_policy!r} lists CV counts by default branch index, as of "
+                f"morphology revision {self._cv_policy_index_basis[1]}; a branch has since been removed or "
+                "replaced, so the counts no longer match their branches. Assign cell.cv_policy again for the "
+                "current branches."
+            )
 
     def _check_view_generation(self, generation: int) -> None:
         if not self._initialized:
@@ -3973,6 +4039,27 @@ MultiCompartment = Cell
 
 # ----------------------------------------------------------------------
 # Helpers
+
+
+def _branch_indices_moved(basis: tuple[Morphology, int] | None, morpho: Morphology) -> bool:
+    """Whether indices declared on ``basis = (tree, revision)`` no longer hold for ``morpho``."""
+    return basis is not None and basis[0] is morpho and morpho._reindexed_after(basis[1])
+
+
+def _lists_branch_indices(policy: CVPolicy) -> bool:
+    """Whether ``policy`` gives CV counts by default branch index, directly or in a composite."""
+    if isinstance(policy, CVPerBranchList):
+        return True
+    if isinstance(policy, CompositeByTypePolicy):
+        return _lists_branch_indices(policy.default_policy) or any(
+            _lists_branch_indices(rule.policy) for rule in policy.rules
+        )
+    return False
+
+
+def _cv_policy_index_basis(policy: CVPolicy, morpho: Morphology) -> tuple[Morphology, int] | None:
+    """``(morpho, revision)`` when ``policy`` holds branch indices, else ``None``."""
+    return (morpho, morpho.revision) if _lists_branch_indices(policy) else None
 
 
 def _is_per_cell_locset_sequence(value) -> bool:

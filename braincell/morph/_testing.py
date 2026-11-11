@@ -67,6 +67,7 @@ __all__ = [
     "make_soma_dend_tree",
     "make_tree_s",
     "make_tree_t",
+    "make_tree_u",
     "morph_fingerprint",
     "simulate_remove_leaf",
     "simulate_replace_geometry",
@@ -370,6 +371,25 @@ def make_tree_s() -> Morphology:
         child_name="axon",
         parent_x=0.0,
     )
+    return tree
+
+
+def make_tree_u() -> Morphology:
+    """Four length-only branches on a soma, for declarations that hold branch indices.
+
+    ``soma`` 20 um, radius 5 um; then ``dend`` 100 um (basal), ``axon``
+    30 um (radius 0.5 um) and ``apical`` 80 um, all radius 1 um unless
+    stated and all on the soma's distal end. Default indices are soma 0,
+    dend 1, axon 2, apical 3, so removing the leaf ``dend`` moves ``axon``
+    to 1 and puts ``apical`` on 2: an index held from before the removal
+    then names the wrong branch rather than a missing one.
+    """
+    tree = Morphology.from_root(
+        Branch.from_lengths(lengths=[20.0] * u.um, radii=[5.0, 5.0] * u.um, type="soma"), name="soma"
+    )
+    tree.soma.dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite")
+    tree.soma.axon = Branch.from_lengths(lengths=[30.0] * u.um, radii=[0.5, 0.5] * u.um, type="axon")
+    tree.soma.apical = Branch.from_lengths(lengths=[80.0] * u.um, radii=[1.0, 1.0] * u.um, type="apical_dendrite")
     return tree
 
 

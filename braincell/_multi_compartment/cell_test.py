@@ -29,7 +29,10 @@ import braincell
 import braincell.mech as mech
 from braincell import (
     Branch,
+    CompositeByTypePolicy,
     CVPerBranch,
+    CVPerBranchList,
+    CVPolicyByTypeRule,
     Cell,
     CellView,
     Channel,
@@ -49,7 +52,11 @@ from braincell.morph._testing import (
     SABOTAGE_CASES,
     EditCase,
     assert_layer_fresh,
+    cold_rebuild,
     make_tree_s,
+    make_tree_t,
+    make_tree_u,
+    simulate_remove_leaf,
     simulate_replace_geometry,
     stretched,
 )
@@ -615,6 +622,266 @@ class CellDeclarationEditTableTest(unittest.TestCase):
         np.testing.assert_allclose(total_cv_length(), 150.0, rtol=1e-12)
         simulate_replace_geometry(morpho, "dend", stretched(morpho.dend.branch))
         np.testing.assert_allclose(total_cv_length(), 250.0, rtol=1e-12)
+
+
+def _index_probe_synapse():
+    return mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms, e=0.0 * u.mV)
+
+
+def _extra_branch() -> Branch:
+    return Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite")
+
+
+def _placed_branches(cell: Cell) -> list:
+    return [(p.branch_id, cell.morpho.branch(index=p.branch_id).name) for p in cell.point_placements]
+
+
+_MASK_PLACE_STALE = r"Cell\.place\(\.\.\.\) at cell_test\.py:\d+ .*LocsetMask.*revision \d+.*at\(\"axon\", 0\.5\)"
+_BATCH_PLACE_STALE = r"Cell\.place\(\.\.\.\) at cell_test\.py:\d+ .*LocsetBatch"
+_CV_LIST_STALE = r"cv_policy CVPerBranchList\(cv_per_branch=\(1, 2, 1, 1\)\) .*default branch index"
+
+
+class IndexHeldDeclarationTest(unittest.TestCase):
+    """A declaration that holds branch indices raises once a removal has shifted them.
+
+    Tree U: soma 0, dend 1, axon 2, apical 3. Removing ``dend`` moves axon to
+    1 and apical to 2, so an index 2 held from before now names apical.
+    """
+
+    def test_a_mask_placement_raises_at_the_first_grid_read_after_a_removal(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
+
+        simulate_remove_leaf(morpho, "dend")
+
+        with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
+            cell.n_cv
+        # The stale grid is never served instead: every later read raises too.
+        with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
+            cell.point_placements
+
+    def test_a_mask_placement_raises_at_init_state_after_a_removal(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
+
+        simulate_remove_leaf(morpho, "dend")
+
+        with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
+            cell.init_state()
+        self.assertFalse(cell._initialized)
+
+    def test_an_expression_placement_follows_a_removal(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.place(at("axon", 0.5), _index_probe_synapse())
+
+        simulate_remove_leaf(morpho, "dend")
+
+        self.assertEqual(_placed_branches(cell), [(1, "axon")])
+
+    def test_a_mask_placement_survives_an_append(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
+
+        morpho.soma.extra = _extra_branch()
+
+        self.assertEqual(cell.n_cv, 5)
+        self.assertEqual(_placed_branches(cell), [(2, "axon")])
+
+    def test_a_mask_placement_survives_an_in_place_replacement(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
+
+        simulate_replace_geometry(
+            morpho,
+            "dend",
+            Branch.from_lengths(lengths=[200.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite"),
+        )
+
+        self.assertEqual(_placed_branches(cell), [(2, "axon")])
+
+    def test_an_aligned_batch_raises_after_a_removal(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho, pop_size=2)
+        batch = LocsetBatch.from_columns(np.asarray([[2], [3]], dtype=np.int64), np.asarray([[0.5], [0.5]]))
+        cell.place(batch, _index_probe_synapse())
+
+        simulate_remove_leaf(morpho, "dend")
+
+        with self.assertRaisesRegex(RuntimeError, _BATCH_PLACE_STALE):
+            cell.n_cv
+
+    def test_per_member_masks_raise_after_a_removal(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho, pop_size=2)
+        mask = at("axon", 0.5).evaluate(morpho)
+        cell.place([mask, at("apical", 0.5)], _index_probe_synapse())
+
+        simulate_remove_leaf(morpho, "dend")
+
+        with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
+            cell.n_cv
+
+    def test_a_population_view_mask_raises_after_a_removal(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho, pop_size=2)
+        cell[[0]].place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
+
+        simulate_remove_leaf(morpho, "dend")
+
+        with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
+            cell.n_cv
+
+    def test_a_location_view_mask_raises_after_a_removal(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.loc(at("axon", 0.5).evaluate(morpho)).place(_index_probe_synapse())
+
+        simulate_remove_leaf(morpho, "dend")
+
+        with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
+            cell.n_cv
+
+    def test_a_declaration_after_the_removal_is_rejected_and_rolled_back(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
+        rules = cell.place_rules
+
+        simulate_remove_leaf(morpho, "dend")
+
+        with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
+            cell.place(at("apical", 0.5), _index_probe_synapse())
+        self.assertEqual(cell.place_rules, rules)
+
+    def test_a_mask_on_a_morphology_reassigned_away_is_not_checked(self):
+        first = make_tree_u()
+        cell = Cell(first)
+        cell.place(at("axon", 0.5).evaluate(first), _index_probe_synapse())
+        cell.morphology = make_tree_u()
+
+        simulate_remove_leaf(first, "dend")
+
+        self.assertEqual(_placed_branches(cell), [(2, "axon")])
+
+    def test_a_mask_placed_after_a_removal_is_valid(self):
+        # The recorded revision is the one at place(): a mask resolved on
+        # the tree as it now is holds current indices.
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        simulate_remove_leaf(morpho, "dend")
+
+        cell.place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
+
+        self.assertEqual(_placed_branches(cell), [(1, "axon")])
+
+    def test_cv_per_branch_list_raises_after_a_removal_and_an_append(self):
+        # Same branch count as declared, so the length check cannot see it:
+        # replaying (1, 2, 1, 1) would give dend's 2 CVs to the axon.
+        morpho = make_tree_u()
+        cell = Cell(morpho, cv_policy=CVPerBranchList((1, 2, 1, 1)))
+
+        simulate_remove_leaf(morpho, "dend")
+        morpho.soma.extra = _extra_branch()
+
+        with self.assertRaisesRegex(RuntimeError, _CV_LIST_STALE):
+            cell.cvs
+
+    def test_cv_per_branch_list_assigned_later_is_checked_too(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.cv_policy = CVPerBranchList((1, 2, 1, 1))
+
+        simulate_remove_leaf(morpho, "dend")
+        morpho.soma.extra = _extra_branch()
+
+        with self.assertRaisesRegex(RuntimeError, _CV_LIST_STALE):
+            cell.n_cv
+
+    def test_cv_per_branch_list_can_be_assigned_again_after_a_removal(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho, cv_policy=CVPerBranchList((1, 2, 1, 1)))
+        simulate_remove_leaf(morpho, "dend")
+
+        cell.cv_policy = CVPerBranchList((1, 2, 1))
+
+        self.assertEqual([cv.branch_id for cv in cell.cvs], [0, 1, 1, 2])
+
+    def test_a_failed_cv_policy_assignment_keeps_the_previous_basis(self):
+        # A rejected assignment rolls back the policy, and with it the
+        # revision its indices were declared at.
+        morpho = make_tree_u()
+        cell = Cell(morpho, cv_policy=CVPerBranchList((1, 2, 1, 1)))
+        simulate_remove_leaf(morpho, "dend")
+
+        with self.assertRaisesRegex(ValueError, "cv_per_branch length must match"):
+            cell.cv_policy = CVPerBranchList((1, 2, 1, 1))
+        with self.assertRaisesRegex(RuntimeError, _CV_LIST_STALE):
+            cell.n_cv
+
+    def test_cv_per_branch_list_survives_an_in_place_replacement(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho, cv_policy=CVPerBranchList((1, 2, 1, 1)))
+
+        simulate_replace_geometry(
+            morpho,
+            "dend",
+            Branch.from_lengths(lengths=[200.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite"),
+        )
+
+        self.assertEqual([cv.branch_id for cv in cell.cvs], [0, 1, 1, 2, 3])
+
+    def test_cv_per_branch_list_inside_a_composite_raises_after_a_removal(self):
+        morpho = make_tree_u()
+        policy = CompositeByTypePolicy(
+            rules=(CVPolicyByTypeRule(("apical_dendrite",), CVPerBranchList((1, 1, 1, 3))),),
+            default_policy=CVPerBranch(),
+        )
+        cell = Cell(morpho, cv_policy=policy)
+
+        simulate_remove_leaf(morpho, "dend")
+        morpho.soma.extra = _extra_branch()
+
+        with self.assertRaisesRegex(RuntimeError, r"cv_policy CompositeByTypePolicy\(.*default branch index"):
+            cell.n_cv
+
+    def test_other_policies_follow_a_removal(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho, cv_policy=MaxCVLen(40.0 * u.um))
+        cell.place(at("axon", 0.5), _index_probe_synapse())
+
+        simulate_remove_leaf(morpho, "dend")
+
+        fresh = Cell(cold_rebuild(morpho), cv_policy=MaxCVLen(40.0 * u.um))
+        fresh.place(at("axon", 0.5), _index_probe_synapse())
+        self.assertEqual(_declaration_fingerprint(cell), _declaration_fingerprint(fresh))
+
+    def test_every_edit_case_keeps_or_rejects_a_mask_placement(self):
+        # Rows that keep every default index keep the mask valid: the Cell
+        # matches one declared with the same mask on the cold rebuild. Rows
+        # that move indices raise at the next rebuild.
+        def declare(morpho: Morphology, mask) -> Cell:
+            cell = Cell(morpho, cv_policy=MaxCVLen(40.0 * u.um))
+            cell.place(mask, _index_probe_synapse())
+            return cell
+
+        for case in EDIT_CASES:
+            with self.subTest(case.name):
+                morpho = make_tree_t()
+                mask = (at("axon", 0.5) + at("d1", 1.0)).evaluate(morpho)
+                cell = declare(morpho, mask)
+                _declaration_fingerprint(cell)
+                case.edit(morpho)
+                if case.reindex:
+                    with self.assertRaisesRegex(RuntimeError, r"LocsetMask.*no longer name the same branches"):
+                        cell.n_cv
+                else:
+                    expected = _declaration_fingerprint(declare(cold_rebuild(morpho), mask))
+                    self.assertEqual(_declaration_fingerprint(cell), expected)
 
 
 class TestCellLifecycle(unittest.TestCase):

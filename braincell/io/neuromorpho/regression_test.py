@@ -243,7 +243,9 @@ def check(
             if metric in INTEGER_METRICS:
                 detail = "counts differ"
             else:
-                detail = f"relative difference {abs(braincell_value - reference) / abs(reference):.3e} > {RTOL[metric]:g}"
+                detail = (
+                    f"relative difference {abs(braincell_value - reference) / abs(reference):.3e} > {RTOL[metric]:g}"
+                )
             problems.append(
                 f"{neuron_id} {metric}: BrainCell {braincell_value!r}, NeuroMorpho {reference!r} ({detail})."
             )

@@ -47,6 +47,9 @@ NeuroML2
    :template: classtemplate.rst
 
     NeuroMlReader
+    NeuroMlReport
+    NeuroMlIssue
+    NeuroMlMetadata
 
 
 NeuroMorpho.Org client

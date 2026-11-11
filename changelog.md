@@ -80,6 +80,25 @@
 
 ### New Features
 
+- **NeuroML2 import** (MORPH-6b). `Morphology.from_neuroml(path, *,
+  cell_id=None, return_report=False)` and `braincell.io.NeuroMlReader().read`
+  read the morphology of one NeuroML2 cell; before, `read` raised
+  `NotImplementedError`. Only the `<segment>` geometry and the
+  `<segmentGroup>` membership are read; channels and biophysical properties
+  are skipped and listed in the report. `cell_id` chooses the cell when the
+  document has several, and `<include>` elements are not followed.
+  Consecutive segments of the same type and cable group form one branch (a
+  diameter change at the joint becomes a zero-length segment); a child
+  attached part-way along a segment cuts the branch there; a spherical soma
+  becomes a soma of length and diameter equal to the sphere's diameter.
+  Branches are named after their cable groups. The new report types
+  `NeuroMlReport`, `NeuroMlIssue` and `NeuroMlMetadata` are exported from
+  `braincell.io`; the metadata lists each segment group's segments and
+  where each segment lies on the branches. Malformed input raises
+  `ValueError` naming the element at fault, and documents that declare a DTD
+  or entities are refused. The README, the documentation index and the
+  NeuroML2 page describe the format as supported again, and the NeuroML2
+  page has a runnable example on a cell shipped in `data/morphology/neuroml2/`.
 - **`braincell.filter.EuclideanDistanceRegion(minimum, maximum, closed="both")`
   selects the cable whose straight-line distance from the soma lies in a
   range** (MORPH-8c). It was exported but raised `NotImplementedError`. The

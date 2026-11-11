@@ -20,6 +20,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from braincell.io._testing import FIXTURE_DIR
 from braincell.io.neuroml2.document import parse_document
 from braincell.io.neuroml2.types import NeuroMlIssue, NeuroMlMetadata, NeuroMlReport
 
@@ -500,6 +501,15 @@ class ParseDocumentTest(_DocumentTestCase):
 
         self.assertEqual(len(document.segments), 5001)
         self.assertEqual(document.segments[5000].proximal, (5007.0, 0.0, 0.0, 1.0))
+
+    def test_pyr_4_sym(self) -> None:
+        # libNeuroML's pyramidal cell: 9 segments, 18 groups, of which 9 are cables.
+        document = parse_document(FIXTURE_DIR / "neuroml2" / "pyr_4_sym.cell.nml")
+
+        self.assertEqual((document.cell_id, document.root), ("pyr_4_sym", 0))
+        self.assertEqual((len(document.segments), len(document.segment_groups), len(document.cable_groups)), (9, 18, 9))
+        self.assertEqual(set(document.segment_cables.values()), set(document.cable_groups))
+        self.assertEqual(document.ignored_elements, ("biophysicalProperties", "notes"))
 
 
 class NeuroMlReportTest(unittest.TestCase):

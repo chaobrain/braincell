@@ -14,5 +14,6 @@
 # ==============================================================================
 
 from braincell.io.neuroml2.reader import NeuroMlReader
+from braincell.io.neuroml2.types import NeuroMlIssue, NeuroMlMetadata, NeuroMlReport
 
-__all__ = ["NeuroMlReader"]
+__all__ = ["NeuroMlIssue", "NeuroMlMetadata", "NeuroMlReader", "NeuroMlReport"]

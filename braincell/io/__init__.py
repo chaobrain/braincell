@@ -22,7 +22,7 @@ from braincell.io.checkpoint import (
     save_branch,
     save_morpho,
 )
-from braincell.io.neuroml2 import NeuroMlReader
+from braincell.io.neuroml2 import NeuroMlIssue, NeuroMlMetadata, NeuroMlReader, NeuroMlReport
 from braincell.io.neuromorpho import (
     DEFAULT_USER_CACHE_DIR,
     NeuroMorphoCache,
@@ -55,7 +55,10 @@ __all__ = [
     "CheckpointError",
     "CheckpointVersionError",
     "DEFAULT_USER_CACHE_DIR",
+    "NeuroMlIssue",
+    "NeuroMlMetadata",
     "NeuroMlReader",
+    "NeuroMlReport",
     "NeuroMorphoCache",
     "NeuroMorphoCacheLayout",
     "NeuroMorphoCacheStatus",

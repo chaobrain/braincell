@@ -601,6 +601,57 @@ class Morphology:
         return AscReader().read(path, return_report=return_report)
 
     @classmethod
+    def from_neuroml(cls, path, *, cell_id: str | None = None, return_report: bool = False):
+        """Load the morphology of one cell from a NeuroML2 document.
+
+        Delegates to :class:`~braincell.io.NeuroMlReader`, which reads the
+        ``<segment>`` geometry and ``<segmentGroup>`` membership and skips
+        channels and biophysical properties. ``<include>`` elements are not
+        followed.
+
+        Parameters
+        ----------
+        path : str or Path
+            Path to the NeuroML2 document, such as a ``.cell.nml`` file.
+        cell_id : str or None
+            Id of the ``<cell>`` to read. Required when the document has more
+            than one cell.
+        return_report : bool
+            If ``True``, return a ``(Morphology, NeuroMlReport)`` tuple instead
+            of just the morphology.
+
+        Returns
+        -------
+        Morphology or (Morphology, NeuroMlReport)
+            The loaded morphology, optionally with a report whose metadata
+            maps segments and segment groups onto the branches.
+
+        Raises
+        ------
+        ValueError
+            If the document is not well-formed NeuroML2 or its segments do
+            not form one valid tree.
+
+        See Also
+        --------
+        from_swc : Load from SWC format.
+        from_asc : Load from Neurolucida ASC format.
+
+        Examples
+        --------
+
+        .. code-block:: python
+
+            >>> from braincell import Morphology
+            >>> morph = Morphology.from_neuroml("cell.nml")  # doctest: +SKIP
+            >>> morph = Morphology.from_neuroml("network.nml", cell_id="pyr")  # doctest: +SKIP
+        """
+
+        from braincell.io.neuroml2 import NeuroMlReader
+
+        return NeuroMlReader().read(path, cell_id=cell_id, return_report=return_report)
+
+    @classmethod
     def from_neuromorpho(
         cls,
         neuron_id,

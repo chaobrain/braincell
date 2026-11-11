@@ -23,8 +23,8 @@ common entry points are the ``Morphology.from_*`` constructors.
      - ``Morphology.from_asc``
      - MicroBrightField / Neurolucida ASCII
    * - :doc:`NeuroML2 <neuroml2>`
-     - ``NeuroMlReader`` (placeholder)
-     - planned, not yet supported: ``read`` raises ``NotImplementedError``
+     - ``Morphology.from_neuroml`` / ``io.NeuroMlReader``
+     - the morphology of one ``<cell>``; channels are skipped
    * - :doc:`NeuroMorpho.Org <neuromorpho>`
      - ``Morphology.from_neuromorpho`` / ``io.load_neuromorpho``
      - download + cache directly from the repository

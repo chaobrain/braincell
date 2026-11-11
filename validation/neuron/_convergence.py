@@ -20,9 +20,11 @@ of a channel_no_conc Cell, replayed with :mod:`validation.neuron._clamp`.
 ``vc_steps`` and the relaxation protocol (independent states start at 0,
 -80 mV for 35 ms) run at each of :data:`DTS_MS` against ``exp_euler`` at
 0.025 ms, exact while the voltage is constant over a step (HH gates, always
-``ind_exp_euler`` in a Cell, are switched to ``exp_euler`` for it).
-``vc_ramp`` has no reference: :data:`RAMP_DTS_MS` give two successive
-differences and their Richardson order. ``e_I`` (normalized by the largest
+``ind_exp_euler`` in a Cell, are switched to ``exp_euler`` for it; a
+channel without states has nothing to switch). ``vc_ramp`` has no
+reference: :data:`RAMP_DTS_MS` (or finer steps, for a channel still
+pre-asymptotic there) give two successive differences and their Richardson
+order. ``e_I`` (normalized by the largest
 reference current) and ``e_s`` are compared every :data:`SAMPLE_MS` ms.
 :func:`classify` sorts the step result into :data:`EXACT`,
 :data:`CONVERGENT`, :data:`ABOVE_GUIDE_LINE` or :data:`NOT_CONVERGENT`.
@@ -129,17 +131,22 @@ def _independent_state_names(channel) -> tuple[str, ...]:
     return ()
 
 
-def _zero_channel_states(cell, cls) -> int:
-    """Set every independent state of the ``cls`` channels of ``cell`` to 0; return how many were set."""
-    count = 0
+def _channel_states(cell, cls) -> list:
+    """The independent states of the ``cls`` channels of ``cell``."""
+    states = []
     for node in cell.nodes().values():
         channel = getattr(node, "_channel", node)
         if isinstance(channel, cls):
-            for name in _independent_state_names(channel):
-                state = getattr(channel, name)
-                state.value = state.value * 0.0
-                count += 1
-    return count
+            states += [getattr(channel, name) for name in _independent_state_names(channel)]
+    return states
+
+
+def _zero_channel_states(cell, cls) -> int:
+    """Set every independent state of the ``cls`` channels of ``cell`` to 0; return how many were set."""
+    states = _channel_states(cell, cls)
+    for state in states:
+        state.value = state.value * 0.0
+    return len(states)
 
 
 def simulate(
@@ -156,7 +163,9 @@ def simulate(
 
     ``subsolver`` and ``substeps`` are the Cell's (Markov channels);
     ``gate_solver`` replaces ``ind_exp_euler`` for the HH gates.
-    ``zero_states`` starts the channel's independent states at 0. Returns
+    ``zero_states`` starts the channel's independent states at 0. A channel
+    without states (a leak) ignores ``gate_solver``: there is nothing to
+    integrate, and ``exp_euler`` rejects an empty state set. Returns
     ``"current"`` (mA/cm^2) and ``"states"`` (by name), each of shape
     ``(n_sample, n_command)`` at ``t = SAMPLE_MS, 2 SAMPLE_MS, ...``.
     """
@@ -177,6 +186,8 @@ def simulate(
     )
     if zero_states and not _zero_channel_states(cell, channel_class(case)):
         raise ValueError(f"{case.mapping_spec.braincell.class_name} has no independent state to start at 0.")
+    if gate_solver is not None and not _channel_states(cell, channel_class(case)):
+        gate_solver = None
     patch = (
         contextlib.nullcontext()
         if gate_solver is None
@@ -208,11 +219,13 @@ def errors(run: Mapping[str, Any], reference: Mapping[str, Any]) -> dict[str, fl
     """Return ``e_I`` and ``e_s`` of ``run`` against ``reference``.
 
     ``e_I`` is ``None`` when the reference current is 0 throughout (a
-    channel with ``g_max = 0``). A NaN output gives NaN.
+    channel with ``g_max = 0``), ``e_s`` when the channel has no state. A
+    NaN output gives NaN.
     """
     scale = float(np.max(np.abs(reference["current"])))
     current_diff = float(np.max(np.abs(run["current"] - reference["current"])))
-    state_diff = max(float(np.max(np.abs(run["states"][g] - reference["states"][g]))) for g in reference["states"])
+    state_diffs = [np.max(np.abs(run["states"][g] - reference["states"][g])) for g in reference["states"]]
+    state_diff = float(np.max(state_diffs)) if state_diffs else None
     return {"e_I": None if scale == 0.0 else current_diff / scale, "e_s": state_diff}
 
 
@@ -300,13 +313,15 @@ def check_config(
     protocol: str = STEPS,
     dts_ms: Iterable[float] = DTS_MS,
     ramp: bool = True,
+    ramp_dts_ms: Iterable[float] = RAMP_DTS_MS,
 ) -> ConvergenceReport:
     """Measure the ``dt`` convergence of ``config`` on the Cell's path.
 
     The path is the Cell default (HH gates ``ind_exp_euler``; Markov
     channels ``backward_euler`` x 1) unless ``subsolver`` and ``substeps``
     choose the Markov subsolver. ``protocol`` is :data:`STEPS` or
-    :data:`RELAXATION`; ``ramp`` adds the ``vc_ramp`` Richardson differences.
+    :data:`RELAXATION`; ``ramp`` adds the ``vc_ramp`` Richardson differences
+    over ``ramp_dts_ms``.
     """
     if protocol not in (STEPS, RELAXATION):
         raise ValueError(f"protocol must be {STEPS!r} or {RELAXATION!r}, got {protocol!r}.")
@@ -332,14 +347,25 @@ def check_config(
         path = "ind_exp_euler"
     report = ConvergenceReport(config, cls.__name__, path, protocol, errors_by_dt, orders, classification)
     if ramp:
-        report.ramp_differences, report.ramp_orders = ramp_convergence(config, subsolver=subsolver, substeps=substeps)
+        report.ramp_differences, report.ramp_orders = ramp_convergence(
+            config, subsolver=subsolver, substeps=substeps, dts_ms=ramp_dts_ms
+        )
     return report
 
 
-def ramp_convergence(config: str, *, subsolver: str | None = None, substeps: int | None = None):
-    """Return the successive differences over :data:`RAMP_DTS_MS` and their Richardson orders."""
+def ramp_convergence(
+    config: str,
+    *,
+    subsolver: str | None = None,
+    substeps: int | None = None,
+    dts_ms: Iterable[float] = RAMP_DTS_MS,
+):
+    """Return the successive differences over ``dts_ms`` (three, each half the last) and their Richardson orders."""
+    dts_ms = tuple(float(dt) for dt in dts_ms)
+    if len(dts_ms) != 3 or any(abs(fine * 2.0 - coarse) > 1e-15 for coarse, fine in zip(dts_ms, dts_ms[1:])):
+        raise ValueError(f"the ramp needs three time steps, each half the last, got {dts_ms!r}.")
     case, spec = load_case(config, RAMP)
-    runs = [simulate(case, spec, dt, subsolver=subsolver, substeps=substeps) for dt in RAMP_DTS_MS]
+    runs = [simulate(case, spec, dt, subsolver=subsolver, substeps=substeps) for dt in dts_ms]
     differences = [errors(coarse, fine) for coarse, fine in zip(runs, runs[1:])]
     orders = {}
     for metric in RAMP_ORDER_WINDOWS:

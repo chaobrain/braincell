@@ -300,9 +300,48 @@ class StiffnessAndSingularityTest(unittest.TestCase):
         self.assertEqual(checked, 3)
 
 
+class StatelessChannelTest(unittest.TestCase):
+    CL = "testing/cl_leak_testing"
+
+    def test_a_stateless_channel_is_exact_with_no_state_error(self):
+        report = cv.check_config(self.CL)
+        table.assert_matches(report, _config_entry(self.CL))
+        self.assertTrue(report.ramp_ok, report.ramp_differences)
+        for values in (*report.errors.values(), *report.ramp_differences):
+            self.assertIsNone(values["e_s"])
+            self.assertIsNotNone(values["e_I"])
+
+    def test_exp_euler_rejects_an_empty_state_set(self):
+        # Why the gate solver is skipped for a channel without states.
+        case, spec = cv.load_case(self.CL, cv.STEPS)
+        with mock.patch.object(cv, "_channel_states", lambda cell, cls: [None]):
+            with self.assertRaisesRegex(ValueError, "at least one array"):
+                cv.simulate(case, spec, 0.025, gate_solver="exp_euler")
+
+
 class CoverageTest(unittest.TestCase):
     def test_the_table_covers_its_scope(self):
         table.assert_covered()
+        # Every configuration and every registered channel class.
+        self.assertEqual(table.COVERAGE_SCOPE, {"configs": None, "classes": None})
+        self.assertEqual({entry.config for entry in table.CONFIGS}, set(table.config_names()))
+        self.assertEqual({entry.name for entry in table.CLASSES}, set(table.class_names()))
+        self.assertGreaterEqual(len(table.CLASSES), 113)
+        self.assertGreaterEqual(len(table.CONFIGS), 97)
+
+    def test_a_new_channel_class_or_configuration_fails(self):
+        from braincell.mech import get_registry, register_channel
+
+        name = "ConvergenceCoverageProbe"
+        register_channel(name)(type(name, (_class("K_Kv_test"),), {}))
+        try:
+            problems = table.coverage_problems()
+        finally:
+            get_registry().unregister("channel", name)
+        self.assertEqual(problems, [f"classes: {name} is not in the table"])
+        names = table.config_names()
+        with mock.patch.object(table, "config_names", lambda: (*names, "testing/new_probe")):
+            self.assertEqual(table.coverage_problems(), ["configs: testing/new_probe is not in the table"])
 
     def test_a_missing_or_unknown_name_fails(self):
         without_nav = [entry for entry in table.CONFIGS if entry.config != NAV]
@@ -328,6 +367,10 @@ class CoverageTest(unittest.TestCase):
             table.ConfigEntry(NAV, cv.CONVERGENT, limits={"e_I": 1e-11})
         with self.assertRaises(ValueError):
             table.ConfigEntry(NAV, cv.CONVERGENT, protocol="vc_ramp", limits={"e_I": 1e-3})
+        with self.assertRaises(ValueError):
+            table.ConfigEntry(KV, cv.EXACT, ramp_dts_ms=(0.1, 0.05, 0.025))
+        with self.assertRaisesRegex(ValueError, "each half the last"):
+            cv.ramp_convergence(KV, dts_ms=(0.01, 0.004, 0.002))
 
 
 if __name__ == "__main__":

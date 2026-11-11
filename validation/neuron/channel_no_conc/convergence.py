@@ -22,7 +22,9 @@ limits are in ``tolerances.py`` and the two tables do not read each other.
   default path under ``vc_steps`` (or the relaxation protocol) and, for a
   convergent path, the limits of ``e_I`` and ``e_s`` at ``dt = 0.025 ms``:
   about 1.5-2x the measured value, rounded up to 1, 2 or 5 times a power of
-  ten. An exact path is asserted at 1e-10 for every ``dt``.
+  ten. An exact path is asserted at 1e-10 for every ``dt``. ``ramp_dts_ms``
+  replaces ``RAMP_DTS_MS`` for a channel whose ramp is still pre-asymptotic
+  there.
 - :data:`CLASSES`: per channel class, the decade of ``rho_max`` and whether
   the class is stiff at ``dt = 0.025 ms``.
 - :data:`KNOWN_SINGULARITIES`: the classes whose gate values, derivatives or
@@ -30,7 +32,9 @@ limits are in ``tolerances.py`` and the two tables do not read each other.
   removes its entry; any other non-finite value fails.
 
 :data:`COVERAGE_SCOPE` lists the names the tables must cover; ``None``
-covers every registered channel class or every file under ``configs/``.
+covers every registered channel class or every file under ``configs/``, as
+both now do. The ``*_FAMILY_*`` tuples name each family's share, which its
+slow module checks against the channel modules.
 """
 
 from collections.abc import Iterable, Mapping
@@ -50,10 +54,13 @@ class ConfigEntry:
     classification: str
     protocol: str = cv.STEPS
     limits: Mapping[str, float] = field(default_factory=dict)
+    ramp_dts_ms: tuple[float, ...] = cv.RAMP_DTS_MS
 
     def __post_init__(self) -> None:
         if self.protocol not in (cv.STEPS, cv.RELAXATION):
             raise ValueError(f"{self.config}: protocol must be {cv.STEPS!r} or {cv.RELAXATION!r}.")
+        if self.ramp_dts_ms != cv.RAMP_DTS_MS and not max(self.ramp_dts_ms) < min(cv.RAMP_DTS_MS):
+            raise ValueError(f"{self.config}: ramp_dts_ms {self.ramp_dts_ms!r} must be finer than {cv.RAMP_DTS_MS!r}.")
         if self.classification == cv.EXACT:
             if self.limits:
                 raise ValueError(f"{self.config}: an exact path is asserted at 1e-10 and takes no limits.")
@@ -173,6 +180,38 @@ CONFIGS = (
     ConfigEntry("su15_dcn/skdr_su15_dcn", cv.EXACT),
     ConfigEntry("testing/kv_testing", cv.EXACT),
     ConfigEntry("zh19_io/kdr_zh19_io", cv.EXACT),
+    # sodium.py, hyperpolarization_activated.py and leaky.py: HH channels on ind_exp_euler are
+    # exact (<= 1.4e-14 at every dt), IL has no state (e_I 0 at every dt).
+    # Na_HH1952 at 36 degC with temp_ref 6.3 degC (rates x 26, up to 28 /ms): on RAMP_DTS_MS the
+    # e_I Richardson order is 1.37, then 0.43, 0.68, 0.86, 0.93 halving down to 0.00078125 ms.
+    ConfigEntry("builtin/na_hh1952_hh", cv.EXACT, ramp_dts_ms=(0.00625, 0.003125, 0.0015625)),
+    ConfigEntry("builtin/il_pas", cv.EXACT),
+    ConfigEntry("ma20_goc/hcn1_ma20_goc", cv.EXACT),
+    ConfigEntry("ma20_goc/hcn2_ma20_goc", cv.EXACT),
+    # backward_euler x 1, measured 1.957e-01 / 4.213e-02 at 0.025 ms (order 0.94 / 0.95).
+    ConfigEntry("ma20_grc/nafhf_ma20_grc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 5e-1, "e_s": 1e-1}),
+    # backward_euler x 1, measured 1.383e-01 / 3.930e-02 at 0.025 ms (order 0.94 / 0.95).
+    ConfigEntry("ma20_grc/nav_ma20_grc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 5e-1, "e_s": 1e-1}),
+    ConfigEntry("ma24_pc/hcn1_ma24_pc", cv.EXACT),
+    # backward_euler x 1, measured 7.841e-02 / 3.241e-02 at 0.025 ms (order 0.90 / 0.95).
+    ConfigEntry("ma24_pc/nav1p6_ma24_pc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 2e-1, "e_s": 5e-2}),
+    ConfigEntry("ma25_bc/hcn1_ma25_bc", cv.EXACT),
+    # backward_euler x 1, measured 6.998e-02 / 2.993e-02 at 0.025 ms (order 0.89 / 0.95).
+    ConfigEntry("ma25_bc/nav1p1_ma25_bc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 2e-1, "e_s": 5e-2}),
+    # backward_euler x 1, measured 7.841e-02 / 3.241e-02 at 0.025 ms (order 0.90 / 0.95).
+    ConfigEntry("ma25_bc/nav1p6_ma25_bc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 2e-1, "e_s": 5e-2}),
+    ConfigEntry("ri21_sc/hcn1_ri21_sc", cv.EXACT),
+    # backward_euler x 1, measured 6.998e-02 / 2.993e-02 at 0.025 ms (order 0.89 / 0.95).
+    ConfigEntry("ri21_sc/nav1p1_ri21_sc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 2e-1, "e_s": 5e-2}),
+    # backward_euler x 1, measured 7.841e-02 / 3.241e-02 at 0.025 ms (order 0.90 / 0.95).
+    ConfigEntry("ri21_sc/nav1p6_ri21_sc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 2e-1, "e_s": 5e-2}),
+    ConfigEntry("su15_dcn/hcn_su15_dcn", cv.EXACT),
+    ConfigEntry("su15_dcn/naf_su15_dcn", cv.EXACT),
+    ConfigEntry("su15_dcn/nap_su15_dcn", cv.EXACT),
+    ConfigEntry("zh19_io/hcn_zh19_io", cv.EXACT),
+    ConfigEntry("zh19_io/na_zh19_io", cv.EXACT),
+    # chloride.py: Cl_Leak has no state (e_I 0 at every dt).
+    ConfigEntry("testing/cl_leak_testing", cv.EXACT),
 )
 
 CLASSES = (
@@ -269,6 +308,29 @@ CLASSES = (
     ClassEntry("Kv4p3_RI2021_SC", 1, False),  # 34.9 /ms, a gate at -100 mV
     ClassEntry("fKdr_SU2015_DCN", 0, False),  # 9.68 /ms, m gate at +60 mV
     ClassEntry("sKdr_SU2015_DCN", 0, False),  # 6.9 /ms, m gate at +60 mV
+    # sodium.py, hyperpolarization_activated.py and leaky.py (36 degC).
+    ClassEntry("HCN1_MA2020_GoC", -2, False),  # 0.042 /ms, o_fast gate at -100 mV
+    ClassEntry("HCN1_MA2024_PC", 5, True),  # 3.62e5 /ms, h gate at +60 mV
+    ClassEntry("HCN1_MA2025_BC", 5, True),  # 3.62e5 /ms, h gate at +60 mV
+    ClassEntry("HCN1_RI2021_SC", 5, True),  # 3.62e5 /ms, h gate at +60 mV
+    ClassEntry("HCN2_MA2020_GoC", -3, False),  # 0.005 /ms, o_fast gate at -100 mV
+    ClassEntry("HCN_HM1992", 1, False),  # 10.3 /ms, p gate at +60 mV
+    ClassEntry("HCN_SU2015_DCN", -3, False),  # 0.0025 /ms, m gate at -79.25 mV
+    ClassEntry("HCN_ZH2019_IO", 1, False),  # 10.3 /ms, q gate at +60 mV
+    ClassEntry("IL", None, False),  # stateless
+    ClassEntry("NaFHF_MA2020_GrC", 6, True),  # 5.54e6 /ms at +60 mV
+    ClassEntry("NaF_SU2015_DCN", 1, False),  # 39.9 /ms, m gate at -100 mV
+    ClassEntry("NaP_SU2015_DCN", -2, False),  # 0.02 /ms, m gate at -100 mV
+    ClassEntry("Na_Ba2002", 1, False),  # 31 /ms, p gate at +60 mV
+    ClassEntry("Na_HH1952", 1, False),  # 28 /ms, p gate at -100 mV
+    ClassEntry("Na_TM1991", 1, False),  # 35.2 /ms, p gate at +60 mV
+    ClassEntry("Na_ZH2019_IO", 3, True),  # 1e3 /ms, m gate at -99.5 mV
+    ClassEntry("Nav1p1_MA2025_BC", 5, True),  # 2.24e5 /ms at +60 mV
+    ClassEntry("Nav1p1_RI2021_SC", 5, True),  # 2.24e5 /ms at +60 mV
+    ClassEntry("Nav1p6_MA2024_PC", 5, True),  # 1.96e5 /ms at +60 mV
+    ClassEntry("Nav1p6_MA2025_BC", 5, True),  # 1.96e5 /ms at +60 mV
+    ClassEntry("Nav1p6_RI2021_SC", 5, True),  # 1.96e5 /ms at +60 mV
+    ClassEntry("Nav_MA2020_GrC", 6, True),  # 2.84e6 /ms at +60 mV
 )
 
 KNOWN_SINGULARITIES: dict[str, dict[str, tuple[float, ...]]] = {}
@@ -328,10 +390,24 @@ POTASSIUM_FAMILY_CLASSES = (
 )
 """The registered channel classes defined in ``potassium.py`` and ``potassium_sodium.py``."""
 
-COVERAGE_SCOPE = {
-    "configs": ("ma20_goc/nav1p6_ma20_goc", *CALCIUM_FAMILY_CONFIGS, *POTASSIUM_FAMILY_CONFIGS),
-    "classes": ("Nav1p6_MA2020_GoC", *CALCIUM_FAMILY_CLASSES, *POTASSIUM_FAMILY_CLASSES),
-}
+SODIUM_HCN_LEAK_FAMILY_CONFIGS = (
+    "builtin/il_pas", "builtin/na_hh1952_hh", "ma20_goc/hcn1_ma20_goc", "ma20_goc/hcn2_ma20_goc",
+    "ma20_goc/nav1p6_ma20_goc", "ma20_grc/nafhf_ma20_grc", "ma20_grc/nav_ma20_grc", "ma24_pc/hcn1_ma24_pc",
+    "ma24_pc/nav1p6_ma24_pc", "ma25_bc/hcn1_ma25_bc", "ma25_bc/nav1p1_ma25_bc", "ma25_bc/nav1p6_ma25_bc",
+    "ri21_sc/hcn1_ri21_sc", "ri21_sc/nav1p1_ri21_sc", "ri21_sc/nav1p6_ri21_sc", "su15_dcn/hcn_su15_dcn",
+    "su15_dcn/naf_su15_dcn", "su15_dcn/nap_su15_dcn", "zh19_io/hcn_zh19_io", "zh19_io/na_zh19_io",
+)
+"""The configurations of the classes in ``sodium.py``, ``hyperpolarization_activated.py`` and ``leaky.py``."""
+SODIUM_HCN_LEAK_FAMILY_CLASSES = (
+    "HCN1_MA2020_GoC", "HCN1_MA2024_PC", "HCN1_MA2025_BC", "HCN1_RI2021_SC", "HCN2_MA2020_GoC", "HCN_HM1992",
+    "HCN_SU2015_DCN", "HCN_ZH2019_IO", "IL", "NaFHF_MA2020_GrC", "NaF_SU2015_DCN", "NaP_SU2015_DCN", "Na_Ba2002",
+    "Na_HH1952", "Na_TM1991", "Na_ZH2019_IO", "Nav1p1_MA2025_BC", "Nav1p1_RI2021_SC", "Nav1p6_MA2020_GoC",
+    "Nav1p6_MA2024_PC", "Nav1p6_MA2025_BC", "Nav1p6_RI2021_SC", "Nav_MA2020_GrC",
+)
+"""The registered channel classes defined in ``sodium.py``, ``hyperpolarization_activated.py`` and ``leaky.py``."""
+
+COVERAGE_SCOPE: dict[str, tuple[str, ...] | None] = {"configs": None, "classes": None}
+"""Every configuration and every registered channel class must have an entry."""
 
 
 def assert_matches(report: cv.ConvergenceReport, entry: ConfigEntry) -> None:

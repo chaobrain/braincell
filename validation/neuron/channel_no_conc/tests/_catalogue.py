@@ -16,8 +16,8 @@
 """Shared body of the catalogue comparison tests (``test_catalogue_<family>.py``).
 
 A family is a set of registry names. Every configuration of one of its classes
-runs the three current-clamp templates it lists and both voltage-clamp
-templates; the limits come from ``tolerances.TABLE`` (T0 unless an entry
+runs the three current-clamp templates it lists (``test_coverage`` checks
+the list) and both voltage-clamp templates; the limits come from ``tolerances.TABLE`` (T0 unless an entry
 raises them), leaving out the commands listed in ``NON_FINITE_REFERENCE``.
 The family's ``VARIANTS`` run the same five protocols with their channel
 parameters.
@@ -97,8 +97,6 @@ class CatalogueAssertions:
         """Assert the five protocols of ``config`` (or of ``variant``, table key ``name``)."""
         params = None if variant is None else dict(variant.channel_params)
         currents = () if variant is None else variant.extra_neuron_currents
-        templates = experiment_schema.load_model_config(config_path(config)).template_paths
-        self.assertEqual({Path(path).stem for path in templates}, set(CURRENT_CLAMP_PROTOCOLS), config)
         measured = {}
         for protocol in CURRENT_CLAMP_PROTOCOLS:
             with self.subTest(config=name, protocol=protocol):

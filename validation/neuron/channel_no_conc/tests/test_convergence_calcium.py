@@ -82,15 +82,13 @@ ENTRIES = {entry.config: entry for entry in table.CONFIGS if entry.config in FAM
 
 
 class FamilyTableTest(unittest.TestCase):
-    def test_the_family_is_in_the_tables_and_the_coverage_scope(self):
+    def test_the_family_is_in_the_tables(self):
         classes = family_classes()
         self.assertEqual((len(classes), len(FAMILY_CONFIGS)), (50, 45))
         self.assertEqual(set(ENTRIES), set(FAMILY_CONFIGS))
-        # A class or configuration added to the family must join the coverage scope.
+        # A class or configuration added to the family must join the family's tuples.
         self.assertEqual(classes, tuple(sorted(table.CALCIUM_FAMILY_CLASSES)))
         self.assertEqual(FAMILY_CONFIGS, tuple(sorted(table.CALCIUM_FAMILY_CONFIGS)))
-        self.assertLessEqual(set(classes), set(table.COVERAGE_SCOPE["classes"]))
-        self.assertLessEqual(set(FAMILY_CONFIGS), set(table.COVERAGE_SCOPE["configs"]))
         stiff = {entry.name for entry in table.CLASSES if entry.name in classes and entry.stiff}
         self.assertEqual(stiff, STIFF)
 
@@ -108,7 +106,7 @@ class FamilyConvergenceTest(unittest.TestCase):
 
     def _check(self, config: str) -> None:
         entry = ENTRIES[config]
-        report = cv.check_config(config, protocol=entry.protocol)
+        report = cv.check_config(config, protocol=entry.protocol, ramp_dts_ms=entry.ramp_dts_ms)
         table.assert_matches(report, entry)
         self.assertTrue(report.ramp_ok, (report.ramp_differences, report.ramp_orders))
         for metric, limit in entry.limits.items():

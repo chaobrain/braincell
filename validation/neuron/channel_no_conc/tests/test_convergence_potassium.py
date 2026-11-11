@@ -89,16 +89,14 @@ def _prefix_kv_test_n_tau(self, V, K):
 
 
 class FamilyTableTest(unittest.TestCase):
-    def test_the_family_is_in_the_tables_and_the_coverage_scope(self):
+    def test_the_family_is_in_the_tables(self):
         classes = family_classes()
         self.assertEqual((len(classes), len(FAMILY_CONFIGS)), (39, 31))
         self.assertIn("Kv1p5_MA2020_GrC", classes)  # potassium_sodium.py
         self.assertEqual(set(ENTRIES), set(FAMILY_CONFIGS))
-        # A class or configuration added to the family must join the coverage scope.
+        # A class or configuration added to the family must join the family's tuples.
         self.assertEqual(classes, tuple(sorted(table.POTASSIUM_FAMILY_CLASSES)))
         self.assertEqual(FAMILY_CONFIGS, tuple(sorted(table.POTASSIUM_FAMILY_CONFIGS)))
-        self.assertLessEqual(set(classes), set(table.COVERAGE_SCOPE["classes"]))
-        self.assertLessEqual(set(FAMILY_CONFIGS), set(table.COVERAGE_SCOPE["configs"]))
         stiff = {entry.name for entry in table.CLASSES if entry.name in classes and entry.stiff}
         self.assertEqual(stiff, STIFF)
         self.assertEqual({entry.classification for entry in ENTRIES.values()}, {cv.EXACT})
@@ -117,7 +115,7 @@ class FamilyConvergenceTest(unittest.TestCase):
 
     def _check(self, config: str) -> None:
         entry = ENTRIES[config]
-        report = cv.check_config(config, protocol=entry.protocol)
+        report = cv.check_config(config, protocol=entry.protocol, ramp_dts_ms=entry.ramp_dts_ms)
         table.assert_matches(report, entry)
         self.assertTrue(report.ramp_ok, (report.ramp_differences, report.ramp_orders))
 

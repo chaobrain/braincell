@@ -23,7 +23,8 @@ User-facing entry points:
 In normal use, users only need `Morphology` and `MorphoBranch`.
 """
 
-from collections.abc import Mapping
+import contextlib
+from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass
 from typing import Callable, Optional, Union
 
@@ -249,13 +250,26 @@ class Morphology:
         >>> morph = Morphology.from_swc("neuron.swc")  # doctest: +SKIP
     """
 
+    # Edit-gate state. Class-level defaults rather than ``__init__``
+    # assignments so that a tree unpickled from an older release, whose
+    # ``__dict__`` lacks them, still reads as unfrozen and editable.
+    #: Set on the read-only snapshot an initialized Cell runs on
+    #: (:func:`frozen_snapshot`); never carried into a copy (``__getstate__``).
+    _frozen: bool = False
+    #: Nesting depth of :meth:`_edit`; only the outermost exit bumps.
+    _edit_depth: int = 0
+    #: Whether any open :meth:`_edit` asked to move the index watermark.
+    _edit_reindex: bool = False
+    #: Revision of the last edit that moved an existing node's default index.
+    _reindex_revision: int = 0
+
     def __init__(self, *, root_name: str | None, root_branch: Branch) -> None:
         self._nodes: dict[int, MorphoBranch] = {}
         self._name_to_id: dict[str, int] = {}
         self._type_name_counters: dict[str, int] = {}
         self._next_id = 0
-        # Caches derived from ``_nodes``. They must exist before the
-        # ``_register_node`` call below, which invalidates them.
+        # Caches derived from the node tables, dropped together by
+        # ``_invalidate_derived_caches`` at the end of every edit.
         self._ordered_id_cache: dict[str, tuple[int, ...]] = {}
         self._branch_index_cache: dict[str, dict[int, int]] = {}
         self._branch_tuple_cache: dict[str, tuple["MorphoBranch", ...]] = {}
@@ -264,10 +278,13 @@ class Morphology:
         self._all_points_cache: np.ndarray | None = None
         # (revision, MorphologyData) of the last to_vis_data() call.
         self._vis_data_cache: tuple[int, object] | None = None
-        # Bumped on every structural change so consumers holding derived
+        # Bumped once per successful edit so consumers holding derived
         # results (e.g. braincell.filter.SelectionCache) can detect staleness.
         self._revision = 0
-        self._root_name = self._resolve_node_name(root_branch, explicit_name=root_name)
+        # The root is registered outside the edit gate: the object is not
+        # constructed yet, so there is nothing to freeze or to roll back.
+        self._root_name, counter = self._resolve_node_name(root_branch, explicit_name=root_name)
+        self._commit_name_counter(counter)
         self._root_id = self._register_node(
             name=self._root_name,
             branch=root_branch,
@@ -275,6 +292,16 @@ class Morphology:
             parent_x=1.0,
             child_x=0.0,
         )
+        self._invalidate_derived_caches()
+
+    def __getstate__(self) -> dict:
+        # ``copy.deepcopy`` and pickle both go through here. A copy is a new
+        # tree the caller owns, so it never inherits the frozen flag of a
+        # Cell's runtime snapshot.
+        state = self.__dict__.copy()
+        for key in ("_frozen", "_edit_depth", "_edit_reindex"):
+            state.pop(key, None)
+        return state
 
     @classmethod
     def from_root(cls, branch: Branch, *, name: str | None = "soma") -> "Morphology":
@@ -672,7 +699,7 @@ class Morphology:
 
     @property
     def revision(self) -> int:
-        """Counter advanced on every structural change to this tree.
+        """Counter advanced once by every successful edit of this tree.
 
         ``Morphology`` is mutable, so any consumer that caches a result
         derived from the tree -- CV geometry, a resolved region mask, a
@@ -681,8 +708,15 @@ class Morphology:
         two: same object *and* same revision means the derived result is
         still valid.
 
-        The absolute value carries no meaning and is not stable across
-        processes; only comparison against a previously recorded value is.
+        Each successful edit call (:meth:`attach`, ``morpho.soma.dend =
+        branch``, ``morpho.soma[0.5].dend = branch``) advances it by exactly
+        one, whether it changes the structure or only the geometry. Reads
+        never advance it, and an edit that raises leaves it, the tree and
+        :meth:`naming_state` unchanged.
+
+        The absolute value carries no meaning, is not stable across
+        processes, and cannot be compared between two trees; only comparison
+        against a value previously recorded from the same object is.
 
         Returns
         -------
@@ -707,7 +741,7 @@ class Morphology:
             >>> tree.soma.dend = Branch.from_lengths(lengths=[100.0] * u.um,
             ...                                      radii=[2.0, 1.0] * u.um,
             ...                                      type="basal_dendrite")
-            >>> tree.revision > before
+            >>> tree.revision == before + 1
             True
         """
         return self._revision
@@ -1688,12 +1722,20 @@ class Morphology:
             If *parent* is not a string or ``MorphoBranch``.
         KeyError
             If *parent* is a string that does not match any branch name.
+        RuntimeError
+            If this morphology is the read-only snapshot of an initialized
+            Cell, or *parent* is a view of a branch that an edit removed.
 
         Notes
         -----
         ``parent_x=0`` attaches to the proximal end of the parent branch.
         This is typically used when the parent is itself a child branch and
         you want to attach at its connection point rather than its distal end.
+
+        Every argument is checked, and the auto-generated name chosen, before
+        anything is written: a call that raises leaves the tree,
+        :attr:`revision` and :meth:`naming_state` exactly as they were. A
+        successful call advances :attr:`revision` by one.
 
         Examples
         --------
@@ -1722,6 +1764,7 @@ class Morphology:
             'apical'
         """
 
+        self._require_editable()
         parent_id = self._resolve_parent(parent)
         return self._insert_child(
             parent_id,
@@ -1773,12 +1816,19 @@ class Morphology:
         )
 
     def _invalidate_derived_caches(self) -> None:
-        """Drop every cache derived from the node set.
+        """Drop every cache derived from this tree and advance :attr:`revision`.
 
         ``Morphology`` is mutable, so a stale entry here is a correctness
-        bug rather than a missed optimization. :meth:`_register_node` is the
-        only place ``_nodes`` ever grows, and nodes are never removed or
-        renamed, so clearing from there is sufficient.
+        bug rather than a missed optimization. The caches cover node order
+        and indices, the view tuples, the point-geometry flag, the
+        concatenated segment and point arrays, and the ``to_vis_data``
+        snapshot; every one of them can depend on any node's name, type,
+        parent or geometry, so all are dropped together.
+
+        Only :meth:`_edit` (once, at its outermost exit) and ``__init__``
+        call this. An edit that wrote to the node tables without going
+        through the gate would leave every consumer keyed on
+        (object, revision) serving the pre-edit result.
         """
         self._ordered_id_cache.clear()
         self._branch_index_cache.clear()
@@ -1786,7 +1836,73 @@ class Morphology:
         self._full_point_geometry = None
         self._all_segment_arrays_cache = None
         self._all_points_cache = None
+        self._vis_data_cache = None
         self._revision += 1
+
+    def _require_editable(self) -> None:
+        if self._frozen:
+            raise RuntimeError(
+                "This Morphology is the read-only snapshot of an initialized Cell and cannot be edited. "
+                "Edit the morphology the Cell was declared with, then call reset() and init_state() "
+                "on the Cell to apply the change."
+            )
+
+    @contextlib.contextmanager
+    def _edit(self, *, reindex: bool = False) -> Iterator[None]:
+        """The one gate every edit of this tree goes through.
+
+        An edit method checks all of its arguments and picks any
+        auto-generated name *before* entering, so a rejected call writes
+        nothing; inside, it performs only writes that cannot fail. On exit
+        every derived cache is dropped and :attr:`revision` advances by
+        exactly one. Nested gates advance it once, at the outermost exit.
+
+        Parameters
+        ----------
+        reindex : bool
+            Set by an edit that can change the default index of a node that
+            existed before it (a removal does; an append does not). The
+            watermark read by :meth:`_reindexed_after` then moves to the new
+            revision.
+
+        Raises
+        ------
+        RuntimeError
+            On entry, if the tree is frozen; nothing has been written then.
+
+        Notes
+        -----
+        If a write inside the gate raises anyway, the caches are still
+        dropped, the revision still advances and a requested watermark
+        still moves, so that no consumer keeps serving a result derived
+        from the tree before the partial write.
+        """
+        self._require_editable()
+        outermost = self._edit_depth == 0
+        self._edit_depth += 1
+        if reindex:
+            self._edit_reindex = True
+        try:
+            yield
+        finally:
+            self._edit_depth -= 1
+            if outermost:
+                self._invalidate_derived_caches()
+                if self._edit_reindex:
+                    self._reindex_revision = self._revision
+                    self._edit_reindex = False
+
+    def _reindexed_after(self, revision: int) -> bool:
+        """Whether an edit after ``revision`` moved an existing node's default index.
+
+        A consumer that holds integer branch indices (a ``LocsetMask``
+        place rule, a per-branch CV list) records the revision it resolved
+        them at. Appending, replacing geometry in place and transforming
+        keep every existing default index, so those indices stay valid; a
+        removal shifts the later ones down and the consumer must re-resolve
+        or fail.
+        """
+        return self._reindex_revision > revision
 
     def _ordered_node_ids_by(self, order: str) -> tuple[int, ...]:
         cached = self._ordered_id_cache.get(order)
@@ -1877,6 +1993,7 @@ class Morphology:
         if isinstance(parent, MorphoBranch):
             if parent._owner is not self:
                 raise ValueError("Parent MorphoBranch belongs to a different Morphology.")
+            parent._require_attached("attaching to it")
             return parent._node_id
         if isinstance(parent, str):
             if parent not in self._name_to_id:
@@ -1910,19 +2027,33 @@ class Morphology:
             raise TypeError("Only Branch values participate in morphology syntax sugar.")
         return value
 
-    def _resolve_node_name(self, branch: Branch, *, explicit_name: str | None) -> str:
-        node_name = explicit_name if explicit_name is not None else self._allocate_name_for_type(branch.type)
+    def _resolve_node_name(self, branch: Branch, *, explicit_name: str | None) -> tuple[str, Optional[tuple[str, int]]]:
+        """Validate the name a new node will get, without writing anything.
+
+        Returns the name and, for an auto-generated one, the
+        ``(type, next_suffix)`` counter update to apply with
+        :meth:`_commit_name_counter` once every other check has passed.
+        """
+        if explicit_name is None:
+            node_name, counter = self._allocate_name_for_type(branch.type)
+        else:
+            node_name, counter = explicit_name, None
         self._validate_public_name(node_name)
         if node_name in self._name_to_id:
             raise ValueError(f"Branch name {node_name!r} already exists in this Morphology.")
-        return node_name
+        return node_name, counter
 
-    def _allocate_name_for_type(self, branch_type: str) -> str:
+    def _allocate_name_for_type(self, branch_type: str) -> tuple[str, tuple[str, int]]:
+        """Pick the next free ``{type}_{n}`` name; the counter is not advanced here."""
         suffix = self._type_name_counters.get(branch_type, 0)
         while f"{branch_type}_{suffix}" in self._name_to_id:
             suffix += 1
-        self._type_name_counters[branch_type] = suffix + 1
-        return f"{branch_type}_{suffix}"
+        return f"{branch_type}_{suffix}", (branch_type, suffix + 1)
+
+    def _commit_name_counter(self, counter: Optional[tuple[str, int]]) -> None:
+        if counter is not None:
+            branch_type, next_suffix = counter
+            self._type_name_counters[branch_type] = next_suffix
 
     def _register_node(
         self,
@@ -1933,9 +2064,7 @@ class Morphology:
         parent_x: float,
         child_x: float,
     ) -> int:
-        self._validate_public_name(name)
-        if name in self._name_to_id:
-            raise ValueError(f"Branch name {name!r} already exists in this Morphology.")
+        """Add one node to the tables; the caller has validated everything and holds the gate."""
         node_id = self._next_id
         self._next_id += 1
         node = MorphoBranch(
@@ -1949,7 +2078,6 @@ class Morphology:
         )
         self._nodes[node_id] = node
         self._name_to_id[name] = node_id
-        self._invalidate_derived_caches()
         return node_id
 
     def _insert_child(
@@ -1961,21 +2089,26 @@ class Morphology:
         parent_x: float = 1.0,
         child_x: float = 0.0,
     ) -> "MorphoBranch":
+        # Every check, the auto-name included, runs before the gate: a
+        # rejected attach must not consume a name suffix.
+        self._require_editable()
         parent = self._get_node(parent_id)
         branch = self._normalize_child_branch(value)
-        resolved_name = self._resolve_node_name(branch, explicit_name=child_name)
+        resolved_name, counter = self._resolve_node_name(branch, explicit_name=child_name)
         if resolved_name in parent._children:
             raise ValueError(f"Parent branch {parent.name!r} already has a child named {resolved_name!r}.")
         self._validate_parent_x(parent, parent_x)
         self._validate_child_x(child_x)
-        node_id = self._register_node(
-            name=resolved_name,
-            branch=branch,
-            parent_id=parent_id,
-            parent_x=parent_x,
-            child_x=child_x,
-        )
-        parent._children[resolved_name] = node_id
+        with self._edit():
+            self._commit_name_counter(counter)
+            node_id = self._register_node(
+                name=resolved_name,
+                branch=branch,
+                parent_id=parent_id,
+                parent_x=parent_x,
+                child_x=child_x,
+            )
+            parent._children[resolved_name] = node_id
         return self._get_node(node_id)
 
     def _eq_records(self) -> tuple[tuple[object, ...], ...]:
@@ -2032,6 +2165,9 @@ _MORPHO_BRANCH_PUBLIC_ATTRS: dict[str, _MorphoBranchAttrGetter] = {
     "parent_x": lambda node: None if node._parent_id is None else node._parent_x,
     "child_x": lambda node: None if node._parent_id is None else node._child_x,
 }
+#: The dynamic attributes a detached view still answers: they describe the
+#: branch itself, not its place in a tree.
+_MORPHO_BRANCH_DETACHED_ATTRS = frozenset({"branch", "name"})
 
 
 class MorphoBranch:
@@ -2076,6 +2212,23 @@ class MorphoBranch:
     (``length``, ``area``, ``n_segments``, ``type``, etc.) are accessible
     directly on the node.  Child branches can also be retrieved by name
     (e.g., ``morph.soma.dend``).
+
+    A view is live: while its branch is in the tree it always reports the
+    current geometry, index, parent and children, so an index read before
+    an edit may differ from one read after it.  A branch's parent never
+    changes.  If an edit removes the branch, the view is *detached*: its
+    ``name``, ``branch`` and the delegated geometry stay readable, while
+    every question about its place in the tree (``index``, ``branch_id``,
+    ``index_by``, ``branch_order``, ``parent``, ``parent_id``,
+    ``parent_x``, ``child_x``, ``children``, ``n_children``, child lookup)
+    and every attachment through it raise :class:`RuntimeError`; look the
+    branch up again by name on the current tree.  Names are the stable way
+    to refer to a branch across edits.
+
+    The view's own attributes are read-only: assigning to a name starting
+    with ``_``, or deleting any attribute, raises :class:`AttributeError`,
+    because a change made that way would bypass the morphology's
+    :attr:`~Morphology.revision` and leave cached results stale.
 
     Examples
     --------
@@ -2122,6 +2275,19 @@ class MorphoBranch:
         object.__setattr__(self, "_child_x", child_x)
         object.__setattr__(self, "_children", {})
 
+    def _is_attached(self) -> bool:
+        return self._owner._nodes.get(self._node_id) is self
+
+    def _require_attached(self, what: str) -> Morphology:
+        """Return the owner, or raise if an edit has removed this branch from it."""
+        if not self._is_attached():
+            raise RuntimeError(
+                f"MorphoBranch {self._name!r} is detached: an edit removed it from its Morphology, "
+                f"so {what} is not available. Its name and geometry are still readable; look the "
+                f"branch up again by name on the current tree, e.g. morpho.branch(name={self._name!r})."
+            )
+        return self._owner
+
     @property
     def index(self) -> int:
         """Index of this branch in the default ordering.
@@ -2135,7 +2301,7 @@ class MorphoBranch:
         --------
         index_by : Index in a specific ordering.
         """
-        return self._owner._branch_index(self._node_id)
+        return self._require_attached(".index")._branch_index(self._node_id)
 
     @property
     def branch_id(self) -> int:
@@ -2150,7 +2316,7 @@ class MorphoBranch:
         --------
         index : The canonical spelling of the same value.
         """
-        return self.index
+        return self._require_attached(".branch_id")._branch_index(self._node_id)
 
     @property
     def branch_order(self) -> int:
@@ -2165,7 +2331,7 @@ class MorphoBranch:
         --------
         Morphology.path_to_root : Full root-to-branch index path.
         """
-        return len(self._owner._path_node_ids(self._node_id)) - 1
+        return len(self._require_attached(".branch_order")._path_node_ids(self._node_id)) - 1
 
     @property
     def n_tapers(self) -> int:
@@ -2192,7 +2358,7 @@ class MorphoBranch:
         int
             Position in the requested ordering.
         """
-        return self._owner._branch_index(self._node_id, order=order)
+        return self._require_attached(".index_by()")._branch_index(self._node_id, order=order)
 
     @property
     def parent(self) -> Optional["MorphoBranch"]:
@@ -2203,9 +2369,10 @@ class MorphoBranch:
         MorphoBranch or None
             Parent node.
         """
+        owner = self._require_attached(".parent")
         if self._parent_id is None:
             return None
-        return self._owner._get_node(self._parent_id)
+        return owner._get_node(self._parent_id)
 
     @property
     def children(self) -> tuple["MorphoBranch", ...]:
@@ -2216,7 +2383,8 @@ class MorphoBranch:
         tuple of MorphoBranch
             Child branch nodes.
         """
-        return tuple(self._owner._get_node(child_id) for child_id in self._children.values())
+        owner = self._require_attached(".children")
+        return tuple(owner._get_node(child_id) for child_id in self._children.values())
 
     @property
     def n_children(self) -> int:
@@ -2227,6 +2395,7 @@ class MorphoBranch:
         int
             Child count.
         """
+        self._require_attached(".n_children")
         return len(self._children)
 
     def attach(
@@ -2262,6 +2431,9 @@ class MorphoBranch:
         ------
         ValueError
             If *parent_x* or *child_x* is invalid.
+        RuntimeError
+            If an edit has removed this branch from its morphology, or the
+            morphology is the read-only snapshot of an initialized Cell.
 
         Notes
         -----
@@ -2279,7 +2451,7 @@ class MorphoBranch:
             'apical'
         """
 
-        return self._owner.attach(
+        return self._require_attached(".attach()").attach(
             parent=self,
             child_branch=branch,
             child_name=name,
@@ -2288,6 +2460,7 @@ class MorphoBranch:
         )
 
     def __getitem__(self, key: object) -> "_MorphAttachPoint":
+        self._require_attached(f"[{key!r}] attachment")
         parent_x, child_x = _parse_attachment_key(key)
         return _MorphAttachPoint(self, parent_x=parent_x, child_x=child_x)
 
@@ -2301,17 +2474,28 @@ class MorphoBranch:
             raise AttributeError(name)
         getter = _MORPHO_BRANCH_PUBLIC_ATTRS.get(name)
         if getter is not None:
+            if name not in _MORPHO_BRANCH_DETACHED_ATTRS:
+                self._require_attached(f".{name}")
             return getter(self)
         try:
             return getattr(self._branch, name)
         except AttributeError:
-            return self._owner._get_child(self._node_id, name)
+            pass
+        return self._require_attached(f"child lookup .{name}")._get_child(self._node_id, name)
 
     def __setattr__(self, key: str, value: object) -> None:
         if key.startswith("_"):
-            object.__setattr__(self, key, value)
-            return
-        self._owner._insert_child(self._node_id, value, child_name=key)
+            # ``__init__`` sets these with ``object.__setattr__``; copy and
+            # pickle restore ``__dict__`` without calling this method.
+            raise AttributeError(
+                f"MorphoBranch attribute {key!r} is read-only: changing it directly would bypass the "
+                "Morphology's revision and leave cached results (indices, metrics, selections, "
+                "discretizations) stale."
+            )
+        self._require_attached(f"attaching child {key!r}")._insert_child(self._node_id, value, child_name=key)
+
+    def __delattr__(self, key: str) -> None:
+        raise AttributeError(f"MorphoBranch attributes cannot be deleted (tried {key!r}).")
 
     def __dir__(self) -> list[str]:
         return sorted(
@@ -2322,7 +2506,9 @@ class MorphoBranch:
         )
 
     def __repr__(self) -> str:
-        return f"MorphoBranch(name={self.name!r}, type={self.branch.type!r}, index={self.index!r})"
+        if not self._is_attached():
+            return f"MorphoBranch(name={self._name!r}, type={self._branch.type!r}, detached)"
+        return f"MorphoBranch(name={self._name!r}, type={self._branch.type!r}, index={self.index!r})"
 
 
 class _MorphAttachPoint:
@@ -2393,11 +2579,13 @@ def _parse_attachment_key(key: object) -> tuple[float, float]:
 
 
 def clone_morpho(morpho: "Morphology") -> "Morphology":
-    """Return a structurally identical copy of ``morpho``.
+    """Return a structurally identical, editable copy of ``morpho``.
 
-    Preserves branch identity, parent/child topology, and attachment
-    ratios. Used by :meth:`Cell.init_state` to freeze the declaration
-    tree without mutating user-supplied objects.
+    Preserves branch names, geometry objects, parent/child topology and
+    attachment points, so the copy compares equal to ``morpho``; the copy
+    has fresh views, its own revision, and is never frozen. Branches are
+    re-attached in default order, which lists every parent before its
+    children. Auto-naming counters are not copied.
     """
     cloned = Morphology.from_root(morpho.root.branch, name=morpho.root.name)
     for branch in morpho.branches[1:]:
@@ -2412,6 +2600,21 @@ def clone_morpho(morpho: "Morphology") -> "Morphology":
             child_x=float(branch.child_x),
         )
     return cloned
+
+
+def frozen_snapshot(morpho: "Morphology") -> "Morphology":
+    """Return a read-only copy of ``morpho`` for an initialized Cell to run on.
+
+    The copy equals ``morpho`` (:meth:`Morphology.__eq__`) and every read
+    works on it, but every edit -- :meth:`Morphology.attach`,
+    :meth:`MorphoBranch.attach`, attribute and subscript attachment --
+    raises :class:`RuntimeError` before writing anything. ``morpho`` itself
+    stays editable. ``copy.deepcopy`` or pickling the snapshot gives an
+    ordinary, editable tree.
+    """
+    snapshot = clone_morpho(morpho)
+    snapshot._frozen = True
+    return snapshot
 
 
 # --------------------------------------------------------------------------- #

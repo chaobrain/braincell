@@ -303,6 +303,21 @@
 
 ### Bug Fixes
 
+- A `Morphology.attach` without `child_name` that fails validation no longer
+  consumes an auto-name suffix (MORPH-11). Before, on a soma-dend tree,
+  `m.attach(parent="dend", child_branch=axon, parent_x=0.5)` raised
+  `ValueError` but still moved `naming_state()` from `{}` to `{'axon': 1}`, so
+  the next auto-named axon was `axon_1` instead of `axon_0`. Every edit now checks
+  all its arguments and picks the name before writing anything, so a failed
+  `attach` (or `morpho.soma.dend = branch`, or `morpho.soma[0.5].dend =
+  branch`) leaves the tree, `revision` and `naming_state()` unchanged, and a
+  successful one advances `revision` by exactly one. Assigning a private
+  attribute of a branch view (`m.dend._branch = new_branch`) now raises
+  `AttributeError`: it used to swap the geometry without advancing
+  `revision`, so `total_length`, `x_range`, `to_vis_data()`, a
+  `SelectionCache` and a Cell's discretization kept returning results for the
+  old geometry.
+
 - Every solver name a cable `Cell` accepts now runs, or is rejected at
   `init_state` (CELL-19). Before, `solver="exp_euler"`, `"ind_exp_euler"`,
   `"backward_euler"` and `"crank_nicolson"` raised `ValueError: State

@@ -27,6 +27,7 @@ from braincell.filter import BranchSlice, LocsetMask, RootLocation, Terminals
 from braincell.io._testing import ALLOWED_TYPES, FIXTURE_DIR, VALID_SWC_FIXTURES
 from braincell.morph import MorphoBranch, MorphoMetric
 from braincell.morph.branch import _ALLOWED_BRANCH_TYPES
+from braincell.morph.morphology import frozen_snapshot
 from braincell.morph._testing import (
     make_apical,
     make_axon,
@@ -36,6 +37,7 @@ from braincell.morph._testing import (
     make_projected_node_tree,
     make_root_split_tree,
     make_soma,
+    simulate_remove_leaf,
 )
 
 
@@ -636,7 +638,369 @@ class MorphoDerivedCacheTest(unittest.TestCase):
         tree = Morphology.from_root(self._soma(), name="soma")
         before = tree._revision
         tree.soma.attach(self._dend(), name="a")
-        self.assertGreater(tree._revision, before)
+        self.assertEqual(tree._revision, before + 1)
+
+
+def _make_tree_u() -> Morphology:
+    """Soma with three leaves, all length-only: dend (100 um), axon (30 um), apical (80 um).
+
+    Default indices are soma 0, dend 1, axon 2, apical 3, so removing the
+    leaf ``dend`` moves both later branches down by one.
+    """
+    tree = Morphology.from_root(
+        Branch.from_lengths(lengths=[20.0] * u.um, radii=[5.0, 5.0] * u.um, type="soma"), name="soma"
+    )
+    tree.soma.dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite")
+    tree.soma.axon = Branch.from_lengths(lengths=[30.0] * u.um, radii=[0.5, 0.5] * u.um, type="axon")
+    tree.soma.apical = Branch.from_lengths(lengths=[80.0] * u.um, radii=[1.0, 1.0] * u.um, type="apical_dendrite")
+    return tree
+
+
+def _short_axon() -> Branch:
+    return Branch.from_lengths(lengths=[10.0] * u.um, radii=[1.0, 1.0] * u.um, type="axon")
+
+
+class MorphoEditGateTest(unittest.TestCase):
+    """Every edit goes through one gate: validate, write, then exactly one revision bump.
+
+    The revision is the only staleness signal for every cache derived from a
+    tree (``SelectionCache``, the Cell's discretization, ``to_vis_data``), so
+    an edit that changes the tree without a bump serves stale results, and a
+    rejected edit that writes anything is visible as a changed tree or a
+    consumed auto-name.
+    """
+
+    def _tree(self) -> Morphology:
+        tree = Morphology.from_root(
+            Branch.from_lengths(lengths=[20.0] * u.um, radii=[5.0, 5.0] * u.um, type="soma"), name="soma"
+        )
+        tree.soma.dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite")
+        return tree
+
+    @staticmethod
+    def _state(tree: Morphology) -> tuple:
+        return tree.revision, tree.n_branches, tree.naming_state(), [b.name for b in tree.branches]
+
+    def test_failed_attaches_leave_no_trace(self) -> None:
+        soma = make_soma()
+        failures = [
+            ("duplicate name", ValueError, dict(parent="soma", child_branch=soma, child_name="dend")),
+            ("unknown parent", KeyError, dict(parent="nope", child_branch=soma, child_name="x")),
+            ("reserved name", ValueError, dict(parent="soma", child_branch=soma, child_name="attach")),
+            (
+                "explicit name, midpoint on a non-soma parent",
+                ValueError,
+                dict(parent="dend", child_branch=soma, child_name="y", parent_x=0.5),
+            ),
+            # On main this one consumed the auto-name suffix: {} -> {'axon': 1}.
+            (
+                "auto name, midpoint on a non-soma parent",
+                ValueError,
+                dict(parent="dend", child_branch=_short_axon(), parent_x=0.5),
+            ),
+            ("auto name, bad child_x", ValueError, dict(parent="soma", child_branch=_short_axon(), child_x=0.5)),
+        ]
+        for label, error, kwargs in failures:
+            with self.subTest(label):
+                tree = self._tree()
+                before = self._state(tree)
+                with self.assertRaises(error):
+                    tree.attach(**kwargs)
+                self.assertEqual(self._state(tree), before)
+
+    def test_a_failed_auto_named_attach_does_not_skip_a_name(self) -> None:
+        tree = self._tree()
+        with self.assertRaises(ValueError):
+            tree.attach(parent="dend", child_branch=_short_axon(), parent_x=0.5)
+
+        self.assertEqual(tree.naming_state(), {})
+        self.assertEqual(tree.attach(parent="soma", child_branch=_short_axon()).name, "axon_0")
+        self.assertEqual(tree.naming_state(), {"axon": 1})
+
+    def test_failed_syntax_sugar_attaches_leave_no_trace(self) -> None:
+        cases = [
+            ("attribute, duplicate name", lambda t: setattr(t.soma, "dend", _short_axon()), ValueError),
+            ("attribute, reserved name", lambda t: setattr(t.soma, "length", _short_axon()), ValueError),
+            ("attribute, not a Branch", lambda t: setattr(t.soma, "x", 1.0), TypeError),
+            (
+                "subscript, midpoint on a non-soma parent",
+                lambda t: setattr(t.dend[0.5], "y", _short_axon()),
+                ValueError,
+            ),
+        ]
+        for label, edit, error in cases:
+            with self.subTest(label):
+                tree = self._tree()
+                before = self._state(tree)
+                with self.assertRaises(error):
+                    edit(tree)
+                self.assertEqual(self._state(tree), before)
+
+    def test_each_successful_edit_advances_the_revision_by_exactly_one(self) -> None:
+        edits = [
+            ("Morphology.attach", lambda t: t.attach(parent="soma", child_branch=_short_axon(), child_name="a")),
+            ("MorphoBranch.attach", lambda t: t.soma.attach(_short_axon(), name="a")),
+            ("attribute", lambda t: setattr(t.soma, "x", _short_axon())),
+            ("subscript", lambda t: setattr(t.soma[0.5], "y", _short_axon())),
+            ("subscript with child_x", lambda t: setattr(t.dend[1.0, 1.0], "z", _short_axon())),
+        ]
+        for label, edit in edits:
+            with self.subTest(label):
+                tree = self._tree()
+                before = tree.revision
+                edit(tree)
+                self.assertEqual(tree.revision, before + 1)
+                self.assertEqual(tree.n_branches, 3)
+
+    def test_reads_do_not_advance_the_revision(self) -> None:
+        tree = self._tree()
+        before = tree.revision
+        _ = (tree.metric, tree.branches, tree.edges, tree.to_vis_data(), tree.soma.dend.index, tree.topo())
+        self.assertEqual(tree.revision, before)
+
+    def test_nested_gates_advance_the_revision_once(self) -> None:
+        tree = self._tree()
+        before = tree.revision
+        with tree._edit():
+            with tree._edit():
+                pass
+            self.assertEqual(tree.revision, before)
+        self.assertEqual(tree.revision, before + 1)
+        self.assertFalse(tree._reindexed_after(before))
+
+    def test_a_nested_reindex_request_moves_the_watermark_at_the_outermost_exit(self) -> None:
+        tree = self._tree()
+        before = tree.revision
+        with tree._edit():
+            with tree._edit(reindex=True):
+                pass
+            self.assertFalse(tree._reindexed_after(before))
+        self.assertEqual(tree.revision, before + 1)
+        self.assertTrue(tree._reindexed_after(before))
+        self.assertFalse(tree._reindexed_after(tree.revision))
+
+    def test_the_gate_drops_every_derived_cache(self) -> None:
+        tree = make_projected_node_tree()
+        # Warm every cache that a revision bump must drop.
+        stale_vis = tree.to_vis_data()
+        self.assertEqual(tree.total_length, 100.0 * u.um)
+        self.assertEqual(tree.y_range, 80.0 * u.um)
+        self.assertTrue(tree.has_full_point_geometry)
+        self.assertEqual([b.name for b in tree.branch_by_order(order="type")], ["soma", "dend"])
+        self.assertEqual(tree.dend.index_by(order="depth"), 1)
+
+        longer = Branch.from_points(
+            points=[[20.0, 0.0, 0.0], [20.0, 100.0, 0.0], [20.0, 200.0, 0.0]] * u.um,
+            radii=[2.0, 1.5, 1.0] * u.um,
+            type="apical_dendrite",
+        )
+        # Stand-in for an in-place geometry replacement (MORPH-2): a
+        # non-failing write inside the gate.
+        with tree._edit():
+            object.__setattr__(tree.dend, "_branch", longer)
+
+        self.assertEqual(tree.total_length, 220.0 * u.um)
+        self.assertEqual(tree.y_range, 200.0 * u.um)
+        fresh_vis = tree.to_vis_data()
+        self.assertIsNot(fresh_vis, stale_vis)
+        self.assertEqual(u.math.sum(fresh_vis.branches[1].lengths), 200.0 * u.um)
+
+    def test_an_error_inside_the_gate_still_invalidates(self) -> None:
+        # The gate's body only does writes that cannot fail; if one does
+        # anyway, consumers must not keep serving the pre-edit caches.
+        tree = self._tree()
+        before = tree.revision
+        _ = tree.total_length
+        with self.assertRaisesRegex(RuntimeError, "boom"):
+            with tree._edit(reindex=True):
+                object.__setattr__(tree.dend, "_branch", make_basal(length=7.0))
+                raise RuntimeError("boom")
+        self.assertEqual(tree.revision, before + 1)
+        self.assertTrue(tree._reindexed_after(before))
+        self.assertEqual(tree.total_length, 27.0 * u.um)
+        # The depth counter unwound, so the next edit bumps again.
+        tree.attach(parent="soma", child_branch=_short_axon(), child_name="a")
+        self.assertEqual(tree.revision, before + 2)
+
+    def test_private_attribute_assignment_on_a_view_is_rejected(self) -> None:
+        tree = self._tree()
+        view = tree.dend
+        _ = tree.total_length
+        before = self._state(tree)
+        for attr in ("_branch", "_name", "_parent_id", "_children", "_owner", "_node_id"):
+            with self.subTest(attr):
+                with self.assertRaisesRegex(AttributeError, "read-only"):
+                    setattr(view, attr, make_basal(length=200.0))
+        with self.assertRaisesRegex(AttributeError, "cannot be deleted"):
+            del view._branch
+        with self.assertRaisesRegex(AttributeError, "cannot be deleted"):
+            del view.dend
+        self.assertEqual(self._state(tree), before)
+        self.assertEqual(tree.total_length, 120.0 * u.um)
+        self.assertEqual(view.branch.length, 100.0 * u.um)
+
+    def test_copies_of_views_and_trees_still_work(self) -> None:
+        import copy
+        import pickle
+
+        tree = self._tree()
+        for label, clone in (
+            ("deepcopy", copy.deepcopy(tree)),
+            ("pickle", pickle.loads(pickle.dumps(tree))),
+            ("view deepcopy", copy.deepcopy(tree.dend)._owner),
+        ):
+            with self.subTest(label):
+                self.assertEqual(clone, tree)
+                clone.dend.tip = _short_axon()
+                self.assertEqual(clone.n_branches, 3)
+                self.assertEqual(clone.dend.tip.parent.name, "dend")
+                self.assertEqual(tree.n_branches, 2)
+
+
+class MorphoFrozenSnapshotTest(unittest.TestCase):
+    """A frozen tree (the snapshot an initialized Cell runs on) rejects every edit."""
+
+    def test_every_edit_entry_point_is_rejected_without_a_trace(self) -> None:
+        source = _make_tree_u()
+        snapshot = frozen_snapshot(source)
+        before = (snapshot.revision, snapshot.n_branches, snapshot.naming_state())
+        edits = [
+            ("Morphology.attach", lambda t: t.attach(parent="soma", child_branch=_short_axon(), child_name="a")),
+            ("auto-named attach", lambda t: t.attach(parent="soma", child_branch=_short_axon())),
+            ("MorphoBranch.attach", lambda t: t.dend.attach(_short_axon(), name="a")),
+            ("attribute", lambda t: setattr(t.soma, "x", _short_axon())),
+            ("subscript", lambda t: setattr(t.soma[0.5], "y", _short_axon())),
+            # Frozen is reported ahead of argument errors.
+            ("invalid arguments", lambda t: t.attach(parent="dend", child_branch=_short_axon(), parent_x=0.5)),
+            ("gate", lambda t: t._edit().__enter__()),
+        ]
+        for label, edit in edits:
+            with self.subTest(label):
+                with self.assertRaisesRegex(RuntimeError, r"read-only snapshot.*reset\(\)"):
+                    edit(snapshot)
+                self.assertEqual((snapshot.revision, snapshot.n_branches, snapshot.naming_state()), before)
+
+    def test_the_snapshot_equals_its_source_and_leaves_it_editable(self) -> None:
+        source = _make_tree_u()
+        snapshot = frozen_snapshot(source)
+
+        self.assertIsNot(snapshot, source)
+        self.assertEqual(snapshot, source)
+        self.assertIsNot(snapshot.dend, source.dend)
+        source.soma.x = _short_axon()
+        self.assertEqual(source.n_branches, 5)
+        self.assertEqual(snapshot.n_branches, 4)
+
+    def test_the_snapshot_can_still_be_read(self) -> None:
+        source = _make_tree_u()
+        snapshot = frozen_snapshot(source)
+        self.assertEqual(snapshot.total_length, source.total_length)
+        self.assertEqual(snapshot.metric, source.metric)
+        self.assertEqual(snapshot.axon.index, 2)
+        self.assertEqual(snapshot.axon.parent.name, "soma")
+
+    def test_deepcopy_and_pickle_give_an_editable_tree(self) -> None:
+        import copy
+        import pickle
+
+        snapshot = frozen_snapshot(_make_tree_u())
+        for label, clone in (
+            ("deepcopy", copy.deepcopy(snapshot)),
+            ("pickle", pickle.loads(pickle.dumps(snapshot))),
+        ):
+            with self.subTest(label):
+                self.assertEqual(clone, snapshot)
+                clone.attach(parent="soma", child_branch=_short_axon(), child_name="a")
+                self.assertEqual(clone.n_branches, 5)
+                with self.assertRaises(RuntimeError):
+                    snapshot.attach(parent="soma", child_branch=_short_axon(), child_name="a")
+
+
+class MorphoDetachedViewTest(unittest.TestCase):
+    """A view of a branch that an edit removed answers geometry questions, not tree questions.
+
+    There is no public delete yet (MORPH-2); ``simulate_remove_leaf`` removes
+    a leaf through the edit gate the way the delete will.
+    """
+
+    def setUp(self) -> None:
+        self.tree = _make_tree_u()
+        self.dend = self.tree.dend
+        self.axon = self.tree.axon
+        self.apical = self.tree.apical
+        self.assertEqual((self.axon.index, self.apical.index), (2, 3))
+        self.revision_before = self.tree.revision
+        simulate_remove_leaf(self.tree, "dend")
+
+    def test_tree_questions_raise_with_the_branch_name(self) -> None:
+        questions = {
+            "index": lambda v: v.index,
+            "branch_id": lambda v: v.branch_id,
+            "index_by": lambda v: v.index_by(order="type"),
+            "branch_order": lambda v: v.branch_order,
+            "parent": lambda v: v.parent,
+            "parent_id": lambda v: v.parent_id,
+            "parent_x": lambda v: v.parent_x,
+            "child_x": lambda v: v.child_x,
+            "children": lambda v: v.children,
+            "n_children": lambda v: v.n_children,
+            "attach": lambda v: v.attach(_short_axon(), name="tip"),
+            "subscript": lambda v: v[1.0],
+            "attribute attach": lambda v: setattr(v, "tip", _short_axon()),
+            "child lookup": lambda v: v.tip,
+            "Morphology.attach parent": lambda v: self.tree.attach(parent=v, child_branch=_short_axon()),
+        }
+        for label, question in questions.items():
+            with self.subTest(label):
+                with self.assertRaisesRegex(RuntimeError, r"'dend'.*detached.*by name"):
+                    question(self.dend)
+        self.assertEqual(self.tree.n_branches, 3)
+        self.assertEqual(self.tree.naming_state(), {})
+
+    def test_name_and_geometry_stay_readable(self) -> None:
+        self.assertEqual(self.dend.name, "dend")
+        self.assertEqual(self.dend.branch.length, 100.0 * u.um)
+        self.assertEqual(self.dend.length, 100.0 * u.um)
+        self.assertEqual(self.dend.type, "basal_dendrite")
+        self.assertEqual(self.dend.n_tapers, 1)
+        self.assertIn("detached", repr(self.dend))
+        self.assertIn("'dend'", repr(self.dend))
+
+    def test_views_of_remaining_branches_follow_the_new_indices(self) -> None:
+        self.assertEqual(self.axon.index, 1)
+        self.assertEqual(self.apical.index, 2)
+        self.assertEqual(repr(self.axon), "MorphoBranch(name='axon', type='axon', index=1)")
+        self.assertEqual(self.axon.parent.name, "soma")
+        self.assertEqual([b.name for b in self.tree.soma.children], ["axon", "apical"])
+        self.assertEqual(self.tree.total_length, 130.0 * u.um)
+        with self.assertRaises(KeyError):
+            self.tree.branch(name="dend")
+
+    def test_the_removal_moves_the_reindex_watermark(self) -> None:
+        tree = self.tree
+        self.assertEqual(tree.revision, self.revision_before + 1)
+        self.assertTrue(tree._reindexed_after(self.revision_before))
+        after_remove = tree.revision
+        self.assertFalse(tree._reindexed_after(after_remove))
+
+        tree.attach(parent="soma", child_branch=_short_axon(), child_name="late")
+
+        self.assertFalse(tree._reindexed_after(after_remove))
+        self.assertTrue(tree._reindexed_after(self.revision_before))
+
+    def test_simulate_remove_leaf_rejects_without_a_trace(self) -> None:
+        tree = _make_tree_u()
+        tree.axon.tip = _short_axon()
+        before = (tree.revision, tree.n_branches)
+        for label, name, error in (
+            ("unknown", "nope", KeyError),
+            ("root", "soma", ValueError),
+            ("not a leaf", "axon", ValueError),
+        ):
+            with self.subTest(label):
+                with self.assertRaises(error):
+                    simulate_remove_leaf(tree, name)
+                self.assertEqual((tree.revision, tree.n_branches), before)
 
 
 class MorphoBranchDerivedPropertyTest(unittest.TestCase):

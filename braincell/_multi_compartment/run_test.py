@@ -30,7 +30,8 @@ from braincell._multi_compartment.run import (
     RunResult,
     _validate_time_quantity,
 )
-from braincell.filter import AllRegion, RootLocation
+from braincell._multi_compartment.selection_test import _cell
+from braincell.filter import AllRegion, RootLocation, at
 from braincell.synapse import ExpSyn
 
 DT = 0.025 * u.ms
@@ -95,21 +96,22 @@ def make_event_cell(solver="staggered"):
     return cell, cell.synapses[declaration]
 
 
-def split_steps(total_steps, split_steps_):
-    """Step counts of the segments ``[0, s1), [s1, s2), ..., [sk, total)``."""
-    edges = (0, *sorted(int(step) for step in split_steps_), int(total_steps))
+def split_steps(total_steps, points):
+    """Step counts of the segments ``[0, p1), [p1, p2), ..., [pk, total)``."""
+    edges = (0, *sorted(int(step) for step in points), int(total_steps))
     return tuple(stop - start for start, stop in zip(edges, edges[1:]))
 
 
-def traces(result):
-    """``(g in uS, V in mV)`` per step of one RunResult."""
+def traces(samples):
+    """``(g in uS, V in mV)`` at each step start, from one cell's samples."""
     return (
-        np.asarray(result.samples["g"].values.to_decimal(u.uS)),
-        np.asarray(result.samples["v"].values.to_decimal(u.mV)),
+        np.asarray(samples["g"].values.to_decimal(u.uS)),
+        np.asarray(samples["v"].values.to_decimal(u.mV)),
     )
 
 
-def assert_same_trajectory(case, split, whole):
+def assert_same_trajectory(split, whole):
+    """Compare two cells' samples of ``make_event_cell``'s recordings."""
     for name, actual, expected in zip(("g", "V"), traces(split), traces(whole)):
         np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=0.0, err_msg=name)
 
@@ -123,9 +125,7 @@ class SplitCellRunTest(unittest.TestCase):
     """
 
     def setUp(self):
-        self._float64 = _float64()
-        self._float64.__enter__()
-        self.addCleanup(self._float64.__exit__, None, None, None)
+        self.enterContext(_float64())
 
     @staticmethod
     def _cell(solver, *sources):
@@ -144,8 +144,8 @@ class SplitCellRunTest(unittest.TestCase):
             with self.subTest(solver=solver):
                 whole = self._run(self._cell(solver, braincell.NetStim(start=1.0 * u.ms, number=1)), (200,))
                 split = self._run(self._cell(solver, braincell.NetStim(start=1.0 * u.ms, number=1)), (40,) * 5)
-                assert_same_trajectory(self, split, whole)
-                g = traces(whole)[0][:, 0]
+                assert_same_trajectory(split.samples, whole.samples)
+                g = traces(whole.samples)[0][:, 0]
                 # Sampled at each step start: the event at 1 ms acts in step 40.
                 self.assertEqual(int(np.flatnonzero(g > 0.0)[0]), 41)
                 np.testing.assert_allclose(g[41], 0.005 * np.exp(-0.025 / 2.0), rtol=1e-9)
@@ -167,7 +167,7 @@ class SplitCellRunTest(unittest.TestCase):
             with self.subTest(solver=solver, steps=steps):
                 whole = self._run(self._cell(solver, *sources()), (200,))
                 split = self._run(self._cell(solver, *sources()), steps)
-                assert_same_trajectory(self, split, whole)
+                assert_same_trajectory(split.samples, whole.samples)
 
     def test_update_then_run_and_run_then_update_deliver_once(self):
         def cell():
@@ -197,9 +197,9 @@ class SplitCellRunTest(unittest.TestCase):
 
     def test_first_run_after_init_or_reset_delivers_a_start_event(self):
         cell = self._cell("staggered", braincell.NetStim(start=0.0 * u.ms, number=1))
-        first = traces(cell.run(dt=DT, duration=4 * DT))
+        first = traces(cell.run(dt=DT, duration=4 * DT).samples)
         cell.reset_state()
-        again = traces(cell.run(dt=DT, duration=4 * DT))
+        again = traces(cell.run(dt=DT, duration=4 * DT).samples)
         self.assertGreater(float(first[0][1, 0]), 0.0)
         for actual, expected in zip(again, first):
             np.testing.assert_array_equal(actual, expected)
@@ -215,7 +215,27 @@ class SplitCellRunTest(unittest.TestCase):
 
         whole = self._run(cell(), (80,))
         split = self._run(cell(), (40, 40))
-        assert_same_trajectory(self, split, whole)
+        assert_same_trajectory(split.samples, whole.samples)
+
+    def test_reduced_cell_receives_a_boundary_event_once(self):
+        def run(steps):
+            cell = _cell(1)
+            cell.place(at("soma", 0.5), mech.Synapse("ExpSyn", name="input"))
+            cell.add_reduction("payload", braincell.PayloadAccumulatorReduction(threshold=10.0 * u.uS))
+            cell.use_model("payload")
+            cell.record("value", braincell.observe.output("value"))
+            braincell.connect(
+                "drive",
+                source=braincell.NetStim(start=0.3 * u.ms, number=1),
+                synapse=cell.synapses["input"],
+                weight=0.2 * u.uS,
+            )
+            cell.init_state()
+            result = RunResult.concat(tuple(cell.run(dt=0.1 * u.ms, duration=n * 0.1 * u.ms) for n in steps))
+            return np.asarray(result.samples["value"].values.to_decimal(u.uS))[:, 0]
+
+        np.testing.assert_allclose(run((6,)), [0.0, 0.0, 0.0, 0.2, 0.0, 0.0])
+        np.testing.assert_allclose(run((3, 3)), run((6,)))
 
     def test_traced_runs_continue_without_redelivery(self):
         cell = self._cell("staggered", braincell.NetStim(start=1.0 * u.ms, number=1))
@@ -228,9 +248,7 @@ class SplitCellRunTest(unittest.TestCase):
         whole = self._cell("staggered", braincell.NetStim(start=1.0 * u.ms, number=1))
         whole.run(dt=DT, duration=120 * DT)
         reference = next(iter(whole.runtime_objects(ExpSyn, allowed_hierarchy=(1, 1)).values()))
-        np.testing.assert_allclose(
-            node.g.value.to_decimal(u.uS), reference.g.value.to_decimal(u.uS), rtol=1e-12
-        )
+        np.testing.assert_allclose(node.g.value.to_decimal(u.uS), reference.g.value.to_decimal(u.uS), rtol=1e-12)
 
 
 if __name__ == "__main__":

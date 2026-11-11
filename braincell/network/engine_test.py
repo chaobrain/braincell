@@ -22,6 +22,14 @@ import brainunit as u
 import numpy as np
 
 import braincell
+from braincell._multi_compartment.run_test import (
+    DT,
+    WEIGHT,
+    _float64,
+    assert_same_trajectory,
+    make_event_cell,
+    split_steps,
+)
 from braincell.filter import AllRegion
 from braincell.network import Network
 from braincell.network._testing import make_runtime_network, make_threshold_cell
@@ -213,6 +221,52 @@ class NetworkRuntimeTest(unittest.TestCase):
         network.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
         self.assertEqual(len(network._run_setup_cache), setup_count)
         self.assertEqual(len(network._network_run_loop_cache), loop_count)
+
+
+class SplitNetworkRunTest(unittest.TestCase):
+    """CELL-34: ``Network.run`` split at any step, event times included, matches one run."""
+
+    def setUp(self):
+        self.enterContext(_float64())
+
+    @staticmethod
+    def _run(solver, source_kwargs, steps, *, delay=0.0 * u.ms):
+        cell, _ = make_event_cell(solver)
+        network = Network("split")
+        source = network.add_population("stim", braincell.NetStim(**source_kwargs))
+        target = network.add_population("post", cell)
+        network.connect("drive", source=source, synapse=target.synapses["syn"], weight=WEIGHT, delay=delay)
+        parts = tuple(network.run(dt=DT, duration=n * DT) for n in steps)
+        return braincell.NetworkResult.concat(parts).samples["post"]
+
+    def _check(self, source_kwargs, steps, **kwargs):
+        for solver in ("staggered", "rk4"):
+            with self.subTest(solver=solver, steps=steps, **kwargs):
+                whole = self._run(solver, source_kwargs, (sum(steps),), **kwargs)
+                split = self._run(solver, source_kwargs, steps, **kwargs)
+                self.assertGreater(float(np.max(split["g"].values.to_decimal(u.uS))), 0.0)
+                assert_same_trajectory(split, whole)
+
+    def test_fixed_interval_events_inside_and_on_segment_ends(self):
+        # Events every 0.5 ms from 0.5 ms; 1 ms segments put every other one
+        # on a segment end. A 0.5 ms delay moves the arrivals by 20 steps.
+        source = dict(start=0.5 * u.ms, interval=0.5 * u.ms, number=9)
+        for delay in (0.0, 0.5):
+            self._check(source, (40,) * 5, delay=delay * u.ms)
+
+    def test_noisy_events_on_segment_ends(self):
+        source = dict(start=0.5 * u.ms, interval=0.5 * u.ms, number=9, noise=0.5, seed=34)
+        times = np.asarray(braincell.NetStim(**source).event_times.to_decimal(u.ms))[0]
+        event_steps = np.unique(np.floor(times / 0.025 + 0.5).astype(int))
+        # Split on the first three event steps, plus one step inside a segment.
+        points = (*event_steps[:3], event_steps[0] + 7)
+        self._check(source, split_steps(200, points))
+
+    def test_random_split_points_match_one_run(self):
+        rng = np.random.default_rng(34)
+        event_steps = np.arange(10, 200, 10)
+        points = (*rng.choice(event_steps, 2, replace=False), rng.choice(np.setdiff1d(np.arange(1, 200), event_steps)))
+        self._check(dict(start=0.25 * u.ms, interval=0.25 * u.ms, number=19), split_steps(200, points))
 
 
 if __name__ == "__main__":

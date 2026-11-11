@@ -405,6 +405,18 @@
   Ralston's second-order method; use braincell.quad.ralston2_step (same
   numbers), or heun2_step for Heun's method."
 
+- A `Cell.run` that continues an earlier `run` or `update()` no longer
+  delivers the events on its first step twice (CELL-34). Each step prepares
+  the synaptic input of the next boundary, and `run` prepared its first
+  boundary again on top of it. Splitting a run at an event time doubled that
+  event: an ExpSyn (tau 2 ms) driven by `NetStim(start=1 ms, number=1)` at
+  0.005 uS had g = 0.006065 uS at 2 ms after two 1 ms runs, instead of the
+  0.003033 uS of one 2 ms run. Bound synapse inputs and reduced cells were
+  affected in the same way; every solver was. `run` now prepares its first
+  boundary only when no step has run since `init_state` or `reset_state`, and a
+  split run matches one run to 1e-12. One run is bit-identical to before.
+  `Network.run` was not affected.
+
 - A population-view `place` (`cell[[0]].place(...)`, or
   `cell[[0]].loc(mask).place(...)`) that fails now leaves the Cell as it was,
   as `Cell.place` and per-member placement already did. Before, the failed

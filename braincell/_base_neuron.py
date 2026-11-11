@@ -25,10 +25,13 @@ than merely avoided, which is what
 ``_base_neuron_test.BaseNeuronExportTest`` pins.
 """
 
+import contextlib
 from typing import Optional, Tuple
 
 import brainpy
 import brainunit as u
+import jax
+import jax.numpy as jnp
 
 from braincell._typing import Size
 from braincell._base_channel import IonChannel
@@ -36,6 +39,17 @@ from braincell._misc import Container, TreeNode, cast_like as _cast_like
 from braincell.quad.protocol import DiffEqModule
 
 __all__ = ["HHTypedNeuron"]
+
+# The value inputs of the step each model has in progress, keyed by
+# ``id(model)``: ``(table, key, value)`` for every one the step removes when
+# it ends. Kept here rather than on the model so that graph traversal of the
+# model never meets it.
+_STEP_VALUE_INPUTS: dict[int, tuple] = {}
+
+
+def _first_step_only(value, first):
+    """``value`` where the traced flag ``first`` is true, zero elsewhere (units kept)."""
+    return jax.tree.map(lambda leaf: jnp.where(first, leaf, jnp.zeros_like(leaf)), value)
 
 
 def _zero_spike_like(V):
@@ -263,6 +277,138 @@ class HHTypedNeuron(brainpy.state.Dynamics, Container, DiffEqModule):
         """
         TreeNode.check_hierarchies(type(self), **elements)
         self.ion_channels.update(self._format_elements(IonChannel, **elements))
+
+    _INPUT_TABLES = ("_current_inputs", "_delta_inputs")
+
+    def _add_to_input_table(self, index: int, key, item) -> None:
+        """Put ``item`` under ``key`` in the current (0) or delta (1) input table."""
+        name = self._INPUT_TABLES[index]
+        if getattr(self, name) is None:
+            setattr(self, name, {})
+        getattr(self, name)[key] = item
+
+    def _take_value_inputs(self) -> tuple:
+        """Remove the value (non-callable) inputs from the input tables and return them.
+
+        A compiled loop takes them before it runs and passes them in, so
+        that they are an input of the loop rather than constants of its
+        trace, and :meth:`_value_input_step` applies them to its first step.
+
+        Returns
+        -------
+        tuple of dict
+            ``(current, delta)``, each mapping an input key to its value.
+        """
+        taken = []
+        for name in self._INPUT_TABLES:
+            table = getattr(self, name) or {}
+            values = {key: item for key, item in table.items() if not callable(item)}
+            for key in values:
+                del table[key]
+            taken.append(values)
+        return tuple(taken)
+
+    def _restore_value_inputs(self, values) -> None:
+        """Put back the inputs :meth:`_take_value_inputs` took, for a loop that failed."""
+        for index, items in enumerate(values):
+            for key, item in items.items():
+                if key not in (getattr(self, self._INPUT_TABLES[index]) or {}):
+                    self._add_to_input_table(index, key, item)
+
+    def _in_value_input_step(self) -> bool:
+        """Whether :meth:`_value_input_step` is in progress on this model."""
+        return id(self) in _STEP_VALUE_INPUTS
+
+    @contextlib.contextmanager
+    def _value_input_step(self, values=None, *, first=None):
+        """Run one step that consumes the value inputs registered for it.
+
+        brainpy removes a value (non-callable) input the first time it is
+        summed, so a solver with several stages used to count it in its
+        first stage only. Inside this block the sums keep the value inputs,
+        so every stage of the step -- and every recording sampled in it --
+        reads the same snapshot, and the block's end removes the values that
+        were registered when it began. Callable inputs are unaffected. A
+        block opened inside another one on the same model does nothing: the
+        outer block is the step.
+
+        Parameters
+        ----------
+        values : tuple of dict, optional
+            Inputs taken by :meth:`_take_value_inputs` before a compiled
+            loop, ``(current, delta)``; they are registered for this step.
+        first : bool array, optional
+            Traced flag of the loop's first step. ``values`` act where it is
+            true and are zero elsewhere, so a loop applies them once.
+        """
+        if self._in_value_input_step():
+            yield
+            return
+        for index, items in enumerate(values or ()):
+            for key, item in items.items():
+                self._add_to_input_table(index, key, item if first is None else _first_step_only(item, first))
+        tables = tuple(getattr(self, name) or {} for name in self._INPUT_TABLES)
+        _STEP_VALUE_INPUTS[id(self)] = tuple(
+            (table, key, item) for table in tables for key, item in table.items() if not callable(item)
+        )
+        try:
+            yield
+        finally:
+            for table, key, item in _STEP_VALUE_INPUTS.pop(id(self)):
+                if table.get(key) is item:
+                    del table[key]
+
+    def sum_current_inputs(self, init, *args, label=None, pop=True, **kwargs):
+        """Add the current inputs to ``init`` (brainpy's ``sum_current_inputs``).
+
+        A callable input is called with ``*args`` and ``**kwargs``; a value
+        input is added as it is. Outside a step a value is removed once
+        summed, as in brainpy; within a step (``update``) every stage
+        adds it and the step removes it when it ends.
+
+        Parameters
+        ----------
+        init : object
+            The value the inputs are added to.
+        *args, **kwargs
+            Passed to every callable input.
+        label : str, optional
+            Sum only the inputs registered with this label.
+        pop : bool, default True
+            Remove each summed value input; ignored within a step.
+
+        Returns
+        -------
+        object
+            ``init`` plus the inputs.
+        """
+        pop = pop and not self._in_value_input_step()
+        return super().sum_current_inputs(init, *args, label=label, pop=pop, **kwargs)
+
+    def sum_delta_inputs(self, init, *args, label=None, pop=True, **kwargs):
+        """Add the delta inputs to ``init`` (brainpy's ``sum_delta_inputs``).
+
+        The value rule of :meth:`sum_current_inputs` applies: within a step
+        a value input is kept until the step ends.
+
+        Parameters
+        ----------
+        init : object
+            The value the inputs are added to.
+        *args, **kwargs
+            Passed to every callable input.
+        label : str, optional
+            Sum only the inputs registered with this label.
+        pop : bool, default True
+            Remove each summed value input; ignored within a step.
+
+        Returns
+        -------
+        object
+            ``init`` plus the inputs.
+        """
+        pop = pop and not self._in_value_input_step()
+        return super().sum_delta_inputs(init, *args, label=label, pop=pop, **kwargs)
 
     def get_spike(self, last_V, next_V):
         """Surrogate-gradient spike indicator at the ``V_th`` crossing.

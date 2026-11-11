@@ -392,5 +392,91 @@ class NetworkInitSnapshotTest(unittest.TestCase):
         self.assertEqual((first.n_cv, second.n_cv), (2, 2))
 
 
+def _add_value(cell, entry):
+    if entry == "delta":
+        cell.add_delta_input("kick", 5.0 * u.mV)
+    else:
+        cell.add_current_input("pulse", 10.0 * u.uA / u.cm**2)
+
+
+def _voltages(cell):
+    return np.asarray(cell.V.value.to_decimal(u.mV)).reshape(-1)
+
+
+class NetworkValueInputTest(unittest.TestCase):
+    """CELL-36: a value input on a population Cell acts on one step of Network.run and Network.update."""
+
+    def _update_loop(self, kind, solver, entry):
+        cell = _resting_one_cv_cell(kind, solver)
+        cell.init_state()
+        _add_value(cell, entry)
+        finals = []
+        with brainstate.environ.context(dt=DT):
+            for step in range(8):
+                with brainstate.environ.context(t=step * DT):
+                    cell.update()
+                if step in (3, 7):
+                    finals.append(_voltages(cell))
+        return finals
+
+    def test_run_and_update_match_the_cell_update_loop(self):
+        # Acceptance 4. On main both loops added the value at every step (a
+        # constant of their trace), and so did every later call that reused
+        # them: Network.run gave -45.22 mV after four steps of a 5 mV delta.
+        for kind, solver in _DELTA_PATHS:
+            for entry in ("delta", "current"):
+                with self.subTest(kind=kind, solver=solver, input=entry), _float64():
+                    expected = self._update_loop(kind, solver, entry)
+                    cell = _resting_one_cv_cell(kind, solver)
+                    network = Network("valued")
+                    network.add_population("cells", cell)
+                    network.init_state()
+                    _add_value(cell, entry)
+                    actual = []
+                    for _ in range(2):
+                        network.run(dt=DT, duration=4 * DT)
+                        actual.append(_voltages(cell))
+                    np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=0.0)
+
+                    cell = _resting_one_cv_cell(kind, solver)
+                    network = Network("stepped")
+                    network.add_population("cells", cell)
+                    network.prepare_run(dt=DT)
+                    _add_value(cell, entry)
+                    stepped = []
+                    with brainstate.environ.context(dt=DT):
+                        for step in range(8):
+                            network.update()
+                            if step in (3, 7):
+                                stepped.append(_voltages(cell))
+                    np.testing.assert_allclose(stepped, expected, rtol=1e-12, atol=0.0)
+                    if entry == "delta":
+                        np.testing.assert_allclose(actual[0], -60.11, atol=0.01)
+
+    def test_value_registered_between_runs_does_not_retrace(self):
+        with _float64():
+            cell = _resting_one_cv_cell("cable", "rk4")
+            network = Network("late_value")
+            network.add_population("cells", cell)
+            network.run(dt=DT, duration=4 * DT)
+            loops = dict(network._network_run_loop_cache)
+            _add_value(cell, "delta")
+            self.assertEqual(dict(network._network_run_loop_cache), loops)
+            network.run(dt=DT, duration=4 * DT)
+            self.assertGreater(float(np.min(_voltages(cell))), -60.2)
+            self.assertNotIn("kick", cell.delta_inputs)
+
+    def test_a_run_that_fails_keeps_its_value_inputs(self):
+        cell = _resting_one_cv_cell("lumped", "rk4")
+        network = Network("failing")
+        network.add_population("cells", cell)
+        network.prepare_run(dt=DT)
+        cell.add_current_input("pulse", np.ones((3,)) * 10.0 * u.uA / u.cm**2)
+        for advance in (lambda: network.update(), lambda: network.run(dt=DT, duration=4 * DT)):
+            with brainstate.environ.context(dt=DT), self.assertRaisesRegex(ValueError, "pulse"):
+                advance()
+            self.assertIn("pulse", cell.current_inputs)
+
+
 if __name__ == "__main__":
     unittest.main()

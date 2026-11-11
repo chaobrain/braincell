@@ -313,16 +313,19 @@ class SingleCompartment(HHTypedNeuron):
         spike : array-like
             An array indicating whether a spike occurred (1) or not (0) for each neuron.
         """
-        # Every channel, including the self-integrating ones that the three
-        # hook methods above skip.
-        for ch in self._ion_channels().values():
-            ch.ind_update(self.V.value)
+        # A value input (add_current_input, add_delta_input) acts on this
+        # step only: every solver stage reads it, and the step removes it.
+        with self._value_input_step():
+            # Every channel, including the self-integrating ones that the
+            # three hook methods above skip.
+            for ch in self._ion_channels().values():
+                ch.ind_update(self.V.value)
 
-        # numerical integration
-        last_V = self.V.value
-        self.solver(self, I_ext)
-        spk = self.get_spike(last_V, self.V.value)
-        self.spike.value = spk
+            # numerical integration
+            last_V = self.V.value
+            self.solver(self, I_ext)
+            spk = self.get_spike(last_V, self.V.value)
+            self.spike.value = spk
         return spk
 
     def soma_spike(self):

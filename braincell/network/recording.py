@@ -438,6 +438,7 @@ def _observable_rows_and_sampler(cell, spec: RecordingSpec):
                 cell,
                 V_cv=cell.V.value,
                 t=brainstate.environ.get("t"),
+                pop=False,
             )
             cv = np.asarray([pair[1] for pair in spec.scope.pairs], dtype=np.int32)
             if len(cell.pop_size) == 0:

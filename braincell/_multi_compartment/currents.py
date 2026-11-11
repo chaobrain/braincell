@@ -58,12 +58,17 @@ def total_membrane_current(
     *,
     V_cv,
     t,
+    pop=True,
 ):
-    """Return ``(..., n_cv)`` membrane current density in ``nA/cm^2``."""
+    """Return ``(..., n_cv)`` membrane current density in ``nA/cm^2``.
+
+    ``pop=False`` (a recording) leaves the value inputs registered: reading
+    the current must not consume them (``Cell.sum_current_inputs``).
+    """
     runtime = host.runtime
     with jax.named_scope("braincell:membrane_current:cv_to_point_for_point_mechanisms"):
         point_V = bridge.cv_to_point(V_cv, runtime)
-    I_point = _point_mechanism_current(host, point_V=point_V, t=t)
+    I_point = _point_mechanism_current(host, point_V=point_V, t=t, pop=pop)
     with jax.named_scope("braincell:membrane_current:point_to_cv"):
         I_cv = bridge.point_to_cv(I_point, runtime)
     return I_cv + _density_current_cv(host, V_cv=V_cv)
@@ -149,14 +154,14 @@ def point_input_current(host: "Cell", *, point_V, t, layout_ids=None):
     return point_current
 
 
-def _point_mechanism_current(host: "Cell", *, point_V, t):
+def _point_mechanism_current(host: "Cell", *, point_V, t, pop=True):
     runtime = host.runtime
     with jax.named_scope("braincell:membrane_current:current_inputs"):
         zero_density = u.Quantity(
             jnp.zeros(runtime.pop_size + (runtime.n_point,), dtype=u.get_mantissa(point_V).dtype),
             _CURRENT_DENSITY,
         )
-        I_point = host.sum_current_inputs(zero_density, point_V)
+        I_point = host.sum_current_inputs(zero_density, point_V, pop=pop)
 
     with jax.named_scope("braincell:membrane_current:clamp_density"):
         I_point = I_point + _clamp_density(host, t=t, dtype=u.get_mantissa(point_V).dtype)

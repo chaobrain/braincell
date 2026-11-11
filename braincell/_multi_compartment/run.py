@@ -161,8 +161,16 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
         schedule_key=schedule_key,
     )
 
-    with brainstate.environ.context(dt=dt), _schedule_horizon(until_ms):
-        times, start_time, stop_time, recorded, probe_values = plan.loop()
+    # Value inputs are arguments of the compiled loop, which applies them to
+    # its first step; as constants of its trace they would act on every step
+    # of this run and of every later run that reuses the loop.
+    values = rcell._take_value_inputs()
+    try:
+        with brainstate.environ.context(dt=dt), _schedule_horizon(until_ms):
+            times, start_time, stop_time, recorded, probe_values = plan.loop(values)
+    except BaseException:
+        rcell._restore_value_inputs(values)
+        raise
 
     traced = is_traced_value(times)
     if traced and plan.schedule_issues:
@@ -283,7 +291,9 @@ def _make_run_loop(
 ):
     """Create the jitted stateful run loop for a fixed observer layout.
 
-    The loop returns ``(times, start_time, stop_time, recorded, probes)``.
+    The loop takes the value inputs (``Cell._take_value_inputs``), which act
+    on its first step, and returns
+    ``(times, start_time, stop_time, recorded, probes)``.
     ``recorded`` holds one ``(values, first_time)`` pair per recording: the
     selected samples for a fixed-shape schedule, or every step's values and
     ``None`` for a variable-length one (selected eagerly by the caller).
@@ -291,7 +301,7 @@ def _make_run_loop(
     n_recordings = len(compiled_recordings)
     period_steps = tuple(_recording_steps(compiled.schema.period, dt) for compiled in compiled_recordings)
 
-    def _run_loop():
+    def _run_loop(values):
         with brainstate.environ.context(dt=dt):
             start_t = rcell.current_time
             times = start_t + u.math.arange(n_steps) * brainstate.environ.get_dt()
@@ -327,7 +337,16 @@ def _make_run_loop(
                         probe_snapshot = rcell.sample_probes()
                 return recording_snapshot + tuple(probe_snapshot[name] for name in ordered_probe_names)
 
-            traces_over_time = brainstate.transform.for_loop(_step, times)
+            if any(values):
+
+                def _step_with_values(index, t):
+                    # The value inputs act on the first step only.
+                    with rcell._value_input_step(values, first=index == 0):
+                        return _step(t)
+
+                traces_over_time = brainstate.transform.for_loop(_step_with_values, jnp.arange(n_steps), times)
+            else:
+                traces_over_time = brainstate.transform.for_loop(_step, times)
             stop_t = start_t + n_steps * brainstate.environ.get_dt()
             rcell._set_current_time(stop_t)
 

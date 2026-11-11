@@ -599,8 +599,41 @@
   cell between two `Network.run` calls was ignored, and a `DeltaProj`
   driving `Network.update` in a second `for_loop` raised
   `UnexpectedTracerError`. `Cell.run` had the same problem for delta inputs
-  (CELL-23 fixed it for current inputs). Registering an input now drops
-  these loops, so the next call traces again.
+  (CELL-23 fixed it for current inputs). Registering a callable input now
+  drops these loops, so the next call traces again; a value input is an
+  argument of the loops (CELL-36).
+
+- A value input -- a non-callable registered with `add_current_input` or
+  `add_delta_input`, as brainpy's gap junctions and `DeltaProj` do -- now
+  acts on exactly one step, and every stage of that step reads it, on
+  `Cell`, `SingleCompartment` and the cells of a `Network` (CELL-36). Three
+  faults gave results that differed from an `update()` loop or with the
+  solver:
+  - The compiled loops of `Cell.run`, `Network.run` and `Network.update`
+    summed the value once while tracing, so it became a constant of the
+    loop and was added at every step, of that call and of every later call
+    that reused the loop. A 5 mV delta on a resting one-CV cell gave
+    -45.22 mV after a 0.1 ms run at dt 0.025 ms and -26.03 mV after a
+    second one, where the same eight `update()` steps give -60.11 and
+    -60.26 mV. The loops now take the values as arguments and apply them to
+    their first step; registering a value no longer retraces them.
+  - brainpy removes a value the first time it is summed, so a multi-stage
+    solver counted it in its first stage only. One 0.025 ms step of
+    10 uA/cm^2 moved a resting leaky soma (0.3 mS/cm^2) by 0.0414 mV under
+    `rk4` and 0.0616 mV under `ralston2`, against 0.2491 mV exact. The step
+    now keeps the value for all its stages and removes it when it ends: the
+    25 registered solvers on a cable cell, and the 23 that step a lumped
+    cell or `SingleCompartment`, are within 1e-3 mV of 0.2491 mV (`rk4` and
+    `exp_euler` within 1e-11 mV).
+  - An `observe.membrane_current()` recording consumed a current value when
+    `Cell.run` compiled it, so the run never applied the value. A
+    recording now reads it without removing it.
+
+  Callable inputs are unchanged, and models without value inputs are
+  bit-identical to before. A loop of your own that traces `update()` once
+  (`brainstate.transform.for_loop`) still reads a value registered before
+  it as a constant, as in brainpy: register the value in the loop body, as
+  projections do, or use `run`.
 
 - A `Cell.run` that continues an earlier `run` or `update()` no longer
   delivers the events on its first step twice (CELL-34). Each step prepares

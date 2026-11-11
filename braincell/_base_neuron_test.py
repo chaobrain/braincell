@@ -103,5 +103,57 @@ class HHTypedNeuronGetSpikeTest(unittest.TestCase):
         np.testing.assert_allclose(far_grad_next, 0.0, atol=0.0)
 
 
+class ValueInputStepTest(unittest.TestCase):
+    """CELL-36: the step that consumes value inputs, shared by SingleCompartment and Cell."""
+
+    def _neuron(self):
+        from braincell._single_compartment.base import SingleCompartment
+
+        return SingleCompartment(size=1)
+
+    def test_step_keeps_values_for_every_read_and_removes_them_at_its_end(self) -> None:
+        neuron = self._neuron()
+        neuron.add_current_input("i", 1.0 * u.nA)
+        neuron.add_delta_input("d", 2.0 * u.mV)
+        neuron.add_delta_input("f", lambda: 3.0 * u.mV)
+        with neuron._value_input_step():
+            self.assertTrue(neuron._in_value_input_step())
+            with neuron._value_input_step():  # nested: the outer block is the step
+                pass
+            self.assertIn("i", neuron.current_inputs)
+            for _ in range(2):
+                self.assertEqual(neuron.sum_current_inputs(0.0 * u.nA).to_decimal(u.nA), 1.0)
+                self.assertEqual(neuron.sum_delta_inputs(0.0 * u.mV).to_decimal(u.mV), 5.0)
+            # Registered anew under a taken key during the step: it is the next step's.
+            neuron.current_inputs["i"] = 4.0 * u.nA
+        self.assertFalse(neuron._in_value_input_step())
+        self.assertEqual(dict(neuron.current_inputs), {"i": 4.0 * u.nA})
+        self.assertEqual(tuple(neuron.delta_inputs), ("f",))
+
+    def test_take_restore_and_first_step_values(self) -> None:
+        neuron = self._neuron()
+        self.assertEqual(neuron._take_value_inputs(), ({}, {}))
+        self.assertIsNone(neuron.current_inputs)
+        neuron.add_current_input("i", 1.0 * u.nA)
+        neuron.add_current_input("g", lambda: 1.0 * u.nA)
+        taken = neuron._take_value_inputs()
+        self.assertEqual(taken, ({"i": 1.0 * u.nA}, {}))
+        self.assertEqual(tuple(neuron.current_inputs), ("g",))
+        neuron._restore_value_inputs(taken)
+        self.assertEqual(tuple(neuron.current_inputs), ("g", "i"))
+
+        def summed(first):
+            with neuron._value_input_step(({"j": jnp.ones(2) * u.nA}, {"k": 2.0 * u.mV}), first=first):
+                return neuron.sum_current_inputs(0.0 * u.nA, pop=True), neuron.sum_delta_inputs(0.0 * u.mV)
+
+        del neuron.current_inputs["g"], neuron.current_inputs["i"]
+        for first, scale in ((jnp.asarray(True), 1.0), (jnp.asarray(False), 0.0)):
+            current, delta = jax.jit(summed)(first)
+            np.testing.assert_array_equal(current.to_decimal(u.nA), [scale, scale])
+            self.assertEqual(float(delta.to_decimal(u.mV)), 2.0 * scale)
+            self.assertEqual(neuron.current_inputs, {})
+            self.assertEqual(neuron.delta_inputs, {})
+
+
 if __name__ == "__main__":
     unittest.main()

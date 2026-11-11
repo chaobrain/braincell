@@ -32,6 +32,12 @@ error messages, as on a cable Cell. Channels are bound to ions by the same
 code as the cable runtime (``root_type``, ``ion_name`` / ``ion_names``,
 placeholder ions).
 
+External input (CELL-23) reaches the runtime as one current density per
+member: :func:`as_current_density` turns a current into a density over the CV
+area, and :meth:`LumpedRuntime.sum_current_inputs` applies the same rule to
+the current inputs registered on the owning Cell (brainpy projections), at
+every solver stage.
+
 At ``init_state`` an explicit Cell solver is checked against the HH gates it
 integrates (:func:`warn_stiff_gates`): a gate that relaxes faster than the
 solver's stability bound turns every practical ``dt`` into NaN, so the Cell
@@ -41,6 +47,7 @@ warns, naming the channel and the solvers that are stable for it.
 from __future__ import annotations
 
 import warnings
+import weakref
 from typing import TYPE_CHECKING, NamedTuple
 
 import braintools
@@ -87,10 +94,12 @@ if TYPE_CHECKING:
 
 __all__ = [
     "CLAMP_TYPES",
+    "CURRENT_DENSITY_UNIT",
     "LumpedChannel",
     "LumpedClamps",
     "LumpedRuntime",
     "StiffGate",
+    "as_current_density",
     "build_lumped_runtime",
     "stiff_gates",
     "warn_stiff_gates",
@@ -101,6 +110,12 @@ CLAMP_TYPES = (CurrentClamp, SineClamp, FunctionClamp)
 
 #: Solvers that need the cable point tree and so cannot step a lumped Cell.
 CABLE_ONLY_SOLVERS = frozenset({"staggered", "dhs_voltage"})
+
+#: Unit of the current density a lumped Cell hands its runtime (clamps and
+#: external input).
+CURRENT_DENSITY_UNIT = u.uA / u.cm**2
+_CURRENT_DIM = u.get_dim(u.amp)
+_CURRENT_DENSITY_DIM = u.get_dim(u.amp / u.meter**2)
 
 #: Voltages (mV) over which :func:`stiff_gates` scans a gate's relaxation rate:
 #: -100 to 60 mV in 0.25 mV steps, the grid of the channel catalogue's stiffness table.
@@ -120,12 +135,63 @@ _FULL_GRID_ELEMENTS = 1 << 19
 _ROUND_ELEMENTS = 1 << 17
 
 
+def as_current_density(value, *, area, shape, what: str):
+    """Return an external input of a lumped Cell as a current density.
+
+    Parameters
+    ----------
+    value : Quantity
+        A current (e.g. nA), divided by ``area``, or a current density
+        (e.g. uA/cm^2), taken as is.
+    area : Quantity
+        Membrane area of the Cell's one CV.
+    shape : tuple of int
+        Voltage shape, ``(batch,) + pop_size``; ``value`` is broadcast to it.
+    what : str
+        Name of the input in error messages.
+
+    Returns
+    -------
+    Quantity
+        The density in :data:`CURRENT_DENSITY_UNIT`, shaped ``shape``.
+
+    Raises
+    ------
+    UnitMismatchError
+        If ``value`` is neither a current nor a current density (a bare
+        number included).
+    ValueError
+        If ``value`` does not broadcast to ``shape``.
+    """
+    dim = u.get_dim(value)
+    if dim == _CURRENT_DIM:
+        density = value / area
+    elif dim == _CURRENT_DENSITY_DIM:
+        density = value
+    else:
+        unit = u.get_unit(value)
+        raise u.UnitMismatchError(
+            f"{what} on a lumped Cell must be a current (e.g. nA) or a current density "
+            f"(e.g. uA/cm^2); got a value {'without units' if unit.is_unitless else f'in {unit}'}."
+        )
+    density = u.Quantity(density).in_unit(CURRENT_DENSITY_UNIT)
+    try:
+        return u.math.broadcast_to(density, shape)
+    except ValueError:
+        raise ValueError(
+            f"{what} has shape {tuple(u.math.shape(density))}, which does not broadcast to the "
+            f"voltage shape {tuple(shape)} ((batch,) + pop_size) of the lumped Cell."
+        ) from None
+
+
 class LumpedRuntime(SingleCompartment):
     """Point-neuron engine of a lumped Cell.
 
     It is :class:`~braincell.SingleCompartment` with the membrane area of the
     Cell's one CV in place of ``2 pi radius length``. The Cell calls
-    :meth:`update` with the clamp current density as ``I_ext``.
+    :meth:`update` with the clamp current density, plus any ``I_ext`` given
+    to ``Cell.update``, as ``I_ext``; the current inputs registered on the
+    Cell are summed by :meth:`sum_current_inputs`.
 
     Parameters
     ----------
@@ -145,11 +211,14 @@ class LumpedRuntime(SingleCompartment):
         Step function from :func:`braincell.quad.get_integrator`.
     ion_channels : dict
         Ions and root-level channels, keyed by attribute name.
+    owner : Cell, optional
+        The Cell whose current inputs (``add_current_input``) drive this
+        runtime. Held by weak reference: the Cell owns the runtime.
     """
 
     __module__ = "braincell._multi_compartment.lumped"
 
-    def __init__(self, size, *, area, C, V_th, V_initializer, spk_fun, solver, ion_channels):
+    def __init__(self, size, *, area, C, V_th, V_initializer, spk_fun, solver, ion_channels, owner=None):
         super().__init__(
             size,
             C=C,
@@ -160,11 +229,54 @@ class LumpedRuntime(SingleCompartment):
             **ion_channels,
         )
         self._cv_area = area
+        self._owner_ref = None if owner is None else weakref.ref(owner)
 
     @property
     def area(self):
         """Membrane area of the Cell's one CV."""
         return self._cv_area
+
+    def sum_current_inputs(self, init, *args, **kwargs):
+        """Add the owning Cell's current inputs, each as a current density.
+
+        ``compute_derivative`` calls this at every solver stage with the
+        stage voltage, as :class:`~braincell.SingleCompartment` does. Each
+        input -- a brainpy projection's output such as ``COBA``, or any
+        callable registered with ``Cell.add_current_input`` -- may return a
+        current or a current density (:func:`as_current_density`). A
+        non-callable input is added once and removed, as in brainpy.
+
+        Parameters
+        ----------
+        init : Quantity
+            The density the inputs are added to.
+        *args, **kwargs
+            Passed to each callable input; ``compute_derivative`` passes the
+            voltage.
+
+        Returns
+        -------
+        Quantity
+            ``init`` plus every input, shaped like the voltage.
+
+        Raises
+        ------
+        UnitMismatchError
+            If an input is neither a current nor a current density; the
+            message names its key.
+        """
+        owner = None if self._owner_ref is None else self._owner_ref()
+        inputs = None if owner is None else owner.current_inputs
+        if not inputs:
+            return init
+        shape = self.V.value.shape
+        for key in tuple(inputs):
+            item = inputs[key]
+            value = item(*args, **kwargs) if callable(item) else item
+            init = init + as_current_density(value, area=self.area, shape=shape, what=f"Current input {key!r}")
+            if not callable(item):
+                del inputs[key]
+        return init
 
 
 class LumpedChannel(NamedTuple):
@@ -307,6 +419,7 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> tuple[LumpedRuntime, 
         spk_fun=cell.spk_fun,
         solver=cell.solver,
         ion_channels={**ions, **root_channels},
+        owner=cell,
     )
     return runtime, tuple(channels)
 

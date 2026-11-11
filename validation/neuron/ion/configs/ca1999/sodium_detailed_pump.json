@@ -1,0 +1,48 @@
+{
+  "meta": {"label": "Canavier 1999 soma with the Na/K pump: SodiumDetailed (nadifl), NaKPump_Ca1999 (pump.mod) and sodium and potassium leaks (leak.mod)"},
+  "identity": {
+    "mod_files": [],
+    "external_mod_files": {
+      "env": "BRAINCELL_CA1999_MOD_DIR",
+      "source": "ModelDB 6763, ModelDBRepository/6763@ccdc2f0083c0ffdbba1f1a8fd8b68d391bff5cc1",
+      "reason": "the ModelDB files carry no license statement and await a maintainers' decision on committing them",
+      "sha256": {
+        "leak.mod": "71d5171938be424cf9b266f2d1fade561f2e70a89f43c71dbdd1f1cde8e6fad9",
+        "nadifl.mod": "26d1903892222e2b7e6bfdd09c3640693c35b19d4f6d496f5498d7dc5d66ab48",
+        "pump.mod": "d1fcacba4f1ca195f8239830d0a63066fc9ebbd2865f31e56ceb914bc5591738"
+      }
+    }
+  },
+  "defaults": {
+    "simulation": {"dt_ms": 0.025, "duration_ms": 2000.0, "v_init_mV": -60.0, "temperature_celsius": 35.0},
+    "morphology": {"length_um": 15.0, "diam_um": 15.0},
+    "current_clamp": {"delay_ms": 0.0, "dur_ms": 1e9, "amp_nA": -0.02},
+    "concentrations": {"Ci": 4.0, "Co": 145.0},
+    "pool_params": {"d_diam": 0.25},
+    "channel_params": {"gnabar_uS_cm2": 40.0, "gkbar_uS_cm2": 100.0, "ek_mV": -100.0, "gcabar_uS_cm2": 0.0, "ggabaa_uS_cm2": 0.0, "nao_mM": 145.0},
+    "neuron_mechanisms": [
+      ["pump", {"ipumpmax": 0.012, "km": 10.0, "n": 1.5}]
+    ],
+    "braincell_mechanisms": [
+      ["ion", "PotassiumFixed", {"E": [-100.0, "mV"]}],
+      ["channel", "K_Leak", {"g_max": [100.0, "uS/cm2"]}],
+      ["channel", "NaKPump_Ca1999", {"imax": [0.012, "mA/cm2"], "km": [10.0, "mM"]}]
+    ]
+  },
+  "mapping": {
+    "ion": "na",
+    "pool_name": {"neuron": "nadifl", "braincell": "SodiumDetailed"},
+    "pool_params": {"d_diam": {"braincell": "d", "unit": "diam_mid"}},
+    "impl_name": {"neuron": "leak", "braincell": "Na_Leak"},
+    "gate_names": {"common": []},
+    "channel_params": {
+      "gnabar_uS_cm2": {"neuron": "gnabar", "braincell": "g_max", "unit": "uS/cm2"},
+      "gkbar_uS_cm2": {"neuron": "gkbar", "unit": "uS/cm2"},
+      "ek_mV": {"neuron": "ek", "unit": "mV"},
+      "gcabar_uS_cm2": {"neuron": "gcabar", "unit": "uS/cm2"},
+      "ggabaa_uS_cm2": {"neuron": "ggabaa", "unit": "uS/cm2"},
+      "nao_mM": {"neuron": "nao", "unit": "mM"}
+    }
+  },
+  "templates": ["../../templates/pool_cc.json"]
+}

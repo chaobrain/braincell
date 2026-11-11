@@ -198,5 +198,7 @@ UNCOVERED = {
     "Na_Leak": f"{_NO_MOD}; no source model: an ohmic leak at E_Na with a placeholder default; "
     "compared with a dynamic sodium ion under validation/neuron/ion (MECH-35)",
     "Na_TM1991": f"{_MODELDB} ModelDB 3670 HH2.mod, which scales the rates by 3^((celsius - 36)/10); the class defaults to q10 = 1 (MECH-6c)",
+    "NaKPump_Ca1999": f"{_MODELDB} ModelDB 6763 pump.mod; a stateless pump that writes sodium and potassium "
+    "currents from nai, compared with a dynamic sodium ion under validation/neuron/ion (MECH-36)",
 }
 """Registry name -> why the channel has no NEURON comparison configuration."""

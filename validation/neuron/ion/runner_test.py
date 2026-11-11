@@ -106,13 +106,21 @@ class ExternalSourcesTest(unittest.TestCase):
 
         from braincell.mech import get_registry
 
-        self.assertEqual(runner.external_config_names(), ["bo2010/potassium_detailed_fh", "ca1999/sodium_detailed_pump_off"])
+        # Derived from the configurations, not listed: every one is in-repository or external, never both.
+        external, internal = runner.external_config_names(), runner.config_names()
+        print(f"\n{len(external)} external and {len(internal)} in-repository configurations")
+        self.assertTrue(external and internal)
+        self.assertFalse(set(external) & set(internal))
+        self.assertEqual(sorted(external + internal), runner._all_config_names())
         registry = get_registry()
         for config in runner.external_config_names():
             spec = runner.load_config(config)["identity"]["external_mod_files"]
             with tempfile.TemporaryDirectory() as directory, self.subTest(config=config):
                 with mock.patch.dict(os.environ, {spec["env"]: ""}):
                     with self.assertRaisesRegex(runner.SourcesUnavailable, "maintainers' decision"):
+                        runner.load_case(config, "pool_cc")
+                with mock.patch.dict(os.environ, {spec["env"]: directory}):
+                    with self.assertRaisesRegex(runner.SourcesUnavailable, "is missing"):
                         runner.load_case(config, "pool_cc")
                 for name in spec["sha256"]:
                     (Path(directory) / name).write_text("not the recorded file")
@@ -149,6 +157,19 @@ class ExternalSourcesTest(unittest.TestCase):
         self.assertEqual((neuron["beta"], braincell["beta"], braincell["beta_o"]), (0.075, 0.075 / u.ms, 0.075 / u.ms))
         self.assertEqual((neuron["ki0"], neuron["ko0"]), (140.0, 5.0))
         self.assertEqual((braincell["C_rest"], braincell["Co_rest"]), (140.0 * u.mM, 5.0 * u.mM))
+
+    def test_the_pump_has_the_same_parameters_on_both_sides(self):
+        spec = runner.load_config("ca1999/sodium_detailed_pump")["identity"]["external_mod_files"]
+        with mock.patch.object(runner, "external_mod_files", return_value=()):
+            case = runner.load_case("ca1999/sodium_detailed_pump", "pool_cc")
+        self.assertIn("pump.mod", spec["sha256"])
+        ((suffix, neuron),) = case.neuron_mechanisms
+        neuron = {p.neuron: p.value for p in neuron}
+        (braincell,) = [params for _, cls, params in case.braincell_mechanisms if cls == "NaKPump_Ca1999"]
+        braincell = {p.braincell: (p.value, p.unit) for p in braincell}
+        self.assertEqual(suffix, "pump")
+        self.assertEqual(neuron, {"ipumpmax": 0.012, "km": 10.0, "n": 1.5})
+        self.assertEqual(braincell, {"imax": (0.012, "mA/cm2"), "km": (10.0, "mM")})
 
     def test_a_diameter_fraction_is_a_spatial_callable(self):
         from types import SimpleNamespace

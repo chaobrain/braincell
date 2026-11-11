@@ -229,6 +229,17 @@
   influx as `ik / (2 FARADAY d)`); against NEURON the pools differ by
   `e_V = 4.7e-5 mV` over 200 ms, from NEURON's implicit Euler update.
 
+- **Na⁺/K⁺ pump `braincell.channel.NaKPump_Ca1999`** (MECH-36), after
+  Canavier (1999) `pump.mod`: `I_p = imax / (1 + (km / [Na⁺]i)^n)`, net
+  outward, three sodium out and two potassium in. The sodium ion receives
+  `-3 I_p`, the potassium ion `+2 I_p` (inward positive), so a
+  `SodiumDetailed` pool falls and a `PotassiumDetailed` pool rises; with fixed
+  ions the pump adds the membrane current `-I_p` only. Defaults are the
+  `.mod`'s (`imax` 0.04 mA/cm², `km` 10 mM, `n` 1.5; the published soma uses
+  `imax` 0.012). It needs both a sodium and a potassium ion where it is
+  painted. A Canavier soma with the pump matches NEURON (`nadifl.mod`,
+  `pump.mod` and `leak.mod`, ModelDB 6763).
+
 ### Changes & Improvements
 
 - **Parameter unit errors name the mechanism, the value and the declaring

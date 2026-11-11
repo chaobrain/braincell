@@ -82,6 +82,11 @@ SHA-256 (`ModelDBRepository/6763@ccdc2f0`), `config_names()` leaves it out,
 and `sodium_test.py` skips unless `BRAINCELL_CA1999_MOD_DIR` points to them.
 `nai` and `nao` are written to NEURON's ion defaults (`nai0_na_ion`) before
 `finitialize`: `nadifl` writes `nai`, so a segment value would be reset.
+`ca1999/sodium_detailed_pump` adds the Na/K pump: `pump.mod` with
+`ipumpmax = 0.012` mA/cm² (`seg1.nrn`; NEURON-only mechanisms are listed under
+`defaults.neuron_mechanisms`) against `NaKPump_Ca1999(imax=0.012 mA/cm²)`;
+`nai` falls from 4 to 3.9901 mM, T0. Both configurations need `nadifl.mod`,
+`pump.mod` and `leak.mod` in the directory.
 
 ```bash
 BRAINCELL_CA1999_MOD_DIR=/path/to/6763 pytest -q validation/neuron/ion/sodium_test.py -m slow

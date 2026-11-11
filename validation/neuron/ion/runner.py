@@ -34,11 +34,13 @@ NEURON's ``<ion>i``/``<ion>o`` written before ``finitialize``, BrainCell's
 a state), pool and channel parameters mapped on one side only, and
 ``defaults.braincell_mechanisms`` (further ions and channels, ``[kind, class,
 {parameter: [value, unit]}]``) for what NEURON's channel mechanism computes
-beyond the pool's ion. ``identity.external_mod_files`` names sources outside
-the repository: an environment variable holding their directory and each
-file's SHA-256; such configurations are not in :func:`config_names` and
-:func:`load_case` raises :class:`SourcesUnavailable` while the variable is
-unset.
+beyond the pool's ion, and ``defaults.neuron_mechanisms`` (further NEURON
+mechanisms, ``[suffix, {parameter: value}]``, such as a pump whose BrainCell
+counterpart is in ``braincell_mechanisms``). ``identity.external_mod_files``
+names sources outside the repository: an environment variable holding their
+directory and each file's SHA-256; such configurations are not in
+:func:`config_names` and :func:`load_case` raises :class:`SourcesUnavailable`
+while the variable is unset.
 
 Sample ``i`` of both sides is the state at ``t = i dt``. Metrics (see
 ``_tolerance``): ``e_Ci`` (``Ci`` over the protocol's largest NEURON ``cai``),
@@ -76,6 +78,7 @@ UNITS = {
     "/mM/ms": lambda u: 1.0 / (u.mM * u.ms),
     "mM*um": lambda u: u.mM * u.um,
     "mol/cm2": lambda u: u.mol / u.cm**2,
+    "mA/cm2": lambda u: u.mA / u.cm**2,
     "S/cm2": lambda u: u.siemens / u.cm**2,
     "uS/cm2": lambda u: u.usiemens / u.cm**2,
     "cm/s": lambda u: u.cm / u.second,
@@ -153,6 +156,7 @@ class PoolCase:
     ion: str = "ca"
     concentrations: Mapping[str, float] = dataclasses.field(default_factory=dict)
     braincell_mechanisms: tuple[tuple[str, str, tuple[Parameter, ...]], ...] = ()
+    neuron_mechanisms: tuple[tuple[str, tuple[Parameter, ...]], ...] = ()
 
     @property
     def n_steps(self) -> int:
@@ -184,7 +188,8 @@ def external_mod_files(config: str) -> tuple[Path, ...]:
     """Resolve ``config``'s external ``.mod`` files and check their SHA-256.
 
     Raises :class:`SourcesUnavailable` when the environment variable is unset
-    and ``ValueError`` when a file differs from its recorded hash.
+    or a file is missing, and ``ValueError`` when a file differs from its
+    recorded hash.
     """
     spec = load_config(config)["identity"].get("external_mod_files")
     if spec is None:
@@ -195,6 +200,8 @@ def external_mod_files(config: str) -> tuple[Path, ...]:
     files = []
     for name, digest in sorted(spec["sha256"].items()):
         path = Path(directory) / name
+        if not path.is_file():
+            raise SourcesUnavailable(f"{config}: {spec['reason']}; {path} ({spec['source']}) is missing.")
         if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise ValueError(f"{config}: {path} does not have the SHA-256 recorded for {name} ({spec['source']}).")
         files.append(path)
@@ -246,6 +253,10 @@ def load_case(config: str, protocol: str) -> PoolCase:
         (kind, cls, tuple(Parameter(None, key, checked_unit(unit, key), float(value)) for key, (value, unit) in values.items()))
         for kind, cls, values in defaults.get("braincell_mechanisms", [])
     )
+    neuron_extra = tuple(
+        (suffix, tuple(Parameter(key, None, "", float(value)) for key, value in values.items()))
+        for suffix, values in defaults.get("neuron_mechanisms", [])
+    )
 
     channel = None
     if "impl_name" in mapping and protocol != "pool_zero_current":
@@ -282,6 +293,7 @@ def load_case(config: str, protocol: str) -> PoolCase:
         ion=mapping.get("ion", "ca"),
         concentrations=dict(defaults.get("concentrations", {})),
         braincell_mechanisms=extra,
+        neuron_mechanisms=neuron_extra,
     )
 
 
@@ -367,6 +379,9 @@ def run_neuron(case: PoolCase, *, initialize=None) -> dict[str, np.ndarray]:
             restore += [_set(h, section, case.channel.neuron, p.neuron, p.value) for p in case.channel.params if p.neuron]
             observables["ica"] = lambda: -getattr(segment, current_name)
             observables.update({f"gate:{b}": (lambda n=n: getattr(mechanism, n)) for n, b in case.channel.gates})
+        for suffix, params in case.neuron_mechanisms:
+            section.insert(suffix)
+            restore += [_set(h, section, suffix, p.neuron, p.value) for p in params]
 
         def set_initial_states(h, segment, **kwargs):
             kwargs["concentrations"] = {**(kwargs.get("concentrations") or {}), **concentrations} or None

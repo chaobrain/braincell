@@ -140,7 +140,7 @@ from braincell.channel.potassium_calcium import (
     Kca1p1_RI2021_SC,
 )
 from braincell.channel.potassium_calcium import __all__ as _potassium_calcium_all
-from braincell.channel.potassium_sodium import Kv1p5_MA2020_GrC
+from braincell.channel.potassium_sodium import Kv1p5_MA2020_GrC, NaKPump_Ca1999
 from braincell.channel.potassium_sodium import __all__ as _potassium_sodium_all
 from braincell.channel.sodium import (
     Na_Ba2002,

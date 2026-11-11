@@ -306,6 +306,7 @@ CLASSES = (
     ClassEntry("Kv4p3_MA2024_PC", 1, False),  # 34.9 /ms, a gate at -100 mV
     ClassEntry("Kv4p3_MA2025_BC", 1, False),  # 34.9 /ms, a gate at -100 mV
     ClassEntry("Kv4p3_RI2021_SC", 1, False),  # 34.9 /ms, a gate at -100 mV
+    ClassEntry("NaKPump_Ca1999", None, False),  # stateless
     ClassEntry("fKdr_SU2015_DCN", 0, False),  # 9.68 /ms, m gate at +60 mV
     ClassEntry("sKdr_SU2015_DCN", 0, False),  # 6.9 /ms, m gate at +60 mV
     # sodium.py, hyperpolarization_activated.py and leaky.py (36 degC).
@@ -387,7 +388,8 @@ POTASSIUM_FAMILY_CLASSES = (
     "Kv1p1_MA2020_GrC", "Kv1p1_MA2024_PC", "Kv1p1_MA2025_BC", "Kv1p1_RI2021_SC", "Kv1p5_MA2020_GrC",
     "Kv1p5_MA2024_PC", "Kv2p2_0010_MA2020_GrC", "Kv3p3_MA2024_PC", "Kv3p4_MA2020_GoC", "Kv3p4_MA2020_GrC",
     "Kv3p4_MA2024_PC", "Kv3p4_MA2025_BC", "Kv3p4_RI2021_SC", "Kv4p3_MA2020_GoC", "Kv4p3_MA2020_GrC",
-    "Kv4p3_MA2024_PC", "Kv4p3_MA2025_BC", "Kv4p3_RI2021_SC", "fKdr_SU2015_DCN", "sKdr_SU2015_DCN",
+    "Kv4p3_MA2024_PC", "Kv4p3_MA2025_BC", "Kv4p3_RI2021_SC", "NaKPump_Ca1999", "fKdr_SU2015_DCN",
+    "sKdr_SU2015_DCN",
 )
 """The registered channel classes defined in ``potassium.py`` and ``potassium_sodium.py``."""
 

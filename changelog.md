@@ -80,6 +80,23 @@
 
 ### New Features
 
+- **`Morphology.scale(factor, *, origin=None, subtree=None)` scales a tree by
+  one factor in every direction** (MORPH-3b). Segment lengths, both radii and
+  the 3-D points (about `origin`, `(0, 0, 0)` um unless given) are multiplied
+  by `factor`, so lengths, areas and volumes change by `factor`, `factor**2`
+  and `factor**3`. It changes the tree in place, returns `None` and keeps
+  names, topology and branch indices. Branches without 3-D points
+  (`Branch.from_lengths`) are scaled too. `subtree=` limits it to one branch
+  and its descendants. `factor` is a plain positive number: a quantity or a
+  `bool` raises `TypeError`, and several factors (such as `[1, 1, 1.3]` to
+  undo slice shrinkage in z) raise `ValueError`, since a circular
+  cross-section has no single radius after a stretch along one axis. A
+  declared Cell rebuilds its CVs from the scaled lengths, so a `MaxCVLen`
+  grid gets more or fewer CVs, and `branch_range("length", ...)` selects by
+  the new lengths. `scale` is now a reserved branch name: a checkpoint that
+  holds a branch named `scale` no longer loads. No branch in this repository
+  uses that name.
+
 - **`Morphology.translate(offset, *, subtree=None)` and
   `Morphology.rotate(angle=None, axis=None, *, matrix=None, origin=None,
   subtree=None)` move a tree in space** (MORPH-3a). Both change the tree in

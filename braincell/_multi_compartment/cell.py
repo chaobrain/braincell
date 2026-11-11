@@ -114,16 +114,15 @@ from braincell._multi_compartment.geometry import GeometryView
 from braincell._multi_compartment.lumped import (
     CABLE_ONLY_SOLVERS,
     CLAMP_TYPES,
+    CURRENT_DENSITY_UNIT as _LUMPED_CURRENT_UNIT,
     LumpedClamps,
+    as_current_density,
     build_lumped_runtime,
     warn_stiff_gates,
 )
 from braincell.morph.morphology import Morphology as _Morphology
 
 __all__ = ["Cell", "CellView", "MultiCompartment"]
-
-#: Unit of the clamp current density a lumped Cell passes to its runtime.
-_LUMPED_CURRENT_UNIT = u.uA / u.cm**2
 
 
 @dataclass(frozen=True)
@@ -3193,19 +3192,54 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._run_integrated_hook("post_integral", self.V.value)
         self._direct_step_clamps_prepared = False
 
-    def update(self):
+    def update(self, I_ext=None):
         """Advance the cell by one simulation step.
 
         This method is the standalone cell-level step wrapper. It applies
         already-prepared synaptic events, advances continuous membrane and
         mechanism dynamics by one ``dt``, computes the spike output, and
-        prepares synaptic input for the next standalone step.
+        prepares synaptic input for the next standalone step. It reads
+        ``dt`` from ``brainstate.environ`` and ``t`` from the environment
+        or, if unset, ``current_time``; it does not advance
+        ``current_time``.
+
+        Parameters
+        ----------
+        I_ext : Quantity, optional
+            External current for this step; lumped cells
+            (``cv_policy=Lumped()``, :meth:`point`) only. Either a current
+            (e.g. ``0.1 * u.nA``), divided by the membrane area, or a
+            current density (e.g. ``10 * u.uA / u.cm**2``), broadcast to
+            ``V.value.shape``, i.e. ``(batch,) + pop_size``: a scalar drives
+            every member, a ``pop_size`` array one value per member. It is
+            added to the clamp current of the step, and every stage of the
+            solver step reads the same value, so evaluate a time-varying
+            input at the step midpoint ``t + dt / 2`` to match the clamps.
+            ``None`` (default) adds nothing. Current inputs registered with
+            :meth:`add_current_input` (brainpy projections) follow the same
+            unit rule but are evaluated at every stage with the stage
+            voltage.
 
         Returns
         -------
         object
             Spike value produced by the transition from the previous membrane
-            voltage to the updated membrane voltage.
+            voltage to the updated membrane voltage, shaped like ``V.value``.
+
+        Raises
+        ------
+        RuntimeError
+            Before ``init_state()``.
+        ValueError
+            If ``brainstate.environ['dt']`` is not set, or ``I_ext`` does not
+            broadcast to ``V.value.shape``.
+        TypeError
+            If ``I_ext`` is given to a cable Cell: inject current there
+            with a placed :class:`~braincell.mech.CurrentClamp` or
+            :class:`~braincell.mech.FunctionClamp`.
+        UnitMismatchError
+            If ``I_ext`` is neither a current nor a current density; also if
+            a registered current input returns another unit.
 
         Notes
         -----
@@ -3219,14 +3253,131 @@ class Cell(_CellFacade, HHTypedNeuron):
         In network execution, delayed event delivery is scheduled outside the
         cell. ``Network.run(...)`` writes arrivals into runtime state buffers
         before calling the corresponding internal cell phases.
+
+        Calling the cell, ``cell(I_ext)``, runs its ``before_updates``
+        (e.g. the synapse of a ``brainpy.state.AlignPostProj``) and then
+        ``update(I_ext)``.
+
+        Examples
+        --------
+        Drive a lumped cell from a user loop with a total current:
+
+        .. code-block:: python
+
+            >>> import brainstate
+            >>> import brainunit as u
+            >>> import numpy as np
+            >>> import braincell as bc
+            >>> cell = bc.Cell.point(3, length=20 * u.um, radius=10 * u.um, V_init=-65 * u.mV)
+            >>> cell = cell.paint(bc.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV))
+            >>> cell.init_state()
+            >>> amplitudes = np.array([0.0, 0.05, 0.1]) * u.nA
+            >>> def step(t):
+            ...     with brainstate.environ.context(t=t):
+            ...         cell.update(amplitudes)
+            ...         return cell.V.value
+            >>> with brainstate.environ.context(dt=0.025 * u.ms):
+            ...     times = u.math.arange(0.0 * u.ms, 5.0 * u.ms, 0.025 * u.ms)
+            ...     trace = brainstate.transform.for_loop(step, times)
+            >>> trace.shape
+            (200, 3)
+            >>> bool(trace[-1, 2] > trace[-1, 1] > trace[-1, 0])
+            True
+
+        Drive it from a brainpy projection; the conductance may be total
+        (nS) or per area (mS/cm^2):
+
+        .. code-block:: python
+
+            >>> import brainpy
+            >>> cell = bc.Cell.point(3, length=20 * u.um, radius=10 * u.um, V_init=-65 * u.mV)
+            >>> cell = cell.paint(bc.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV))
+            >>> proj = brainpy.state.AlignPostProj(
+            ...     comm=lambda spikes: spikes * (5.0 * u.nS),
+            ...     syn=brainpy.state.Expon.desc(3, tau=5.0 * u.ms),
+            ...     out=brainpy.state.COBA.desc(E=0.0 * u.mV),
+            ...     post=cell,
+            ... )
+            >>> _ = brainstate.nn.init_all_states(proj)  # also initializes the cell
+            >>> with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms):
+            ...     proj(np.array([1.0, 0.0, 0.0]))
+            ...     spike = cell()
+            >>> spike.shape
+            (3,)
+            >>> bool(cell.V.value[0] > cell.V.value[1])
+            True
         """
+        if I_ext is not None and not self._is_lumped:
+            raise TypeError(
+                "Cell.update(I_ext) drives a lumped Cell (cv_policy=Lumped(), Cell.point) only. "
+                "On a cable Cell, inject current with a placed clamp at a site: "
+                "cell.place(locset, braincell.mech.CurrentClamp(...)) or "
+                "braincell.mech.FunctionClamp(fn=...); after init_state(), call reset() before placing it."
+            )
         self._raise_if_not_initialized("update()")
+        # Checked before any state changes, so a bad input leaves the cell as it was.
+        external = None
+        if I_ext is not None:
+            external = as_current_density(
+                I_ext, area=self._lumped_runtime.area, shape=tuple(self.V.value.shape), what="I_ext"
+            )
         self._prepare_step_clamps()
         self._begin_step()
         with brainstate.environ.context(_braincell_step_clamps_prepared=True):
-            spk = self._update_dynamics()
+            spk = self._update_dynamics(external)
         self._prepare_next_synapse_inputs(t=self._resolve_t() + brainstate.environ.get_dt())
         return spk
+
+    def add_current_input(self, key, inp, label=None):
+        """Register a current input, the entry brainpy projections use.
+
+        ``brainpy.state.AlignPostProj`` and ``CurrentProj`` call this on
+        their ``post`` model with their synaptic output (e.g. ``COBA``), a
+        callable of the membrane voltage. Registering an input also drops
+        the compiled loops of :meth:`run`, so the next ``run`` includes it.
+
+        Parameters
+        ----------
+        key : str
+            Unique name of the input.
+        inp : callable or Quantity
+            A callable of the voltage, evaluated at every solver stage, or a
+            value, added once and then removed (brainpy's rule).
+        label : str, optional
+            brainpy's grouping label.
+
+        Raises
+        ------
+        ValueError
+            If ``key`` is already registered with a different input.
+
+        Notes
+        -----
+        On a lumped cell the input may return a current (e.g. nA), divided
+        by the membrane area, or a current density (e.g. uA/cm^2), as
+        :meth:`update`'s ``I_ext``; it is called with the voltage shaped
+        ``(batch,) + pop_size``. On a cable cell it is called with the point
+        voltage, shaped ``(batch,) + pop_size + (n_point,)``, and must return
+        a current density.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainstate
+            >>> import brainunit as u
+            >>> import braincell as bc
+            >>> cell = bc.Cell.point(2, V_init=-65 * u.mV)
+            >>> cell = cell.paint(bc.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-65 * u.mV))
+            >>> cell.add_current_input("drive", lambda V: 0.02 * u.nA)
+            >>> cell.init_state()
+            >>> with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms):
+            ...     _ = cell.update()
+            >>> bool((cell.V.value > -65 * u.mV).all())
+            True
+        """
+        super().add_current_input(key, inp, label=label)
+        self._run_loop_cache.clear()
 
     def _begin_step(self):
         """Apply prepared discrete synaptic events at step start.
@@ -3301,8 +3452,15 @@ class Cell(_CellFacade, HHTypedNeuron):
             n_point=self._runtime.n_point,
         )
 
-    def _update_dynamics(self):
+    def _update_dynamics(self, external=None):
         """Advance continuous cell dynamics and update spike state.
+
+        Parameters
+        ----------
+        external : Quantity, optional
+            Lumped cells only: external current density for this step,
+            already converted and broadcast by :meth:`update`; it is added
+            to the prepared clamp density.
 
         Returns
         -------
@@ -3334,8 +3492,11 @@ class Cell(_CellFacade, HHTypedNeuron):
             self._publish_reduction_output(output)
             return self.spike.value
         if self._is_lumped:
+            I_ext = self._lumped_I_ext.value
+            if external is not None:
+                I_ext = I_ext + external
             with jax.named_scope("braincell:cell_update:lumped"):
-                return self._lumped_runtime.update(self._lumped_I_ext.value)
+                return self._lumped_runtime.update(I_ext)
 
         last_V = self.V.value
         self._event_previous_V.value = last_V

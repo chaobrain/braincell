@@ -19,6 +19,7 @@ import unittest
 import warnings
 from unittest import mock
 
+import brainpy
 import brainstate
 import braintools
 import brainunit as u
@@ -829,6 +830,396 @@ class LumpedCounterexampleTest(unittest.TestCase):
         network = bc.Network("lumped")
         with self.assertRaisesRegex(NotImplementedError, "lumped Cell"):
             network.add_population("points", bc.Cell.point(N))
+
+
+
+# ---------------------------------------------------------------------------
+# CELL-23: external input -- update(I_ext) and brainpy projections.
+# ---------------------------------------------------------------------------
+
+#: CELL-23 acceptance 1: the caller's drive, a current per member.
+_DRIVE_SCALE = np.asarray([0.5, 1.0, 1.5])
+_BOUNDS = {"rk4": 1e-10, "euler": 1e-10, "ralston2": 1e-10, "exp_euler": 1e-9}
+_STEPS = int(round(float(DURATION / DT)))
+
+
+def _drive(t):
+    """0.1 nA * (1 + sin(2 pi t / 5 ms)) * [0.5, 1, 1.5]."""
+    return 0.1 * u.nA * (1.0 + u.math.sin(2.0 * np.pi * t / (5.0 * u.ms))) * _DRIVE_SCALE
+
+
+def _input_clamp():
+    return bc.mech.CurrentClamp(delay=2.0 * u.ms, durations=5.0 * u.ms, amplitudes=0.05 * u.nA)
+
+
+def _input_clamp_density(t, area):
+    """The clamp above at the step midpoint, as a density over ``area``."""
+    mid = t + 0.5 * DT
+    on = (mid >= 2.0 * u.ms) & (mid < 7.0 * u.ms)
+    return u.math.where(on, 0.05, 0.0) * u.nA / area
+
+
+def _voltage_before_each_step(model, step):
+    """Run ``step(i, t)`` for every step under ``for_loop``; return V before each."""
+
+    def body(index):
+        t = index * DT
+        with brainstate.environ.context(t=t, dt=DT):
+            before = model.V.value
+            step(index, t)
+            return before
+
+    with brainstate.environ.context(dt=DT):
+        return brainstate.transform.for_loop(body, np.arange(_STEPS))
+
+
+def _max_dv(a, b) -> float:
+    return float(u.math.max(u.math.abs(a - b)).to_decimal(u.mV))
+
+
+def _raster(seed):
+    """Spikes of 20 sources, each firing with p = 0.05 per step."""
+    return jax.numpy.asarray((np.random.default_rng(seed).random((_STEPS, 20)) < 0.05).astype(float))
+
+
+def _weights(seed):
+    return np.random.default_rng(seed).uniform(0.5, 1.5, size=(20, N))
+
+
+class _Dense(brainstate.nn.Module):
+    """``spikes @ W``, the communication of the projection tests."""
+
+    def __init__(self, weight):
+        super().__init__()
+        self.weight = weight
+
+    def update(self, spikes):
+        return u.math.matmul(spikes, self.weight)
+
+
+def _run_projection(post, proj, raster):
+    """Initialise through the projection (it reaches ``post`` once) and drive it."""
+    brainstate.nn.init_all_states(proj)
+    if isinstance(post, bc.SingleCompartment):
+        post.reset_state()
+
+    def step(index, t):
+        proj(raster[index])
+        post()
+
+    return _voltage_before_each_step(post, step)
+
+
+def _align_post(post, weight, g_unit):
+    return brainpy.state.AlignPostProj(
+        comm=_Dense(weight),
+        syn=brainpy.state.Expon.desc(N, tau=5.0 * u.ms, g_initializer=braintools.init.Constant(0.0 * g_unit)),
+        out=brainpy.state.COBA.desc(E=0.0 * u.mV),
+        post=post,
+    )
+
+
+class ExternalInputEquivalenceTest(unittest.TestCase):
+    """CELL-23 acceptance 1: every drive matches SingleCompartment step by step in float64."""
+
+    def _check(self, drive):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for solver, bound in _BOUNDS.items():
+                with self.subTest(solver=solver):
+                    expected, actual = drive(solver)
+                    self.assertEqual(actual.shape, expected.shape)
+                    self.assertLessEqual(_max_dv(actual, expected), bound)
+
+    def test_total_current(self) -> None:
+        def drive(solver):
+            model = _single_compartment(hh=True, solver=solver)
+            model.init_state()
+            model.reset_state()
+            area = model.area
+            expected = _voltage_before_each_step(
+                model,
+                lambda i, t: model.update(_drive(t + 0.5 * DT) / area + _input_clamp_density(t, area)),
+            )
+            cell = _point_cell(solver=solver)
+            cell.place(_input_clamp())
+            cell.init_state()
+            return expected, _voltage_before_each_step(cell, lambda i, t: cell.update(_drive(t + 0.5 * DT)))
+
+        self._check(drive)
+
+    def test_current_density(self) -> None:
+        def drive(solver):
+            model = _single_compartment(hh=True, solver=solver)
+            model.init_state()
+            model.reset_state()
+            area = model.area
+
+            def density(t):
+                return (_drive(t + 0.5 * DT) / area).in_unit(u.uA / u.cm**2)
+
+            expected = _voltage_before_each_step(
+                model, lambda i, t: model.update(density(t) + _input_clamp_density(t, area))
+            )
+            cell = _point_cell(solver=solver)
+            cell.place(_input_clamp())
+            cell.init_state()
+            return expected, _voltage_before_each_step(cell, lambda i, t: cell.update(density(t)))
+
+        self._check(drive)
+
+    def test_batch_axis(self) -> None:
+        rows = np.asarray([[1.0], [2.0]])
+
+        def drive(solver):
+            model = _single_compartment(hh=True, solver=solver)
+            model.init_state(batch_size=2)
+            model.reset_state(batch_size=2)
+            area = model.area
+            expected = _voltage_before_each_step(
+                model, lambda i, t: model.update(_drive(t + 0.5 * DT) * rows / area)
+            )
+            cell = _point_cell(solver=solver)
+            cell.init_state(batch_size=2)
+            actual = _voltage_before_each_step(cell, lambda i, t: cell.update(_drive(t + 0.5 * DT) * rows))
+            self.assertEqual(actual.shape, (_STEPS, 2, N))
+            return expected, actual
+
+        self._check(drive)
+
+    def test_align_post_projection_with_coba(self) -> None:
+        raster = _raster(7)
+        weight = _weights(11) * 2.0 * u.nS
+        for kind in ("current", "density"):
+
+            def drive(solver, kind=kind):
+                model = _single_compartment(hh=True, solver=solver)
+                density = (weight / model.area).in_unit(u.mS / u.cm**2)
+                expected = _run_projection(model, _align_post(model, density, u.mS / u.cm**2), raster)
+                cell = _point_cell(solver=solver)
+                if kind == "current":
+                    proj = _align_post(cell, weight, u.nS)
+                else:
+                    proj = _align_post(cell, (weight / _area()).in_unit(u.mS / u.cm**2), u.mS / u.cm**2)
+                # The input makes the cell fire, so the comparison is not trivial.
+                self.assertGreater(float(u.math.max(expected).to_decimal(u.mV)), 0.0)
+                return expected, _run_projection(cell, proj, raster)
+
+            with self.subTest(conductance=kind):
+                self._check(drive)
+
+    def test_current_projection(self) -> None:
+        raster = _raster(3)
+        outputs = {
+            "COBA": (_weights(5) * 3.0 * u.nS, u.mS / u.cm**2, lambda: brainpy.state.COBA(E=0.0 * u.mV)),
+            "CUBA": (_weights(5) * 0.3 * u.nA, u.uA / u.cm**2, lambda: brainpy.state.CUBA(scale=1.0)),
+        }
+        for name, (weight, density_unit, make_out) in outputs.items():
+
+            def drive(solver, weight=weight, density_unit=density_unit, make_out=make_out):
+                model = _single_compartment(hh=True, solver=solver)
+                density = (weight / model.area).in_unit(density_unit)
+                expected = _run_projection(
+                    model, brainpy.state.CurrentProj(comm=_Dense(density), out=make_out(), post=model), raster
+                )
+                cell = _point_cell(solver=solver)
+                proj = brainpy.state.CurrentProj(comm=_Dense(weight), out=make_out(), post=cell)
+                return expected, _run_projection(cell, proj, raster)
+
+            with self.subTest(out=name):
+                self._check(drive)
+
+
+class ExternalInputTest(unittest.TestCase):
+    """CELL-23 acceptance 2-4, 6: shapes, stages, units and the other entry points."""
+
+    def _cell(self, *, batch_size=None, solver=None, hh=False):
+        cell = _point_cell(hh=hh, solver=solver)
+        cell.init_state(batch_size=batch_size)
+        return cell
+
+    def test_broadcast_over_population_and_batch(self) -> None:
+        cases = (
+            (None, 0.1 * u.nA, (N,)),
+            (None, np.asarray([0.1, 0.2, 0.3]) * u.nA, (N,)),
+            (2, np.asarray([0.1, 0.2, 0.3]) * u.nA, (2, N)),
+            (2, np.ones((2, N)) * u.uA / u.cm**2, (2, N)),
+        )
+        for batch_size, current, shape in cases:
+            with self.subTest(batch_size=batch_size, shape=u.math.shape(current)):
+                cell = self._cell(batch_size=batch_size)
+                with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                    spike = cell.update(current)
+                self.assertEqual(spike.shape, shape)
+                self.assertEqual(cell.V.value.shape, shape)
+        # A scalar drives every member alike.
+        cell = self._cell()
+        with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+            cell.update(0.1 * u.nA)
+        voltage = cell.V.value.to_decimal(u.mV)
+        np.testing.assert_array_equal(voltage, np.full((N,), voltage[0]))
+
+    def test_shape_that_does_not_broadcast_raises(self) -> None:
+        cases = ((None, (2,)), (None, (N, 1)), (2, (2,)))
+        for batch_size, shape in cases:
+            with self.subTest(batch_size=batch_size, shape=shape):
+                cell = self._cell(batch_size=batch_size)
+                before = cell.V.value
+                with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                    with self.assertRaisesRegex(ValueError, r"voltage shape \(" + str(cell.V.value.shape[0])):
+                        cell.update(np.ones(shape) * u.nA)
+                np.testing.assert_array_equal(cell.V.value.to_decimal(u.mV), before.to_decimal(u.mV))
+
+    def test_input_is_held_over_the_stages_of_a_step(self) -> None:
+        cell = self._cell(solver="rk4")
+        stage_voltages = []
+
+        def probe(V):
+            stage_voltages.append(np.asarray(V.to_decimal(u.mV)))
+            return u.math.zeros_like(u.get_mantissa(V)) * u.uA / u.cm**2
+
+        cell.add_current_input("probe", probe)
+        runtime = cell._lumped_runtime
+        with mock.patch.object(runtime, "compute_derivative", wraps=runtime.compute_derivative) as spy:
+            with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                cell.update(0.1 * u.nA)
+        received = [call.args[0] for call in spy.call_args_list]
+        self.assertEqual(len(received), 4)
+        expected = float((0.1 * u.nA / _area()).to_decimal(u.uA / u.cm**2))
+        for value in received:
+            np.testing.assert_allclose(value.to_decimal(u.uA / u.cm**2), np.full((N,), expected), rtol=1e-6)
+        self.assertEqual(len(stage_voltages), 4)
+        self.assertGreater(len({float(v[0]) for v in stage_voltages}), 1)
+
+    def test_wrong_unit_raises_unit_mismatch_at_update(self) -> None:
+        for value in (1.0 * u.mV, 0.1):
+            with self.subTest(value=value):
+                cell = self._cell()
+                before = cell.V.value
+                with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                    with self.assertRaisesRegex(u.UnitMismatchError, r"current \(e\.g\. nA\) or a current density"):
+                        cell.update(value)
+                np.testing.assert_array_equal(cell.V.value.to_decimal(u.mV), before.to_decimal(u.mV))
+
+    def test_current_input_with_wrong_unit_raises_naming_its_key(self) -> None:
+        cell = self._cell()
+        cell.add_current_input("bad_input", lambda V: u.math.zeros_like(u.get_mantissa(V)) * u.mV)
+        with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+            with self.assertRaisesRegex(u.UnitMismatchError, "bad_input"):
+                cell.update()
+
+    def test_current_input_was_ignored_before(self) -> None:
+        # On main before CELL-23 a lumped Cell summed its runtime's (empty)
+        # input table, so a current input left V unchanged.
+        traces = []
+        for value in (None, 10.0 * u.uA / u.cm**2, (10.0 * u.uA / u.cm**2 * _area()).in_unit(u.nA)):
+            cell = self._cell()
+            if value is not None:
+                cell.add_current_input("drive", lambda V, value=value: value)
+            with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                cell.update()
+            traces.append(cell.V.value.to_decimal(u.mV))
+        self.assertGreater(float(np.min(traces[1] - traces[0])), 1e-3)
+        np.testing.assert_allclose(traces[2], traces[1], rtol=0.0, atol=1e-5)
+
+    def test_direct_solver_call_and_call_operator_match_update(self) -> None:
+        raster = _raster(3)
+        weight = _weights(5) * 3.0 * u.nS
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            results = {}
+            for entry in ("update", "rk4_step"):
+                cell = _point_cell(solver="rk4")
+                proj = brainpy.state.CurrentProj(comm=_Dense(weight), out=brainpy.state.COBA(E=0.0 * u.mV), post=cell)
+                brainstate.nn.init_all_states(proj)
+                voltages = []
+                for index in range(2):
+                    with brainstate.environ.context(t=index * DT, dt=DT):
+                        proj(raster[2 * index + 30])
+                        if entry == "update":
+                            cell.update()
+                        else:
+                            bc.quad.rk4_step(cell)
+                    voltages.append(cell.V.value.to_decimal(u.mV))
+                results[entry] = np.stack(voltages)
+            self.assertGreater(float(np.max(np.abs(results["update"] + 65.0))), 1e-6)
+            np.testing.assert_array_equal(results["rk4_step"], results["update"])
+
+            called = []
+            for entry in ("update", "call"):
+                cell = _point_cell(solver="rk4")
+                cell.init_state()
+                with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                    if entry == "update":
+                        cell.update(0.2 * u.nA)
+                    else:
+                        cell(0.2 * u.nA)
+                called.append(cell.V.value.to_decimal(u.mV))
+            np.testing.assert_array_equal(called[1], called[0])
+
+    def test_run_includes_a_current_input_added_after_a_run(self) -> None:
+        def drive(V):
+            return u.math.full_like(u.get_mantissa(V), 10.0) * u.uA / u.cm**2
+
+        finals = []
+        for late in (False, True):
+            cell = self._cell()
+            if not late:
+                cell.add_current_input("drive", drive)
+            cell.run(dt=DT, duration=1.0 * u.ms)
+            if late:
+                cell.add_current_input("drive", drive)
+            cell.run(dt=DT, duration=1.0 * u.ms)
+            finals.append(cell.V.value.to_decimal(u.mV))
+        idle = self._cell()
+        idle.run(dt=DT, duration=2.0 * u.ms)
+        # Added after the first run, the input still moves the second one.
+        self.assertGreater(float(np.min(finals[1] - idle.V.value.to_decimal(u.mV))), 1.0)
+        self.assertGreater(float(np.min(finals[0] - finals[1])), 0.0)
+
+
+class ExternalInputOnCableCellTest(unittest.TestCase):
+    """CELL-23 acceptance 5 and 6: a cable Cell rejects I_ext; run() sees late current inputs."""
+
+    @staticmethod
+    def _cable_cell(cv_count=3, g_max=0.1 * u.mS / u.cm**2):
+        branch = bc.Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 2.0] * u.um, type="dendrite")
+        cell = bc.Cell(bc.Morphology.from_root(branch), cv_policy=bc.CVPerBranch(cv_count), V_init=-65.0 * u.mV)
+        cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=g_max, E=-65.0 * u.mV))
+        return cell
+
+    def test_update_with_input_raises_type_error_pointing_to_clamps(self) -> None:
+        cell = self._cable_cell()
+        cell.init_state()
+        with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+            with self.assertRaisesRegex(TypeError, r"CurrentClamp.*FunctionClamp"):
+                cell.update(0.1 * u.nA)
+            cell.update(None)
+        after_none = cell.V.value.to_decimal(u.mV)
+        reference = self._cable_cell()
+        reference.init_state()
+        with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+            reference.update()
+        np.testing.assert_array_equal(after_none, reference.V.value.to_decimal(u.mV))
+
+        # The recovery the message gives: reset(), place a clamp, init again.
+        cell.reset()
+        cell.place(RootLocation(0.5), bc.mech.FunctionClamp(fn=lambda t: 0.01 * u.nA))
+        cell.init_state()
+        with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+            cell.update()
+        middle = cell.V.value.to_decimal(u.mV)[0, 1]
+        self.assertGreater(float(middle), float(reference.V.value.to_decimal(u.mV)[0, 1]) + 1e-4)
+
+    def test_run_includes_a_current_input_added_after_a_run(self) -> None:
+        def drive(V):
+            return u.math.full_like(u.get_mantissa(V), 10.0) * u.uA / u.cm**2
+
+        cell = self._cable_cell(cv_count=1, g_max=0.3 * u.mS / u.cm**2)
+        cell.init_state()
+        cell.run(dt=DT, duration=1.0 * u.ms)
+        np.testing.assert_allclose(cell.V.value.to_decimal(u.mV), -65.0)
+        cell.add_current_input("drive", drive)
+        cell.run(dt=DT, duration=1.0 * u.ms)
+        self.assertGreater(float(np.min(cell.V.value.to_decimal(u.mV))), -60.0)
 
 
 if __name__ == "__main__":

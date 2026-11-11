@@ -80,6 +80,28 @@
 
 ### New Features
 
+- **External input for lumped cells: `update(I_ext)` and brainpy projections**
+  (CELL-23). A lumped cell (`Cell.point(...)`, `cv_policy=Lumped()`) can be
+  driven from a user loop and by `brainpy.state` projections, with the same
+  numbers as the equivalent `SingleCompartment` (float64, 800 steps, `rk4`,
+  `euler`, `ralston2`, `exp_euler`: at most 3e-12 mV apart).
+  - `cell.update(I_ext)` takes a current (`0.1 * u.nA`, divided by the
+    membrane area) or a current density (`10 * u.uA / u.cm**2`), broadcast
+    to `(batch,) + pop_size`. It is added to the step's clamp current and
+    held over every stage of the solver step; `cell(I_ext)` does the same
+    after the `before_updates`. `update()` without input is unchanged.
+  - `AlignPostProj` (with `COBA` or another output) and `CurrentProj` reach
+    the cell through `add_current_input`; the output may be a current (a
+    conductance in nS) or a density (mS/cm^2), and is evaluated at every
+    stage with the stage voltage, as on a `SingleCompartment`. A lumped cell
+    used to ignore these inputs silently. They also apply under `run()` and
+    a directly called solver step.
+  - Errors at `update`: `UnitMismatchError` for any other unit (or a bare
+    number), naming the input for a registered one; `ValueError` for a
+    shape that does not broadcast. A cable cell raises `TypeError` for
+    `update(I_ext)` and points to `CurrentClamp` / `FunctionClamp`, as it
+    never took an input.
+
 - **The same `paint` / `place` verbs on a Cell and its views** (CELL-22).
   `cell.paint(*mechanisms)` without a region paints the whole cell
   (`AllRegion()`), so a point neuron and a morphological one are declared
@@ -316,6 +338,13 @@
   versions CI tests.
 
 ### Bug Fixes
+
+- A current input registered with `Cell.add_current_input` after a
+  `Cell.run` is now included by the next `run` (CELL-23). `run` reuses its
+  compiled loop for the same `dt`, step count and recordings, and the loop
+  had traced the inputs present at the first run: on a one-CV cable cell
+  (`IL` 0.3 mS/cm^2, E -65 mV) a 10 uA/cm^2 input added between two 1 ms
+  runs left V at -65 mV. Registering an input now drops the compiled loops.
 
 - A solver step called directly on a `Cell` now samples the current clamps
   as `update()` does (CELL-2c): once per main step, at `t + dt / 2`, with every

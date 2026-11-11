@@ -97,6 +97,10 @@ class LocsetBatch:
     Instances are built through :meth:`from_columns`; the class itself takes
     no constructor arguments.
 
+    Like :class:`LocsetMask`, a batch holds default-order branch indices
+    valid for the morphology revision it was resolved on; evaluate again
+    after a branch is removed or a subtree replaced.
+
     See Also
     --------
     from_columns : The constructor, which documents the columns.
@@ -215,6 +219,27 @@ class LocsetMask:
     display_names : iterable of str, optional
         Human-readable labels aligned with ``points``. Names may be omitted
         when a mask is constructed independently of a morphology.
+
+    Notes
+    -----
+    A mask is a value: it does not record the morphology it came from. Each
+    ``branch_id`` is the default-order index of a branch in the morphology
+    at the :attr:`~braincell.Morphology.revision` the mask was evaluated
+    on. Attaching a branch, or replacing or transforming one in place,
+    keeps every existing default index, so the integers still name the same
+    branches (though evaluating the expression again may select other
+    points). Removing a branch, or replacing a whole subtree, shifts the
+    indices after it: evaluate the expression again rather than reuse the
+    mask. Keep the expression (``at("axon", 0.5)``), not the mask, wherever
+    the tree may change.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> from braincell.filter import LocsetMask
+        >>> LocsetMask(points=((0, 0.5), (1, 1.0))).points
+        ((0, 0.5), (1, 1.0))
     """
 
     __slots__ = ("_branch_id", "_branch_x", "_display_names", "_points_cache")

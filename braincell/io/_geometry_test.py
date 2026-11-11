@@ -246,13 +246,14 @@ class ContourCenterTest(unittest.TestCase):
 
 class PrincipalAxisSamplingTest(unittest.TestCase):
     def test_an_ellipse_is_sampled_along_its_major_axis(self) -> None:
-        xy, diameters = _geometry.principal_axis_sampling(_ellipse(10.0, 2.0))
+        points, diameters = _geometry.principal_axis_sampling(_ellipse(10.0, 2.0))
 
-        self.assertEqual(xy.shape, (21, 2))
+        self.assertEqual(points.shape, (21, 3))
         self.assertEqual(diameters.shape, (21,))
         # The samples advance along x (the major axis) and barely move in y.
-        self.assertGreater(xy[-1, 0] - xy[0, 0], 15.0)
-        np.testing.assert_allclose(xy[:, 1], 0.0, atol=0.05)
+        self.assertGreater(points[-1, 0] - points[0, 0], 15.0)
+        np.testing.assert_allclose(points[:, 1], 0.0, atol=0.05)
+        np.testing.assert_allclose(points[:, 2], 0.0, atol=1e-12)
 
     def test_the_widest_diameter_is_near_the_middle(self) -> None:
         _, diameters = _geometry.principal_axis_sampling(_ellipse(10.0, 2.0))
@@ -278,6 +279,27 @@ class PrincipalAxisSamplingTest(unittest.TestCase):
 
         np.testing.assert_allclose(diameters, diameters[::-1], rtol=0.05)
         np.testing.assert_allclose(diameters[1:-1], diameters[1:-1][::-1], rtol=0.01)
+
+    def test_a_tilted_outline_is_sampled_along_its_tilted_major_axis(self) -> None:
+        # The ellipse turned about y by 30 degrees: the major axis leaves the
+        # xy plane, the minor axis (y) stays in it.
+        ellipse = _ellipse(10.0, 2.0)
+        angle = np.deg2rad(30.0)
+        tilted = np.column_stack([ellipse[:, 0] * np.cos(angle), ellipse[:, 1], ellipse[:, 0] * np.sin(angle)])
+
+        points, diameters = _geometry.principal_axis_sampling(tilted)
+
+        np.testing.assert_allclose(points[:, 2], points[:, 0] * np.tan(angle), atol=1e-12)
+        np.testing.assert_allclose(points[:, 1], 0.0, atol=0.05)
+        self.assertAlmostEqual(float(diameters.max()), 4.0, delta=0.05)
+
+    def test_a_contour_without_a_horizontal_minor_axis_is_degenerate(self) -> None:
+        collinear = np.array([[0.0, 0, 0], [2, 0, 0], [4, 0, 0], [6, 0, 0]])
+        vertical = np.array([[-4.0, 0, 0], [0, 0, 1], [4, 0, 0], [0, 0, -1], [-4, 0, 0]])
+        for contour, reason in ((collinear, "its points are collinear"), (vertical, "its minor axis is parallel to z")):
+            with self.subTest(reason=reason):
+                with self.assertRaisesRegex(_geometry.DegenerateContourError, reason):
+                    _geometry.principal_axis_sampling(contour)
 
 
 class ContourToCentroidTest(unittest.TestCase):

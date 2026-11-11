@@ -173,6 +173,35 @@ _GAP_FIXTURES = {
   (0 10 0 1)
 )
 """,
+    "nonplanar_contour": """\
+("CellBody"
+  (CellBody)
+  (0 0 0 0)
+  (4 0 1 0)
+  (0 4 2 0)
+  (-4 0 1 0)
+)
+( (Dendrite)
+  (0 0 0 1)
+  (0 5 0 1)
+  (0 10 0 1)
+)
+""",
+    "vertical_closed_contour": """\
+("CellBody"
+  (CellBody)
+  (-4 0 0 0)
+  (0 0 1 0)
+  (4 0 0 0)
+  (0 0 -1 0)
+  (-4 0 0 0)
+)
+( (Dendrite)
+  (0 0 0 1)
+  (0 5 0 1)
+  (0 10 0 1)
+)
+""",
 }
 
 
@@ -704,6 +733,38 @@ class AscMalformedInputTest(_AscTestMixin, unittest.TestCase):
                 self.assertEqual({issue.code for issue in report.issues}, codes)
 
 
+class AscContourPrincipalAxisTest(_AscTestMixin, unittest.TestCase):
+    """A single CellBody contour is sampled along NEURON's 3D principal axis (MORPH-5d)."""
+
+    def test_nonplanar_contour_soma_follows_the_3d_major_axis(self) -> None:
+        tree = AscReader().read(self._write_asc(_GAP_FIXTURES["nonplanar_contour"]))
+        soma = tree.root.branch
+        points = np.asarray(soma.points.to_decimal(u.um), dtype=float)
+        diameters = 2.0 * np.asarray(soma.radii.to_decimal(u.um), dtype=float)
+
+        # float64 values. NEURON 9.0.2 stores pt3d in float32 and gives
+        # (-3.358562707901001, 2.315037965774536, 1.5604015588760376),
+        # (4.026669502258301, 0.6830273866653442, 0.9303712844848633) and a
+        # soma area of 56.888621768205184.
+        self.assertEqual(points.shape, (21, 3))
+        np.testing.assert_allclose(points[0], [-3.3585626261135237, 2.3150378826073803, 1.5604016078799239], rtol=1e-12)
+        np.testing.assert_allclose(points[-1], [4.026669602396029, 0.6830273875075027, 0.9303712659878458], rtol=1e-12)
+        np.testing.assert_allclose(diameters[[0, -1]], [0.3776128883207476, 0.26736422871776877], rtol=1e-12)
+        np.testing.assert_allclose(float(soma.area.to_decimal(u.um**2)), 56.88862183431629, rtol=1e-12)
+        np.testing.assert_allclose(float(tree.total_area.to_decimal(u.um**2)), 88.30454837021422, rtol=1e-12)
+
+    def test_contour_whose_minor_axis_is_vertical_raises_like_neuron(self) -> None:
+        # Traced in the xz plane: the middle principal axis is z, which has no
+        # width in the xy plane. NEURON 9.0.2 stops with "Failed to compute
+        # soma centroid from contour."
+        path = self._write_asc(_GAP_FIXTURES["vertical_closed_contour"])
+
+        with self.assertRaisesRegex(
+            ValueError, "CellBody contour at line 1 is degenerate: its minor axis is parallel to z"
+        ):
+            AscReader().read(path)
+
+
 class AscRealFileSmokeTest(unittest.TestCase):
     def test_valid_real_asc_fixtures_pass_smoke_checks(self) -> None:
         reader = AscReader()
@@ -819,6 +880,17 @@ class AscNeuronParityTest(_AscTestMixin, unittest.TestCase):
         braincell_pt3d = self._braincell_root_soma_pt3d(tree)
 
         self.assertEqual(braincell_pt3d.shape, (2, 4))
+        self.assertEqual(braincell_pt3d.shape, neuron_pt3d.shape)
+        self.assertTrue(np.allclose(braincell_pt3d, neuron_pt3d, atol=1e-6, rtol=0.0))
+
+    def test_nonplanar_cellbody_matches_neuron_pt3d(self) -> None:
+        path = self._write_asc(_GAP_FIXTURES["nonplanar_contour"])
+
+        tree = Morphology.from_asc(path)
+        neuron_pt3d = self._neuron_root_soma_pt3d(path)
+        braincell_pt3d = self._braincell_root_soma_pt3d(tree)
+
+        self.assertEqual(braincell_pt3d.shape, (21, 4))
         self.assertEqual(braincell_pt3d.shape, neuron_pt3d.shape)
         self.assertTrue(np.allclose(braincell_pt3d, neuron_pt3d, atol=1e-6, rtol=0.0))
 

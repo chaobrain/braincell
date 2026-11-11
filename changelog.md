@@ -658,6 +658,20 @@
 
 ### Bug Fixes
 
+- A single CellBody contour that does not lie in one plane is now turned
+  into a soma along its 3D principal axis, as NEURON 9.0's `Import3d` does
+  (MORPH-5d). The importer used to take the principal axes of the x and y
+  coordinates only and put every soma point at the z of the contour's first
+  point. Such files get a different soma, and different areas and volumes.
+  On a contour whose z runs 0, 1, 2, 1 µm, the soma points were up to
+  1.560 µm from NEURON's (diameters up to 0.1775 µm) and are now within
+  1.2e-7 µm. On NeuroMorpho.Org cell 1004 (`IF1-190301.asc`) they were up to
+  2.656 µm off and are now within 7.3e-7 µm, and `total_volume` changes by
+  0.14%. A contour whose minor axis is parallel to z, which NEURON also
+  rejects, raises `ValueError: ... CellBody contour at line <n> is degenerate:
+  its minor axis is parallel to z`. Planar contours, which include all the
+  shipped ASC files, give the same total length and area as before.
+
 - The ASC reader rejects malformed input with a `ValueError` that names the
   line, instead of importing a truncated tree (MORPH-5b). In a tree, a group
   that starts with a number is a point and must be four finite numbers

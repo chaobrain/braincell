@@ -685,10 +685,11 @@ class AscReader:
         *,
         line_number: int,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Sample one CellBody contour along its major axis, rejecting a line."""
-        if _geometry.contour_is_collinear(contour):
-            raise _AscInputError(f"CellBody contour at line {line_number} is degenerate: its points are collinear")
-        return _geometry.contour_to_centroid(contour)
+        """Sample one CellBody contour along its major axis, naming the line if it cannot be."""
+        try:
+            return _geometry.contour_to_centroid(contour)
+        except _geometry.DegenerateContourError as exc:
+            raise _AscInputError(f"CellBody contour at line {line_number} is degenerate: {exc}") from None
 
     def _validate_soma_stack(
         self,

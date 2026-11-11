@@ -28,6 +28,7 @@ from braincell._base_channel import Channel
 from braincell._base_channel import IonInfo
 from braincell.ion import Calcium
 from braincell.ion import CalciumDetailed
+from braincell.ion import PotassiumDetailedFH
 from braincell.ion import SodiumDetailed
 from braincell.ion import _base as ionbase
 from braincell.ion._base import Conserve
@@ -790,6 +791,7 @@ def _shell_rate(ion):
 _CURRENT_TO_CI_RATE = {
     "CalciumDetailed": lambda ion: 1.0 / (2.0 * _F * ion.d),
     "PotassiumDetailed": _shell_rate,
+    "PotassiumDetailedFH": _shell_rate,
     "SodiumDetailed": _shell_rate,
     "CalciumFirstOrder": lambda ion: ion.alpha,
     "CdpHVA_SU2015_DCN": lambda ion: _mod_shell_rate(ion.kCa, ion.depth),
@@ -810,6 +812,12 @@ _CURRENT_TO_CI_RATE = {
     ),
     # z = -1: an inward current is a Cl- efflux, ``-pi d I / F`` into the outer shell.
     "Cldif_JE2011": lambda ion: -u.math.pi / (_F * ion.diam_arc_mean * _CLDIF_VRAT0),
+}
+
+#: ``d(dCo/dt) / dI`` for the ions whose extracellular ``Co`` is a state too:
+#: the inward current that fills the cell leaves the space outside it.
+_CURRENT_TO_CO_RATE = {
+    "PotassiumDetailedFH": lambda ion: -1.0 / (ion.valence * _F * ion.d_o),
 }
 
 #: Dynamic ions with ``uses_total_current = False``, and why.
@@ -834,9 +842,9 @@ def _make_contract_ion(cls):
     return ion
 
 
-def _ci_derivative(ion):
+def _ci_derivative(ion, state="Ci"):
     ion.compute_derivative(_CONTRACT_V)
-    return ion.Ci.derivative
+    return getattr(ion, state).derivative
 
 
 def _assert_rate_close(actual, expected):
@@ -846,22 +854,22 @@ def _assert_rate_close(actual, expected):
     )
 
 
-def _check_external_current(cls, rate):
-    """(a) An external current shifts ``dCi/dt`` by ``rate * I``."""
+def _check_external_current(cls, rate, state="Ci"):
+    """(a) An external current shifts the ``state`` derivative by ``rate * I``."""
     ion = _make_contract_ion(cls)
-    baseline = _ci_derivative(ion)
+    baseline = _ci_derivative(ion, state)
     ion.register_external_current("external", lambda V, info: _EXTERNAL_I)
-    _assert_rate_close(_ci_derivative(ion) - baseline, rate(ion) * _EXTERNAL_I)
+    _assert_rate_close(_ci_derivative(ion, state) - baseline, rate(ion) * _EXTERNAL_I)
 
 
-def _check_snapshot(cls, rate):
+def _check_snapshot(cls, rate, state="Ci"):
     """(b) A step-start snapshot replaces the live current, which is not evaluated."""
     ion = _make_contract_ion(cls)
-    baseline = _ci_derivative(ion)
+    baseline = _ci_derivative(ion, state)
     calls = []
     ion.register_external_current("live", lambda V, info: calls.append(V) or _EXTERNAL_I)
     ion._cached_total_current = _SNAPSHOT_I
-    shifted = _ci_derivative(ion)
+    shifted = _ci_derivative(ion, state)
     assert not calls, "the live current was evaluated although a snapshot was set"
     _assert_rate_close(shifted - baseline, rate(ion) * _SNAPSHOT_I)
 
@@ -878,7 +886,7 @@ def _check_current_units(cls):
 
 
 #: Pools whose influx is not rectified: an outward current lowers ``Ci`` at the same rate.
-_UNRECTIFIED = ("PotassiumDetailed", "SodiumDetailed")
+_UNRECTIFIED = ("PotassiumDetailed", "PotassiumDetailedFH", "SodiumDetailed")
 _OUTWARD_I = -_EXTERNAL_I
 
 
@@ -903,6 +911,21 @@ class _RectifiedShell(SodiumDetailed):
     def derivative(self, Ci, V, total_current=None):
         influx = self._drive_current(total_current) / (self.valence * _F * self.d)
         return u.math.maximum(influx, u.math.zeros_like(influx)) + self.beta * (self.C_rest - Ci)
+
+
+class _LiveCurrentCo(PotassiumDetailedFH):
+    """Counter-example: ``Co`` reads the live current instead of the step-start snapshot."""
+
+    def _ion_compute_derivative_hook(self, V):
+        super()._ion_compute_derivative_hook(V)
+        self.Co.derivative = self.derivative_Co(self.Co.value, V, self.current(V, include_external=True))
+
+
+class _InflowingCo(PotassiumDetailedFH):
+    """Counter-example: the ``Co`` source with the wrong sign (an inward current fills the space)."""
+
+    def derivative_Co(self, Co, V, total_current=None):
+        return -super().derivative_Co(Co, V, total_current) + 2.0 * self.beta_o * (self.Co_rest - Co)
 
 
 class _IgnoresTotalCurrent(CalciumDetailed):
@@ -932,6 +955,33 @@ class IonCurrentInputContractTest(unittest.TestCase):
                 _check_snapshot(cls, rate)
             with self.subTest(ion=name, check="units"):
                 _check_current_units(cls)
+
+    def test_every_extracellular_state_is_classified(self) -> None:
+        with_co = {
+            name
+            for name, cls in get_registry().items("ion")
+            if "Co_initializer" in inspect.signature(cls.__init__).parameters
+        }
+        self.assertEqual(with_co, set(_CURRENT_TO_CO_RATE))
+        self.assertLessEqual(set(_CURRENT_TO_CO_RATE), set(_CURRENT_TO_CI_RATE))
+
+    def test_extracellular_states_follow_the_contract(self) -> None:
+        for name, rate in _CURRENT_TO_CO_RATE.items():
+            cls = get_registry().get("ion", name)
+            with self.subTest(ion=name, check="external"):
+                _check_external_current(cls, rate, "Co")
+            with self.subTest(ion=name, check="snapshot"):
+                _check_snapshot(cls, rate, "Co")
+
+    def test_counter_examples_of_the_extracellular_state_fail(self) -> None:
+        rate = _CURRENT_TO_CO_RATE["PotassiumDetailedFH"]
+        _check_external_current(_LiveCurrentCo, rate, "Co")  # without a snapshot both currents agree
+        with self.assertRaisesRegex(AssertionError, "live current was evaluated"):
+            _check_snapshot(_LiveCurrentCo, rate, "Co")
+        _check_snapshot(_InflowingCo, rate=lambda ion: -rate(ion), state="Co")  # it is the flipped rate
+        with self.assertRaises(AssertionError):
+            _check_external_current(_InflowingCo, rate, "Co")
+        _check_external_current(PotassiumDetailedFH, rate, "Co")  # the unmodified parent passes
 
     def test_unrectified_pools_fall_with_an_outward_current(self) -> None:
         for name in _UNRECTIFIED:

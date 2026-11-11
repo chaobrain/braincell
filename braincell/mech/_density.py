@@ -453,8 +453,9 @@ class Ion(Density):
     Notes
     -----
     Units are checked in ``Cell.init_state()`` as for :class:`Channel`.
-    The prototypes of ``Ci``, ``Co``, ``Ci_initializer`` and ``valence``
-    whose default is ``None`` are the class's ``default_Ci``,
+    The prototypes of ``Ci``, ``Co``, ``valence``, ``Ci_initializer``
+    and ``Co_initializer`` whose default is ``None`` (or, for the
+    initializers, an initializer) are the class's ``default_Ci``,
     ``default_Co`` and ``default_valence``; ``parameter_units`` on the
     runtime class declares any other.
 

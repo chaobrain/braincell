@@ -1,0 +1,50 @@
+{
+  "meta": {"label": "Botta et al. 2010 potassium pool (K_conc.mod): PotassiumDetailedFH with a potassium leak (kleak.mod); the .mod file's ik / (2 FARADAY d) with d = 0.2 um is d = d_o = 0.4 um at z = 1"},
+  "identity": {
+    "mod_files": ["mechanisms/testing/kleak.mod"],
+    "external_mod_files": {
+      "env": "BRAINCELL_BO2010_MOD_DIR",
+      "source": "ModelDB 127021, ModelDBRepository/127021@fa2e53a71c0fb789d942f9008af0be9c1b98bdbe",
+      "reason": "the ModelDB files carry no license statement and await a maintainers' decision on committing them",
+      "sha256": {
+        "K_conc.mod": "40cd4916b1c53f34d09243f2f62676e16648df9ee09396cb16e14df401e0e5d0"
+      }
+    }
+  },
+  "defaults": {
+    "simulation": {"dt_ms": 0.025, "duration_ms": 200.0, "v_init_mV": -60.0, "temperature_celsius": 23.0},
+    "morphology": {"length_um": 15.0, "diam_um": 15.0},
+    "current_clamp": {"delay_ms": 0.0, "dur_ms": 1e9, "amp_nA": 0.05},
+    "concentrations": {"Ci": 140.0, "Co": 5.0},
+    "pool_params": {
+      "d_mod_um": 0.2,
+      "d_um": 0.4,
+      "d_o_um": 0.4,
+      "beta_per_ms": 0.075,
+      "beta_o_per_ms": 0.075,
+      "ki0_mM": 140.0,
+      "ko0_mM": 5.0
+    },
+    "channel_params": {"g_S_cm2": 1e-3}
+  },
+  "mapping": {
+    "ion": "k",
+    "pool_name": {"neuron": "k_conc", "braincell": "PotassiumDetailedFH"},
+    "pool_params": {
+      "d_mod_um": {"neuron": "d", "unit": "um"},
+      "d_um": {"braincell": "d", "unit": "um"},
+      "d_o_um": {"braincell": "d_o", "unit": "um"},
+      "beta_per_ms": {"neuron": "beta", "braincell": "beta", "unit": "/ms"},
+      "beta_o_per_ms": {"braincell": "beta_o", "unit": "/ms"},
+      "ki0_mM": {"neuron": "ki0", "braincell": "C_rest", "unit": "mM"},
+      "ko0_mM": {"neuron": "ko0", "braincell": "Co_rest", "unit": "mM"}
+    },
+    "pool_states": {"neuron": ["ko"], "braincell": ["Co"]},
+    "impl_name": {"neuron": "kleak", "braincell": "K_Leak"},
+    "gate_names": {"common": []},
+    "channel_params": {
+      "g_S_cm2": {"neuron": "g", "braincell": "g_max", "unit": "S/cm2"}
+    }
+  },
+  "templates": ["../../templates/pool_cc.json"]
+}

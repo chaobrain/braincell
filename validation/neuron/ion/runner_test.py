@@ -106,7 +106,7 @@ class ExternalSourcesTest(unittest.TestCase):
 
         from braincell.mech import get_registry
 
-        self.assertEqual(runner.external_config_names(), ["ca1999/sodium_detailed_pump_off"])
+        self.assertEqual(runner.external_config_names(), ["bo2010/potassium_detailed_fh", "ca1999/sodium_detailed_pump_off"])
         registry = get_registry()
         for config in runner.external_config_names():
             spec = runner.load_config(config)["identity"]["external_mod_files"]
@@ -122,7 +122,9 @@ class ExternalSourcesTest(unittest.TestCase):
                     with mock.patch.object(runner.hashlib, "sha256") as digest:
                         digest.return_value.hexdigest.side_effect = [spec["sha256"][n] for n in sorted(spec["sha256"])]
                         case = runner.load_case(config, "pool_cc")
-                self.assertEqual(sorted(p.name for p in case.mod_files), sorted(spec["sha256"]))
+                external = [p.name for p in case.mod_files if p.parent == Path(directory)]
+                self.assertEqual(sorted(external), sorted(spec["sha256"]))
+                self.assertTrue(all(p.is_file() for p in case.mod_files))
                 registry.get("ion", case.pool[1])
                 registry.get("channel", case.channel.braincell)
                 for kind, name, params in case.braincell_mechanisms:
@@ -131,6 +133,22 @@ class ExternalSourcesTest(unittest.TestCase):
                 conductances = [p for p in case.channel.params if p.braincell == "g_max"]
                 self.assertTrue(conductances and all(p.value > 0 for p in conductances))
                 self.assertEqual(case.n_steps * case.simulation["dt_ms"], case.simulation["duration_ms"])
+
+    def test_a_written_extracellular_concentration_is_a_pool_state(self):
+        import brainunit as u
+
+        spec = runner.load_config("bo2010/potassium_detailed_fh")["identity"]["external_mod_files"]
+        with mock.patch.object(runner, "external_mod_files", lambda config: ()):
+            case = runner.load_case("bo2010/potassium_detailed_fh", "pool_cc")
+        self.assertEqual(spec["env"], "BRAINCELL_BO2010_MOD_DIR")
+        self.assertEqual((case.ion, case.states, dict(case.concentrations)), ("k", (("ko", "Co"),), {"Ci": 140.0, "Co": 5.0}))
+        braincell = {p.braincell: p.quantity() for p in case.pool_params if p.braincell}
+        neuron = {p.neuron: p.value for p in case.pool_params if p.neuron}
+        # K_conc.mod's 2 FARADAY d: its d = 0.2 um is d = d_o = 0.4 um at z = 1.
+        self.assertEqual((neuron["d"], braincell["d"], braincell["d_o"]), (0.2, 0.4 * u.um, 0.4 * u.um))
+        self.assertEqual((neuron["beta"], braincell["beta"], braincell["beta_o"]), (0.075, 0.075 / u.ms, 0.075 / u.ms))
+        self.assertEqual((neuron["ki0"], neuron["ko0"]), (140.0, 5.0))
+        self.assertEqual((braincell["C_rest"], braincell["Co_rest"]), (140.0 * u.mM, 5.0 * u.mM))
 
     def test_a_diameter_fraction_is_a_spatial_callable(self):
         from types import SimpleNamespace
@@ -144,6 +162,7 @@ class ExternalSourcesTest(unittest.TestCase):
 class PoolToleranceTableTest(unittest.TestCase):
     def test_entries_name_listed_protocols_and_documented_causes(self):
         listed = {(case.config, case.protocol) for case in _cases()}
+        listed |= {(c, Path(t).stem) for c in runner.external_config_names() for t in runner.load_config(c)["templates"]}
         for entry in TABLE.entries:
             with self.subTest(config=entry.config, protocol=entry.protocol):
                 self.assertIn((entry.config, entry.protocol), listed)

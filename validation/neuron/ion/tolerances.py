@@ -35,6 +35,7 @@ NEWTON = "Kinetic pools: one linearized implicit Euler step"
 EXPLICIT_EULER = "CdpHVA_SU15_DCN explicit Euler update"
 FORWARD_DIFFERENCE = "CaHVA_SU15_DCN forward-difference conductance"
 GHK = "Unfrozen GHK calcium channels"
+IMPLICIT_EULER = "K_conc.mod implicit Euler update"
 
 _ZERO, _VC, _CC = "pool_zero_current", "pool_vc", "pool_cc"
 
@@ -68,6 +69,8 @@ ENTRIES = [
     _newton("testing/toy_ca_pump_factor_kinetic", _CC, e_Ci=1e-4, e_pool=1e-4),
     ToleranceEntry("testing/toy_ca_pump_factor_kinetic", _CC, {"e_V": 5e-6}, "c", FORWARD_DIFFERENCE),
     _newton("testing/toy_diam_factor_kinetic", _ZERO, e_Ci=2e-4, e_pool=2e-4),
+    # External sources (BRAINCELL_BO2010_MOD_DIR); checked by potassium_test.py.
+    ToleranceEntry("bo2010/potassium_detailed_fh", _CC, {"e_V": 1e-4, "e_Ci": 1e-7, "e_pool": 5e-6}, "c", IMPLICIT_EULER),
 ]
 
 TABLE = ToleranceTable(ENTRIES)

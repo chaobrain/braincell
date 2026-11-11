@@ -39,7 +39,13 @@ from braincell.ion.chloride import Chloride, ChlorideFixed, ChlorideInitNernst, 
 from braincell.ion.chloride import __all__ as _chloride_all
 from braincell.ion.nonspecific import NonSpecific, NonSpecificFixed
 from braincell.ion.nonspecific import __all__ as _nonspecific_all
-from braincell.ion.potassium import Potassium, PotassiumDetailed, PotassiumFixed, PotassiumInitNernst
+from braincell.ion.potassium import (
+    Potassium,
+    PotassiumDetailed,
+    PotassiumDetailedFH,
+    PotassiumFixed,
+    PotassiumInitNernst,
+)
 from braincell.ion.potassium import __all__ as _potassium_all
 from braincell.ion.sodium import Sodium, SodiumDetailed, SodiumFixed, SodiumInitNernst
 from braincell.ion.sodium import __all__ as _sodium_all

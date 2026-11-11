@@ -59,6 +59,7 @@ Potassium Ions
    PotassiumFixed
    PotassiumInitNernst
    PotassiumDetailed
+   PotassiumDetailedFH
 
 
 Sodium Ions

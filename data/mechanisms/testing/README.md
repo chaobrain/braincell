@@ -10,6 +10,10 @@ reference of `braincell.channel.Cl_Leak` in
 `validation/neuron/channel_no_conc/configs/testing/cl_leak_testing.json`. It
 only reads `ecl`, so NEURON computes the Nernst potential only under
 `ion_style("cl_ion", 1, 2, 1, 1, 1)`, which the channel_no_conc runner sets.
+`kleak.mod` is the potassium-leak fixture (`kleak`, `ik = g (v - ek)`), the
+current that drives `braincell.ion.PotassiumDetailedFH` against Botta et al.'s
+(2010) `K_conc.mod` in `validation/neuron/ion/configs/bo2010/`; that pool
+writes `ki` and `ko`, so NEURON computes `ek` from them.
 
 Compile the validation library from the repository root:
 

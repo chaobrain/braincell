@@ -201,7 +201,7 @@ def _sample_mechanism_probe_point(
             declaration.field,
             probe_name=_probe_name(declaration),
         )
-        return _select_last_axis(raw, cv_id)
+        return _select_last_axis(_cv_values(rcell, raw), cv_id)
 
     try:
         ion = runtime.get_ion(declaration.mechanism)
@@ -213,7 +213,7 @@ def _sample_mechanism_probe_point(
             declaration.field,
             probe_name=_probe_name(declaration),
         )
-        return _select_last_axis(raw, cv_id)
+        return _select_last_axis(_cv_values(rcell, raw), cv_id)
 
     raise KeyError(
         f"Probe {_probe_name(declaration)!r} could not find a mechanism or ion named "
@@ -268,13 +268,18 @@ def _sample_current_probe_point(
                 ion_info,
                 probe_name=_probe_name(declaration),
             )
-        return _select_last_axis(current, cv_id)
+        return _select_last_axis(_cv_values(rcell, current), cv_id)
 
     if declaration.ion is None:
         raise ValueError(f"Probe {_probe_name(declaration)!r} must define 'ion' when 'mechanism' is omitted.")
     ion = runtime.get_ion(declaration.ion)
     current = ion.current(rcell.V.value, include_external=False)
-    return _select_last_axis(current, _representative_cv_id(runtime, point_id=point_id))
+    return _select_last_axis(_cv_values(rcell, current), _representative_cv_id(runtime, point_id=point_id))
+
+
+def _cv_values(rcell: "Cell", values):
+    """Give a lumped Cell's values (no CV axis) its one CV, index 0."""
+    return values[..., None] if rcell._is_lumped else values
 
 
 #: The probe declaration types this module can sample, mapped to the

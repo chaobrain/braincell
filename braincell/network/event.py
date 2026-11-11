@@ -723,31 +723,22 @@ class VoltageCrossingSource(EventSource):
         source_index = np.asarray(source_index, dtype=np.int64)
         population_index = self._population_indices[source_index]
         cv_id = self.cv_id[source_index]
-        if self._uses_cell_threshold and self.direction == "rising" and self.spk_fun is None:
-            spike = self.cells.spike.value
-            if len(self.cells.pop_size) == 0:
-                return spike[cv_id]
-            return spike[population_index, cv_id]
-
-        last_v = self.cells._event_previous_V.value
-        next_v = self.cells.V.value
-        if len(self.cells.pop_size) == 0:
-            last = last_v[cv_id]
-            next_value = next_v[cv_id]
-            threshold = self.cells.V_th[cv_id] if self._uses_cell_threshold else self._threshold.value[source_index]
+        if self.cells._is_lumped:
+            # A lumped Cell has no CV axis: each row reads its member.
+            index = (population_index,)
+        elif len(self.cells.pop_size) == 0:
+            index = (cv_id,)
         else:
-            last = last_v[population_index, cv_id]
-            next_value = next_v[population_index, cv_id]
-            threshold = (
-                self.cells.V_th[population_index, cv_id]
-                if self._uses_cell_threshold
-                else self._threshold.value[source_index]
-            )
+            index = (population_index, cv_id)
+        if self._uses_cell_threshold and self.direction == "rising" and self.spk_fun is None:
+            return self.cells.spike.value[index]
+
+        threshold = self.cells.V_th[index] if self._uses_cell_threshold else self._threshold.value[source_index]
         from braincell._base_neuron import _threshold_crossing
 
         return _threshold_crossing(
-            last,
-            next_value,
+            self.cells._event_previous_V.value[index],
+            self.cells.V.value[index],
             threshold,
             self.cells.spk_fun if self.spk_fun is None else self.spk_fun,
             direction=self.direction,
@@ -794,7 +785,7 @@ class _CellSpikeSource(EventSource):
         self.cell._raise_if_not_initialized("read cell.event_outputs['spike']")
         source_index = np.asarray(source_index, dtype=np.int64)
         spike = self.cell.spike.value
-        if self.cell._uses_reduction:
+        if self.cell._uses_reduction or self.cell._is_lumped:
             return spike[..., source_index]
         return spike[..., source_index, self.cv_id]
 

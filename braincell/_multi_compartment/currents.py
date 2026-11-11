@@ -234,7 +234,7 @@ def synapse_current(runtime: CellRuntimeState, layout, syn, local_voltage):
     if syn.ion_type is None:
         return syn.current(local_voltage)
     ion_info = runtime.get_ion(runtime.bound_ion_keys[layout.id][0]).pack_info()
-    return syn.current(local_voltage, _synapse_row_ion_info(layout, ion_info))
+    return syn.current(local_voltage, _synapse_row_ion_info(layout, ion_info, lumped=runtime.is_lumped))
 
 
 def _synapse_row_selector(layout) -> tuple:
@@ -242,13 +242,16 @@ def _synapse_row_selector(layout) -> tuple:
     return (Ellipsis, layout.population_index, layout.cv_index) if layout.is_packed else (Ellipsis, layout.cv_index)
 
 
-def _synapse_row_ion_info(layout, ion_info: IonInfo) -> IonInfo:
+def _synapse_row_ion_info(layout, ion_info: IonInfo, *, lumped: bool = False) -> IonInfo:
     """Take each array field of a CV-space :class:`IonInfo` at the synapse rows' CVs.
 
-    Scalar fields (a Python ``int`` valence, a shared ``Co``) pass through.
+    Scalar fields (a Python ``int`` valence, a shared ``Co``) pass through. A
+    lumped Cell's ion fields have no CV axis; ``lumped`` gives them their one CV.
     """
     selector = _synapse_row_selector(layout)
-    return IonInfo(*(field[selector] if u.math.ndim(field) > 0 else field for field in ion_info))
+    return IonInfo(
+        *((field[..., None] if lumped else field)[selector] if u.math.ndim(field) > 0 else field for field in ion_info)
+    )
 
 
 class _SynapseIonCurrent:
@@ -270,10 +273,14 @@ class _SynapseIonCurrent:
     def __call__(self, V, ion_info):
         runtime = self.host._runtime
         local_voltage = self.layout.gather_points(self.host._point_voltage_for_mechanisms(V))
-        rows = self.syn.ion_current(local_voltage, _synapse_row_ion_info(self.layout, ion_info))
-        total = u.Quantity(jnp.zeros(u.math.shape(V), dtype=u.get_mantissa(rows).dtype), rows.unit)
-        total = total.at[_synapse_row_selector(self.layout)].add(rows)
-        return total / runtime.current_cable().area
+        rows = self.syn.ion_current(
+            local_voltage, _synapse_row_ion_info(self.layout, ion_info, lumped=runtime.is_lumped)
+        )
+        # A lumped Cell's V has no CV axis; its one CV is index 0.
+        shape = u.math.shape(V) + ((1,) if runtime.is_lumped else ())
+        total = u.Quantity(jnp.zeros(shape, dtype=u.get_mantissa(rows).dtype), rows.unit)
+        total = total.at[_synapse_row_selector(self.layout)].add(rows) / runtime.current_cable().area
+        return total[..., 0] if runtime.is_lumped else total
 
 
 def register_synapse_ion_currents(host: "Cell") -> tuple[_SynapseIonCurrent, ...]:

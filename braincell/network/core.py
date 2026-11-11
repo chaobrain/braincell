@@ -249,10 +249,6 @@ def _model_size_and_kind(model) -> tuple[int, str]:
             f"Population model must be a Cell, NetStim, or EventSequence; got {type(model).__name__!s}. "
             "A SingleCompartment cannot join a Network; build the neuron as a braincell.Cell."
         )
-    if model._is_lumped:
-        raise NotImplementedError(
-            "A lumped Cell (cv_policy=Lumped()) cannot join a Network yet; use a cable policy such as CVPerBranch()."
-        )
     pop_size = tuple(model.pop_size)
     if not pop_size:
         raise ValueError("Network v1 requires one-dimensional cell.pop_size; got scalar pop_size ().")

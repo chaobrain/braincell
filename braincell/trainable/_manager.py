@@ -110,7 +110,7 @@ class TrainableManager(brainstate.nn.Module):
                 return None
             for row in binding._rows:
                 layout = _runtime_layout(runtime, row)
-                state = runtime.state_buffers.get((int(layout.id), binding.target_field))
+                state = _node_parameter_state(runtime, int(layout.id), binding.target_field)
                 node = runtime.runtime_nodes.get(int(layout.id))
                 if (
                     not layout.kind.startswith("channel:")
@@ -155,8 +155,8 @@ class TrainableManager(brainstate.nn.Module):
             layouts = {_runtime_layout(runtime, row).id for row in binding._rows}
             if len(layouts) != 1:
                 continue
-            state = runtime.state_buffers[(int(next(iter(layouts))), binding.target_field)]
-            if state.axis != _binding_axis(binding) or len(state.full_shape) != 2:
+            state = _node_parameter_state(runtime, int(next(iter(layouts))), binding.target_field)
+            if state is None or state.axis != _binding_axis(binding) or len(state.full_shape) != 2:
                 continue
             population, n_cv = state.full_shape
             expected_rows = tuple((pop, cv) for pop in range(population) for cv in range(n_cv))
@@ -746,3 +746,10 @@ def _project_axis(value: object, axis: str, point_mask: object | None):
         flat = value.reshape((-1, value.shape[-1]))
         return flat[0]
     raise ValueError(f"Unknown runtime parameter axis {axis!r}.")
+
+
+def _node_parameter_state(runtime, layout_id: int, field: str):
+    """The parameter State a runtime node reads: its buffer, or a lumped Cell's ``pop_size`` mirror of it."""
+    if getattr(runtime, "is_lumped", False):
+        return runtime.lumped_mirrors.get((layout_id, field), (None, None))[1]
+    return runtime.state_buffers.get((layout_id, field))

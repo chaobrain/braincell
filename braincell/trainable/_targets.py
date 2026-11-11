@@ -148,7 +148,10 @@ def register_detector(view, fields):
         if cell._V_th_parameter is None:
             cell._V_th_parameter = RuntimeParameterState(cell._materialize_population_parameter("V_th"))
         state = cell._V_th_parameter
-        indices = (populations, cvs) if len(cell.pop_size) else (cvs,)
+        if cell._is_lumped:
+            indices = (populations,)
+        else:
+            indices = (populations, cvs) if len(cell.pop_size) else (cvs,)
         read = lambda field: state.value[indices]
     if len(set(logical.tolist())) != len(logical):
         raise ValueError("A trainable detector selection cannot repeat the same threshold target.")

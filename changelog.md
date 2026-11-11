@@ -137,6 +137,38 @@
   checkpoint that holds a branch named `remove` no longer loads. No branch in
   this repository uses that name.
 
+- **A lumped cell has the views, trainables, synapses and `Network` of a
+  cable cell** (CELL-24). On `Cell.point(...)` / `cv_policy=Lumped()`,
+  everything that raised `NotImplementedError` now works and gives what the
+  same declarations give on the one-CV twin
+  `Cell(Morphology.from_soma(...), cv_policy=CVPerBranch())` (float64,
+  `rk4`: voltages within 1e-9 mV, the same spike events, first-order
+  gradients within 1e-8 relative):
+  - views: `cell.channels`, `cell.ions`, `cell.synapses`, `cell.geometry`,
+    `cell[...]`, `cell.on(...)`, `cell.loc(...)`, `cell.soma`, `cell.cv[...]`,
+    `cell.branch[...]`, read and `set`, including ion initializers
+    (`Ci_initializer`) and per-member values; a view drops the twin's one-CV
+    axis;
+  - `trainable(...)` on density and geometry fields and on the spike
+    threshold, with gradients, under `brainstate.transform.grad` and the
+    experimental rollout engine (which keeps its `"rollout"` schedule);
+  - every point mechanism on the one site: synapses (also on a population
+    view, `cell[1:].place(syn)`, and synapses that read an ion, such as
+    `GabaA_JE2011`), the deprecated probes and `Junction`; the block solvers
+    `exp_euler`, `backward_euler` and `crank_nicolson` reject point synapses
+    at `init_state`, as on a cable cell;
+  - every `braincell.observe` recording, `membrane_current()` included, and
+    `add_reduction` / `use_model`;
+  - `Network.add_population`: a lumped cell is a spike source
+    (`event_outputs["spike"]`, `VoltageCrossingSource`) and a synapse target,
+    also next to cable populations.
+
+  A kinetic ion (e.g. `Cldif_JE2011`) advances before the solver on a lumped
+  cell, as on a `SingleCompartment`, and after it on a cable cell, so its
+  recorded concentration leads the twin's by one step. `cell.runtime` on a
+  lumped cell is the one-CV layout state its mechanisms run on; `n_point` and
+  `layouts` still raise `RuntimeError`.
+
 - **`Morphology.clone()` and `Morphology.subtree(target)`** (MORPH-2a).
   `tree.clone()` returns an independent copy that compares equal to `tree`
   and has the same auto-naming counters (`naming_state()`).
@@ -243,16 +275,14 @@
 
   - `place` may omit the locset on a lumped cell; an explicit locset must be
     the CV midpoint (`RootLocation(0.5)`, `cell.cv_midpoints`), otherwise
-    `place` raises `ValueError`. Only current clamps can be placed.
+    `place` raises `ValueError`.
   - `Lumped()` on a morphology with more than one branch raises `ValueError`
     when the cell is built or the policy assigned.
   - Initial gates are at steady state for `V_init` (as on cable cells;
     `SingleCompartment.init_state()` leaves them at 0). `V_init=None` starts
     at the resting potential.
-  - Views (`cell.channels`, `cell.ions`, `cell.synapses`, `cell.on(...)`,
-    `cell.cv[...]`, `cell[...]`, `cell.geometry`), trainable parameters,
-    synapses, `add_reduction` and `Network.add_population` raise
-    `NotImplementedError` on a lumped cell for now.
+  - Views, trainable parameters, synapses, `add_reduction` and
+    `Network.add_population` work on a lumped cell (CELL-24, above).
 - **`Cell(solver=None)` resolves by mode.** The default is now `None`:
   `"staggered"` on a cable cell (unchanged) and `"ralston2"` on a lumped
   cell. A lumped cell accepts every single-step solver of

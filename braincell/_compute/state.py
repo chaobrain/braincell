@@ -178,9 +178,18 @@ class CellRuntimeState:
     reference_length: object | None = None
     reference_radius_mid: object | None = None
     reference_diam_arc_mean: object | None = None
+    #: Lumped Cell only: ``(layout_id, name) -> (buffer, mirror)``. The buffer
+    #: keeps the single-CV shape ``pop_size + (1,)``; the lumped node reads the
+    #: ``pop_size`` mirror, refreshed by ``_sync_runtime_node_param``.
+    lumped_mirrors: dict | None = None
+
+    @property
+    def is_lumped(self) -> bool:
+        """Whether a lumped Cell's nodes (no CV axis) run on these layouts."""
+        return self.lumped_mirrors is not None
 
     @classmethod
-    def from_cell(cls, cell: "Cell") -> "CellRuntimeState":
+    def from_cell(cls, cell: "Cell", *, build_nodes: bool = True) -> "CellRuntimeState":
         """Lower one initialized ``Cell`` declaration into runtime state.
 
         Parameters
@@ -402,11 +411,16 @@ class CellRuntimeState:
                     and mechanism.category == "channel"
                     and isinstance(value, braintools.init.Initialization)
                 ):
-                    raise TypeError(
-                        f"{owner} parameter {var_name!r} is a {type(value).__name__} initializer; braintools "
-                        "initializers are not supported for Channel parameters in a Cell; pass a quantity "
-                        f"or a CVContext callable.{' ' + source if source else ''}"
-                    )
+                    if not build_nodes and parameter_spec is not None:
+                        # A lumped Cell's channel samples the initializer itself; the
+                        # buffer takes the sampled values (see lumped._adapt_cable_layouts).
+                        value = parameter_spec.default
+                    else:
+                        raise TypeError(
+                            f"{owner} parameter {var_name!r} is a {type(value).__name__} initializer; braintools "
+                            "initializers are not supported for Channel parameters in a Cell; pass a quantity "
+                            f"or a CVContext callable.{' ' + source if source else ''}"
+                        )
                 if (
                     isinstance(mechanism, Density)
                     and callable(value)
@@ -457,26 +471,31 @@ class CellRuntimeState:
             state_buffers=state_buffers,
         )
 
-        (
-            ions,
-            ion_aliases,
-            ion_family_candidates,
-            ion_class_candidates,
-            runtime_nodes,
-            bound_ion_keys,
-            current_owner_keys,
-            merged_channel_layout_groups,
-        ) = _build_runtime_nodes(
-            n_cv=n_cv,
-            layouts=tuple(layouts),
-            layout_mechanisms=layout_mechanisms,
-            state_buffers=state_buffers,
-            pop_size=pop_size,
-        )
-        attach_runtime_ion_geometry(
-            ions=ions,
-            cvs=cell.cvs,
-        )
+        if build_nodes:
+            (
+                ions,
+                ion_aliases,
+                ion_family_candidates,
+                ion_class_candidates,
+                runtime_nodes,
+                bound_ion_keys,
+                current_owner_keys,
+                merged_channel_layout_groups,
+            ) = _build_runtime_nodes(
+                n_cv=n_cv,
+                layouts=tuple(layouts),
+                layout_mechanisms=layout_mechanisms,
+                state_buffers=state_buffers,
+                pop_size=pop_size,
+            )
+            attach_runtime_ion_geometry(
+                ions=ions,
+                cvs=cell.cvs,
+            )
+        else:
+            # A lumped Cell installs its own nodes (no CV axis) on these layouts.
+            ions, ion_aliases, ion_family_candidates, ion_class_candidates = {}, {}, {}, {}
+            runtime_nodes, bound_ion_keys, current_owner_keys, merged_channel_layout_groups = {}, {}, {}, {}
 
         # Hoisted: ``u.cm**2`` costs ~13 us to construct, and the comprehension
         # below converts once per CV.

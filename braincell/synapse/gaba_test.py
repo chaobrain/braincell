@@ -315,7 +315,7 @@ class GabaAGenericSolverTest(unittest.TestCase):
 
 
 class GabaAGuardTest(unittest.TestCase):
-    """Missing or ambiguous chloride, a missing snapshot, and lumped Cells."""
+    """Missing or ambiguous chloride, a missing snapshot, and a lumped Cell."""
 
     def test_dynamic_chloride_needs_the_snapshot(self) -> None:
         gaba = (0.5, bc.mech.Synapse("GabaA_JE2011", name="s"))
@@ -338,9 +338,13 @@ class GabaAGuardTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Ion family 'cl' is ambiguous"):
             cell.init_state()
 
-    def test_lumped_cell_rejects_the_synapse(self) -> None:
-        with self.assertRaisesRegex(NotImplementedError, "lumped Cell"):
-            bc.Cell.point(1).place(bc.mech.Synapse("GabaA_JE2011", name="s"))
+    def test_lumped_cell_places_the_synapse(self) -> None:
+        # CELL-24; the traces are checked against the one-CV twin in lumped_twin_test.py.
+        cell = bc.Cell.point(1)
+        cell.paint(bc.mech.Ion("ChlorideInitNernst", name="cl", temp=u.celsius2kelvin(35.0)))
+        cell.place(bc.mech.Synapse("GabaA_JE2011", name="s"))
+        cell.init_state()
+        self.assertEqual(cell.runtime.bound_ion_keys[_synapse_layout(cell).id], ("cl",))
 
 
 #: ``_legacy_trace()`` before ``Synapse.ion_type`` existed (every 200th step, float64).

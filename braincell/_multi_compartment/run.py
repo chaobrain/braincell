@@ -151,7 +151,7 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     )
 
     compiled_recordings = rcell._compiled_recordings(dt)
-    ordered_probe_names = () if rcell._uses_reduction or rcell._is_lumped else tuple(sorted(probes.probe_names(rcell)))
+    ordered_probe_names = () if rcell._uses_reduction else tuple(sorted(probes.probe_names(rcell)))
     plan = _cached_run_plan(
         rcell,
         dt=dt,

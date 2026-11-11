@@ -16,12 +16,28 @@
 """Reusable preference densities for continuous morphology sampling."""
 
 from dataclasses import dataclass
-import warnings
 
 import brainunit as u
 import numpy as np
 
+from braincell._deprecation import Deprecation
+
 __all__ = ["exponential", "gaussian", "spatial_gaussian"]
+
+#: Release that removes ``exponential`` and ``gaussian`` (provisional).
+_REMOVED_IN = "0.4"
+_EXPONENTIAL = Deprecation(
+    "braincell.filter.density.exponential()",
+    since="0.3",
+    removed_in=_REMOVED_IN,
+    replacement="a callable built from braincell.filter.metric",
+)
+_GAUSSIAN = Deprecation(
+    "braincell.filter.density.gaussian()",
+    since="0.3",
+    removed_in=_REMOVED_IN,
+    replacement="a callable built from braincell.filter.metric",
+)
 
 
 def _dimensionless_mantissa(value: object, *, name: str) -> np.ndarray:
@@ -105,6 +121,11 @@ def exponential(
 ) -> object:
     """Build an exponential preference density over a context field.
 
+    .. deprecated:: 0.3
+       Write a callable built from ``braincell.filter.metric``, such as
+       ``lambda context: np.exp(metric.branch_x(context) / 0.2)``;
+       ``exponential`` is removed in braincell 0.4.
+
     Parameters
     ----------
     field : str
@@ -119,11 +140,7 @@ def exponential(
     callable
         A callable accepting one sampling context.
     """
-    warnings.warn(
-        "density.exponential(field, ...) is deprecated; write a callable using braincell.filter.metric instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
+    _EXPONENTIAL.warn()
     if not isinstance(field, str) or not field:
         raise TypeError("field must be a non-empty string.")
     _positive_scale(scale, name="scale")
@@ -134,6 +151,10 @@ def exponential(
 
 def gaussian(field: str, center: object, sigma: object) -> object:
     """Build a Gaussian preference density over a context field.
+
+    .. deprecated:: 0.3
+       Write a callable built from ``braincell.filter.metric``;
+       ``gaussian`` is removed in braincell 0.4.
 
     Parameters
     ----------
@@ -149,11 +170,7 @@ def gaussian(field: str, center: object, sigma: object) -> object:
     callable
         A callable accepting one sampling context.
     """
-    warnings.warn(
-        "density.gaussian(field, ...) is deprecated; write a callable using braincell.filter.metric instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
+    _GAUSSIAN.warn()
     if not isinstance(field, str) or not field:
         raise TypeError("field must be a non-empty string.")
     _positive_scale(sigma, name="sigma")

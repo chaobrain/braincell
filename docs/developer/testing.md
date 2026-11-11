@@ -36,13 +36,37 @@ python -m pytest braincell/experimental/optim -q
 python -m pytest validation/optim benchmarks -m "not slow" -q   # every pull request
 python -m pytest validation/optim benchmarks -m slow -q         # daily CI run
 python -m pytest validation/neuron/cable/tests -q
-python -m pytest validation/neuron/channel_no_conc/tests -q   # after compiling its mechanisms
 ```
 
 CI runs `validation/optim` and the benchmark scripts' tests in two tiers: modules marked `pytestmark = pytest.mark.slow` (more than about 25 s on their own) run only in the daily workflow, the rest on every pull request. A new test module there runs on every pull request unless you mark it slow.
 
-Both NEURON suites run on every pull request, each in its own job (and so its own process). NEURON mechanism comparisons require compiling the relevant models first. See the
-[Validation Guide](https://github.com/chaobrain/braincell/blob/main/validation/neuron/README.md) for entry points and dependencies.
+The NEURON comparison suites are tiered the same way, each suite in its own job (and so its own process):
+
+| Tier | CI job | What runs |
+| --- | --- | --- |
+| Every pull request (in `ci-ok`) | `test_linux_neuron_compare_cable` | `validation/neuron/cable/tests` |
+| Every pull request (in `ci-ok`) | `test_linux_neuron_compare_channel` | `validation/neuron/channel_no_conc/tests` and the shared `_clamp_test.py`, `_tolerance_test.py`, `_convergence_test.py`, `_mechanisms_test.py` under `validation/neuron/`, with `-m "not slow"`; then `validation/neuron/ion` with `-m "not slow"` in a separate process |
+| Daily run only | `slow_tests_neuron` | `-m slow` of `validation/neuron/channel_no_conc/tests` (the per-family `dt` convergence tests), then of `validation/neuron/ion` in a separate process; an empty selection there passes |
+
+Both tiers compile the eight channel models first. To reproduce them locally:
+
+```bash
+for model in bc_ma2025 dcn_su2015 goc_ma2020 grc_ma2020 io_zh2019 pc_ma2024 sc_ma2021 testing; do
+    python -m validation.neuron._mechanisms "$model" --kind channel
+done
+# Pull-request tier.
+python -m pytest validation/neuron/channel_no_conc/tests \
+    validation/neuron/_clamp_test.py validation/neuron/_tolerance_test.py \
+    validation/neuron/_convergence_test.py validation/neuron/_mechanisms_test.py -m "not slow" -q
+python -m pytest validation/neuron/ion -m "not slow" -q
+# Daily tier.
+python -m pytest validation/neuron/channel_no_conc/tests -m slow -q
+python -m pytest validation/neuron/ion -m slow -q   # exit code 5: no slow module yet
+```
+
+A NEURON comparison module that takes more than about 25 s on its own gets `pytestmark = pytest.mark.slow` and so moves to the daily run; the daily job selects by marker, so it needs no workflow change. A red daily run opens a `main is red` issue, and fixing it is the first task of the day. To run the daily jobs on a branch, dispatch the daily workflow on it (`gh workflow run CI-daily.yml --ref <branch>`); a red run there opens an issue titled `<branch> is red`.
+
+See the [Validation Guide](https://github.com/chaobrain/braincell/blob/main/validation/neuron/README.md) for entry points and dependencies.
 The benchmark tests check the scripts on small configurations and synthetic records; nothing they time is a benchmark result. Running a benchmark itself is different:
 list and confirm the run counts first, as the
 [benchmark rules](https://github.com/chaobrain/braincell/blob/main/benchmarks/README.md#before-running-a-benchmark) describe.

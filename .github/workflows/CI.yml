@@ -152,11 +152,12 @@ jobs:
         run: |
           pytest validation/neuron/cable/tests
 
-  # Single-channel BrainCell/NEURON comparisons (validation/neuron/channel_no_conc).
-  # A separate job, so its NEURON mechanism libraries never share a process
-  # with the cable suite's. On CI, compiling the eight models takes about 75 s
-  # and the suite about 70 s, plus about 130 s (locally) for the NEURON voltage
-  # agreement test (MECH-16). It runs on every pull request.
+  # Single-channel BrainCell/NEURON comparisons (validation/neuron/channel_no_conc)
+  # with the shared clamp, tolerance, convergence and build modules, then the
+  # ion pool comparisons (validation/neuron/ion) in their own process. A separate
+  # job, so its NEURON mechanism libraries never share a process with the cable
+  # suite's. It runs on every pull request; modules marked `slow` (such as the
+  # per-family dt convergence tests) run in `slow_tests_neuron` instead.
   test_linux_neuron_compare_channel:
     runs-on: ubuntu-latest
     strategy:
@@ -181,9 +182,23 @@ jobs:
           for model in bc_ma2025 dcn_su2015 goc_ma2020 grc_ma2020 io_zh2019 pc_ma2024 sc_ma2021 testing; do
             python -m validation.neuron._mechanisms "$model" --kind channel > /dev/null
           done
-      - name: Test the channel_no_conc suite
+      - name: Test the channel_no_conc suite (fast tier)
         run: |
-          pytest validation/neuron/channel_no_conc/tests validation/neuron/_convergence_test.py --durations=10
+          pytest validation/neuron/channel_no_conc/tests \
+            validation/neuron/_clamp_test.py validation/neuron/_tolerance_test.py \
+            validation/neuron/_convergence_test.py validation/neuron/_mechanisms_test.py \
+            -m "not slow" --durations=10
+      - name: Test the ion suite (fast tier)
+        # Its own process, like the daily tier. pytest exits 5 when it
+        # collects no test, which is not a failure.
+        run: |
+          status=0
+          pytest validation/neuron/ion -m "not slow" --durations=10 || status=$?
+          if [ "$status" -eq 5 ]; then
+            echo "No fast test under validation/neuron/ion."
+            exit 0
+          fi
+          exit "$status"
 
   # Tests that live outside the braincell package: the optim validation suite
   # and the benchmark scripts' own tests. Modules marked `slow` (pyproject.toml)
@@ -235,6 +250,51 @@ jobs:
           python -m pip install .
       - name: Test validation/optim and benchmarks (slow tier)
         run: pytest validation/optim benchmarks -m slow --durations=10
+
+  # The slow tier of the NEURON comparison suites: every module marked `slow`
+  # under validation/neuron/channel_no_conc/tests and validation/neuron/ion,
+  # selected by marker, so a new slow module joins without editing this file.
+  # Like `slow_tests`, it runs only when the daily workflow calls this file and
+  # is not in ci-ok's `needs`; a failure fails the daily run, which opens the
+  # red issue. Each suite runs in its own process (mechanism libraries).
+  slow_tests_neuron:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [ "3.13" ]
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools
+          python -m pip install -r requirements-dev.txt
+          python -m pip install neuron pandas
+          python -m pip install .
+      - name: Compile the channel mechanisms
+        run: |
+          for model in bc_ma2025 dcn_su2015 goc_ma2020 grc_ma2020 io_zh2019 pc_ma2024 sc_ma2021 testing; do
+            python -m validation.neuron._mechanisms "$model" --kind channel > /dev/null
+          done
+      - name: Test the channel_no_conc suite (slow tier)
+        run: pytest validation/neuron/channel_no_conc/tests -m slow --durations=10
+      - name: Test the ion suite (slow tier)
+        # pytest exits 5 when it collects no test: validation/neuron/ion has
+        # no slow module yet, which is not a failure.
+        run: |
+          status=0
+          pytest validation/neuron/ion -m slow --durations=10 || status=$?
+          if [ "$status" -eq 5 ]; then
+            echo "No slow test under validation/neuron/ion."
+            exit 0
+          fi
+          exit "$status"
 
   test_macos:
     runs-on: macos-latest

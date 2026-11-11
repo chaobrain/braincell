@@ -425,6 +425,19 @@ def _retype_d1(morpho: Morphology) -> None:
     morpho.replace("d1", _point_branch([[120, 0, 5], [150, 30, 5]], (0.8, 0.6), "apical_dendrite"))
 
 
+def _graft_tuft(morpho: Morphology) -> None:
+    # A new tree on every call: the row must not share state between runs.
+    other = Morphology.from_root(
+        _point_branch([[150, 30, 5], [150, 70, 5]], (0.6, 0.4), "apical_dendrite"), name="tuft"
+    )
+    other.attach(
+        parent="tuft",
+        child_branch=_point_branch([[150, 70, 5], [180, 110, 5]], (0.4, 0.3), "apical_dendrite"),
+        child_name="tuft2",
+    )
+    morpho.graft(other, parent="d1")
+
+
 def _remove_d2(morpho: Morphology) -> None:
     morpho.remove("d2")
 
@@ -446,6 +459,7 @@ EDIT_CASES: tuple[EditCase, ...] = (
     EditCase("replace d1 with an apical branch", "replace", _retype_d1),
     EditCase("remove the leaf d2", "delete", _remove_d2, reindex=True),
     EditCase("remove the subtree at dend", "delete", _remove_dend_subtree, reindex=True),
+    EditCase("graft a two-branch tree onto d1", "splice", _graft_tuft),
 )
 
 #: Edits that skip the gate on purpose: every layer's check must fail on them.

@@ -23,6 +23,7 @@ User-facing entry points:
 In normal use, users only need `Morphology` and `MorphoBranch`.
 """
 
+import collections
 import contextlib
 from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass
@@ -38,6 +39,8 @@ from braincell.morph.branch import Branch, frustum_areas_um2, frustum_volumes_um
 _BRANCH_RESERVED_NAMES = set(Branch.__dataclass_fields__) | {name for name in dir(Branch) if not name.startswith("_")}
 
 ParentRef = Union[str, "MorphoBranch"]
+#: ``rename=`` of :meth:`Morphology.graft`: old name to new name, as a mapping or a function.
+RenameSpec = Union[Mapping[str, str], Callable[[str], str], None]
 
 
 class _BranchRecord(NamedTuple):
@@ -728,8 +731,8 @@ class Morphology:
 
         Each successful edit call (:meth:`attach`, ``morpho.soma.dend =
         branch``, ``morpho.soma[0.5].dend = branch``, :meth:`remove`,
-        :meth:`replace`) advances it by exactly one, whether it changes the
-        structure or only the geometry. Reads
+        :meth:`replace`, :meth:`graft`) advances it by exactly one, whether
+        it changes the structure or only the geometry. Reads
         never advance it, and an edit that raises leaves it, the tree and
         :meth:`naming_state` unchanged.
 
@@ -2093,6 +2096,117 @@ class Morphology:
             object.__setattr__(view, "_branch", new_branch)
         return view
 
+    def graft(
+        self,
+        other: "Morphology",
+        *,
+        parent: ParentRef,
+        parent_x: float = 1.0,
+        child_x: float = 0.0,
+        rename: RenameSpec = None,
+    ) -> "MorphoBranch":
+        """Attach a copy of another tree as a subtree of ``parent``.
+
+        ``other``'s root becomes a child of ``parent``, attached as
+        :meth:`attach` would attach it; ``other``'s other branches follow in
+        its default order with their own attachment points. This tree keeps
+        its root. To graft only part of ``other``, pass ``other.subtree(name)``.
+
+        Parameters
+        ----------
+        other : Morphology
+            The tree to copy. It may be this tree or a frozen tree, and is
+            never changed: the new branches are copies that share its
+            immutable :class:`Branch` geometry.
+        parent : str or MorphoBranch
+            The branch of this tree to graft onto, by name or by a view that
+            is still in it.
+        parent_x : float
+            Attachment point on ``parent``: ``0`` (proximal), ``0.5``
+            (midpoint, soma only) or ``1`` (distal, default).
+        child_x : float
+            End of ``other``'s root that attaches: ``0`` (proximal, default)
+            or ``1`` (distal).
+        rename : mapping, callable or None
+            New names for ``other``'s branches: a mapping from old to new
+            name (names it omits are kept), or a function applied to every
+            name, such as ``lambda name: f"{name}_copy"``.
+
+        Returns
+        -------
+        MorphoBranch
+            The view, in this tree, of the copy of ``other``'s root.
+
+        Raises
+        ------
+        RuntimeError
+            If this morphology is the read-only snapshot of an initialized
+            Cell (checked first), or ``parent`` is a view of a branch that
+            an edit removed.
+        TypeError
+            If ``other`` is not a :class:`Morphology`, ``parent`` is neither a
+            ``str`` nor a :class:`MorphoBranch`, ``rename`` is neither a
+            mapping, a callable nor ``None``, or it gives a name that is not
+            a ``str``.
+        KeyError
+            If no branch is called ``parent``.
+        ValueError
+            If ``parent`` is a view of another morphology's branch;
+            ``parent_x`` or ``child_x`` is not an allowed value; a
+            ``rename`` key is not a branch of ``other``; or a resulting name
+            is not a valid identifier, is reserved, is given to two
+            branches, or already names a branch of this tree. A clash lists
+            every clashing name; resolve it with ``rename``.
+
+        See Also
+        --------
+        attach : Attach a single branch.
+        subtree : Copy part of a tree, e.g. to graft only that part.
+
+        Notes
+        -----
+        :attr:`revision` advances by one. Every existing branch keeps its
+        default index and the new branches come last, so Cell inputs held by
+        branch index stay valid; the type and depth orders can change. The
+        auto-naming counters do not change: the grafted names are explicit,
+        and later auto-names skip any that are taken. 3-D continuity at the
+        joint is not checked; :meth:`to_swc` reports a gap. Every argument is
+        checked before anything is written, so a call that raises changes
+        neither tree.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch, Morphology
+            >>> soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+            >>> dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+            >>> tree = Morphology.from_root(soma, name="soma")
+            >>> tree.soma.dend = dend
+            >>> tuft = Morphology.from_root(dend, name="tuft")
+            >>> tuft.tuft.tip = dend
+            >>> tree.graft(tuft, parent="dend").name
+            'tuft'
+            >>> tree.graft(tuft, parent="soma", parent_x=0.0, rename=lambda name: name + "_b").name
+            'tuft_b'
+            >>> [branch.name for branch in tree.branches]
+            ['soma', 'dend', 'tuft', 'tip', 'tuft_b', 'tip_b']
+        """
+        self._require_editable()
+        if not isinstance(other, Morphology):
+            raise TypeError(f"graft() expects other to be a Morphology, got {type(other).__name__}.")
+        parent_id = self._resolve_parent(parent)
+        self._validate_parent_x(self._nodes[parent_id], parent_x)
+        self._validate_child_x(child_x)
+        # Read before anything is written: ``other`` may be this tree.
+        records = other._subtree_records(other._root_id)
+        names = self._graft_names([record.name for record in records], rename)
+        root = records[0]._replace(parent_x=float(parent_x), child_x=float(child_x))
+        with self._edit():
+            new_ids = self._register_records([root, *records[1:]], names=names, parent_ids={None: parent_id})
+        return self._nodes[new_ids[0]]
+
     def __getattr__(self, name: str) -> object:
         # Underscore-prefixed names never name a branch. Failing fast avoids
         # unbounded recursion when pickle / copy.deepcopy probe for
@@ -2395,6 +2509,36 @@ class Morphology:
             parent_ids[record.name] = node_id
             new_ids.append(node_id)
         return new_ids
+
+    def _graft_names(self, old_names: list[str], rename: RenameSpec) -> list[str]:
+        """The names :meth:`graft` gives ``other``'s branches, checked against this tree; writes nothing."""
+        if rename is None:
+            new_names = list(old_names)
+        elif isinstance(rename, Mapping):
+            known = set(old_names)
+            unknown = [key for key in rename if key not in known]
+            if unknown:
+                raise ValueError(f"rename names branches that are not in the grafted tree: {unknown}.")
+            new_names = [rename.get(name, name) for name in old_names]
+        elif callable(rename):
+            new_names = [rename(name) for name in old_names]
+        else:
+            raise TypeError(f"rename must be a mapping, a callable or None, got {type(rename).__name__}.")
+        for old_name, new_name in zip(old_names, new_names):
+            if not isinstance(new_name, str):
+                raise TypeError(f"rename must give a str name, got {new_name!r} for {old_name!r}.")
+        for new_name in new_names:
+            self._validate_public_name(new_name)
+        repeated = sorted(name for name, count in collections.Counter(new_names).items() if count > 1)
+        if repeated:
+            raise ValueError(f"rename gives several grafted branches the same name: {repeated}.")
+        taken = [name for name in new_names if name in self._name_to_id]
+        if taken:
+            raise ValueError(
+                f"Branch names {taken} already exist in this Morphology; pass rename= to graft() "
+                "to give the grafted branches other names."
+            )
+        return new_names
 
     def _unregister_subtree(self, node_ids: list[int]) -> None:
         """Drop a subtree from the tables; the caller holds the gate.

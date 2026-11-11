@@ -1655,6 +1655,164 @@ class MorphoReplaceTest(_RoundTripMixin, unittest.TestCase):
         self.assertEqual(tree, make_tree_w())
 
 
+_W_TUFT = _pb([[140, 80, 0], [140, 120, 0]], (0.5, 0.4), "apical_dendrite")  # 40 um
+_W_TUFT2 = _pb([[140, 120, 0], [170, 160, 0]], (0.4, 0.3), "apical_dendrite")  # 50 um
+
+
+def _tuft() -> Morphology:
+    """The tree E5 grafts onto W's d1: tuft (root) -> tuft2, both apical, 90 um."""
+    return _build(("tuft", _W_TUFT, None, None, None), ("tuft2", _W_TUFT2, "tuft", 1.0, 0.0))
+
+
+class MorphoGraftTest(_RoundTripMixin, unittest.TestCase):
+    """``Morphology.graft(other, parent=...)`` attaches a copy of another tree (tree W)."""
+
+    def test_grafting_a_two_branch_tree_onto_d1(self) -> None:
+        tree = make_tree_w()
+        other = _tuft()
+        held = {b.name: b for b in tree.branches}
+        indices = {name: view.index for name, view in held.items()}
+        other_before = (other.revision, morph_fingerprint(other))
+        revision = tree.revision
+
+        returned = tree.graft(other, parent="d1")
+
+        self.assertEqual((returned.name, returned.index, tree.tuft2.index), ("tuft", 5, 6))
+        self.assertIs(returned, tree.tuft)
+        for name, view in held.items():
+            with self.subTest(name):
+                self.assertIs(getattr(tree, name), view)
+                self.assertEqual(view.index, indices[name])
+        self.assertFalse(tree._reindexed_after(revision))
+        self.assertEqual(tree.revision, revision + 1)
+        self.assertEqual(tree.n_branches, 7)
+        np.testing.assert_allclose(_um(tree.total_length), 350.0, rtol=1e-12)
+        self.assertEqual(
+            [(e.parent.name, e.child.name, e.parent_x, e.child_x) for e in tree.edges[-2:]],
+            [("d1", "tuft", 1.0, 0.0), ("tuft", "tuft2", 1.0, 0.0)],
+        )
+        self.assertIs(tree.tuft.branch, other.tuft.branch)
+        self.assertEqual((other.revision, morph_fingerprint(other)), other_before)
+        self.assertEqual(tree.naming_state(), {})
+        expected = _w_with()
+        expected.attach(parent="d1", child_branch=_W_TUFT, child_name="tuft")
+        expected.attach(parent="tuft", child_branch=_W_TUFT2, child_name="tuft2")
+        self.assert_round_trips(tree, expected)
+        # SWC keeps no branch boundary between two unforked branches of one type.
+        self.assertEqual(Morphology.from_swc(self.tmp / "tree-edited.swc").n_branches, 6)
+
+    def test_the_call_gives_the_root_s_attachment(self) -> None:
+        tree = make_tree_w()
+        tree.graft(_tuft(), parent="soma", parent_x=0.5, child_x=1.0)
+        self.assertEqual((tree.tuft.parent.name, tree.tuft.parent_x, tree.tuft.child_x), ("soma", 0.5, 1.0))
+        self.assertEqual((tree.tuft2.parent_x, tree.tuft2.child_x), (1.0, 0.0))
+
+    def test_a_view_selects_the_parent(self) -> None:
+        tree = make_tree_w()
+        self.assertEqual(tree.graft(_tuft(), parent=tree.d2).parent.name, "d2")
+
+    def test_renaming_with_a_mapping_copies_part_of_the_tree_itself(self) -> None:
+        tree = make_tree_w()
+        returned = tree.graft(tree.subtree("d1"), parent="d2", rename={"d1": "d1b"})
+        self.assertEqual((returned.name, returned.index), ("d1b", 5))
+        self.assertEqual(tree.n_branches, 6)
+        np.testing.assert_allclose(_um(tree.total_length), 310.0, rtol=1e-12)
+        self.assertIs(tree.d1b.branch, tree.d1.branch)
+
+    def test_renaming_with_a_function(self) -> None:
+        tree = make_tree_w()
+        tree.graft(_tuft(), parent="d1", rename=lambda name: f"{name}_copy")
+        self.assertEqual([b.name for b in tree.branches][-2:], ["tuft_copy", "tuft2_copy"])
+
+    def test_a_tree_can_graft_a_copy_of_itself(self) -> None:
+        tree = make_tree_w()
+        returned = tree.graft(tree, parent="d1", rename=lambda name: name + "_b")
+        self.assertEqual((returned.name, returned.index), ("soma_b", 5))
+        self.assertEqual(tree.n_branches, 10)
+        np.testing.assert_allclose(_um(tree.total_length), 520.0, rtol=1e-12)
+        self.assertEqual(
+            [(b.name, b.parent.name) for b in tree.branches[5:]],
+            [("soma_b", "d1"), ("dend_b", "soma_b"), ("d1_b", "dend_b"), ("d2_b", "dend_b"), ("axon_b", "soma_b")],
+        )
+        self.assertEqual(cold_rebuild(tree), tree)
+
+    def test_a_frozen_tree_can_be_grafted(self) -> None:
+        tree = make_tree_w()
+        tree.graft(frozen_snapshot(_tuft()), parent="d1")
+        self.assertEqual(tree.n_branches, 7)
+
+    def test_the_auto_naming_counters_do_not_change(self) -> None:
+        tree = make_tree_s()
+        other = Morphology.from_root(make_basal(), name="stem")
+        self.assertEqual(other.attach(parent="stem", child_branch=make_basal()).name, "basal_dendrite_0")
+
+        tree.graft(other, parent="dend")
+
+        self.assertEqual(tree.naming_state(), {})
+        self.assertEqual(tree.attach(parent="soma", child_branch=make_basal()).name, "basal_dendrite_1")
+
+    def test_rejected_grafts_change_neither_tree(self) -> None:
+        tree = make_tree_w()
+        other = _tuft()
+        clash = Morphology.from_root(_W_D1, name="d1")
+        clash.attach(parent="d1", child_branch=make_apical(), child_name="tip")
+        cases = [
+            ("a clashing name", lambda: tree.graft(clash, parent="axon"), ValueError, r"\['d1'\].*rename="),
+            (
+                "the tree itself",
+                lambda: tree.graft(tree, parent="d1"),
+                ValueError,
+                re.escape("['soma', 'dend', 'd1', 'd2', 'axon']"),
+            ),
+            ("unknown parent", lambda: tree.graft(other, parent="nope"), KeyError, "nope"),
+            ("midpoint off a soma", lambda: tree.graft(other, parent="d1", parent_x=0.5), ValueError, "soma"),
+            ("child_x=0.5", lambda: tree.graft(other, parent="d1", child_x=0.5), ValueError, "child_x"),
+            ("not a Morphology", lambda: tree.graft("x", parent="d1"), TypeError, "expects other to be a Morphology"),
+            ("parent of another tree", lambda: tree.graft(other, parent=other.tuft), ValueError, "different"),
+            ("reserved", lambda: tree.graft(other, parent="d1", rename={"tuft": "branches"}), ValueError, "reserved"),
+            (
+                "not an identifier",
+                lambda: tree.graft(other, parent="d1", rename={"tuft": "1x"}),
+                ValueError,
+                "identifier",
+            ),
+            ("unknown key", lambda: tree.graft(other, parent="d1", rename={"tuf": "x"}), ValueError, r"\['tuf'\]"),
+            (
+                "same name twice",
+                lambda: tree.graft(other, parent="d1", rename=lambda n: "same"),
+                ValueError,
+                r"\['same'\]",
+            ),
+            ("non-str name", lambda: tree.graft(other, parent="d1", rename=lambda n: 1), TypeError, "str name"),
+            ("non-str mapped name", lambda: tree.graft(other, parent="d1", rename={"tuft": 2}), TypeError, "str name"),
+            ("rename=1", lambda: tree.graft(other, parent="d1", rename=1), TypeError, "mapping, a callable or None"),
+        ]
+        for label, call, error, pattern in cases:
+            with self.subTest(label):
+                before, other_before = _edit_state(tree), _edit_state(other)
+                with self.assertRaisesRegex(error, pattern):
+                    call()
+                self.assertEqual(_edit_state(tree), before)
+                self.assertEqual(_edit_state(other), other_before)
+        self.assertEqual(clash.n_branches, 2)
+
+    def test_a_detached_parent_is_rejected(self) -> None:
+        tree = make_tree_w()
+        held = tree.d2
+        tree.remove("d2")
+        before = _edit_state(tree)
+        with self.assertRaisesRegex(RuntimeError, r"'d2'.*detached.*by name"):
+            tree.graft(_tuft(), parent=held)
+        self.assertEqual(_edit_state(tree), before)
+
+    def test_a_frozen_tree_rejects_before_checking_arguments(self) -> None:
+        snapshot = frozen_snapshot(make_tree_w())
+        before = _edit_state(snapshot)
+        with self.assertRaisesRegex(RuntimeError, "read-only snapshot"):
+            snapshot.graft("x", parent="nope")
+        self.assertEqual(_edit_state(snapshot), before)
+
+
 class MorphoBranchDerivedPropertyTest(unittest.TestCase):
     """``branch_id`` / ``branch_order`` / ``n_tapers`` published by MorphoBranch.
 
@@ -1746,7 +1904,7 @@ class MorphoReservedNameTest(unittest.TestCase):
     def test_copy_and_edit_method_names_are_reserved(self) -> None:
         # Each new public method takes a name away from branches: a tree or a
         # checkpoint that used it can no longer be built (the changelog says so).
-        for name in ("clone", "subtree", "remove", "replace"):
+        for name in ("clone", "subtree", "remove", "replace", "graft"):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(ValueError, "reserved by the Morphology API"):
                     self._attach_named(self._tree(), name)

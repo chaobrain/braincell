@@ -22,6 +22,7 @@ ids to rows in one runtime SoA node per registered synapse type.
 
 from __future__ import annotations
 
+import itertools
 from collections import Counter
 from dataclasses import dataclass
 
@@ -36,6 +37,10 @@ from braincell.mech import Synapse, get_registry
 from braincell.mech._synapse_schema import describe_mechanism, unit_error_message
 
 __all__ = ["SynapseView"]
+
+#: Numbers every synapse store, so a holder of logical ids can tell whether
+#: they still refer to the store it took them from.
+_STORE_SERIALS = itertools.count()
 
 
 @dataclass(frozen=True)
@@ -64,6 +69,13 @@ class _SynapseStore:
         "cv_id",
         "branch_id",
         "branch_x",
+        "branch_name",
+        "rule_index",
+        "mechanism_index",
+        "repeat_index",
+        "sites",
+        "serial",
+        "_id_order",
         "name",
         "synapse_type",
         "mechanism",
@@ -79,6 +91,8 @@ class _SynapseStore:
 
     def __init__(self, cell) -> None:
         self.cell = cell
+        self.serial = next(_STORE_SERIALS)
+        self._id_order = None
         rows = []
         synapse_placements = tuple(
             placement for placement in cell.point_placements if isinstance(placement.mechanism, Synapse)
@@ -88,13 +102,26 @@ class _SynapseStore:
                 f"Synapse views currently require scalar or one-dimensional pop_size; got {cell.pop_size!r}."
             )
         population_size = 1 if len(cell.pop_size) == 0 else int(cell.pop_size[0])
+        # A placement's identity across rebuilds (MORPH-15): its place rule
+        # and mechanism there, branch name, x, and which repeat of that
+        # location it is. ``sites`` lists each rule-mechanism's locations.
+        repeats: dict[tuple, int] = {}
+        repeat_of: dict[int, int] = {}
+        sites: dict[tuple[int, int], list] = {}
         for placement in synapse_placements:
             mechanism = placement.mechanism
+            rule_key = (placement._rule_index, placement._mechanism_index)
+            site = (-1 if placement.population_index is None else int(placement.population_index),
+                    placement.branch_name, float(placement.branch_x))
+            repeat_of[int(placement.id)] = repeats.get(rule_key + site, 0)
+            repeats[rule_key + site] = repeat_of[int(placement.id)] + 1
+            sites.setdefault(rule_key, []).append(site)
             owners = (
                 range(population_size) if placement.population_index is None else (int(placement.population_index),)
             )
             for owner in owners:
                 rows.append((int(owner), int(placement.id), placement, mechanism))
+        self.sites = {key: tuple(sorted(value)) for key, value in sites.items()}
 
         # Public logical order is stable and cell-major, independently of how
         # broadcast placements happen to be represented by discretization.
@@ -106,6 +133,10 @@ class _SynapseStore:
         self.cv_id = np.asarray([row[2].cv_id for row in rows], dtype=np.int64)
         self.branch_id = np.asarray([row[2].branch_id for row in rows], dtype=np.int64)
         self.branch_x = np.asarray([row[2].branch_x for row in rows], dtype=float)
+        self.branch_name = np.asarray([row[2].branch_name for row in rows], dtype=object)
+        self.rule_index = np.asarray([row[2]._rule_index for row in rows], dtype=np.int64)
+        self.mechanism_index = np.asarray([row[2]._mechanism_index for row in rows], dtype=np.int64)
+        self.repeat_index = np.asarray([repeat_of[row[1]] for row in rows], dtype=np.int64)
         self.mechanism = tuple(row[3] for row in rows)
         origins = getattr(cell, "_synapse_origins", {})
         self.declaration = tuple(origins.get(id(item), item) for item in self.mechanism)
@@ -299,6 +330,63 @@ class _SynapseStore:
     def row_indices(self, logical_ids) -> np.ndarray:
         """Return private physical rows for stable logical ids."""
         return np.asarray([self.row_index(int(item)) for item in np.asarray(logical_ids).tolist()], dtype=np.int64)
+
+    def rows_of(self, logical_ids) -> tuple[np.ndarray, np.ndarray]:
+        """Return ``(rows, found)`` for ``logical_ids``: vectorized :meth:`row_indices` that does not raise."""
+        ids = np.asarray(logical_ids, dtype=np.int64).reshape(-1)
+        if self._id_order is None:
+            self._id_order = np.argsort(self.id, kind="stable")
+        order = self._id_order
+        sorted_ids = self.id[order]
+        position = np.minimum(np.searchsorted(sorted_ids, ids), max(len(sorted_ids) - 1, 0))
+        found = sorted_ids[position] == ids if len(sorted_ids) else np.zeros(ids.shape, dtype=bool)
+        return (order[position] if len(sorted_ids) else position), found
+
+    def identity(self, rows) -> tuple[np.ndarray, ...]:
+        """``(rule, mechanism, population, branch name, x, repeat)`` of ``rows``.
+
+        This names a logical synapse across rebuilds of the grid: its place
+        rule and the mechanism within that rule, its population member, its
+        branch by name and ``branch_x``, and which repeat of that location
+        it is. Its logical id is not stable: it numbers placements across
+        all rules, so an earlier rule gaining a site shifts it (MORPH-15).
+        """
+        rows = np.asarray(rows, dtype=np.int64)
+        return (
+            self.rule_index[rows],
+            self.mechanism_index[rows],
+            self.population_index[rows],
+            self.branch_name[rows],
+            self.branch_x[rows],
+            self.repeat_index[rows],
+        )
+
+    def ids_with_identity(self, identity) -> np.ndarray:
+        """Logical ids of the synapses with ``identity`` (:meth:`identity`), ``-1`` where none has it."""
+        rule, mechanism = identity[0], identity[1]
+        candidates = np.zeros(len(self.id), dtype=bool)
+        for key in dict.fromkeys(zip(rule.tolist(), mechanism.tolist())):
+            candidates |= (self.rule_index == key[0]) & (self.mechanism_index == key[1])
+        table_rows = np.flatnonzero(candidates)
+        table = self.identity(table_rows)
+        n_table = len(table_rows)
+        _, name_codes = np.unique(np.concatenate((table[3], identity[3])).astype(str), return_inverse=True)
+        keys = np.concatenate(
+            (_identity_keys(table, name_codes[:n_table]), _identity_keys(identity, name_codes[n_table:]))
+        )
+        _, inverse = np.unique(keys, return_inverse=True)
+        lookup = np.full(int(inverse.max(initial=-1)) + 1, -1, dtype=np.int64)
+        lookup[inverse[:n_table]] = self.id[table_rows]
+        return lookup[inverse[n_table:]]
+
+
+def _identity_keys(identity, name_codes) -> np.ndarray:
+    """One sortable record per synapse identity, its branch name replaced by ``name_codes``."""
+    rule, mechanism, population, _, x, repeat = identity
+    keys = np.empty(len(rule), dtype=[("r", "i8"), ("m", "i8"), ("p", "i8"), ("n", "i8"), ("x", "f8"), ("k", "i8")])
+    keys["r"], keys["m"], keys["p"] = rule, mechanism, population
+    keys["n"], keys["x"], keys["k"] = name_codes, x, repeat
+    return keys
 
 
 class SynapseView(DiscreteView):

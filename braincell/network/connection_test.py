@@ -33,7 +33,8 @@ from braincell import (
     Network,
     connect,
 )
-from braincell.filter import AllRegion, at
+from braincell.filter import AllRegion, Terminals, at
+from braincell.morph._testing import make_tree_s
 
 
 def _population(size=3):
@@ -543,6 +544,144 @@ class ConnectionTest(unittest.TestCase):
             cell._prepare_runtime_synapse_inputs(cell._cv_to_point(cell.V.value))
 
         np.testing.assert_allclose(cell.runtime.get_event_buffer(layout.id).to_decimal(u.uS), [0.15])
+
+
+def _extra_basal() -> Branch:
+    return Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite")
+
+
+def _two_rule_network(target: str, *, pop_size: int = 1):
+    """Tree S post Cell with ExpSyn "a" on Terminals() and "b" at soma(0.5), driven by a pre Cell.
+
+    Terminals of tree S are dend's and axon's ends, so the logical synapses
+    are a, a, b (ids 0, 1, 2 for one member).
+    """
+    morpho = make_tree_s()
+    post = Cell(morpho, pop_size=(pop_size,))
+    post.place(Terminals(), braincell.mech.Synapse("ExpSyn", name="a", tau=2.0 * u.ms, e=0.0 * u.mV))
+    post.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="b", tau=2.0 * u.ms, e=0.0 * u.mV))
+    pre = Cell(make_tree_s(), pop_size=(pop_size,))
+    network = Network("n")
+    pre_population = network.add_population("pre", pre)
+    post_population = network.add_population("post", post)
+    network.connect(
+        "drive",
+        source=pre_population.event_outputs["spike"],
+        synapse=post_population.synapses[target],
+        weight=0.1 * u.uS,
+    )
+    return network, post, morpho
+
+
+def _targets(post: Cell) -> list[tuple[str, str, float, int]]:
+    """(synapse name, branch name, x, member) of every connection row of ``post``."""
+    synapses = post._get_synapse_store()
+    rows = [synapses._row_by_id[int(item)] for item in post._get_connection_store().synapse_id.tolist()]
+    names = [post.morpho.branch(index=int(synapses.branch_id[row])).name for row in rows]
+    return [
+        (str(synapses.name[row]), name, float(synapses.branch_x[row]), int(synapses.population_index[row]))
+        for row, name in zip(rows, names)
+    ]
+
+
+class ConnectionFollowsItsSynapseTest(unittest.TestCase):
+    """MORPH-15: a connection row reaches the synapse it was connected to after a rebuild.
+
+    Logical synapse ids are numbered across every place rule, so a rebuild
+    that adds a site to an earlier rule shifts the later ids; the rows used
+    to keep the old id and deliver to whatever synapse holds it now.
+    """
+
+    def test_a_row_follows_its_synapse_when_an_earlier_rule_gains_a_site(self) -> None:
+        network, post, morpho = _two_rule_network("b")
+        self.assertEqual(post._get_connection_store().synapse_id.tolist(), [2])
+
+        morpho.soma.extra = _extra_basal()
+        network.init_state()
+
+        self.assertEqual(post._get_connection_store().synapse_id.tolist(), [3])
+        self.assertEqual(_targets(post), [("b", "soma", 0.5, 0)])
+
+    def test_every_member_follows_its_synapse(self) -> None:
+        network, post, morpho = _two_rule_network("b", pop_size=2)
+        morpho.soma.extra = _extra_basal()
+        network.init_state()
+
+        self.assertEqual(_targets(post), [("b", "soma", 0.5, 0), ("b", "soma", 0.5, 1)])
+
+    def test_a_cell_initialized_on_its_own_follows_too(self) -> None:
+        morpho = make_tree_s()
+        post = Cell(morpho)
+        post.place(Terminals(), braincell.mech.Synapse("ExpSyn", name="a", tau=2.0 * u.ms, e=0.0 * u.mV))
+        post.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="b", tau=2.0 * u.ms, e=0.0 * u.mV))
+        source = NetStim(start=0.1 * u.ms, interval=1.0 * u.ms, number=1)
+        connect("drive", source=source, synapse=post.synapses["b"], weight=0.1 * u.uS)
+
+        morpho.soma.extra = _extra_basal()
+        post.init_state()
+
+        self.assertEqual(_targets(post), [("b", "soma", 0.5, 0)])
+
+    def test_a_row_follows_a_reused_branch_name(self) -> None:
+        # The synapse is identified by branch name: removing the axon and
+        # attaching another branch named axon gives the row that branch.
+        morpho = make_tree_s()
+        post = Cell(morpho)
+        post.place(at("axon", 0.5), braincell.mech.Synapse("ExpSyn", name="b", tau=2.0 * u.ms, e=0.0 * u.mV))
+        connect("drive", source=NetStim(start=0.1 * u.ms, number=1), synapse=post.synapses["b"], weight=0.1 * u.uS)
+
+        morpho.remove("axon")
+        morpho.soma.axon = Branch.from_lengths(lengths=[60.0] * u.um, radii=[0.5, 0.5] * u.um, type="axon")
+        post.init_state()
+
+        self.assertEqual(_targets(post), [("b", "axon", 0.5, 0)])
+
+    def test_a_new_site_in_the_connected_group_raises(self) -> None:
+        network, post, morpho = _two_rule_network("a")
+        self.assertEqual(post._get_connection_store().synapse_id.tolist(), [0, 1])
+
+        morpho.soma.extra = _extra_basal()
+
+        pattern = r"Connection 'drive' .*'a'.*3 sites \(axon\(1\), dend\(1\), extra\(1\)\).*when connected it resolved to 2"
+        with self.assertRaisesRegex(RuntimeError, pattern):
+            network.init_state()
+        # The check runs before any Cell of the Network initializes.
+        self.assertFalse(post._initialized)
+        self.assertFalse(network.populations["pre"].cell._initialized)
+        self.assertEqual(post._get_connection_store().synapse_id.tolist(), [0, 1])
+
+        # The recoveries the message names: connect the group again ...
+        post.connections["drive"].remove()
+        network.connect(
+            "drive_all",
+            source=network.populations["pre"].event_outputs["spike"],
+            synapse=network.populations["post"].synapses["a"],
+            weight=0.1 * u.uS,
+        )
+        network.init_state()
+        self.assertEqual(
+            [target for target in _targets(post)][-3:],
+            [("a", "dend", 1.0, 0), ("a", "axon", 1.0, 0), ("a", "extra", 1.0, 0)],
+        )
+
+    def test_undoing_the_edit_lets_the_connection_initialize(self) -> None:
+        network, post, morpho = _two_rule_network("a")
+        morpho.soma.extra = _extra_basal()
+        with self.assertRaisesRegex(RuntimeError, "Connection 'drive'"):
+            network.init_state()
+
+        morpho.remove("extra")
+        network.init_state()
+
+        self.assertEqual(_targets(post), [("a", "dend", 1.0, 0), ("a", "axon", 1.0, 0)])
+
+    def test_an_unchanged_declaration_keeps_the_rows(self) -> None:
+        network, post, _ = _two_rule_network("b")
+        post.paint(AllRegion(), braincell.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2))
+        network.init_state()
+
+        self.assertEqual(post._get_connection_store().synapse_id.tolist(), [2])
+        self.assertEqual(_targets(post), [("b", "soma", 0.5, 0)])
 
 
 if __name__ == "__main__":

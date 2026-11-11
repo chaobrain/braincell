@@ -564,6 +564,8 @@ def _apply_place(
     seen_names: set[str],
     position: Position = "mid",
     population_index: int | None = None,
+    rule_index: int = -1,
+    mechanism_index: int = -1,
 ) -> Point:
     named = _resolve_point_name(mechanism, display_name=display_name)
     auto_generated = getattr(mechanism, "name", None) is None and getattr(named, "name", None) is not None
@@ -583,6 +585,8 @@ def _apply_place(
             branch_id=int(branch_id),
             branch_x=float(branch_x),
             population_index=population_index,
+            _rule_index=int(rule_index),
+            _mechanism_index=int(mechanism_index),
         )
     )
     return named
@@ -768,7 +772,7 @@ def build_cv_mechanisms(
 
     seen_names: set[str] = set()
     placement_id = 0
-    for rule in place_rules:
+    for rule_index, rule in enumerate(place_rules):
         try:
             location_groups = _place_rule_locations(rule, cache)
         except KeyError as error:
@@ -791,7 +795,7 @@ def build_cv_mechanisms(
                 geo = geos[cv_id]
                 position = _position_for_geo(geo, x=float(x))
                 for population_index in population_indices:
-                    for mechanism in rule.mechanisms:
+                    for mechanism_index, mechanism in enumerate(rule.mechanisms):
                         _apply_place(
                             buckets[cv_id],
                             mechanism,
@@ -802,6 +806,8 @@ def build_cv_mechanisms(
                             seen_names=seen_names,
                             position=position,
                             population_index=population_index,
+                            rule_index=rule_index,
+                            mechanism_index=mechanism_index,
                         )
                         placement_id += 1
 

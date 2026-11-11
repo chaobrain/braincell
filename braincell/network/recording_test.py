@@ -21,7 +21,8 @@ import numpy as np
 
 import braincell
 from braincell._multi_compartment.selection_test import _cell
-from braincell.filter import BranchSlice, at
+from braincell.filter import BranchSlice, at, branch_in
+from braincell.morph._testing import make_tree_s, make_tree_t, make_tree_u
 
 
 class RecordingTest(unittest.TestCase):
@@ -240,6 +241,147 @@ class RecordingTest(unittest.TestCase):
         self.assertEqual(result.samples["nav_p"].schema.size, 1)
         self.assertEqual(result.samples["imem"].schema.size, 1)
         self.assertTrue(np.isfinite(result.samples["ina"].values.to_decimal(u.mA / u.cm**2)).all())
+
+
+def _rows(result, name: str) -> list[tuple[int, int]]:
+    return [(row.branch_id, row.cv_id) for row in result.samples[name].schema.rows]
+
+
+def _run(cell):
+    return cell.run(dt=0.05 * u.ms, duration=0.1 * u.ms)
+
+
+def _soma_dend_tree() -> braincell.Morphology:
+    """Soma 20 um (r 5 um) and a 100 um dendrite (r 1 um)."""
+    soma = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
+    tree = braincell.Morphology.from_root(soma, name="soma")
+    tree.soma.dend = braincell.Branch.from_lengths(
+        lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite"
+    )
+    return tree
+
+
+def _basal(length: float = 50.0) -> braincell.Branch:
+    return braincell.Branch.from_lengths(lengths=[length] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite")
+
+
+class RecordingFollowsItsDeclarationTest(unittest.TestCase):
+    """MORPH-15: a recording declared before the grid or tree changed records what it named.
+
+    Tree S: soma 0, dend 1, axon 2 (on the soma's proximal end). The
+    recording used to keep the CV ids it resolved when declared, so after a
+    new ``cv_policy`` or an edit it recorded other CVs without a word.
+    """
+
+    def test_a_region_recording_follows_a_new_cv_policy(self) -> None:
+        cell = braincell.Cell(make_tree_s())
+        cell.on(branch_in("type", "axon")).record("av", braincell.observe.state("v"))
+        cell.cv_policy = braincell.MaxCVLen(40.0 * u.um)
+
+        self.assertEqual(_rows(_run(cell), "av"), [(2, 4)])
+
+    def test_a_region_recording_includes_a_branch_appended_later(self) -> None:
+        morpho = make_tree_s()
+        cell = braincell.Cell(morpho)
+        cell.on(branch_in("type", "basal_dendrite")).record("dv", braincell.observe.state("v"))
+        morpho.soma.dend2 = _basal()
+
+        self.assertEqual(_rows(_run(cell), "dv"), [(1, 1), (3, 3)])
+
+    def test_a_type_selection_follows_a_retyped_branch_on_the_same_grid(self) -> None:
+        # Replacing dend by an apical branch of the same length keeps every
+        # CV (CVPerBranch) but changes which CVs the type selection names.
+        morpho = make_tree_u()
+        cell = braincell.Cell(morpho)
+        cell.apical_dendrite.record("ap", braincell.observe.state("v"))
+        morpho.replace(
+            "dend",
+            braincell.Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="apical_dendrite"),
+        )
+
+        self.assertEqual(_rows(_run(cell), "ap"), [(1, 1), (3, 3)])
+
+    def test_population_and_location_selections_are_kept(self) -> None:
+        morpho = make_tree_s()
+        cell = braincell.Cell(morpho, pop_size=(3,))
+        cell[[2, 0]].loc(at("axon", 0.5)).record("ax", braincell.observe.state("v"))
+        cell.cv_policy = braincell.MaxCVLen(40.0 * u.um)
+
+        rows = _run(cell).samples["ax"].schema.rows
+        self.assertEqual([(row.population_index, row.branch_id, row.cv_id) for row in rows], [(2, 2, 4), (0, 2, 4)])
+
+    def test_an_unchanged_grid_keeps_the_declared_selection(self) -> None:
+        cell = braincell.Cell(make_tree_s())
+        spec = cell.cv[1].record("c1", braincell.observe.state("v"))
+        cell.paint(braincell.filter.AllRegion(), braincell.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2))
+
+        self.assertEqual(_rows(_run(cell), "c1"), [(1, 1)])
+        self.assertIs(cell.recordings["c1"], spec)
+
+    def test_a_cv_recording_raises_on_a_new_grid(self) -> None:
+        cell = braincell.Cell(_soma_dend_tree())
+        cell.cv[1].record("c1", braincell.observe.state("v"))
+        cell.cv_policy = braincell.MaxCVLen(20.0 * u.um)
+        self.assertEqual(cell.n_cv, 6)
+
+        pattern = r"Recording 'c1' .*cv\[\.\.\.\].*grid"
+        with self.assertRaisesRegex(RuntimeError, pattern):
+            cell.init_state()
+        self.assertFalse(cell._initialized)
+        with self.assertRaisesRegex(RuntimeError, pattern):
+            _run(cell)
+        # The recovery the message names: the grid it was declared on.
+        cell.cv_policy = braincell.CVPerBranch()
+        self.assertEqual(_rows(_run(cell), "c1"), [(1, 1)])
+
+    def test_a_branch_recording_stays_on_its_branch_after_scaling(self) -> None:
+        # MORPH-3b: scale(2) doubles every length, so MaxCVLen(40 um) cuts
+        # more CVs and d1's CV ids move.
+        morpho = make_tree_t()
+        cell = braincell.Cell(morpho, cv_policy=braincell.MaxCVLen(40.0 * u.um))
+        cell.branch["d1"].record("d1v", braincell.observe.state("v"))
+        self.assertEqual([cv.id for cv in cell.cvs if cv.branch_id == 2], [4, 5, 6])
+
+        morpho.scale(2)
+
+        d1 = [cv.id for cv in cell.cvs if cv.branch_id == 2]
+        self.assertEqual(d1, D1_AFTER_SCALE)
+        self.assertEqual(_rows(_run(cell), "d1v"), [(2, cv_id) for cv_id in d1])
+
+    def test_a_cv_recording_is_kept_when_an_edit_keeps_the_grid(self) -> None:
+        morpho = make_tree_u()
+        cell = braincell.Cell(morpho)
+        cell.cv[1].record("c1", braincell.observe.state("v"))
+        morpho.replace(
+            "dend",
+            braincell.Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="apical_dendrite"),
+        )
+
+        self.assertEqual(_rows(_run(cell), "c1"), [(1, 1)])
+
+    def test_an_expression_on_a_removed_branch_names_the_recording(self) -> None:
+        morpho = make_tree_u()
+        cell = braincell.Cell(morpho)
+        cell.loc(at("dend", 0.5)).record("dv", braincell.observe.state("v"))
+        morpho.remove("dend")
+
+        with self.assertRaisesRegex(KeyError, r"Recording 'dv' selects branch 'dend'.*does not have"):
+            cell.init_state()
+        # Reusing the name gives the recording a branch to follow again.
+        morpho.soma.dend = _basal()
+        self.assertEqual(_rows(_run(cell), "dv"), [(3, 3)])
+
+    def test_a_mask_recording_raises_once_a_removal_moves_its_indices(self) -> None:
+        morpho = make_tree_u()
+        cell = braincell.Cell(morpho)
+        cell.loc(at("axon", 0.5).evaluate(morpho)).record("ax", braincell.observe.state("v"))
+        morpho.soma.extra = _basal()
+        self.assertEqual(_rows(_run(cell), "ax"), [(2, 2)])
+
+        cell.reset()
+        morpho.remove("dend")
+        with self.assertRaisesRegex(RuntimeError, r"Recording 'ax' .*LocsetMask.*removed or moved"):
+            cell.init_state()
 
 
 if __name__ == "__main__":

@@ -89,6 +89,12 @@ class _ConnectionCall:
     live_history: object = None
     live_delay_steps: np.ndarray | None = None
     live_dt_ms: float | None = None
+    #: Identity of each row's synapse (``_SynapseStore.identity``) and the
+    #: sites of each place rule it was connected on, as of ``connect`` (MORPH-15).
+    synapse_identity: tuple | None = None
+    synapse_sites: dict | None = None
+    #: ``_SynapseStore.serial`` of the store the rows' synapse ids refer to.
+    synapse_store_serial: int = -1
 
     def __post_init__(self):
         if self.weight is not None:
@@ -174,6 +180,8 @@ class _ConnectionStore:
         self.active = np.concatenate((self.active, np.ones(count, dtype=bool)))
         self._row_of_id = np.concatenate((self._row_of_id, np.arange(start, start + count, dtype=np.int64)))
 
+        synapses = synapse._store
+        identity = synapses.identity(synapses.rows_of(synapse_id)[0])
         call = _ConnectionCall(
             id=connect_id,
             name=name,
@@ -182,6 +190,11 @@ class _ConnectionStore:
             synapse_name=str(synapse.name[0]),
             row_ids=row_ids,
             weight=weight,
+            synapse_identity=identity,
+            synapse_sites={
+                key: synapses.sites[key] for key in dict.fromkeys(zip(identity[0].tolist(), identity[1].tolist()))
+            },
+            synapse_store_serial=synapses.serial,
         )
         self._calls.append(call)
         self._call_by_id[connect_id] = call
@@ -198,6 +211,56 @@ class _ConnectionStore:
 
     def rows(self, ids) -> np.ndarray:
         return self._row_of_id[np.asarray(ids, dtype=np.int64)]
+
+    def follow_synapses(self, synapses) -> None:
+        """Point every active row at the synapse it was connected to, on the current grid.
+
+        Logical synapse ids number placements across all place rules, so a
+        rebuild that gives an earlier rule another site shifts every later
+        id (MORPH-15). Each row keeps its synapse's identity (place rule,
+        mechanism, member, branch name, ``branch_x``, repeat) and is moved
+        to the id that synapse has now. Nothing changes when no id moved.
+
+        Raises
+        ------
+        RuntimeError
+            Before changing any row, naming the first connection whose
+            place rule now resolves to other sites than when it was
+            connected: its rows could not all reach the same synapses.
+        """
+        updates = []
+        for call in self._calls:
+            if call.synapse_store_serial == synapses.serial:
+                continue
+            rows = self._row_of_id[call.row_ids]
+            active = self.active[rows]
+            if not active.any():
+                continue
+            for key, sites in call.synapse_sites.items():
+                now = synapses.sites.get(key, ())
+                if now != sites:
+                    raise RuntimeError(
+                        f"Connection {call.name!r} targets synapse group {call.synapse_name!r} "
+                        f"({call.synapse_type}), whose Cell.place(...) rule now resolves to {len(now)} sites "
+                        f"({_describe_sites(now)}); when connected it resolved to {len(sites)} "
+                        f"({_describe_sites(sites)}). Its rows would leave sites unconnected or reach none. "
+                        f"Undo the edit, or remove the connection (cell.connections[{call.name!r}].remove()) and "
+                        "connect the group again under a new name."
+                    )
+            identity = tuple(column[active] for column in call.synapse_identity)
+            rows = rows[active]
+            found_rows, found = synapses.rows_of(self.synapse_id[rows])
+            if found.all() and _same_identity(synapses.identity(found_rows), identity):
+                updates.append((call, rows, None))
+                continue
+            ids = synapses.ids_with_identity(identity)
+            # The sites match, so every identity is still there.
+            assert (ids >= 0).all(), call.name
+            updates.append((call, rows, ids))
+        for call, rows, ids in updates:
+            if ids is not None:
+                self.synapse_id[rows] = ids
+            call.synapse_store_serial = synapses.serial
 
     def active_ids(self, ids=None) -> np.ndarray:
         ids = self.id if ids is None else np.asarray(ids, dtype=np.int64).reshape(-1)
@@ -247,6 +310,16 @@ class _ConnectionStore:
                 ids[mask] - int(call.row_ids[0]),
                 _stack_values(selected),
             )
+
+
+def _same_identity(first, second) -> bool:
+    return all(np.array_equal(a, b) for a, b in zip(first, second))
+
+
+def _describe_sites(sites, limit: int = 4) -> str:
+    """``dend(1), axon(1)`` for a place rule's sites; ``[member]`` prefixes a per-member site."""
+    parts = [f"{'' if member < 0 else f'[{member}] '}{branch}({x:g})" for member, branch, x in sites[:limit]]
+    return ", ".join(parts) + (", ..." if len(sites) > limit else "")
 
 
 class ConnectionView(DiscreteView):

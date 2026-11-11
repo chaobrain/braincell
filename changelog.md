@@ -603,6 +603,19 @@
 
 ### Bug Fixes
 
+- With `ion_channel_update_order="integration"`, the `"staggered"` solver
+  now advances the dependent channels under a kinetic ion (CELL-32). The
+  ion's own update integrates its species only, and the dependent-node pass
+  skipped the ion with its channels, so they stayed at their initial state:
+  `CaHVA_MA2020_GoC` under `CdpStC_MA2020_GoC` kept s = 0.01006 and
+  u = 0.75749 through a 1 ms run, and V did not converge to the `"family"`
+  order (1.3e-4 mV apart at dt 0.005 and 0.001 ms) or to the generic solvers
+  (`ralston2` 2.4e-4 -> 1.5e-4 mV). They now advance with `ind_exp_euler` and
+  the ion's state, as in the `"family"` order's channel phase: that model
+  matches `"family"` to 1e-12 mV, and `ralston2` converges to it at first
+  order (1.1e-4 -> 2.2e-5 mV). Models without such channels are
+  bit-identical to before.
+
 - The `AttributeError` for the removed `braincell.quad.rk2_step` no longer
   names it twice. It now reads: "braincell.quad.rk2_step was removed; it was
   Ralston's second-order method; use braincell.quad.ralston2_step (same

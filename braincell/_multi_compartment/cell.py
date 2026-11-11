@@ -1124,7 +1124,10 @@ class Cell(_CellFacade, HHTypedNeuron):
     ion_channel_update_order : {"family", "integration"}
         Post-voltage ion/channel scheduling. ``"family"`` updates all ions
         before all channels; ``"integration"`` preserves the previous
-        IndependentIntegration-grouped scheduling.
+        IndependentIntegration-grouped scheduling: the dependent nodes first
+        (with the dependent channels of a self-integrating ion such as a
+        ``KineticIon``, which read its state before it advances), then each
+        node's own ``ind_update``.
     membrane_linearizer : {"point", "generic"}
         Compatibility selector for the membrane-current linearization
         strategy. Both values currently differentiate the assembled CV-space
@@ -3329,17 +3332,31 @@ class Cell(_CellFacade, HHTypedNeuron):
             # (both derive from ``IonChannel, Container``), and a channel
             # under either is reached the same way.
             if isinstance(node, (Ion, MixIons)):
-                for child_path, child in brainstate.graph.nodes(
-                    node,
-                    Channel,
-                    allowed_hierarchy=(1, 1),
-                ).items():
-                    if getattr(child, "_skip_family_update", False):
-                        continue
-                    nodes.append((path + child_path, child))
+                nodes.extend(self._child_channel_nodes(path, node))
             elif isinstance(node, Channel):
                 nodes.append((path, node))
         return tuple(nodes)
+
+    @staticmethod
+    def _child_channel_nodes(path, node):
+        """``(full path, channel)`` for the channels under an Ion or MixIons that own state."""
+        return tuple(
+            (path + child_path, child)
+            for child_path, child in brainstate.graph.nodes(node, Channel, allowed_hierarchy=(1, 1)).items()
+            if not getattr(child, "_skip_family_update", False)
+        )
+
+    def _integrate_dependent_child_channels(self, path, node, cv_V):
+        """Advance the non-independent channels under ``node`` with ``ind_exp_euler``, reading its ion info."""
+        for child_path, child in self._child_channel_nodes(path, node):
+            if self._is_independent_channel(child):
+                continue
+            target, args = self._channel_integration_target_and_args(child_path, child, cv_V)
+            with jax.named_scope(_scope_name("braincell:ion_update:channel", child_path, child)):
+                jax.named_call(
+                    ind_exp_euler_step,
+                    name=_call_name("braincell:ion_update:channel_step", child_path, child),
+                )(target, *args)
 
     def _integrate_selected_ion_self_states(
         self,
@@ -3373,6 +3390,11 @@ class Cell(_CellFacade, HHTypedNeuron):
         with jax.named_scope("braincell:ion_update:integration:dependent"):
             for path, node in self._top_level_ion_channel_nodes():
                 if isinstance(node, IndependentIntegration):
+                    # A self-integrating ion (KineticIon) advances its own
+                    # species only; its dependent channels advance here, as
+                    # in the "family" order's channel phase (CELL-32).
+                    if isinstance(node, (Ion, MixIons)):
+                        self._integrate_dependent_child_channels(path, node, cv_V)
                     continue
                 args = self._runtime_node_phase_args(path, node, cv_V)
                 with jax.named_scope(_scope_name("braincell:ion_update:node", path, node)):

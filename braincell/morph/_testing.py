@@ -380,10 +380,10 @@ class EditCase:
         :func:`make_tree_t`.
     reindex : bool
         Whether the edit can change the default index of a branch that
-        existed before it. True for a removal
-        (:meth:`Morphology.remove`), which must move the index watermark;
-        False for an append, an in-place replacement, a spliced copy or a
-        transform, which must keep every existing default index.
+        existed before it. True for a removal (:meth:`Morphology.remove`)
+        or a move (:meth:`Morphology.reattach`), which must move the index
+        watermark; False for an append, an in-place replacement, a grafted
+        copy or a transform, which must keep every existing default index.
     """
 
     name: str
@@ -438,6 +438,10 @@ def _graft_tuft(morpho: Morphology) -> None:
     morpho.graft(other, parent="d1")
 
 
+def _reattach_d2(morpho: Morphology) -> None:
+    morpho.reattach("d2", parent="axon")
+
+
 def _remove_d2(morpho: Morphology) -> None:
     morpho.remove("d2")
 
@@ -460,6 +464,7 @@ EDIT_CASES: tuple[EditCase, ...] = (
     EditCase("remove the leaf d2", "delete", _remove_d2, reindex=True),
     EditCase("remove the subtree at dend", "delete", _remove_dend_subtree, reindex=True),
     EditCase("graft a two-branch tree onto d1", "splice", _graft_tuft),
+    EditCase("reattach d2 under the axon", "splice", _reattach_d2, reindex=True),
 )
 
 #: Edits that skip the gate on purpose: every layer's check must fail on them.

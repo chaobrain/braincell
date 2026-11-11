@@ -1755,8 +1755,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         :class:`~braincell.filter.LocsetBatch` holds the default branch
         indices of the morphology as it is at this call. They stay valid
         when branches are appended or replaced in place; once a branch is
-        removed or a subtree replaced, the next rebuild (the first grid read,
-        or ``init_state``) raises ``RuntimeError`` rather than place the
+        removed or moved, the next rebuild (the first grid read, or
+        ``init_state``) raises ``RuntimeError`` rather than place the
         mechanisms on other branches. A location expression such as
         ``at("axon", 0.5)`` is evaluated again at every rebuild and follows
         the edit.
@@ -1918,7 +1918,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             ``LocsetMask``/``LocsetBatch`` given to :meth:`place`, or a
             :class:`~braincell.CVPerBranchList` policy -- was made before an
             edit of this morphology that shifted those indices (a branch
-            removal or subtree replacement).
+            removal or a move).
         """
         self._raise_if_initialized("discretize()")
         self._raise_if_branch_indices_moved()
@@ -1941,10 +1941,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         counts per branch (:class:`CVPerBranchList`) hold default branch
         indices of ``self._morpho`` at the revision they were declared.
         Appending a branch, or replacing or transforming one in place, keeps
-        every existing index; removing a branch or replacing a subtree moves
-        the morphology's index watermark past that revision, and replaying
-        the integers would put the declaration on other branches without a
-        word. Declarations made on another morphology object are not
+        every existing index; removing or moving a branch
+        (``Morphology.remove``, ``Morphology.reattach``) moves the
+        morphology's index watermark past that revision, and replaying the
+        integers would put the declaration on other branches without a word. Declarations made on another morphology object are not
         checked.
 
         Raises
@@ -1959,14 +1959,14 @@ class Cell(_CellFacade, HHTypedNeuron):
                 raise RuntimeError(
                     f"Cell.place(...){where} was given a resolved {type(rule.locset).__name__}, whose branch "
                     f"indices are those of morphology revision {rule._index_basis[1]}; a branch has since been "
-                    "removed or replaced, so they no longer name the same branches. Place a location expression "
+                    "removed or moved, so they no longer name the same branches. Place a location expression "
                     'such as at("axon", 0.5) instead of an evaluated mask, on a newly declared Cell.'
                 )
         if _branch_indices_moved(self._cv_policy_index_basis, morpho):
             raise RuntimeError(
                 f"cv_policy {self._discretization_policy!r} lists CV counts by default branch index, as of "
                 f"morphology revision {self._cv_policy_index_basis[1]}; a branch has since been removed or "
-                "replaced, so the counts no longer match their branches. Assign cell.cv_policy again for the "
+                "moved, so the counts no longer match their branches. Assign cell.cv_policy again for the "
                 "current branches."
             )
 

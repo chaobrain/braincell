@@ -728,6 +728,27 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         with self.assertRaisesRegex(KeyError, r"Cell\.place\(\.\.\.\) at cell_test\.py:\d+ .*branch 'dend'"):
             cell.n_cv
 
+    def test_a_mask_placement_raises_after_a_move(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
+
+        morpho.reattach("dend", parent="apical")
+
+        with self.assertRaisesRegex(
+            RuntimeError, r"Cell\.place\(\.\.\.\) at cell_test\.py:\d+ .*LocsetMask.*removed or moved"
+        ):
+            cell.n_cv
+
+    def test_an_expression_placement_follows_a_move(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.place(at("dend", 1.0), _index_probe_synapse())
+
+        morpho.reattach("dend", parent="apical")
+
+        self.assertEqual(_placed_branches(cell), [(3, "dend")])
+
     def test_a_mask_placement_survives_an_append(self):
         morpho = make_tree_u()
         cell = Cell(morpho)

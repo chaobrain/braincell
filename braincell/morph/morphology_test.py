@@ -1813,6 +1813,137 @@ class MorphoGraftTest(_RoundTripMixin, unittest.TestCase):
         self.assertEqual(_edit_state(snapshot), before)
 
 
+class MorphoReattachTest(_RoundTripMixin, unittest.TestCase):
+    """``Morphology.reattach(target, parent=...)`` moves a subtree within the tree (tree W)."""
+
+    def test_moving_d2_to_the_proximal_end_of_d1(self) -> None:
+        tree = make_tree_w()
+        held_d2, held_axon = tree.d2, tree.axon
+        revision = tree.revision
+
+        moved = tree.reattach("d2", parent="d1", parent_x=0.0)
+
+        self.assertEqual((moved.name, moved.index), ("d2", 4))
+        self.assertIsNot(moved, held_d2)
+        self.assertIs(moved.branch, held_d2.branch)
+        with self.assertRaisesRegex(RuntimeError, r"'d2'.*detached.*by name"):
+            held_d2.index
+        self.assertEqual(held_axon.index, 3)
+        self.assertEqual((moved.parent.name, moved.parent_x, moved.child_x), ("d1", 0.0, 0.0))
+        self.assertEqual(tree.n_branches, 5)
+        np.testing.assert_allclose(_um(tree.total_length), 260.0, rtol=1e-12)
+        self.assertTrue(tree._reindexed_after(revision))
+        self.assertEqual(tree.revision, revision + 1)
+        self.assert_round_trips(
+            tree,
+            _build(
+                ("soma", _W_SOMA, None, None, None),
+                ("dend", _W_DEND, "soma", 1.0, 0.0),
+                ("d1", _W_D1, "dend", 1.0, 0.0),
+                ("axon", _W_AXON, "soma", 0.0, 0.0),
+                ("d2", _W_D2, "d1", 0.0, 0.0),
+            ),
+        )
+
+    def test_moving_a_subtree_equals_remove_then_graft(self) -> None:
+        moved = make_tree_w()
+        held = {name: getattr(moved, name) for name in ("dend", "d1", "d2")}
+        moved.reattach("dend", parent="soma", parent_x=0.0)
+
+        two_steps = make_tree_w()
+        two_steps.graft(two_steps.remove("dend"), parent="soma", parent_x=0.0)
+
+        self.assertEqual(moved, two_steps)
+        self.assertEqual(
+            [(b.name, b.index) for b in moved.branches],
+            [("soma", 0), ("axon", 1), ("dend", 2), ("d1", 3), ("d2", 4)],
+        )
+        for name, view in held.items():
+            with self.subTest(name):
+                self.assertIn("detached", repr(view))
+        self.assertEqual(cold_rebuild(moved), moved)
+
+    def test_child_x_is_kept_unless_given(self) -> None:
+        tree = make_tree_s()
+        tree.attach(parent="dend", child_branch=make_basal(), child_name="rev", child_x=1.0)
+
+        self.assertEqual(tree.reattach("rev", parent="axon").child_x, 1.0)
+        self.assertEqual(tree.reattach("rev", parent="soma", child_x=0.0).child_x, 0.0)
+
+    def test_moving_back_to_the_same_place_is_still_an_edit(self) -> None:
+        tree = make_tree_w()
+        revision = tree.revision
+        moved = tree.reattach("dend", parent="soma")
+        self.assertEqual((moved.parent_x, moved.child_x), (1.0, 0.0))
+        self.assertEqual([b.name for b in tree.branches], ["soma", "axon", "dend", "d1", "d2"])
+        self.assertTrue(tree._reindexed_after(revision))
+
+    def test_a_view_gives_the_target_and_the_parent(self) -> None:
+        tree = make_tree_w()
+        moved = tree.reattach(tree.d2, parent=tree.axon)
+        self.assertEqual(moved.parent.name, "axon")
+
+    def test_inserting_a_branch_between_two_others(self) -> None:
+        tree = make_tree_w()
+        tree.attach(parent="soma", child_branch=make_basal(), child_name="hub")
+        tree.reattach("dend", parent="hub")
+        self.assertEqual(tree.dend.parent.name, "hub")
+        self.assertEqual([b.name for b in tree.dend.children], ["d1", "d2"])
+
+    def test_a_deep_chain_is_moved_without_recursion(self) -> None:
+        tree = make_deep_chain_tree(1200)
+        moved = tree.reattach("seg_600", parent="soma")
+        self.assertEqual(tree.n_branches, 1200)
+        self.assertEqual(moved.parent.name, "soma")
+        self.assertEqual(tree.max_branch_order, 600)
+
+    def test_rejected_moves_leave_no_trace(self) -> None:
+        tree = make_tree_w()
+        cases = [
+            ("under a descendant", lambda: tree.reattach("dend", parent="d1"), ValueError, "descendant 'd1'.*cycle"),
+            ("under itself", lambda: tree.reattach("dend", parent="dend"), ValueError, "itself.*cycle"),
+            ("the root", lambda: tree.reattach("soma", parent="axon"), ValueError, "root"),
+            ("unknown parent", lambda: tree.reattach("d2", parent="nope"), KeyError, "nope"),
+            ("unknown target", lambda: tree.reattach("nope", parent="axon"), KeyError, "nope"),
+            ("midpoint off a soma", lambda: tree.reattach("d2", parent="d1", parent_x=0.5), ValueError, "soma"),
+            ("child_x=0.5", lambda: tree.reattach("d2", parent="d1", child_x=0.5), ValueError, "child_x"),
+            ("target of another tree", lambda: tree.reattach(make_tree_w().d2, parent="d1"), ValueError, "different"),
+            ("parent of another tree", lambda: tree.reattach("d2", parent=make_tree_w().d1), ValueError, "different"),
+            ("not a name or view", lambda: tree.reattach(2, parent="d1"), TypeError, "got int"),
+        ]
+        for label, call, error, pattern in cases:
+            with self.subTest(label):
+                before = _edit_state(tree)
+                with self.assertRaisesRegex(error, pattern):
+                    call()
+                self.assertEqual(_edit_state(tree), before)
+
+    def test_detached_views_are_rejected(self) -> None:
+        tree = make_tree_w()
+        held_d2, held_d1 = tree.d2, tree.d1
+        tree.remove("d2")
+        tree.reattach("d1", parent="axon")
+        before = _edit_state(tree)
+        with self.assertRaisesRegex(RuntimeError, r"'d2'.*detached.*reattach\(\)"):
+            tree.reattach(held_d2, parent="axon")
+        with self.assertRaisesRegex(RuntimeError, r"'d1'.*detached"):
+            tree.reattach("axon", parent=held_d1)
+        self.assertEqual(_edit_state(tree), before)
+
+    def test_a_frozen_tree_rejects_before_checking_arguments(self) -> None:
+        snapshot = frozen_snapshot(make_tree_w())
+        before = _edit_state(snapshot)
+        for label, call in (
+            ("valid", lambda: snapshot.reattach("d2", parent="d1")),
+            ("a cycle", lambda: snapshot.reattach("dend", parent="d1")),
+            ("unknown", lambda: snapshot.reattach("nope", parent="nope")),
+        ):
+            with self.subTest(label):
+                with self.assertRaisesRegex(RuntimeError, "read-only snapshot"):
+                    call()
+                self.assertEqual(_edit_state(snapshot), before)
+
+
 class MorphoBranchDerivedPropertyTest(unittest.TestCase):
     """``branch_id`` / ``branch_order`` / ``n_tapers`` published by MorphoBranch.
 
@@ -1904,7 +2035,7 @@ class MorphoReservedNameTest(unittest.TestCase):
     def test_copy_and_edit_method_names_are_reserved(self) -> None:
         # Each new public method takes a name away from branches: a tree or a
         # checkpoint that used it can no longer be built (the changelog says so).
-        for name in ("clone", "subtree", "remove", "replace", "graft"):
+        for name in ("clone", "subtree", "remove", "replace", "graft", "reattach"):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(ValueError, "reserved by the Morphology API"):
                     self._attach_named(self._tree(), name)

@@ -25,6 +25,7 @@ In normal use, users only need `Morphology` and `MorphoBranch`.
 
 import collections
 import contextlib
+import dataclasses
 from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass
 from typing import Callable, NamedTuple, Optional, Union
@@ -731,10 +732,10 @@ class Morphology:
 
         Each successful edit call (:meth:`attach`, ``morpho.soma.dend =
         branch``, ``morpho.soma[0.5].dend = branch``, :meth:`remove`,
-        :meth:`replace`, :meth:`graft`, :meth:`reattach`) advances it by
-        exactly one, whether it changes the structure or only the geometry. Reads
-        never advance it, and an edit that raises leaves it, the tree and
-        :meth:`naming_state` unchanged.
+        :meth:`replace`, :meth:`graft`, :meth:`reattach`, :meth:`translate`,
+        :meth:`rotate`) advances it by exactly one, whether it changes the
+        structure or only the geometry. Reads never advance it, and an edit
+        that raises leaves it, the tree and :meth:`naming_state` unchanged.
 
         The absolute value carries no meaning, is not stable across
         processes, and cannot be compared between two trees; only comparison
@@ -2050,8 +2051,9 @@ class Morphology:
         ends somewhere else, the children's 3-D points no longer meet it.
         The cable model only reads lengths, radii and topology and is not
         affected, but :meth:`to_swc` then raises ``ValueError`` naming the
-        first child that does not connect. A call that raises changes
-        nothing.
+        first child that does not connect; move each child's subtree onto
+        the new end with :meth:`translate` (``subtree=``). A call that
+        raises changes nothing.
 
         Examples
         --------
@@ -2170,7 +2172,8 @@ class Morphology:
         branch index stay valid; the type and depth orders can change. The
         auto-naming counters do not change: the grafted names are explicit,
         and later auto-names skip any that are taken. 3-D continuity at the
-        joint is not checked; :meth:`to_swc` reports a gap. Every argument is
+        joint is not checked; :meth:`to_swc` reports a gap, which
+        :meth:`translate` with ``subtree=`` closes. Every argument is
         checked before anything is written, so a call that raises changes
         neither tree.
 
@@ -2281,7 +2284,8 @@ class Morphology:
         ``at("dend", 0.5)`` follow the move. Moving a subtree back to where
         it was is an edit too: it still goes to the end of the default
         order. 3-D points do not move; :meth:`to_swc` reports a gap at the
-        new joint. A call that raises changes nothing.
+        new joint, which :meth:`translate` with ``subtree=`` closes. A call
+        that raises changes nothing.
 
         Examples
         --------
@@ -2327,6 +2331,255 @@ class Morphology:
                 [root, *records[1:]], names=[record.name for record in records], parent_ids={None: parent_id}
             )
         return self._nodes[new_ids[0]]
+
+    def translate(self, offset: Quantity, *, subtree: Optional[ParentRef] = None) -> None:
+        """Move every 3-D point of the tree, or of one subtree, by ``offset``.
+
+        Only the points move. Segment lengths and radii are kept as they
+        are, so lengths, areas, volumes and path distances do not change,
+        not even in the last bit. Names, topology and branch indices do not
+        change either.
+
+        Parameters
+        ----------
+        offset : Quantity
+            Displacement in a length unit, shape ``(3,)``.
+        subtree : str, MorphoBranch or None
+            Move only this branch and its descendants, given by name or by a
+            view that is still in this tree. ``None`` (default) moves the
+            whole tree.
+
+        Raises
+        ------
+        RuntimeError
+            If this morphology is the read-only snapshot of an initialized
+            Cell (checked first), or ``subtree`` is a view of a branch that
+            an edit removed.
+        KeyError
+            If no branch is called ``subtree``.
+        TypeError
+            If ``offset`` is a bare number or not a length, or ``subtree`` is
+            neither a ``str``, a :class:`MorphoBranch` nor ``None``.
+        ValueError
+            If ``offset`` does not have shape ``(3,)`` or is not finite;
+            ``subtree`` is a view of another morphology's branch; a branch in
+            scope has no 3-D points (built with :meth:`Branch.from_lengths`);
+            or a moved point is not finite or has lost so much precision that
+            it no longer matches the segment lengths.
+
+        See Also
+        --------
+        rotate : Rotate the tree or a subtree.
+        clone : Copy the tree, e.g. to keep the original.
+
+        Notes
+        -----
+        The tree changes in place and the call returns ``None``; to keep the
+        original, :meth:`clone` it first. :attr:`revision` advances by one,
+        and integer branch indices held by a Cell stay valid. Views held
+        from before the call stay in the tree and read the moved geometry;
+        a :class:`Branch` object read before the call is immutable and keeps
+        the old points. A Cell has no position of its own: to place a cell,
+        transform its morphology.
+
+        ``subtree=`` closes the 3-D gap that :meth:`replace`, :meth:`graft`
+        or :meth:`reattach` can leave at a joint, which :meth:`to_swc`
+        reports.
+        Move the child's subtree by the parent's attachment point minus the
+        child's connecting end: ``points_distal[-1]`` of the parent for
+        ``parent_x=1`` (``points_proximal[0]`` for ``0``), and
+        ``points_proximal[0]`` of the child for ``child_x=0``
+        (``points_distal[-1]`` for ``1``). A call that raises changes
+        nothing.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> import numpy as np
+            >>> from braincell import Branch, Morphology
+            >>> def branch(points, radii, type):
+            ...     return Branch.from_points(points=np.array(points) * u.um, radii=np.array(radii) * u.um,
+            ...                               type=type)
+            >>> tree = Morphology.from_root(branch([[0.0, 0, 0], [20, 0, 0]], [5.0, 5.0], "soma"), name="soma")
+            >>> tree.soma.dend = branch([[20.0, 0, 0], [120, 0, 0]], [2.0, 1.0], "basal_dendrite")
+            >>> tree.translate(np.array([5.0, -3.0, 2.0]) * u.um)
+            >>> tree.dend.points_distal[-1].to_decimal(u.um).tolist()
+            [125.0, -3.0, 2.0]
+
+        Close the gap left by grafting a branch that starts at the origin:
+
+        .. code-block:: python
+
+            >>> tip = Morphology.from_root(branch([[0.0, 0, 0], [0, 40, 0]], [1.0, 0.5], "basal_dendrite"),
+            ...                            name="tip")
+            >>> _ = tree.graft(tip, parent="dend")
+            >>> gap = tree.dend.points_distal[-1] - tree.tip.points_proximal[0]
+            >>> tree.translate(gap, subtree="tip")
+            >>> tree.tip.points_distal[-1].to_decimal(u.um).tolist()
+            [125.0, 37.0, 2.0]
+        """
+        self._require_editable()
+        node_ids = self._transform_scope(subtree, what="translate()")
+        offset_um = _length_um(offset, name="offset")
+        _check_point_um(offset_um, name="offset")
+        self._require_points_in(node_ids, what="translate()")
+        self._write_geometry(node_ids, "translate()", lambda points: points + offset_um)
+
+    def rotate(
+        self,
+        angle: Optional[Quantity] = None,
+        axis: Union[str, np.ndarray, None] = None,
+        *,
+        matrix: Optional[np.ndarray] = None,
+        origin: Optional[Quantity] = None,
+        subtree: Optional[ParentRef] = None,
+    ) -> None:
+        """Rotate every 3-D point of the tree, or of one subtree, about ``origin``.
+
+        Give either ``angle`` and ``axis``, or ``matrix``. Each point ``p``
+        becomes ``origin + R (p - origin)``. Only the points move: segment
+        lengths and radii are kept as they are, so lengths, areas, volumes
+        and path distances do not change, not even in the last bit. Names,
+        topology and branch indices do not change either.
+
+        Parameters
+        ----------
+        angle : Quantity
+            Rotation angle with an angle unit, e.g. ``90 * u.degree`` or
+            ``np.pi / 2 * u.radian``. Positive angles turn counter-clockwise
+            when looking from the tip of ``axis`` towards ``origin``
+            (right-hand rule).
+        axis : {'x', 'y', 'z'} or array_like
+            Rotation axis: a coordinate axis, or a direction of three plain
+            numbers, normalized internally.
+        matrix : array_like
+            A ``(3, 3)`` rotation matrix acting on column vectors, such as
+            ``scipy.spatial.transform.Rotation.as_matrix()``. It must be
+            orthonormal (``max|R^T R - I| <= 1e-6``) with ``det(R) > 0`` and
+            is used as given, without re-orthonormalization.
+        origin : Quantity or None
+            Fixed point of the rotation in a length unit, shape ``(3,)``.
+            ``None`` (default) is ``(0, 0, 0)`` um, as in an external
+            registration ``x' = R x + t``; to turn a cell about its soma,
+            pass the soma's position.
+        subtree : str, MorphoBranch or None
+            Rotate only this branch and its descendants, given by name or by
+            a view that is still in this tree. ``None`` (default) rotates the
+            whole tree.
+
+        Raises
+        ------
+        RuntimeError
+            If this morphology is the read-only snapshot of an initialized
+            Cell (checked first), or ``subtree`` is a view of a branch that
+            an edit removed.
+        KeyError
+            If no branch is called ``subtree``.
+        TypeError
+            If both forms or neither are given, or only one of ``angle`` and
+            ``axis``; ``angle`` is a bare number or not an angle; ``axis`` or
+            ``matrix`` is a quantity or not numeric; ``origin`` is a bare
+            number or not a length; or ``subtree`` is neither a ``str``, a
+            :class:`MorphoBranch` nor ``None``.
+        ValueError
+            If ``angle`` is not a finite scalar; ``axis`` is another string,
+            not three numbers, zero or not finite; ``matrix`` is not
+            ``(3, 3)``, not finite, not orthonormal or a reflection;
+            ``origin`` does not have shape ``(3,)`` or is not finite;
+            ``subtree`` is a view of another morphology's branch; a branch in
+            scope has no 3-D points; or a rotated point is not finite.
+
+        See Also
+        --------
+        translate : Move the tree or a subtree.
+
+        Notes
+        -----
+        Euler angles are not accepted: their axis order and conventions make
+        one triple mean different rotations. Pass a quaternion as
+        ``matrix=Rotation.from_quat(q).as_matrix()``. A mirror image
+        (``det(R) < 0``) is not a rotation and is rejected.
+
+        The tree changes in place and the call returns ``None``, as for
+        :meth:`translate`; :attr:`revision` advances by one. A call that
+        raises changes nothing.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> import numpy as np
+            >>> from braincell import Branch, Morphology
+            >>> def branch(points, radii, type):
+            ...     return Branch.from_points(points=np.array(points) * u.um, radii=np.array(radii) * u.um,
+            ...                               type=type)
+            >>> tree = Morphology.from_root(branch([[0.0, 0, 0], [20, 0, 0]], [5.0, 5.0], "soma"), name="soma")
+            >>> tree.soma.dend = branch([[20.0, 0, 0], [120, 0, 0]], [2.0, 1.0], "basal_dendrite")
+            >>> tree.rotate(90 * u.degree, axis="z")
+            >>> np.round(tree.dend.points_distal[-1].to_decimal(u.um), 12).tolist()
+            [0.0, 120.0, 0.0]
+
+        Turn only ``dend`` back, about its base, with a matrix:
+
+        .. code-block:: python
+
+            >>> back = np.array([[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+            >>> tree.rotate(matrix=back, origin=tree.dend.points_proximal[0], subtree="dend")
+            >>> np.round(tree.dend.points_distal[-1].to_decimal(u.um), 12).tolist()
+            [100.0, 20.0, 0.0]
+        """
+        self._require_editable()
+        node_ids = self._transform_scope(subtree, what="rotate()")
+        theta, axis, matrix = _rotation_arguments(angle, axis, matrix)
+        origin_um = None if origin is None else _length_um(origin, name="origin")
+        rotation = _rotation_matrix(theta, axis, matrix)
+        origin_um = np.zeros(3) if origin_um is None else _check_point_um(origin_um, name="origin")
+        self._require_points_in(node_ids, what="rotate()")
+        self._write_geometry(node_ids, "rotate()", lambda points: (points - origin_um) @ rotation.T + origin_um)
+
+    def _transform_scope(self, subtree: Optional[ParentRef], *, what: str) -> list[int]:
+        """Node ids a transform acts on, ascending: the whole tree, or ``subtree`` and its descendants."""
+        if subtree is None:
+            return sorted(self._nodes)
+        return self._subtree_node_ids(self._resolve_branch_ref(subtree, what=what, role="subtree"))
+
+    def _require_points_in(self, node_ids: list[int], *, what: str) -> None:
+        """Raise ``ValueError`` naming up to five branches in ``node_ids`` that have no 3-D points."""
+        missing = [
+            self._nodes[node_id]._name for node_id in node_ids if self._nodes[node_id]._branch.points_proximal is None
+        ]
+        if missing:
+            shown = ", ".join(repr(name) for name in missing[:5])
+            if len(missing) > 5:
+                shown += f" and {len(missing) - 5} more"
+            raise ValueError(
+                f"{what} needs 3-D points, but {len(missing)} branch(es) in its scope have none "
+                f"(built from lengths only): {shown}. Pass subtree= to transform only a part that has "
+                "points, or rebuild these branches with Branch.from_points."
+            )
+
+    def _write_geometry(self, node_ids: list[int], what: str, move: Callable[[np.ndarray], np.ndarray]) -> None:
+        """Map the points of every branch in ``node_ids`` by ``move`` and write them in one edit.
+
+        Every new :class:`Branch` is built, and so validated, before the
+        gate opens; inside it only the views' ``_branch`` slots are
+        written, which cannot fail. The lengths and radii arrays are kept,
+        so a rigid move leaves every length-derived value bit for bit as it
+        was.
+        """
+        moved = []
+        for node_id in node_ids:
+            view = self._nodes[node_id]
+            try:
+                moved.append(_moved_branch(view._branch, move))
+            except ValueError as exc:
+                raise ValueError(f"{what} would give branch {view._name!r} invalid geometry: {exc}") from exc
+        with self._edit():
+            for node_id, branch in zip(node_ids, moved):
+                object.__setattr__(self._nodes[node_id], "_branch", branch)
 
     def __getattr__(self, name: str) -> object:
         # Underscore-prefixed names never name a branch. Failing fast avoids
@@ -3257,6 +3510,117 @@ def _parse_attachment_key(key: object) -> tuple[float, float]:
     parent_x = float(key)
     _check_parent_x_value(parent_x)
     return parent_x, 0.0
+
+
+#: Unit vectors of the named rotation axes.
+_AXIS_VECTORS = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
+#: Largest ``max|R^T R - I|`` a rotation matrix may have. A 30-degree matrix
+#: built in float32 is off by 2.7e-8 and passes; ``2 * I`` is off by 3.
+_ROTATION_ORTHONORMAL_ATOL = 1e-6
+
+
+def _length_um(value: object, *, name: str) -> np.ndarray:
+    """``value`` in micrometres as float64; a bare number or another unit raises ``TypeError``.
+
+    Only the unit is checked here, so that every argument's type is checked
+    before any argument's value (:meth:`Morphology.rotate`).
+    """
+    return np.asarray(normalize_param(value, name=name, unit=u.um).to_decimal(u.um), dtype=float)
+
+
+def _check_point_um(point_um: np.ndarray, *, name: str) -> np.ndarray:
+    """Reject a point or displacement that is not three finite numbers."""
+    if point_um.shape != (3,):
+        raise ValueError(f"{name} must have shape (3,), got {point_um.shape}.")
+    if not np.all(np.isfinite(point_um)):
+        raise ValueError(f"{name} must be finite, got {point_um.tolist()} um.")
+    return point_um
+
+
+def _plain_numbers(value: object, *, name: str, what: str) -> np.ndarray:
+    """``value`` as a float64 array; a quantity or anything non-numeric raises ``TypeError``."""
+    if isinstance(value, Quantity):
+        raise TypeError(f"{name} is {what} and takes plain numbers, not a quantity; got {value!r}.")
+    try:
+        return np.asarray(value, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"{name} is {what} and takes plain numbers, got {value!r}.") from exc
+
+
+def _rotation_arguments(
+    angle: object, axis: object, matrix: object
+) -> tuple[Optional[np.ndarray], Union[str, np.ndarray, None], Optional[np.ndarray]]:
+    """Type checks of :meth:`Morphology.rotate`: ``(angle in rad, axis, matrix)``, one form set."""
+    if matrix is not None:
+        if angle is not None or axis is not None:
+            raise TypeError("rotate() takes either angle and axis, or matrix, not both.")
+        return None, None, _plain_numbers(matrix, name="matrix", what="a (3, 3) rotation matrix")
+    if angle is None or axis is None:
+        given = "angle" if angle is not None else "axis" if axis is not None else "neither"
+        raise TypeError(f"rotate() needs both angle and axis, or matrix; got {given}.")
+    theta = np.asarray(normalize_param(angle, name="angle", unit=u.radian).to_decimal(u.radian), dtype=float)
+    if not isinstance(axis, str):
+        axis = _plain_numbers(axis, name="axis", what="a direction")
+    return theta, axis, None
+
+
+def _rotation_matrix(
+    theta: Optional[np.ndarray], axis: Union[str, np.ndarray, None], matrix: Optional[np.ndarray]
+) -> np.ndarray:
+    """Value checks of :meth:`Morphology.rotate`; the rotation as a (3, 3) float64 matrix."""
+    if matrix is not None:
+        if matrix.shape != (3, 3):
+            raise ValueError(f"matrix must have shape (3, 3), got {matrix.shape}.")
+        if not np.all(np.isfinite(matrix)):
+            raise ValueError("matrix must be finite.")
+        error = float(np.max(np.abs(matrix.T @ matrix - np.eye(3))))
+        if error > _ROTATION_ORTHONORMAL_ATOL:
+            raise ValueError(
+                f"matrix is not a rotation: max|R^T R - I| = {error:.3g} exceeds {_ROTATION_ORTHONORMAL_ATOL:g}."
+            )
+        if np.linalg.det(matrix) <= 0.0:
+            raise ValueError("matrix is a reflection (det < 0); rotate() takes proper rotations only.")
+        return matrix
+    if theta.shape != ():
+        raise ValueError(f"angle must be a scalar, got shape {theta.shape}.")
+    if not np.isfinite(theta):
+        raise ValueError(f"angle must be finite, got {float(theta)!r} rad.")
+    if isinstance(axis, str):
+        if axis not in _AXIS_VECTORS:
+            raise ValueError(f"axis must be 'x', 'y', 'z' or three numbers, got {axis!r}.")
+        direction = np.array(_AXIS_VECTORS[axis])
+    else:
+        if axis.shape != (3,):
+            raise ValueError(f"axis must be 'x', 'y', 'z' or three numbers, got shape {axis.shape}.")
+        norm = float(np.linalg.norm(axis))
+        if not np.isfinite(norm) or norm == 0.0:
+            raise ValueError(f"axis must be a finite, non-zero direction, got {axis.tolist()}.")
+        direction = axis / norm
+    # Rodrigues' formula.
+    cross = np.array(
+        [
+            [0.0, -direction[2], direction[1]],
+            [direction[2], 0.0, -direction[0]],
+            [-direction[1], direction[0], 0.0],
+        ]
+    )
+    return np.eye(3) + np.sin(theta) * cross + (1.0 - np.cos(theta)) * (cross @ cross)
+
+
+def _moved_branch(branch: Branch, move: Callable[[np.ndarray], np.ndarray]) -> Branch:
+    """``branch`` with its points (in um) mapped by ``move``; the lengths and radii arrays are kept.
+
+    Built through the ``Branch`` constructor, so the new points are checked
+    against the kept segment lengths: a move that loses precision (an
+    offset of 1e308 um) is rejected there.
+    """
+    # An overflow is reported below as a ValueError, so numpy need not warn about it.
+    with np.errstate(over="ignore", invalid="ignore"):
+        proximal = move(np.asarray(branch.points_proximal.to_decimal(u.um), dtype=float))
+        distal = move(np.asarray(branch.points_distal.to_decimal(u.um), dtype=float))
+    if not (np.all(np.isfinite(proximal)) and np.all(np.isfinite(distal))):
+        raise ValueError("the moved points are not finite.")
+    return dataclasses.replace(branch, points_proximal=Quantity(proximal, u.um), points_distal=Quantity(distal, u.um))
 
 
 def _morpho_from_records(records: list[_BranchRecord]) -> "Morphology":

@@ -21,12 +21,13 @@ import tempfile
 import unittest
 from unittest import mock
 from unittest.mock import patch
+import warnings
 
 import brainunit as u
 import numpy as np
 
-from braincell import Branch, Cell, Morphology, SingleCompartment
-from braincell.filter import BranchSlice, LocsetMask, RootLocation, Terminals
+from braincell import Branch, Cell, MaxCVLen, Morphology, SingleCompartment
+from braincell.filter import AllRegion, BranchSlice, LocsetMask, RootLocation, Terminals, density, sample
 from braincell.io._testing import ALLOWED_TYPES, FIXTURE_DIR, VALID_SWC_FIXTURES
 from braincell.morph import MorphoBranch, MorphoMetric
 from braincell.morph.branch import _ALLOWED_BRANCH_TYPES
@@ -1944,6 +1945,525 @@ class MorphoReattachTest(_RoundTripMixin, unittest.TestCase):
                 self.assertEqual(_edit_state(snapshot), before)
 
 
+_T_UM = np.array([5.0, -3.0, 2.0])
+_T = _T_UM * u.um
+_W_NAMES = ("soma", "dend", "d1", "d2", "axon")
+_RIGID_INVARIANTS = (
+    "total_length",
+    "total_area",
+    "total_volume",
+    "mean_radius",
+    "max_path_distance",
+    "max_path_distance_excluding_soma",
+)
+
+
+def _um_array(quantity) -> np.ndarray:
+    return np.asarray(quantity.to_decimal(u.um), dtype=float)
+
+
+def _branch_arrays(branch: Branch) -> dict[str, np.ndarray]:
+    fields = ("points_proximal", "points_distal", "lengths", "radii_proximal", "radii_distal")
+    return {field: _um_array(getattr(branch, field)) for field in fields}
+
+
+def _orders(tree: Morphology) -> dict[str, list]:
+    return {order: [(b.name, b.index_by(order=order)) for b in tree.branches] for order in ("default", "type", "depth")}
+
+
+def _tip_um(tree: Morphology, name: str) -> np.ndarray:
+    return _um_array(tree.branch(name=name).branch.points_distal)[-1]
+
+
+def _w_with_stub() -> Morphology:
+    """Tree W with a 60 um length-only ``stub`` (no 3-D points) on the soma's proximal end."""
+    tree = make_tree_w()
+    tree.attach(
+        parent="soma",
+        child_branch=Branch.from_lengths(
+            lengths=np.array([60.0]) * u.um, radii=np.array([0.5, 0.5]) * u.um, type="axon"
+        ),
+        child_name="stub",
+        parent_x=0.0,
+    )
+    return tree
+
+
+def _quaternion_matrix(q: np.ndarray) -> np.ndarray:
+    w, x, y, z = q / np.linalg.norm(q)
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
+
+
+def _fixture_morphologies() -> list[tuple[str, Morphology]]:
+    """Every morphology under ``FIXTURE_DIR``: the SWC files, then the ASC files."""
+    paths = sorted(FIXTURE_DIR.glob("*.swc")) + sorted(FIXTURE_DIR.glob("*.asc"))
+    with warnings.catch_warnings():
+        # CA1, bc, goc and pc repeat a sample; the reader keeps it as a zero-length segment and says so.
+        warnings.filterwarnings("ignore", r"from_points\(\) produced \d+ zero-length segment", UserWarning)
+        return [
+            (path.name, Morphology.from_swc(path) if path.suffix == ".swc" else Morphology.from_asc(path))
+            for path in paths
+        ]
+
+
+def _sample_points_um(tree: Morphology, limit: int = 500) -> tuple[np.ndarray, np.ndarray]:
+    """All points in default order, and at most ``limit`` evenly spaced indices into them."""
+    points = np.concatenate(
+        [np.vstack([_um_array(b.branch.points_proximal)[:1], _um_array(b.branch.points_distal)]) for b in tree.branches]
+    )
+    return points, np.unique(np.linspace(0, len(points) - 1, min(len(points), limit)).round().astype(int))
+
+
+def _pairwise_um(points: np.ndarray) -> np.ndarray:
+    return np.linalg.norm(points[:, None, :] - points[None, :, :], axis=-1)
+
+
+class MorphoTranslateTest(unittest.TestCase):
+    """``Morphology.translate(offset, subtree=...)`` moves points in place; lengths and radii stay bit for bit."""
+
+    def test_translating_tree_w_in_place(self) -> None:
+        tree = make_tree_w()
+        revision = tree.revision
+        held = tree.dend
+        old = held.branch
+        copy = tree.clone()
+        before = {b.name: _branch_arrays(b.branch) for b in tree.branches}
+        orders = _orders(tree)
+
+        returned = tree.translate(_T)
+
+        self.assertIsNone(returned)
+        self.assertEqual(tree.revision, revision + 1)
+        self.assertFalse(tree._reindexed_after(revision))
+        self.assertEqual(_orders(tree), orders)
+        for name, arrays in before.items():
+            with self.subTest(name):
+                now = _branch_arrays(tree.branch(name=name).branch)
+                np.testing.assert_array_equal(now["points_proximal"], arrays["points_proximal"] + _T_UM)
+                np.testing.assert_array_equal(now["points_distal"], arrays["points_distal"] + _T_UM)
+                for field in ("lengths", "radii_proximal", "radii_distal"):
+                    np.testing.assert_array_equal(now[field], arrays[field])
+        self.assertIs(held, tree.dend)
+        self.assertIsNot(held.branch, old)
+        np.testing.assert_array_equal(_um_array(old.points_proximal), [[20, 0, 0], [50, 40, 0]])
+        self.assertIs(copy.dend.branch, old)
+        np.testing.assert_array_equal(_um_array(copy.soma.points_proximal), [[0, 0, 0]])
+
+    def test_translating_a_subtree_by_view(self) -> None:
+        tree = make_tree_w()
+        before = {b.name: _branch_arrays(b.branch) for b in tree.branches}
+
+        tree.translate(_T, subtree=tree.dend)
+
+        for name in _W_NAMES:
+            with self.subTest(name):
+                now = _branch_arrays(tree.branch(name=name).branch)
+                shift = _T_UM if name in ("dend", "d1", "d2") else 0.0
+                np.testing.assert_array_equal(now["points_distal"], before[name]["points_distal"] + shift)
+
+    def test_a_mixed_tree_moves_the_part_with_points(self) -> None:
+        tree = _w_with_stub()
+        before = _edit_state(tree)
+        for label, call in (
+            ("whole tree", lambda: tree.translate(_T)),
+            ("rotate the stub", lambda: tree.rotate(90 * u.degree, "z", subtree="stub")),
+        ):
+            with self.subTest(label):
+                with self.assertRaisesRegex(ValueError, r"1 branch\(es\) in its scope have none.*'stub'"):
+                    call()
+                self.assertEqual(_edit_state(tree), before)
+
+        tree.translate(_T, subtree="dend")
+
+        np.testing.assert_array_equal(_tip_um(tree, "d1"), [145, 77, 2])
+
+    def test_a_length_only_tree_names_its_branches(self) -> None:
+        tree = make_tree_u()
+        before = _edit_state(tree)
+        for label, call in (
+            ("translate", lambda: tree.translate(_T)),
+            ("rotate", lambda: tree.rotate(90 * u.degree, "z")),
+        ):
+            with self.subTest(label):
+                with self.assertRaisesRegex(ValueError, r"4 branch\(es\).*'soma', 'dend', 'axon', 'apical'\."):
+                    call()
+                self.assertEqual(_edit_state(tree), before)
+
+    def test_a_long_list_of_length_only_branches_is_cut_at_five(self) -> None:
+        tree = make_tree_u()
+        for index in range(3):
+            tree.attach(parent="dend", child_branch=make_basal(), child_name=f"tip{index}")
+        with self.assertRaisesRegex(ValueError, r"7 branch\(es\).*'apical', 'tip0' and 2 more\. Pass subtree="):
+            tree.translate(_T)
+
+
+class MorphoRotateTest(unittest.TestCase):
+    """``Morphology.rotate(angle, axis | matrix=..., origin=..., subtree=...)`` on tree W (right-hand rule)."""
+
+    def assert_points_close(self, tree: Morphology, expected: Morphology) -> None:
+        for name in _W_NAMES:
+            with self.subTest(name):
+                now = _branch_arrays(tree.branch(name=name).branch)
+                want = _branch_arrays(expected.branch(name=name).branch)
+                for field in ("points_proximal", "points_distal"):
+                    np.testing.assert_allclose(now[field], want[field], rtol=0, atol=1e-12)
+
+    def test_quarter_turns_about_each_axis(self) -> None:
+        # cos(pi/2) is 6.1e-17 in float64, so the comparisons are not exact.
+        for axis, branch, expected in (
+            ("z", "dend", [-40, 110, 0]),
+            ("y", "soma", [0, 0, -20]),
+            ("x", "dend", [110, 0, 40]),
+        ):
+            with self.subTest(axis):
+                tree = make_tree_w()
+                revision = tree.revision
+                self.assertIsNone(tree.rotate(90 * u.degree, axis=axis))
+                np.testing.assert_allclose(_tip_um(tree, branch), expected, rtol=0, atol=1e-12)
+                self.assertEqual(tree.revision, revision + 1)
+                self.assertFalse(tree._reindexed_after(revision))
+        tree = make_tree_w()
+        tree.rotate(90 * u.degree, axis="z")
+        np.testing.assert_allclose(_tip_um(tree, "soma"), [0, 20, 0], rtol=0, atol=1e-12)
+
+    def test_every_form_of_the_same_rotation_agrees(self) -> None:
+        reference = make_tree_w()
+        reference.rotate(90 * u.degree, axis="z")
+        for label, kwargs in (
+            ("radians", dict(angle=np.pi / 2 * u.radian, axis="z")),
+            ("unnormalized axis", dict(angle=90 * u.degree, axis=np.array([0.0, 0.0, 2.0]))),
+            ("matrix", dict(matrix=np.array([[0.0, -1, 0], [1, 0, 0], [0, 0, 1]]))),
+        ):
+            with self.subTest(label):
+                tree = make_tree_w()
+                tree.rotate(**kwargs)
+                self.assert_points_close(tree, reference)
+
+    def test_a_subtree_about_its_base(self) -> None:
+        tree = make_tree_w()
+        before = {b.name: _branch_arrays(b.branch) for b in tree.branches}
+
+        tree.rotate(90 * u.degree, axis="z", origin=np.array([110.0, 40.0, 0.0]) * u.um, subtree="d1")
+
+        np.testing.assert_allclose(_tip_um(tree, "d1"), [70, 70, 0], rtol=0, atol=1e-12)
+        for name in ("soma", "dend", "d2", "axon"):
+            with self.subTest(name):
+                now = _branch_arrays(tree.branch(name=name).branch)
+                for field, array in before[name].items():
+                    np.testing.assert_array_equal(now[field], array)
+
+    def test_a_float32_matrix_is_accepted(self) -> None:
+        c, s = np.float32(np.cos(np.pi / 6)), np.float32(np.sin(np.pi / 6))
+        matrix = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], dtype=np.float32)
+        self.assertGreater(np.max(np.abs(matrix.astype(float).T @ matrix.astype(float) - np.eye(3))), 1e-9)
+        tree = make_tree_w()
+        names = ("total_length", "total_area", "total_volume")
+        totals = [float(getattr(tree, name).mantissa) for name in names]
+
+        tree.rotate(matrix=matrix)
+
+        self.assertEqual([float(getattr(tree, name).mantissa) for name in names], totals)
+
+
+class MorphoRigidTransformFixtureTest(unittest.TestCase):
+    """R1, R3, R4 on every repository morphology, in float64.
+
+    Two rigid transforms per tree, from ``numpy.random.default_rng(20261111)``:
+    a random unit quaternion's matrix about a random origin within 300 um,
+    then a random offset within 500 um; and 37 degrees about (1, 2, 3), then
+    a random offset. Lengths and radii arrays are kept, so the length-based
+    metrics are exactly equal; distances move by float64 rounding of
+    ``R p`` (about 1e-13 um for coordinates up to 1e3 um).
+    """
+
+    def test_rigid_transforms_keep_lengths_and_distances(self) -> None:
+        rng = np.random.default_rng(20261111)
+        trees = _fixture_morphologies()
+        self.assertEqual(len(trees), 15)
+        checked = 0
+        for name, tree in trees:
+            points, index = _sample_points_um(tree)
+            distances = _pairwise_um(points[index])
+            metrics = {metric: getattr(tree, metric) for metric in _RIGID_INVARIANTS}
+            farthest = float(tree.max_euclidean_distance.to_decimal(u.um))
+            for kind in ("quaternion", "angle-axis"):
+                with self.subTest(f"{name}: {kind}"):
+                    moved = tree.clone()
+                    if kind == "quaternion":
+                        moved.rotate(
+                            matrix=_quaternion_matrix(rng.normal(size=4)), origin=rng.uniform(-300, 300, 3) * u.um
+                        )
+                    else:
+                        moved.rotate(37 * u.degree, axis=[1.0, 2.0, 3.0])
+                    moved.translate(rng.uniform(-500, 500, 3) * u.um)
+                    for metric, value in metrics.items():
+                        self.assertEqual(float(getattr(moved, metric).mantissa), float(value.mantissa), metric)
+                        checked += 1
+                    after = _pairwise_um(_sample_points_um(moved)[0][index])
+                    self.assertLessEqual(float(np.max(np.abs(after - distances))), 1e-9)
+                    moved_farthest = float(moved.max_euclidean_distance.to_decimal(u.um))
+                    self.assertLessEqual(abs(moved_farthest - farthest) / farthest, 1e-12)
+        self.assertEqual(checked, 15 * 2 * 6)
+
+
+class MorphoTransformConsumerTest(unittest.TestCase):
+    """A declared Cell and the filter read the transformed coordinates (tree W)."""
+
+    def test_a_declared_cell_reads_the_moved_positions(self) -> None:
+        tree = make_tree_w()
+        cell = Cell(tree, cv_policy=MaxCVLen(40 * u.um))
+        self.assertEqual(cell.n_cv, 11)
+        before = np.array([_um_array(context.position) for context in cell.cv_contexts])
+
+        tree.translate(_T)
+
+        self.assertEqual(cell.n_cv, 11)
+        after = np.array([_um_array(context.position) for context in cell.cv_contexts])
+        np.testing.assert_allclose(after, before + _T_UM, rtol=0, atol=1e-12)
+
+    def test_path_distances_are_exact_after_a_rigid_transform(self) -> None:
+        tree = make_tree_w()
+        cell = Cell(tree, cv_policy=MaxCVLen(40 * u.um))
+        before = [float(context.path_distance_from_soma.to_decimal(u.um)) for context in cell.cv_contexts]
+
+        tree.rotate(37 * u.degree, axis=[1.0, 2.0, 3.0])
+        tree.translate(_T)
+
+        after = [float(context.path_distance_from_soma.to_decimal(u.um)) for context in cell.cv_contexts]
+        self.assertEqual(len(after), 11)
+        self.assertEqual(after, before)
+
+    def test_spatial_sampling_follows_the_moved_tree(self) -> None:
+        centre = np.array([120.0, 40.0, 0.0])
+
+        def draw(tree: Morphology, at: np.ndarray) -> tuple:
+            gaussian = density.spatial_gaussian(at * u.um, 20 * u.um)
+            return tree.select(sample(AllRegion(), number=5, seed=7, density=gaussian)).points
+
+        tree = make_tree_w()
+        before = draw(tree, centre)
+        self.assertEqual([branch for branch, _ in before], [3, 3, 2, 2, 2])
+
+        tree.translate(_T)
+
+        self.assertEqual(draw(tree, centre + _T_UM), before)
+        self.assertNotEqual(draw(tree, centre), before)
+
+
+class MorphoTransformGapTest(_RoundTripMixin, unittest.TestCase):
+    """``translate(gap, subtree=child)`` closes the 3-D gap an edit leaves at a joint, which ``to_swc`` reports."""
+
+    def test_closing_the_gap_after_a_graft(self) -> None:
+        tree = make_tree_w()
+        other = Morphology.from_root(_pb([[0, 0, 0], [0, 40, 0]], (0.5, 0.4), "apical_dendrite"), name="tuft")
+        tree.graft(other, parent="d1")
+        with self.assertRaisesRegex(ValueError, "cannot connect branch 'tuft'"):
+            tree.to_swc(self.tmp / "gap.swc")
+        gap = tree.d1.branch.points_distal[-1] - tree.tuft.branch.points_proximal[0]
+        np.testing.assert_array_equal(_um_array(gap), [140, 80, 0])
+
+        tree.translate(gap, subtree="tuft")
+
+        expected = make_tree_w()
+        expected.attach(parent="d1", child_branch=_W_TUFT, child_name="tuft")
+        self.assert_round_trips(tree, expected)
+
+    def test_closing_the_gaps_after_a_replace(self) -> None:
+        tree = make_tree_w()
+        tree.replace("dend", _W_DEND_LONG)
+        with self.assertRaisesRegex(ValueError, "cannot connect branch 'd1'"):
+            tree.to_swc(self.tmp / "gap.swc")
+        gap = tree.dend.branch.points_distal[-1] - tree.d1.branch.points_proximal[0]
+        np.testing.assert_array_equal(_um_array(gap), [90, 40, 0])
+        revision = tree.revision
+
+        tree.translate(gap, subtree="d1")
+        tree.translate(gap, subtree="d2")
+
+        self.assertEqual(tree.revision, revision + 2)
+        expected = _w_with(
+            dend=_W_DEND_LONG,
+            d1=_pb([[200, 80, 0], [230, 120, 0]], (1.0, 0.5), "basal_dendrite"),
+            d2=_pb([[200, 80, 0], [240, 50, 0]], (1.0, 0.5), "basal_dendrite"),
+        )
+        self.assert_round_trips(tree, expected)
+
+    def test_closing_the_gap_after_a_reattach(self) -> None:
+        tree = make_tree_w()
+        tree.reattach("d2", parent="soma")
+        with self.assertRaisesRegex(ValueError, "cannot connect branch 'd2'"):
+            tree.to_swc(self.tmp / "gap.swc")
+        gap = tree.soma.branch.points_distal[-1] - tree.d2.branch.points_proximal[0]
+        np.testing.assert_array_equal(_um_array(gap), [-90, -40, 0])
+
+        tree.translate(gap, subtree="d2")
+
+        expected = _build(
+            ("soma", _W_SOMA, None, None, None),
+            ("dend", _W_DEND, "soma", 1.0, 0.0),
+            ("d1", _W_D1, "dend", 1.0, 0.0),
+            ("axon", _W_AXON, "soma", 0.0, 0.0),
+            ("d2", _pb([[20, 0, 0], [60, -30, 0]], (1.0, 0.5), "basal_dendrite"), "soma", 1.0, 0.0),
+        )
+        self.assert_round_trips(tree, expected)
+
+
+class MorphoTransformArgumentTest(unittest.TestCase):
+    """Rejected ``translate`` / ``rotate`` calls raise at the call and leave the tree as it was (tree W)."""
+
+    def test_bad_arguments_are_rejected_without_a_trace(self) -> None:
+        tree = make_tree_w()
+        other = make_tree_w()
+        deg = u.degree
+        for label, call, error, pattern in (
+            (
+                "bare array offset",
+                lambda: tree.translate(np.array([5.0, -3.0, 2.0])),
+                TypeError,
+                "offset must satisfy unit",
+            ),
+            ("bare list offset", lambda: tree.translate([5, -3, 2]), TypeError, "offset must satisfy unit"),
+            ("offset in mV", lambda: tree.translate(_T_UM * u.mV), TypeError, "offset must satisfy unit"),
+            (
+                "NaN offset",
+                lambda: tree.translate(np.array([np.nan, 0, 0]) * u.um),
+                ValueError,
+                "offset must be finite",
+            ),
+            (
+                "inf offset",
+                lambda: tree.translate(np.array([np.inf, 0, 0]) * u.um),
+                ValueError,
+                "offset must be finite",
+            ),
+            ("2-vector offset", lambda: tree.translate(np.array([1.0, 2.0]) * u.um), ValueError, r"shape \(3,\)"),
+            (
+                "offset that loses precision",
+                lambda: tree.translate(np.array([1e308, 0, 0]) * u.um),
+                ValueError,
+                "branch 'soma' invalid geometry: lengths must match point-derived",
+            ),
+            (
+                "bare origin",
+                lambda: tree.rotate(90 * deg, "z", origin=np.array([1.0, 2.0, 3.0])),
+                TypeError,
+                "origin must satisfy unit",
+            ),
+            (
+                "NaN origin",
+                lambda: tree.rotate(90 * deg, "z", origin=np.array([np.nan, 0, 0]) * u.um),
+                ValueError,
+                "origin must be finite",
+            ),
+            ("bare angle", lambda: tree.rotate(np.pi / 2, "z"), TypeError, "angle must satisfy unit"),
+            ("angle in um", lambda: tree.rotate(90 * u.um, "z"), TypeError, "angle must satisfy unit"),
+            ("no axis", lambda: tree.rotate(90 * deg), TypeError, "needs both angle and axis, or matrix; got angle"),
+            ("no angle", lambda: tree.rotate(axis="z"), TypeError, "got axis"),
+            ("nothing", lambda: tree.rotate(), TypeError, "got neither"),
+            ("both forms", lambda: tree.rotate(90 * deg, "z", matrix=np.eye(3)), TypeError, "not both"),
+            ("NaN angle", lambda: tree.rotate(np.nan * deg, "z"), ValueError, "angle must be finite"),
+            (
+                "array angle",
+                lambda: tree.rotate(np.array([90.0, 0.0]) * deg, "z"),
+                ValueError,
+                "angle must be a scalar",
+            ),
+            ("zero axis", lambda: tree.rotate(90 * deg, axis=[0, 0, 0]), ValueError, "non-zero direction"),
+            ("unknown axis", lambda: tree.rotate(90 * deg, axis="w"), ValueError, "'x', 'y', 'z' or three numbers"),
+            ("2-vector axis", lambda: tree.rotate(90 * deg, axis=[0.0, 1.0]), ValueError, r"got shape \(2,\)"),
+            (
+                "axis in um",
+                lambda: tree.rotate(90 * deg, axis=np.array([0.0, 0.0, 1.0]) * u.um),
+                TypeError,
+                "not a quantity",
+            ),
+            ("text axis", lambda: tree.rotate(90 * deg, axis=["a", "b", "c"]), TypeError, "axis is a direction"),
+            ("reflection", lambda: tree.rotate(matrix=np.diag([1.0, 1.0, -1.0])), ValueError, "reflection"),
+            (
+                "scaling matrix",
+                lambda: tree.rotate(matrix=2 * np.eye(3)),
+                ValueError,
+                r"not a rotation: max\|R\^T R - I\| = 3",
+            ),
+            ("NaN matrix", lambda: tree.rotate(matrix=np.full((3, 3), np.nan)), ValueError, "matrix must be finite"),
+            ("2x2 matrix", lambda: tree.rotate(matrix=np.eye(2)), ValueError, r"shape \(3, 3\)"),
+            ("matrix quantity", lambda: tree.rotate(matrix=np.eye(3) * u.um), TypeError, "not a quantity"),
+            ("unknown subtree", lambda: tree.translate(_T, subtree="nope"), KeyError, "nope"),
+            ("subtree not a name", lambda: tree.translate(_T, subtree=1), TypeError, "subtree must be a branch name"),
+            (
+                "subtree of another tree",
+                lambda: tree.rotate(90 * deg, "z", subtree=other.dend),
+                ValueError,
+                "Subtree .*different Morphology",
+            ),
+            # Every type is checked before any value: the bare origin wins over the NaN angle.
+            (
+                "types before values",
+                lambda: tree.rotate(np.nan * deg, "z", origin=np.array([1.0, 2, 3])),
+                TypeError,
+                "origin",
+            ),
+        ):
+            with self.subTest(label):
+                before = _edit_state(tree)
+                with self.assertRaisesRegex(error, pattern):
+                    call()
+                self.assertEqual(_edit_state(tree), before)
+
+    def test_a_move_past_the_largest_float_is_rejected(self) -> None:
+        far = Morphology.from_root(_pb([[1.5e308, 0, 0], [1.5e308, 1e150, 0]], (1.0, 1.0), "soma"), name="soma")
+        before = _edit_state(far)
+        with self.assertRaisesRegex(ValueError, "branch 'soma' invalid geometry: the moved points are not finite"):
+            far.translate(np.array([1e308, 0, 0]) * u.um)
+        self.assertEqual(_edit_state(far), before)
+
+    def test_a_detached_view_is_rejected(self) -> None:
+        tree = make_tree_w()
+        held = tree.d2
+        tree.remove("d2")
+        before = _edit_state(tree)
+        for label, call in (
+            ("translate", lambda: tree.translate(_T, subtree=held)),
+            ("rotate", lambda: tree.rotate(90 * u.degree, "z", subtree=held)),
+        ):
+            with self.subTest(label):
+                with self.assertRaisesRegex(RuntimeError, rf"'d2'.*detached.*{label}\(\).*by name"):
+                    call()
+                self.assertEqual(_edit_state(tree), before)
+
+    def test_a_frozen_tree_rejects_before_checking_arguments(self) -> None:
+        snapshot = frozen_snapshot(make_tree_w())
+        before = _edit_state(snapshot)
+        for label, call in (
+            ("translate", lambda: snapshot.translate(_T)),
+            ("translate a string", lambda: snapshot.translate("bad")),
+            ("rotate", lambda: snapshot.rotate(90 * u.degree, "z")),
+            ("rotate an unknown subtree", lambda: snapshot.rotate(subtree="nope")),
+        ):
+            with self.subTest(label):
+                with self.assertRaisesRegex(RuntimeError, "read-only snapshot"):
+                    call()
+                self.assertEqual(_edit_state(snapshot), before)
+
+    def test_the_transform_rows_change_the_points(self) -> None:
+        # MORPH-12: a row that left the fingerprint unchanged could not catch a stale cache.
+        rows = [case for case in EDIT_CASES if case.kind == "transform"]
+        self.assertGreaterEqual(len(rows), 3)
+        for case in rows:
+            with self.subTest(case.name):
+                tree = make_tree_t()
+                before = morph_fingerprint(tree)
+                case.edit(tree)
+                after = morph_fingerprint(tree)
+                self.assertNotEqual(after["vis/xyz"], before["vis/xyz"])
+
+
 class MorphoBranchDerivedPropertyTest(unittest.TestCase):
     """``branch_id`` / ``branch_order`` / ``n_tapers`` published by MorphoBranch.
 
@@ -2035,7 +2555,7 @@ class MorphoReservedNameTest(unittest.TestCase):
     def test_copy_and_edit_method_names_are_reserved(self) -> None:
         # Each new public method takes a name away from branches: a tree or a
         # checkpoint that used it can no longer be built (the changelog says so).
-        for name in ("clone", "subtree", "remove", "replace", "graft", "reattach"):
+        for name in ("clone", "subtree", "remove", "replace", "graft", "translate", "rotate", "reattach"):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(ValueError, "reserved by the Morphology API"):
                     self._attach_named(self._tree(), name)

@@ -450,6 +450,18 @@ def _remove_dend_subtree(morpho: Morphology) -> None:
     morpho.remove("dend")
 
 
+def _translate_tree(morpho: Morphology) -> None:
+    morpho.translate(np.array([5.0, -3.0, 2.0]) * u.um)
+
+
+def _rotate_tree_about_z(morpho: Morphology) -> None:
+    morpho.rotate(90.0 * u.degree, axis="z")
+
+
+def _rotate_dend_about_its_base(morpho: Morphology) -> None:
+    morpho.rotate(30.0 * u.degree, axis="z", origin=np.array([20.0, 0.0, 0.0]) * u.um, subtree="dend")
+
+
 def _stretch_dend_bypassing_the_gate(morpho: Morphology) -> None:
     object.__setattr__(morpho.dend, "_branch", stretched(morpho.dend.branch))
 
@@ -465,6 +477,9 @@ EDIT_CASES: tuple[EditCase, ...] = (
     EditCase("remove the subtree at dend", "delete", _remove_dend_subtree, reindex=True),
     EditCase("graft a two-branch tree onto d1", "splice", _graft_tuft),
     EditCase("reattach d2 under the axon", "splice", _reattach_d2, reindex=True),
+    EditCase("translate the tree", "transform", _translate_tree),
+    EditCase("rotate the tree about z", "transform", _rotate_tree_about_z),
+    EditCase("rotate the subtree at dend about its base", "transform", _rotate_dend_about_its_base),
 )
 
 #: Edits that skip the gate on purpose: every layer's check must fail on them.

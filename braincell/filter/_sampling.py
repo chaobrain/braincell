@@ -72,7 +72,11 @@ class SamplingContext:
 
     @property
     def position(self) -> object:
-        """World position, equal to ``local_position`` until transforms land."""
+        """3-D position, equal to ``local_position``.
+
+        A Cell has no pose of its own: to move a cell, transform its
+        morphology (``Morphology.translate``, ``Morphology.rotate``).
+        """
         return self.local_position
 
 

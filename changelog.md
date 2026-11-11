@@ -339,6 +339,29 @@
 
 ### Bug Fixes
 
+- Cell inputs given as resolved branch indices no longer land silently on
+  other branches after an edit shifts those indices (MORPH-16). There are
+  three such inputs:
+  - a `LocsetMask` or `LocsetBatch` passed to `Cell.place` (directly, per
+    member, or through `cell.loc(mask)` or a population view);
+  - a `CVPerBranchList` policy, alone or inside a `CompositeByTypePolicy`;
+  - a `VoltageCrossingSource` whose `location` is a `LocsetMask`.
+
+  Each records the morphology revision it was declared at. Removing a branch
+  or replacing a subtree moves later default indices down. After that the next
+  rebuild raises `RuntimeError`, and the message names the declaration. The
+  rebuild is the first grid read, `init_state`, or the detector's next
+  `cv_id`. Before, on a soma with `dend`, `axon` and `apical` (indices 1, 2
+  and 3), removing `dend` left a synapse placed with
+  `at("axon", 0.5).evaluate(m)` on `apical`. It also pointed the detector at
+  apical's CV, and `CVPerBranchList((1, 2, 1, 1))` handed dend's two CVs to
+  the axon once a fourth branch was attached. Appending branches, and
+  replacing or transforming a branch in place, keep every existing index, so
+  these declarations stay valid. A location expression such as
+  `at("axon", 0.5)` is evaluated again at each rebuild and follows any edit.
+  Unedited morphologies behave as before. No public edit moves existing
+  indices yet; the check takes effect once branch removal lands.
+
 - A current input registered with `Cell.add_current_input` after a
   `Cell.run` is now included by the next `run` (CELL-23). `run` reuses its
   compiled loop for the same `dt`, step count and recordings, and the loop

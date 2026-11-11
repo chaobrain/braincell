@@ -150,60 +150,32 @@ jobs:
           BRAINX_HEADER_TTL: "0"
         run: python -m sphinx -W --keep-going -b html docs docs/_build/html
 
-  test_linux_neuron_compare_cable:
+  # The tests outside the braincell package, in one job so a pull request
+  # holds one runner for them; each suite runs in its own pytest process, so
+  # the NEURON mechanism libraries of the cable, channel and ion suites never
+  # share a process. Steps are selected by `changes`: the NEURON comparisons
+  # (validation/neuron) when `neuron`, the optim validation suite and the
+  # benchmark scripts' own tests when `bench`. Every selected step runs even
+  # after an earlier one failed, so one run reports every failure. Modules
+  # marked `slow` (pyproject.toml) run only in `slow_tests` and
+  # `slow_tests_neuron`.
+  validation:
     needs: changes
-    if: needs.changes.outputs.neuron == 'true'
+    if: needs.changes.outputs.neuron == 'true' || needs.changes.outputs.bench == 'true'
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: [ "3.13" ]
-
-    steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.13.1
-        with:
-          access_token: ${{ github.token }}
-      - uses: actions/checkout@v7
-      - name: Print concurrency group
-        run: echo '${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}'
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: |
-          python -m pip cache purge
-          python -m pip install --upgrade pip setuptools --no-cache-dir
-          python -m pip install -r requirements-dev.txt --no-cache-dir
-          python -m pip install neuron --no-cache-dir
-          python -m pip install pandas --no-cache-dir
-          pip install . --no-cache-dir
-      - name: Test Linux-only cable neuron_compare suite
-        run: |
-          pytest validation/neuron/cable/tests
-
-  # Single-channel BrainCell/NEURON comparisons (validation/neuron/channel_no_conc)
-  # with the shared clamp, tolerance, convergence and build modules, then the
-  # ion pool comparisons (validation/neuron/ion) in their own process. A separate
-  # job, so its NEURON mechanism libraries never share a process with the cable
-  # suite's. It runs on every pull request; modules marked `slow` (such as the
-  # per-family dt convergence tests) run in `slow_tests_neuron` instead.
-  test_linux_neuron_compare_channel:
-    needs: changes
-    if: needs.changes.outputs.neuron == 'true'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: [ "3.13" ]
-
+    env:
+      NEURON_SUITES: ${{ needs.changes.outputs.neuron }}
+      BENCH_SUITES: ${{ needs.changes.outputs.bench }}
     steps:
       - uses: actions/checkout@v7
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-dev.txt
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools
@@ -211,19 +183,24 @@ jobs:
           python -m pip install neuron pandas
           python -m pip install .
       - name: Compile the channel mechanisms
+        if: env.NEURON_SUITES == 'true'
         run: |
           for model in bc_ma2025 dcn_su2015 goc_ma2020 grc_ma2020 io_zh2019 pc_ma2024 sc_ma2021 testing; do
             python -m validation.neuron._mechanisms "$model" --kind channel > /dev/null
           done
+      - name: Test the cable suite
+        if: ${{ !cancelled() && env.NEURON_SUITES == 'true' }}
+        run: pytest validation/neuron/cable/tests --durations=10
       - name: Test the channel_no_conc suite (fast tier)
+        if: ${{ !cancelled() && env.NEURON_SUITES == 'true' }}
         run: |
           pytest validation/neuron/channel_no_conc/tests \
             validation/neuron/_clamp_test.py validation/neuron/_tolerance_test.py \
             validation/neuron/_convergence_test.py validation/neuron/_mechanisms_test.py \
             -m "not slow" --durations=10
       - name: Test the ion suite (fast tier)
-        # Its own process, like the daily tier. pytest exits 5 when it
-        # collects no test, which is not a failure.
+        # pytest exits 5 when it collects no test, which is not a failure.
+        if: ${{ !cancelled() && env.NEURON_SUITES == 'true' }}
         run: |
           status=0
           pytest validation/neuron/ion -m "not slow" --durations=10 || status=$?
@@ -232,33 +209,9 @@ jobs:
             exit 0
           fi
           exit "$status"
-
-  # Tests that live outside the braincell package: the optim validation suite
-  # and the benchmark scripts' own tests. Modules marked `slow` (pyproject.toml)
-  # run only in the daily job below.
-  test_linux_validation_benchmarks:
-    needs: changes
-    if: needs.changes.outputs.bench == 'true'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: [ "3.13" ]
-
-    steps:
-      - uses: actions/checkout@v7
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools
-          python -m pip install -r requirements-dev.txt
-          python -m pip install .
       - name: Test validation/optim and benchmarks (fast tier)
-        run: |
-          pytest validation/optim benchmarks -m "not slow" --durations=10
+        if: ${{ !cancelled() && env.BENCH_SUITES == 'true' }}
+        run: pytest validation/optim benchmarks -m "not slow" --durations=10
 
   # The slow tier of the suites above. It runs only when the daily workflow
   # (CI-daily.yml) calls this file: inside a called workflow `github.event_name`
@@ -278,6 +231,10 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-dev.txt
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools
@@ -306,6 +263,10 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-dev.txt
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools
@@ -355,11 +316,14 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-dev.txt
       - name: Install dependencies
         run: |
-          python -m pip cache purge
-          python -m pip install --upgrade pip setuptools --no-cache-dir
-          python -m pip install -r requirements-dev.txt  --no-cache-dir
+          python -m pip install --upgrade pip setuptools
+          python -m pip install -r requirements-dev.txt
           pip install .
       - name: Test with pytest
         run: |
@@ -386,12 +350,15 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-dev.txt
       - name: Install dependencies
         run: |
-          python -m pip cache purge
-          python -m pip install --upgrade pip setuptools --no-cache-dir
-          python -m pip install -r requirements-dev.txt  --no-cache-dir
-          pip install .  --no-cache-dir
+          python -m pip install --upgrade pip setuptools
+          python -m pip install -r requirements-dev.txt
+          pip install .
       - name: Test with pytest
         run: |
           pytest braincell/ -p no:faulthandler
@@ -423,9 +390,12 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-dev.txt
       - name: Install dependencies
         run: |
-          python -m pip cache purge
           python -m pip install --upgrade pip setuptools
           python -m pip install -r requirements-dev.txt
           python -m pip install jax==${{ matrix.jax-version }} || exit 1
@@ -454,6 +424,10 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-dev.txt
       - name: Install dependencies
         # Editable, so the measured files are the checkout's paths that
         # diff-cover matches against the git diff.
@@ -490,9 +464,7 @@ jobs:
     needs:
       - changes
       - checks
-      - test_linux_neuron_compare_cable
-      - test_linux_neuron_compare_channel
-      - test_linux_validation_benchmarks
+      - validation
       - coverage
     runs-on: ubuntu-latest
     steps:

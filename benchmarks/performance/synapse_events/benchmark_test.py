@@ -23,6 +23,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 import braincell as bc
 import brainstate
 import brainunit as u
@@ -30,6 +32,10 @@ import jax
 import numpy as np
 
 from benchmarks.performance.synapse_events import benchmark as b
+
+
+# Slow tier: runs nightly, not on every pull request (see the CI workflow).
+pytestmark = pytest.mark.slow
 
 
 class ConfigurationTest(unittest.TestCase):

@@ -62,7 +62,7 @@ CI runs these suites in two tiers, selected by the pytest marker `slow`
 its own sets `pytestmark = pytest.mark.slow`; the daily job selects by marker,
 so a new slow module needs no workflow change.
 
-- **Every pull request** (jobs in `ci-ok`, each its own process):
+- **Every pull request** (job `validation` in `ci-ok`, each suite its own process):
   `cable/tests`; and, after compiling the eight channel models,
   `channel_no_conc/tests` with `_clamp_test.py`, `_tolerance_test.py`,
   `_convergence_test.py` and `_mechanisms_test.py`, all with `-m "not slow"`;
@@ -70,7 +70,8 @@ so a new slow module needs no workflow change.
   skips unless `BRAINCELL_JE2011_MOD_DIR` is set).
 - **Daily** (job `slow_tests_neuron`, not in `ci-ok`; a red run opens a
   `main is red` issue): after compiling the same models,
-  `channel_no_conc/tests -m slow` (the per-family `dt` convergence tests),
+  `channel_no_conc/tests -m slow` (the per-family catalogue and `dt`
+  convergence tests, and `test_neuron_agreement.py`),
   then `ion -m slow` in a separate process (the pool comparisons,
   `ion/tolerances_test.py`).
 

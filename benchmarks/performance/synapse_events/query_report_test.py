@@ -22,8 +22,14 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import pytest
+
 from benchmarks.performance.synapse_events.query_benchmark import QueryCase
 from benchmarks.performance.synapse_events import query_report as r
+
+
+# Slow tier: runs nightly, not on every pull request (see the CI workflow).
+pytestmark = pytest.mark.slow
 
 
 def fixture(directory):

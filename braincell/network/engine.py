@@ -375,6 +375,8 @@ class Network:
         brainevent_backend: str | None = "jax_raw",
     ) -> NetworkResult:
         """Run the network for ``duration`` at fixed step ``dt``."""
+        from braincell.network.event import _schedule_horizon
+
         validate_time_quantity(dt, name="dt", prefix="Network.run(...)")
         validate_time_quantity(duration, name="duration", prefix="Network.run(...)")
         event_backend = normalize_event_backend(event_backend)
@@ -412,13 +414,18 @@ class Network:
         n_trace = setup.n_trace
         n_recording = setup.n_recording
         n_event = setup.n_event
+        # NetStim events up to one step past the end cover every arrival the
+        # loop delivers; later events are not generated.
+        until_ms = scalar_decimal(start_t, u.ms) + (n_steps + 1) * scalar_decimal(dt, u.ms)
         cached_loop = self._network_run_loop(
             setup=setup,
             setup_key=setup_key,
             dt=dt,
             n_steps=int(relative_times.shape[0]),
+            schedule_key=self._prepare_netstim_schedules(until_ms=until_ms),
         )
-        times, samples_over_time = cached_loop.runner(start_t, relative_times)
+        with _schedule_horizon(until_ms):
+            times, samples_over_time = cached_loop.runner(start_t, relative_times)
 
         samples_tuple = normalize_loop_outputs(
             samples_over_time,
@@ -514,7 +521,14 @@ class Network:
             brainevent_backend=brainevent_backend,
         )
         self._common_start_time(setup.ordered_population_names)
-        cached = self._network_run_loop(setup=setup, setup_key=key, dt=dt, n_steps=1)
+        # update() runs for an unknown number of steps: generate every event.
+        cached = self._network_run_loop(
+            setup=setup,
+            setup_key=key,
+            dt=dt,
+            n_steps=1,
+            schedule_key=self._prepare_netstim_schedules(until_ms=None),
+        )
         self.trainables.materialize()
         self._prepared_run = (setup, cached, dt)
         return self
@@ -649,11 +663,13 @@ class Network:
         setup_key: tuple,
         dt,
         n_steps: int,
+        schedule_key: tuple = (),
     ) -> _CachedRunLoop:
         key = (
             setup_key,
             int(n_steps),
             int(brainstate.environ.get_precision()),
+            schedule_key,
         )
         cached = self._network_run_loop_cache.get(key)
         if cached is None:
@@ -762,6 +778,15 @@ class Network:
 
         return brainstate.transform.jit(_run_loop)
 
+    def _prepare_netstim_schedules(self, *, until_ms: float | None) -> tuple:
+        """Generate NetStim events up to ``until_ms``; return the loop-cache token."""
+        from braincell.network.event import _prepare_netstim_schedules
+
+        return _prepare_netstim_schedules(
+            (population.model for population in self.populations.values() if population.kind == "netstim"),
+            until_ms=until_ms,
+        )
+
     def _common_start_time(self, names: tuple[str, ...]):
         first = self.populations[names[0]].cell.current_time
         for name in names[1:]:
@@ -864,7 +889,10 @@ class Network:
         event_index = 0
         for name, population in self.populations.items():
             if population.kind != "cell":
-                table = population.model.events
+                if population.kind == "netstim":
+                    table = population.model._event_table(until_ms=stop_ms)
+                else:
+                    table = population.model.events
                 event_ms = np.asarray(table.time.to_decimal(u.ms), dtype=float)
                 selected = (event_ms >= start_ms) & (event_ms < stop_ms)
                 selected_rows = np.flatnonzero(selected)

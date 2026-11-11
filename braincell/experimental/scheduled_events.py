@@ -219,6 +219,7 @@ def prepare_events(source, source_index, *, delay, dt, n_steps, start_step=0, me
         clock_dt = np.asarray(dt_ms, dtype=clock_dtype)
     if not np.isfinite(clock_dt) or clock_dt <= 0 or last_time > clock_limits.max:
         raise ValueError("time grid is not representable in the selected clock precision")
+    source._ensure_schedule()
     times = np.asarray(source._event_times_ms[index])
     mask = np.asarray(source._event_mask[index])
     if times.shape[1] and (np.any(~np.isfinite(times[mask])) or np.any(times[mask] < 0)):

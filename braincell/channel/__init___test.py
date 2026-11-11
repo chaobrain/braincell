@@ -15,20 +15,21 @@
 
 """Package-level guards for :mod:`braincell.channel`.
 
-Three concerns live here because all are properties of the package as a whole
+Four concerns live here because all are properties of the package as a whole
 rather than of any single module: the docstring conformance sweep over every
-covered module, the re-export completeness of the explicit import block, and
-the agreement between each channel's class name and the key it is registered
-under.
+covered module, the re-export completeness of the explicit import block, the
+agreement between each channel's class name and the key it is registered
+under, and the static unit-safety sweep.
 """
 
 import unittest
+from pathlib import Path
 
 import pytest
 
 import braincell.channel as channel
 from braincell._base_channel import Channel
-from braincell._testing import DocstringConformanceTests, ReExportTests
+from braincell._testing import DocstringConformanceTests, ReExportTests, UnitSafetyGuardTests
 from braincell.channel import (
     _base,
     calcium,
@@ -102,6 +103,21 @@ class ChannelReExportTest(ReExportTests, unittest.TestCase):
     package = channel
     reexport_sources = _COVERED_MODULES
     require_sorted_all = True
+
+
+class ChannelUnitSafetyTest(UnitSafetyGuardTests, unittest.TestCase):
+    """No bare-number reads, ``TypeError`` fallbacks or NMODL unit factors (MECH-27)."""
+
+    package_dir = Path(__file__).resolve().parent
+    check_factors = True
+    allowlist = (
+        ("_base.py", "freeze_gradient", "get_mantissa", "stop_gradient needs an array; the same unit is put back."),
+        ("_base.py", "is_disabled", "get_mantissa", "tests a switch for exact zero, which is zero in any unit."),
+        ("_base.py", "_steady_state_inputs.flatten", "get_magnitude", "rates come bare (1/ms) from _transition_rate."),
+        ("_base.py", "Markov._solve_steady_state_jax", "get_magnitude", "uses only the zero template's shape."),
+        ("_base.py", "Markov._solve_steady_state_host", "get_magnitude", "uses only the zero template's shape."),
+        ("potassium.py", "Kv1p5_MA2024_PC.f_n_tau", "factor 1e-3", "the .mod rate coefficient 0.001/ms, not a unit."),
+    )
 
 
 def _registered_channel_classes():

@@ -529,6 +529,23 @@
 
 ### Changes & Improvements
 
+- **NeuroMorpho metrics have an offline regression** (MORPH-7a).
+  `data/morphology/neuromorpho/` now holds seven NeuroMorpho.Org neurons
+  (standardized SWC and the `metadata.json` that `NeuroMorphoClient.download`
+  writes; CC BY 4.0, sources and citations in its README), and
+  `braincell/io/neuromorpho/regression_test.py` compares BrainCell's counts,
+  length, distances, surface, volume and soma surface with the published
+  morphometry without network access. Surface and volume follow L-Measure's
+  cylinders with the child point's radius, so the comparison holds to 1e-4
+  (measured: 5.9e-5 at most); `Branch.area` and `Branch.volume` are frustums
+  and are pinned by a snapshot instead. The 11 known disagreements
+  (multi-point somata and `con2prox` points) are registered with their
+  reason, and a registered row that starts to agree fails the test.
+  `examples/io/neuromorpho.ipynb` runs offline on this dataset by default
+  (`DOWNLOAD = False`) with the same formulas and thresholds. Its former
+  comparison, frustum values at 1%, failed surface or volume on 4 of the 9
+  candidate neurons that the cylinder formulas match (up to 4.9% and 6.0%).
+
 - **A Cell declaration whose branch name is gone says which declaration it
   is** (MORPH-2b). A location expression names its branch, such as
   `at("dend", 0.5)` given to `Cell.place` or to `VoltageCrossingSource`, and

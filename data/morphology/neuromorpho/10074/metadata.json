@@ -1,0 +1,137 @@
+{
+  "archive": "Dusart",
+  "brain_region": [
+    "cerebellum",
+    "cerebellar cortex",
+    "Purkinje layer"
+  ],
+  "cell_type": [
+    "Purkinje",
+    "principal cell"
+  ],
+  "download_items": [
+    {
+      "downloaded_now": true,
+      "filename": "Purkinje-slice-ageP35-3.CNG.swc",
+      "kind": "standard",
+      "path": "Purkinje-slice-ageP35-3.CNG.swc",
+      "reason": null,
+      "url": "https://neuromorpho.org/dableFiles/dusart/CNG%20version/Purkinje-slice-ageP35-3.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/10074"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/10074"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/10074"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 84.95,
+    "bif_ampl_remote": 74.46,
+    "branch_Order": 27.0,
+    "contraction": 0.94,
+    "depth": 8.72,
+    "diameter": 1.67,
+    "eucDistance": 246.92,
+    "fractal_Dim": 1.02,
+    "fragmentation": 4013.0,
+    "height": 204.46,
+    "length": 5915.11,
+    "n_bifs": 302.0,
+    "n_branch": 605.0,
+    "n_stems": 1.0,
+    "neuron_id": 10074,
+    "neuron_name": "Purkinje-slice-ageP35-3",
+    "partition_asymmetry": 0.54,
+    "pathDistance": 298.69,
+    "pk_classic": 1.26,
+    "soma_Surface": 180.08,
+    "surface": 32214.4,
+    "volume": 15185.3,
+    "width": 156.13
+  },
+  "measurement_url": "https://neuromorpho.org/api/morphometry/id/10074",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/10074"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/10074"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/10074"
+      }
+    },
+    "age_classification": "young adult",
+    "age_scale": "Day",
+    "archive": "Dusart",
+    "attributes": "Diameter, 3D, Angles",
+    "brain_region": [
+      "cerebellum",
+      "cerebellar cortex",
+      "Purkinje layer"
+    ],
+    "cell_type": [
+      "Purkinje",
+      "principal cell"
+    ],
+    "corrected_value": null,
+    "corrected_xy": null,
+    "corrected_z": null,
+    "deposition_date": "2013-07-15",
+    "domain": "Dendrites, Soma, No Axon",
+    "experiment_condition": [
+      "Control"
+    ],
+    "gender": "Not reported",
+    "magnification": "63",
+    "max_age": "35.0",
+    "max_weight": "Not Reported",
+    "min_age": "35.0",
+    "min_weight": "Not Reported",
+    "neuron_id": 10074,
+    "neuron_name": "Purkinje-slice-ageP35-3",
+    "note": null,
+    "objective_type": "oil",
+    "original_format": "Neuronstudio.swc",
+    "physical_Integrity": "Dendrites Complete",
+    "png_url": "http://neuromorpho.org/images/imageFiles/Dusart/Purkinje-slice-ageP35-3.png",
+    "protocol": "in vitro",
+    "reconstruction_software": "NeuronStudio",
+    "reference_doi": [
+      "10.1523/JNEUROSCI.2977-12.2013"
+    ],
+    "reference_pmid": [
+      "23719821"
+    ],
+    "reported_value": null,
+    "reported_xy": null,
+    "reported_z": null,
+    "scientific_name": null,
+    "shrinkage_corrected": "",
+    "shrinkage_reported": "Not Reported",
+    "slicing_direction": "Not reported",
+    "slicing_thickness": "250",
+    "soma_surface": "180.08",
+    "species": "mouse",
+    "stain": "biocytin",
+    "strain": "C56BL/6",
+    "surface": "32214.4",
+    "upload_date": "2014-05-30",
+    "volume": "15185.3"
+  },
+  "neuron_id": 10074,
+  "neuron_name": "Purkinje-slice-ageP35-3",
+  "original_file_url": "https://neuromorpho.org/dableFiles/dusart/Source-Version/Purkinje-slice-ageP35-3.swc",
+  "original_format": "Neuronstudio.swc",
+  "species": "mouse",
+  "standard_swc_url": "https://neuromorpho.org/dableFiles/dusart/CNG%20version/Purkinje-slice-ageP35-3.CNG.swc",
+  "thumbnail_url": "https://neuromorpho.org/images/imageFiles/Dusart/Purkinje-slice-ageP35-3.png"
+}

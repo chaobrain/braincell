@@ -1,11 +1,12 @@
 # IO examples
 
 - [Morphology checkpoints](morphology-checkpoint.ipynb): save and restore branches and morphologies; generated files go to `artifacts/checkpoint/`.
-- [NeuroMorpho](neuromorpho.ipynb): query and download neurons, inspect cached metadata and compare morphology measurements.
+- [NeuroMorpho](neuromorpho.ipynb): compare `braincell`'s morphology metrics with NeuroMorpho's published measurements; optionally query and download neurons and inspect cached metadata.
 
 The checkpoint tutorial uses the shared `data/morphology/branched_dend.swc` fixture.
-NeuroMorpho downloads require network access and are cached in `data/neuromorpho/`.
+The NeuroMorpho notebook runs offline by default, on the seven neurons in
+`data/morphology/neuromorpho/` that the regression test
+`braincell/io/neuromorpho/regression_test.py` also uses. With `DOWNLOAD = True`
+it queries NeuroMorpho, which needs network access, and caches the downloads in
+`data/neuromorpho/` (ignored by git).
 See the [IO API reference](../../docs/apis/io.rst) for interface contracts.
-
-Follow-up: extract NeuroMorpho metric comparisons into validation with a fixed
-dataset and explicit tolerances; keep query, download and cache usage here.

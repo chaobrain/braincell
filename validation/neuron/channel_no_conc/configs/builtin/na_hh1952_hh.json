@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "label": "Na_HH1952 against NEURON's built-in hh, sodium only"
+  },
+  "identity": {
+    "mod_dir": "../../../artifacts/mechanisms/testing/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.12,
+      "temp_ref_celsius": 6.3,
+      "gkbar_S_cm2": 0.0,
+      "gl_S_cm2": 0.0
+    }
+  },
+  "mapping": {
+    "current": "ina",
+    "impl_name": {
+      "neuron": "hh",
+      "braincell": "Na_HH1952"
+    },
+    "gate_names": {
+      "canonical": [
+        "m",
+        "h"
+      ],
+      "neuron": [
+        "m",
+        "h"
+      ],
+      "braincell": [
+        "p",
+        "q"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gnabar",
+        "braincell": "g_max"
+      },
+      "temp_ref_celsius": {
+        "braincell": "temp_ref"
+      },
+      "gkbar_S_cm2": {
+        "neuron": "gkbar"
+      },
+      "gl_S_cm2": {
+        "neuron": "gl"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

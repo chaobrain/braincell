@@ -1,0 +1,39 @@
+{
+  "meta": {
+    "label": "IL against NEURON's built-in pas"
+  },
+  "identity": {
+    "mod_dir": "../../../artifacts/mechanisms/testing/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.0001,
+      "E_mV": -70.0
+    }
+  },
+  "mapping": {
+    "current": "i",
+    "impl_name": {
+      "neuron": "pas",
+      "braincell": "IL"
+    },
+    "gate_names": {
+      "common": []
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "g",
+        "braincell": "g_max"
+      },
+      "E_mV": {
+        "neuron": "e",
+        "braincell": "E"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

@@ -40,6 +40,8 @@
     }
   },
   "templates": [
-    "../../templates/vinit_celsius.json"
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
   ]
 }

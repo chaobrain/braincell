@@ -54,6 +54,12 @@ T0（`e_V ≤ 1e-6 mV`；`e_I`、`e_s ≤ 1e-10`）；每个 T1 项写明偏差�
 `configs/testing/cl_leak_testing.json` 对照同一库中的 `clleak.mod`：没有门变量
 （`gate_names` 为空列表，电压钳只比较 `e_I`）；`clleak` 只读 `ecl`，NEURON 侧由
 runner 对 `cl_ion` 设 `ion_style`，使 `ecl` 按 `ion_state` 的浓度取 Nernst 值。
+`configs/builtin/` 以 NEURON 自带机制为参照（任一已编译的库都含有）：`hh` 只留一种
+电导（其余设为 0，runner 对带 `TABLE` 的机制设 `usetable_<mech> = 0`），对照
+`K_HH1952` 与 `Na_HH1952`（braincell 侧 `temp_ref = 6.3 °C`）；`pas` 对照 `IL`。
+`.mod` 中的 `GLOBAL` 参数（如 Nav1.1 的 `gateCurrent`）由 runner 写到
+`h.<参数>_<机制>`，在同一进程内对之后的模型保持有效，所以改变它的配置在 `defaults`
+中显式给出默认值。
 
 当前推荐的 `MA24_PC` batch 配置目录为：
 

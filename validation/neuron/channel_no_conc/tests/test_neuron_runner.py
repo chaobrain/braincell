@@ -63,6 +63,36 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertAlmostEqual(result["time_ms"][0], 0.025, places=12)
         self.assertAlmostEqual(result["time_ms"][-1], 2.0, places=12)
 
+    def test_rate_tables_are_turned_off(self) -> None:
+        from neuron import h
+
+        h.usetable_hh = 1
+        self.assertTrue(neuron_runner.disable_rate_table(h, "hh"))
+        self.assertEqual(h.usetable_hh, 0)
+        self.assertFalse(neuron_runner.disable_rate_table(h, "pas"))
+
+    def test_neuron_only_channel_params_reach_only_neuron(self) -> None:
+        mapping = build_mapping_payload(
+            impl_name={"neuron": "hh", "braincell": "K_HH1952"},
+            gate_names={"canonical": ["n"], "neuron": ["n"], "braincell": ["p"]},
+            channel_params={
+                "g_max_S_cm2": {"neuron": "gkbar", "braincell": "g_max"},
+                "gnabar_S_cm2": {"neuron": "gnabar"},
+                "temp_ref_celsius": {"braincell": "temp_ref"},
+            },
+        )
+        payload = {
+            **build_case_payload(mapping=mapping),
+            "channel_params": {"g_max_S_cm2": 0.036, "gnabar_S_cm2": 0.0, "temp_ref_celsius": 6.3},
+        }
+        case = experiment_schema.ChannelNoConcCase.from_dict(payload)
+        h, section, segment = neuron_runner._build_neuron_model(case, mapping_spec=case.mapping_spec)
+        try:
+            self.assertEqual((segment.hh.gkbar, segment.hh.gnabar), (0.036, 0.0))
+            self.assertEqual(h.usetable_hh, 0)
+        finally:
+            h.delete_section(sec=section)
+
     def test_sine_stimulus_runs(self) -> None:
         case = experiment_schema.ChannelNoConcCase.from_dict(
             self._build_payload(

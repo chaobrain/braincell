@@ -138,6 +138,23 @@ class MappingSchemaTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be a string parameter name"):
             mapping_schema.MappingSpec.from_mapping(payload)
 
+    def test_one_sided_parameters_map_to_a_single_side(self) -> None:
+        params = {
+            "g_max_S_cm2": {"neuron": "gkbar", "braincell": "g_max"},
+            "gnabar_S_cm2": {"neuron": "gnabar"},
+            "temp_ref_celsius": {"braincell": "temp_ref"},
+        }
+        payload = build_mapping_payload(impl_name={"neuron": "hh", "braincell": "K_HH1952"}, channel_params=params)
+        parameter_map = mapping_schema.MappingSpec.from_mapping(payload).parameter_map
+        self.assertEqual((parameter_map["gnabar_S_cm2"].neuron, parameter_map["gnabar_S_cm2"].braincell), ("gnabar", None))
+        self.assertEqual((parameter_map["temp_ref_celsius"].neuron, parameter_map["temp_ref_celsius"].braincell), (None, "temp_ref"))
+        self.assertEqual(mapping_schema.normalize_mapping_payload(payload)["channel_params"], params)
+
+    def test_rejects_a_parameter_without_any_side(self) -> None:
+        payload = build_mapping_payload(channel_params={"g_max_S_cm2": {}})
+        with self.assertRaisesRegex(ValueError, "must define 'common', 'neuron' or 'braincell'"):
+            mapping_schema.MappingSpec.from_mapping(payload)
+
 
 if __name__ == "__main__":
     unittest.main()

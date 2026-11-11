@@ -1,0 +1,54 @@
+{
+  "meta": {
+    "label": "K_HH1952 against NEURON's built-in hh, potassium only"
+  },
+  "identity": {
+    "mod_dir": "../../../artifacts/mechanisms/testing/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_S_cm2": 0.036,
+      "temp_ref_celsius": 6.3,
+      "gnabar_S_cm2": 0.0,
+      "gl_S_cm2": 0.0
+    }
+  },
+  "mapping": {
+    "current": "ik",
+    "impl_name": {
+      "neuron": "hh",
+      "braincell": "K_HH1952"
+    },
+    "gate_names": {
+      "canonical": [
+        "n"
+      ],
+      "neuron": [
+        "n"
+      ],
+      "braincell": [
+        "p"
+      ]
+    },
+    "channel_params": {
+      "g_max_S_cm2": {
+        "neuron": "gkbar",
+        "braincell": "g_max"
+      },
+      "temp_ref_celsius": {
+        "braincell": "temp_ref"
+      },
+      "gnabar_S_cm2": {
+        "neuron": "gnabar"
+      },
+      "gl_S_cm2": {
+        "neuron": "gl"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

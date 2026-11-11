@@ -222,6 +222,23 @@ class K_TM1991Test(_P4HHMixin, unittest.TestCase):
 class K_HH1952Test(_P4HHMixin, unittest.TestCase):
     CLS = K_HH1952
 
+    def test_default_rates_are_the_published_6p3_degC_rates(self) -> None:
+        # The docstring's claim: with temp = temp_ref the Q10 factor is 1, so the
+        # gate runs HH's published (6.3 degC) n rates; temp_ref = 6.3 degC gives
+        # NEURON hh's 3**((T - 6.3)/10) at 36 degC.
+        default = self._make(size=1)
+        hh_like = self._make(size=1, temp_ref=u.celsius2kelvin(6.3))
+        gate = default._iter_gates()[0]
+        self.assertTrue(u.math.allclose(default.gate_phi(gate), jnp.ones(1), rtol=1e-12))
+        self.assertTrue(u.math.allclose(hh_like.gate_phi(gate), 3.0**2.97 * jnp.ones(1), rtol=1e-12))
+        k = k_info()
+        for v in (-80.0, -55.0 + 1e-3, -20.0, 30.0):
+            V = voltage([v])
+            alpha = 0.01 * (v + 55.0) / (1.0 - math.exp(-(v + 55.0) / 10.0))
+            beta = 0.125 * math.exp(-(v + 65.0) / 80.0)
+            self.assertTrue(u.math.allclose(default.f_p_alpha(V, k), alpha * jnp.ones(1), rtol=1e-9), v)
+            self.assertTrue(u.math.allclose(default.f_p_beta(V, k), beta * jnp.ones(1), rtol=1e-12), v)
+
 
 class _P4QHHMixin:
     CLS = None

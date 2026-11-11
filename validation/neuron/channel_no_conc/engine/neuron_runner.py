@@ -171,6 +171,7 @@ def _build_neuron_model(case: ChannelNoConcCase, *, mapping_spec: MappingSpec):
             seg.pas.e = float(case.leak.e_mV)
 
     soma.insert(mapping_spec.neuron.mechanism_name)
+    disable_rate_table(h, mapping_spec.neuron.mechanism_name)
     if case.ion_state is not None:
         ion_name = mapping_spec.current_source.ion_name
         if ion_name is None:
@@ -193,10 +194,27 @@ def _build_neuron_model(case: ChannelNoConcCase, *, mapping_spec: MappingSpec):
                 raise ValueError(
                     f"channel_params contains unsupported param for mapping: {key!r}."
                 ) from exc
+            if attr_name is None:
+                continue
             target = _resolve_neuron_parameter_target(soma=soma, mech_obj=mech_obj, attr_name=attr_name)
             setattr(target, attr_name, float(value))
 
     return h, soma, soma(0.5)
+
+
+def disable_rate_table(h, mechanism_name: str) -> bool:
+    """Make a mechanism with a ``TABLE`` statement evaluate its rates exactly.
+
+    NMODL ``TABLE`` interpolates the rates on a voltage grid (NEURON's ``hh``:
+    200 intervals from -100 to 100 mV), which BrainCell does not; setting
+    ``usetable_<mechanism> = 0`` turns the table off. Returns whether the
+    mechanism has a table.
+    """
+    name = f"usetable_{mechanism_name}"
+    if not hasattr(h, name):
+        return False
+    setattr(h, name, 0)
+    return True
 
 
 def _resolve_neuron_erev_field(ion_name: str) -> str:

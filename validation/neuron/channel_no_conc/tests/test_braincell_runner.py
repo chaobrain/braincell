@@ -172,6 +172,23 @@ class BraincellRunnerTest(unittest.TestCase):
             )
         )
 
+    def test_one_sided_and_celsius_channel_params_convert_for_braincell(self) -> None:
+        mapping = build_mapping_payload(
+            impl_name={"neuron": "hh", "braincell": "K_HH1952"},
+            channel_params={
+                "g_max_S_cm2": {"neuron": "gkbar", "braincell": "g_max"},
+                "gnabar_S_cm2": {"neuron": "gnabar"},
+                "temp_ref_celsius": {"braincell": "temp_ref"},
+            },
+        )
+        kwargs = braincell_runner._convert_channel_params_for_braincell(
+            experiment_schema.MappingSpec.from_mapping(mapping),
+            {"g_max_S_cm2": 0.036, "gnabar_S_cm2": 0.0, "temp_ref_celsius": 6.3},
+        )
+
+        self.assertEqual(set(kwargs), {"g_max", "temp_ref"})
+        self.assertTrue(u.math.allclose(kwargs["temp_ref"].to_decimal(u.kelvin), 279.45, atol=1e-9))
+
     def test_build_init_nernst_ion_uses_fixed_concentration_mode(self) -> None:
         payload = self._build_payload(stimulus={"kind": "dc", "delay_ms": 0.0, "dur_ms": 2.0, "amp_nA": 0.0})
         payload["ion_state"] = {"Ci_mM": 2.4e-4, "Co_mM": 2.0}

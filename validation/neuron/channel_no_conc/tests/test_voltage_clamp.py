@@ -120,6 +120,18 @@ class VoltageClampSensitivityTest(unittest.TestCase):
         wrong = voltage_clamp.compare_protocol(*_paths(config, "vc_steps"), initialize=_initialize_after_finitialize)
         self.assertGreater(wrong["e_s"], 0.1)
 
+    def test_variant_parameters_and_extra_currents_reach_both_sides(self):
+        config = "ma20_grc/kv1p5_ma20_grc"
+        _skip_unless_compiled(self, config)
+        variant = {"channel_params": {"gnonspec_S_cm2": 1.3195e-4}}
+        case, _ = voltage_clamp.load_protocol(*_paths(config, "vc_ramp"), **variant)
+        self.assertEqual(case.channel_params["gnonspec_S_cm2"], 1.3195e-4)
+        both = voltage_clamp.compare_protocol(*_paths(config, "vc_ramp"), **variant, extra_neuron_currents=("ino",))
+        self.assertLessEqual(both["e_I"], TABLE.limit(config, "vc_ramp", "e_I"))
+        # NEURON's ino left out: BrainCell's nonspecific current is unmatched.
+        ik_only = voltage_clamp.compare_protocol(*_paths(config, "vc_ramp"), **variant)
+        self.assertGreater(ik_only["e_I"], 1e-3)
+
 
 if __name__ == "__main__":
     unittest.main()

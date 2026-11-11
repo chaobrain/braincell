@@ -334,7 +334,8 @@ def _convert_channel_params_for_braincell(
             raise ValueError(
                 f"channel_params contains unsupported param for mapping: {ir_key!r}."
             ) from exc
-        converted[mapping.braincell] = _convert_braincell_value(value, ir_key=ir_key)
+        if mapping.braincell is not None:
+            converted[mapping.braincell] = _convert_braincell_value(value, ir_key=ir_key)
     return converted
 
 
@@ -347,6 +348,8 @@ def _convert_braincell_value(value: Any, *, ir_key: str) -> Any:
         return float(value) * (u.cm / u.second)
     if ir_key.endswith("_mV"):
         return float(value) * u.mV
+    if ir_key.endswith("_celsius"):
+        return u.celsius2kelvin(float(value))
     return value
 
 

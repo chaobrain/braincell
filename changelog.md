@@ -250,6 +250,12 @@
 
 ### Bug Fixes
 
+- The `K_HH1952` docstring said its defaults do not reproduce Hodgkin and
+  Huxley's 6.3 degC kinetics; they do (MECH-19b). `temp` and `temp_ref` both
+  default to 36 degC, so the Q10 factor is 1 and the gate runs the published
+  rates. With `temp_ref = 6.3 degC` the class matches NEURON's built-in `hh`
+  at 36 degC to 1e-15 under voltage clamp, now part of the NEURON comparison.
+
 - Five calcium channels no longer return NaN when the voltage sits exactly on
   a removable 0/0 point of their source expressions (MECH-23a): `CaHT_Re1993`
   at -27 mV (the `p` gate's rate, so its state, derivative and current),

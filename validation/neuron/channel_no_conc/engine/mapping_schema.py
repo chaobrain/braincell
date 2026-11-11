@@ -40,8 +40,15 @@ class CurrentSourceSpec:
 
 @dataclass(frozen=True)
 class SideParameterSpec:
-    braincell: str
-    neuron: str
+    """Names of one parameter on each side; ``None`` where the side has no counterpart.
+
+    A one-sided parameter sets the reference's other channels to zero (NEURON's
+    ``hh`` carries sodium and leak currents) or a BrainCell constant that the
+    ``.mod`` hard-codes (``hh``'s 6.3 degC Q10 reference).
+    """
+
+    braincell: str | None
+    neuron: str | None
 
 
 @dataclass(frozen=True)
@@ -153,8 +160,9 @@ def normalize_mapping_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
             params_payload[ir_key] = {"common": side_names.neuron}
         else:
             params_payload[ir_key] = {
-                "neuron": side_names.neuron,
-                "braincell": side_names.braincell,
+                side: name
+                for side, name in (("neuron", side_names.neuron), ("braincell", side_names.braincell))
+                if name is not None
             }
 
     return {
@@ -207,11 +215,13 @@ def _parse_parameter_spec(payload: Any, *, name: str) -> SideParameterSpec:
             neuron=common_name,
             braincell=common_name,
         )
-    if not (has_neuron and has_braincell):
-        raise ValueError(f"{name} must define either 'common' or both 'neuron' and 'braincell'.")
+    if not (has_neuron or has_braincell):
+        raise ValueError(f"{name} must define 'common', 'neuron' or 'braincell'.")
 
-    neuron_name = _resolve_parameter_name(payload.get("neuron"), name=f"{name}.neuron")
-    braincell_name = _resolve_braincell_parameter_name(payload.get("braincell"), name=f"{name}.braincell")
+    neuron_name = _resolve_parameter_name(payload["neuron"], name=f"{name}.neuron") if has_neuron else None
+    braincell_name = (
+        _resolve_braincell_parameter_name(payload["braincell"], name=f"{name}.braincell") if has_braincell else None
+    )
     return SideParameterSpec(
         neuron=neuron_name,
         braincell=braincell_name,

@@ -14,6 +14,7 @@
 # ==============================================================================
 
 import unittest
+import warnings
 from types import ModuleType
 from unittest.mock import patch
 
@@ -351,6 +352,44 @@ class NetworkDeltaInputTest(unittest.TestCase):
                     network.run(dt=DT, duration=0.5 * u.ms)
                     # 20 kicks of 0.25 mV, or 10 uA/cm^2 for 0.5 ms, less the leak.
                     self.assertGreater(float(np.min(cell.V.value.to_decimal(u.mV))), -61.0)
+
+
+def _two_branch_tree() -> braincell.Morphology:
+    soma = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
+    tree = braincell.Morphology.from_root(soma, name="soma")
+    tree.soma.dend = braincell.Branch.from_lengths(
+        lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite"
+    )
+    return tree
+
+
+class NetworkInitSnapshotTest(unittest.TestCase):
+    """MORPH-14: Network cells run on the morphology as it was at ``init_state``."""
+
+    def test_editing_a_shared_morphology_after_init_warns_once_and_runs(self):
+        tree = _two_branch_tree()
+        first, second = braincell.Cell(tree), braincell.Cell(tree)
+        network = Network("shared")
+        network.add_population("first", first)
+        network.add_population("second", second)
+        network.init_state()
+        self.assertIsNot(first.morpho, tree)
+        self.assertIsNot(second.morpho, first.morpho)
+
+        tree.soma.extra = braincell.Branch.from_lengths(
+            lengths=[30.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite"
+        )
+
+        def snapshot_warnings():
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                network.run(dt=0.025 * u.ms, duration=0.1 * u.ms)
+            return [str(w.message) for w in caught if issubclass(w.category, RuntimeWarning)]
+
+        (message,) = snapshot_warnings()
+        self.assertRegex(message, r"populations 'first', 'second' run on the snapshot.*new Network")
+        self.assertEqual(snapshot_warnings(), [])
+        self.assertEqual((first.n_cv, second.n_cv), (2, 2))
 
 
 if __name__ == "__main__":

@@ -590,6 +590,45 @@ class VoltageCrossingIndexHeldLocationTest(unittest.TestCase):
         np.testing.assert_array_equal(detector.cv_id, [2])
         self.assertEqual(cell.n_cv, 5)
 
+    def test_a_removal_before_init_is_still_reported_after_init(self) -> None:
+        # MORPH-14: the initialized Cell runs on a copy of its tree; the
+        # detector's indices belong to the tree it was declared on.
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        detector = VoltageCrossingSource(cell, location=at("axon", 0.5).evaluate(morpho))
+
+        morpho.remove("dend")
+        cell.init_state()
+
+        with self.assertRaisesRegex(RuntimeError, r"VoltageCrossingSource location .*LocsetMask"):
+            detector.cv_id
+
+    def test_a_removal_after_init_waits_for_reset(self) -> None:
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        detector = VoltageCrossingSource(cell, location=at("axon", 0.5).evaluate(morpho))
+        cell.init_state()
+
+        morpho.remove("dend")
+
+        np.testing.assert_array_equal(detector.cv_id, [2])
+        cell.reset()
+        with self.assertRaisesRegex(RuntimeError, r"VoltageCrossingSource location .*LocsetMask"):
+            detector.cv_id
+
+    def test_a_mask_resolved_on_the_snapshot_is_checked_after_reset(self) -> None:
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.init_state()
+        detector = VoltageCrossingSource(cell, location=at("axon", 0.5).evaluate(cell.morpho))
+
+        morpho.remove("dend")
+
+        np.testing.assert_array_equal(detector.cv_id, [2])
+        cell.reset()
+        with self.assertRaisesRegex(RuntimeError, r"VoltageCrossingSource location .*LocsetMask"):
+            detector.cv_id
+
     def test_a_mask_on_a_morphology_reassigned_away_is_not_checked(self) -> None:
         first = make_tree_u()
         cell = Cell(first)

@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from dataclasses import dataclass
 
 import brainstate
@@ -386,7 +387,15 @@ class Network:
         event_backend: str = "auto",
         brainevent_backend: str | None = "jax_raw",
     ) -> NetworkResult:
-        """Run the network for ``duration`` at fixed step ``dt``."""
+        """Run the network for ``duration`` at fixed step ``dt``.
+
+        Warns
+        -----
+        RuntimeWarning
+            Once per edit, made after initialization, of the morphology a
+            population Cell was declared with: each Cell runs on the
+            snapshot taken at its ``init_state``.
+        """
         from braincell.network.event import _schedule_horizon
 
         validate_time_quantity(dt, name="dt", prefix="Network.run(...)")
@@ -397,6 +406,7 @@ class Network:
         self.init_state()
         if not self._cell_populations():
             return self._run_scheduled_sources_only(dt=dt, duration=duration)
+        self._warn_on_morphology_edits()
         self.trainables.materialize()
         setup_key = self._run_setup_cache_key(
             dt=dt,
@@ -492,6 +502,24 @@ class Network:
             stop_time=stop_t,
             dt=dt,
         )
+
+    def _warn_on_morphology_edits(self) -> None:
+        """Warn once per edit of a population Cell's declaration tree after init (MORPH-14)."""
+        edited = [
+            name
+            for name, population in self._cell_populations().items()
+            if population.cell._unannounced_declaration_edit()
+        ]
+        if edited:
+            names = ", ".join(repr(name) for name in edited)
+            warnings.warn(
+                f"The Cells of populations {names} run on the snapshot of their morphology taken at "
+                "init_state(); the morphology they were declared with has been edited since, and the edit "
+                "does not apply to an initialized Network. Declare new Cells and a new Network to run the "
+                "edited morphology.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
 
     def prepare_run(self, *, dt, delay_quantization="nearest", event_backend="auto", brainevent_backend="jax_raw"):
         """Prepare static routing and queues outside a differentiated rollout.

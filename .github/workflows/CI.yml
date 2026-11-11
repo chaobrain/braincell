@@ -433,11 +433,13 @@ jobs:
         # diff-cover matches against the git diff.
         run: |
           python -m pip install --upgrade pip setuptools
-          python -m pip install -r requirements-dev.txt jax pytest-cov
+          python -m pip install -r requirements-dev.txt jax pytest-cov pytest-xdist
           python -m pip install -e .
       - name: Test with coverage
+        # One worker per CPU; whole files per worker, so a file's tests keep
+        # their order. pytest-cov merges the workers' data.
         run: |
-          pytest braincell/ --cov=braincell --cov-report=xml --cov-report=term
+          pytest braincell/ -n auto --dist loadfile --cov=braincell --cov-report=xml --cov-report=term
       - name: Upload the coverage report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7

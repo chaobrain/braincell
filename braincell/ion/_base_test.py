@@ -14,6 +14,7 @@
 # limitations under the License.
 # ==============================================================================
 
+import inspect
 import unittest
 import warnings
 
@@ -671,6 +672,37 @@ class KineticIonCiInitializerTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ion.Ci.value, 0.75 * u.mM, atol=1e-12 * u.mM))
 
 
+class DynamicNernstIonCiShapeTest(unittest.TestCase):
+    """A bare-scalar ``Ci_initializer`` gives ``Ci`` the full state shape (MECH-38)."""
+
+    def test_scalar_and_constant_initializers_give_the_same_shape(self) -> None:
+        V = jnp.array([-65.0, -60.0, -55.0]) * u.mV
+        for initializer in (2.4e-4 * u.mM, braintools.init.Constant(2.4e-4 * u.mM)):
+            with self.subTest(initializer=initializer):
+                ion = CalciumDetailed(3, Ci_initializer=initializer)
+                ion.init_state(V)
+                self.assertEqual(ion.Ci.value.shape, (3,))
+                ion.reset_state(V, batch_size=2)
+                self.assertEqual(ion.Ci.value.shape, (2, 3))
+                np.testing.assert_allclose(ion.Ci.value.to_decimal(u.mM), np.full((2, 3), 2.4e-4), rtol=1e-6)
+
+    def test_single_compartment_with_a_scalar_initializer_integrates(self) -> None:
+        import braincell
+
+        cell = braincell.SingleCompartment(1, V_initializer=braintools.init.Constant(-60.0 * u.mV), solver="ralston2")
+        cell.ca = CalciumDetailed(1, Ci_initializer=2.4e-4 * u.mM)
+        cell.ca.add(cat=braincell.channel.CaT_HM1992(1))
+        brainstate.nn.init_all_states(cell)
+
+        def step(i):
+            with brainstate.environ.context(dt=0.025 * u.ms, t=i * 0.025 * u.ms):
+                cell.update(0.0 * u.nA / u.cm**2)
+
+        brainstate.transform.for_loop(step, jnp.arange(4))
+        self.assertEqual(cell.ca.Ci.value.shape, (1,))
+        self.assertTrue(np.all(np.isfinite(cell.ca.Ci.value.to_decimal(u.mM))))
+
+
 class NernstHelperTest(unittest.TestCase):
     """The single Nernst transcription shared by three ion templates."""
 
@@ -884,6 +916,67 @@ class IonCurrentInputContractTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             _check_snapshot(_IgnoresTotalCurrent, rate)
         _check_external_current(CalciumDetailed, rate)  # the unmodified parent passes
+
+
+def _registered_dynamic_ions() -> list[str]:
+    """Registered ``DynamicNernstIon``/``KineticIon`` classes, without test fixtures."""
+    return sorted(
+        name
+        for name, cls in get_registry().items("ion")
+        if issubclass(cls, (DynamicNernstIon, KineticIon)) and not cls.__module__.endswith("_test")
+    )
+
+
+def _declared_ci(cls) -> dict:
+    """Declare an initial ``Ci`` of 1.5 times the class default, as a bare Quantity."""
+    value = 1.5 * cls.default_Ci
+    if "Ci_initializer" in inspect.signature(cls.__init__).parameters:
+        return {"Ci_initializer": value}
+    return {"species_initializers": {"Ci": value}}  # Cldif_JE2011 names its species directly
+
+
+class LumpedDeclaredCiInitializerTest(unittest.TestCase):
+    """Every dynamic ion runs on a lumped Cell with a declared ``Ci`` initializer (MECH-38)."""
+
+    POP_SIZE = 2
+
+    def _run_one_step(self, name, solver):
+        import braincell as bc
+        from braincell.filter import AllRegion
+
+        cls = get_registry().get("ion", name)
+        declared = _declared_ci(cls)
+        cell = bc.Cell.point(self.POP_SIZE, V_init=-60.0 * u.mV, solver=solver)
+        cell.paint(AllRegion(), bc.mech.Ion(name, name="pool", **declared))
+        cell.init_state()
+        ion = cell._lumped_runtime.ion_channels["pool"]
+        self.assertEqual(ion.Ci.value.shape, (self.POP_SIZE,))
+        np.testing.assert_allclose(
+            np.asarray(ion.Ci.value.to_decimal(u.mM)),
+            np.full(self.POP_SIZE, (1.5 * cls.default_Ci).to_decimal(u.mM)),
+            rtol=1e-6,
+        )
+        cell.run(dt=0.025 * u.ms, duration=0.025 * u.ms)
+        ci = np.asarray(ion.Ci.value.to_decimal(u.mM))
+        self.assertEqual(ci.shape, (self.POP_SIZE,))
+        self.assertTrue(np.all(np.isfinite(ci)), f"{name}: Ci = {ci}")
+
+    def test_every_dynamic_ion_runs_one_step(self) -> None:
+        names = _registered_dynamic_ions()
+        checked = []
+        for name in names:
+            cls = get_registry().get("ion", name)
+            # Kinetic pools run with ``exp_euler``: the lumped default
+            # ``ralston2`` rejects them for an unrelated reason (CELL-19).
+            solvers = ("ralston2", "exp_euler") if issubclass(cls, DynamicNernstIon) else ("exp_euler",)
+            for solver in solvers:
+                with self.subTest(ion=name, solver=solver):
+                    self._run_one_step(name, solver)
+                    checked.append((name, solver))
+        # A floor, not an exact count: new pools must not need this test edited,
+        # but losing the 17 pools on main (4 DynamicNernstIon) must fail.
+        self.assertGreaterEqual(len(names), 17, names)
+        self.assertEqual({name for name, _ in checked}, set(names))
 
 
 class IonDirectConstructionUnitTest(unittest.TestCase):

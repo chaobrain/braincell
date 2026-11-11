@@ -64,6 +64,26 @@ def _unwrap(value):
     return value.value if isinstance(value, brainstate.State) else value
 
 
+def _initial_state_value(initializer, varshape, batch_size: int = None):
+    """Materialize a state initializer at the full state shape.
+
+    ``braintools.init.param`` passes a bare scalar through unbroadcast, so
+    an initializer declared as e.g. ``2.4e-4 * u.mM`` would start the state
+    rank-0 while a ``Constant`` of the same value starts it at ``varshape``.
+    The first integration step then writes a ``varshape`` value into the
+    rank-0 state, which breaks a ``jit``/``scan`` carry signature. A
+    lumped :class:`braincell.Cell` hands every declared initializer to the
+    ion as such a scalar.
+    """
+    value = braintools.init.param(initializer, varshape, batch_size)
+    target = tuple(varshape)
+    if batch_size is not None:
+        target = (int(batch_size),) + target
+    if tuple(getattr(value, "shape", ())) == target:
+        return value
+    return u.math.broadcast_to(value, target)
+
+
 def _nernst(*, Ci, Co, temp, valence):
     r"""Return the Nernst reversal potential for one ion species.
 
@@ -614,18 +634,12 @@ class DynamicNernstIon(brainstate.mixin.Mixin):
     def _ion_init_state_hook(self, V, batch_size: int = None):
         """Create the runtime ``Ci`` state from the stored initializer."""
         _ = V
-        self.Ci = state(
-            braintools.init.param(self._Ci_initializer, self.varshape, batch_size),
-        )
+        self.Ci = state(_initial_state_value(self._Ci_initializer, self.varshape, batch_size))
 
     def _ion_reset_state_hook(self, V, batch_size: int = None):
         """Reset the dynamic ``Ci`` state back to its initializer."""
         _ = V
-        value = braintools.init.param(
-            self._Ci_initializer,
-            self.varshape,
-            batch_size,
-        )
+        value = _initial_state_value(self._Ci_initializer, self.varshape, batch_size)
         self.Ci.value = value
         if isinstance(batch_size, int):
             assert value.shape[0] == batch_size
@@ -1153,23 +1167,14 @@ class _Species:
     def _species_value(self, spec, batch_size: int = None):
         """Materialize one species initializer at the owner's full state shape.
 
-        ``braintools.init.param`` passes a bare scalar through unbroadcast,
-        so a species declared as e.g. ``0.0 * u.mol / u.cm**2`` would start
-        rank-0 while every sibling species is shaped ``varshape``. That
-        shape is not stable: :meth:`_Conserve.writeback` later assigns the
-        per-point value, silently growing the state mid-simulation — which
+        A species declared as e.g. ``0.0 * u.mol / u.cm**2`` would otherwise
+        start rank-0 while every sibling species is shaped ``varshape``, and
+        :meth:`_Conserve.writeback` would later grow it mid-simulation, which
         breaks a ``jit``/``scan`` carry signature and, on a
         :class:`braincell.Cell`, the grouped hidden-state rank contract.
-        Broadcasting here keeps one species set homogeneous from the start.
         """
         init = _unwrap(self.owner.species_initializers.get(spec.name, spec.init))
-        value = braintools.init.param(init, self.owner.varshape, batch_size)
-        target = tuple(self.owner.varshape)
-        if batch_size is not None:
-            target = (int(batch_size),) + target
-        if tuple(getattr(value, "shape", ())) == target:
-            return value
-        return u.math.broadcast_to(value, target)
+        return _initial_state_value(init, self.owner.varshape, batch_size)
 
     def init(self, batch_size: int = None):
         """Materialize runtime species attributes from class declarations."""

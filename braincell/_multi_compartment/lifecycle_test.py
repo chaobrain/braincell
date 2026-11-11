@@ -356,8 +356,7 @@ class NetworkOwnedLifecycleTest(unittest.TestCase):
         self.assertEqual(final_voltage(new_cell).shape, (1, 4))
 
     def test_an_initialized_cell_in_a_network_is_not_told_to_reset(self):
-        # A Cell initialized before it joined the Network (or one that a failed
-        # Network.init_state left initialized) cannot reset() either.
+        # A Cell initialized before it joined the Network cannot reset() either.
         cell = make_cell()
         cell.init_state()
         net = bc.Network("n")

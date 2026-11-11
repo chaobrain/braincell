@@ -421,8 +421,13 @@ class NetworkInitRollbackTest(unittest.TestCase):
     @staticmethod
     def _declaration(cell):
         # What the Cell is before Network.init_state: its declaration tree,
-        # rules, the grid built from them and the selections made on it.
-        return (cell.morpho, cell._paint_rules, cell._place_rules, cell._discretization, cell._view_generation)
+        # rules and the grid built from them.
+        return {
+            "morpho": cell.morpho,
+            "paint rules": cell._paint_rules,
+            "place rules": cell._place_rules,
+            "grid": cell._discretization,
+        }
 
     def test_the_cells_before_a_failing_cell_are_declaring_as_before(self):
         for kind in ("cable", "lumped"):
@@ -433,6 +438,7 @@ class NetworkInitRollbackTest(unittest.TestCase):
                 net.add_population("b", b)
                 declared = a.morpho
                 before = self._declaration(a)
+                generation = a._view_generation
                 leak = a.channels["leak"]
 
                 with self.assertRaisesRegex(KeyError, _JUNCTION_ERROR):
@@ -440,8 +446,9 @@ class NetworkInitRollbackTest(unittest.TestCase):
 
                 self.assertEqual((a._initialized, b._initialized, net._initialized), (False, False, False))
                 self.assertIs(a.morpho, declared)
-                for now, then in zip(self._declaration(a), before):
-                    self.assertIs(now, then)
+                for (name, now), then in zip(self._declaration(a).items(), before.values()):
+                    self.assertTrue(now is then, f"{name} changed")
+                self.assertEqual(a._view_generation, generation)
                 self.assertEqual(leak.names, ("leak",))  # a selection made before the call is still live
                 # The recovery: a declares again, and the Network takes new connections onto it.
                 a.paint(AllRegion(), _leak("extra"))

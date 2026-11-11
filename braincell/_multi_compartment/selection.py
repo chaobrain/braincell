@@ -22,6 +22,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 from braincell._discretization.base import locate_cv_on_branch
+from braincell._discretization.mechanism import require_existing_branches
 from braincell._multi_compartment.lifecycle import DiscreteView
 from braincell.filter import LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask, branch_in
 from braincell._multi_compartment import field_resolution
@@ -253,6 +254,8 @@ class CVSelector(DiscreteView):
 def _resolve_location_rows(cell, population_indices: tuple[int, ...], locset) -> tuple[_LocationRow, ...]:
     if isinstance(locset, LocsetExpr):
         locset = locset.evaluate(cell.morpho)
+    if isinstance(locset, (LocsetMask, LocsetBatch)):
+        require_existing_branches(locset, cell.morpho)
     if isinstance(locset, LocsetMask):
         return tuple(
             row for population_index in population_indices for row in _mask_rows(cell, population_index, locset)
@@ -276,8 +279,6 @@ def _mask_rows(cell, population_index: int, mask: LocsetMask) -> tuple[_Location
     rows = []
     for branch_id, branch_x, display_name in zip(mask.branch_id, mask.branch_x, names):
         branch_id = int(branch_id)
-        if branch_id < 0 or branch_id >= len(cell.cv_tree.branch_to_cv_ids):
-            raise IndexError(f"Location branch id {branch_id!r} is out of range.")
         cv_id = locate_cv_on_branch(
             cell.cv_tree.branch_to_cv_ids[branch_id],
             cell.cvs,

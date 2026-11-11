@@ -13,11 +13,16 @@
 # limitations under the License.
 # ==============================================================================
 
+import re
+import sys
 import unittest
+import warnings
 
 import brainunit as u
 import numpy as np
 
+from braincell import Branch, CVPerBranch, Cell, Morphology
+from braincell.filter import RootLocation
 from braincell.mech import (
     CurrentProbe,
     CurrentClamp,
@@ -31,6 +36,7 @@ from braincell.mech import (
     StateProbe,
     Synapse,
 )
+from braincell.mech._point import _PROBES_REMOVED_IN
 
 
 class PointBaseTest(unittest.TestCase):
@@ -181,6 +187,57 @@ class FunctionClampValidatesInputsTest(unittest.TestCase):
     def test_fn_must_be_callable(self) -> None:
         with self.assertRaises(TypeError):
             FunctionClamp(fn=None)
+
+
+class LegacyProbeDeprecationTest(unittest.TestCase):
+    """API-7: each legacy probe warns at the constructing line, naming the removal release and the replacement."""
+
+    def _expect(self, cls: type):
+        removed_in = re.escape(_PROBES_REMOVED_IN)
+        return self.assertWarnsRegex(
+            DeprecationWarning,
+            rf"^braincell\.mech\.{cls.__name__} is deprecated since braincell 0\.3 and will be removed in "
+            rf"braincell {removed_in}\. Use Cell\.record\(\.\.\., braincell\.observe\.\*\) instead\.$",
+        )
+
+    def assertAtLine(self, caught, line: int) -> None:
+        self.assertEqual((caught.filename, caught.lineno), (__file__, line))
+
+    def test_state_probe(self) -> None:
+        with self._expect(StateProbe) as caught:
+            line, probe = sys._getframe().f_lineno, StateProbe(name="v_soma")
+        self.assertAtLine(caught, line)
+        self.assertEqual((probe.name, probe.field), ("v_soma", "v"))
+
+    def test_mechanism_probe(self) -> None:
+        with self._expect(MechanismProbe) as caught:
+            line, probe = sys._getframe().f_lineno, MechanismProbe(mechanism="na_soma", field="p")
+        self.assertAtLine(caught, line)
+        self.assertEqual((probe.name, probe.mechanism, probe.field), (None, "na_soma", "p"))
+
+    def test_current_probe(self) -> None:
+        with self._expect(CurrentProbe) as caught:
+            line, probe = sys._getframe().f_lineno, CurrentProbe(ion="k")
+        self.assertAtLine(caught, line)
+        self.assertEqual((probe.name, probe.ion, probe.mechanism), (None, "k", None))
+
+    def test_probe_mechanism(self) -> None:
+        with self._expect(ProbeMechanism) as caught:
+            line, probe = sys._getframe().f_lineno, ProbeMechanism(variable="v", target="soma")
+        self.assertAtLine(caught, line)
+        self.assertEqual((probe.variable, probe.target), ("v", "soma"))
+
+    def test_an_unnamed_probe_on_a_cell_warns_once(self) -> None:
+        # The Cell names it with ``dataclasses.replace``; that rebuild warned again, at dataclasses.py.
+        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        cell = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch())
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            line, probe = sys._getframe().f_lineno, StateProbe()
+            cell.place(RootLocation(0.5), probe)
+            cell.init_state()
+        places = [(w.filename, w.lineno) for w in caught if w.category is DeprecationWarning]
+        self.assertEqual(places, [(__file__, line)])
 
 
 class StateProbeTest(unittest.TestCase):

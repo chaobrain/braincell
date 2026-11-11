@@ -41,7 +41,6 @@ convenience. Subsequent ``run`` calls never re-initialize.
 """
 
 import operator
-import warnings
 import weakref
 from types import MappingProxyType
 from typing import Callable, ClassVar, Mapping, Optional
@@ -57,6 +56,7 @@ import numpy as np
 from braincell._base_channel import Channel, IonChannel, Synapse as RuntimeSynapse
 from braincell._base_ion import Ion, MixIons
 from braincell._base_neuron import HHTypedNeuron, _zero_spike_like
+from braincell._deprecation import Deprecation
 from braincell._misc import (
     is_traced_value,
     scalar_decimal,
@@ -123,6 +123,14 @@ from braincell._multi_compartment.lumped import (
 from braincell.morph.morphology import Morphology as _Morphology
 
 __all__ = ["Cell", "CellView", "MultiCompartment"]
+
+#: ``Cell.bind_synapse_input`` is deprecated; ``removed_in`` is provisional.
+_BIND_SYNAPSE_INPUT = Deprecation(
+    "braincell.Cell.bind_synapse_input()",
+    since="0.3",
+    removed_in="0.4",
+    replacement="an EventSource with braincell.connect()",
+)
 
 
 @dataclass(frozen=True)
@@ -1819,6 +1827,10 @@ class Cell(_CellFacade, HHTypedNeuron):
     def bind_synapse_input(self, synapse: str, source, *, weight=1.0, transform=None) -> "Cell":
         """Deprecated compatibility adapter for per-boundary event payloads.
 
+        .. deprecated:: 0.3
+           Create an ``EventSource`` and connect it with
+           ``braincell.connect()``; this method is removed in braincell 0.4.
+
         Parameters
         ----------
         synapse : str
@@ -1834,11 +1846,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             weighting, useful when the source shape does not directly broadcast
             to the target synapse shape.
         """
-        warnings.warn(
-            "Cell.bind_synapse_input() is deprecated; create an EventSource and use braincell.connect().",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        _BIND_SYNAPSE_INPUT.warn()
         key = str(synapse)
         self._synapse_input_bindings.setdefault(key, []).append((source, weight, transform))
         return self

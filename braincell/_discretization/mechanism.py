@@ -42,8 +42,8 @@ from braincell.mech import (
     Point,
     StateProbe,
 )
-from braincell.mech._units import user_frame
 from braincell.morph.morphology import Morphology
+from braincell._deprecation import user_frame
 from braincell._discretization.base import DEFAULT_CABLE, EPS_PARAM, CVPointMechanism, Position
 from braincell._discretization.context import build_cv_contexts
 from braincell._discretization.geometry import CVGeometryResult, _GeoCV, _build_frusta, interval_area_fraction
@@ -119,7 +119,7 @@ def caller_origin() -> str | None:
 
     Frames in the braincell package are skipped, except its ``*_test.py``
     files, which call ``paint``/``place`` as users do (the rule shared with
-    declaration warnings, :func:`braincell.mech._units.user_frame`). Returns
+    declaration warnings, :func:`braincell._deprecation.user_frame`). Returns
     ``None`` where frames are unavailable (``sys._getframe`` is
     CPython-specific).
     """

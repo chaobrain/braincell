@@ -80,17 +80,6 @@ def _normalize_size(size) -> tuple:
 _INIT_DEPTH: dict = {}
 
 
-@functools.lru_cache(maxsize=None)
-def _metaclass_call_codes(metaclass: type) -> frozenset:
-    """Code objects of the Python ``__call__`` methods along a metaclass MRO.
-
-    brainstate's ``GraphNodeMeta.__call__`` runs ``__init__`` for the user, so
-    its frame sits between the user's line and the outermost ``__init__``.
-    """
-    codes = (getattr(vars(klass).get("__call__"), "__code__", None) for klass in metaclass.__mro__)
-    return frozenset(code for code in codes if code is not None)
-
-
 def _check_units_after_init(init):
     """Wrap a Channel or Ion ``__init__`` to check parameter units after the outermost call.
 
@@ -112,9 +101,7 @@ def _check_units_after_init(init):
             else:
                 del _INIT_DEPTH[key]
         if not depth:
-            warn_invalid_constructed_parameters(
-                self, self._unit_check_category, skip=_metaclass_call_codes(type(type(self)))
-            )
+            warn_invalid_constructed_parameters(self, self._unit_check_category)
 
     return __init__
 

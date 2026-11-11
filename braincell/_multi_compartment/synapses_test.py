@@ -283,7 +283,8 @@ class SynapseViewTest(unittest.TestCase):
         aa = braincell.mech.Synapse("ExpSyn", name="aa", tau=2.0 * u.ms, e=0.0 * u.mV)
         cell.place(at("soma", 0.3), pf)
         cell.place(at("soma", 0.7), aa)
-        cell.bind_synapse_input("pf", np.asarray([1.0, 2.0]), weight=0.1 * u.uS)
+        with self.assertWarns(DeprecationWarning):
+            cell.bind_synapse_input("pf", np.asarray([1.0, 2.0]), weight=0.1 * u.uS)
         cell.init_state()
 
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):

@@ -192,11 +192,17 @@ class ImportGraphTest(unittest.TestCase):
             visit(module, ())
 
 
+#: Modules every package may import: at module scope they import only the
+#: standard library (``braincell/_deprecation/__init___test.py`` checks it),
+#: so importing them cannot close a cycle.
+_SHARED_LEAVES = frozenset({"braincell._deprecation"})
+
+
 class MechIsALeafTest(unittest.TestCase):
     """``braincell.mech`` owns the declaration contracts, so it may not
     import any other ``braincell`` package -- that is what lets
     ``_base_channel``, ``_compute.state`` and ``network.connection`` all
-    depend on it without a cycle."""
+    depend on it without a cycle. The shared leaves are the exception."""
 
     def test_no_mech_module_imports_another_braincell_package(self) -> None:
         offenders = []
@@ -208,11 +214,11 @@ class MechIsALeafTest(unittest.TestCase):
                 if isinstance(node, ast.Import):
                     for alias in node.names:
                         if alias.name == "braincell" or alias.name.startswith("braincell."):
-                            if not alias.name.startswith("braincell.mech"):
+                            if not alias.name.startswith("braincell.mech") and alias.name not in _SHARED_LEAVES:
                                 offenders.append(f"{path.name}:{node.lineno}: import {alias.name}")
                 elif isinstance(node, ast.ImportFrom):
                     if node.level == 0 and node.module and node.module.startswith("braincell"):
-                        if not node.module.startswith("braincell.mech"):
+                        if not node.module.startswith("braincell.mech") and node.module not in _SHARED_LEAVES:
                             offenders.append(f"{path.name}:{node.lineno}: from {node.module} import ...")
                     elif node.level >= 2:
                         offenders.append(f"{path.name}:{node.lineno}: relative import escapes braincell.mech")

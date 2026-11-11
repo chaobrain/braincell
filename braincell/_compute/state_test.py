@@ -593,7 +593,8 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             synapse=cell.synapses[exp],
             weight=2.0 * u.uS,
         )
-        cell.bind_synapse_input("exp_syn", source=lambda: np.asarray([3.0]), weight=0.5 * u.uS)
+        with self.assertWarns(DeprecationWarning):
+            cell.bind_synapse_input("exp_syn", source=lambda: np.asarray([3.0]), weight=0.5 * u.uS)
         cell.init_state()
         runtime = cell.runtime
         layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:ExpSyn")

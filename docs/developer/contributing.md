@@ -60,7 +60,7 @@ The output is `docs/_build/html/index.html`. Website builds currently do not exe
 
 ## Breaking changes
 
-A change that removes or renames a public name, or changes its behavior in a way existing calls notice, first ships a deprecation warning for at least one minor release; the next minor release may then remove the old form. Record both steps in `changelog.md`, with the migration.
+A change that removes or renames a public name, or changes its behavior in a way existing calls notice, first ships a deprecation warning for at least one minor release; the next minor release may then remove the old form. Record both steps in `changelog.md`, with the migration. Declare the deprecation with the `braincell._deprecation` helper, which sets the message, the line the warning points at, the tests and the changelog entries ([conventions](conventions.md#deprecation)).
 
 ## Submit a pull request
 

@@ -39,11 +39,11 @@ inherits from :class:`Point` but lives in its own module
 
 from dataclasses import dataclass, field
 from typing import Any, Callable, ClassVar, Mapping
-import warnings
 
 import brainunit as u
 import numpy as np
 
+from braincell._deprecation import Deprecation
 from braincell.mech._base import Mechanism
 from braincell.mech._density import _resolve_class_name
 from braincell.mech._params import Params, quantity_hashable
@@ -232,6 +232,19 @@ class FunctionClamp(Point):
 # ---------------------------------------------------------------------------
 
 
+#: Release that removes the four legacy probe classes (provisional).
+_PROBES_REMOVED_IN = "0.4"
+
+
+def _probe_deprecation(name: str) -> Deprecation:
+    return Deprecation(
+        f"braincell.mech.{name}",
+        since="0.3",
+        removed_in=_PROBES_REMOVED_IN,
+        replacement="Cell.record(..., braincell.observe.*)",
+    )
+
+
 @dataclass(frozen=True)
 class _LegacyProbe(Point):
     """Shared preamble for the deprecated probe declarations.
@@ -240,15 +253,15 @@ class _LegacyProbe(Point):
     deprecation warning -- passing their own class name as a string
     literal, which a rename would silently desync -- followed by the same
     optional-``name`` check. Both now happen once, here, and each
-    subclass implements only :meth:`_validate` for its own fields.
+    subclass implements only :meth:`_validate` for its own fields. The
+    warning goes to the constructing line; braincell rebuilding a probe
+    (``dataclasses.replace``) does not warn again.
     """
 
+    _DEPRECATION: ClassVar[Deprecation]
+
     def __post_init__(self) -> None:
-        warnings.warn(
-            f"{type(self).__name__} is deprecated; use Cell.record(..., braincell.observe.*) for new code.",
-            DeprecationWarning,
-            stacklevel=3,
-        )
+        self._DEPRECATION.warn()
         require_str(getattr(self, "name", None), type(self).__name__, "name", optional=True)
         self._validate()
 
@@ -258,7 +271,15 @@ class _LegacyProbe(Point):
 
 @dataclass(frozen=True)
 class StateProbe(_LegacyProbe):
-    """Probe for cell-owned state at one placed location."""
+    """Probe for cell-owned state at one placed location.
+
+    .. deprecated:: 0.3
+       Record the membrane potential with
+       ``Cell.record(..., braincell.observe.state("V"))``; ``StateProbe`` is
+       removed in braincell 0.4.
+    """
+
+    _DEPRECATION: ClassVar[Deprecation] = _probe_deprecation("StateProbe")
 
     name: str | None = None
     field: str = "v"
@@ -271,7 +292,14 @@ class StateProbe(_LegacyProbe):
 
 @dataclass(frozen=True)
 class MechanismProbe(_LegacyProbe):
-    """Probe for runtime state on a named mechanism."""
+    """Probe for runtime state on a named mechanism.
+
+    .. deprecated:: 0.3
+       Record with ``Cell.record(..., braincell.observe.*)``; ``MechanismProbe`` is
+       removed in braincell 0.4.
+    """
+
+    _DEPRECATION: ClassVar[Deprecation] = _probe_deprecation("MechanismProbe")
 
     mechanism: str
     field: str
@@ -284,7 +312,14 @@ class MechanismProbe(_LegacyProbe):
 
 @dataclass(frozen=True)
 class CurrentProbe(_LegacyProbe):
-    """Probe for current at a placed location."""
+    """Probe for current at a placed location.
+
+    .. deprecated:: 0.3
+       Record with ``Cell.record(..., braincell.observe.*)``; ``CurrentProbe`` is
+       removed in braincell 0.4.
+    """
+
+    _DEPRECATION: ClassVar[Deprecation] = _probe_deprecation("CurrentProbe")
 
     ion: str | None = None
     mechanism: str | None = None
@@ -301,6 +336,10 @@ class CurrentProbe(_LegacyProbe):
 class ProbeMechanism(_LegacyProbe):
     """Observer that records a named variable at a point location.
 
+    .. deprecated:: 0.3
+       Record with ``Cell.record(..., braincell.observe.*)``; ``ProbeMechanism`` is
+       removed in braincell 0.4.
+
     Parameters
     ----------
     variable : str
@@ -310,6 +349,8 @@ class ProbeMechanism(_LegacyProbe):
         instance name) used to disambiguate probes of the same
         variable on different mechanisms.
     """
+
+    _DEPRECATION: ClassVar[Deprecation] = _probe_deprecation("ProbeMechanism")
 
     variable: str
     target: str | None = None

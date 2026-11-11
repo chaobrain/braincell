@@ -16,6 +16,8 @@
 """Unit tests for :class:`braincell.Cell`."""
 
 import dataclasses
+import re
+import sys
 import unittest
 from unittest import mock
 
@@ -1176,10 +1178,27 @@ class TestCellLifecycle(unittest.TestCase):
         cell = _simple_cell()
         source = lambda: jnp.asarray([1.0])
 
-        returned = cell.bind_synapse_input("ampa", source, weight=2.0)
+        with self.assertWarns(DeprecationWarning):
+            returned = cell.bind_synapse_input("ampa", source, weight=2.0)
 
         self.assertIs(returned, cell)
         self.assertEqual(len(cell._synapse_input_bindings["ampa"]), 1)
+
+    def test_bind_synapse_input_is_deprecated(self):
+        # API-7: the warning names the removal release and the replacement, at the calling line.
+        cell = _simple_cell()
+        source = lambda: jnp.asarray([1.0])
+        removed_in = re.escape(cell_module._BIND_SYNAPSE_INPUT.removed_in)
+        pattern = (
+            rf"^braincell\.Cell\.bind_synapse_input\(\) is deprecated since braincell 0\.3 and will be removed in "
+            rf"braincell {removed_in}\. Use an EventSource with braincell\.connect\(\) instead\.$"
+        )
+        with self.assertWarnsRegex(DeprecationWarning, pattern) as caught:
+            line, returned = sys._getframe().f_lineno, cell.bind_synapse_input("ampa", source, weight=2.0)
+
+        self.assertEqual((caught.filename, caught.lineno), (__file__, line))
+        self.assertIs(returned, cell)
+        self.assertEqual(cell._synapse_input_bindings["ampa"], [(source, 2.0, None)])
 
 
 class CellMembraneLinearizerTest(unittest.TestCase):

@@ -560,6 +560,49 @@ class LumpedSynapseTwinTest(LumpedTwinTestCase):
             scale = max(1.0, float(np.max(np.abs(cable))))
             self.assertLessEqual(float(np.max(np.abs(lumped - cable))) / scale, 1e-10, name)
 
+    def test_split_run_delivers_a_boundary_event_once(self) -> None:
+        # CELL-34 on a lumped Cell: a run split at the event time matches one
+        # run and the twin, and the first run (after init_state or
+        # reset_state) delivers an event at t = 0.
+        def drive(cell, start):
+            bc.connect(
+                "drive",
+                source=bc.NetStim(start=start * u.ms, number=1),
+                synapse=cell.synapses["ampa"],
+                weight=0.005 * u.uS,
+            )
+
+        def samples(runs):
+            return {
+                key: np.concatenate([np.asarray(u.get_mantissa(run.samples[key].values)) for run in runs])
+                for key in ("v", "g")
+            }
+
+        with _float64():
+            out = {}
+            for kind in KINDS:
+                for start in (0.0, 1.0):
+                    for steps in ((200,), (40,) * 5):
+                        cell = _hh(kind, 1, synapse=True)
+                        cell.record("v", bc.observe.state("v"))
+                        cell.record("g", bc.observe.synapse(name="ampa").state("g"))
+                        drive(cell, start)
+                        cell.init_state()
+                        out[kind, start, len(steps)] = samples([cell.run(dt=DT, duration=n * DT) for n in steps])
+                        if start == 0.0 and len(steps) == 1:
+                            cell.reset_state()
+                            out[kind, "reset"] = samples([cell.run(dt=DT, duration=200 * DT)])
+            for start, first_step in ((0.0, 1), (1.0, 41)):
+                lumped = out["lumped", start, 1]
+                for key in ("v", "g"):
+                    np.testing.assert_allclose(out["lumped", start, 5][key], lumped[key], rtol=1e-12, atol=0.0)
+                    self.assertTwin(out["lumped", start, 5][key], out["cable", start, 5][key], 1e-12, msg=key)
+                # Sampled at each step start: an event at t acts in the step that starts at t.
+                g = lumped["g"].reshape(200, -1)[:, 0]
+                self.assertEqual(int(np.flatnonzero(g > 0.0)[0]), first_step)
+            for key in ("v", "g"):
+                np.testing.assert_array_equal(out["lumped", "reset"][key], out["lumped", 0.0, 1][key])
+
     def test_block_solvers_reject_point_synapses(self) -> None:
         for solver in ("exp_euler", "backward_euler", "crank_nicolson"):
             with self.subTest(solver=solver):

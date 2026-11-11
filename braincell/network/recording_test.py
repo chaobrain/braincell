@@ -345,7 +345,7 @@ class RecordingFollowsItsDeclarationTest(unittest.TestCase):
         morpho.scale(2)
 
         d1 = [cv.id for cv in cell.cvs if cv.branch_id == 2]
-        self.assertEqual(d1, D1_AFTER_SCALE)
+        self.assertEqual(d1, [8, 9, 10])
         self.assertEqual(_rows(_run(cell), "d1v"), [(2, cv_id) for cv_id in d1])
 
     def test_a_cv_recording_is_kept_when_an_edit_keeps_the_grid(self) -> None:

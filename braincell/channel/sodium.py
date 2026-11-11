@@ -30,6 +30,7 @@ from braincell.mech import StateSpec, register_channel
 
 __all__ = [
     "Na_Ba2002",
+    "Na_Leak",
     "Na_TM1991",
     "Na_HH1952",
     "NaF_SU2015_DCN",
@@ -50,6 +51,71 @@ _NA_HH1952_TEMP_DEFAULT = u.celsius2kelvin(36.0)
 _NA_HH1952_Q10_DEFAULT = 3.0
 _NA_HH1952_TEMP_REF_DEFAULT = u.celsius2kelvin(36.0)
 _NA_HH1952_V_SH_DEFAULT = -45.0 * u.mV
+
+
+@register_channel("Na_Leak")
+class Na_Leak(OhmicHH):
+    r"""Sodium leak current.
+
+    A voltage-independent, always-open sodium conductance:
+
+    .. math::
+
+        I = g_{max} \, (E_{Na} - V)
+
+    with ``I`` positive inward. The reversal potential is not a
+    parameter: it is taken from the sodium ion this channel is attached
+    to, so ``E_Na`` follows whatever the ion computes (fixed, Nernst, or
+    the dynamic ``Ci`` of :class:`~braincell.ion.SodiumDetailed`). The
+    current is the sodium ion's, so it enters that ion's ``current(V)``
+    and drives a dynamic sodium pool. There are no gating variables and
+    no state to integrate.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    g_max : array-like or callable, optional
+        Leak conductance density. Defaults to ``0.005 mS/cm2``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    braincell.channel.K_Leak : The potassium counterpart.
+    braincell.channel.IL : Ion-independent leak with its own fixed
+        reversal potential parameter.
+    braincell.ion.SodiumDetailed : Dynamic sodium ion whose ``E_Na``
+        this channel follows.
+
+    Notes
+    -----
+    This class has **no primary literature source**: the current law is
+    Ohm's law and the ``0.005 mS/cm2`` default, the same as
+    :class:`~braincell.channel.K_Leak`'s, is a placeholder that any
+    caller overrides, so the class ships without a ``References``
+    section. The sodium half of ``leak.mod`` in Canavier's model
+    (ModelDB 6763) is this current with ``gnabar = 40 uS/cm2``; that
+    file computes ``ena`` itself from ``nai`` and a fixed ``nao =
+    145 mM``, which equals this channel on a sodium ion with ``Co =
+    145 mM``.
+
+    ``root_type`` is :class:`~braincell.ion.Sodium`, so the channel must
+    be attached to a sodium ion.
+    """
+
+    __module__ = "braincell.channel"
+    root_type = Sodium
+    gates = ()
+
+    def __init__(
+        self,
+        size: Size,
+        g_max: Initializer = 0.005 * (u.mS / u.cm**2),
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
 
 
 @register_channel("Na_Ba2002")

@@ -18,15 +18,17 @@
 
 from typing import Optional
 
+import braintools
 import brainunit as u
 
 from braincell._base_ion import Ion
 from braincell._typing import Initializer, Size
 from braincell.mech import register_ion
-from braincell.ion._base import FixedIon, InitNernstIon
+from braincell.ion._base import DynamicNernstIon, FixedIon, InitNernstIon, _shell_influx
 
 __all__ = [
     'Potassium',
+    'PotassiumDetailed',
     'PotassiumFixed',
     'PotassiumInitNernst',
 ]
@@ -243,3 +245,103 @@ class PotassiumInitNernst(Potassium, InitNernstIon):
     ):
         super().__init__(size, name=name, **channels)
         self._init_nernst_ion(Ci=Ci, Co=Co, temp=temp, valence=valence)
+
+
+@register_ion("PotassiumDetailed")
+class PotassiumDetailed(Potassium, DynamicNernstIon):
+    r"""Dynamic intracellular potassium driven by the potassium current, with Nernst ``E``.
+
+    The model of :class:`~braincell.ion.SodiumDetailed` for potassium:
+    ``Ci`` is a state, ``Co`` a fixed parameter, and
+
+    .. math::
+
+        \frac{dC_i}{dt} = \frac{I}{z F d} + \beta\,(C_{rest} - C_i),
+        \qquad
+        E = \frac{RT}{zF}\,\ln\frac{C_o}{C_i},
+
+    with :math:`I` the potassium current density (positive inward, own
+    channels plus registered external currents, or the Cell's
+    step-start snapshot), :math:`z` the ``valence`` (+1) and :math:`d`
+    the volume per unit membrane area. The equation is that of the
+    sodium pool of Canavier (1999) [1]_, whose potassium concentrations
+    are fixed.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to
+        :class:`Potassium`.
+    temp : array-like or callable, optional
+        Absolute temperature of the Nernst equation. Defaults to 36
+        degrees Celsius (``309.15 K``).
+    d : array-like or callable, optional
+        Volume per unit membrane area that the current fills. Defaults
+        to ``1.0 um``.
+    beta : array-like or callable, optional
+        Relaxation rate of ``Ci`` toward ``C_rest``. Defaults to
+        ``0.0 /ms`` (no relaxation).
+    C_rest : array-like or callable, optional
+        Concentration ``Ci`` relaxes toward. Defaults to ``54.4 mM``.
+    Co : array-like or callable or None, optional
+        Extracellular potassium concentration. Defaults to ``None``,
+        which falls back to :attr:`Potassium.default_Co` (``2.5 mM``).
+    Ci_initializer : array-like or callable, optional
+        Initial ``Ci``. Defaults to a constant ``54.4 mM``
+        (:attr:`Potassium.default_Ci`).
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged to
+        :class:`Potassium`.
+
+    See Also
+    --------
+    SodiumDetailed : The same model for sodium.
+    braincell.channel.K_Leak : A potassium leak that reads this ion's
+        ``E``.
+
+    Notes
+    -----
+    ``d`` is a shell depth, or the whole compartment's volume / lateral
+    area, ``d=lambda ctx: ctx.diam_mid / 4`` for a cylinder. The influx
+    is not rectified, so an outward potassium current lowers ``Ci``.
+    No literature source fixes the defaults: ``d = 1 um`` is
+    :class:`~braincell.ion.CalciumDetailed`'s, and ``54.4 / 2.5 mM`` are the potassium
+    family's conventional concentrations. Every value carries its unit;
+    a bare number or a wrong unit raises at ``init_state`` in a Cell.
+
+    References
+    ----------
+    .. [1] Canavier, C. C. (1999). Sodium dynamics underlying burst firing
+           and putative mechanisms for the regulation of the firing pattern
+           in midbrain dopamine neurons: a computational approach. Journal
+           of Computational Neuroscience, 6(1), 49-69.
+           doi:10.1023/A:1008809000182
+    """
+
+    __module__ = 'braincell.ion'
+    uses_total_current = True
+
+    def __init__(
+        self,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(36.0),
+        d: Initializer = 1.0 * u.um,
+        beta: Initializer = 0.0 / u.ms,
+        C_rest: Initializer = 54.4 * u.mM,
+        Co: Optional[Initializer] = None,
+        Ci_initializer: Initializer = braintools.init.Constant(54.4 * u.mM),
+        name: Optional[str] = None,
+        **channels,
+    ):
+        super().__init__(size, name=name, **channels)
+        self._init_dynamic_nernst_ion(Co=Co, temp=temp, Ci_initializer=Ci_initializer)
+        self.d = braintools.init.param(d, self.varshape, allow_none=False)
+        self.beta = braintools.init.param(beta, self.varshape, allow_none=False)
+        self.C_rest = braintools.init.param(C_rest, self.varshape, allow_none=False)
+
+    def derivative(self, Ci, V, total_current=None):
+        _ = V
+        return _shell_influx(self, total_current) + self.beta * (self.C_rest - Ci)

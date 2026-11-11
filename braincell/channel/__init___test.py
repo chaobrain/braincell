@@ -76,6 +76,7 @@ _NO_PRIMARY_SOURCE = frozenset(
         "CaL_IS2008",
         "K_Leak",
         "Cl_Leak",
+        "Na_Leak",
         "K_Kv_test",
     }
 )

@@ -1,8 +1,10 @@
 # ion
 
-Calcium-pool comparisons against NEURON. Each configuration puts one pool,
-with or without one calcium channel, on a single soma (L = diam = 20 um) and
-runs it under up to three protocols; the limits come from one tolerance table.
+Ion-pool comparisons against NEURON. Each configuration puts one pool,
+with or without one channel of its ion, on a single soma (L = diam = 20 um
+unless it sets `defaults.morphology`) and runs it under up to three
+protocols; the limits come from one tolerance table. The pool's ion is
+calcium unless `mapping.ion` names another family (`ca1999` uses sodium).
 
 | File | Contents |
 |---|---|
@@ -12,6 +14,7 @@ runs it under up to three protocols; the limits come from one tolerance table.
 | `tolerances.py` | The T1 entries; every other configuration and protocol is T0 |
 | `runner_test.py` | Configurations, templates and table, without NEURON (pull-request tier) |
 | `tolerances_test.py` | Every configuration within the table, with its root causes patched at T0, and a pump-rate counterexample (`slow`, daily tier) |
+| `sodium_test.py` | The `ca1999` configuration (Canavier's soma, `SodiumDetailed`), with a volume-factor counterexample (`slow`, local only, see below) |
 | `chloride_test.py` | `Cldif_JE2011` against ModelDB 148253 (local only, see below) |
 | `gaba_test.py` | `GabaA_JE2011` with `Cldif_JE2011` against ModelDB 148253 (local only, see below) |
 
@@ -67,6 +70,20 @@ A new configuration lists its `.mod` files, names and templates; a pool
 whose NEURON state for `cai` is not `cai` itself names it in `ci_state`. A
 difference above T0 needs its cause, a patch that removes it and an entry in
 `tolerances.py`.
+
+`ca1999/sodium_detailed_pump_off` is Canavier's (1999) soma with the pump
+off: `SodiumDetailed` (`d = diam/4`) with `Na_Leak`, `PotassiumFixed` and
+`K_Leak` against `nadifl.mod` with `leak.mod` (ModelDB 6763), 2000 ms under
+-0.02 nA, T0. Its `.mod` files have no license statement either; the
+configuration lists them under `identity.external_mod_files` with their
+SHA-256 (`ModelDBRepository/6763@ccdc2f0`), `config_names()` leaves it out,
+and `sodium_test.py` skips unless `BRAINCELL_CA1999_MOD_DIR` points to them.
+`nai` and `nao` are written to NEURON's ion defaults (`nai0_na_ion`) before
+`finitialize`: `nadifl` writes `nai`, so a segment value would be reset.
+
+```bash
+BRAINCELL_CA1999_MOD_DIR=/path/to/6763 pytest -q validation/neuron/ion/sodium_test.py -m slow
+```
 
 `chloride_test.py` compares `Cldif_JE2011` with ModelDB 148253's `cldifus` on
 one segment, as a zero-current relaxation and with `Cl_Leak` under current

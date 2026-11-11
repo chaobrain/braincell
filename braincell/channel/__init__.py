@@ -144,6 +144,7 @@ from braincell.channel.potassium_sodium import Kv1p5_MA2020_GrC
 from braincell.channel.potassium_sodium import __all__ as _potassium_sodium_all
 from braincell.channel.sodium import (
     Na_Ba2002,
+    Na_Leak,
     Na_TM1991,
     Na_HH1952,
     NaF_SU2015_DCN,

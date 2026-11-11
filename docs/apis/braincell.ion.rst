@@ -58,6 +58,7 @@ Potassium Ions
    Potassium
    PotassiumFixed
    PotassiumInitNernst
+   PotassiumDetailed
 
 
 Sodium Ions
@@ -71,6 +72,7 @@ Sodium Ions
    Sodium
    SodiumFixed
    SodiumInitNernst
+   SodiumDetailed
 
 
 Non-Specific Ions

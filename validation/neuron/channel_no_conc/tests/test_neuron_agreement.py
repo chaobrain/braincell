@@ -28,11 +28,18 @@ from pathlib import Path
 import unittest
 
 import numpy as np
+import pytest
 
 from validation.neuron._tolerance import CURRENT_CLAMP_PROTOCOLS
 from validation.neuron.channel_no_conc.tolerances import KNOWN_DIFFERENCES, TABLE, VARIANTS
 
 from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, load_module
+
+
+# Slow tier: runs nightly, not on every pull request. Every configuration here
+# except testing/cl_leak_testing is also compared, under every template it
+# lists, by the nightly catalogue modules (test_catalogue_*.py).
+pytestmark = pytest.mark.slow
 
 
 os.environ.setdefault("JAX_PLATFORMS", "cpu")

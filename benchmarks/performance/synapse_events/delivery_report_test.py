@@ -22,7 +22,13 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import pytest
+
 from benchmarks.performance.synapse_events import delivery_report as r
+
+
+# Slow tier: runs nightly, not on every pull request (see the CI workflow).
+pytestmark = pytest.mark.slow
 
 
 def _fixture(root, phase="micro"):

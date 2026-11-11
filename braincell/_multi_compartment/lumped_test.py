@@ -1118,6 +1118,27 @@ class ExternalInputTest(unittest.TestCase):
         self.assertGreater(float(np.min(traces[1] - traces[0])), 1e-3)
         np.testing.assert_allclose(traces[2], traces[1], rtol=0.0, atol=1e-5)
 
+    def test_value_input_is_added_once_as_on_single_compartment(self) -> None:
+        # brainpy's rule: a non-callable input is added at the first
+        # evaluation (the first solver stage) and then removed.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            model = _single_compartment(hh=True, solver="rk4")
+            model.init_state()
+            model.reset_state()
+            model.add_current_input("kick", (0.2 * u.nA / model.area).in_unit(u.uA / u.cm**2))
+            cell = _point_cell(solver="rk4")
+            cell.init_state()
+            cell.add_current_input("kick", 0.2 * u.nA)
+            voltages = []
+            for target in (model, cell):
+                with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                    target.update()
+                    target.update()
+                voltages.append(target.V.value.to_decimal(u.mV))
+                self.assertNotIn("kick", target.current_inputs)
+            self.assertGreater(float(np.min(voltages[1] + 65.0)), 1e-3)
+            np.testing.assert_allclose(voltages[1], voltages[0], rtol=0.0, atol=1e-10)
+
     def test_direct_solver_call_and_call_operator_match_update(self) -> None:
         raster = _raster(3)
         weight = _weights(5) * 3.0 * u.nS

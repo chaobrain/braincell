@@ -1,0 +1,135 @@
+{
+  "archive": "Turner",
+  "brain_region": [
+    "hippocampus",
+    "CA1"
+  ],
+  "cell_type": [
+    "pyramidal",
+    "principal cell"
+  ],
+  "download_items": [
+    {
+      "downloaded_now": true,
+      "filename": "n419.CNG.swc",
+      "kind": "standard",
+      "path": "n419.CNG.swc",
+      "reason": null,
+      "url": "https://neuromorpho.org/dableFiles/turner/CNG%20version/n419.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/100"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/100"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/100"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 79.1183,
+    "bif_ampl_remote": 57.4892,
+    "branch_Order": 19.0,
+    "contraction": 0.772968,
+    "depth": 205.03,
+    "diameter": 0.556778,
+    "eucDistance": 529.358,
+    "fractal_Dim": 1.04104,
+    "fragmentation": 4223.0,
+    "height": 611.318,
+    "length": 13143.0,
+    "n_bifs": 75.0,
+    "n_branch": 155.0,
+    "n_stems": 5.0,
+    "neuron_id": 100,
+    "neuron_name": "n419",
+    "partition_asymmetry": 0.447733,
+    "pathDistance": 1078.42,
+    "pk_classic": 1.68693,
+    "soma_Surface": 897.846,
+    "surface": 23909.3,
+    "volume": 4215.04,
+    "width": 249.098
+  },
+  "measurement_url": "https://neuromorpho.org/api/morphometry/id/100",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/100"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/100"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/100"
+      }
+    },
+    "age_classification": "young",
+    "age_scale": "Month",
+    "archive": "Turner",
+    "attributes": "Diameter, 3D, Angles",
+    "brain_region": [
+      "hippocampus",
+      "CA1"
+    ],
+    "cell_type": [
+      "pyramidal",
+      "principal cell"
+    ],
+    "corrected_value": null,
+    "corrected_xy": "133.0",
+    "corrected_z": "400.0",
+    "deposition_date": "2005-12-31",
+    "domain": "Dendrites, Soma, No Axon",
+    "experiment_condition": [
+      "Control"
+    ],
+    "gender": "Male/Female",
+    "magnification": "100",
+    "max_age": "8.0",
+    "max_weight": "350.0",
+    "min_age": "2.0",
+    "min_weight": "200.0",
+    "neuron_id": 100,
+    "neuron_name": "n419",
+    "note": "When originally released, this reconstruction had been incompletely processed, and this issue was fixed in release 6.3 (February 2016). The pre-6.3 version of the processed file is available for download <a href=\" dableFiles/previous/v6.3/turner/n419.CNG.swc \">here</a>.",
+    "objective_type": "oil",
+    "original_format": "Neurolucida.swc",
+    "physical_Integrity": "Dendrites Complete",
+    "png_url": "http://neuromorpho.org/images/imageFiles/Turner/n419.png",
+    "protocol": "in vivo",
+    "reconstruction_software": "Neurolucida",
+    "reference_doi": [
+      "10.1002/(SICI)1096-9861(19980216)391:3<335::AID-CNE4>3.0.CO;2-2"
+    ],
+    "reference_pmid": [
+      "9492204"
+    ],
+    "reported_value": null,
+    "reported_xy": "25.0",
+    "reported_z": "75.0",
+    "scientific_name": "rattus norvegicus",
+    "shrinkage_corrected": "Corrected",
+    "shrinkage_reported": "Reported",
+    "slicing_direction": "coronal",
+    "slicing_thickness": "80",
+    "soma_surface": "897.846",
+    "species": "rat",
+    "stain": "biocytin",
+    "strain": "Fischer 344",
+    "surface": "23909.3",
+    "upload_date": "2006-08-01",
+    "volume": "4215.04"
+  },
+  "neuron_id": 100,
+  "neuron_name": "n419",
+  "original_file_url": "https://neuromorpho.org/dableFiles/turner/Source-Version/n419.swc",
+  "original_format": "Neurolucida.swc",
+  "species": "rat",
+  "standard_swc_url": "https://neuromorpho.org/dableFiles/turner/CNG%20version/n419.CNG.swc",
+  "thumbnail_url": "https://neuromorpho.org/images/imageFiles/Turner/n419.png"
+}

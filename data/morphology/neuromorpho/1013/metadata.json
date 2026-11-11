@@ -1,0 +1,135 @@
+{
+  "archive": "Ascoli",
+  "brain_region": [
+    "hippocampus"
+  ],
+  "cell_type": [
+    "pyramidal",
+    "principal cell"
+  ],
+  "download_items": [
+    {
+      "downloaded_now": true,
+      "filename": "n10fts.CNG.swc",
+      "kind": "standard",
+      "path": "n10fts.CNG.swc",
+      "reason": null,
+      "url": "https://neuromorpho.org/dableFiles/ascoli/CNG%20version/n10fts.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/1013"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/1013"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/1013"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 70.18,
+    "bif_ampl_remote": 65.05,
+    "branch_Order": 14.0,
+    "contraction": 0.93,
+    "depth": 3.0,
+    "diameter": 0.59,
+    "eucDistance": 154.56,
+    "fractal_Dim": 1.02371,
+    "fragmentation": 1664.0,
+    "height": 236.12,
+    "length": 3803.36,
+    "n_bifs": 105.0,
+    "n_branch": 217.0,
+    "n_stems": 7.0,
+    "neuron_id": 1013,
+    "neuron_name": "n10fts",
+    "partition_asymmetry": 0.57,
+    "pathDistance": 257.83,
+    "pk_classic": 1.81,
+    "soma_Surface": 980.84,
+    "surface": 7144.55,
+    "volume": 1952.58,
+    "width": 211.82
+  },
+  "measurement_url": "https://neuromorpho.org/api/morphometry/id/1013",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/1013"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/1013"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/1013"
+      }
+    },
+    "age_classification": "neonatal",
+    "age_scale": "Day",
+    "archive": "Ascoli",
+    "attributes": "Diameter, 2D, Angles",
+    "brain_region": [
+      "hippocampus"
+    ],
+    "cell_type": [
+      "pyramidal",
+      "principal cell"
+    ],
+    "corrected_value": null,
+    "corrected_xy": null,
+    "corrected_z": null,
+    "deposition_date": "2006-09-29",
+    "domain": "Dendrites, Soma, No Axon",
+    "experiment_condition": [
+      "Beta-catenin overexpression"
+    ],
+    "gender": "Not reported",
+    "magnification": "40",
+    "max_age": "0.0",
+    "max_weight": "Not Reported",
+    "min_age": "0.0",
+    "min_weight": "Not Reported",
+    "neuron_id": 1013,
+    "neuron_name": "n10fts",
+    "note": "",
+    "objective_type": "oil",
+    "original_format": "Neuron_Morpho.swc",
+    "physical_Integrity": "Dendrites Moderate",
+    "png_url": "http://neuromorpho.org/images/imageFiles/Ascoli/n10fts.png",
+    "protocol": "culture",
+    "reconstruction_software": "Neuron_Morpho",
+    "reference_doi": [
+      "10.2307/4134575",
+      "10.1038/nn1132"
+    ],
+    "reference_pmid": [
+      "16946239",
+      "14528308"
+    ],
+    "reported_value": null,
+    "reported_xy": null,
+    "reported_z": null,
+    "scientific_name": "rattus norvegicus",
+    "shrinkage_corrected": "",
+    "shrinkage_reported": "Not Reported",
+    "slicing_direction": "Not reported",
+    "slicing_thickness": "Not reported",
+    "soma_surface": "980.84",
+    "species": "rat",
+    "stain": "green fluorescent protein",
+    "strain": "Sprague-Dawley",
+    "surface": "7144.55",
+    "upload_date": "2006-11-20",
+    "volume": "1952.58"
+  },
+  "neuron_id": 1013,
+  "neuron_name": "n10fts",
+  "original_file_url": "https://neuromorpho.org/dableFiles/ascoli/Source-Version/n10fts.swc",
+  "original_format": "Neuron_Morpho.swc",
+  "species": "rat",
+  "standard_swc_url": "https://neuromorpho.org/dableFiles/ascoli/CNG%20version/n10fts.CNG.swc",
+  "thumbnail_url": "https://neuromorpho.org/images/imageFiles/Ascoli/n10fts.png"
+}

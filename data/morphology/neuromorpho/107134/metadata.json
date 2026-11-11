@@ -1,0 +1,143 @@
+{
+  "archive": "Tamas",
+  "brain_region": [
+    "neocortex",
+    "frontal",
+    "secondary motor",
+    "layer 2-3"
+  ],
+  "cell_type": [
+    "interneuron",
+    "basket",
+    "Fast-spiking",
+    "Parvalbumin (PV)-positive"
+  ],
+  "download_items": [
+    {
+      "downloaded_now": true,
+      "filename": "Fig3i_Rat_81.CNG.swc",
+      "kind": "standard",
+      "path": "Fig3i_Rat_81.CNG.swc",
+      "reason": null,
+      "url": "https://neuromorpho.org/dableFiles/tamas/CNG%20version/Fig3i_Rat_81.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/107134"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/107134"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/107134"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 78.8347,
+    "bif_ampl_remote": 71.2807,
+    "branch_Order": 29.0,
+    "contraction": 0.885278,
+    "depth": 244.45,
+    "diameter": 0.182419,
+    "eucDistance": 793.459,
+    "fractal_Dim": 1.03651,
+    "fragmentation": 9172.0,
+    "height": 832.522,
+    "length": 23522.1,
+    "n_bifs": 276.0,
+    "n_branch": 559.0,
+    "n_stems": 7.0,
+    "neuron_id": 107134,
+    "neuron_name": "Fig3i_Rat_81",
+    "partition_asymmetry": 0.583579,
+    "pathDistance": 1073.13,
+    "pk_classic": 1.71148,
+    "soma_Surface": 550.212,
+    "surface": 13245.5,
+    "volume": 975.925,
+    "width": 501.981
+  },
+  "measurement_url": "https://neuromorpho.org/api/morphometry/id/107134",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/107134"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/107134"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/107134"
+      }
+    },
+    "age_classification": "adult",
+    "age_scale": "Not Reported",
+    "archive": "Tamas",
+    "attributes": "Diameter, 3D, Angles",
+    "brain_region": [
+      "neocortex",
+      "frontal",
+      "secondary motor",
+      "layer 2-3"
+    ],
+    "cell_type": [
+      "interneuron",
+      "basket",
+      "Fast-spiking",
+      "Parvalbumin (PV)-positive"
+    ],
+    "corrected_value": null,
+    "corrected_xy": null,
+    "corrected_z": null,
+    "deposition_date": "2018-10-18",
+    "domain": "Dendrites, Soma, Axon",
+    "experiment_condition": [
+      "Control"
+    ],
+    "gender": "Male",
+    "magnification": "100",
+    "max_age": "Not Reported",
+    "max_weight": "500.0",
+    "min_age": "Not Reported",
+    "min_weight": "300.0",
+    "neuron_id": 107134,
+    "neuron_name": "Fig3i_Rat_81",
+    "note": "",
+    "objective_type": "oil",
+    "original_format": "Neurolucida.dat",
+    "physical_Integrity": "Dendrites & Axon Complete",
+    "png_url": "http://neuromorpho.org/images/imageFiles/Tamas/Fig3i_Rat_81.png",
+    "protocol": "in vivo",
+    "reconstruction_software": "Neurolucida",
+    "reference_doi": [
+      "10.1016/j.neuron.2016.09.032"
+    ],
+    "reference_pmid": [
+      "27746131"
+    ],
+    "reported_value": null,
+    "reported_xy": null,
+    "reported_z": null,
+    "scientific_name": "rattus norvegicus",
+    "shrinkage_corrected": "",
+    "shrinkage_reported": "Not Reported",
+    "slicing_direction": "coronal",
+    "slicing_thickness": "60",
+    "soma_surface": "550.212",
+    "species": "rat",
+    "stain": "biocytin",
+    "strain": "Wistar",
+    "surface": "13245.5",
+    "upload_date": "2019-04-08",
+    "volume": "975.925"
+  },
+  "neuron_id": 107134,
+  "neuron_name": "Fig3i_Rat_81",
+  "original_file_url": "https://neuromorpho.org/dableFiles/tamas/Source-Version/Fig3i_Rat_81.dat",
+  "original_format": "Neurolucida.dat",
+  "species": "rat",
+  "standard_swc_url": "https://neuromorpho.org/dableFiles/tamas/CNG%20version/Fig3i_Rat_81.CNG.swc",
+  "thumbnail_url": "https://neuromorpho.org/images/imageFiles/Tamas/Fig3i_Rat_81.png"
+}

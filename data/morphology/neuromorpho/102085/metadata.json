@@ -1,0 +1,141 @@
+{
+  "archive": "Nandi",
+  "brain_region": [
+    "hippocampus",
+    "dentate gyrus",
+    "granule layer",
+    "outer"
+  ],
+  "cell_type": [
+    "principal cell",
+    "granule",
+    "mature"
+  ],
+  "download_items": [
+    {
+      "downloaded_now": true,
+      "filename": "01042017e6-000.CNG.swc",
+      "kind": "standard",
+      "path": "01042017e6-000.CNG.swc",
+      "reason": null,
+      "url": "https://neuromorpho.org/dableFiles/nandi/CNG%20version/01042017e6-000.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/102085"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/102085"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/102085"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 54.0031,
+    "bif_ampl_remote": 42.362,
+    "branch_Order": 4.0,
+    "contraction": 0.883804,
+    "depth": 115.12,
+    "diameter": 2.60005,
+    "eucDistance": 196.417,
+    "fractal_Dim": 1.03979,
+    "fragmentation": 198.0,
+    "height": 164.359,
+    "length": 1116.79,
+    "n_bifs": 7.0,
+    "n_branch": 15.0,
+    "n_stems": 1.0,
+    "neuron_id": 102085,
+    "neuron_name": "01042017e6-000",
+    "partition_asymmetry": 0.571429,
+    "pathDistance": 252.892,
+    "pk_classic": 2.0,
+    "soma_Surface": 399.001,
+    "surface": 9083.6,
+    "volume": 5909.05,
+    "width": 105.111
+  },
+  "measurement_url": "https://neuromorpho.org/api/morphometry/id/102085",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/102085"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/102085"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/102085"
+      }
+    },
+    "age_classification": "young adult",
+    "age_scale": "Day",
+    "archive": "Nandi",
+    "attributes": "Diameter, 3D, Angles",
+    "brain_region": [
+      "hippocampus",
+      "dentate gyrus",
+      "granule layer",
+      "outer"
+    ],
+    "cell_type": [
+      "principal cell",
+      "granule",
+      "mature"
+    ],
+    "corrected_value": null,
+    "corrected_xy": null,
+    "corrected_z": null,
+    "deposition_date": "2018-06-20",
+    "domain": "Dendrites, Soma, No Axon",
+    "experiment_condition": [
+      "Frs2, 3-double mutant"
+    ],
+    "gender": "Male/Female",
+    "magnification": "60",
+    "max_age": "25.0",
+    "max_weight": "18.0",
+    "min_age": "21.0",
+    "min_weight": "15.0",
+    "neuron_id": 102085,
+    "neuron_name": "01042017e6-000",
+    "note": "",
+    "objective_type": "dry",
+    "original_format": "Neurolucida.dat",
+    "physical_Integrity": "Dendrites Complete",
+    "png_url": "http://neuromorpho.org/images/imageFiles/Nandi/01042017e6-000.png",
+    "protocol": "in vitro",
+    "reconstruction_software": "Neurolucida",
+    "reference_doi": [
+      "10.1016/j.neuroscience.2017.11.017"
+    ],
+    "reference_pmid": [
+      "29155277"
+    ],
+    "reported_value": null,
+    "reported_xy": null,
+    "reported_z": null,
+    "scientific_name": null,
+    "shrinkage_corrected": "Not Corrected",
+    "shrinkage_reported": "Not Reported",
+    "slicing_direction": "horizontal",
+    "slicing_thickness": "300",
+    "soma_surface": "399.001",
+    "species": "mouse",
+    "stain": "Alexa Fluor 594",
+    "strain": "h-GFAP-Cre;Frs2(fl/fl);Frs3-/-",
+    "surface": "9083.6",
+    "upload_date": "2018-11-27",
+    "volume": "5909.05"
+  },
+  "neuron_id": 102085,
+  "neuron_name": "01042017e6-000",
+  "original_file_url": "https://neuromorpho.org/dableFiles/nandi/Source-Version/01042017e6-000.dat",
+  "original_format": "Neurolucida.dat",
+  "species": "mouse",
+  "standard_swc_url": "https://neuromorpho.org/dableFiles/nandi/CNG%20version/01042017e6-000.CNG.swc",
+  "thumbnail_url": "https://neuromorpho.org/images/imageFiles/Nandi/01042017e6-000.png"
+}

@@ -1,0 +1,139 @@
+{
+  "archive": "Santhakumar",
+  "brain_region": [
+    "hippocampus",
+    "dentate gyrus",
+    "granule layer"
+  ],
+  "cell_type": [
+    "Non-fast spiking",
+    "basket",
+    "interneuron"
+  ],
+  "download_items": [
+    {
+      "downloaded_now": true,
+      "filename": "5-27-11cell1-nonFS-BC.CNG.swc",
+      "kind": "standard",
+      "path": "5-27-11cell1-nonFS-BC.CNG.swc",
+      "reason": null,
+      "url": "https://neuromorpho.org/dableFiles/santhakumar/CNG%20version/5-27-11cell1-nonFS-BC.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/10036"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/10036"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/10036"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 79.96,
+    "bif_ampl_remote": 76.0,
+    "branch_Order": 11.0,
+    "contraction": 0.8,
+    "depth": 181.97,
+    "diameter": 0.17,
+    "eucDistance": 338.58,
+    "fractal_Dim": 1.03,
+    "fragmentation": 6375.0,
+    "height": 463.48,
+    "length": 7894.35,
+    "n_bifs": 51.0,
+    "n_branch": 106.0,
+    "n_stems": 4.0,
+    "neuron_id": 10036,
+    "neuron_name": "5-27-11cell1-nonFS-BC",
+    "partition_asymmetry": 0.43,
+    "pathDistance": 933.9,
+    "pk_classic": 2.03,
+    "soma_Surface": 1386.5,
+    "surface": 4514.72,
+    "volume": 233.23,
+    "width": 480.99
+  },
+  "measurement_url": "https://neuromorpho.org/api/morphometry/id/10036",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/10036"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/10036"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/10036"
+      }
+    },
+    "age_classification": "young adult",
+    "age_scale": "Day",
+    "archive": "Santhakumar",
+    "attributes": "No Diameter, 3D, Angles",
+    "brain_region": [
+      "hippocampus",
+      "dentate gyrus",
+      "granule layer"
+    ],
+    "cell_type": [
+      "Non-fast spiking",
+      "basket",
+      "interneuron"
+    ],
+    "corrected_value": null,
+    "corrected_xy": null,
+    "corrected_z": null,
+    "deposition_date": "2013-05-20",
+    "domain": "Dendrites, Soma, Axon",
+    "experiment_condition": [
+      "Not reported"
+    ],
+    "gender": "Male",
+    "magnification": "60",
+    "max_age": "27.0",
+    "max_weight": "Not Reported",
+    "min_age": "25.0",
+    "min_weight": "Not Reported",
+    "neuron_id": 10036,
+    "neuron_name": "5-27-11cell1-nonFS-BC",
+    "note": null,
+    "objective_type": "water",
+    "original_format": "Neurolucida.dat",
+    "physical_Integrity": "Dendrites & Axon Complete",
+    "png_url": "http://neuromorpho.org/images/imageFiles/Santhakumar/5-27-11cell1-nonFS-BC.png",
+    "protocol": "in vitro",
+    "reconstruction_software": "Neurolucida",
+    "reference_doi": [
+      "10.1152/jn.00891.2012"
+    ],
+    "reference_pmid": [
+      "23324316"
+    ],
+    "reported_value": null,
+    "reported_xy": null,
+    "reported_z": null,
+    "scientific_name": "rattus norvegicus",
+    "shrinkage_corrected": "",
+    "shrinkage_reported": "Not Reported",
+    "slicing_direction": "horizontal",
+    "slicing_thickness": "300",
+    "soma_surface": "1386.5",
+    "species": "rat",
+    "stain": "biocytin",
+    "strain": "Wistar",
+    "surface": "4514.72",
+    "upload_date": "2014-05-30",
+    "volume": "233.23"
+  },
+  "neuron_id": 10036,
+  "neuron_name": "5-27-11cell1-nonFS-BC",
+  "original_file_url": "https://neuromorpho.org/dableFiles/santhakumar/Source-Version/5-27-11cell1-nonFS-BC.dat",
+  "original_format": "Neurolucida.dat",
+  "species": "rat",
+  "standard_swc_url": "https://neuromorpho.org/dableFiles/santhakumar/CNG%20version/5-27-11cell1-nonFS-BC.CNG.swc",
+  "thumbnail_url": "https://neuromorpho.org/images/imageFiles/Santhakumar/5-27-11cell1-nonFS-BC.png"
+}

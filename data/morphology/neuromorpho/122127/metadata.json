@@ -1,0 +1,139 @@
+{
+  "archive": "MouseLight",
+  "brain_region": [
+    "cerebellum",
+    "vermis",
+    "paramedian lobule"
+  ],
+  "cell_type": [
+    "principal cell",
+    "Purkinje",
+    "projection"
+  ],
+  "download_items": [
+    {
+      "downloaded_now": true,
+      "filename": "AA0990.CNG.swc",
+      "kind": "standard",
+      "path": "AA0990.CNG.swc",
+      "reason": null,
+      "url": "https://neuromorpho.org/dableFiles/mouselight/CNG%20version/AA0990.CNG.swc"
+    }
+  ],
+  "download_mode": "standard",
+  "links": {
+    "measurements": {
+      "href": "http://neuromorpho.org/api/morphometry/id/122127"
+    },
+    "persistence_vector": {
+      "href": "http://neuromorpho.org/api/pvec/id/122127"
+    },
+    "self": {
+      "href": "http://neuromorpho.org/api/neuron/id/122127"
+    }
+  },
+  "measurement": {
+    "bif_ampl_local": 71.6219,
+    "bif_ampl_remote": 68.097,
+    "branch_Order": 22.0,
+    "contraction": 0.929043,
+    "depth": 197.13,
+    "diameter": 0.25,
+    "eucDistance": 1415.66,
+    "fractal_Dim": 1.08819,
+    "fragmentation": 876.0,
+    "height": 773.883,
+    "length": 10994.4,
+    "n_bifs": 237.0,
+    "n_branch": 476.0,
+    "n_stems": 2.0,
+    "neuron_id": 122127,
+    "neuron_name": "AA0990",
+    "partition_asymmetry": 0.527359,
+    "pathDistance": 2069.23,
+    "pk_classic": 2.0,
+    "soma_Surface": 12.376,
+    "surface": 8635.02,
+    "volume": 539.689,
+    "width": 1409.68
+  },
+  "measurement_url": "https://neuromorpho.org/api/morphometry/id/122127",
+  "neuron": {
+    "_links": {
+      "measurements": {
+        "href": "http://neuromorpho.org/api/morphometry/id/122127"
+      },
+      "persistence_vector": {
+        "href": "http://neuromorpho.org/api/pvec/id/122127"
+      },
+      "self": {
+        "href": "http://neuromorpho.org/api/neuron/id/122127"
+      }
+    },
+    "age_classification": "adult",
+    "age_scale": "Month",
+    "archive": "MouseLight",
+    "attributes": "No Diameter, 3D, Angles",
+    "brain_region": [
+      "cerebellum",
+      "vermis",
+      "paramedian lobule"
+    ],
+    "cell_type": [
+      "principal cell",
+      "Purkinje",
+      "projection"
+    ],
+    "corrected_value": null,
+    "corrected_xy": null,
+    "corrected_z": null,
+    "deposition_date": "2019-10-02",
+    "domain": "Dendrites, Soma, Axon",
+    "experiment_condition": [
+      "Control"
+    ],
+    "gender": "Female",
+    "magnification": "40",
+    "max_age": "2.0",
+    "max_weight": "25.0",
+    "min_age": "2.0",
+    "min_weight": "25.0",
+    "neuron_id": 122127,
+    "neuron_name": "AA0990",
+    "note": "",
+    "objective_type": "oil",
+    "original_format": "Janelia Workstation-Large Volume Viewer.swc",
+    "physical_Integrity": "Dendrites Moderate, Axon Complete",
+    "png_url": "http://neuromorpho.org/images/imageFiles/MouseLight/AA0990.png",
+    "protocol": "in vivo",
+    "reconstruction_software": "Janelia Workstation-Large Volume Viewer",
+    "reference_doi": [
+      "10.2139/ssrn.3330557"
+    ],
+    "reference_pmid": [
+      "-8"
+    ],
+    "reported_value": null,
+    "reported_xy": null,
+    "reported_z": null,
+    "scientific_name": "",
+    "shrinkage_corrected": "",
+    "shrinkage_reported": "Not Reported",
+    "slicing_direction": "coronal",
+    "slicing_thickness": "25",
+    "soma_surface": "12.376",
+    "species": "mouse",
+    "stain": "enhanced green fluorescent protein",
+    "strain": "C57BL/6",
+    "surface": "8635.02",
+    "upload_date": "2019-12-13",
+    "volume": "539.689"
+  },
+  "neuron_id": 122127,
+  "neuron_name": "AA0990",
+  "original_file_url": "https://neuromorpho.org/dableFiles/mouselight/Source-Version/AA0990.swc",
+  "original_format": "Janelia Workstation-Large Volume Viewer.swc",
+  "species": "mouse",
+  "standard_swc_url": "https://neuromorpho.org/dableFiles/mouselight/CNG%20version/AA0990.CNG.swc",
+  "thumbnail_url": "https://neuromorpho.org/images/imageFiles/MouseLight/AA0990.png"
+}

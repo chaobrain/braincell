@@ -2,7 +2,9 @@
 
 - [Cerebellum](cerebellum/README.md): morphology, MOD sources, parameter tables
   and original reference files grouped by cell model.
-- `morphology/`: generic morphology and IO fixtures, including simulator benchmark `n144.swc`.
+- `morphology/`: generic morphology and IO fixtures, including simulator benchmark `n144.swc`, and
+  [`neuromorpho/`](morphology/neuromorpho/README.md), seven NeuroMorpho.Org neurons (CC BY 4.0)
+  for the offline NeuroMorpho regression.
 - `mechanisms/testing/`: synthetic MOD fixtures for numerical validation.
 - `reference_traces/`: fixed reference input/output traces.
 

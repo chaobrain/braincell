@@ -61,9 +61,11 @@ from braincell.filter import (
     RegionAnchors,
     RootLocation,
     StepSamples,
+    SubtreeRegion,
     Terminals,
     at,
     branch_in,
+    branch_range,
 )
 from braincell.mech import StateProbe
 from braincell.morph._testing import (
@@ -1013,6 +1015,229 @@ class IndexHeldDeclarationTest(unittest.TestCase):
                 else:
                     expected = _declaration_fingerprint(declare(cold_rebuild(morpho), mask))
                     self.assertEqual(_declaration_fingerprint(cell), expected)
+
+
+def _index_probe_leak():
+    return mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-70.0 * u.mV, name="leak")
+
+
+def _painted_branches(cell: Cell) -> list:
+    return sorted({cell.morpho.branch(index=cell.cvs[int(c)].branch_id).name for c in cell.channels["leak"].cv_id})
+
+
+def _paint_stale(index: str) -> str:
+    return rf"Cell\.paint\(\.\.\.\) at cell_test\.py:\d+ selects .*by default {index}, .*removed or moved"
+
+
+def _place_stale(index: str) -> str:
+    return rf"Cell\.place\(\.\.\.\) at cell_test\.py:\d+ selects .*by default {index}, .*removed or moved"
+
+
+class IndexExpressionDeclarationTest(unittest.TestCase):
+    """MORPH-17: an expression that names a branch by index raises once an edit shifts the indices.
+
+    Tree T: soma 0, dend 1, d1 2, d2 3, axon 4; removing ``dend`` (and its
+    children) leaves soma 0, axon 1. Tree U: soma 0, dend 1, axon 2,
+    apical 3. The expression is evaluated again at every rebuild, but the
+    integer is not: it used to name whichever branch had that index now.
+    """
+
+    def test_a_branch_slice_painted_before_a_removal_raises_at_init_state(self):
+        morpho = make_tree_t()
+        cell = Cell(morpho, cv_policy=CVPerBranch())
+        cell.paint(BranchSlice(1, 0.0, 1.0), _index_probe_leak())
+        self.assertEqual(_painted_branches(cell), ["dend"])
+
+        morpho.remove("dend")
+
+        with self.assertRaisesRegex(ValueError, _paint_stale("index 1")):
+            cell.init_state()
+        self.assertFalse(cell._initialized)
+        self.assertIs(cell.morpho, morpho)
+        with self.assertRaisesRegex(ValueError, _paint_stale("index 1")):
+            cell.n_cv
+        # The recovery the message names: a new Cell, naming the branch.
+        fresh = Cell(morpho, cv_policy=CVPerBranch())
+        fresh.paint(branch_in("name", "axon"), _index_probe_leak())
+        fresh.init_state()
+        self.assertEqual(_painted_branches(fresh), ["axon"])
+
+    def test_a_removal_after_init_raises_after_reset(self):
+        morpho = make_tree_t()
+        cell = Cell(morpho, cv_policy=CVPerBranch())
+        cell.paint(BranchSlice(1, 0.0, 1.0), _index_probe_leak())
+        cell.init_state()
+
+        morpho.remove("dend")
+
+        # The initialized Cell runs its snapshot, where index 1 is still dend.
+        self.assertEqual(_painted_branches(cell), ["dend"])
+        cell.reset()
+        with self.assertRaisesRegex(ValueError, _paint_stale("index 1")):
+            cell.n_cv
+        with self.assertRaisesRegex(ValueError, _paint_stale("index 1")):
+            cell.init_state()
+        self.assertFalse(cell._initialized)
+
+    def test_a_point_by_index_raises_after_a_move(self):
+        # reattach("dend", parent="apical") gives soma 0, axon 1, apical 2,
+        # dend 3: at(1, 0.5) would put the synapse on the axon.
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.place(at(1, 0.5), _index_probe_synapse())
+        self.assertEqual(_placed_branches(cell), [(1, "dend")])
+
+        morpho.reattach("dend", parent="apical")
+
+        with self.assertRaisesRegex(ValueError, _place_stale("index 1")):
+            cell.n_cv
+        with self.assertRaisesRegex(ValueError, _place_stale("index 1")):
+            cell.init_state()
+
+    def test_a_subtree_by_index_raises_after_a_removal(self):
+        morpho = make_tree_t()
+        cell = Cell(morpho, cv_policy=CVPerBranch())
+        cell.paint(SubtreeRegion(1), _index_probe_leak())
+        self.assertEqual(_painted_branches(cell), ["d1", "d2", "dend"])
+
+        morpho.remove("d2")
+
+        with self.assertRaisesRegex(ValueError, _paint_stale("index 1")):
+            cell.n_cv
+
+    def test_every_way_of_declaring_by_index_is_checked(self):
+        # cell.branch[1] declares branch_in("index", [1]); composite
+        # expressions report every index they hold.
+        declarations = (
+            ("branch view paint", lambda cell: cell.branch[1].paint(_index_probe_leak()), _paint_stale("index 1")),
+            (
+                "composite paint",
+                lambda cell: cell.paint(branch_in("type", "soma") | BranchSlice([3, 2], 0.0, 0.5), _index_probe_leak()),
+                _paint_stale(r"indices 3, 2"),
+            ),
+            (
+                "index range paint",
+                lambda cell: cell.paint(branch_range("index", (2, 3), closed="both"), _index_probe_leak()),
+                _paint_stale(r"indices 2, 3"),
+            ),
+            (
+                "anchors on a slice",
+                lambda cell: cell.place(RegionAnchors(BranchSlice(2, 0.0, 1.0), 0.5), _index_probe_synapse()),
+                _place_stale("index 2"),
+            ),
+            (
+                "population view",
+                lambda cell: cell[[0]].place(at(2, 0.5), _index_probe_synapse()),
+                _place_stale("index 2"),
+            ),
+            ("location view", lambda cell: cell.loc(at(2, 0.5)).place(_index_probe_synapse()), _place_stale("index 2")),
+            (
+                "per member",
+                lambda cell: cell.place([at("axon", 0.5), at(2, 0.5)], _index_probe_synapse()),
+                _place_stale("index 2"),
+            ),
+        )
+        for name, declare, pattern in declarations:
+            with self.subTest(name):
+                morpho = make_tree_u()
+                cell = Cell(morpho, pop_size=2)
+                declare(cell)
+                cell.n_cv
+                morpho.remove("dend")
+                with self.assertRaisesRegex(ValueError, pattern):
+                    cell.n_cv
+
+    def test_declarations_by_index_survive_an_append(self):
+        # Appending keeps every default index (counter-example: no false alarm).
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.paint(BranchSlice(2, 0.0, 1.0), _index_probe_leak())
+        cell.place(at(3, 0.5), _index_probe_synapse())
+        before = (_painted_branches(cell), _placed_branches(cell))
+
+        morpho.soma.extra = _extra_branch()
+
+        self.assertEqual(cell.n_cv, 5)
+        self.assertEqual((_painted_branches(cell), _placed_branches(cell)), before)
+        self.assertEqual(before, (["axon"], [(3, "apical")]))
+        cell.init_state()
+
+    def test_declarations_by_name_are_not_checked(self):
+        # Names follow the edit, or raise KeyError (MORPH-2b), never ValueError.
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.paint(branch_in("name", "dend"), _index_probe_leak())
+        cell.paint(SubtreeRegion("axon"), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV, name="ax"))
+        cell.place(at("apical", 0.5), _index_probe_synapse())
+        self.assertIsNone(cell.paint_rules[-1]._index_basis)
+        self.assertIsNone(cell.place_rules[-1]._index_basis)
+
+        morpho.remove("dend")
+
+        self.assertEqual(_placed_branches(cell), [(2, "apical")])
+        cell.init_state()
+        self.assertEqual(cell.channels["ax"].cv_id.tolist(), [1])
+
+    def test_a_declaration_after_the_removal_is_rejected_and_rolled_back(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.place(at(2, 0.5), _index_probe_synapse())
+        rules = cell.paint_rules, cell.place_rules
+
+        morpho.remove("dend")
+
+        with self.assertRaisesRegex(ValueError, _place_stale("index 2")):
+            cell.paint(branch_in("name", "axon"), _index_probe_leak())
+        with self.assertRaisesRegex(ValueError, _place_stale("index 2")):
+            cell.place(at("axon", 0.5), _index_probe_synapse())
+        self.assertEqual((cell.paint_rules, cell.place_rules), rules)
+
+    def test_an_index_declared_after_the_removal_is_valid(self):
+        # The recorded revision is the one at paint(): the index is current.
+        morpho = make_tree_t()
+        morpho.remove("dend")
+        cell = Cell(morpho, cv_policy=CVPerBranch())
+
+        cell.paint(BranchSlice(1, 0.0, 1.0), _index_probe_leak())
+
+        self.assertEqual(_painted_branches(cell), ["axon"])
+
+    def test_an_index_on_a_morphology_reassigned_away_is_not_checked(self):
+        first = make_tree_u()
+        cell = Cell(first)
+        cell.place(at(2, 0.5), _index_probe_synapse())
+        cell.morphology = make_tree_u()
+
+        first.remove("dend")
+
+        self.assertEqual(_placed_branches(cell), [(2, "axon")])
+
+    def test_every_edit_case_keeps_or_rejects_an_index_declaration(self):
+        # Rows that keep every default index keep the declaration where it
+        # was (by name) and match a Cell declared with it on the cold
+        # rebuild; rows that move indices raise ValueError. Nothing else.
+        def declare(morpho: Morphology) -> Cell:
+            cell = Cell(morpho, cv_policy=MaxCVLen(40.0 * u.um))
+            cell.paint(BranchSlice(4, 0.0, 1.0), _index_probe_leak())
+            cell.place(at(2, 1.0) + at(4, 0.5), _index_probe_synapse())
+            return cell
+
+        def landing(cell: Cell) -> tuple:
+            return _painted_branches(cell), [name for _, name in _placed_branches(cell)]
+
+        for case in EDIT_CASES:
+            with self.subTest(case.name):
+                morpho = make_tree_t()
+                cell = declare(morpho)
+                self.assertEqual(landing(cell), (["axon"], ["d1", "axon"]))
+                case.edit(morpho)
+                if case.reindex:
+                    with self.assertRaisesRegex(ValueError, _paint_stale("index 4")):
+                        cell.n_cv
+                else:
+                    self.assertEqual(landing(cell), (["axon"], ["d1", "axon"]))
+                    fresh = declare(cold_rebuild(morpho))
+                    self.assertEqual(_declaration_fingerprint(cell), _declaration_fingerprint(fresh))
 
 
 def _first_member(locset):

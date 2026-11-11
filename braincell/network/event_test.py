@@ -640,6 +640,118 @@ class VoltageCrossingIndexHeldLocationTest(unittest.TestCase):
         np.testing.assert_array_equal(detector.cv_id, [2])
 
 
+class VoltageCrossingIndexExpressionTest(unittest.TestCase):
+    """MORPH-17: a detector at ``at(2, 0.5)`` raises once an edit shifts index 2.
+
+    Tree U: soma 0, dend 1, axon 2, apical 3, one CV per branch; removing
+    ``dend`` puts apical on index 2, which the expression used to follow.
+    """
+
+    _STALE = r"VoltageCrossingSource location selects AtLocation\(branch=2.*by default index 2, .*removed or moved"
+
+    @staticmethod
+    def _synapse():
+        return bc.mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms, e=0.0 * u.mV)
+
+    def test_the_next_cv_read_after_a_removal_raises(self) -> None:
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        detector = VoltageCrossingSource(cell, location=at(2, 0.5))
+        np.testing.assert_array_equal(detector.cv_id, [2])
+
+        morpho.remove("dend")
+
+        with self.assertRaisesRegex(ValueError, self._STALE):
+            detector.cv_id
+
+    def test_a_removal_before_init_is_still_reported_after_init(self) -> None:
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        detector = VoltageCrossingSource(cell, location=at(2, 0.5))
+
+        morpho.remove("dend")
+        cell.init_state()
+
+        with self.assertRaisesRegex(ValueError, self._STALE):
+            detector.cv_id
+
+    def test_a_removal_after_init_waits_for_reset(self) -> None:
+        for declared in ("before init", "on the snapshot"):
+            with self.subTest(declared):
+                morpho = make_tree_u()
+                cell = Cell(morpho)
+                detector = VoltageCrossingSource(cell, location=at(2, 0.5)) if declared == "before init" else None
+                cell.init_state()
+                if detector is None:
+                    detector = VoltageCrossingSource(cell, location=at(2, 0.5))
+
+                morpho.remove("dend")
+
+                np.testing.assert_array_equal(detector.cv_id, [2])
+                cell.reset()
+                with self.assertRaisesRegex(ValueError, self._STALE):
+                    detector.cv_id
+
+    def test_a_detector_by_index_survives_an_append(self) -> None:
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        detector = VoltageCrossingSource(cell, location=at(2, 0.5))
+
+        morpho.soma.extra = Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite")
+
+        np.testing.assert_array_equal(detector.cv_id, [2])
+
+    def test_a_connected_detector_raises_before_init(self) -> None:
+        # Without the check at init_state the Cell initialized and the first
+        # run raised, when a Cell owned by a Network can no longer reset.
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.place(at("soma", 0.5), self._synapse())
+        bc.connect("c", source=VoltageCrossingSource(cell, location=at(2, 0.5)), synapse=cell.synapses["s"])
+
+        morpho.remove("dend")
+
+        with self.assertRaisesRegex(ValueError, self._STALE):
+            cell.init_state()
+        self.assertFalse(cell._initialized)
+        # The recovery the message names: a new detector, connected in place of the old one.
+        cell.connections["c"].remove()
+        detector = VoltageCrossingSource(cell, location=at("axon", 0.5))
+        bc.connect("c2", source=detector, synapse=cell.synapses["s"])
+        cell.init_state()
+        np.testing.assert_array_equal(detector.cv_id, [1])
+
+    def test_a_network_with_a_connected_detector_initializes_no_cell(self) -> None:
+        morpho = make_tree_u()
+        pre, post = Cell(morpho), Cell(make_tree_u())
+        post.place(at("soma", 0.5), self._synapse())
+        network = bc.Network("n")
+        network.add_population("pre", pre)
+        target = network.add_population("post", post)
+        detector = VoltageCrossingSource(pre, location=at(2, 0.5), name="det")
+        network.connect("c", source=detector, synapse=target.synapses["s"], weight=0.1 * u.uS)
+
+        morpho.remove("dend")
+
+        with self.assertRaisesRegex(ValueError, self._STALE):
+            network.init_state()
+        self.assertFalse(pre._initialized)
+        self.assertFalse(post._initialized)
+
+    def test_a_connected_mask_detector_raises_before_init_too(self) -> None:
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.place(at("soma", 0.5), self._synapse())
+        detector = VoltageCrossingSource(cell, location=at("axon", 0.5).evaluate(morpho))
+        bc.connect("c", source=detector, synapse=cell.synapses["s"])
+
+        morpho.remove("dend")
+
+        with self.assertRaisesRegex(RuntimeError, r"VoltageCrossingSource location .*LocsetMask"):
+            cell.init_state()
+        self.assertFalse(cell._initialized)
+
+
 class ResolveCellLocationCvTest(unittest.TestCase):
     """The one place a presynaptic location becomes a CV id.
 

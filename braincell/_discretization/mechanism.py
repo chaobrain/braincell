@@ -32,6 +32,7 @@ import brainunit as u
 import numpy as np
 
 from braincell.filter import AllRegion, LocsetBatch, LocsetExpr, LocsetMask, RegionExpr
+from braincell.filter._index_refs import held_branch_indices
 from braincell.filter.cache import SelectionCache
 from braincell.mech import (
     CableProperty,
@@ -73,11 +74,20 @@ class PaintRule:
     origin : str or None
         ``<file>:<line>`` of the user code that called ``paint``, for error
         messages; ``None`` when unknown. Ignored by equality and hashing.
+    _index_basis : tuple of (Morphology, int) or None
+        For a region that names branches by default index
+        (``BranchSlice(1, ...)``, ``SubtreeRegion(1)``, ``branch_in("index",
+        ...)``; see :func:`~braincell.filter._index_refs.held_branch_indices`),
+        the morphology and revision at ``paint`` time, which the Cell
+        compares with the morphology's index watermark before every rebuild
+        (MORPH-17). ``None`` for a region that finds its branches otherwise.
+        Ignored by equality and hashing.
     """
 
     region: RegionExpr
     mechanism: CableProperty | Density
     origin: str | None = field(default=None, compare=False, repr=False)
+    _index_basis: tuple[Morphology, int] | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -96,11 +106,13 @@ class PlaceRule:
         ``<file>:<line>`` of the user code that called ``place``, for error
         messages; ``None`` when unknown. Ignored by equality and hashing.
     _index_basis : tuple of (Morphology, int) or None
-        For a resolved ``LocsetMask``/``LocsetBatch``, the morphology and
-        revision at ``place`` time. The mask holds default branch indices,
-        which a removal shifts; the Cell compares this revision with the
-        morphology's index watermark before every rebuild. ``None`` for a
-        locset expression, which is evaluated again at each rebuild.
+        For a resolved ``LocsetMask``/``LocsetBatch``, or a locset
+        expression that names branches by default index (``at(1, 0.5)``),
+        the morphology and revision at ``place`` time. Such indices are
+        shifted by a removal or a move; the Cell compares this revision with
+        the morphology's index watermark before every rebuild. ``None`` for
+        a locset expression that finds its branches by name or geometry,
+        which is evaluated again at each rebuild and follows an edit.
         Ignored by equality and hashing, so it never changes the
         discretization key.
     """
@@ -144,6 +156,31 @@ def missing_branch_name(morpho: Morphology, error: KeyError) -> str | None:
     if not isinstance(name, str) or any(view.name == name for view in morpho.branches):
         return None
     return name
+
+
+def moved_index_message(declaration: str, expression: object, revision: int, remedy: str) -> str:
+    """Say that ``declaration`` names branches by default indices an edit has since shifted (MORPH-17).
+
+    ``expression`` is the region or locset expression the declaration was
+    made with; its indices (:func:`~braincell.filter._index_refs.held_branch_indices`)
+    are those of morphology ``revision``. A removal or a move
+    (``Morphology.remove``, ``Morphology.reattach``) has moved the index
+    watermark past it, so evaluating the expression again would select
+    other branches. ``remedy`` says what the user can do instead, as a
+    clause the message continues ("Declare it on a new Cell").
+    """
+    indices = held_branch_indices(expression)
+    shown = ", ".join(str(index) for index in indices)
+    if len(indices) > 1:
+        held, still = f"indices {shown}", "no longer name the same branches"
+    else:
+        held, still = f"index {shown}", "no longer names the same branch"
+    return (
+        f"{declaration} selects {expression!r}, which names branches by default {held}, as numbered at "
+        f"morphology revision {revision}; a branch has since been removed or moved, so {held} {still}. "
+        f'{remedy}, naming the branches instead: e.g. at("axon", 0.5), branch_in("name", "axon") or '
+        'SubtreeRegion("axon").'
+    )
 
 
 @dataclass
@@ -249,6 +286,8 @@ def default_paint_rules() -> tuple[PaintRule, ...]:
 def normalize_paint_rules(
     region: RegionExpr,
     mechanisms: tuple[object, ...],
+    *,
+    morpho: Morphology | None = None,
 ) -> tuple[PaintRule, ...]:
     """Normalize one ``Cell.paint(...)`` call into paint rules.
 
@@ -259,6 +298,10 @@ def normalize_paint_rules(
     mechanisms : tuple of object
         Candidate mechanism declarations. Each item must be a
         :class:`CableProperty` or :class:`Density`.
+    morpho : Morphology or None, optional
+        The Cell's morphology at declaration time. When given and
+        ``region`` names branches by default index, each rule records it
+        with its current revision (``PaintRule._index_basis``).
 
     Returns
     -------
@@ -279,10 +322,13 @@ def normalize_paint_rules(
         raise ValueError("Cell.paint(...) expects at least one mechanism.")
 
     origin = caller_origin()
+    index_basis = None
+    if morpho is not None and held_branch_indices(region):
+        index_basis = (morpho, morpho.revision)
     rules: list[PaintRule] = []
     for mechanism in mechanisms:
         if isinstance(mechanism, (CableProperty, Density)):
-            rules.append(PaintRule(region=region, mechanism=mechanism, origin=origin))
+            rules.append(PaintRule(region=region, mechanism=mechanism, origin=origin, _index_basis=index_basis))
             continue
         raise TypeError(
             "Cell.paint(...) mechanisms must be CableProperty or Density "
@@ -313,8 +359,9 @@ def normalize_place_rule(
         Whether ``locset`` is a :class:`LocsetBatch` with one row per member.
     morpho : Morphology or None, optional
         The Cell's morphology at declaration time. When given and
-        ``locset`` is a resolved mask, the rule records it with its current
-        revision (``PlaceRule._index_basis``).
+        ``locset`` is a resolved mask or an expression that names branches
+        by default index, the rule records it with its current revision
+        (``PlaceRule._index_basis``).
 
     Returns
     -------
@@ -351,6 +398,8 @@ def normalize_place_rule(
     index_basis = None
     if morpho is not None and isinstance(locset, (LocsetMask, LocsetBatch)):
         require_existing_branches(locset, morpho)
+        index_basis = (morpho, morpho.revision)
+    elif morpho is not None and held_branch_indices(locset):
         index_basis = (morpho, morpho.revision)
     return PlaceRule(
         locset=locset,

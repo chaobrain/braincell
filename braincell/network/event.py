@@ -558,7 +558,10 @@ class VoltageCrossingSource(EventSource):
         A resolved ``LocsetMask`` holds default branch indices: they stay
         valid when branches are appended, but once a branch is removed or
         moved, :attr:`cv_id` raises ``RuntimeError`` rather than watch
-        another branch.
+        another branch. An expression that names its branch by index, such
+        as ``at(1, 0.5)``, does not follow such an edit either: :attr:`cv_id`
+        raises ``ValueError``. A Cell with a connection from such a detector
+        raises the same error at ``init_state``, before initializing.
     threshold : brainunit.Quantity, optional
         Explicit voltage threshold, or the owning Cell's V_th when omitted.
     direction : str, optional
@@ -598,6 +601,7 @@ class VoltageCrossingSource(EventSource):
         name: str | None = None,
     ) -> None:
         from braincell.filter import RootLocation
+        from braincell.filter._index_refs import held_branch_indices
 
         root = getattr(cells, "root", cells)
         population_indices = getattr(cells, "population_indices", None)
@@ -660,8 +664,11 @@ class VoltageCrossingSource(EventSource):
         self._cv_ids = np.tile(location_cv_ids, n_population)
         self._grid_generation = root._view_generation
         # A resolved mask holds default branch indices of the Cell's tree at
-        # this revision; an expression is evaluated again on every refresh.
-        self._index_basis = None if hasattr(location, "evaluate") else root._index_basis()
+        # this revision, and so does an expression that names branches by
+        # index (MORPH-17); any other expression is evaluated again on every
+        # refresh and follows edits.
+        holds_indices = not hasattr(location, "evaluate") or held_branch_indices(location)
+        self._index_basis = root._index_basis() if holds_indices else None
 
     @property
     def size(self) -> int:
@@ -696,14 +703,9 @@ class VoltageCrossingSource(EventSource):
         # A detector is a continuous location declaration, not a saved CV View.
         _ = self.cells._discretization
         if self._grid_generation != self.cells._view_generation:
-            basis = self._index_basis
-            if self.cells._held_indices_moved(basis):
-                raise RuntimeError(
-                    f"VoltageCrossingSource location is a resolved {type(self.location).__name__}, whose branch "
-                    f"indices are those of morphology revision {basis[1]}; a branch has since been removed or "
-                    "moved, so they no longer name the same branches. Recreate the detector with a location "
-                    'expression such as at("axon", 0.5).'
-                )
+            error = self._moved_location_error()
+            if error is not None:
+                raise error
             cv_ids = _resolve_detector_location_cvs(self.cells, self.location)
             n_location = int(np.max(self._location_indices)) + 1
             if len(cv_ids) != n_location:
@@ -711,6 +713,35 @@ class VoltageCrossingSource(EventSource):
             self._cv_ids = cv_ids[self._location_indices]
             self._grid_generation = self.cells._view_generation
         return np.array(self._cv_ids, copy=True)
+
+    def _moved_location_error(self) -> Exception | None:
+        """The error to raise if an edit has shifted the branch indices :attr:`location` holds, else ``None``.
+
+        ``RuntimeError`` for a resolved mask (MORPH-16), ``ValueError`` for
+        an expression that names branches by index (MORPH-17). Read by
+        :attr:`cv_id`, and by ``Cell.init_state`` for a detector connected
+        to the Cell, before it initializes.
+        """
+        basis = self._index_basis
+        if not self.cells._held_indices_moved(basis):
+            return None
+        if hasattr(self.location, "evaluate"):
+            from braincell._discretization.mechanism import moved_index_message
+
+            return ValueError(
+                moved_index_message(
+                    "VoltageCrossingSource location",
+                    self.location,
+                    basis[1],
+                    "Recreate the detector, and connect the new one in place of this one",
+                )
+            )
+        return RuntimeError(
+            f"VoltageCrossingSource location is a resolved {type(self.location).__name__}, whose branch "
+            f"indices are those of morphology revision {basis[1]}; a branch has since been removed or "
+            "moved, so they no longer name the same branches. Recreate the detector with a location "
+            'expression such as at("axon", 0.5).'
+        )
 
     def current_event_count(self, source_index):
         """Return current-boundary crossing values for selected detector rows."""

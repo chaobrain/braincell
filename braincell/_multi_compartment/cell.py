@@ -77,6 +77,7 @@ from braincell._discretization.mechanism import (
     merge_paint_rules,
     merge_place_rules,
     missing_branch_name,
+    moved_index_message,
     normalize_paint_rules,
     normalize_place_rule,
 )
@@ -90,6 +91,7 @@ from braincell._discretization.base import (
     build_discretization,
 )
 from braincell.filter import AllRegion, LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask, at
+from braincell.filter._index_refs import held_branch_indices
 from braincell.network.event import EventOutputCollection, _CellSpikeSource
 from braincell.network.recording import (
     RecordingSpec,
@@ -354,7 +356,10 @@ class _CellFacade:
         it records the branches it named: a region recording declared before
         a branch was appended includes that branch. A selection of CVs
         (``cv[...]``) cannot be made again on other CVs, and
-        ``init_state`` raises ``RuntimeError`` naming the recording.
+        ``init_state`` raises ``RuntimeError`` naming the recording. A
+        region or location that names a branch by index (``cell.branch[1]``,
+        ``cell.on(BranchSlice(1, 0.0, 1.0))``) is not followed through a
+        removal or a move of a branch: ``init_state`` raises ``ValueError``.
         """
         return self._view_root._add_recording(
             RecordingSpec(
@@ -1741,9 +1746,24 @@ class Cell(_CellFacade, HHTypedNeuron):
         TypeError
             If no mechanism is given, or an argument has the wrong type.
         ValueError
-            If a region is given without mechanisms.
+            If a region is given without mechanisms, or if an earlier
+            declaration names branches by an index that an edit has since
+            shifted (see Notes).
         RuntimeError
             After :meth:`init_state`.
+
+        Notes
+        -----
+        A region that names branches by default index -- ``BranchSlice(1,
+        ...)``, ``SubtreeRegion(1)``, ``branch_in("index", ...)``, or a view
+        such as ``cell.branch[1]`` -- is evaluated again at every rebuild,
+        but the index does not follow an edit: once a branch is removed or
+        moved (``Morphology.remove``, ``Morphology.reattach``), the next
+        rebuild (the first grid read, or ``init_state``) raises
+        ``ValueError`` rather than paint other branches. Appending a branch,
+        or replacing or transforming one in place, keeps every index. Name
+        the branches (``branch_in("name", "dend")``, ``SubtreeRegion("dend")``)
+        to follow edits.
         """
         self._raise_if_initialized("paint()")
         if not args:
@@ -1753,7 +1773,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         else:
             region, mechanisms = args[0], args[1:]
         previous_rules = self._paint_rules
-        self._paint_rules = merge_paint_rules(previous_rules, normalize_paint_rules(region, mechanisms))
+        self._paint_rules = merge_paint_rules(
+            previous_rules, normalize_paint_rules(region, mechanisms, morpho=self._morpho)
+        )
         try:
             # Paint is a declaration. Keep the derived grid current immediately
             # so init_state() can consume it without a hidden policy pass.
@@ -1792,14 +1814,16 @@ class Cell(_CellFacade, HHTypedNeuron):
         TypeError
             If the locset is omitted on a cable cell.
         ValueError
-            On a lumped cell, if a location is not the CV midpoint.
+            On a lumped cell, if a location is not the CV midpoint. Also if
+            an earlier declaration's expression names branches by an index
+            that an edit has since shifted (see Notes).
         IndexError
             If a :class:`~braincell.filter.LocsetMask` or
             :class:`~braincell.filter.LocsetBatch` names a branch the
             morphology does not have.
         RuntimeError
-            If an earlier declaration holds branch indices that an edit has
-            since shifted (see Notes).
+            If an earlier declaration holds a resolved mask whose branch
+            indices an edit has since shifted (see Notes).
 
         A call that raises leaves the Cell's declarations as they were.
 
@@ -1813,7 +1837,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         ``init_state``) raises ``RuntimeError`` rather than place the
         mechanisms on other branches. A location expression such as
         ``at("axon", 0.5)`` is evaluated again at every rebuild and follows
-        the edit.
+        the edit. An expression that names its branch by index, such as
+        ``at(1, 0.5)``, is evaluated again too, but the index does not
+        follow the edit: after a removal or a move the next rebuild raises
+        ``ValueError``.
         """
         self._raise_if_initialized("place()")
         # A user-supplied mask holds branch indices the Cell must watch; the
@@ -1976,6 +2003,11 @@ class Cell(_CellFacade, HHTypedNeuron):
             :class:`~braincell.CVPerBranchList` policy -- was made before an
             edit of this morphology that shifted those indices (a branch
             removal or a move).
+        ValueError
+            If a :meth:`paint` or :meth:`place` expression that names
+            branches by default index (``BranchSlice(1, ...)``,
+            ``at(1, 0.5)``, ``cell.branch[1]``) was declared before such an
+            edit.
         """
         self._raise_if_initialized("discretize()")
         self._raise_if_branch_indices_moved()
@@ -2004,14 +2036,31 @@ class Cell(_CellFacade, HHTypedNeuron):
         integers would put the declaration on other branches without a word. Declarations made on another morphology object are not
         checked.
 
+        A paint or place expression that names branches by default index
+        (``BranchSlice(1, ...)``, ``at(1, 0.5)``, ``branch_in("index", ...)``)
+        records the same basis and is checked the same way (MORPH-17).
+
         Raises
         ------
+        ValueError
+            Naming the first such expression, its call site and its indices.
         RuntimeError
-            Naming the first such declaration.
+            Naming the first such mask or policy.
         """
+        new_cell = "Declare it on a new Cell"
+        for rule in self._paint_rules:
+            if self._held_indices_moved(rule._index_basis):
+                where = "" if rule.origin is None else f" at {rule.origin}"
+                raise ValueError(
+                    moved_index_message(f"Cell.paint(...){where}", rule.region, rule._index_basis[1], new_cell)
+                )
         for rule in self._place_rules:
             if self._held_indices_moved(rule._index_basis):
                 where = "" if rule.origin is None else f" at {rule.origin}"
+                if isinstance(rule.locset, LocsetExpr):
+                    raise ValueError(
+                        moved_index_message(f"Cell.place(...){where}", rule.locset, rule._index_basis[1], new_cell)
+                    )
                 raise RuntimeError(
                     f"Cell.place(...){where} was given a resolved {type(rule.locset).__name__}, whose branch "
                     f"indices are those of morphology revision {rule._index_basis[1]}; a branch has since been "
@@ -2358,7 +2407,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         if spec.name in self._recording_specs:
             raise ValueError(f"Cell already has a recording named {spec.name!r}.")
         target = spec.scope.target
-        index_basis = self._index_basis() if isinstance(target, (RegionMask, LocsetMask, LocsetBatch)) else None
+        index_basis = None
+        if isinstance(target, (RegionMask, LocsetMask, LocsetBatch)) or held_branch_indices(target):
+            # Resolved masks and expressions naming branches by index (MORPH-16, MORPH-17).
+            index_basis = self._index_basis()
         self._recording_bases[spec.name] = (self._morpho, self._morpho.revision, self._grid_fingerprint(), index_basis)
         self._recording_specs[spec.name] = spec
         self._compiled_recording_cache.clear()
@@ -2388,6 +2440,10 @@ class Cell(_CellFacade, HHTypedNeuron):
             be selected again: it was declared on CVs (``cv[...]``) or on
             nested selections and the grid changed, or on a resolved mask
             whose branch indices a removal or move has shifted.
+        ValueError
+            Likewise, naming the recording and its indices, if its expression
+            names branches by default index (``cell.on(BranchSlice(1, ...))``,
+            ``cell.branch[1]``) and a removal or move has shifted them.
         KeyError
             Naming the recording, if its expression names a branch the tree
             no longer has.
@@ -2417,6 +2473,10 @@ class Cell(_CellFacade, HHTypedNeuron):
                     "(cell.on(...), cell.loc(...))."
                 )
             if self._held_indices_moved(index_basis):
+                if not isinstance(target, (RegionMask, LocsetMask, LocsetBatch)):
+                    raise ValueError(
+                        moved_index_message(f"Recording {name!r}", target, index_basis[1], "Record on a new Cell")
+                    )
                 raise RuntimeError(
                     f"Recording {name!r} selects a resolved {type(target).__name__}, whose branch indices are "
                     f"those of morphology revision {index_basis[1]}; a branch has since been removed or moved, "
@@ -2447,11 +2507,22 @@ class Cell(_CellFacade, HHTypedNeuron):
         ``init_state`` calls this first, and ``Network.init_state`` calls it
         on every Cell before initializing any, so that an error leaves the
         whole Network declaring. It raises before changing anything.
+
+        A detector connected to this Cell whose location holds branch
+        indices that an edit has shifted raises here too (MORPH-17), rather
+        than at its first ``cv_id`` read after initialization; a connection
+        whose rows were all removed is skipped.
         """
         _ = self._discretization
         self._resolve_recordings()
-        if self._connection_store_cache is not None:
-            self._connection_store_cache.follow_synapses(self._get_synapse_store())
+        store = self._connection_store_cache
+        if store is not None:
+            for call in store._calls:
+                moved = getattr(call.source, "_moved_location_error", None)
+                error = None if moved is None else moved()
+                if error is not None and store.active[store._row_of_id[call.row_ids]].any():
+                    raise error
+            store.follow_synapses(self._get_synapse_store())
 
     def _compiled_recordings(self, dt) -> tuple:
         self._raise_if_not_initialized("compile recordings")

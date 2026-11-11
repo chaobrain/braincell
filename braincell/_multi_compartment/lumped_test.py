@@ -16,6 +16,7 @@
 """Lumped (point) Cells: ``Cell.point`` and ``cv_policy=Lumped()``."""
 
 import gc
+import re
 import unittest
 import warnings
 from unittest import mock
@@ -1249,6 +1250,233 @@ class ExternalInputOnCableCellTest(unittest.TestCase):
         cell.add_current_input("drive", drive)
         cell.run(dt=DT, duration=1.0 * u.ms)
         self.assertGreater(float(np.min(cell.V.value.to_decimal(u.mV))), -60.0)
+
+
+# ---------------------------------------------------------------------------
+# CELL-33: delta inputs -- add_delta_input and brainpy DeltaProj.
+# ---------------------------------------------------------------------------
+
+#: The 5 mV kick of CELL-33 acceptance 1.
+_KICK = 5.0 * u.mV
+
+
+def _resting_leak():
+    """Leak at its reversal: without input V stays at -65 mV on every solver."""
+    return bc.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-65.0 * u.mV)
+
+
+def _one_cv_cell(kind, solver, *, pop_size=1, hh=False):
+    if kind == "lumped":
+        cell = bc.Cell.point(pop_size, length=LENGTH, radius=RADIUS, V_init=-65.0 * u.mV, solver=solver)
+    else:
+        morphology = bc.Morphology.from_soma(length=LENGTH, radius=RADIUS)
+        cell = bc.Cell(morphology, pop_size=pop_size, cv_policy=bc.CVPerBranch(), V_init=-65.0 * u.mV, solver=solver)
+    cell.paint(AllRegion(), *(_mechanisms(True) if hh else (_resting_leak(),)))
+    return cell
+
+
+def _runnable_one_cv_cells(kind, **kwargs):
+    """``(solver, cell)`` for every registered integrator that can step ``kind``."""
+    for solver in bc.quad.list_integrators():
+        try:
+            cell = _one_cv_cell(kind, solver, **kwargs)
+        except ValueError:
+            # Only the cable-tree steps cannot advance a lumped cell.
+            if kind != "lumped" or solver not in {"staggered", "dhs_voltage"}:
+                raise
+            continue
+        yield solver, cell
+
+
+def _resting_single_compartment(solver):
+    class Model(bc.SingleCompartment):
+        def __init__(self):
+            super().__init__(
+                1, length=LENGTH, radius=RADIUS, V_initializer=braintools.init.Constant(-65.0 * u.mV), solver=solver
+            )
+            self.IL = bc.channel.IL(1, g_max=0.3 * u.mS / u.cm**2, E=-65.0 * u.mV)
+
+    model = Model()
+    model.init_state()
+    model.reset_state()
+    return model
+
+
+def _gates(cell):
+    """Every channel state of a one-CV cell, as plain arrays keyed by path."""
+    return {
+        str(path): np.asarray(u.get_mantissa(state.value))
+        for path, state in cell.states(brainstate.HiddenState).items()
+        if state is not cell.V
+    }
+
+
+def _kick_projection(post, weight):
+    return brainpy.state.DeltaProj(comm=_Dense(weight), post=post)
+
+
+class DeltaInputTest(unittest.TestCase):
+    """CELL-33: a delta input moves V on every path, at the end of the step as on SingleCompartment."""
+
+    def test_kick_matches_single_compartment_on_every_solver(self) -> None:
+        # Acceptance 1. On main the lumped cell (every solver) and the cable
+        # cell under "staggered" and "dhs_voltage" stayed at -65 mV.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            model = _resting_single_compartment("rk4")
+            model.add_delta_input("kick", _KICK)
+            with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                model.update()
+            expected = float(model.V.value.to_decimal(u.mV)[0])
+            self.assertAlmostEqual(expected, -60.0, places=12)
+            checked = {}
+            for kind in ("lumped", "cable"):
+                for solver, cell in _runnable_one_cv_cells(kind):
+                    with self.subTest(kind=kind, solver=solver):
+                        cell.init_state()
+                        cell.add_delta_input("kick", _KICK)
+                        with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                            cell.update()
+                        self.assertLessEqual(abs(float(cell.V.value.to_decimal(u.mV).reshape(-1)[0]) - expected), 1e-6)
+                        # A value is applied once and removed, as brainpy does.
+                        self.assertNotIn("kick", cell.delta_inputs)
+                        checked.setdefault(kind, []).append(solver)
+            self.assertEqual(len(checked["cable"]), len(bc.quad.list_integrators()))
+            self.assertEqual(len(checked["lumped"]), len(bc.quad.list_integrators()) - 2)
+
+    def test_kick_is_added_after_the_step_dynamics(self) -> None:
+        # The delta does not take part in the step it is applied in: V ends
+        # exactly 5 mV above the unkicked step and every gate is unchanged,
+        # on SingleCompartment and on every path.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for kind in ("lumped", "cable"):
+                for solver, plain in _runnable_one_cv_cells(kind, hh=True):
+                    with self.subTest(kind=kind, solver=solver):
+                        kicked = _one_cv_cell(kind, solver, hh=True)
+                        for cell in (plain, kicked):
+                            cell.init_state()
+                        kicked.add_delta_input("kick", _KICK)
+                        with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                            plain.update()
+                            kicked.update()
+                        np.testing.assert_allclose(
+                            kicked.V.value.to_decimal(u.mV) - plain.V.value.to_decimal(u.mV), 5.0, rtol=0, atol=1e-9
+                        )
+                        gates = _gates(plain)
+                        self.assertTrue(gates)
+                        for path, value in _gates(kicked).items():
+                            np.testing.assert_array_equal(value, gates[path], err_msg=path)
+
+    def test_delta_projection_matches_single_compartment(self) -> None:
+        # Acceptance 2: brainpy DeltaProj drives both models with the same raster.
+        raster = _raster(13)
+        weight = _weights(17) * 4.0 * u.mV
+
+        def drive(solver):
+            model = _single_compartment(hh=True, solver=solver)
+            expected = _run_projection(model, _kick_projection(model, weight), raster)
+            # The kicks make the cell fire, so the comparison is not trivial.
+            self.assertGreater(float(u.math.max(expected).to_decimal(u.mV)), 0.0)
+            cell = _point_cell(solver=solver)
+            return expected, _run_projection(cell, _kick_projection(cell, weight), raster)
+
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for solver, bound in _BOUNDS.items():
+                with self.subTest(solver=solver):
+                    expected, actual = drive(solver)
+                    self.assertEqual(actual.shape, expected.shape)
+                    self.assertLessEqual(_max_dv(actual, expected), bound)
+
+    def test_run_includes_a_delta_input_added_after_a_run(self) -> None:
+        # Acceptance 2: run() compiles its loop once; a delta input registered
+        # later must drop it (on main the cable "rk4" cell ignored it too).
+        def kick():
+            return 0.25 * u.mV
+
+        for kind, solver in (("lumped", "rk4"), ("cable", "rk4"), ("cable", "staggered")):
+            with self.subTest(kind=kind, solver=solver):
+                cell = _one_cv_cell(kind, solver)
+                cell.init_state()
+                cell.run(dt=DT, duration=1.0 * u.ms)
+                np.testing.assert_allclose(cell.V.value.to_decimal(u.mV), -65.0)
+                cell.add_delta_input("kick", kick)
+                cell.run(dt=DT, duration=1.0 * u.ms)
+                # 40 kicks of 0.25 mV, partly relaxed by the leak.
+                self.assertGreater(float(np.min(cell.V.value.to_decimal(u.mV))), -57.0)
+
+    def test_delta_that_would_reshape_V_raises(self) -> None:
+        # On main a cable cell's V took the broadcast shape: (3,) + (3, 1) -> (3, 3).
+        cases = (("lumped", "rk4", (N, 1)), ("cable", "rk4", (N,)), ("cable", "staggered", (N,)))
+        for kind, solver, shape in cases:
+            with self.subTest(kind=kind, solver=solver, shape=shape):
+                cell = _one_cv_cell(kind, solver, pop_size=N)
+                cell.init_state()
+                voltage_shape = cell.V.value.shape
+                cell.add_delta_input("kick", np.ones(shape) * u.mV)
+                with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                    with self.assertRaisesRegex(ValueError, r"kick.*" + re.escape(str(voltage_shape))):
+                        cell.update()
+                self.assertEqual(cell.V.value.shape, voltage_shape)
+        # Shapes that broadcast to V are accepted: one value per member, or
+        # per batch row and member.
+        members = np.arange(N, dtype=float)
+        accepted = (
+            ("lumped", "rk4", None, members * u.mV, -65.0 + members),
+            ("cable", "rk4", None, members[:, None] * u.mV, -65.0 + members[:, None]),
+            ("cable", "staggered", None, members[:, None] * u.mV, -65.0 + members[:, None]),
+            ("lumped", "rk4", 2, np.stack([members, 2 * members]) * u.mV, -65.0 + np.stack([members, 2 * members])),
+        )
+        for kind, solver, batch_size, value, expected in accepted:
+            with self.subTest(kind=kind, solver=solver, batch_size=batch_size, accepted=u.math.shape(value)):
+                cell = _one_cv_cell(kind, solver, pop_size=N)
+                cell.init_state(batch_size=batch_size)
+                cell.add_delta_input("kick", value)
+                with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                    cell.update()
+                np.testing.assert_allclose(cell.V.value.to_decimal(u.mV), expected, rtol=0.0, atol=1e-5)
+
+    def test_direct_solver_calls_and_the_call_operator_add_the_kick(self) -> None:
+        # The solver step itself adds the delta, not only update().
+        for kind, solver in (("lumped", "rk4"), ("cable", "rk4"), ("cable", "staggered"), ("cable", "dhs_voltage")):
+            for entry in ("solver", "call"):
+                with self.subTest(kind=kind, solver=solver, entry=entry):
+                    cell = _one_cv_cell(kind, solver)
+                    cell.init_state()
+                    cell.add_delta_input("kick", _KICK)
+                    with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                        if entry == "solver":
+                            bc.quad.get_integrator(solver)(cell)
+                        else:
+                            cell()
+                    np.testing.assert_allclose(cell.V.value.to_decimal(u.mV), -60.0, rtol=0.0, atol=1e-5)
+
+    def test_runtime_without_its_cell_reads_its_own_inputs(self) -> None:
+        # The weak reference is dead once the Cell is gone; the runtime then
+        # behaves as the SingleCompartment it is.
+        cell = _one_cv_cell("lumped", "rk4")
+        cell.init_state()
+        runtime = cell._lumped_runtime
+        runtime._owner_ref = None
+        cell.add_delta_input("ignored", _KICK)
+        runtime.add_delta_input("own", 2.0 * u.mV)
+        runtime.post_integral()
+        np.testing.assert_allclose(runtime.V.value.to_decimal(u.mV), -63.0)
+        self.assertNotIn("own", runtime.delta_inputs)
+        self.assertIn("ignored", cell.delta_inputs)
+
+    def test_reduction_model_rejects_delta_inputs(self) -> None:
+        # A reduction has no membrane voltage for the delta to move.
+        cell = bc.Cell(bc.Morphology.from_soma())
+        cell.add_reduction("reduced", bc.EventAccumulatorReduction(alpha=0.5, threshold=0.05))
+        cell.use_model("reduced")
+        cell.add_delta_input("kick", _KICK)
+        with self.assertRaisesRegex(ValueError, r"'reduced'.*kick"):
+            cell.init_state()
+        cell.delta_inputs.clear()
+        cell.init_state()
+        cell.add_delta_input("later", _KICK)
+        with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+            with self.assertRaisesRegex(ValueError, r"'reduced'.*later"):
+                cell.update()
 
 
 if __name__ == "__main__":

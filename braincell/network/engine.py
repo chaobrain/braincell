@@ -117,6 +117,18 @@ class Network:
         finally:
             self._cell_lifecycle_active = False
 
+    def _drop_compiled_loops(self) -> None:
+        """Drop the compiled run and update loops, keeping the delivery buffers.
+
+        A member Cell calls this when it registers a current or delta input
+        (brainpy projections): the loops traced its input tables once, so
+        they would miss the new input.
+        """
+        self._network_run_loop_cache.clear()
+        if self._prepared_run is not None:
+            setup, cached, dt = self._prepared_run
+            self._prepared_run = (setup, _CachedRunLoop(runner=None, delivery_state=cached.delivery_state), dt)
+
     def _mark_topology_changed(self) -> None:
         self._topology_version += 1
         self._run_setup_cache.clear()
@@ -555,6 +567,13 @@ class Network:
         if self._prepared_run is None:
             raise RuntimeError("Call Network.prepare_run() before update().")
         setup, cached, dt = self._prepared_run
+        if cached.runner is None:
+            # A Cell registered an input since the loop was traced.
+            cached = _CachedRunLoop(
+                runner=self._make_network_run_loop(setup=setup, dt=dt, delivery_state=cached.delivery_state),
+                delivery_state=cached.delivery_state,
+            )
+            self._prepared_run = (setup, cached, dt)
         self.trainables.materialize()
         first = self.populations[setup.ordered_population_names[0]].cell
         cached.runner(first.current_time, u.math.zeros((1,)) * dt)

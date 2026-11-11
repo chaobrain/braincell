@@ -73,9 +73,15 @@ class DeliveryBlock:
     flat_target_index: np.ndarray
     weight: object
     weight_indices: object = None
+    #: The consecutive lowered blocks of one queue this route concatenates
+    #: (CELL-18b); empty for a route over ``source`` alone.
+    members: tuple[ConnectionBlock, ...] = ()
 
     def __getattribute__(self, name):
         if name == "weight":
+            members = object.__getattribute__(self, "members")
+            if members:
+                return _concatenate_weights(members)
             source = object.__getattribute__(self, "source")
             if getattr(source, "weight_getter", None) is not None:
                 indices = object.__getattribute__(self, "weight_indices")
@@ -157,21 +163,23 @@ def delivery_blocks(
     -----
     Delay grouping is an operator-lowering choice only. Every returned block
     targeting the same synapse layout writes one shared ring buffer.
+
+    Without grouping, consecutive blocks of one queue (the blocks for one
+    ``(post_population, layout_id)``, in order) that read the same event
+    source and carry weights of the same unit and dtype become one route
+    whose contacts are the members' contacts in order (CELL-18b), so a step
+    runs one gather and one scatter for them instead of one per block. A
+    scatter adds its contacts one at a time in order, so each queue slot
+    and each zero-delay drive receives the same values in the same order
+    as from one route per block: the compiled step already added a later
+    block's zero-delay drive into the running sum contact by contact, as
+    XLA rewrites ``drive + zeros.at[i].add(x)`` into ``drive.at[i].add(x)``.
     """
+    if not group_by_delay:
+        return _merged_delivery_blocks(blocks)
     delivery = []
     for block in blocks:
         delay_steps = np.asarray(block.delay_steps, dtype=np.int32)
-        if not group_by_delay:
-            delivery.append(
-                DeliveryBlock(
-                    source=block,
-                    delay_steps=delay_steps,
-                    pre_index=np.asarray(block.pre_index, dtype=np.int32),
-                    flat_target_index=np.asarray(block.synapse_index, dtype=np.int32),
-                    weight=block.weight,
-                )
-            )
-            continue
         for delay_step in sorted(set(delay_steps.tolist())):
             contact_indices = np.nonzero(delay_steps == int(delay_step))[0]
             delivery.append(
@@ -185,6 +193,68 @@ def delivery_blocks(
                 )
             )
     return tuple(delivery)
+
+
+def _merged_delivery_blocks(blocks: tuple[ConnectionBlock, ...]) -> tuple[DeliveryBlock, ...]:
+    """One route per run of consecutive same-source blocks of a queue."""
+    runs: list[list[ConnectionBlock]] = []
+    open_run: dict[tuple[str, int], tuple[tuple, list[ConnectionBlock]]] = {}
+    for block in blocks:
+        key = (block.post_population, int(block.layout_id))
+        signature = (id(block.event_source), _weight_signature(block.weight))
+        current = open_run.get(key)
+        if current is not None and current[0] == signature:
+            current[1].append(block)
+            continue
+        run = [block]
+        runs.append(run)
+        open_run[key] = (signature, run)
+
+    delivery = []
+    for run in runs:
+        first = run[0]
+        if len(run) == 1:
+            delivery.append(
+                DeliveryBlock(
+                    source=first,
+                    delay_steps=np.asarray(first.delay_steps, dtype=np.int32),
+                    pre_index=np.asarray(first.pre_index, dtype=np.int32),
+                    flat_target_index=np.asarray(first.synapse_index, dtype=np.int32),
+                    weight=first.weight,
+                )
+            )
+            continue
+        delivery.append(
+            DeliveryBlock(
+                source=first,
+                delay_steps=np.concatenate([np.asarray(block.delay_steps, dtype=np.int32) for block in run]),
+                pre_index=np.concatenate([np.asarray(block.pre_index, dtype=np.int32) for block in run]),
+                flat_target_index=np.concatenate([np.asarray(block.synapse_index, dtype=np.int32) for block in run]),
+                weight=None,
+                members=tuple(run),
+            )
+        )
+    return tuple(delivery)
+
+
+def _weight_signature(weight) -> tuple:
+    """Routes concatenate weights only when no value changes on the way."""
+    if weight is None:
+        return (object(),)
+    unit = u.get_unit(weight) if isinstance(weight, u.Quantity) else None
+    return (type(weight) is u.Quantity, unit, np.dtype(u.get_mantissa(weight).dtype))
+
+
+def _concatenate_weights(members: tuple[ConnectionBlock, ...]):
+    """The members' per-contact weights, read now, end to end."""
+    weights = [member.weight for member in members]
+    mantissas = [
+        jnp.broadcast_to(jnp.asarray(u.get_mantissa(weight)), (len(member.pre_index),))
+        for member, weight in zip(members, weights)
+    ]
+    if isinstance(weights[0], u.Quantity):
+        return u.Quantity(jnp.concatenate(mantissas), u.get_unit(weights[0]))
+    return jnp.concatenate(mantissas)
 
 
 def slice_weight(weight, indices: np.ndarray):

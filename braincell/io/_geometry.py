@@ -44,6 +44,7 @@ __all__ = [
     "bboxes_intersect_xy",
     "constant_z",
     "contour_center",
+    "contour_is_collinear",
     "contour_stack_center",
     "contour_stack_to_centroid",
     "contour_to_centroid",
@@ -322,6 +323,40 @@ def constant_z(contour: np.ndarray, *, tol: float = 1e-6) -> float | None:
     if np.any(np.abs(contour[1:, 2] - z0) > tol):
         return None
     return z0
+
+
+def contour_is_collinear(contour: np.ndarray, *, rtol: float = 1e-6) -> bool:
+    """Return whether a contour's points lie on one straight line.
+
+    Parameters
+    ----------
+    contour : numpy.ndarray
+        Shape ``(N, 3)`` xyz coordinates.
+    rtol : float, optional
+        Largest spread across the best-fit line, relative to the spread
+        along it, that still counts as a line.
+
+    Returns
+    -------
+    bool
+        ``True`` when the second singular value of the centred points is at
+        most ``rtol`` times the first, which includes a contour whose points
+        all coincide. Such a contour encloses no area and has no minor axis,
+        so it cannot be turned into a soma.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import numpy as np
+        >>> contour_is_collinear(np.array([[0.0, 0, 0], [2, 0, 0], [4, 0, 0]]))
+        True
+        >>> contour_is_collinear(np.array([[0.0, 0, 0], [4, 0, 0], [0, 4, 0]]))
+        False
+    """
+    contour = np.asarray(contour, dtype=float)
+    singular = np.linalg.svd(contour - contour.mean(axis=0), compute_uv=False)
+    return len(singular) < 2 or bool(singular[1] <= rtol * singular[0])
 
 
 def contour_center(contour: np.ndarray, *, num: int = 101) -> tuple[np.ndarray, np.ndarray]:

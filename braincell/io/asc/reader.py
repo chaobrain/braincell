@@ -14,6 +14,8 @@
 # ==============================================================================
 
 
+import codecs
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,6 +51,27 @@ _ANNOTATION_KEYS = {
 }
 
 
+class _AscInputError(Exception):
+    """Malformed ASC input; :meth:`AscReader.read` prefixes the file path.
+
+    Not a ``ValueError``, so that no ``except ValueError`` inside the reader
+    can swallow it on the way out.
+    """
+
+
+class _AscGroup(tuple):
+    """A parenthesized ASC group: a tuple that remembers the line of its ``(``."""
+
+    line_number: int
+
+    # The defaults let copy and pickle rebuild a group; they then restore
+    # line_number from the instance __dict__.
+    def __new__(cls, items=(), line_number: int = 0):
+        group = super().__new__(cls, items)
+        group.line_number = line_number
+        return group
+
+
 @dataclass(frozen=True)
 class _AscToken:
     kind: str
@@ -74,6 +97,12 @@ class _AscPoint:
 
 
 @dataclass(frozen=True)
+class _AscContour:
+    points: tuple[_AscPoint, ...]
+    line_number: int
+
+
+@dataclass(frozen=True)
 class _AscSegment:
     points: tuple[_AscPoint, ...]
     children: tuple["_AscSegment", ...]
@@ -92,15 +121,44 @@ class AscReader:
         source_path = Path(path)
         report = AscReport()
         try:
-            expressions = self._parse_document(source_path.read_text(), report)
+            text = self._decode(source_path.read_bytes(), report)
+            expressions = self._parse_document(text, report)
             contours, neurites = self._extract_blocks(expressions, report)
             morpho = self._build_morpho(contours, neurites, report, path=source_path)
-        except (OSError, UnicodeDecodeError) as exc:
+        except OSError as exc:
             raise ValueError(f"ASC import failed for {source_path}: {exc}") from exc
+        except _AscInputError as exc:
+            raise ValueError(f"ASC import failed for {source_path}: {exc}") from None
 
         if return_report:
             return morpho, report
         return morpho
+
+    def _decode(self, data: bytes, report: AscReport) -> str:
+        """Decode the file: UTF-8 without its BOM, else Latin-1 with a warning.
+
+        Every character of the ASC syntax is ASCII, so Latin-1 decodes any
+        byte string and only the text of strings and comments can come out
+        different. Line endings are normalized as text-mode reading does.
+        """
+        bom = len(codecs.BOM_UTF8) if data.startswith(codecs.BOM_UTF8) else 0
+        data = data[bom:]
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            text = data.decode("latin-1")
+            line_number = self._normalize_newlines(text[: exc.start]).count("\n") + 1
+            report.add_warning(
+                "syntax.encoding_fallback",
+                f"ASC file is not valid UTF-8 (byte 0x{data[exc.start]:02x} at offset {bom + exc.start}); "
+                "decoded it as Latin-1.",
+                line_number=line_number,
+            )
+        return self._normalize_newlines(text)
+
+    @staticmethod
+    def _normalize_newlines(text: str) -> str:
+        return text.replace("\r\n", "\n").replace("\r", "\n")
 
     def _parse_document(self, text: str, report: AscReport) -> tuple[object, ...]:
         tokens = self._tokenize(text, report.metadata)
@@ -198,7 +256,7 @@ class AscReader:
             items.append(item)
         if index >= len(tokens):
             raise ValueError(f"Unclosed {opener!r} at line {opener_token.line_number}.")
-        return tuple(items), index + 1
+        return _AscGroup(items, opener_token.line_number), index + 1
 
     def _parse_expression(self, tokens: tuple[_AscToken, ...], index: int) -> tuple[object, int]:
         token = tokens[index]
@@ -217,8 +275,8 @@ class AscReader:
         self,
         expressions: tuple[object, ...],
         report: AscReport,
-    ) -> tuple[tuple[tuple[_AscPoint, ...], ...], tuple[_AscSegment, ...]]:
-        contours: list[tuple[_AscPoint, ...]] = []
+    ) -> tuple[tuple[_AscContour, ...], tuple[_AscSegment, ...]]:
+        contours: list[_AscContour] = []
         neurites: list[_AscSegment] = []
         for expr in expressions:
             self._collect_metadata(expr, report.metadata)
@@ -228,8 +286,14 @@ class AscReader:
             block_kind = self._block_kind(expr)
             if block_kind == "soma":
                 points = tuple(self._iter_points(expr))
-                if points:
-                    contours.append(points)
+                if len(points) < 3:
+                    # NEURON drops such a contour; the cell would then get a
+                    # synthesized soma, which is harder to notice than an error.
+                    raise _AscInputError(
+                        f"CellBody contour at line {expr.line_number} has {len(points)} point"
+                        f"{'' if len(points) == 1 else 's'}; a contour needs at least 3"
+                    )
+                contours.append(_AscContour(points=points, line_number=expr.line_number))
                 continue
             if block_kind is None:
                 continue
@@ -299,14 +363,11 @@ class AscReader:
                 if spine_record is not None:
                     report.metadata.spines.append(spine_record)
                 continue
-            if self._is_point_expr(item):
+            if self._is_point_candidate(item):
+                point = self._tree_point(item)
                 if seen_children:
-                    report.add_warning(
-                        "syntax.point_after_children",
-                        "Ignoring ASC point that appeared after child branches had started.",
-                    )
-                    continue
-                points.append(self._point_from_expr(item))
+                    raise _AscInputError(f"point at line {point.line_number} follows child branches")
+                points.append(point)
                 continue
             if isinstance(item, tuple):
                 seen_children = True
@@ -411,7 +472,7 @@ class AscReader:
 
     def _build_morpho(
         self,
-        contours: tuple[tuple[_AscPoint, ...], ...],
+        contours: tuple[_AscContour, ...],
         neurites: tuple[_AscSegment, ...],
         report: AscReport,
         *,
@@ -424,7 +485,7 @@ class AscReader:
             # Cross the boundary into format-independent geometry once:
             # everything below works on (N, 3) xyz arrays, not _AscPoint.
             stacks = _geometry.group_contour_stacks(
-                tuple(np.asarray([point.xyz for point in contour], dtype=float) for contour in contours)
+                tuple(np.asarray([point.xyz for point in contour.points], dtype=float) for contour in contours)
             )
             if len(stacks) != 1:
                 raise ValueError(
@@ -432,7 +493,10 @@ class AscReader:
                     "Braincell currently supports exactly one soma."
                 )
             stack = stacks[0]
-            soma_branch, center, radius = self._soma_branch_from_stack(stack, path=path)
+            # One stack holds every contour in file order, so stack[0] is contours[0].
+            soma_branch, center, radius = self._soma_branch_from_stack(
+                stack, path=path, line_number=contours[0].line_number
+            )
             soma_bbox_xy = _geometry.loose_bbox_xy(stack)
         else:
             first_point = self._first_point(neurites)
@@ -595,9 +659,10 @@ class AscReader:
         stack: tuple[np.ndarray, ...],
         *,
         path: Path,
+        line_number: int,
     ) -> tuple[Branch, np.ndarray, float]:
         if len(stack) == 1:
-            points, radii, center = _geometry.contour_to_centroid(stack[0])
+            points, radii, center = self._single_contour_soma(stack[0], line_number=line_number)
         else:
             # A CellBody stack whose z layers are duplicated or non-monotonic is
             # malformed input, so _validate_soma_stack's ValueError propagates.
@@ -609,10 +674,21 @@ class AscReader:
                 points, radii = _geometry.contour_stack_to_centroid(stack)
                 center = _geometry.contour_stack_center(stack)
             except ValueError:
-                points, radii, center = _geometry.contour_to_centroid(stack[0])
+                points, radii, center = self._single_contour_soma(stack[0], line_number=line_number)
 
         branch = Soma.from_points(points=points * u.um, radii=radii * u.um)
         return branch, center, float(radii[len(radii) // 2])
+
+    def _single_contour_soma(
+        self,
+        contour: np.ndarray,
+        *,
+        line_number: int,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Sample one CellBody contour along its major axis, rejecting a line."""
+        if _geometry.contour_is_collinear(contour):
+            raise _AscInputError(f"CellBody contour at line {line_number} is degenerate: its points are collinear")
+        return _geometry.contour_to_centroid(contour)
 
     def _validate_soma_stack(
         self,
@@ -727,17 +803,65 @@ class AscReader:
         return "".join(char for char in value.lower() if char.isalnum())
 
     def _is_point_expr(self, expr: object) -> bool:
-        return isinstance(expr, tuple) and len(expr) == 4 and all(isinstance(item, (float, int)) for item in expr)
+        """Return whether *expr* reads as a point: ``(x y z d)``, optionally with one label."""
+        if not isinstance(expr, tuple) or len(expr) not in (4, 5):
+            return False
+        if len(expr) == 5 and not isinstance(expr[4], str):
+            return False
+        return all(isinstance(item, (float, int)) for item in expr[:4])
+
+    def _is_point_candidate(self, expr: object) -> bool:
+        """Return whether *expr*, an item of a tree, has to be a point: a group led by a number."""
+        return isinstance(expr, tuple) and len(expr) > 0 and isinstance(expr[0], (float, int))
+
+    def _tree_point(self, expr: _AscGroup) -> _AscPoint:
+        """Read a point of a tree, raising on anything but ``(x y z d)`` with finite values and ``d > 0``.
+
+        One trailing label symbol, which Neurolucida writes for some points
+        (``(0 5 0 1 S1)``), is allowed and ignored.
+        """
+        reason = self._invalid_point_reason(expr)
+        if reason is not None:
+            raise _AscInputError(f"invalid point at line {expr.line_number}: {reason}")
+        return self._point_from_expr(expr)
+
+    def _invalid_point_reason(self, expr: tuple[object, ...]) -> str | None:
+        n_numbers = next(
+            (index for index, item in enumerate(expr) if not isinstance(item, (float, int))),
+            len(expr),
+        )
+        if n_numbers < 4:
+            if n_numbers == len(expr):
+                return f"expected 4 numbers (x y z diameter), found {n_numbers}"
+            item = expr[n_numbers]
+            return f"expected 4 numbers (x y z diameter), found {self._describe_item(item)} at position {n_numbers + 1}"
+        if not self._is_point_expr(expr):
+            return f"expected 4 numbers (x y z diameter) and at most one label, found {len(expr)} items"
+        values = tuple(float(item) for item in expr[:4])
+        if not all(math.isfinite(value) for value in values):
+            return f"x, y, z and diameter must be finite, found ({' '.join(f'{value:g}' for value in values)})"
+        if values[3] <= 0.0:
+            return f"diameter must be positive, found {values[3]:g}"
+        return None
+
+    def _describe_item(self, item: object) -> str:
+        if isinstance(item, str):
+            return repr(item)
+        if item is _PIPE:
+            return "'|'"
+        if isinstance(item, _AscSpineBlock):
+            return "a spine block"
+        return "a nested list"
 
     def _point_from_expr(self, expr: object) -> _AscPoint:
-        if not isinstance(expr, tuple):
-            raise TypeError(f"_point_from_expr: expected tuple, got {type(expr).__name__!r}")
+        if not isinstance(expr, _AscGroup):
+            raise TypeError(f"_point_from_expr: expected a parsed group, got {type(expr).__name__!r}")
         return _AscPoint(
             x=float(expr[0]),
             y=float(expr[1]),
             z=float(expr[2]),
             diameter=max(float(expr[3]), 0.0),
-            line_number=0,
+            line_number=expr.line_number,
         )
 
     def _iter_points(self, expr: object):

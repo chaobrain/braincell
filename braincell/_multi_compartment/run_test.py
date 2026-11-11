@@ -251,7 +251,6 @@ class SplitCellRunTest(unittest.TestCase):
         np.testing.assert_allclose(node.g.value.to_decimal(u.uS), reference.g.value.to_decimal(u.uS), rtol=1e-12)
 
 
-
 class UpdateLoopTest(unittest.TestCase):
     """CELL-35: an ``update()`` loop matches ``run``, events on the first step included.
 

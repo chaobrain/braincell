@@ -486,12 +486,188 @@ class TreeDistanceRegion(_LengthRangeRegion):
 
 @dataclass(frozen=True, eq=False)
 class EuclideanDistanceRegion(_LengthRangeRegion):
+    """Select the cable whose straight-line distance from the soma lies in a range.
+
+    Parameters
+    ----------
+    minimum : brainunit.Quantity or None, optional
+        Smallest distance selected, a scalar length; ``None`` (default) for
+        no lower bound.
+    maximum : brainunit.Quantity or None, optional
+        Largest distance selected; ``None`` (default) for no upper bound.
+    closed : {'both', 'left', 'right', 'neither'}, optional
+        Which bounds are inclusive. It matters only where the distance is
+        constant over a stretch of cable, as on the soma, where it is 0: the
+        default ``"both"`` keeps the soma in
+        ``EuclideanDistanceRegion(maximum=50 * u.um)``.
+
+    Returns
+    -------
+    RegionMask
+        From :meth:`~RegionExpr.evaluate`: on every branch, the stretches
+        whose distance is within the range, normalized. A branch that bends
+        back towards the soma can contribute more than one interval.
+
+    Raises
+    ------
+    TypeError
+        At construction, if a bound is a bare number or not a length.
+    ValueError
+        At construction, if a bound is not a scalar, is negative, infinite
+        (use ``None`` for no bound) or NaN, if ``minimum > maximum``, or if
+        ``closed`` is not one of the four values. At evaluation (``select``,
+        ``Cell.paint``), if any branch of the tree has no 3-D points; the
+        message names up to five of them.
+
+    See Also
+    --------
+    TreeDistanceRegion : The distance along the tree instead.
+    RadiusRangeRegion : The same bounds on the local radius.
+
+    Notes
+    -----
+    The distance from a point is the shortest 3-D distance to the centre
+    lines of all soma branches (every segment of every ``"soma"`` branch),
+    and is 0 on the soma; a tree without a soma branch measures from its
+    root branch instead. This reference differs from
+    :meth:`braincell.Morphology.max_euclidean_distance`, which measures from
+    one point on the root branch. The straight line is never longer than
+    the path along the tree, so this region always contains the
+    :class:`TreeDistanceRegion` with the same maximum.
+
+    Each segment is a straight line, and its distance to each soma segment
+    is solved exactly (three quadratic pieces, by where the nearest point
+    lies), for all segments at once with NumPy; a morphology of about 700
+    branches and 40 000 segments takes well under a second. Moving or
+    rotating the whole tree does not change the region; scaling does.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> import numpy as np
+        >>> from braincell import Branch, Morphology
+        >>> from braincell.filter import EuclideanDistanceRegion
+        >>> soma = Branch.from_points(
+        ...     points=np.array([[0.0, 0.0, 0.0], [20.0, 0.0, 0.0]]) * u.um, radii=np.array([5.0, 5.0]) * u.um, type="soma"
+        ... )
+        >>> loop = Branch.from_points(  # out along x, across, and back towards the soma
+        ...     points=np.array([[20.0, 0.0, 0.0], [88.0, 0.0, 0.0], [88.0, 24.0, 0.0], [20.0, 24.0, 0.0]]) * u.um,
+        ...     radii=np.array([1.0, 1.0, 1.0, 1.0]) * u.um,
+        ...     type="basal_dendrite",
+        ... )
+        >>> tree = Morphology.from_root(soma, name="soma")
+        >>> tree.soma.loop = loop
+        >>> tree.select(EuclideanDistanceRegion(maximum=40 * u.um)).intervals
+        ((0, 0.0, 1.0), (1, 0.0, 0.25), (1, 0.8, 1.0))
+    """
+
     def _evaluate(
         self,
         morpho: Morphology,
         cache: SelectionCache | None = None,
     ) -> RegionMask:
-        raise NotImplementedError
+        branches = morpho.branches
+        if not morpho.has_full_point_geometry:
+            missing = [view.name for view in branches if view.branch.points_proximal is None]
+            shown = ", ".join(repr(name) for name in missing[:5])
+            more = f" and {len(missing) - 5} more" if len(missing) > 5 else ""
+            raise ValueError(
+                f"EuclideanDistanceRegion needs 3-D points on every branch; "
+                f"{len(missing)} branch(es) have none: {shown}{more}."
+            )
+        lo, hi, closed = self._bounds_um
+        reference_ids = sorted({view.index for view in branches if str(view.type) == "soma"} or {morpho.root.index})
+        references = []
+        for index in reference_ids:
+            branch = branches[index].branch
+            references.extend(
+                zip(
+                    np.asarray(branch.points_proximal.to_decimal(u.um), dtype=float),
+                    np.asarray(branch.points_distal.to_decimal(u.um), dtype=float),
+                )
+            )
+        intervals: list[tuple[int, float, float]] = []
+        if self._accepts(0.0):
+            # The distance is 0 over every reference branch: a plateau.
+            intervals.extend((index, 0.0, 1.0) for index in reference_ids)
+
+        # Every positive-length segment of every other branch, as one batch.
+        segment_branch, segment_x0, segment_x1, starts, steps = [], [], [], [], []
+        reference_set = set(reference_ids)
+        for index, view in enumerate(branches):
+            if index in reference_set:
+                continue
+            branch = view.branch
+            lengths = np.asarray(branch.lengths.to_decimal(u.um), dtype=float)
+            cumulative = np.cumsum(lengths)
+            x0 = np.concatenate(([0.0], cumulative[:-1])) / cumulative[-1]
+            x1 = cumulative / cumulative[-1]
+            x1[-1] = 1.0
+            keep = lengths > 0.0
+            proximal = np.asarray(branch.points_proximal.to_decimal(u.um), dtype=float)[keep]
+            segment_branch.append(np.full(int(keep.sum()), index))
+            segment_x0.append(x0[keep])
+            segment_x1.append(x1[keep])
+            starts.append(proximal)
+            steps.append(np.asarray(branch.points_distal.to_decimal(u.um), dtype=float)[keep] - proximal)
+        if not starts:
+            return RegionMask(helper.normalize_region_intervals(intervals))
+        segment_branch = np.concatenate(segment_branch)
+        segment_x0 = np.concatenate(segment_x0)
+        segment_x1 = np.concatenate(segment_x1)
+        starts = np.concatenate(starts)
+        steps = np.concatenate(steps)
+
+        def within(radius: float | None, strict: bool) -> np.ndarray | None:
+            # (2, n_references, n_segments): each reference segment's t-interval on each segment.
+            if radius is None:
+                return None
+            return np.stack(
+                [
+                    np.stack(helper._segment_distance_sublevel(starts, steps, a, b, radius, strict=strict))
+                    for a, b in references
+                ],
+                axis=1,
+            )
+
+        # Keep {d <= maximum} (< if the upper end is open); drop {d < minimum} (<= if the lower end is open).
+        keep = within(hi, strict=not helper._right_closed(closed))
+        drop = within(lo, strict=helper._left_closed(closed))
+        eps = helper.EPSILON
+        n = len(starts)
+
+        def covers(spans: np.ndarray) -> np.ndarray:
+            return np.any((spans[0] <= eps) & (spans[1] >= 1.0 - eps), axis=0)
+
+        def misses(spans: np.ndarray) -> np.ndarray:
+            return ~np.any(spans[1] - spans[0] > eps, axis=0)
+
+        whole = (np.ones(n, dtype=bool) if keep is None else covers(keep)) & (
+            np.ones(n, dtype=bool) if drop is None else misses(drop)
+        )
+        empty = (np.zeros(n, dtype=bool) if keep is None else misses(keep)) | (
+            np.zeros(n, dtype=bool) if drop is None else covers(drop)
+        )
+        for i in np.flatnonzero(whole & ~empty):
+            intervals.append((int(segment_branch[i]), float(segment_x0[i]), float(segment_x1[i])))
+        # Only segments with an interval end strictly inside them need the interval arithmetic.
+        for i in np.flatnonzero(~whole & ~empty):
+            kept = (
+                [(0, 0.0, 1.0)]
+                if keep is None
+                else [(0, float(t0), float(t1)) for t0, t1 in zip(keep[0, :, i], keep[1, :, i]) if t1 > t0]
+            )
+            if drop is None:
+                pieces = helper.normalize_region_intervals(kept)
+            else:
+                dropped = [(0, float(t0), float(t1)) for t0, t1 in zip(drop[0, :, i], drop[1, :, i]) if t1 > t0]
+                pieces = helper.difference_region_intervals(kept, dropped)
+            x0, x1 = float(segment_x0[i]), float(segment_x1[i])
+            for _, t0, t1 in pieces:
+                intervals.append((int(segment_branch[i]), x0 + t0 * (x1 - x0), x0 + t1 * (x1 - x0)))
+        return RegionMask(helper.normalize_region_intervals(intervals))
 
 
 @dataclass(frozen=True)

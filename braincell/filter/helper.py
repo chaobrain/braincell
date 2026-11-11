@@ -200,6 +200,126 @@ def _linear_piece_select(
     return (x0 + t_start * (x1 - x0), x0 + t_end * (x1 - x0))
 
 
+def _quadratic_sublevel(
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray,
+    t_lo: np.ndarray | float,
+    t_hi: np.ndarray | float,
+    *,
+    strict: bool,
+    scale: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Elementwise ``{t in [t_lo, t_hi] : a t^2 + b t + c <= 0}`` (``< 0`` if ``strict``), for ``a >= 0``.
+
+    Returns ``(lo, hi)``; the set is empty where ``hi <= lo``. A
+    coefficient smaller than ``1e-12 * scale`` counts as zero, so a nearly
+    flat quadratic is solved as linear and a nearly flat line as constant.
+    Roots use ``q = -(b + sign(b) sqrt(b^2 - 4ac)) / 2``, ``q / a`` and
+    ``c / q``, which avoids cancelling the two terms of the usual formula.
+    """
+    tiny = 1e-12 * scale
+    lo = np.full(a.shape, np.inf)
+    hi = np.full(a.shape, -np.inf)
+    quadratic = a > tiny
+    disc = b * b - 4.0 * a * c
+    real = quadratic & (disc >= 0.0)
+    root = np.sqrt(np.where(real, disc, 0.0))
+    q = -0.5 * (b + np.where(b >= 0.0, root, -root))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        r1 = q / np.where(quadratic, a, 1.0)
+        # q == 0 only when b == 0 and c == 0: a double root at 0.
+        r2 = np.where(q != 0.0, c / np.where(q != 0.0, q, 1.0), 0.0)
+    lo = np.where(real, np.minimum(r1, r2), lo)
+    hi = np.where(real, np.maximum(r1, r2), hi)
+    linear = ~quadratic & (np.abs(b) > tiny)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        crossing = -c / np.where(linear, b, 1.0)
+    lo = np.where(linear, np.where(b > 0.0, -np.inf, crossing), lo)
+    hi = np.where(linear, np.where(b > 0.0, crossing, np.inf), hi)
+    constant = ~quadratic & ~linear
+    inside = (c < 0.0) if strict else (c <= 0.0)
+    lo = np.where(constant, np.where(inside, -np.inf, np.inf), lo)
+    hi = np.where(constant, np.where(inside, np.inf, -np.inf), hi)
+    return np.maximum(lo, t_lo), np.minimum(hi, t_hi)
+
+
+def _segment_distance_sublevel(
+    starts: np.ndarray,
+    steps: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+    radius: float,
+    *,
+    strict: bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    """For each line segment ``p(t) = starts + t * steps``, ``t in [0, 1]``, where it is within ``radius`` of ``[a, b]``.
+
+    ``starts`` and ``steps`` are ``(n, 3)``; ``a`` and ``b`` one reference
+    segment's ends (``a == b`` is a point). The distance to a segment is
+    convex along a line, so each result is one ``t``-interval ``(lo, hi)``,
+    empty where ``hi <= lo``: the hull of three quadratic pieces, where the
+    nearest point is ``a``, inside ``[a, b]``, or ``b``. ``strict`` uses
+    ``< radius`` instead of ``<= radius``.
+    """
+    vv = np.einsum("ij,ij->i", steps, steps)
+    scale = np.maximum(vv, 1.0)
+    w = b - a
+    ww = float(w @ w)
+    d = starts - a
+    dd = np.einsum("ij,ij->i", d, d)
+    dv = np.einsum("ij,ij->i", d, steps)
+    r2 = radius * radius
+    if ww == 0.0:
+        return _quadratic_sublevel(vv, 2.0 * dv, dd - r2, 0.0, 1.0, strict=strict, scale=scale)
+    dw = d @ w
+    vw = steps @ w
+    # s(t) = s0 + ds t is the position of the nearest point of the infinite line through [a, b].
+    s0 = dw / ww
+    ds = vw / ww
+    rising, falling = ds > 0.0, ds < 0.0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t0 = np.where(ds != 0.0, -s0 / np.where(ds != 0.0, ds, 1.0), np.nan)
+        t1 = np.where(ds != 0.0, (1.0 - s0) / np.where(ds != 0.0, ds, 1.0), np.nan)
+    # Where ds == 0 the nearest point is the same for every t: one piece covers [0, 1], the others nothing.
+    before, after = s0 < 0.0, s0 > 1.0
+    within = ~before & ~after
+    a_lo = np.where(rising, 0.0, np.where(falling, t0, np.where(before, 0.0, 1.0)))
+    a_hi = np.where(rising, t0, np.where(falling, 1.0, np.where(before, 1.0, 0.0)))
+    b_lo = np.where(rising, t1, np.where(falling, 0.0, np.where(after, 0.0, 1.0)))
+    b_hi = np.where(rising, 1.0, np.where(falling, t1, np.where(after, 1.0, 0.0)))
+    m_lo = np.where(rising, t0, np.where(falling, t1, np.where(within, 0.0, 1.0)))
+    m_hi = np.where(rising, t1, np.where(falling, t0, np.where(within, 1.0, 0.0)))
+    e = starts - b
+    pieces = (
+        _quadratic_sublevel(
+            vv, 2.0 * dv, dd - r2, np.clip(a_lo, 0.0, 1.0), np.clip(a_hi, 0.0, 1.0), strict=strict, scale=scale
+        ),
+        _quadratic_sublevel(
+            vv,
+            2.0 * np.einsum("ij,ij->i", e, steps),
+            np.einsum("ij,ij->i", e, e) - r2,
+            np.clip(b_lo, 0.0, 1.0),
+            np.clip(b_hi, 0.0, 1.0),
+            strict=strict,
+            scale=scale,
+        ),
+        _quadratic_sublevel(
+            np.maximum(vv - vw * vw / ww, 0.0),
+            2.0 * (dv - dw * vw / ww),
+            dd - dw * dw / ww - r2,
+            np.clip(m_lo, 0.0, 1.0),
+            np.clip(m_hi, 0.0, 1.0),
+            strict=strict,
+            scale=scale,
+        ),
+    )
+    los = np.stack([piece[0] for piece in pieces])
+    his = np.stack([piece[1] for piece in pieces])
+    nonempty = his > los
+    return np.min(np.where(nonempty, los, np.inf), axis=0), np.max(np.where(nonempty, his, -np.inf), axis=0)
+
+
 def _left_closed(closed: str) -> bool:
     return closed in ("left", "both")
 

@@ -46,18 +46,6 @@ class SelectionCache:
     drops the stored masks rather than returning a stale answer. The cache
     holds a strong reference to the last morphology it saw, so an identity
     check cannot be fooled by a new tree reusing a freed address.
-
-    This class previously also carried ``euclidean_distance_to_root``,
-    reserved for :class:`~braincell.filter.EuclideanDistanceRegion`, which
-    still raises ``NotImplementedError``. Nothing ever wrote it. Whoever
-    implements that type should add the field it actually needs rather than
-    inherit a guess. :class:`~braincell.filter.RadiusRangeRegion` and
-    :class:`~braincell.filter.TreeDistanceRegion` need no field: the first
-    reads each branch's segment radii directly, and the second takes the
-    per-node tree distance from
-    :class:`braincell.morph._spatial.MorphologySpatialGeometry`, which it
-    builds once per evaluation; their masks are memoized like any other
-    expression's.
     """
 
     _masks: dict[object, object] = field(default_factory=dict, repr=False, compare=False)

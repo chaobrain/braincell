@@ -24,9 +24,6 @@ Three things are live and tested here:
 * *invalidation* — a memoized mask is dropped when the cache meets a
   different morphology, or the same morphology after any edit; every row
   of the morphology edit table is checked against a cold rebuild.
-
-The reserved surface is pinned too, so implementing the last reserved
-type without wiring the cache up fails loudly.
 """
 
 import unittest
@@ -53,7 +50,6 @@ from braincell.morph._testing import (
 )
 from braincell.filter.region import (
     EmptyRegion,
-    EuclideanDistanceRegion,
     RegionExpr,
     RegionMask,
     RegionSetOp,
@@ -284,7 +280,8 @@ class SelectionCacheEditTableTest(unittest.TestCase):
             with self.subTest(case.name):
                 # Every entry that reads segment lengths must see the stale replay.
                 with self.assertRaisesRegex(
-                    AssertionError, r"(?s)selection cache: .*\n  lengths.*\n  step samples.*\n  path distance"
+                    AssertionError,
+                    r"(?s)selection cache: .*\n  lengths.*\n  step samples.*\n  path distance.*\n  euclidean distance",
                 ):
                     assert_selection_fresh(self, case)
 
@@ -365,22 +362,6 @@ class SelectionCacheEditTableTest(unittest.TestCase):
         np.testing.assert_allclose(warm.branch_x, [0.9375, 0.3625, 0.7375, 0.375, 0.5], rtol=0, atol=1e-12)
         np.testing.assert_array_equal(edited.branch_id, [1, 1, 1, 1, 0])
         np.testing.assert_allclose(edited.branch_x, [0.05625, 0.36875, 0.68125, 0.99375, 0.5], rtol=0, atol=1e-12)
-
-
-class ReservedCacheConsumersTest(unittest.TestCase):
-    """The one expression that would populate the cache is unimplemented.
-
-    When it grows a real implementation it must also start filling the
-    matching ``SelectionCache`` dict — these assertions turn that into a
-    deliberate, visible edit rather than a silent omission.
-    """
-
-    def setUp(self) -> None:
-        self.tree = _soma_dend_tree()
-
-    def test_euclidean_distance_region_is_reserved(self) -> None:
-        with self.assertRaises(NotImplementedError):
-            EuclideanDistanceRegion(minimum=0.0 * u.um, maximum=10.0 * u.um).evaluate(self.tree)
 
 
 if __name__ == "__main__":

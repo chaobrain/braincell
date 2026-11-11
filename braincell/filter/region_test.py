@@ -28,6 +28,7 @@ from braincell import Branch, Morphology
 from braincell.filter._testing import (
     brute_force_mismatches,
     crossing_errors,
+    euclidean_distance_metric,
     fixture_morphologies,
     make_apical,
     make_soma,
@@ -40,6 +41,7 @@ from braincell.filter import (
     BranchInFilter,
     BranchRangeFilter,
     BranchSlice,
+    EuclideanDistanceRegion,
     RadiusRangeRegion,
     RegionMask,
     RegionSetOp,
@@ -826,6 +828,171 @@ class TreeDistanceRegionTest(unittest.TestCase):
         tree = make_tree_r()
         tree.scale(2.0)
         self.assertNotEqual(tree.select(region).intervals, before)
+
+
+def _tree_without_points(names: tuple[str, ...]) -> Morphology:
+    """A soma and one ``from_lengths`` child per name: no branch has 3-D points."""
+    from_lengths = lambda type_name: Branch.from_lengths(  # noqa: E731
+        lengths=np.array([10.0]) * u.um, radii=np.array([0.3, 0.3]) * u.um, type=type_name
+    )
+    tree = Morphology.from_root(from_lengths("soma"), name="soma")
+    for name in names:
+        tree.attach(parent="soma", child_name=name, child_branch=from_lengths("basal_dendrite"))
+    return tree
+
+
+class EuclideanDistanceRegionTest(unittest.TestCase):
+    """MORPH-8c: the cable whose straight-line distance from the soma's centre lines lies in a range."""
+
+    assertIntervalsClose = RadiusRangeRegionTest.assertIntervalsClose
+
+    def test_intervals_on_tree_r(self) -> None:
+        # dend leaves the soma's end straight, so the distance is 50x up to its corner. The axon's
+        # second leg is sqrt(40^2 + y^2) away and its third sqrt(x^2 + 40^2): it dips back under 45 um.
+        tree = make_tree_r()
+        select = lambda *args, **kwargs: tree.select(EuclideanDistanceRegion(*args, **kwargs)).intervals  # noqa: E731
+        root = np.sqrt(425.0)
+        self.assertIntervalsClose(
+            select(maximum=45 * u.um),
+            ((0, 0.0, 1.0), (1, 0.0, 0.5), (4, 0.0, (40 + root) / 120), (4, 1 - root / 120, 1.0)),
+        )
+        self.assertIntervalsClose(
+            select(minimum=45 * u.um),
+            ((1, 0.5, 1.0), (2, 0.0, 1.0), (3, 0.0, 1.0), (4, (40 + root) / 120, 1 - root / 120)),
+        )
+        self.assertEqual(select(maximum=0 * u.um), ((0, 0.0, 1.0),))
+        self.assertEqual(
+            select(minimum=0 * u.um, closed="neither"), ((1, 0.0, 1.0), (2, 0.0, 1.0), (3, 0.0, 1.0), (4, 0.0, 1.0))
+        )
+        self.assertEqual(tree.select(EuclideanDistanceRegion()), tree.select(AllRegion()))
+
+    def test_the_straight_line_is_never_longer_than_the_path(self) -> None:
+        tree = make_tree_r()
+        for radius in (10, 45, 90, 130):
+            with self.subTest(radius=radius):
+                difference = TreeDistanceRegion(maximum=radius * u.um) - EuclideanDistanceRegion(maximum=radius * u.um)
+                self.assertEqual(tree.select(difference).intervals, ())
+
+    def test_matches_brute_force_on_trees_r_and_r2(self) -> None:
+        bounds = ((None, 45.0), (45.0, None), (20.0, 50.0), (0.0, 0.0), (10.0, 70.0), (56.0, 57.0), (None, None))
+        samples = 200001
+        xs = np.linspace(0.0, 1.0, samples)
+        for second_soma in (False, True):
+            tree = make_tree_r(second_soma)
+            metric = euclidean_distance_metric(tree)
+            distances = {index: metric(tree, index, xs) for index in range(len(tree.branches))}
+            crossings = 0
+            for (lo, hi), closed in itertools.product(bounds, ("both", "left", "right", "neither")):
+                with self.subTest(second_soma=second_soma, lo=lo, hi=hi, closed=closed):
+                    mask = tree.select(EuclideanDistanceRegion(_um(lo), _um(hi), closed))
+                    self.assertEqual(
+                        brute_force_mismatches(
+                            tree, mask, metric, lo, hi, closed, samples=samples, metric_values=distances
+                        ),
+                        [],
+                    )
+                    checked, problems = crossing_errors(tree, mask, metric, lo, hi)
+                    self.assertEqual(problems, [])
+                    crossings += checked
+            self.assertGreater(crossings, 0)
+
+    def test_matches_brute_force_on_fixture_morphologies(self) -> None:
+        rng = np.random.default_rng(0)
+        xs = np.linspace(0.0, 1.0, 1001)
+        for name, tree in fixture_morphologies():
+            metric = euclidean_distance_metric(tree)
+            distances = {index: metric(tree, index, xs) for index in range(len(tree.branches))}
+            values = np.concatenate(list(distances.values()))
+            for _ in range(4):
+                lo, hi = sorted(rng.choice(values[values > 0], 2, replace=False))
+                with self.subTest(name, lo=lo, hi=hi):
+                    mask = tree.select(EuclideanDistanceRegion(lo * u.um, hi * u.um))
+                    self.assertEqual(
+                        brute_force_mismatches(
+                            tree, mask, metric, lo, hi, "both", samples=1001, metric_values=distances
+                        ),
+                        [],
+                    )
+
+    def test_a_tree_without_a_soma_measures_from_its_root_branch(self) -> None:
+        tree = Morphology.from_root(
+            Branch.from_points(
+                points=np.array([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]) * u.um,
+                radii=np.array([1.0, 1.0]) * u.um,
+                type="basal_dendrite",
+            ),
+            name="trunk",
+        )
+        tree.attach(
+            parent="trunk",
+            child_name="side",
+            child_branch=Branch.from_points(
+                points=np.array([[10.0, 0.0, 0.0], [10.0, 40.0, 0.0]]) * u.um,
+                radii=np.array([1.0, 1.0]) * u.um,
+                type="basal_dendrite",
+            ),
+        )
+        self.assertIntervalsClose(
+            tree.select(EuclideanDistanceRegion(maximum=10 * u.um)).intervals, ((0, 0.0, 1.0), (1, 0.0, 0.25))
+        )
+        # A lone soma is all reference: in at distance 0, out of any range above it.
+        soma = Morphology.from_root(make_tree_r().soma.branch, name="soma")
+        self.assertEqual(soma.select(EuclideanDistanceRegion(maximum=10 * u.um)).intervals, ((0, 0.0, 1.0),))
+        self.assertEqual(soma.select(EuclideanDistanceRegion(minimum=10 * u.um)).intervals, ())
+
+    def test_missing_3d_points_raise_at_select_and_at_paint(self) -> None:
+        stub = make_tree_r()
+        stub.attach(
+            parent="d1",
+            child_name="stub",
+            child_branch=Branch.from_lengths(
+                lengths=np.array([10.0]) * u.um, radii=np.array([0.3, 0.3]) * u.um, type="basal_dendrite"
+            ),
+        )
+        prefix = r"EuclideanDistanceRegion needs 3-D points on every branch; "
+        for label, tree, message in (
+            ("tree U", make_tree_u(), "4 branch(es) have none: 'soma', 'dend', 'axon', 'apical'."),
+            ("tree R and a stub", stub, "1 branch(es) have none: 'stub'."),
+            (
+                "six branches",
+                _tree_without_points(("b0", "b1", "b2", "b3", "b4")),
+                "6 branch(es) have none: 'soma', 'b0', 'b1', 'b2', 'b3' and 1 more.",
+            ),
+        ):
+            region = EuclideanDistanceRegion(0 * u.um, 50 * u.um)
+            with self.subTest(label):
+                with self.assertRaises(ValueError) as raised:
+                    tree.select(region)
+                self.assertEqual(str(raised.exception), prefix + message)
+                cell = braincell.Cell(tree, cv_policy=braincell.CVPerBranch())
+                with self.assertRaises(ValueError) as raised:
+                    cell.paint(region, braincell.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70 * u.mV))
+                self.assertEqual(str(raised.exception), prefix + message)
+
+    def test_construction_checks_the_bounds(self) -> None:
+        _assert_range_construction_checks(self, EuclideanDistanceRegion)
+
+    def test_value_semantics(self) -> None:
+        region = EuclideanDistanceRegion(maximum=45 * u.um)
+        self.assertEqual(region, EuclideanDistanceRegion(maximum=0.045 * u.mmeter))
+        self.assertEqual(hash(region), hash(EuclideanDistanceRegion(maximum=0.045 * u.mmeter)))
+        self.assertNotEqual(region, TreeDistanceRegion(maximum=45 * u.um))
+        self.assertEqual(pickle.loads(pickle.dumps(region)), region)
+
+    def test_rigid_transforms_keep_the_region_and_scaling_changes_it(self) -> None:
+        for region in (EuclideanDistanceRegion(maximum=45 * u.um), EuclideanDistanceRegion(20 * u.um, 50 * u.um)):
+            before = make_tree_r().select(region).intervals
+            for label, edit in (
+                ("translate", lambda tree: tree.translate(np.array([5.0, -3.0, 2.0]) * u.um)),
+                ("rotate", lambda tree: tree.rotate(40 * u.degree, axis=np.array([1.0, 2.0, 3.0]))),
+            ):
+                with self.subTest(region=region, edit=label):
+                    tree = make_tree_r()
+                    edit(tree)
+                    self.assertIntervalsClose(tree.select(region).intervals, before)
+            tree = make_tree_r()
+            tree.scale(2.0)
+            self.assertNotEqual(tree.select(region).intervals, before)
 
 
 class RegionModuleAllTest(unittest.TestCase):

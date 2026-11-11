@@ -80,6 +80,19 @@
 
 ### New Features
 
+- **`braincell.filter.EuclideanDistanceRegion(minimum, maximum, closed="both")`
+  selects the cable whose straight-line distance from the soma lies in a
+  range** (MORPH-8c). It was exported but raised `NotImplementedError`. The
+  distance is the shortest 3-D distance to the centre lines of all soma
+  branches (the root branch when there is no soma), 0 on the soma; this
+  differs from `Morphology.max_euclidean_distance`, which measures from one
+  point on the root branch. Branches are cut exactly where the distance
+  crosses a bound, and a branch that bends back towards the soma can give
+  several intervals. It contains the `TreeDistanceRegion` with the same
+  maximum. It needs 3-D points on every branch: otherwise `select` and
+  `Cell.paint` raise a `ValueError` that names up to five branches without
+  them. A 700-branch reconstruction (about 40 000 segments) evaluates in
+  well under a second.
 - **`braincell.filter.TreeDistanceRegion(minimum, maximum, closed="both")`
   selects the cable whose path distance from the soma lies in a range**
   (MORPH-8b). It was exported but raised `NotImplementedError`. The distance

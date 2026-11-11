@@ -220,6 +220,8 @@ class LumpedViewTwinTest(LumpedTwinTestCase):
                     "cell[2].spike": cell[2].spike,
                     "V_init": cell.V_init,
                     "V_th": cell.V_th,
+                    "cell[1:].V_th": cell[1:].V_th,
+                    "soma.V_init": cell.soma.V_init,
                     "cell[0] g_max": cell[0].channels["na"].g_max,
                     "soma g_max": cell.soma.channels["k"].g_max,
                 }
@@ -341,6 +343,7 @@ class LumpedNetworkTwinTest(LumpedTwinTestCase):
 
     def _network_twins(self, source=None):
         results = {}
+        self._post_cells = {}
         for kind in KINDS:
             pre_cell = _hh(kind, clamp=_clamp(delay=2.0, duration=6.0))
             post_cell = _hh(kind, synapse=True, clamp=_clamp(delay=1.0, duration=2.0, amplitudes=0.01 * u.nA))
@@ -348,6 +351,7 @@ class LumpedNetworkTwinTest(LumpedTwinTestCase):
             for name, make in OBSERVABLES.items():
                 post_cell.record(name, make())
             network = bc.Network(f"twin_{kind}")
+            self._post_cells[kind] = network, post_cell
             pre = network.add_population("pre", pre_cell)
             post = network.add_population("post", post_cell)
             spikes = pre.event_outputs["spike"] if source is None else source(pre_cell)
@@ -363,6 +367,11 @@ class LumpedNetworkTwinTest(LumpedTwinTestCase):
     def test_spike_source_and_synapse_target(self) -> None:
         with _float64():
             results = self._network_twins()
+            for network, post_cell in self._post_cells.values():
+                # reset_state clears the delivered events and the synapse state.
+                self.assertGreater(float(np.max(np.asarray(u.get_mantissa(post_cell.synapses["ampa"].g)))), 0.0)
+                network.reset_state()
+                self.assertFalse(np.any(np.asarray(u.get_mantissa(post_cell.synapses["ampa"].g))))
         lumped, cable = results["lumped"], results["cable"]
         for population in ("pre", "post"):
             self.assertSameEvents(lumped.events[population]["spike"], cable.events[population]["spike"])

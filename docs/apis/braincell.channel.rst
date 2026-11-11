@@ -193,6 +193,17 @@ Potassium-Calcium Channels
    Kca3p1_MA2025_BC
 
 
+Sodium-Potassium Pump
+---------------------
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+   NaKPump_Ca1999
+
+
 Sodium Channels
 ---------------
 

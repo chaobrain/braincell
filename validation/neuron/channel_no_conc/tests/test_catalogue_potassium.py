@@ -64,12 +64,15 @@ class PotassiumCatalogueTest(CatalogueAssertions, unittest.TestCase):
     def test_family_is_configured_or_listed(self):
         configured = {class_name(config) for config in CONFIGS}
         uncovered = FAMILY & set(UNCOVERED)
-        self.assertEqual(len(FAMILY), 39)
+        self.assertEqual(len(FAMILY), 40)
         self.assertEqual(len(CONFIGS), 31)
         self.assertEqual(configured | uncovered, FAMILY)
         self.assertEqual(
             uncovered,
-            {"KA1_HM1992", "KA2_HM1992", "KDR_Ba2002", "KK2A_HM1992", "KK2B_HM1992", "KNI_Ya1989", "K_Leak", "K_TM1991"},
+            {
+                "KA1_HM1992", "KA2_HM1992", "KDR_Ba2002", "KK2A_HM1992", "KK2B_HM1992", "KNI_Ya1989", "K_Leak",
+                "K_TM1991", "NaKPump_Ca1999",
+            },
         )
 
     def test_every_configuration_stays_within_its_limits(self):

@@ -91,8 +91,8 @@ def _prefix_kv_test_n_tau(self, V, K):
 class FamilyTableTest(unittest.TestCase):
     def test_the_family_is_in_the_tables(self):
         classes = family_classes()
-        self.assertEqual((len(classes), len(FAMILY_CONFIGS)), (39, 31))
-        self.assertIn("Kv1p5_MA2020_GrC", classes)  # potassium_sodium.py
+        self.assertEqual((len(classes), len(FAMILY_CONFIGS)), (40, 31))
+        self.assertLessEqual({"Kv1p5_MA2020_GrC", "NaKPump_Ca1999"}, set(classes))  # potassium_sodium.py
         self.assertEqual(set(ENTRIES), set(FAMILY_CONFIGS))
         # A class or configuration added to the family must join the family's tuples.
         self.assertEqual(classes, tuple(sorted(table.POTASSIUM_FAMILY_CLASSES)))

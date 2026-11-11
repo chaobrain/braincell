@@ -40,12 +40,27 @@ python -m pytest validation/neuron/cable/tests -q
 
 CI runs `validation/optim` and the benchmark scripts' tests in two tiers: modules marked `pytestmark = pytest.mark.slow` (more than about 25 s on their own) run only in the daily workflow, the rest on every pull request. A new test module there runs on every pull request unless you mark it slow.
 
+## What CI runs on a pull request
+
+A draft pull request runs no tests: its `ci-ok` fails until you mark it ready for review, which starts the run. On a ready pull request, the `changes` job selects the test jobs from the files it changes ([.github/ci_changes.py](https://github.com/chaobrain/braincell/blob/main/.github/ci_changes.py)), and `ci-ok` accepts a job it skipped:
+
+| Files the pull request changes | Jobs that run |
+| --- | --- |
+| `.github/`, `pyproject.toml`, `requirements*`, `setup.*`, `MANIFEST.in`, a `conftest.py`, `data/` | every job |
+| `braincell/` | every job |
+| `validation/neuron/` | `checks`, the two NEURON comparison jobs |
+| `benchmarks/` or another directory of `validation/` | `checks`, `test_linux_validation_benchmarks` |
+| anything else (`docs/`, `examples/`, `changelog.md`, ...) | `checks` |
+
+`checks` (pre-commit, the package build and the documentation build) always runs. `coverage` runs `pytest braincell/` on the latest JAX. Every job uses Python 3.13; the JAX floor (0.11.0), macOS and Windows run only in the daily workflow, which runs every job and also tests `main` (there is no run on `main` after a merge). To add a rule, edit `RUN_ALL` or `jobs()` in `ci_changes.py` and its `CASES`; the `changes` job runs `ci_changes.py --self-test` first.
+
 The NEURON comparison suites are tiered the same way, each suite in its own job (and so its own process):
 
 | Tier | CI job | What runs |
 | --- | --- | --- |
 | Every pull request (in `ci-ok`) | `test_linux_neuron_compare_cable` | `validation/neuron/cable/tests` |
 | Every pull request (in `ci-ok`) | `test_linux_neuron_compare_channel` | `validation/neuron/channel_no_conc/tests` and the shared `_clamp_test.py`, `_tolerance_test.py`, `_convergence_test.py`, `_mechanisms_test.py` under `validation/neuron/`, with `-m "not slow"`; then `validation/neuron/ion` with `-m "not slow"` in a separate process |
+| Daily run only | `test_linux` | `pytest braincell/` on the JAX floor (0.11.0) |
 | Daily run only | `test_macos`, `test_windows` | `pytest braincell/` on macOS and Windows (Python 3.13); kept out of pull requests to stay within the concurrent-job limit |
 | Daily run only | `slow_tests_neuron` | `-m slow` of `validation/neuron/channel_no_conc/tests` (the per-family `dt` convergence tests), then of `validation/neuron/ion` (the pool comparisons) in a separate process |
 

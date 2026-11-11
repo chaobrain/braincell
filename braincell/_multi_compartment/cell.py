@@ -1038,7 +1038,17 @@ class Cell(_CellFacade, HHTypedNeuron):
         (the default) selects ``"staggered"`` on a cable cell and
         ``"ralston2"`` on a lumped cell; a lumped cell rejects the cable-only
         ``"staggered"`` and ``"dhs_voltage"``. :attr:`solver_name` reports the
-        resolved name.
+        resolved name. Every name of :func:`braincell.quad.list_integrators`
+        advances a cable cell: a generic one (the explicit Runge-Kutta
+        methods, ``"exp_euler"``, ``"ind_exp_euler"``, ``"backward_euler"``,
+        ``"crank_nicolson"``) integrates ``V`` with the dependent mechanism
+        states, after which Markov channels and kinetic ions advance at the
+        new voltage through their own subsolver, in the staggered order.
+        ``"exp_euler"``, ``"backward_euler"`` and ``"crank_nicolson"`` solve
+        all states as one block per cell and reject point synapses at
+        :meth:`init_state` with ``ValueError``. ``"dhs_voltage"`` advances
+        ``V`` only. A callable is called as ``solver(cell)`` and owns the
+        whole step.
     subsolver : str or Callable or None
         Integrator for Markov channels and kinetic ions. Together with
         ``substeps=None``, ``None`` selects ``"backward_euler"``. A
@@ -3052,8 +3062,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         states together, and only reads the states of Markov channels and
         kinetic ions. These then advance at the new voltage, in the order
         the staggered schedule uses for them under
-        ``ion_channel_update_order``.
+        ``ion_channel_update_order``. An ion driven by its total current
+        reads it from a snapshot taken at the new voltage, as staggered
+        takes one before its mechanism phase; a synapse current carried by
+        the ion needs that snapshot.
         """
+        self.cache_ion_total_currents(cv_V)
         if self.ion_channel_update_order == "family":
             self._update_independent_ions(self._family_ion_nodes(), cv_V)
             self._update_independent_channels(self._family_channel_nodes(), cv_V)

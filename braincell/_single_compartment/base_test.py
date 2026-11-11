@@ -714,6 +714,53 @@ class SingleCompartmentIndependentIntegrationTest(unittest.TestCase):
         self.assertNotIn("post_integral", channel.calls)
 
 
+class _SelfIntegratingPools(SingleCompartment):
+    """A Markov sodium channel and a kinetic calcium pool with an HH channel of its own."""
+
+    def __init__(self, solver):
+        super().__init__(1, solver=solver)
+        self.IL = IL(1, g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV)
+        self.na = SodiumFixed(1, E=55.0 * u.mV)
+        self.na.add(nav=braincell.channel.Nav_MA2020_GrC(1, g_max=10.0 * u.mS / u.cm**2))
+        self.ca = braincell.ion.CdpStC_MA2020_GoC(1)
+        self.ca.add(hva=braincell.channel.CaHVA_MA2020_GoC(1, g_max=0.5 * u.mS / u.cm**2))
+        self.ca.diam_arc_mean = 2.0 * self.radius
+
+
+class SingleCompartmentSelfIntegratingPoolTest(unittest.TestCase):
+    """CELL-19: Markov channels and kinetic ions under every kind of solver.
+
+    The explicit methods (``ralston2`` is the default) raised ``ValueError:
+    State ... must be written by compute_derivative()`` on the states they
+    only read; the block solvers hit an ``UnexpectedTracerError`` on the
+    kinetic pool's HH channel, which no hook stepped.
+    """
+
+    def test_one_step_advances_every_state(self) -> None:
+        for solver in ("ralston2", "rk4", "ind_exp_euler", "exp_euler", "backward_euler"):
+            with self.subTest(solver=solver):
+                model = _SelfIntegratingPools(solver)
+                model.init_state()
+                before = {key: st.value for key, st in model.states(DiffEqState).items()}
+                with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms):
+                    model.update(0.0 * u.nA / u.cm**2)
+                after = {key: st.value for key, st in model.states(DiffEqState).items()}
+                for key in (("na", "nav", "O"), ("ca", "Ci"), ("ca", "hva", "s")):
+                    stored = next(
+                        path for path in after if path[0] == key[0] and path[-1] == key[-1] and key[1] in path
+                    )
+                    self.assertFalse(bool(u.math.allclose(before[stored], after[stored], rtol=0, atol=0)), stored)
+
+    def test_hooks_step_the_dependent_channel_of_a_self_integrating_ion(self) -> None:
+        model = _SelfIntegratingPools("ralston2")
+        model.init_state()
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms), brainstate.StateTraceStack() as trace:
+            model.compute_derivative(0.0 * u.nA / u.cm**2)
+        written = {id(st) for st, w in zip(trace.states, trace.been_writen) if w}
+        self.assertIn(id(model.ca.hva.s), written)
+        self.assertNotIn(id(model.ca.Ci), written)
+
+
 # ---------------------------------------------------------------------------
 # solver kwarg resolution
 # ---------------------------------------------------------------------------

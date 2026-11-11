@@ -388,6 +388,68 @@ class LumpedDefaultsTest(unittest.TestCase):
             np.testing.assert_allclose(np.asarray(k_channel.p.value), np.broadcast_to(n_inf, (N,)), rtol=1e-12)
 
 
+def _kinetic_pool_cell(solver):
+    """A GoC calcium pool with its HV calcium channel: lumped, or the one-CV cable twin under staggered."""
+    if solver == "staggered":
+        cell = bc.Cell(bc.Morphology.from_soma(length=LENGTH, radius=RADIUS), V_init=-65.0 * u.mV)
+    else:
+        cell = bc.Cell.point(1, length=LENGTH, radius=RADIUS, V_init=-65.0 * u.mV, solver=solver)
+    cell.paint(
+        AllRegion(),
+        bc.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV),
+        bc.mech.Ion("CdpStC_MA2020_GoC", name="ca"),
+        bc.mech.Channel("CaHVA_MA2020_GoC", g_max=0.5 * u.mS / u.cm**2, ion_name="ca"),
+    )
+    return cell
+
+
+def _final_values(cell, dt_ms):
+    """``V`` (mV) at 1 ms and the other DiffEqStates, keyed by their path below the runtime."""
+    cell.init_state()
+    cell.run(dt=dt_ms * u.ms, duration=1.0 * u.ms)
+    states = {
+        ".".join(map(str, path)).removeprefix("_lumped_runtime."): np.asarray(u.get_mantissa(st.value)).ravel()
+        for path, st in brainstate.graph.states(cell).items()
+        if isinstance(st, bc.quad.DiffEqState) and path[-1] != "V"
+    }
+    return np.asarray(cell.V.value.to_decimal(u.mV)).ravel(), states
+
+
+class LumpedKineticIonTest(unittest.TestCase):
+    """CELL-19: a kinetic ion on a lumped Cell runs under every solver it accepts.
+
+    The explicit methods (``ralston2`` is the default) used to raise
+    ``ValueError: State ... must be written by compute_derivative()`` in
+    ``run``, and the block solvers an ``UnexpectedTracerError`` once the pool
+    had a channel of its own.
+    """
+
+    def test_every_solver_runs(self) -> None:
+        for name in [n for n in bc.quad.list_integrators() if n not in ("staggered", "dhs_voltage")]:
+            with self.subTest(solver=name):
+                cell = _kinetic_pool_cell(name)
+                cell.init_state()
+                cell.run(dt=DT, duration=2 * DT)
+                self.assertTrue(np.all(np.isfinite(cell.V.value.to_decimal(u.mV))))
+
+    def test_matches_the_cable_twin_under_staggered(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            reference = {dt: _final_values(_kinetic_pool_cell("staggered"), dt) for dt in (0.005, 0.001)}
+            for name in (None, "rk4", "ind_exp_euler", "exp_euler", "backward_euler"):
+                with self.subTest(solver=name):
+                    gap = {}
+                    for dt in (0.005, 0.001):
+                        V, states = _final_values(_kinetic_pool_cell(name), dt)
+                        ref_V, ref_states = reference[dt]
+                        self.assertEqual(set(states), set(ref_states))
+                        self.assertGreater(len(states), 10)
+                        gap[dt] = float(np.max(np.abs(V - ref_V)))
+                        for key in states:
+                            np.testing.assert_allclose(states[key], ref_states[key], rtol=0, atol=1e-3, err_msg=key)
+                    self.assertLessEqual(gap[0.005], 1e-3)
+                    self.assertGreaterEqual(gap[0.005] / gap[0.001], 3.0)
+
+
 class LumpedSiteTest(unittest.TestCase):
     """Acceptance 4: the one site, and Cell subclasses."""
 

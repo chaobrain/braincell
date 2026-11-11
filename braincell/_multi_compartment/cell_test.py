@@ -1152,6 +1152,183 @@ class CellIonTotalCurrentSnapshotTest(unittest.TestCase):
         self.assertFalse(hasattr(ion, "_cached_total_current"))
 
 
+# Cell-only steps: staggered schedules the mechanisms itself, dhs_voltage
+# advances V only.
+_CABLE_ONLY = ("staggered", "dhs_voltage")
+
+
+def _generic_solver_names():
+    """Every registered name a Cell accepts besides the cable-only steps, with two aliases."""
+    names = [name for name in braincell.quad.list_integrators() if name not in _CABLE_ONLY]
+    return names + ["heun3", "ssprk3"]
+
+
+def _mechanism_cell(solver, mechanism, *, order="family"):
+    """The one-CV soma of CELL-19 with ``IL`` and one more mechanism."""
+    cell = Cell(_soma_tree(), cv_policy=CVPerBranch(), solver=solver, ion_channel_update_order=order)
+    cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV))
+    if mechanism == "markov":
+        cell.paint(AllRegion(), mech.Ion("SodiumFixed", name="na", E=55.0 * u.mV))
+        cell.paint(AllRegion(), mech.Channel("Nav_MA2020_GrC", g_max=10.0 * u.mS / u.cm**2, ion_name="na"))
+    elif mechanism == "kinetic":
+        cell.paint(AllRegion(), mech.Ion("ToyCaBindingKinetic_SU2015_DCN", name="ca"))
+    elif mechanism == "kinetic_child":
+        # A kinetic pool with a dependent (HH) channel of its own.
+        cell.paint(AllRegion(), mech.Ion("CdpStC_MA2020_GoC", name="ca"))
+        cell.paint(AllRegion(), mech.Channel("CaHVA_MA2020_GoC", g_max=0.5 * u.mS / u.cm**2, ion_name="ca"))
+    return cell
+
+
+def _diffeq_values(cell):
+    """Final ``V`` (mV) and every other DiffEqState value, keyed by graph path."""
+    states = {
+        ".".join(map(str, path)): np.asarray(u.get_mantissa(st.value), dtype=np.float64).ravel()
+        for path, st in brainstate.graph.states(cell).items()
+        if isinstance(st, DiffEqState) and path != ("V",)
+    }
+    return np.asarray(cell.V.value.to_decimal(u.mV), dtype=np.float64).ravel(), states
+
+
+def _run_to_1ms(cell, dt_ms):
+    cell.init_state()
+    cell.run(dt=dt_ms * u.ms, duration=1.0 * u.ms)
+    return _diffeq_values(cell)
+
+
+class CellGenericSolverTest(unittest.TestCase):
+    """CELL-19: every registered solver name runs on a cable Cell or is rejected at init_state."""
+
+    def _assert_converges_to_staggered(self, build, names):
+        # V at 1 ms within 1e-3 mV of staggered at dt = 0.005 ms, the gap
+        # shrinking at least 3-fold to dt = 0.001 ms; mechanism states within 1e-3.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            reference = {dt: _run_to_1ms(build("staggered"), dt) for dt in (0.005, 0.001)}
+            for name in names:
+                with self.subTest(solver=name):
+                    gap, state_gap = {}, {}
+                    for dt in (0.005, 0.001):
+                        V, states = _run_to_1ms(build(name), dt)
+                        ref_V, ref_states = reference[dt]
+                        self.assertEqual(set(states), set(ref_states))
+                        gap[dt] = float(np.max(np.abs(V - ref_V)))
+                        state_gap[dt] = max([float(np.max(np.abs(states[k] - ref_states[k]))) for k in states] or [0.0])
+                    self.assertLessEqual(gap[0.005], 1e-3)
+                    if gap[0.005] > 1e-12:
+                        self.assertGreaterEqual(gap[0.005] / gap[0.001], 3.0)
+                    self.assertLessEqual(state_gap[0.005], 1e-3)
+
+    def test_every_generic_solver_converges_to_staggered(self):
+        for mechanism in ("none", "markov", "kinetic"):
+            with self.subTest(mechanism=mechanism):
+                self._assert_converges_to_staggered(
+                    lambda name, m=mechanism: _mechanism_cell(name, m), _generic_solver_names()
+                )
+
+    def test_dependent_channels_of_a_kinetic_ion_follow_the_solver(self):
+        # The HH channel under a kinetic pool is integrated by the main solver,
+        # the pool by its subsolver; it used to fail in run ("must be written",
+        # or a unit-mismatch assertion under the block solvers).
+        names = ("ralston2", "ind_exp_euler", "exp_euler", "backward_euler", "crank_nicolson")
+        self._assert_converges_to_staggered(lambda name: _mechanism_cell(name, "kinetic_child"), names)
+
+    def test_integration_order_advances_markov_channels_after_the_solver(self):
+        self._assert_converges_to_staggered(
+            lambda name: _mechanism_cell(name, "markov", order="integration"), ("ralston2", "exp_euler")
+        )
+
+    def test_independent_mechanisms_advance_after_a_generic_solver(self):
+        for order, expected in (
+            ("family", ["solver", "cache", "ions", "channels"]),
+            ("integration", ["solver", "cache", "top_level"]),
+        ):
+            with self.subTest(order=order):
+                calls = []
+                cell = _mechanism_cell("ralston2", "markov", order=order)
+                cell.init_state()
+                cell._solver_fn = lambda target: calls.append("solver")
+                cell._ind_update_after_solver = True
+                cell.cache_ion_total_currents = lambda V=None: calls.append("cache")
+                cell._update_independent_ions = lambda nodes, V: calls.append("ions")
+                cell._update_independent_channels = lambda nodes, V: calls.append("channels")
+                cell._ind_update_top_level_nodes = lambda V: calls.append("top_level")
+                cell._update_ion_channel_families = lambda V: calls.append("family")
+                with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+                    cell.update()
+                self.assertEqual(calls, expected)
+
+    def test_which_solvers_advance_independent_mechanisms(self):
+        def custom(target):
+            pass
+
+        for solver, expected in (
+            ("ralston2", True),
+            ("ind_exp_euler", True),
+            ("backward_euler", True),
+            (braincell.quad.rk4_step, True),
+            ("staggered", False),
+            ("dhs_voltage", False),
+            (custom, False),
+        ):
+            with self.subTest(solver=getattr(solver, "__name__", solver)):
+                cell = _mechanism_cell(solver, "markov")
+                cell.init_state()
+                self.assertIs(cell._ind_update_after_solver, expected)
+
+    def test_a_registered_step_passed_as_a_callable_runs_markov_channels(self):
+        cell = _mechanism_cell(braincell.quad.rk4_step, "markov")
+        cell.init_state()
+        before = _diffeq_values(cell)[1]
+        cell.run(dt=0.025 * u.ms, duration=0.1 * u.ms)
+        after = _diffeq_values(cell)[1]
+        self.assertTrue(any(not np.array_equal(before[k], after[k]) for k in before))
+
+    def test_block_solvers_reject_point_synapses_at_init_state(self):
+        for name in ("exp_euler", "backward_euler", "crank_nicolson"):
+            with self.subTest(solver=name):
+                cell = _mechanism_cell(name, "none")
+                cell.place(at("soma", 0.5), mech.Synapse("Exp2Syn", name="syn"))
+                with self.assertRaisesRegex(
+                    ValueError, rf"solver '{name}' cannot advance a Cell with point synapses \(Exp2Syn\)"
+                ):
+                    cell.init_state()
+                self.assertFalse(cell._initialized)
+                cell.solver = "ralston2"
+                cell.init_state()
+                cell.run(dt=0.025 * u.ms, duration=0.05 * u.ms)
+
+    def test_point_synapses_in_a_network_converge_under_generic_solvers(self):
+        # Exp2Syn driven by a NetStim. The explicit solvers integrate the
+        # synapse in their stages and agree with the Richardson limit of
+        # staggered; ind_exp_euler is first order like staggered.
+        def network(solver):
+            cell = _mechanism_cell(solver, "none")
+            cell.place(
+                at("soma", 0.5),
+                mech.Synapse("Exp2Syn", name="syn", tau1=0.5 * u.ms, tau2=5.0 * u.ms, e=0.0 * u.mV),
+            )
+            net = braincell.Network(name="exp2syn")
+            source = net.add_population("stim", NetStim(size=1, start=0.1 * u.ms, interval=0.3 * u.ms, number=3))
+            target = net.add_population("post", cell)
+            net.connect("drive", source=source, synapse=target.synapses["syn"], weight=0.01 * u.uS)
+            return net, cell
+
+        def final_V(solver, dt):
+            net, cell = network(solver)
+            net.init_state()
+            net.run(dt=dt * u.ms, duration=1.0 * u.ms)
+            return float(cell.V.value.to_decimal(u.mV).reshape(-1)[0])
+
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            limit = 2.0 * final_V("staggered", 0.00025) - final_V("staggered", 0.0005)
+            self.assertLessEqual(abs(final_V("rk4", 0.005) - limit), 1e-5)
+            self.assertLessEqual(abs(final_V("ralston2", 0.001) - limit), 1e-4)
+            gap = {dt: abs(final_V("ind_exp_euler", dt) - limit) for dt in (0.005, 0.001)}
+            self.assertGreaterEqual(gap[0.005] / gap[0.001], 3.0)
+            net, _ = network("exp_euler")
+            with self.assertRaisesRegex(ValueError, "solver 'exp_euler' cannot advance a Cell with point synapses"):
+                net.init_state()
+
+
 class DiscretizationTracksAMutatedMorphologyTest(unittest.TestCase):
     """A ``Cell`` shares its ``Morphology``, so it must notice edits to it.
 

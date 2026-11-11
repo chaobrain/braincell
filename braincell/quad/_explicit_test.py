@@ -40,7 +40,7 @@ from braincell.quad import (
     ssprk3_step,
 )
 from braincell.quad._testing import LinearDecay, drive, integrate
-from braincell.quad.protocol import DiffEqModule, DiffEqSingleState
+from braincell.quad.protocol import DiffEqModule, DiffEqSingleState, IndependentIntegration
 
 
 class RungeKuttaConvergenceTest(unittest.TestCase):
@@ -454,7 +454,58 @@ class _WritesAux(LinearDecay):
         self.aux.value = self.aux.value + 1.0
 
 
+class _Pool(brainstate.nn.Module, DiffEqModule, IndependentIntegration):
+    """Advances itself (``ind_update``); its host only reads ``c``."""
+
+    def __init__(self):
+        IndependentIntegration.__init__(self, 'euler')
+        brainstate.nn.Module.__init__(self)
+        self.c = DiffEqSingleState(jnp.full(1, 2.0) * u.mM)
+
+    def compute_derivative(self, *args):
+        self.c.derivative = -self.c.value / (1.0 * u.ms)
+
+
+class _ReadsPool(brainstate.nn.Module, DiffEqModule):
+    """dx/dt = -c x / (10 mM ms), with ``c`` owned by an independently integrated pool."""
+
+    def __init__(self):
+        super().__init__()
+        self.x = DiffEqSingleState(jnp.ones(1) * u.mV)
+        self.pool = _Pool()
+
+    def compute_derivative(self, *args):
+        self.x.derivative = -self.pool.c.value * self.x.value / (10.0 * u.mM * u.ms)
+
+
+class _ForgetsState(LinearDecay):
+    """Reads a second DiffEqState of its own but never sets its derivative."""
+
+    def __init__(self):
+        super().__init__(shape=(1,))
+        self.y = DiffEqSingleState(jnp.ones(1) * u.mV)
+
+    def compute_derivative(self, *args, **kwargs):
+        self.x.derivative = -(self.x.value + 0.0 * self.y.value) / self.tau
+
+
 class ModuleStepFromOdeTest(unittest.TestCase):
+    def test_independent_states_are_read_as_constants(self):
+        # A Markov channel or kinetic ion is read by its host's derivative and
+        # advanced by ``ind_update``; the explicit step used to reject it.
+        for name in ('euler', 'ralston2', 'rk4', 'dopri5'):
+            with self.subTest(method=name):
+                m = _ReadsPool()
+                with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+                    get_integrator(name)(m)
+                np.testing.assert_allclose(m.pool.c.value.to_decimal(u.mM), [2.0])
+                np.testing.assert_allclose(m.x.value.to_decimal(u.mV), np.exp(-0.02), rtol=1e-3)
+
+    def test_an_unwritten_dependent_state_still_raises(self):
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+            with self.assertRaisesRegex(ValueError, 'must be written by compute_derivative'):
+                rk4_step(_ForgetsState())
+
     def test_same_object_for_same_ode_step(self):
         self.assertIs(module_step_from_ode(braintools.quad.ode_rk4_step), rk4_step)
         self.assertIs(get_integrator('rk4'), rk4_step)

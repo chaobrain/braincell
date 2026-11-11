@@ -32,6 +32,7 @@ from braincell.filter._testing import (
     make_apical,
     make_soma,
     make_tree_r,
+    path_distance_metric,
     radius_um,
 )
 from braincell.filter import (
@@ -534,6 +535,31 @@ def _um(value):
     return None if value is None else value * u.um
 
 
+def _assert_range_construction_checks(testcase: unittest.TestCase, cls) -> None:
+    """The bounds checks every range region shares (MORPH-8a)."""
+    name = cls.__name__
+    for args, message in (
+        ((1.0, 2.0), f"{name}.minimum must satisfy unit um"),
+        ((None, 2.0), f"{name}.maximum must satisfy unit um"),
+        ((1 * u.ms, 2 * u.ms), "must satisfy unit um"),
+    ):
+        with testcase.subTest(args=args), testcase.assertRaisesRegex(TypeError, message):
+            cls(*args)
+    for kwargs, message in (
+        ({"minimum": 2 * u.um, "maximum": 1 * u.um}, "minimum must be <= maximum"),
+        ({"minimum": -1 * u.um, "maximum": 2 * u.um}, "minimum must be >= 0"),
+        ({"minimum": np.nan * u.um, "maximum": 2 * u.um}, "minimum must be finite"),
+        ({"maximum": np.inf * u.um}, "maximum must be finite; use None for no bound"),
+        ({"minimum": np.array([1.0, 2.0]) * u.um}, f"{name}.minimum"),
+        ({"closed": "open"}, r"closed must be one of \['both', 'left', 'neither', 'right'\], got 'open'"),
+    ):
+        with testcase.subTest(kwargs=kwargs), testcase.assertRaisesRegex(ValueError, message):
+            cls(**kwargs)
+    # Either bound alone, by keyword.
+    testcase.assertIsNone(cls(maximum=2 * u.um).minimum)
+    testcase.assertIsNone(cls(minimum=2 * u.um).maximum)
+
+
 class RadiusRangeRegionTest(unittest.TestCase):
     """MORPH-8a: the cable whose local radius lies in a range, cut where a taper crosses a bound."""
 
@@ -655,26 +681,7 @@ class RadiusRangeRegionTest(unittest.TestCase):
         self.assertEqual(len(cell.channels), 3)
 
     def test_construction_checks_the_bounds(self) -> None:
-        for args, message in (
-            ((1.0, 2.0), "RadiusRangeRegion.minimum must satisfy unit um"),
-            ((None, 2.0), "RadiusRangeRegion.maximum must satisfy unit um"),
-            ((1 * u.ms, 2 * u.ms), "must satisfy unit um"),
-        ):
-            with self.subTest(args=args), self.assertRaisesRegex(TypeError, message):
-                RadiusRangeRegion(*args)
-        for kwargs, message in (
-            ({"minimum": 2 * u.um, "maximum": 1 * u.um}, "minimum must be <= maximum"),
-            ({"minimum": -1 * u.um, "maximum": 2 * u.um}, "minimum must be >= 0"),
-            ({"minimum": np.nan * u.um, "maximum": 2 * u.um}, "minimum must be finite"),
-            ({"maximum": np.inf * u.um}, "maximum must be finite; use None for no bound"),
-            ({"minimum": np.array([1.0, 2.0]) * u.um}, "RadiusRangeRegion.minimum"),
-            ({"closed": "open"}, r"closed must be one of \['both', 'left', 'neither', 'right'\], got 'open'"),
-        ):
-            with self.subTest(kwargs=kwargs), self.assertRaisesRegex(ValueError, message):
-                RadiusRangeRegion(**kwargs)
-        # Either bound alone, by keyword.
-        self.assertIsNone(RadiusRangeRegion(maximum=2 * u.um).minimum)
-        self.assertIsNone(RadiusRangeRegion(minimum=2 * u.um).maximum)
+        _assert_range_construction_checks(self, RadiusRangeRegion)
 
     def test_value_semantics(self) -> None:
         region = RadiusRangeRegion(maximum=1.5 * u.um)
@@ -697,6 +704,125 @@ class RadiusRangeRegionTest(unittest.TestCase):
                 tree = make_tree_r()
                 edit(tree)
                 self.assertIntervalsClose(tree.select(region).intervals, before)
+        tree = make_tree_r()
+        tree.scale(2.0)
+        self.assertNotEqual(tree.select(region).intervals, before)
+
+
+class TreeDistanceRegionTest(unittest.TestCase):
+    """MORPH-8b: the cable whose path distance from the soma lies in a range."""
+
+    assertIntervalsClose = RadiusRangeRegionTest.assertIntervalsClose
+
+    def test_intervals_on_tree_r(self) -> None:
+        # Distance: 0 on the soma, 90x on dend, 90 + 50x on d1, 90 + 50(1 - x) on the reversed d2, 120x on the axon.
+        tree = make_tree_r()
+        select = lambda *args, **kwargs: tree.select(TreeDistanceRegion(*args, **kwargs)).intervals  # noqa: E731
+        self.assertIntervalsClose(select(maximum=30 * u.um), ((0, 0.0, 1.0), (1, 0.0, 1 / 3), (4, 0.0, 1 / 4)))
+        self.assertIntervalsClose(select(30 * u.um, 80 * u.um), ((1, 1 / 3, 8 / 9), (4, 1 / 4, 2 / 3)))
+        self.assertIntervalsClose(select(95 * u.um, 125 * u.um), ((2, 0.1, 0.7), (3, 0.3, 0.9), (4, 19 / 24, 1.0)))
+        self.assertEqual(select(maximum=0 * u.um), ((0, 0.0, 1.0),))
+        self.assertEqual(
+            select(minimum=0 * u.um, closed="neither"), ((1, 0.0, 1.0), (2, 0.0, 1.0), (3, 0.0, 1.0), (4, 0.0, 1.0))
+        )
+        halves = TreeDistanceRegion(maximum=50 * u.um) | TreeDistanceRegion(minimum=50 * u.um)
+        self.assertEqual(tree.select(halves), tree.select(AllRegion()))
+
+    def test_two_somata_make_the_distance_rise_and_fall(self) -> None:
+        # On dend the distance is min(90x, 50 + 90(1 - x)), peaking at x = 7/9.
+        tree = make_tree_r(second_soma=True)
+        self.assertIntervalsClose(
+            tree.select(TreeDistanceRegion(minimum=60 * u.um)).intervals,
+            ((1, 2 / 3, 8 / 9), (3, 0.0, 0.8), (4, 0.5, 1.0)),
+        )
+
+    def test_matches_brute_force_on_trees_r_and_r2(self) -> None:
+        bounds = ((None, 30.0), (30.0, 80.0), (0.0, 0.0), (100.0, None), (45.0, 45.0), (0.0, 135.0), (95.0, 125.0))
+        bounds += ((None, None),)
+        samples = 200001
+        xs = np.linspace(0.0, 1.0, samples)
+        for second_soma in (False, True):
+            tree = make_tree_r(second_soma)
+            metric = path_distance_metric(tree)
+            distances = {index: metric(tree, index, xs) for index in range(len(tree.branches))}
+            crossings = 0
+            for (lo, hi), closed in itertools.product(bounds, ("both", "left", "right", "neither")):
+                with self.subTest(second_soma=second_soma, lo=lo, hi=hi, closed=closed):
+                    mask = tree.select(TreeDistanceRegion(_um(lo), _um(hi), closed))
+                    self.assertEqual(
+                        brute_force_mismatches(
+                            tree, mask, metric, lo, hi, closed, samples=samples, metric_values=distances
+                        ),
+                        [],
+                    )
+                    checked, problems = crossing_errors(tree, mask, metric, lo, hi)
+                    self.assertEqual(problems, [])
+                    crossings += checked
+            self.assertGreater(crossings, 0)
+
+    def test_matches_brute_force_on_fixture_morphologies(self) -> None:
+        rng = np.random.default_rng(0)
+        xs = np.linspace(0.0, 1.0, 1001)
+        for name, tree in fixture_morphologies():
+            metric = path_distance_metric(tree)
+            distances = {index: metric(tree, index, xs) for index in range(len(tree.branches))}
+            values = np.concatenate(list(distances.values()))
+            for _ in range(4):
+                lo, hi = sorted(rng.choice(values[values > 0], 2, replace=False))
+                with self.subTest(name, lo=lo, hi=hi):
+                    mask = tree.select(TreeDistanceRegion(lo * u.um, hi * u.um))
+                    self.assertEqual(
+                        brute_force_mismatches(
+                            tree, mask, metric, lo, hi, "both", samples=1001, metric_values=distances
+                        ),
+                        [],
+                    )
+
+    def test_interval_ends_sit_at_the_sampling_distance(self) -> None:
+        # The region and callable parameters read one distance: at every interior end it equals a bound.
+        tree = make_tree_r()
+        metric = path_distance_metric(tree)
+        for lo, hi in ((None, 30.0), (30.0, 80.0), (95.0, 125.0), (100.0, None), (0.0, 135.0)):
+            mask = tree.select(TreeDistanceRegion(_um(lo), _um(hi)))
+            for branch, prox, dist in mask.intervals:
+                for end in (prox, dist):
+                    if end in (0.0, 1.0):
+                        continue
+                    with self.subTest(lo=lo, hi=hi, branch=branch, end=end):
+                        value = float(metric(tree, branch, np.array([end]))[0])
+                        self.assertLessEqual(min(abs(value - b) for b in (lo, hi) if b is not None), 1e-9)
+
+    def test_needs_no_3d_points(self) -> None:
+        tree = make_tree_u()
+        self.assertFalse(tree.has_full_point_geometry)
+        region = TreeDistanceRegion(0 * u.um, 50 * u.um)
+        self.assertEqual(tree.select(region).intervals, ((0, 0.0, 1.0), (1, 0.0, 0.5), (2, 0.0, 1.0), (3, 0.0, 0.625)))
+        cell = braincell.Cell(tree, cv_policy=braincell.CVPerBranch())
+        cell.paint(region, braincell.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70 * u.mV))
+        cell.init_state()
+        self.assertEqual(len(cell.channels), 4)
+
+    def test_construction_checks_the_bounds(self) -> None:
+        _assert_range_construction_checks(self, TreeDistanceRegion)
+
+    def test_value_semantics(self) -> None:
+        region = TreeDistanceRegion(maximum=100 * u.um)
+        self.assertEqual(region, TreeDistanceRegion(maximum=0.1 * u.mmeter))
+        self.assertEqual(hash(region), hash(TreeDistanceRegion(maximum=0.1 * u.mmeter)))
+        self.assertNotEqual(region, RadiusRangeRegion(maximum=100 * u.um))
+        self.assertEqual(pickle.loads(pickle.dumps(region)), region)
+
+    def test_rigid_transforms_keep_the_region_and_scaling_changes_it(self) -> None:
+        region = TreeDistanceRegion(30 * u.um, 80 * u.um)
+        before = make_tree_r().select(region).intervals
+        for label, edit in (
+            ("translate", lambda tree: tree.translate(np.array([5.0, -3.0, 2.0]) * u.um)),
+            ("rotate", lambda tree: tree.rotate(40 * u.degree, axis=np.array([1.0, 2.0, 3.0]))),
+        ):
+            with self.subTest(label):
+                tree = make_tree_r()
+                edit(tree)
+                self.assertEqual(tree.select(region).intervals, before)
         tree = make_tree_r()
         tree.scale(2.0)
         self.assertNotEqual(tree.select(region).intervals, before)

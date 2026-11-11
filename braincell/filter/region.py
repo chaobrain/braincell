@@ -23,6 +23,7 @@ import brainunit as u
 import numpy as np
 from brainunit import Quantity
 
+from braincell.morph._spatial import MorphologySpatialGeometry
 from braincell.morph.morphology import MorphoBranch, Morphology
 from braincell.filter import helper
 from braincell.filter.cache import SelectionCache, evaluate_cached
@@ -381,12 +382,106 @@ class RadiusRangeRegion(_LengthRangeRegion):
 
 @dataclass(frozen=True, eq=False)
 class TreeDistanceRegion(_LengthRangeRegion):
+    """Select the cable whose path distance from the soma lies in a range.
+
+    Parameters
+    ----------
+    minimum : brainunit.Quantity or None, optional
+        Smallest distance selected, a scalar length; ``None`` (default) for
+        no lower bound.
+    maximum : brainunit.Quantity or None, optional
+        Largest distance selected; ``None`` (default) for no upper bound.
+    closed : {'both', 'left', 'right', 'neither'}, optional
+        Which bounds are inclusive. It matters only on the soma, where the
+        distance is 0 over the whole branch: the default ``"both"`` keeps the
+        soma in ``TreeDistanceRegion(maximum=100 * u.um)`` and in
+        ``TreeDistanceRegion(0 * u.um, 100 * u.um)``.
+
+    Returns
+    -------
+    RegionMask
+        From :meth:`~RegionExpr.evaluate`: on every branch, the stretches
+        whose distance is within the range, normalized.
+
+    Raises
+    ------
+    TypeError
+        At construction, if a bound is a bare number or not a length.
+    ValueError
+        At construction, if a bound is not a scalar, is negative, infinite
+        (use ``None`` for no bound) or NaN, if ``minimum > maximum``, or if
+        ``closed`` is not one of the four values.
+
+    See Also
+    --------
+    EuclideanDistanceRegion : The straight-line distance instead.
+    RadiusRangeRegion : The same bounds on the local radius.
+
+    Notes
+    -----
+    The distance is the length of the shortest path along the tree to the
+    union of all soma branches, and is 0 on the soma; a tree without a soma
+    branch measures from its whole root branch instead. It is the same
+    distance a callable cable or density parameter reads as
+    ``path_distance_from_soma`` (:class:`braincell.mech.CVContext`,
+    :func:`braincell.filter.metric.path_distance_from_soma`), so a region and
+    a parameter that use the same bound agree.
+
+    Along a branch the distance changes at a rate of 1 um per um, so the
+    region is cut exactly where it crosses a bound. With one soma it grows
+    away from the soma; with two or more it can rise and then fall along a
+    branch that lies between them, and a single range can then select two
+    stretches of one branch. Only lengths and topology are read, so the
+    region needs no 3-D points, and moving or rotating the tree does not
+    change it (scaling does).
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> import numpy as np
+        >>> from braincell import Branch, Morphology
+        >>> from braincell.filter import TreeDistanceRegion, branch_in
+        >>> soma = Branch.from_lengths(lengths=np.array([20.0]) * u.um, radii=np.array([5.0, 5.0]) * u.um, type="soma")
+        >>> dend = Branch.from_lengths(lengths=np.array([200.0]) * u.um, radii=np.array([1.0, 1.0]) * u.um, type="basal_dendrite")
+        >>> tree = Morphology.from_root(soma, name="soma")
+        >>> tree.soma.dend = dend
+        >>> tree.select(TreeDistanceRegion(maximum=50 * u.um)).intervals
+        ((0, 0.0, 1.0), (1, 0.0, 0.25))
+        >>> tree.select(branch_in("type", "basal_dendrite") & TreeDistanceRegion(maximum=100 * u.um)).intervals
+        ((1, 0.0, 0.5),)
+    """
+
     def _evaluate(
         self,
         morpho: Morphology,
         cache: SelectionCache | None = None,
     ) -> RegionMask:
-        raise NotImplementedError
+        geometry = MorphologySpatialGeometry.build(morpho)
+        intervals: list[tuple[int, float, float]] = []
+        for index in range(len(morpho.branches)):
+            if index in geometry.reference_branch_ids:
+                # The distance is 0 over the whole branch: a plateau.
+                if self._accepts(0.0):
+                    intervals.append((index, 0.0, 1.0))
+                continue
+            nodes = geometry.branch_nodes_x[index]
+            bases = geometry.soma_bases_um[index]
+            length = float(geometry.branch_lengths_um[index])
+            for j in range(len(nodes) - 1):
+                # Between two adjacent nodes the distance is the nearer of the
+                # paths through either one: up from b0, then down to b1.
+                n0, n1 = float(nodes[j]), float(nodes[j + 1])
+                b0, b1 = float(bases[j]), float(bases[j + 1])
+                peak = min(n1, max(n0, (b1 - b0 + (n1 + n0) * length) / (2.0 * length)))
+                at_peak = b0 + (peak - n0) * length
+                for x0, x1, f0, f1 in ((n0, peak, b0, at_peak), (peak, n1, at_peak, b1)):
+                    if x1 > x0:
+                        piece = self._select_linear_piece(x0, x1, f0, f1)
+                        if piece is not None:
+                            intervals.append((index, *piece))
+        return RegionMask(helper.normalize_region_intervals(intervals))
 
 
 @dataclass(frozen=True, eq=False)

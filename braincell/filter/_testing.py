@@ -46,8 +46,17 @@ from braincell.filter.locset import (
     UniformSamples,
     at,
 )
-from braincell.filter.region import AllRegion, EmptyRegion, RadiusRangeRegion, RegionMask, SubtreeRegion, branch_in
+from braincell.filter.region import (
+    AllRegion,
+    EmptyRegion,
+    RadiusRangeRegion,
+    RegionMask,
+    SubtreeRegion,
+    TreeDistanceRegion,
+    branch_in,
+)
 from braincell.io._testing import FIXTURE_DIR
+from braincell.morph._spatial import MorphologySpatialGeometry
 from braincell.morph._testing import EditCase, assert_layer_fresh, make_tree_t
 
 # Re-exported so the filter tests keep a single import site for fixtures.
@@ -74,6 +83,7 @@ __all__ = [
     "make_single_branch_tree",
     "make_soma_dend_tree",
     "make_tree_r",
+    "path_distance_metric",
     "radius_um",
 ]
 
@@ -210,6 +220,24 @@ def radius_um(morpho: Morphology, index: int, xs: np.ndarray) -> np.ndarray:
     return out
 
 
+def path_distance_metric(morpho: Morphology) -> Metric:
+    """A :data:`Metric` for the path distance (um) from the soma on ``morpho``, as callable parameters read it.
+
+    It is ``MorphologySpatialGeometry.path_distance_from_soma``, the same
+    definition the cell's ``CVContext`` and the sampling context use, so it
+    checks the region's crossing solve rather than the definition itself
+    (which the closed-form tests do). The geometry is built once, so the
+    metric is valid only until ``morpho`` is edited.
+    """
+    geometry = MorphologySpatialGeometry.build(morpho)
+
+    def metric(tree: Morphology, index: int, xs: np.ndarray) -> np.ndarray:
+        assert tree is morpho, "a path-distance metric belongs to one morphology"
+        return np.asarray(geometry.path_distance_from_soma(index, np.asarray(xs, dtype=float)).to_decimal(u.um))
+
+    return metric
+
+
 def _in_range(f: np.ndarray, lo: float | None, hi: float | None, closed: str) -> np.ndarray:
     keep = np.ones(f.shape, dtype=bool)
     if lo is not None:
@@ -318,10 +346,10 @@ def crossing_errors(
 #: Expressions a ``SelectionCache`` serves after an edit, one per thing a mask
 #: can depend on: segment lengths, topology, branch type, the name -> index
 #: mapping, subtree membership by index and by name, the intervals a region
-#: resolves to, a fixed physical step, and the local radius. Each is a
-#: composite whose operands are all hashable, because the cache memoizes
-#: operands only; a top-level leaf would never be cached and could not go
-#: stale.
+#: resolves to, a fixed physical step, the local radius, and the path
+#: distance from the soma. Each is a composite whose operands are all
+#: hashable, because the cache memoizes operands only; a top-level leaf would
+#: never be cached and could not go stale.
 SELECTION_BATTERY: tuple[tuple[str, object], ...] = (
     ("lengths", UniformSamples(AllRegion(), 5) + RootLocation(0.5)),
     ("topology", Terminals() + BranchPoints()),
@@ -340,6 +368,8 @@ SELECTION_BATTERY: tuple[tuple[str, object], ...] = (
     # Local radius: moves with any edit that changes a branch's radii or its
     # length; a Quantity bound keys the cache by value.
     ("radius", RadiusRangeRegion(maximum=1.5 * u.um) & AllRegion()),
+    # Path distance from the soma: moves with lengths and with topology.
+    ("path distance", TreeDistanceRegion(maximum=100 * u.um) | EmptyRegion()),
 )
 
 

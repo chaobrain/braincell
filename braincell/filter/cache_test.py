@@ -25,8 +25,8 @@ Three things are live and tested here:
   different morphology, or the same morphology after any edit; every row
   of the morphology edit table is checked against a cold rebuild.
 
-The reserved surface is pinned too, so implementing one of the two
-without wiring the cache up fails loudly.
+The reserved surface is pinned too, so implementing the last reserved
+type without wiring the cache up fails loudly.
 """
 
 import unittest
@@ -58,7 +58,6 @@ from braincell.filter.region import (
     RegionMask,
     RegionSetOp,
     SubtreeRegion,
-    TreeDistanceRegion,
 )
 
 
@@ -283,8 +282,10 @@ class SelectionCacheEditTableTest(unittest.TestCase):
         # see that, or a passing row above proves nothing.
         for case in SABOTAGE_CASES:
             with self.subTest(case.name):
-                # Both entries that read segment lengths must see the stale replay.
-                with self.assertRaisesRegex(AssertionError, r"selection cache: .*\n  lengths.*\n  step samples"):
+                # Every entry that reads segment lengths must see the stale replay.
+                with self.assertRaisesRegex(
+                    AssertionError, r"(?s)selection cache: .*\n  lengths.*\n  step samples.*\n  path distance"
+                ):
                     assert_selection_fresh(self, case)
 
     def test_every_battery_expression_memoizes_its_operands(self) -> None:
@@ -367,19 +368,15 @@ class SelectionCacheEditTableTest(unittest.TestCase):
 
 
 class ReservedCacheConsumersTest(unittest.TestCase):
-    """The two expressions that would populate the cache are unimplemented.
+    """The one expression that would populate the cache is unimplemented.
 
-    When any of them grows a real implementation it must also start filling
-    the matching ``SelectionCache`` dict — these assertions turn that into a
+    When it grows a real implementation it must also start filling the
+    matching ``SelectionCache`` dict — these assertions turn that into a
     deliberate, visible edit rather than a silent omission.
     """
 
     def setUp(self) -> None:
         self.tree = _soma_dend_tree()
-
-    def test_tree_distance_region_is_reserved(self) -> None:
-        with self.assertRaises(NotImplementedError):
-            TreeDistanceRegion(minimum=0.0 * u.um, maximum=10.0 * u.um).evaluate(self.tree)
 
     def test_euclidean_distance_region_is_reserved(self) -> None:
         with self.assertRaises(NotImplementedError):

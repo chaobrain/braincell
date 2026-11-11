@@ -334,10 +334,18 @@ class Network:
         if self._initialized:
             return self
         self._validate_direct_source_ownership()
+        uninitialized = [
+            population.cell
+            for population in self._cell_populations().values()
+            if not getattr(population.cell, "_initialized", False)
+        ]
+        # Recordings and connections declared on an older grid follow it, or
+        # raise, before any Cell initializes (MORPH-15).
+        for cell in uninitialized:
+            cell._resolve_declarations()
         with self._cell_lifecycle():
-            for population in self._cell_populations().values():
-                if not getattr(population.cell, "_initialized", False):
-                    population.cell.init_state()
+            for cell in uninitialized:
+                cell.init_state()
         self._initialized = True
         return self
 

@@ -45,7 +45,7 @@ import warnings
 import weakref
 from types import MappingProxyType
 from typing import Callable, ClassVar, Mapping, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import brainstate
 import braintools
@@ -76,6 +76,7 @@ from braincell._discretization.mechanism import (
     default_paint_rules,
     merge_paint_rules,
     merge_place_rules,
+    missing_branch_name,
     normalize_paint_rules,
     normalize_place_rule,
 )
@@ -343,6 +344,17 @@ class _CellFacade:
         -------
         RecordingSpec
             Frozen declaration owned by the root Cell.
+
+        Notes
+        -----
+        The recording is a declaration, like ``paint`` and ``place``. If the
+        grid or the morphology changes before :meth:`Cell.init_state` (a new
+        ``cv_policy``, or an edit of the tree), ``init_state`` selects it
+        again from the same population members and region or locations, so
+        it records the branches it named: a region recording declared before
+        a branch was appended includes that branch. A selection of CVs
+        (``cv[...]``) cannot be made again on other CVs, and
+        ``init_state`` raises ``RuntimeError`` naming the recording.
         """
         return self._view_root._add_recording(
             RecordingSpec(
@@ -1231,6 +1243,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._connection_weight_declarations = ()
         self._network_owner_ref: weakref.ReferenceType | None = None
         self._recording_specs: dict[str, RecordingSpec] = {}
+        # Per recording: (tree, revision, grid fingerprint, index basis) it
+        # was resolved on; init_state resolves it again when these change.
+        self._recording_bases: dict[str, tuple] = {}
+        self._grid_fingerprint_cache: tuple | None = None
         self._compiled_recording_cache: dict[tuple, tuple] = {}
 
         self._initialized = False
@@ -1893,6 +1909,7 @@ class Cell(_CellFacade, HHTypedNeuron):
     def _invalidate_discretization_cache(self) -> None:
         self._discretization_cache = None
         self._discretization_cache_key = None
+        self._grid_fingerprint_cache = None
         self._cv_collection_cache = None
         self._synapse_store_cache = None
         self._clamp_store_cache = None
@@ -2337,10 +2354,101 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._raise_if_initialized("add a recording")
         if spec.name in self._recording_specs:
             raise ValueError(f"Cell already has a recording named {spec.name!r}.")
+        target = spec.scope.target
+        index_basis = self._index_basis() if isinstance(target, (RegionMask, LocsetMask, LocsetBatch)) else None
+        self._recording_bases[spec.name] = (self._morpho, self._morpho.revision, self._grid_fingerprint(), index_basis)
         self._recording_specs[spec.name] = spec
         self._compiled_recording_cache.clear()
         self._run_loop_cache.clear()
         return spec
+
+    def _grid_fingerprint(self) -> tuple:
+        """``(branch_id, prox, dist)`` of every CV: equal on two grids that have the same CVs."""
+        if self._grid_fingerprint_cache is None:
+            self._grid_fingerprint_cache = tuple((cv.branch_id, cv.prox, cv.dist) for cv in self._discretization.cvs)
+        return self._grid_fingerprint_cache
+
+    def _resolve_recordings(self) -> None:
+        """Select each recording again from its declaration if its grid or tree changed (MORPH-15).
+
+        A recording keeps the CVs it selected when it was declared. If the
+        grid has other CVs now (a new ``cv_policy`` or an edit), or the tree
+        was edited, the selection is made again from what it was declared
+        with -- the population members and the region or locset -- so it
+        records the same branches and locations. Recordings on an unchanged
+        tree and grid are kept as they are.
+
+        Raises
+        ------
+        RuntimeError
+            Before changing any recording, naming the first one that cannot
+            be selected again: it was declared on CVs (``cv[...]``) or on
+            nested selections and the grid changed, or on a resolved mask
+            whose branch indices a removal or move has shifted.
+        KeyError
+            Naming the recording, if its expression names a branch the tree
+            no longer has.
+        """
+        if not self._recording_specs:
+            return
+        morpho, grid = self._morpho, self._grid_fingerprint()
+        same_grid: dict[int, bool] = {}
+        updated = {}
+        for name, spec in self._recording_specs.items():
+            declared_morpho, revision, declared_grid, index_basis = self._recording_bases[name]
+            if id(declared_grid) not in same_grid:
+                same_grid[id(declared_grid)] = declared_grid is grid or declared_grid == grid
+            grid_kept = same_grid[id(declared_grid)]
+            if grid_kept and declared_morpho is morpho and revision == morpho.revision:
+                continue
+            target = spec.scope.target
+            if isinstance(target, _Undeclarable):
+                if grid_kept:
+                    # Same CVs: the selection still names what it named.
+                    updated[name] = spec
+                    continue
+                raise RuntimeError(
+                    f"Recording {name!r} was declared on {target.reason}, and the grid has changed since "
+                    "(a new cv_policy or an edit of the morphology), so which CVs it means is unknown. Restore "
+                    "the grid it was declared on, or record on a new Cell with a region or location "
+                    "(cell.on(...), cell.loc(...))."
+                )
+            if self._held_indices_moved(index_basis):
+                raise RuntimeError(
+                    f"Recording {name!r} selects a resolved {type(target).__name__}, whose branch indices are "
+                    f"those of morphology revision {index_basis[1]}; a branch has since been removed or moved, "
+                    "so they no longer name the same branches. Record on a new Cell with a location expression "
+                    'such as at("axon", 0.5) instead of an evaluated mask.'
+                )
+            try:
+                updated[name] = replace(spec, scope=spec.scope.replayed(self))
+            except KeyError as error:
+                missing = missing_branch_name(morpho, error)
+                if missing is None:
+                    raise
+                raise KeyError(
+                    f"Recording {name!r} selects branch {missing!r}, which the morphology (revision "
+                    f"{morpho.revision}) does not have: an edit removed it. Attach a branch named {missing!r} "
+                    "again, or record on a new Cell."
+                ) from error
+        for name, spec in updated.items():
+            self._recording_specs[name] = spec
+            self._recording_bases[name] = (morpho, morpho.revision, grid, self._recording_bases[name][3])
+        if updated:
+            self._compiled_recording_cache.clear()
+            self._run_loop_cache.clear()
+
+    def _resolve_declarations(self) -> None:
+        """Bring recordings and connection rows declared on an older grid or tree up to date (MORPH-15).
+
+        ``init_state`` calls this first, and ``Network.init_state`` calls it
+        on every Cell before initializing any, so that an error leaves the
+        whole Network declaring. It raises before changing anything.
+        """
+        _ = self._discretization
+        self._resolve_recordings()
+        if self._connection_store_cache is not None:
+            self._connection_store_cache.follow_synapses(self._get_synapse_store())
 
     def _compiled_recordings(self, dt) -> tuple:
         self._raise_if_not_initialized("compile recordings")
@@ -2478,7 +2586,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         # the discretization cache current while the cell is uninitialized.
         # Initialization consumes that snapshot; it must never silently rerun a
         # policy or create a second grid generation.
-        _ = self._discretization
+        self._resolve_declarations()
         declaration_key = self._discretization_cache_key
         self._take_morphology_snapshot()
         try:

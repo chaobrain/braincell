@@ -31,7 +31,7 @@ The single formal build entry point is :func:`build_discretization`,
 which returns a frozen :class:`Discretization` bundling both views.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 import brainunit as u
@@ -119,6 +119,10 @@ class CVPointMechanism:
     branch_id: int = -1
     branch_x: float = 0.5
     population_index: int | None = None
+    #: Index of the ``Cell.place`` rule, and of the mechanism within it,
+    #: that made this placement; see :class:`PointPlacement`.
+    _rule_index: int = field(default=-1, compare=False, repr=False)
+    _mechanism_index: int = field(default=-1, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -160,6 +164,12 @@ class PointPlacement:
     cv_position: Position
     point_id: int
     population_index: int | None = None
+    #: Which ``Cell.place`` rule (index into ``Cell.place_rules``) and which
+    #: mechanism of it made this placement. With the branch name, ``branch_x``
+    #: and population they identify a logical synapse across rebuilds, where
+    #: ``id`` shifts when an earlier rule gains or loses a site (MORPH-15).
+    _rule_index: int = field(default=-1, compare=False, repr=False)
+    _mechanism_index: int = field(default=-1, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -730,6 +740,8 @@ def _build_point_placements(
                     cv_position=placement.position,
                     point_id=point_id,
                     population_index=placement.population_index,
+                    _rule_index=placement._rule_index,
+                    _mechanism_index=placement._mechanism_index,
                 )
             )
     return tuple(sorted(placements, key=lambda item: item.id))

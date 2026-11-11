@@ -72,6 +72,22 @@ class _CellScope:
         pairs = tuple((population, cv_id) for population in populations for cv_id in range(cell.n_cv))
         return cls(population_indices=populations, pairs=pairs)
 
+    def replayed(self, cell) -> "_CellScope":
+        """Make this selection again on ``cell``'s current grid from what it was declared with.
+
+        The population members are kept and ``target`` (the whole cell, a
+        region, or a locset) is selected again, so a selection made before
+        the grid or tree changed names the same branches and locations
+        after. A ``_Undeclarable`` target cannot be replayed; the caller
+        checks for it first.
+        """
+        scope = cell._root_scope().select_population(self.population_indices)
+        if self.target is None:
+            return scope
+        if isinstance(self.target, (RegionExpr, RegionMask)):
+            return scope.select_region(cell, self.target)
+        return scope.select_locations(cell, self.target)
+
     @property
     def cv_ids(self) -> tuple[int, ...]:
         return _ordered_unique(cv_id for _, cv_id in self.pairs)

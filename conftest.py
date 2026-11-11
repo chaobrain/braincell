@@ -22,6 +22,7 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 
 import gc  # noqa: E402
 
+import brainstate  # noqa: E402
 import jax  # noqa: E402
 import pytest  # noqa: E402
 
@@ -66,3 +67,24 @@ def _collect_garbage_after_a_precision_switch():
     _collected_after_last_test = _switched_in_this_test
     if _switched_in_this_test:
         gc.collect()
+
+
+# Collection leaves the precision where the session started.
+#
+# ``brainstate.environ.set(precision=64)`` is process-wide, and the NEURON
+# comparison suites under validation/neuron call it when imported (it also
+# serves their ``python <suite>.py`` runs). Collecting one of them with
+# braincell's tests therefore ran every test of the session in float64; a test
+# that checks float32 dtypes failed, and the rest silently tested float64 only.
+# The switch happens before the first test, so the hook above never sees it
+# inside one. validation/neuron/conftest.py gives those suites float64 while
+# their own tests run.
+_SESSION_PRECISION = brainstate.environ.get_precision()
+_SESSION_X64 = bool(jax.config.jax_enable_x64)
+
+
+def pytest_collection_finish(session):
+    if brainstate.environ.get_precision() != _SESSION_PRECISION:
+        brainstate.environ.set(precision=_SESSION_PRECISION)
+    if bool(jax.config.jax_enable_x64) != _SESSION_X64:
+        jax.config.update("jax_enable_x64", _SESSION_X64)

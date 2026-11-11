@@ -26,10 +26,12 @@ is deleted is an ``AttributeError`` at import time.
 
 import gc
 import importlib
+import os
 import pathlib
 import pickle
 import subprocess
 import sys
+import tempfile
 import unittest
 
 import brainstate
@@ -198,3 +200,41 @@ class PrecisionSwitchIsolationTest(unittest.TestCase):
         with brainstate.environ.context(precision=64):
             result = _CONSTANT_FOR_X32_THEN_X64 * jnp.ones((1, 7, 4))
             self.assertEqual(result.dtype, jnp.float64)
+
+
+class CollectionKeepsTheSessionPrecisionTest(unittest.TestCase):
+    """Importing a test module does not change the precision other tests run at.
+
+    ``brainstate.environ.set(precision=64)`` is process-wide. The NEURON
+    comparison suites under ``validation/neuron`` call it when imported, so
+    collecting one of them together with braincell's tests ran every test of
+    the session in float64. The root ``conftest.py`` restores the session's
+    precision once collection ends.
+    """
+
+    def test_a_module_that_sets_float64_on_import_leaves_the_others_at_float32(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            pathlib.Path(tmp, "sets_float64_on_import_test.py").write_text(
+                "import brainstate\nbrainstate.environ.set(precision=64)\n\ndef test_imported():\n    pass\n"
+            )
+            pathlib.Path(tmp, "session_precision_test.py").write_text(
+                "import jax.numpy as jnp\n\ndef test_runs_in_float32():\n    assert jnp.ones(1).dtype == jnp.float32\n"
+            )
+            env = {key: value for key, value in os.environ.items() if key != "JAX_ENABLE_X64"}
+            env.update(
+                JAX_PLATFORMS="cpu", PYTHONPATH=os.pathsep.join(filter(None, (str(root), env.get("PYTHONPATH"))))
+            )
+            # ``-p conftest`` loads the root conftest.py, which the temporary
+            # directory is outside of.
+            result = subprocess.run(
+                [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-p", "conftest"]
+                + ["sets_float64_on_import_test.py", "session_precision_test.py"],
+                cwd=tmp,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("2 passed", result.stdout)

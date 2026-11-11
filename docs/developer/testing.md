@@ -30,6 +30,7 @@ python -m pytest braincell/ -q -n auto --dist loadfile   # in parallel (pytest-x
 The root `conftest.py` forces CPU JAX (`JAX_PLATFORMS=cpu`) and headless Matplotlib (`MPLBACKEND=Agg`).
 It also collects garbage around a switch of `jax_enable_x64` between tests: jaxlib reuses a numpy constant's float64 (or float32) device form while a jaxpr from the other precision still holds it, so a float32 test after a float64 one (or the reverse) could fail with `RuntimeProgramInputMismatch` depending on test order.
 A test that needs float64 after float32 work in the same test runs the float64 part in a child process (`run_float64` in `braincell/ion/_testing.py`).
+A test that needs float64 sets it with `brainstate.environ.context(precision=64)` or an autouse fixture. A module-level `brainstate.environ.set` is process-wide and would change the precision of every test collected with it, so the root `conftest.py` restores the session's precision once collection ends; the NEURON suites under `validation/neuron`, which set float64 when imported, get it while their tests run from `validation/neuron/conftest.py`.
 GPU performance and large numerical comparisons require separate workflows; unit tests do not establish those results.
 
 ## Validation and performance workflows

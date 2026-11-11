@@ -303,6 +303,37 @@
 
 ### Bug Fixes
 
+- Every solver name a cable `Cell` accepts now runs, or is rejected at
+  `init_state` (CELL-19). Before, `solver="exp_euler"`, `"ind_exp_euler"`,
+  `"backward_euler"` and `"crank_nicolson"` raised `ValueError: State
+  RuntimeParameterState(...) is not in the state list.` in `run` on every
+  cable Cell (the steps rejected the geometry they read, which the Cell keeps
+  outside its state graph), and the explicit Runge-Kutta solvers (`"ralston2"`,
+  `"rk4"`, ...) raised `ValueError: State ... must be written by
+  compute_derivative().` once the Cell had a Markov channel or a kinetic ion.
+  Now a generic solver integrates `V` with the dependent mechanism and synapse
+  states, and the Markov channels and kinetic ions then advance at the new
+  voltage through their subsolver, in the order `"staggered"` uses
+  (`ion_channel_update_order`). On a one-CV soma with `Nav_MA2020_GrC` or a
+  kinetic pool, `V` at 1 ms is within 2.3e-4 mV of `"staggered"` at
+  `dt = 0.005 ms` (float64) and the gap shrinks 5-fold at `dt = 0.001 ms`.
+  `"exp_euler"`, `"backward_euler"` and `"crank_nicolson"` solve all states of
+  a cell as one block, which point-synapse states (no CV axis) do not fit: with
+  a point synapse they now raise `ValueError` at `init_state` naming the solver
+  and the synapse class, where `Network.run` raised `TypeError: Cannot
+  concatenate arrays with different numbers of dimensions` or `ValueError:
+  Cannot stack arrays ...`. A user callable still owns the whole step.
+- A kinetic ion (e.g. `CdpStC_MA2020_GoC`) now runs on a lumped Cell under its
+  default `"ralston2"` and every other explicit solver, and a Markov channel on
+  a `SingleCompartment` under its default (CELL-19); both raised `ValueError:
+  State ... must be written by compute_derivative()`. The explicit steps of
+  `braincell.quad` now read a `DiffEqState` of an `IndependentIntegration`
+  submodule as a constant of the step instead of rejecting it. The dependent
+  channels of a kinetic ion (`CaHVA_MA2020_GoC` on the pool) are now
+  integrated by the cell's solver on a `SingleCompartment`, a lumped Cell and
+  a cable Cell under a generic solver: no hook stepped them, and the block
+  solvers failed with `UnexpectedTracerError`.
+
 - A lumped Cell (`cv_policy=Lumped()`, `Cell.point`) now checks the units of
   declared Channel and Ion parameters at `init_state`, with the same exception
   type and message as a cable Cell (MECH-41): the mechanism, the parameter, the

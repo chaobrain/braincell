@@ -29,6 +29,7 @@ from braincell.quad.protocol import DiffEqModule
 from braincell.quad._registry import register_module_step
 from braincell.quad._util import (
     apply_standard_solver_step,
+    check_unlisted_writes,
     environ_time,
     linearize_flat,
     _check_diffeq_state_derivative,
@@ -366,9 +367,7 @@ def _ind_exp_euler_step_selected(
             compute_derivative(*args)
             _check_diffeq_state_derivative(all_states[key], dt)  # THIS is important.
             derivative = all_states[key].derivative
-        for st in trace.states:
-            if id(st) not in all_state_ids:
-                raise ValueError(f'State {st} is not in the state list.')
+        check_unlisted_writes(trace, all_state_ids)
         return derivative
 
     # Each DiffEqState takes one exponential Euler step of its own,

@@ -98,7 +98,7 @@ from braincell.network.recording import (
 from braincell.reduction import ReductionOutput, ReductionViewCollection
 from braincell.reduction.runtime import ReductionInputRuntime, build_reduction_input_runtime
 from braincell.morph.morphology import Morphology
-from braincell.quad import get_integrator, ind_exp_euler_step, integrator_info
+from braincell.quad import get_integrator, ind_exp_euler_step, integrator_info, list_integrators
 from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad.protocol import DiffEqGroupState, IndependentIntegration, state_grouping
@@ -1038,7 +1038,17 @@ class Cell(_CellFacade, HHTypedNeuron):
         (the default) selects ``"staggered"`` on a cable cell and
         ``"ralston2"`` on a lumped cell; a lumped cell rejects the cable-only
         ``"staggered"`` and ``"dhs_voltage"``. :attr:`solver_name` reports the
-        resolved name.
+        resolved name. Every name of :func:`braincell.quad.list_integrators`
+        advances a cable cell: a generic one (the explicit Runge-Kutta
+        methods, ``"exp_euler"``, ``"ind_exp_euler"``, ``"backward_euler"``,
+        ``"crank_nicolson"``) integrates ``V`` with the dependent mechanism
+        states, after which Markov channels and kinetic ions advance at the
+        new voltage through their own subsolver, in the staggered order.
+        ``"exp_euler"``, ``"backward_euler"`` and ``"crank_nicolson"`` solve
+        all states as one block per cell and reject point synapses at
+        :meth:`init_state` with ``ValueError``. ``"dhs_voltage"`` advances
+        ``V`` only. A callable is called as ``solver(cell)`` and owns the
+        whole step.
     subsolver : str or Callable or None
         Integrator for Markov channels and kinetic ions. Together with
         ``substeps=None``, ``None`` selects ``"backward_euler"``. A
@@ -1169,6 +1179,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._compiled_recording_cache: dict[tuple, tuple] = {}
 
         self._initialized = False
+        # Set by init_state: the solver is a generic registered step, so the
+        # Markov channels and kinetic ions advance after it (``ind_update``).
+        self._ind_update_after_solver = False
 
         from braincell.trainable import TrainableManager
 
@@ -2355,6 +2368,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             self._runtime_generation += 1
             return
         self._runtime = CellRuntimeState.from_cell(self)
+        self._ind_update_after_solver = self._check_solver_against_mechanisms()
         self._runtime.refresh_geometry()
         for callback in currents.register_synapse_ion_currents(self):
             ion = self._runtime.get_ion(callback.ion_key)
@@ -2431,6 +2445,37 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._runtime_generation += 1
         self._runtime_cvs_cache = self._build_runtime_cv_views()
         self._runtime_nodes_cache = self._build_runtime_node_views()
+
+    def _check_solver_against_mechanisms(self) -> bool:
+        """Reject a solver that cannot advance this cable Cell's mechanisms.
+
+        Returns
+        -------
+        bool
+            Whether the solver is a generic registered step, after which the
+            IndependentIntegration mechanisms advance in ``ind_update``. It is
+            ``False`` for ``"staggered"`` (which schedules them itself),
+            ``"dhs_voltage"`` (voltage only) and a user callable (which owns
+            the whole step).
+
+        Raises
+        ------
+        ValueError
+            If ``exp_euler``, ``backward_euler`` or ``crank_nicolson`` meets a
+            point synapse.
+        """
+        if not _is_generic_step(self._solver_fn):
+            return False
+        if any(self._solver_fn is get_integrator(name) for name in _BLOCK_SOLVERS):
+            synapses = sorted({type(synapse).__name__ for _, synapse in self._runtime.iter_synapse_layouts()})
+            if synapses:
+                raise ValueError(
+                    f"solver {self._solver_name!r} cannot advance a Cell with point synapses "
+                    f"({', '.join(synapses)}): it integrates all states as one block per cell, and "
+                    "synapse states have no CV axis. Use 'staggered', 'ind_exp_euler' or an explicit "
+                    "Runge-Kutta solver such as 'ralston2'."
+                )
+        return True
 
     def _init_lumped_state(self, *, batch_size=None) -> None:
         """Build the lumped runtime: SingleCompartment math with no CV axis."""
@@ -2762,24 +2807,33 @@ class Cell(_CellFacade, HHTypedNeuron):
         except KeyError:
             return self.current_time
 
+    def _run_integrated_hook(self, hook: str, cv_V) -> None:
+        """Call one integration hook on every mechanism a generic solver advances.
+
+        A node marked :class:`~braincell.quad.IndependentIntegration` advances
+        itself in ``ind_update``. The dependent channels under such an ion (a
+        kinetic ion's HH calcium channel) are still the solver's, as in the
+        staggered schedule.
+        """
+        for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
+            if not isinstance(node, IndependentIntegration):
+                args = self._runtime_node_phase_args(path, node, cv_V)
+                getattr(node, hook)(*args)
+            elif isinstance(node, Ion):
+                node._run_on_dependent_children(node._channels(), hook, cv_V)
+
     def pre_integral(self):
         self._raise_if_not_initialized("pre_integral()")
         if self._is_lumped:
             return self._lumped_runtime.pre_integral(self._lumped_I_ext.value)
-        for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
-            if not isinstance(node, IndependentIntegration):
-                args = self._runtime_node_phase_args(path, node, self.V.value)
-                node.pre_integral(*args)
+        self._run_integrated_hook("pre_integral", self.V.value)
 
     def compute_derivative(self):
         self._raise_if_not_initialized("compute_derivative()")
         if self._is_lumped:
             return self._lumped_runtime.compute_derivative(self._lumped_I_ext.value)
         self.V.derivative = self.compute_voltage_derivative(self.V.value)
-        for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
-            if not isinstance(node, IndependentIntegration):
-                args = self._runtime_node_phase_args(path, node, self.V.value)
-                node.compute_derivative(*args)
+        self._run_integrated_hook("compute_derivative", self.V.value)
 
     def compute_membrane_derivative(self, V):
         self._raise_if_not_initialized("compute_membrane_derivative()")
@@ -2917,6 +2971,10 @@ class Cell(_CellFacade, HHTypedNeuron):
                         name=_call_name("braincell:ion_update:node_step", path, node),
                     )(node, *args)
 
+        self._ind_update_top_level_nodes(cv_V)
+
+    def _ind_update_top_level_nodes(self, cv_V):
+        """Call ``ind_update`` on every top-level node (the ``"integration"`` order)."""
         with jax.named_scope("braincell:ion_update:integration:independent"):
             for path, node in self._top_level_ion_channel_nodes():
                 args = self._runtime_node_phase_args(path, node, cv_V)
@@ -2947,14 +3005,7 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         # Independent Ion states use their own updater, still without
         # recursing into child channels.
-        with jax.named_scope("braincell:ion_update:family:independent_ion"):
-            for path, node in ion_nodes:
-                if isinstance(node, IndependentIntegration):
-                    with jax.named_scope(_scope_name("braincell:ion_update:ion", path, node)):
-                        jax.named_call(
-                            node.ind_update,
-                            name=_call_name("braincell:ion_update:ion_ind_update", path, node),
-                        )(cv_V, recursive_child=False)
+        self._update_independent_ions(ion_nodes, cv_V)
 
         # Channel nodes include Ion child channels, MixIons child channels,
         # and top-level channels. The owner path rebuilds the right ion args.
@@ -2973,6 +3024,21 @@ class Cell(_CellFacade, HHTypedNeuron):
                         )(target, *args)
 
         # Independent channels finish through their own update rule.
+        self._update_independent_channels(channel_nodes, cv_V)
+
+    def _update_independent_ions(self, ion_nodes, cv_V):
+        """Advance each IndependentIntegration ion, without its child channels."""
+        with jax.named_scope("braincell:ion_update:family:independent_ion"):
+            for path, node in ion_nodes:
+                if isinstance(node, IndependentIntegration):
+                    with jax.named_scope(_scope_name("braincell:ion_update:ion", path, node)):
+                        jax.named_call(
+                            node.ind_update,
+                            name=_call_name("braincell:ion_update:ion_ind_update", path, node),
+                        )(cv_V, recursive_child=False)
+
+    def _update_independent_channels(self, channel_nodes, cv_V):
+        """Advance each IndependentIntegration channel through its own solver."""
         with jax.named_scope("braincell:ion_update:family:independent_channel"):
             for path, node in channel_nodes:
                 if not self._is_independent_channel(node):
@@ -2987,6 +3053,26 @@ class Cell(_CellFacade, HHTypedNeuron):
                         target.ind_update,
                         name=_call_name("braincell:ion_update:channel_ind_update", path, node),
                     )(*args)
+
+    def _update_independent_mechanisms(self, cv_V):
+        """Advance the IndependentIntegration mechanisms after a generic solver step.
+
+        A generic solver (an explicit Runge-Kutta method, ``exp_euler``,
+        ``backward_euler`` ...) integrates ``V`` and the dependent mechanism
+        states together, and only reads the states of Markov channels and
+        kinetic ions. These then advance at the new voltage, in the order
+        the staggered schedule uses for them under
+        ``ion_channel_update_order``. An ion driven by its total current
+        reads it from a snapshot taken at the new voltage, as staggered
+        takes one before its mechanism phase; a synapse current carried by
+        the ion needs that snapshot.
+        """
+        self.cache_ion_total_currents(cv_V)
+        if self.ion_channel_update_order == "family":
+            self._update_independent_ions(self._family_ion_nodes(), cv_V)
+            self._update_independent_channels(self._family_channel_nodes(), cv_V)
+        else:
+            self._ind_update_top_level_nodes(cv_V)
 
     @staticmethod
     def _is_independent_channel(node):
@@ -3061,10 +3147,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         if self._is_lumped:
             return self._lumped_runtime.post_integral(self._lumped_I_ext.value)
         self.V.value = self.sum_delta_inputs(init=self.V.value)
-        for path, node in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
-            if not isinstance(node, IndependentIntegration):
-                args = self._runtime_node_phase_args(path, node, self.V.value)
-                node.post_integral(*args)
+        self._run_integrated_hook("post_integral", self.V.value)
 
     def update(self):
         """Advance the cell by one simulation step.
@@ -3210,6 +3293,10 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         with jax.named_scope("braincell:cell_update:solver"):
             self.solver(self)
+
+        if self._ind_update_after_solver:
+            with jax.named_scope("braincell:cell_update:independent_update"):
+                self._update_independent_mechanisms(self.V.value)
 
         with jax.named_scope("braincell:cell_update:clear_ion_total_current_cache"):
             self.clear_ion_total_current_cache()
@@ -3907,6 +3994,16 @@ def _resolve_solver(solver):
     if callable(solver):
         return getattr(solver, "__name__", type(solver).__name__), solver
     raise TypeError(f"solver must be str or callable, got {type(solver).__name__!s}.")
+
+
+#: Generic steps that merge every DiffEqState of a Cell into one array per
+#: cell (``diffeq_state_merging``) and solve it as a block.
+_BLOCK_SOLVERS = ("exp_euler", "backward_euler", "crank_nicolson")
+
+
+def _is_generic_step(fn) -> bool:
+    """Whether ``fn`` is a registered integrator other than a cable-only step."""
+    return any(get_integrator(name) is fn for name in list_integrators() if name not in CABLE_ONLY_SOLVERS)
 
 
 def _resolve_cell_solver(solver, *, lumped: bool):

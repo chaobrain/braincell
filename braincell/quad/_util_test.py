@@ -167,6 +167,53 @@ class ApplyStandardSolverStepTest(unittest.TestCase):
             )
 
 
+class _Holder:
+    """A plain object: graph traversal does not see the state it holds."""
+
+    def __init__(self, value):
+        self.state = brainstate.ShortTermState(value)
+
+
+class _ReadsUnlisted(brainstate.nn.Module, DiffEqModule):
+    """dx/dt = -x / tau, with tau read from a state outside the module graph."""
+
+    def __init__(self, write=False):
+        super().__init__()
+        self.x = DiffEqSingleState(jnp.ones(2, dtype=FLOAT_DTYPE) * u.mV)
+        self.holder = _Holder(jnp.full(2, 10.0, dtype=FLOAT_DTYPE) * u.ms)
+        self.write = write
+
+    def compute_derivative(self, *args, **kwargs):
+        tau = self.holder.state.value
+        if self.write:
+            self.holder.state.value = tau
+        self.x.derivative = -self.x.value / tau
+
+
+class UnlistedStateTest(unittest.TestCase):
+    """A Cell keeps its geometry outside the graph; reading it is allowed."""
+
+    def test_block_and_independent_steps_read_an_unlisted_state(self):
+        from braincell.quad import backward_euler_step, crank_nicolson_step, exp_euler_step, ind_exp_euler_step
+
+        for step in (exp_euler_step, backward_euler_step, crank_nicolson_step, ind_exp_euler_step):
+            with self.subTest(step=step.__name__):
+                m = _ReadsUnlisted()
+                self.assertNotIn(id(m.holder.state), {id(st) for st in split_diffeq_states(m)[0].values()})
+                with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+                    step(m)
+                np.testing.assert_allclose(m.x.value.to_decimal(u.mV), np.exp(-0.01), rtol=1e-4)
+
+    def test_writing_an_unlisted_state_raises(self):
+        from braincell.quad import exp_euler_step, ind_exp_euler_step
+
+        for step in (exp_euler_step, ind_exp_euler_step):
+            with self.subTest(step=step.__name__):
+                with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+                    with self.assertRaisesRegex(ValueError, "not in the state list, but compute_derivative"):
+                        step(_ReadsUnlisted(write=True))
+
+
 class JacrevLastDimTest(unittest.TestCase):
     def test_diagonal_linear_function(self):
         def f(y):

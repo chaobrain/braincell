@@ -28,7 +28,7 @@ import brainstate
 import braintools.quad as btq
 
 from braincell._misc import cast_like as _cast_like
-from braincell.quad._util import environ_time
+from braincell.quad._util import environ_time, split_diffeq_states
 from braincell.quad.protocol import DiffEqModule, DiffEqState
 
 __all__ = [
@@ -49,24 +49,42 @@ _CACHE: dict[Callable, Callable] = {}
 _CACHE_LOCK = threading.Lock()
 
 
+def _independent_state_ids(target: DiffEqModule) -> set[int]:
+    """Ids of the :class:`DiffEqState` leaves owned by ``IndependentIntegration`` submodules."""
+    all_states, integrated, _ = split_diffeq_states(target)
+    integrated_ids = {id(st) for st in integrated.values()}
+    return {id(st) for st in all_states.values() if isinstance(st, DiffEqState) and id(st) not in integrated_ids}
+
+
 def _discover(target: DiffEqModule, t, args):
     """Evaluate the first stage and collect the integrated states.
 
     Every :class:`DiffEqState` written by ``compute_derivative`` is integrated;
     writing any other state is an error, as for the previous braincell kernels.
+    A :class:`DiffEqState` that is only read must belong to an
+    :class:`~braincell.quad.IndependentIntegration` submodule (a Markov channel
+    or a kinetic ion): the host advances it through ``ind_update``, and the
+    stages see it as a constant. Any other unwritten one is an error.
     """
     with brainstate.environ.context(t=t), brainstate.StateTraceStack() as trace:
         target.compute_derivative(*args)
-        states, y0, k1 = [], [], []
+        states, y0, k1, unwritten = [], [], [], []
         for st, val, written in zip(trace.states, trace.original_state_values, trace.been_writen):
             if isinstance(st, DiffEqState):
                 if not written:
-                    raise ValueError(f'State {st} must be written by compute_derivative().')
+                    unwritten.append(st)
+                    continue
                 states.append(st)
                 y0.append(val)
                 k1.append(st.derivative)
             elif written:
                 raise ValueError(f'State {st} is not for integral.')
+    if unwritten:
+        # Only traversed when needed: the common model writes every state it reads.
+        independent = _independent_state_ids(target)
+        for st in unwritten:
+            if id(st) not in independent:
+                raise ValueError(f'State {st} must be written by compute_derivative().')
     return states, tuple(y0), tuple(k1)
 
 
@@ -115,7 +133,10 @@ def module_step_from_ode(ode_step: Callable) -> Callable:
     1. calls ``target.pre_integral(*args)``;
     2. evaluates ``target.compute_derivative(*args)`` once at the current
        time; every :class:`DiffEqState` it writes is integrated (writing any
-       other state raises ``ValueError``);
+       other state raises ``ValueError``). A :class:`DiffEqState` it only
+       reads must belong to an :class:`~braincell.quad.IndependentIntegration`
+       submodule, which the host advances through ``ind_update``; the stages
+       read it as a constant. Any other unwritten one raises ``ValueError``;
     3. calls ``ode_step(f, y0, t)``, where ``f(y, t_stage)`` writes ``y``
        into those states, sets ``t_stage`` as the environment time and
        returns their derivatives;

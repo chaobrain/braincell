@@ -768,6 +768,26 @@
   Unedited morphologies behave as before. `Morphology.remove` and
   `Morphology.reattach` are the public edits that move them.
 
+- A Cell declaration whose expression names a branch by index no longer
+  lands silently on another branch after an edit shifts the indices
+  (MORPH-17). Such expressions are `BranchSlice(1, ...)`, `SubtreeRegion(1)`,
+  `at(1, x)`, a `branch_in` or `branch_range` filter on `index`, `branch_id`
+  or `parent_id`, the region `cell.branch[1]` declares, and any composite
+  holding one. They are checked in `Cell.paint` and `Cell.place` (every
+  path), in recordings and in `VoltageCrossingSource` locations. Each records
+  the morphology revision it was declared at, as the resolved masks of
+  MORPH-16 do. After `Morphology.remove` or `Morphology.reattach`, the next
+  rebuild raises `ValueError`. The message names the declaration (call site,
+  or recording), the expression and its indices, and suggests branch names.
+  The rebuild is the first grid read, `init_state`, or the detector's next
+  `cv_id`. Before, on a tree with `soma`, `dend` (two children) and `axon`,
+  `paint(BranchSlice(1, 0.0, 1.0), leak)` followed by `remove("dend")`
+  painted the axon. Appending, replacing in place and transforming keep
+  every index, and declarations by name, type or geometry follow edits as
+  before. A detector connected to a Cell, by an expression or a mask, is now
+  checked at `init_state` before the Cell initializes (`Network.init_state`:
+  before any Cell initializes), not at its first `cv_id` read after it.
+
 - Editing a Cell's morphology after `init_state()` no longer makes `run` and
   `reset()` fail (MORPH-14). Before, attaching a branch to the tree a Cell
   was declared with made `cell.run`, `cell.n_cv`, `cell.cvs` and `cell.reset()`

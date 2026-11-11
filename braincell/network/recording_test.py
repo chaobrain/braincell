@@ -384,5 +384,74 @@ class RecordingFollowsItsDeclarationTest(unittest.TestCase):
             cell.init_state()
 
 
+class RecordingByIndexTest(unittest.TestCase):
+    """MORPH-17: a recording whose expression names a branch by index raises once an edit shifts it.
+
+    Tree U: soma 0, dend 1, axon 2, apical 3; removing ``dend`` puts apical
+    on 2, where a recording of ``BranchSlice(2, ...)`` would have moved.
+    """
+
+    _STALE = r"Recording '{}' selects .*by default index 2, .*removed or moved.*Record on a new Cell"
+
+    def test_a_removal_before_init_raises_at_init_state(self) -> None:
+        morpho = make_tree_u()
+        cell = braincell.Cell(morpho)
+        cell.on(BranchSlice(2, 0.0, 1.0)).record("ax", braincell.observe.state("v"))
+        cell.loc(at(2, 0.5)).record("ax_mid", braincell.observe.state("v"))
+
+        morpho.remove("dend")
+
+        with self.assertRaisesRegex(ValueError, self._STALE.format("ax")):
+            cell.init_state()
+        self.assertFalse(cell._initialized)
+        self.assertIs(cell.morpho, morpho)
+        # The recovery the message names: record on a new Cell, by name.
+        fresh = braincell.Cell(morpho)
+        fresh.branch["axon"].record("ax", braincell.observe.state("v"))
+        self.assertEqual(_rows(_run(fresh), "ax"), [(1, 1)])
+
+    def test_a_removal_after_init_raises_after_reset(self) -> None:
+        morpho = make_tree_u()
+        cell = braincell.Cell(morpho)
+        cell.branch[2].record("ax", braincell.observe.state("v"))
+        self.assertEqual(_rows(_run(cell), "ax"), [(2, 2)])
+
+        morpho.remove("dend")
+
+        # The initialized Cell runs its snapshot, where index 2 is the axon.
+        with self.assertWarns(RuntimeWarning):
+            self.assertEqual(_rows(_run(cell), "ax"), [(2, 2)])
+        cell.reset()
+        with self.assertRaisesRegex(ValueError, self._STALE.format("ax")):
+            cell.init_state()
+        self.assertFalse(cell._initialized)
+
+    def test_an_index_recording_survives_an_append_and_a_new_policy(self) -> None:
+        morpho = make_tree_u()
+        cell = braincell.Cell(morpho)
+        cell.on(BranchSlice(2, 0.0, 1.0)).record("ax", braincell.observe.state("v"))
+
+        morpho.soma.extra = _basal()
+        cell.cv_policy = braincell.CVPerBranch(2)
+
+        self.assertEqual(_rows(_run(cell), "ax"), [(2, 4), (2, 5)])
+
+    def test_network_init_state_initializes_no_cell(self) -> None:
+        morpho = make_tree_u()
+        stale = braincell.Cell(morpho)
+        stale.loc(at(2, 0.5)).record("ax", braincell.observe.state("v"))
+        other = braincell.Cell(make_tree_u())
+        network = braincell.Network("n")
+        network.add_population("a", other)
+        network.add_population("b", stale)
+
+        morpho.remove("dend")
+
+        with self.assertRaisesRegex(ValueError, self._STALE.format("ax")):
+            network.init_state()
+        self.assertFalse(other._initialized)
+        self.assertFalse(stale._initialized)
+
+
 if __name__ == "__main__":
     unittest.main()

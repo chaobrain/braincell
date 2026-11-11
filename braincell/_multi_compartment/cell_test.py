@@ -1655,6 +1655,72 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
             self.assertEqual(len(ions), 1)
             self.assertFalse(any(isinstance(arg, bool) for arg in ions))
 
+    def test_integration_order_hands_a_self_integrating_ions_dependent_channels_on(self):
+        # CELL-32: the ion's own update leaves its channels out, so the
+        # dependent pass advances its dependent channel (with the ion's info,
+        # before the ion's update) and leaves the independent one to it.
+        from braincell.quad.protocol import IndependentIntegration
+
+        calls = []
+
+        class _SelfIon(Ion, IndependentIntegration):
+            def __init__(self):
+                super().__init__(size=1, name=None)
+                self.Ci = DiffEqSingleState(jnp.asarray([1.0]))
+                self.Co = jnp.asarray([2.0])
+                self.valence = 1
+
+            @property
+            def E(self):
+                return jnp.asarray([0.0])
+
+            def ind_update(self, V, *args, **kwargs):
+                calls.append("ion")
+
+        class _Dependent(Channel):
+            root_type = _SelfIon
+
+            def __init__(self):
+                super().__init__(size=1, name=None)
+                self.x = DiffEqSingleState(jnp.asarray([1.0]))
+
+            def compute_derivative(self, V, *ions):
+                calls.append(("dependent", len(ions)))
+                self.x.derivative = -jnp.asarray([1.0]) / u.ms
+
+            def current(self, V, ion):
+                return 0.0
+
+        class _Independent(Channel, IndependentIntegration):
+            root_type = _SelfIon
+
+            def __init__(self):
+                super().__init__(size=1, name=None)
+                self.y = DiffEqSingleState(jnp.asarray([1.0]))
+
+            def compute_derivative(self, V, *ions):
+                calls.append("independent")
+                self.y.derivative = -jnp.asarray([1.0]) / u.ms
+
+            def current(self, V, ion):
+                return 0.0
+
+        cell = _simple_cell()
+        cell.ion_channel_update_order = "integration"
+        ion = _SelfIon()
+        ion.add(dep=_Dependent(), ind=_Independent())
+        cell.init_state()
+        cell.ion_channels["test_ion"] = ion
+
+        with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+            cell._update_ion_channels_by_integration(cell._cv_to_point(cell.V.value))
+
+        self.assertIn(("dependent", 1), calls)
+        self.assertNotIn("independent", calls)
+        self.assertEqual(calls[-1], "ion")
+        np.testing.assert_allclose(np.asarray(ion.channels["dep"].x.value), [0.9], rtol=1e-6)
+        np.testing.assert_array_equal(np.asarray(ion.channels["ind"].y.value), [1.0])
+
 
 def _kinetic_calcium_cell(order, solver="staggered"):
     """Soma 20 um x 10 um: leak 0.1 mS/cm^2 at -70 mV, kinetic Ca pool, CaHVA 0.5 mS/cm^2 under it."""

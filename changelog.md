@@ -80,6 +80,24 @@
 
 ### New Features
 
+- **`Morphology.reattach(target, *, parent, parent_x=1.0, child_x=None)`
+  moves a subtree within a tree** (MORPH-2e). `target` and all its
+  descendants are cut from their parent and attached to `parent`; names,
+  geometry and every attachment inside the moved subtree are kept, and
+  `child_x=None` keeps the end `target` attached by. A branch's parent never
+  changes, so the move is a removal plus an inserted copy made as one edit:
+  the moved branches get new views (the views held before detach) and come
+  last in default order. Cell inputs held by branch index are therefore
+  rejected at the Cell's next rebuild, as after `remove`, and location
+  expressions follow the move. Moving the root, or moving a branch under
+  itself or one of its descendants (a cycle), raises `ValueError`. To insert
+  a branch between two others, `attach` it and then `reattach` the lower part
+  under it. 3-D points do not move. `reattach` is now a reserved branch
+  name: a checkpoint that holds a branch named `reattach` no longer loads. No
+  branch in this repository uses that name. The morphology tutorial has a new
+  section, "Editing a tree", that walks through `clone`, `remove`,
+  `replace`, `graft` and `reattach`.
+
 - **`Morphology.graft(other, *, parent, parent_x=1.0, child_x=0.0,
   rename=None)` attaches a copy of another tree** (MORPH-2d). `other`'s root
   becomes a child of `parent`, attached as `attach` would attach it, and its
@@ -514,8 +532,8 @@
   - a `CVPerBranchList` policy, alone or inside a `CompositeByTypePolicy`;
   - a `VoltageCrossingSource` whose `location` is a `LocsetMask`.
 
-  Each records the morphology revision it was declared at. Removing a branch
-  or replacing a subtree moves later default indices down. After that the next
+  Each records the morphology revision it was declared at. Removing or moving
+  a branch moves later default indices down. After that the next
   rebuild raises `RuntimeError`, and the message names the declaration. The
   rebuild is the first grid read, `init_state`, or the detector's next
   `cv_id`. Before, on a soma with `dend`, `axon` and `apical` (indices 1, 2
@@ -526,8 +544,8 @@
   replacing or transforming a branch in place, keep every existing index, so
   these declarations stay valid. A location expression such as
   `at("axon", 0.5)` is evaluated again at each rebuild and follows any edit.
-  Unedited morphologies behave as before. `Morphology.remove` is the first
-  public edit that moves them.
+  Unedited morphologies behave as before. `Morphology.remove` and
+  `Morphology.reattach` are the public edits that move them.
 
 - A current input registered with `Cell.add_current_input` after a
   `Cell.run` is now included by the next `run` (CELL-23). `run` reuses its

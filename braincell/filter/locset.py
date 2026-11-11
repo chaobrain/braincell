@@ -99,7 +99,7 @@ class LocsetBatch:
 
     Like :class:`LocsetMask`, a batch holds default-order branch indices
     valid for the morphology revision it was resolved on; evaluate again
-    after a branch is removed or a subtree replaced.
+    after a branch is removed or moved.
 
     See Also
     --------

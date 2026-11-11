@@ -556,9 +556,9 @@ class VoltageCrossingSource(EventSource):
         Morphology locations; defaults to the root midpoint. An expression
         such as ``at("axon", 0.5)`` follows edits of the Cell's morphology.
         A resolved ``LocsetMask`` holds default branch indices: they stay
-        valid when branches are appended, but once a branch is removed or a
-        subtree replaced, :attr:`cv_id` raises ``RuntimeError`` rather than
-        watch another branch.
+        valid when branches are appended, but once a branch is removed or
+        moved, :attr:`cv_id` raises ``RuntimeError`` rather than watch
+        another branch.
     threshold : brainunit.Quantity, optional
         Explicit voltage threshold, or the owning Cell's V_th when omitted.
     direction : str, optional
@@ -702,7 +702,7 @@ class VoltageCrossingSource(EventSource):
                 raise RuntimeError(
                     f"VoltageCrossingSource location is a resolved {type(self.location).__name__}, whose branch "
                     f"indices are those of morphology revision {basis[1]}; a branch has since been removed or "
-                    "replaced, so they no longer name the same branches. Recreate the detector with a location "
+                    "moved, so they no longer name the same branches. Recreate the detector with a location "
                     'expression such as at("axon", 0.5).'
                 )
             cv_ids = _resolve_detector_location_cvs(self.cells, self.location)

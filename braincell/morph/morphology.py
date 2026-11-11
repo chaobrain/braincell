@@ -731,8 +731,8 @@ class Morphology:
 
         Each successful edit call (:meth:`attach`, ``morpho.soma.dend =
         branch``, ``morpho.soma[0.5].dend = branch``, :meth:`remove`,
-        :meth:`replace`, :meth:`graft`) advances it by exactly one, whether
-        it changes the structure or only the geometry. Reads
+        :meth:`replace`, :meth:`graft`, :meth:`reattach`) advances it by
+        exactly one, whether it changes the structure or only the geometry. Reads
         never advance it, and an edit that raises leaves it, the tree and
         :meth:`naming_state` unchanged.
 
@@ -2207,6 +2207,127 @@ class Morphology:
             new_ids = self._register_records([root, *records[1:]], names=names, parent_ids={None: parent_id})
         return self._nodes[new_ids[0]]
 
+    def reattach(
+        self,
+        target: ParentRef,
+        *,
+        parent: ParentRef,
+        parent_x: float = 1.0,
+        child_x: float | None = None,
+    ) -> "MorphoBranch":
+        """Move a branch and its descendants to another parent in this tree.
+
+        ``target`` is cut from its parent and attached to ``parent``, with
+        its whole subtree. Names, geometry and every attachment inside the
+        moved subtree are kept. To insert a branch between two others, attach
+        it first and then move the lower part under it::
+
+            morpho.attach(parent="soma", child_branch=hub, child_name="hub")
+            morpho.reattach("dend", parent="hub")
+
+        Parameters
+        ----------
+        target : str or MorphoBranch
+            A non-root branch of this tree, by name or by a view that is
+            still in it.
+        parent : str or MorphoBranch
+            The new parent, by name or by view; not ``target`` itself or one
+            of its descendants.
+        parent_x : float
+            Attachment point on ``parent``: ``0`` (proximal), ``0.5``
+            (midpoint, soma only) or ``1`` (distal, default). The old value
+            is not kept, because it may not be valid on the new parent.
+        child_x : float or None
+            End of ``target`` that attaches: ``0`` (proximal) or ``1``
+            (distal). ``None`` (default) keeps the end ``target`` attached by
+            before the move.
+
+        Returns
+        -------
+        MorphoBranch
+            The view of ``target`` in its new place. It is a new object: the
+            views held from before the call are detached.
+
+        Raises
+        ------
+        RuntimeError
+            If this morphology is the read-only snapshot of an initialized
+            Cell (checked first), or ``target`` or ``parent`` is a view of a
+            branch that an edit removed.
+        KeyError
+            If no branch is called ``target`` or ``parent``.
+        TypeError
+            If ``target`` or ``parent`` is neither a ``str`` nor a
+            :class:`MorphoBranch`.
+        ValueError
+            If ``target`` or ``parent`` is a view of another morphology's
+            branch; ``target`` is the root; ``parent`` is ``target`` or one of
+            its descendants, which would make a cycle; or ``parent_x`` or
+            ``child_x`` is not an allowed value.
+
+        See Also
+        --------
+        remove : Remove a subtree and return it.
+        graft : Attach a copy of another tree.
+
+        Notes
+        -----
+        A branch's parent never changes, so a move is a removal plus an
+        insertion of a copy, made as one edit: :attr:`revision` advances by
+        one and the index watermark moves. The moved branches get new views
+        and come last in default order, and the branches after them in the
+        old order move down, so Cell inputs held by branch index are rejected
+        at the Cell's next rebuild, while location expressions such as
+        ``at("dend", 0.5)`` follow the move. Moving a subtree back to where
+        it was is an edit too: it still goes to the end of the default
+        order. 3-D points do not move; :meth:`to_swc` reports a gap at the
+        new joint. A call that raises changes nothing.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch, Morphology
+            >>> soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+            >>> dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+            >>> tree = Morphology.from_root(soma, name="soma")
+            >>> tree.soma.dend = dend
+            >>> tree.soma.apical = dend
+            >>> tree.dend.tip = dend
+            >>> moved = tree.reattach("tip", parent="apical", parent_x=0.0)
+            >>> moved.parent.name, moved.parent_x
+            ('apical', 0.0)
+            >>> [(branch.name, branch.index) for branch in tree.branches]
+            [('soma', 0), ('dend', 1), ('apical', 2), ('tip', 3)]
+        """
+        self._require_editable()
+        node_id = self._resolve_branch_ref(target, what="reattach()")
+        node = self._nodes[node_id]
+        if node._parent_id is None:
+            raise ValueError(f"Cannot reattach the root branch {node._name!r}: it has no parent to move it from.")
+        parent_id = self._resolve_parent(parent)
+        node_ids = self._subtree_node_ids(node_id)
+        if parent_id in set(node_ids):
+            where = "itself" if parent_id == node_id else f"its descendant {self._nodes[parent_id]._name!r}"
+            raise ValueError(
+                f"Cannot reattach {node._name!r} under {where}: the new parent is in the subtree being moved, "
+                "so the tree would contain a cycle."
+            )
+        self._validate_parent_x(self._nodes[parent_id], parent_x)
+        if child_x is None:
+            child_x = node._child_x
+        else:
+            self._validate_child_x(child_x)
+        records = self._subtree_records(node_id)
+        root = records[0]._replace(parent_x=float(parent_x), child_x=float(child_x))
+        with self._edit(reindex=True):
+            self._unregister_subtree(node_ids)
+            new_ids = self._register_records(
+                [root, *records[1:]], names=[record.name for record in records], parent_ids={None: parent_id}
+            )
+        return self._nodes[new_ids[0]]
+
     def __getattr__(self, name: str) -> object:
         # Underscore-prefixed names never name a branch. Failing fast avoids
         # unbounded recursion when pickle / copy.deepcopy probe for
@@ -2332,8 +2453,8 @@ class Morphology:
         place rule, a per-branch CV list) records the revision it resolved
         them at. Appending, replacing geometry in place and transforming
         keep every existing default index, so those indices stay valid; a
-        removal (:meth:`remove`) shifts the later ones down and the consumer
-        must re-resolve or fail.
+        removal (:meth:`remove`) or a move (:meth:`reattach`) shifts the
+        later ones down and the consumer must re-resolve or fail.
         """
         return self._reindex_revision > revision
 
@@ -2767,8 +2888,9 @@ class MorphoBranch:
     A view is live: while its branch is in the tree it always reports the
     current geometry, index, parent and children, so an index read before
     an edit may differ from one read after it.  A branch's parent never
-    changes.  If an edit removes the branch (:meth:`Morphology.remove`),
-    the view is *detached*: its ``name``, ``branch`` and the delegated
+    changes.  If an edit removes the branch (:meth:`Morphology.remove`), or
+    moves it with a new view (:meth:`Morphology.reattach`), the view is
+    *detached*: its ``name``, ``branch`` and the delegated
     geometry stay readable, while every question about its place in the
     tree (``index``, ``branch_id``, ``index_by``, ``branch_order``,
     ``parent``, ``parent_id``, ``parent_x``, ``child_x``, ``children``,

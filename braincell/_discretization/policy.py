@@ -125,7 +125,7 @@ class CVPerBranchList(CVPolicy):
     The counts are tied to the default branch indices of the Cell's
     morphology when the policy is given to it. Appending a branch changes
     the branch count, which raises ``ValueError``; once a branch is removed
-    or a subtree replaced, the Cell raises ``RuntimeError`` at its next
+    or moved, the Cell raises ``RuntimeError`` at its next
     rebuild even if the count matches again, rather than give one branch's
     CVs to another. Assign the policy again for the current branches.
     """

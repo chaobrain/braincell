@@ -15,6 +15,7 @@
 
 
 from dataclasses import is_dataclass
+import re
 import unittest
 from unittest import mock
 from unittest.mock import patch
@@ -29,6 +30,12 @@ from braincell.morph import MorphoBranch, MorphoMetric
 from braincell.morph.branch import _ALLOWED_BRANCH_TYPES
 from braincell.morph.morphology import frozen_snapshot
 from braincell.morph._testing import (
+    EDIT_CASES,
+    SABOTAGE_CASES,
+    EditCase,
+    assert_layer_fresh,
+    assert_morpho_fresh,
+    cold_rebuild,
     make_apical,
     make_axon,
     make_basal,
@@ -37,7 +44,12 @@ from braincell.morph._testing import (
     make_projected_node_tree,
     make_root_split_tree,
     make_soma,
+    make_tree_s,
+    make_tree_t,
+    morph_fingerprint,
     simulate_remove_leaf,
+    simulate_replace_geometry,
+    stretched,
 )
 
 
@@ -1001,6 +1013,139 @@ class MorphoDetachedViewTest(unittest.TestCase):
                 with self.assertRaises(error):
                     simulate_remove_leaf(tree, name)
                 self.assertEqual((tree.revision, tree.n_branches), before)
+
+
+class MorphoEditTableTest(unittest.TestCase):
+    """Morph layer of the edit table: after every edit, each read of the tree equals a cold rebuild.
+
+    A new kind of edit (MORPH-2, MORPH-3, MORPH-9) adds a row to
+    ``EDIT_CASES`` and is covered here without a new test.
+    """
+
+    def test_every_edit_case_matches_a_cold_rebuild(self) -> None:
+        for case in EDIT_CASES:
+            with self.subTest(case.name):
+                assert_morpho_fresh(self, case)
+
+    def test_every_sabotage_case_is_reported(self) -> None:
+        for case in SABOTAGE_CASES:
+            with self.subTest(case.name):
+                with self.assertRaisesRegex(AssertionError, r"\n  revision: "):
+                    assert_morpho_fresh(self, case)
+
+    def test_a_replacement_that_bypasses_the_gate_is_reported_key_by_key(self) -> None:
+        with self.assertRaises(AssertionError) as caught:
+            assert_morpho_fresh(self, SABOTAGE_CASES[0])
+        message = str(caught.exception)
+        for key in ("revision", "metric", "ranges", "vis/structure_key", "vis/xyz"):
+            with self.subTest(key):
+                self.assertRegex(message, rf"\n  {re.escape(key)}[.\[: ]")
+        self.assertIn("ranges[0]: edited (180.0, 'um') != cold rebuild (250.0, 'um')", message)
+
+    def test_replacing_dend_on_tree_s_updates_the_totals(self) -> None:
+        tree = make_tree_s()
+        np.testing.assert_allclose(tree.total_length.to_decimal(u.um), 150.0, rtol=1e-12)
+        np.testing.assert_allclose(tree.x_range.to_decimal(u.um), 150.0, rtol=1e-12)
+
+        simulate_replace_geometry(tree, "dend", stretched(tree.dend.branch))
+
+        np.testing.assert_allclose(tree.total_length.to_decimal(u.um), 250.0, rtol=1e-12)
+        np.testing.assert_allclose(tree.x_range.to_decimal(u.um), 250.0, rtol=1e-12)
+        np.testing.assert_allclose(tree.dend.points_distal.to_decimal(u.um)[-1], [220.0, 0.0, 0.0], rtol=1e-12)
+
+    def test_the_cold_rebuild_reads_no_cache(self) -> None:
+        tree = make_tree_s()
+        _ = tree.total_length, tree.branches
+        object.__setattr__(tree.dend, "_branch", stretched(tree.dend.branch))
+
+        rebuilt = cold_rebuild(tree)
+
+        np.testing.assert_allclose(rebuilt.dend.length.to_decimal(u.um), 200.0, rtol=1e-12)
+        np.testing.assert_allclose(rebuilt.total_length.to_decimal(u.um), 250.0, rtol=1e-12)
+        # The edited tree still serves the stale total, so the reference did not read it.
+        np.testing.assert_allclose(tree.total_length.to_decimal(u.um), 150.0, rtol=1e-12)
+
+    def test_a_structural_write_that_bypasses_the_gate_is_reported(self) -> None:
+        def attach_bypassing_the_gate(tree: Morphology) -> None:
+            d1 = tree._name_to_id["d1"]
+            node_id = tree._register_node(name="tip", branch=make_apical(), parent_id=d1, parent_x=1.0, child_x=0.0)
+            tree._nodes[d1]._children["tip"] = node_id
+
+        with self.assertRaises(AssertionError) as caught:
+            assert_morpho_fresh(self, EditCase("attach bypassing the gate", "append", attach_bypassing_the_gate))
+        message = str(caught.exception)
+        for key in ("revision", "metric", "names/default", "index/type", "edges", "full_point_geometry", "vis/xyz"):
+            with self.subTest(key):
+                self.assertRegex(message, rf"\n  {re.escape(key)}[.\[: ]")
+
+    def test_a_wrong_reindex_declaration_is_reported(self) -> None:
+        cases = [
+            (
+                EditCase("removal declared as keeping indices", "delete", lambda t: simulate_remove_leaf(t, "d2")),
+                r"watermark: .* reindex=False(.|\n)*index: default indices moved \{'axon': \(4, 3\)\}",
+            ),
+            (
+                EditCase(
+                    "append declared as reindexing",
+                    "append",
+                    lambda t: t.attach(parent="soma", child_branch=make_axon(), child_name="late"),
+                    reindex=True,
+                ),
+                r"watermark: .* reindex=True",
+            ),
+        ]
+        for case, pattern in cases:
+            with self.subTest(case.name):
+                with self.assertRaisesRegex(AssertionError, pattern):
+                    assert_morpho_fresh(self, case)
+
+    def test_an_edit_that_changes_nothing_is_reported(self) -> None:
+        def empty_edit(tree: Morphology) -> None:
+            with tree._edit():
+                pass
+
+        with self.assertRaisesRegex(AssertionError, "no-op: the cold rebuild equals the tree before the edit"):
+            assert_morpho_fresh(self, EditCase("empty gate", "replace", empty_edit))
+
+    def test_a_layer_can_supply_its_own_reference(self) -> None:
+        case = EDIT_CASES[0]
+        observe = lambda tree: {"n_branches": tree.n_branches}  # noqa: E731
+        assert_layer_fresh(self, case, layer="toy", warm=lambda tree: tree, observe=observe, reference=observe)
+        with self.assertRaisesRegex(AssertionError, r"toy: .*\n  n_branches: edited 6 != cold rebuild 0"):
+            assert_layer_fresh(
+                self, case, layer="toy", warm=lambda tree: tree, observe=observe, reference=lambda _: {"n_branches": 0}
+            )
+
+    def test_the_table_and_its_trees(self) -> None:
+        names = [case.name for case in EDIT_CASES + SABOTAGE_CASES]
+        self.assertEqual(len(names), len(set(names)))
+        with self.assertRaisesRegex(ValueError, "kind must be one of"):
+            EditCase("move", "move", lambda tree: None)
+
+        tree = make_tree_t()
+        self.assertEqual(
+            [(b.name, b.index) for b in tree.branches], [("soma", 0), ("dend", 1), ("d1", 2), ("d2", 3), ("axon", 4)]
+        )
+        self.assertTrue(tree.has_full_point_geometry)
+        self.assertEqual(cold_rebuild(tree), tree)
+        self.assertEqual(morph_fingerprint(cold_rebuild(tree)), morph_fingerprint(tree))
+
+    def test_simulate_replace_geometry_rejects_without_a_trace(self) -> None:
+        tree = make_tree_s()
+        frozen = frozen_snapshot(tree)
+        for label, target, call, error in (
+            ("unknown name", tree, lambda t: simulate_replace_geometry(t, "nope", make_basal()), KeyError),
+            ("not a Branch", tree, lambda t: simulate_replace_geometry(t, "dend", 1.0), TypeError),
+            ("frozen", frozen, lambda t: simulate_replace_geometry(t, "dend", make_basal()), RuntimeError),
+        ):
+            with self.subTest(label):
+                before = (target.revision, target.dend.branch)
+                with self.assertRaises(error):
+                    call(target)
+                self.assertEqual(target.revision, before[0])
+                self.assertIs(target.dend.branch, before[1])
+        with self.assertRaisesRegex(ValueError, "3-D points"):
+            stretched(make_basal())
 
 
 class MorphoBranchDerivedPropertyTest(unittest.TestCase):

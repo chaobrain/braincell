@@ -554,12 +554,9 @@ def _first_difference(mine: object, theirs: object, path: str) -> tuple[str, obj
             a, b = mine.get(key, _MISSING), theirs.get(key, _MISSING)
             if a != b:
                 return _first_difference(a, b, f"{path}.{key}")
-    if (
-        isinstance(mine, tuple)
-        and isinstance(theirs, tuple)
-        and len(mine) == len(theirs)
-        and any(isinstance(item, (tuple, dict)) for item in mine)
-    ):
+    if isinstance(mine, tuple) and isinstance(theirs, tuple) and any(isinstance(x, (tuple, dict)) for x in mine):
+        if len(mine) != len(theirs):
+            return f"{path} ({len(mine)} vs {len(theirs)} entries)", mine, theirs
         for index, (a, b) in enumerate(zip(mine, theirs)):
             if a != b:
                 return _first_difference(a, b, f"{path}[{index}]")
@@ -632,7 +629,9 @@ def assert_morpho_fresh(testcase, case: EditCase, build: Callable[[], Morphology
         if moved:
             problems.append(f"index: default indices moved {moved}, but the case declares reindex=False")
     if before == reference:
-        problems.append("no-op: the cold rebuild equals the tree before the edit, so this row cannot catch a stale cache")
+        problems.append(
+            "no-op: the cold rebuild equals the tree before the edit, so this row cannot catch a stale cache"
+        )
     problems += _fingerprint_diff(edited, reference)
     _fail_if_stale(testcase, case, "morph", problems)
 

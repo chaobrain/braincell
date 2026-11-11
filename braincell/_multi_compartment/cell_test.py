@@ -36,13 +36,23 @@ from braincell import (
     CurrentClamp,
     Ion,
     IonChannel,
+    MaxCVLen,
     Morphology,
     NetStim,
     connect,
 )
 from braincell._multi_compartment import cell as cell_module
-from braincell.filter import AllRegion, BranchSlice, LocsetBatch, RootLocation, at
+from braincell.filter import AllRegion, BranchSlice, LocsetBatch, RootLocation, Terminals, at
 from braincell.mech import StateProbe
+from braincell.morph._testing import (
+    EDIT_CASES,
+    SABOTAGE_CASES,
+    EditCase,
+    assert_layer_fresh,
+    make_tree_s,
+    simulate_replace_geometry,
+    stretched,
+)
 from braincell.quad import DiffEqSingleState, DiffEqState, get_integrator
 
 
@@ -552,6 +562,59 @@ class TestCellDeclaration(unittest.TestCase):
         self.assertEqual([item.branch_x for item in placements], [1.0, 0.0])
         self.assertEqual([item.cv_id for item in placements], [0, 1])
         self.assertEqual(placements[0].point_id, placements[1].point_id)
+
+
+def _edit_probe_cell(morpho: Morphology) -> Cell:
+    """The Cell the edit table declares on a tree: 40 um CVs and an ExpSyn on every terminal."""
+    cell = Cell(morpho, cv_policy=MaxCVLen(40.0 * u.um))
+    cell.place(Terminals(), mech.Synapse("ExpSyn", name="syn", tau=2.0 * u.ms, e=0.0 * u.mV))
+    return cell
+
+
+def _declaration_fingerprint(cell: Cell) -> dict:
+    return {
+        "cvs": tuple((cv.branch_id, cv.prox, cv.dist, float(cv.length.to_decimal(u.um))) for cv in cell.cvs),
+        "point mechanisms": tuple((p.branch_id, p.branch_x, p.cv_id) for p in cell.point_placements),
+    }
+
+
+def assert_cell_declaration_fresh(testcase: unittest.TestCase, case: EditCase) -> None:
+    """Cell layer of the morphology edit table, before ``init_state``.
+
+    A Cell declared and discretized on a tree, then read again after
+    ``case.edit``, must report the CVs (branch, prox, dist, length) and
+    point-mechanism placements (branch, x, CV) of a Cell declared from
+    scratch on the cold rebuild of the edited tree.
+    """
+    assert_layer_fresh(
+        testcase, case, layer="Cell declaration", warm=_edit_probe_cell, observe=_declaration_fingerprint
+    )
+
+
+class CellDeclarationEditTableTest(unittest.TestCase):
+    """A declared Cell never serves the discretization of its tree from before an edit."""
+
+    def test_every_edit_case_matches_a_cell_on_the_cold_rebuild(self):
+        for case in EDIT_CASES:
+            with self.subTest(case.name):
+                assert_cell_declaration_fresh(self, case)
+
+    def test_every_sabotage_case_is_reported(self):
+        for case in SABOTAGE_CASES:
+            with self.subTest(case.name):
+                with self.assertRaisesRegex(AssertionError, r"Cell declaration: .*\n  cvs"):
+                    assert_cell_declaration_fresh(self, case)
+
+    def test_cv_lengths_follow_an_in_place_replacement(self):
+        morpho = make_tree_s()
+        cell = Cell(morpho)
+
+        def total_cv_length() -> float:
+            return sum(float(cv.length.to_decimal(u.um)) for cv in cell.cvs)
+
+        np.testing.assert_allclose(total_cv_length(), 150.0, rtol=1e-12)
+        simulate_replace_geometry(morpho, "dend", stretched(morpho.dend.branch))
+        np.testing.assert_allclose(total_cv_length(), 250.0, rtol=1e-12)
 
 
 class TestCellLifecycle(unittest.TestCase):

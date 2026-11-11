@@ -1178,6 +1178,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._reduction_output_states: dict[str, brainstate.State] = {}
         self._pending_reduction_inputs = None
         self._runtime_batch_size: int | None = None
+        # Set by ``pre_integral`` when a solver step is called directly, so
+        # its stages read the clamp current sampled for this step.
+        self._direct_step_clamps_prepared = False
         self._runtime_cvs_cache: tuple[RuntimeCVView, ...] | None = None
         self._runtime_nodes_cache: tuple[RuntimeNodeView, ...] | None = None
         self._synapse_store_cache: _SynapseStore | None = None
@@ -2849,7 +2852,19 @@ class Cell(_CellFacade, HHTypedNeuron):
                 node._run_on_dependent_children(node._channels(), hook, cv_V)
 
     def pre_integral(self):
+        """Start one solver step: sample the clamps, then run the mechanism hooks.
+
+        ``update()``, ``run()`` and ``Network.run`` sample every current
+        clamp once per main step, at ``t + dt / 2``, before calling the
+        solver. A solver step called directly (``braincell.quad.rk4_step(cell)``)
+        reaches this hook first, at the step's start time, so the clamps
+        are sampled here instead, and every stage of the step reads that
+        value.
+        """
         self._raise_if_not_initialized("pre_integral()")
+        if not brainstate.environ.get("_braincell_step_clamps_prepared", False):
+            self._prepare_step_clamps()
+            self._direct_step_clamps_prepared = True
         if self._is_lumped:
             return self._lumped_runtime.pre_integral(self._lumped_I_ext.value)
         self._run_integrated_hook("pre_integral", self.V.value)
@@ -3169,11 +3184,14 @@ class Cell(_CellFacade, HHTypedNeuron):
                 delattr(node, "_cached_total_current")
 
     def post_integral(self):
+        """Finish one solver step: add delta inputs, then run the mechanism hooks."""
         self._raise_if_not_initialized("post_integral()")
         if self._is_lumped:
+            self._direct_step_clamps_prepared = False
             return self._lumped_runtime.post_integral(self._lumped_I_ext.value)
         self.V.value = self.sum_delta_inputs(init=self.V.value)
         self._run_integrated_hook("post_integral", self.V.value)
+        self._direct_step_clamps_prepared = False
 
     def update(self):
         """Advance the cell by one simulation step.
@@ -3260,10 +3278,15 @@ class Cell(_CellFacade, HHTypedNeuron):
         )
 
     def _solver_clamp_point_current(self, *, t):
-        """Return the prepared point current, with a direct-solver fallback."""
+        """Return the point current prepared for this step.
+
+        Outside a prepared step (a derivative evaluated on its own, or a
+        voltage solver such as ``staggered_step`` called directly, which has
+        no ``pre_integral``), the clamps are sampled at ``t + dt / 2``.
+        """
         if len(self._get_clamp_store().id) == 0:
             return self._step_clamp_point_current.value
-        if brainstate.environ.get("_braincell_step_clamps_prepared", False):
+        if self._direct_step_clamps_prepared or brainstate.environ.get("_braincell_step_clamps_prepared", False):
             return self._step_clamp_point_current.value
         try:
             dt = brainstate.environ.get_dt()
@@ -3626,6 +3649,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                 "Cell reset_state() must preserve the init_state() batch size; "
                 f"expected {self._runtime_batch_size!r}, got {requested_batch!r}."
             )
+        self._direct_step_clamps_prepared = False
         if self._is_lumped:
             self._lumped_runtime.reset_state(batch_size)
             self._lumped_I_ext.value = self._zero_lumped_current()

@@ -1277,8 +1277,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         if owner is not None and owner._initialized and not getattr(owner, "_cell_lifecycle_active", False):
             raise RuntimeError(f"Cannot {action} after owning Network {owner_name!r} has been initialized.")
         if self._initialized and owner is not None:
-            # Initialized before it joined the Network, or left initialized by a
-            # failed Network.init_state(): it cannot reset() either.
+            # Initialized before it joined the Network (a failed
+            # Network.init_state() rolls back the Cells it initialized): it
+            # cannot reset() either.
             raise RuntimeError(
                 f"Cannot {action} after init_state(); this Cell belongs to Network {owner_name!r} and cannot "
                 "reset() back to declaring, so declare a new Cell and a new Network to change it."
@@ -3022,6 +3023,23 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._V_init_materialized = None
 
         self._initialized = False
+
+    def _declaration_preview(self) -> tuple:
+        """The grid an uninitialized Cell has built, for :meth:`_roll_back_init_state`."""
+        return self._discretization_cache, self._discretization_cache_key, self._view_generation
+
+    def _roll_back_init_state(self, preview: tuple) -> None:
+        """Undo this Cell's ``init_state`` after a later Cell failed in ``Network.init_state`` (CELL-37).
+
+        :meth:`reset` returns to declaring on the declaration tree. The
+        declarations are those ``preview`` was taken on, so the grid built
+        from them, and the selections made on that grid, are put back: the
+        Cell is as it was before ``Network.init_state``. Should the key not
+        match the declarations, the next grid read rebuilds the grid, which
+        expires those selections, as after any edit.
+        """
+        self.reset()
+        self._discretization_cache, self._discretization_cache_key, self._view_generation = preview
 
     # ------------------------------------------------------------------
     # Static topology + runtime inspection views

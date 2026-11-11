@@ -921,15 +921,25 @@
   removal before `init_state` (or before `reset()`, for a mask made on the
   snapshot) moved its indices.
 
+- `Network.init_state()` initializes all of its Cells or none (CELL-37).
+  When one Cell's `init_state` raised, the Cells initialized before it in the
+  same call stayed initialized while the Network did not: they could not
+  `reset()`, `paint`, `place` or take a new connection, so the only way on
+  was to declare every Cell and the Network again. Now those Cells go back
+  to declaring, on the morphology they were declared with and with the
+  selections made before the call still valid, and the error propagates
+  unchanged; correct the declaration and call `init_state()` again. A Cell
+  initialized before the call (before `add_population`) stays initialized.
+
 - A Cell that belongs to a `Network` no longer suggests a recovery that
   fails (CELL-1). `cell.reset()` said "use Network.reset() instead", but a
   `Network` has no `reset()`: its Cells do not go back to declaring. The
   message now suggests `Network.reset_state()` to start the run again from
   the initial state, or a new Cell in a new Network to change the
-  declarations. A Cell initialized before `Network.add_population`, or left
-  initialized by a failed `Network.init_state()`, said "call reset() first"
-  on `paint`, `place`, `discretize()` and the declaration setters, and
-  `reset()` then raised; it now says to declare a new Cell and a new Network.
+  declarations. A Cell initialized before `Network.add_population` said
+  "call reset() first" on `paint`, `place`, `discretize()` and the
+  declaration setters, and `reset()` then raised; it now says to declare a
+  new Cell and a new Network.
 
 - A recording declared before the grid or the morphology changed now records
   what it was declared on (MORPH-15). It used to keep the CVs it selected

@@ -329,6 +329,13 @@ class Network:
         This method is idempotent at the network level: already initialized
         cells are left unchanged because ``Cell.init_state`` itself is a
         one-shot declaration-to-runtime transition.
+
+        It initializes all of its cells or none. If a cell's ``init_state``
+        raises, the cells this call initialized before it go back to
+        declaring, as they were before the call, and the error propagates
+        unchanged; the Network stays uninitialized. Correct the declaration
+        and call ``init_state()`` again. Cells initialized before the call
+        are left initialized.
         """
         _reject_batch_size(batch_size)
         if self._initialized:
@@ -343,9 +350,20 @@ class Network:
         # raise, before any Cell initializes (MORPH-15).
         for cell in uninitialized:
             cell._resolve_declarations()
+        initialized = []
         with self._cell_lifecycle():
-            for cell in uninitialized:
-                cell.init_state()
+            try:
+                for cell in uninitialized:
+                    preview = cell._declaration_preview()
+                    cell.init_state()
+                    initialized.append((cell, preview))
+            except BaseException:
+                # All or none (CELL-37): a Cell left initialized here could
+                # neither reset() nor take a correction, and the Network
+                # would not run it.
+                for cell, preview in reversed(initialized):
+                    cell._roll_back_init_state(preview)
+                raise
         self._initialized = True
         return self
 

@@ -758,16 +758,21 @@ class IndexHeldDeclarationTest(unittest.TestCase):
             cell.place(at("apical", 0.5), _index_probe_synapse())
         self.assertEqual(cell.place_rules, rules)
 
-    def test_a_population_view_declaration_after_the_removal_is_rolled_back(self):
+    def test_a_population_view_after_the_removal_raises_and_adds_no_rule(self):
+        # The view checks the grid before it reaches place(), so the stale
+        # rule is reported there, even for a view taken before the removal.
         morpho = make_tree_u()
         cell = Cell(morpho, pop_size=2)
         cell.place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
         rules = cell.place_rules
+        early_view = cell[[0]]
 
         simulate_remove_leaf(morpho, "dend")
 
         with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
-            cell[[0]].place(at("apical", 0.5), _index_probe_synapse())
+            cell[[0]]
+        with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
+            early_view.place(at("apical", 0.5), _index_probe_synapse())
         self.assertEqual(cell.place_rules, rules)
 
     def test_a_mask_on_a_morphology_reassigned_away_is_not_checked(self):

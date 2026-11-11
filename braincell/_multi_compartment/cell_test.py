@@ -49,7 +49,17 @@ from braincell import (
 )
 from braincell._compute.state import CellRuntimeState
 from braincell._multi_compartment import cell as cell_module
-from braincell.filter import AllRegion, BranchSlice, LocsetBatch, LocsetMask, RootLocation, Terminals, at
+from braincell.filter import (
+    AllRegion,
+    BranchSlice,
+    LocsetBatch,
+    LocsetMask,
+    RegionAnchors,
+    RootLocation,
+    Terminals,
+    at,
+    branch_in,
+)
 from braincell.mech import StateProbe
 from braincell.morph._testing import (
     EDIT_CASES,
@@ -571,6 +581,32 @@ class TestCellDeclaration(unittest.TestCase):
         self.assertEqual([item.branch_x for item in placements], [1.0, 0.0])
         self.assertEqual([item.cv_id for item in placements], [0, 1])
         self.assertEqual(placements[0].point_id, placements[1].point_id)
+
+    def test_region_anchors_place_in_row_order_and_keep_repeats(self):
+        """MORPH-10a: one placement per RegionAnchors row, in order; junction rows share a point."""
+        soma = Branch.from_lengths(lengths=np.array([20.0]) * u.um, radii=np.array([5.0, 5.0]) * u.um, type="soma")
+        dend = Branch.from_lengths(
+            lengths=np.array([40.0, 60.0]) * u.um, radii=np.array([2.0, 1.5, 1.0]) * u.um, type="basal_dendrite"
+        )
+        dend_region = branch_in("name", "dend")
+
+        def placed(locset):
+            morpho = Morphology.from_root(soma, name="soma")
+            morpho.attach(parent="soma", child_branch=dend, child_name="dend")
+            cell = Cell(morpho, cv_policy=CVPerBranch())
+            synapse = mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms, e=0.0 * u.mV)
+            cell.place(locset, synapse)
+            rows = [(p.branch_name, p.branch_x, p.cv_id, p.point_id) for p in cell.point_placements]
+            cell.init_state()
+            return rows, len(cell.synapses[synapse].id)
+
+        self.assertEqual(
+            placed(RegionAnchors(AllRegion(), 1.0) + RegionAnchors(AllRegion(), 0.0)),
+            ([("soma", 1.0, 0, 2), ("dend", 1.0, 1, 4), ("soma", 0.0, 0, 0), ("dend", 0.0, 1, 2)], 4),
+        )
+        repeated = RegionAnchors(dend_region, 0.5) + RegionAnchors(dend_region, 0.5)
+        self.assertEqual(placed(repeated), ([("dend", 0.5, 1, 3)] * 2, 2))
+        self.assertEqual(placed(repeated.unique()), ([("dend", 0.5, 1, 3)], 1))
 
 
 def _edit_probe_cell(morpho: Morphology) -> Cell:

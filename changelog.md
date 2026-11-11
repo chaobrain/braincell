@@ -80,6 +80,23 @@
 
 ### New Features
 
+- **`braincell.filter.RegionAnchors(region, x)` places one location in each
+  interval of a region** (MORPH-10a). It was exported but raised
+  `NotImplementedError`. For each interval `(b, p, d)` of the normalized
+  region, in ascending branch index and then `p`, it gives the row
+  `(b, p + x * (d - p))`: `x` is the relative position inside the interval,
+  along the branch's own direction. Touching intervals on one branch merge
+  first, so they give one row; otherwise the number of rows equals the number
+  of intervals, and rows are never merged. At `x = 0` or `1`, two branches
+  that meet at a junction give two rows for one physical point (`soma(1)` and
+  `dend(0)`); `unique()` keeps both, and `Cell.place` puts both at that point,
+  each on its own branch. `RegionAnchors(branch_in("name", "dend"), x)` equals
+  `at("dend", x)`. A `region` that is not a `RegionExpr`, or an `x` that is a
+  `bool`, a `Quantity` or not a real number, raises `TypeError` at
+  construction; an `x` that is NaN or outside `[0, 1]` raises `ValueError`
+  then (values within 1e-12 are clipped, as in `at`). A region that is empty
+  once normalized raises `ValueError` when evaluated (`select`, `Cell.place`),
+  as `UniformSamples` does.
 - **`braincell.filter.SubtreeRegion(root)` selects a branch and all its
   descendants** (MORPH-9a). It was exported but raised `NotImplementedError`.
   `root` is a branch name or a default-order index; prefer the name, because

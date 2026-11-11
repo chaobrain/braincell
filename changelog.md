@@ -80,6 +80,24 @@
 
 ### New Features
 
+- **`Morphology.graft(other, *, parent, parent_x=1.0, child_x=0.0,
+  rename=None)` attaches a copy of another tree** (MORPH-2d). `other`'s root
+  becomes a child of `parent`, attached as `attach` would attach it, and its
+  other branches follow with their own attachment points; the receiving tree
+  keeps its root. To graft part of a tree, pass `other.subtree(name)`; to
+  make `other` the host, call `other.graft(tree, ...)`. `other` is copied,
+  never changed or taken over: the new branches share its immutable `Branch`
+  geometry, it may be frozen, and it may be the receiving tree itself. A
+  name that already exists raises `ValueError` listing every clash, before
+  anything is written; `rename=` resolves it, as a mapping (`{"d1": "d1b"}`)
+  or a function (`lambda name: f"{name}_copy"`). Existing branches keep
+  their default indices, so Cell inputs held by branch index stay valid, and
+  the auto-naming counters do not change. 3-D continuity at the joint is not
+  checked; `to_swc` reports a gap. Grafting the 681-branch CA1 reconstruction
+  onto a one-branch tree takes about 1 ms. `graft` is now a reserved branch
+  name: a checkpoint that holds a branch named `graft` no longer loads. No
+  branch in this repository uses that name.
+
 - **`Morphology.replace(target, new_branch)` swaps one branch's geometry in
   place** (MORPH-2c). The new `Branch` may have another length, number of
   segments or type. The branch keeps its name, its view (`replace` returns the

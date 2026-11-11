@@ -733,9 +733,10 @@ class Morphology:
         Each successful edit call (:meth:`attach`, ``morpho.soma.dend =
         branch``, ``morpho.soma[0.5].dend = branch``, :meth:`remove`,
         :meth:`replace`, :meth:`graft`, :meth:`reattach`, :meth:`translate`,
-        :meth:`rotate`) advances it by exactly one, whether it changes the
-        structure or only the geometry. Reads never advance it, and an edit
-        that raises leaves it, the tree and :meth:`naming_state` unchanged.
+        :meth:`rotate`, :meth:`scale`) advances it by exactly one, whether it
+        changes the structure or only the geometry. Reads never advance it,
+        and an edit that raises leaves it, the tree and :meth:`naming_state`
+        unchanged.
 
         The absolute value carries no meaning, is not stable across
         processes, and cannot be compared between two trees; only comparison
@@ -2540,6 +2541,96 @@ class Morphology:
         self._require_points_in(node_ids, what="rotate()")
         self._write_geometry(node_ids, "rotate()", lambda points: (points - origin_um) @ rotation.T + origin_um)
 
+    def scale(self, factor: float, *, origin: Optional[Quantity] = None, subtree: Optional[ParentRef] = None) -> None:
+        """Scale the tree, or one subtree, by the same factor in every direction.
+
+        Segment lengths and both radii are multiplied by ``factor``, and
+        every 3-D point ``p`` becomes ``origin + factor (p - origin)``, so
+        lengths, areas and volumes are multiplied by ``factor``,
+        ``factor**2`` and ``factor**3``. Branches without 3-D points
+        (:meth:`Branch.from_lengths`) are scaled too: scaling is defined on
+        the cable geometry. Names, topology and branch indices do not change.
+
+        Parameters
+        ----------
+        factor : float
+            Ratio, a plain positive number (``int``, ``float`` or a 0-d
+            numpy number); not a quantity.
+        origin : Quantity or None
+            Fixed point of the scaling in a length unit, shape ``(3,)``.
+            ``None`` (default) is ``(0, 0, 0)`` um.
+        subtree : str, MorphoBranch or None
+            Scale only this branch and its descendants, given by name or by a
+            view that is still in this tree. ``None`` (default) scales the
+            whole tree.
+
+        Raises
+        ------
+        RuntimeError
+            If this morphology is the read-only snapshot of an initialized
+            Cell (checked first), or ``subtree`` is a view of a branch that
+            an edit removed.
+        KeyError
+            If no branch is called ``subtree``.
+        TypeError
+            If ``factor`` is a ``bool``, a quantity or not a number;
+            ``origin`` is a bare number or not a length; or ``subtree`` is
+            neither a ``str``, a :class:`MorphoBranch` nor ``None``.
+        ValueError
+            If ``factor`` is not a single number (scaling is isotropic), or
+            is not finite and positive; ``origin`` does not have shape
+            ``(3,)`` or is not finite; ``subtree`` is a view of another
+            morphology's branch; or a scaled length, radius or point is not
+            finite, or not positive where it must be.
+
+        See Also
+        --------
+        translate : Move the tree or a subtree.
+        rotate : Rotate the tree or a subtree.
+
+        Notes
+        -----
+        A different factor per axis (for instance to undo the z shrinkage of
+        a slice) is not offered: a circular cross-section would become an
+        ellipse with no single radius, and a branch without points has no
+        direction to stretch along.
+
+        A declared Cell rebuilds its CVs from the scaled lengths, so a
+        length-based policy such as ``MaxCVLen`` gives a different number of
+        CVs, and a selection by absolute length (``branch_range("length",
+        ...)``) can select other branches. The tree changes in place and the
+        call returns ``None``, as for :meth:`translate`; :attr:`revision`
+        advances by one. A call that raises changes nothing.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> import numpy as np
+            >>> from braincell import Branch, Morphology
+            >>> soma = Branch.from_lengths(lengths=np.array([20.0]) * u.um, radii=np.array([5.0, 5.0]) * u.um,
+            ...                            type="soma")
+            >>> tree = Morphology.from_root(soma, name="soma")
+            >>> tree.soma.dend = Branch.from_lengths(lengths=np.array([100.0]) * u.um,
+            ...                                      radii=np.array([2.0, 1.0]) * u.um, type="basal_dendrite")
+            >>> tree.scale(2)
+            >>> tree.total_length
+            Quantity(240., "um")
+            >>> tree.scale(0.5, subtree="dend")
+            >>> tree.dend.length
+            Quantity(100., "um")
+        """
+        self._require_editable()
+        node_ids = self._transform_scope(subtree, what="scale()")
+        factor = _plain_ratio(factor, name="factor")
+        origin_um = None if origin is None else _length_um(origin, name="origin")
+        factor = _check_scale_factor(factor)
+        origin_um = np.zeros(3) if origin_um is None else _check_point_um(origin_um, name="origin")
+        self._write_geometry(
+            node_ids, "scale()", lambda points: origin_um + factor * (points - origin_um), factor=factor
+        )
+
     def _transform_scope(self, subtree: Optional[ParentRef], *, what: str) -> list[int]:
         """Node ids a transform acts on, ascending: the whole tree, or ``subtree`` and its descendants."""
         if subtree is None:
@@ -2561,20 +2652,28 @@ class Morphology:
                 "points, or rebuild these branches with Branch.from_points."
             )
 
-    def _write_geometry(self, node_ids: list[int], what: str, move: Callable[[np.ndarray], np.ndarray]) -> None:
+    def _write_geometry(
+        self,
+        node_ids: list[int],
+        what: str,
+        move: Callable[[np.ndarray], np.ndarray],
+        *,
+        factor: Optional[float] = None,
+    ) -> None:
         """Map the points of every branch in ``node_ids`` by ``move`` and write them in one edit.
 
+        ``factor`` (scaling only) also multiplies the lengths and radii.
         Every new :class:`Branch` is built, and so validated, before the
         gate opens; inside it only the views' ``_branch`` slots are
-        written, which cannot fail. The lengths and radii arrays are kept,
-        so a rigid move leaves every length-derived value bit for bit as it
-        was.
+        written, which cannot fail. Without ``factor`` the lengths and radii
+        arrays are kept, so a rigid move leaves every length-derived value
+        bit for bit as it was.
         """
         moved = []
         for node_id in node_ids:
             view = self._nodes[node_id]
             try:
-                moved.append(_moved_branch(view._branch, move))
+                moved.append(_moved_branch(view._branch, move, factor=factor))
             except ValueError as exc:
                 raise ValueError(f"{what} would give branch {view._name!r} invalid geometry: {exc}") from exc
         with self._edit():
@@ -3607,20 +3706,59 @@ def _rotation_matrix(
     return np.eye(3) + np.sin(theta) * cross + (1.0 - np.cos(theta)) * (cross @ cross)
 
 
-def _moved_branch(branch: Branch, move: Callable[[np.ndarray], np.ndarray]) -> Branch:
-    """``branch`` with its points (in um) mapped by ``move``; the lengths and radii arrays are kept.
+def _plain_ratio(value: object, *, name: str) -> np.ndarray:
+    """Type checks of a ratio: a ``bool``, a quantity or anything non-numeric raises ``TypeError``."""
+    if isinstance(value, (bool, np.bool_)) or isinstance(value, Quantity):
+        raise TypeError(f"{name} is a plain ratio and takes a number, got {value!r}.")
+    try:
+        array = np.asarray(value)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"{name} is a plain ratio and takes a number, got {value!r}.") from exc
+    if array.dtype.kind not in "iuf":
+        raise TypeError(f"{name} is a plain ratio and takes a number, got {value!r}.")
+    return array.astype(float)
 
-    Built through the ``Branch`` constructor, so the new points are checked
-    against the kept segment lengths: a move that loses precision (an
-    offset of 1e308 um) is rejected there.
+
+def _check_scale_factor(factor: np.ndarray) -> float:
+    """Value checks of :meth:`Morphology.scale`'s ``factor``: one finite, positive number."""
+    if factor.shape != ():
+        raise ValueError(
+            f"factor must be a single number: scale() is isotropic, the same factor along x, y and z; "
+            f"got shape {factor.shape}."
+        )
+    value = float(factor)
+    if not (np.isfinite(value) and value > 0.0):
+        raise ValueError(f"factor must be finite and > 0, got {value!r}.")
+    return value
+
+
+def _moved_branch(
+    branch: Branch, move: Callable[[np.ndarray], np.ndarray], *, factor: Optional[float] = None
+) -> Branch:
+    """``branch`` with its points (in um) mapped by ``move``, and its lengths and radii times ``factor``.
+
+    Without ``factor`` the lengths and radii arrays are kept as they are. A
+    branch without points has only its lengths and radii scaled. Built
+    through the ``Branch`` constructor, so the new points are checked
+    against the segment lengths: a move that loses precision (an offset of
+    1e308 um) is rejected there.
     """
+    changes = {}
     # An overflow is reported below as a ValueError, so numpy need not warn about it.
     with np.errstate(over="ignore", invalid="ignore"):
-        proximal = move(np.asarray(branch.points_proximal.to_decimal(u.um), dtype=float))
-        distal = move(np.asarray(branch.points_distal.to_decimal(u.um), dtype=float))
-    if not (np.all(np.isfinite(proximal)) and np.all(np.isfinite(distal))):
-        raise ValueError("the moved points are not finite.")
-    return dataclasses.replace(branch, points_proximal=Quantity(proximal, u.um), points_distal=Quantity(distal, u.um))
+        if branch.points_proximal is not None:
+            proximal = move(np.asarray(branch.points_proximal.to_decimal(u.um), dtype=float))
+            distal = move(np.asarray(branch.points_distal.to_decimal(u.um), dtype=float))
+            if not (np.all(np.isfinite(proximal)) and np.all(np.isfinite(distal))):
+                raise ValueError("the moved points are not finite.")
+            changes.update(points_proximal=Quantity(proximal, u.um), points_distal=Quantity(distal, u.um))
+        if factor is not None:
+            for field in ("lengths", "radii_proximal", "radii_distal"):
+                values = np.asarray(getattr(branch, field).to_decimal(u.um), dtype=float) * factor
+                if not np.all(np.isfinite(values)):
+                    raise ValueError(f"the scaled {field} are not finite.")
+                changes[field] = Quantity(values, u.um)
+    return dataclasses.replace(branch, **changes)
 
 
 def _morpho_from_records(records: list[_BranchRecord]) -> "Morphology":

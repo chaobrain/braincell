@@ -27,7 +27,16 @@ import brainunit as u
 import numpy as np
 
 from braincell import Branch, Cell, MaxCVLen, Morphology, SingleCompartment
-from braincell.filter import AllRegion, BranchSlice, LocsetMask, RootLocation, Terminals, density, sample
+from braincell.filter import (
+    AllRegion,
+    BranchSlice,
+    LocsetMask,
+    RootLocation,
+    Terminals,
+    branch_range,
+    density,
+    sample,
+)
 from braincell.io._testing import ALLOWED_TYPES, FIXTURE_DIR, VALID_SWC_FIXTURES
 from braincell.morph import MorphoBranch, MorphoMetric
 from braincell.morph.branch import _ALLOWED_BRANCH_TYPES
@@ -2464,6 +2473,195 @@ class MorphoTransformArgumentTest(unittest.TestCase):
                 self.assertNotEqual(after["vis/xyz"], before["vis/xyz"])
 
 
+_W_TOTALS = ("total_length", "total_area", "total_volume", "max_path_distance")
+
+
+def _mantissas(tree: Morphology, names) -> dict[str, float]:
+    return {name: float(getattr(tree, name).mantissa) for name in names}
+
+
+def _length_intervals(tree: Morphology, low: float, high: float) -> tuple:
+    region = tree.select(branch_range("length", np.array([low, high]) * u.um, closed="both"))
+    return tuple((int(b), float(p), float(d)) for b, p, d in region.intervals)
+
+
+class MorphoScaleTest(unittest.TestCase):
+    """``Morphology.scale(factor, origin=..., subtree=...)``: lengths, radii and points times one factor."""
+
+    def test_scaling_tree_w_by_2(self) -> None:
+        tree = make_tree_w()
+        before = {b.name: _branch_arrays(b.branch) for b in tree.branches}
+        orders = _orders(tree)
+        revision = tree.revision
+        self.assertEqual(
+            _mantissas(tree, _W_TOTALS),
+            dict(zip(_W_TOTALS, (260.0, 2214.8902325628937, 2560.3980126756815, 180.0))),
+        )
+
+        self.assertIsNone(tree.scale(2.0))
+
+        self.assertEqual(
+            _mantissas(tree, _W_TOTALS),
+            dict(zip(_W_TOTALS, (520.0, 8859.560930251575, 20483.18410140545, 360.0))),
+        )
+        for name, arrays in before.items():
+            with self.subTest(name):
+                now = _branch_arrays(tree.branch(name=name).branch)
+                for field, array in arrays.items():
+                    np.testing.assert_array_equal(now[field], 2 * array)
+        self.assertEqual(tree.revision, revision + 1)
+        self.assertFalse(tree._reindexed_after(revision))
+        self.assertEqual(_orders(tree), orders)
+
+    def test_a_subtree_about_its_base(self) -> None:
+        tree = make_tree_w()
+        before = {b.name: _branch_arrays(b.branch) for b in tree.branches}
+
+        tree.scale(2.0, origin=np.array([110.0, 40.0, 0.0]) * u.um, subtree="d1")
+
+        self.assertEqual(_um(tree.d1.length), 100.0)
+        np.testing.assert_array_equal(_tip_um(tree, "d1"), [170, 120, 0])
+        self.assertEqual(_um(tree.total_length), 310.0)
+        for name in ("soma", "dend", "d2", "axon"):
+            with self.subTest(name):
+                now = _branch_arrays(tree.branch(name=name).branch)
+                for field, array in before[name].items():
+                    np.testing.assert_array_equal(now[field], array)
+
+    def test_a_length_only_tree_and_its_declared_cell(self) -> None:
+        tree = make_tree_u()
+        cell = Cell(tree)
+        self.assertEqual(_um(tree.total_length), 230.0)
+        np.testing.assert_allclose(_cv_length_um(cell), 230.0, rtol=1e-12)
+
+        tree.scale(2.0)
+
+        self.assertEqual(_um(tree.total_length), 460.0)
+        np.testing.assert_allclose(_cv_length_um(cell), 460.0, rtol=1e-12)
+
+    def test_a_mixed_tree(self) -> None:
+        tree = _w_with_stub()
+
+        tree.scale(2.0)
+
+        self.assertEqual(_um(tree.stub.length), 120.0)
+        self.assertEqual(_um(tree.total_length), 640.0)
+        self.assertIsNone(tree.stub.branch.points_proximal)
+
+    def test_a_declared_cell_and_a_length_selection_follow(self) -> None:
+        tree = make_tree_w()
+        cell = Cell(tree, cv_policy=MaxCVLen(40 * u.um))
+        self.assertEqual(cell.n_cv, 11)
+        self.assertEqual(_length_intervals(tree, 45.0, 55.0), ((2, 0.0, 1.0), (3, 0.0, 1.0)))
+
+        tree.scale(2.0)
+
+        self.assertEqual(cell.n_cv, 17)
+        self.assertEqual([sum(1 for cv in cell.cvs if cv.branch_id == index) for index in range(5)], [1, 7, 3, 3, 3])
+        np.testing.assert_allclose(_cv_length_um(cell), 520.0, rtol=1e-12)
+        self.assertEqual(_length_intervals(tree, 45.0, 55.0), ())
+        self.assertEqual(_length_intervals(tree, 90.0, 110.0), ((2, 0.0, 1.0), (3, 0.0, 1.0)))
+
+    def test_bad_arguments_are_rejected_without_a_trace(self) -> None:
+        tree = make_tree_w()
+        for label, call, error, pattern in (
+            ("zero", lambda: tree.scale(0), ValueError, "finite and > 0, got 0.0"),
+            ("negative", lambda: tree.scale(-2), ValueError, "finite and > 0, got -2.0"),
+            ("NaN", lambda: tree.scale(np.nan), ValueError, "finite and > 0, got nan"),
+            ("inf", lambda: tree.scale(np.inf), ValueError, "finite and > 0, got inf"),
+            ("bool", lambda: tree.scale(True), TypeError, "plain ratio"),
+            ("quantity", lambda: tree.scale(2 * u.um), TypeError, "plain ratio"),
+            ("text", lambda: tree.scale("2"), TypeError, "plain ratio"),
+            ("ragged", lambda: tree.scale([1.0, [2.0, 3.0]]), TypeError, "plain ratio"),
+            ("per-axis factors", lambda: tree.scale(np.array([2.0, 2.0, 1.0])), ValueError, "isotropic"),
+            ("overflow", lambda: tree.scale(1e308), ValueError, "branch 'soma' invalid geometry: .* not finite"),
+            (
+                "bare origin",
+                lambda: tree.scale(2.0, origin=np.array([1.0, 2.0, 3.0])),
+                TypeError,
+                "origin must satisfy",
+            ),
+            (
+                "NaN origin",
+                lambda: tree.scale(2.0, origin=np.array([np.nan, 0, 0]) * u.um),
+                ValueError,
+                "origin must be finite",
+            ),
+            ("unknown subtree", lambda: tree.scale(2.0, subtree="nope"), KeyError, "nope"),
+            ("subtree not a name", lambda: tree.scale(2.0, subtree=1), TypeError, "subtree must be a branch name"),
+            ("subtree of another tree", lambda: tree.scale(2.0, subtree=make_tree_w().d1), ValueError, "different"),
+            ("types before values", lambda: tree.scale(-1, origin=np.array([1.0, 2, 3])), TypeError, "origin"),
+        ):
+            with self.subTest(label):
+                before = _edit_state(tree)
+                with self.assertRaisesRegex(error, pattern):
+                    call()
+                self.assertEqual(_edit_state(tree), before)
+
+    def test_an_overflow_without_points_is_rejected(self) -> None:
+        tree = make_tree_u()
+        before = _edit_state(tree)
+        with self.assertRaisesRegex(ValueError, r"branch 'soma' invalid geometry: the scaled lengths are not finite"):
+            tree.scale(1e308)
+        self.assertEqual(_edit_state(tree), before)
+
+    def test_a_detached_view_and_a_frozen_tree_are_rejected(self) -> None:
+        tree = make_tree_w()
+        held = tree.d2
+        tree.remove("d2")
+        before = _edit_state(tree)
+        with self.assertRaisesRegex(RuntimeError, r"'d2'.*detached.*scale\(\).*by name"):
+            tree.scale(2.0, subtree=held)
+        self.assertEqual(_edit_state(tree), before)
+
+        snapshot = frozen_snapshot(make_tree_w())
+        before = _edit_state(snapshot)
+        with self.assertRaisesRegex(RuntimeError, "read-only snapshot"):
+            snapshot.scale(-1)
+        self.assertEqual(_edit_state(snapshot), before)
+
+
+#: S1: exactly ``factor**power`` times the value for a factor of 2 or 0.5.
+_SCALED_EXACT = {"total_length": 1, "max_path_distance": 1, "total_area": 2, "total_volume": 3}
+#: S2: within rtol 1e-12 for any factor.
+_SCALED_RELATIVE = {**_SCALED_EXACT, "mean_radius": 1, "max_euclidean_distance": 1}
+
+
+class MorphoScaleFixtureTest(unittest.TestCase):
+    """S1, S2, S3 on every repository morphology, in float64, about origins from ``default_rng(20261111)``.
+
+    Multiplying by 2 or 0.5 rounds nothing in binary, so S1 is exact; other
+    factors round each product once and each sum to about 16 eps over
+    4e4 segments, well inside rtol 1e-12.
+    """
+
+    def test_scaling_multiplies_lengths_areas_volumes_and_distances(self) -> None:
+        rng = np.random.default_rng(20261111)
+        trees = _fixture_morphologies()
+        self.assertEqual(len(trees), 15)
+        exact = 0
+        for name, tree in trees:
+            points, index = _sample_points_um(tree)
+            distances = _pairwise_um(points[index])
+            base = _mantissas(tree, _SCALED_RELATIVE)
+            for factor in (2.0, 0.5, 1.7, 0.37, 3.3):
+                with self.subTest(f"{name}: x{factor}"):
+                    scaled = tree.clone()
+                    scaled.scale(factor, origin=rng.uniform(-300, 300, 3) * u.um)
+                    now = _mantissas(scaled, _SCALED_RELATIVE)
+                    if factor in (2.0, 0.5):
+                        for metric, power in _SCALED_EXACT.items():
+                            self.assertEqual(now[metric], base[metric] * factor**power, metric)
+                        exact += 1
+                    else:
+                        for metric, power in _SCALED_RELATIVE.items():
+                            want = base[metric] * factor**power
+                            self.assertLessEqual(abs(now[metric] - want) / want, 1e-12, metric)
+                    after = _pairwise_um(_sample_points_um(scaled)[0][index])
+                    self.assertLessEqual(float(np.max(np.abs(after - factor * distances))), 1e-9)
+        self.assertEqual(exact, 30)
+
+
 class MorphoBranchDerivedPropertyTest(unittest.TestCase):
     """``branch_id`` / ``branch_order`` / ``n_tapers`` published by MorphoBranch.
 
@@ -2555,7 +2753,7 @@ class MorphoReservedNameTest(unittest.TestCase):
     def test_copy_and_edit_method_names_are_reserved(self) -> None:
         # Each new public method takes a name away from branches: a tree or a
         # checkpoint that used it can no longer be built (the changelog says so).
-        for name in ("clone", "subtree", "remove", "replace", "graft", "translate", "rotate", "reattach"):
+        for name in ("clone", "subtree", "remove", "replace", "graft", "reattach", "translate", "rotate", "scale"):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(ValueError, "reserved by the Morphology API"):
                     self._attach_named(self._tree(), name)

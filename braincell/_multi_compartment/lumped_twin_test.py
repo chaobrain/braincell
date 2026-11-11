@@ -174,6 +174,20 @@ class LumpedViewTwinTest(LumpedTwinTestCase):
                 self.assertTwin(lumped, cable, 1e-9, msg=f"value {index}")
             np.testing.assert_allclose(_pair(out["lumped"][2], 0)[0], [2e-4, 3e-4], rtol=1e-12)
 
+    def test_nernst_ion_write_updates_reversal(self) -> None:
+        with _float64():
+            out = {}
+            for kind in KINDS:
+                cell = _new_cell(kind, 2, V_init=-70.0 * u.mV, length=20.0 * u.um, radius=0.5 * u.um)
+                cell.paint(bc.mech.Ion("ChlorideInitNernst", name="cl", temp=u.celsius2kelvin(35.0)))
+                cell.init_state()
+                before = cell.ions["cl"].E
+                cell.ions["cl"].set(Co=np.asarray([100.0, 130.0]) * u.mM)
+                out[kind] = before, cell.ions["cl"].E
+            for index, (lumped, cable) in enumerate(zip(out["lumped"], out["cable"])):
+                self.assertTwin(lumped, cable, 1e-12, msg=f"E {index}")
+            self.assertFalse(np.allclose(_pair(out["lumped"][0], 0)[0], _pair(out["lumped"][1], 0)[0]))
+
     def test_geometry_reads_writes_and_length(self) -> None:
         fields = ("cm", "length", "Ra", "radius_scale", "area", "diam_arc_mean", "radius_mid")
         with _float64():

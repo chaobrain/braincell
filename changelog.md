@@ -80,6 +80,14 @@
 
 ### New Features
 
+- **`braincell.morph` exports its classes** (MORPH-4a). `Branch`, `Morphology`
+  and the six branch types (`Soma`, `Dendrite`, `Axon`, `BasalDendrite`,
+  `ApicalDendrite`, `CustomBranch`) can now be imported from `braincell.morph`
+  as well as from `braincell`; they are the same objects as the top-level
+  names. Every class `braincell.morph.branch_class_for_type` returns is now in
+  `braincell.morph`. Before, `from braincell.morph import Morphology` raised
+  `ImportError`.
+
 - **NeuroML2 import** (MORPH-6b). `Morphology.from_neuroml(path, *,
   cell_id=None, return_report=False)` and `braincell.io.NeuroMlReader().read`
   read the morphology of one NeuroML2 cell; before, `read` raised

@@ -13,13 +13,32 @@
 # limitations under the License.
 # ==============================================================================
 
-from braincell.morph.branch import branch_class_for_type
-from braincell.morph.morphology import MorphoEdge, MorphoMetric, MorphoBranch, PrincipalAxes
+from braincell.morph.branch import (
+    ApicalDendrite,
+    Axon,
+    BasalDendrite,
+    Branch,
+    CustomBranch,
+    Dendrite,
+    Soma,
+    branch_class_for_type,
+)
+from braincell.morph.morphology import MorphoBranch, MorphoEdge, MorphoMetric, Morphology, PrincipalAxes
 
+# ``Branch``, ``Morphology`` and the six branch types are also exported from
+# the ``braincell`` root; both paths name the same object.
 __all__ = [
+    "ApicalDendrite",
+    "Axon",
+    "BasalDendrite",
+    "Branch",
+    "CustomBranch",
+    "Dendrite",
     "MorphoBranch",
     "MorphoEdge",
     "MorphoMetric",
+    "Morphology",
     "PrincipalAxes",
+    "Soma",
     "branch_class_for_type",
 ]

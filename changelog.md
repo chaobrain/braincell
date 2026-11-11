@@ -80,6 +80,27 @@
 
 ### New Features
 
+- **`braincell.filter.StepSamples(region, step)` places locations a fixed
+  physical step apart** (MORPH-10b). It was exported but raised
+  `NotImplementedError`. The region's intervals are joined in the same order
+  as for `UniformSamples` (zero-length ones dropped), and with `T` their
+  total length the locations sit at arc lengths `(k + 1/2) * step` for
+  `k < floor(T / step)`: the first is half a step in, a final partial step
+  gets none, and the count runs on across branches. When the step divides `T`
+  into `n` parts the result equals `UniformSamples(region, n)` (the two share
+  one arc-length mapping; `UniformSamples` output is unchanged bit for bit).
+  The count allows a relative slack of 1e-9, so a 0.3 um branch sampled every
+  0.1 um gets three locations. `step` must be a positive, finite scalar
+  length and is checked at construction: a bare number, `None` or a
+  non-length raises `TypeError`; zero, a negative, infinite, NaN or
+  non-scalar step raises `ValueError`; so does a `region` that is not a
+  `RegionExpr` (`TypeError`). An empty or zero-length region, and a step
+  longer than the region (the message gives both lengths), raise
+  `ValueError` when evaluated. `StepSamples` keeps the `step` it was given
+  but compares and hashes by its value in micrometres, so
+  `StepSamples(r, 30 * u.um) == StepSamples(r, 0.03 * u.mmeter)` and the
+  expression can key a `SelectionCache`; before, any `Quantity` step made it
+  unhashable.
 - **`braincell.filter.RegionAnchors(region, x)` places one location in each
   interval of a region** (MORPH-10a). It was exported but raised
   `NotImplementedError`. For each interval `(b, p, d)` of the normalized

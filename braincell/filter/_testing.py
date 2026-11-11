@@ -40,6 +40,7 @@ from braincell.filter.locset import (
     LocsetMask,
     RegionAnchors,
     RootLocation,
+    StepSamples,
     Terminals,
     UniformSamples,
     at,
@@ -96,10 +97,10 @@ def fixture_morphologies() -> list[tuple[str, Morphology]]:
 
 #: Expressions a ``SelectionCache`` serves after an edit, one per thing a mask
 #: can depend on: segment lengths, topology, branch type, the name -> index
-#: mapping, subtree membership by index and by name, and the intervals a
-#: region resolves to. Each is a composite whose operands are all hashable,
-#: because the cache memoizes operands only; a top-level leaf would never be
-#: cached and could not go stale.
+#: mapping, subtree membership by index and by name, the intervals a region
+#: resolves to, and a fixed physical step. Each is a composite whose operands
+#: are all hashable, because the cache memoizes operands only; a top-level
+#: leaf would never be cached and could not go stale.
 SELECTION_BATTERY: tuple[tuple[str, object], ...] = (
     ("lengths", UniformSamples(AllRegion(), 5) + RootLocation(0.5)),
     ("topology", Terminals() + BranchPoints()),
@@ -112,6 +113,9 @@ SELECTION_BATTERY: tuple[tuple[str, object], ...] = (
     # The axon survives every edit; a basal region would be empty after
     # "remove the subtree at dend", and RegionAnchors raises on that.
     ("region anchors", RegionAnchors(AllRegion(), 0.5) + RegionAnchors(branch_in("type", "axon"), 1.0)),
+    # Counts its steps over the whole tree's length, so every edit that
+    # changes a length changes it; a Quantity step keys the cache by value.
+    ("step samples", StepSamples(AllRegion(), 25 * u.um) + RootLocation(0.5)),
 )
 
 

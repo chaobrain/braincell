@@ -19,12 +19,16 @@ from numbers import Integral, Real
 import brainunit as u
 import numpy as np
 
-from braincell._misc import scalar_decimal
+from braincell._misc import normalize_param, scalar_decimal
 from braincell.morph.morphology import MorphoBranch, Morphology
 
 Interval = tuple[int, float, float]
 Location = tuple[int, float]
 EPSILON = 1e-12
+#: Relative slack in StepSamples' step count, so a step that divides the
+#: total length up to rounding (0.3 um / 0.1 um = 2.9999999999999996) still
+#: takes its last step.
+STEP_COUNT_SLACK = 1e-9
 _BRANCH_METRIC_PROPERTIES = {"length", "mean_radius", "diam_arc_mean", "area", "volume"}
 _UNSUPPORTED_BRANCH_METRIC_PROPERTIES = {"max_radius", "min_radius"}
 
@@ -708,23 +712,48 @@ def coerce_positive_count(name: str, count: object) -> int:
     return value
 
 
-def uniform_samples_from_region(
-    morpho: Morphology,
+def _length_scalar_um(
+    value: object,
     *,
-    intervals: tuple[Interval, ...],
-    count: object,
+    name: str,
+    positive: bool = False,
+    allow_none: bool = False,
+) -> float | None:
+    """Check a scalar length quantity and return it as a float in micrometres.
+
+    ``None`` raises ``TypeError`` unless ``allow_none``; a bare number or a
+    quantity of the wrong unit raises ``TypeError`` and a non-scalar one
+    ``ValueError`` (both from ``normalize_param``; a one-element array is a
+    scalar). A non-finite value raises ``ValueError``, as does a value
+    ``<= 0`` when ``positive`` and ``< 0`` otherwise.
+    """
+    if value is None and allow_none:
+        return None
+    quantity = normalize_param(value, name=name, unit=u.um, shape=())
+    length_um = float(np.asarray(quantity.to_decimal(u.um)).reshape(()))
+    if not np.isfinite(length_um):
+        raise ValueError(f"{name} must be finite, got {value!r}.")
+    if positive and length_um <= 0.0:
+        raise ValueError(f"{name} must be > 0, got {value!r}.")
+    if length_um < 0.0:
+        raise ValueError(f"{name} must be >= 0, got {value!r}.")
+    return length_um
+
+
+def _points_at_arc_lengths(
+    entries: list[tuple[int, float, float, float]],
+    targets: np.ndarray,
+    *,
     epsilon: float = EPSILON,
 ) -> tuple[Location, ...]:
-    n = coerce_positive_count("count", count)
-    entries = _sample_entries(morpho, intervals, epsilon=epsilon)
-    if not entries:
-        raise ValueError("UniformSamples cannot sample from an empty or zero-length region.")
+    """Map arc lengths along the concatenated ``_sample_entries`` to locations.
 
+    Shared by ``UniformSamples`` and ``StepSamples``, so the two agree when a
+    step divides the total length. A target past the end clips to the end
+    of the last interval.
+    """
     lengths = np.asarray([item[3] for item in entries], dtype=float)
     cumulative = np.cumsum(lengths)
-    total = float(cumulative[-1])
-    targets = ((np.arange(n, dtype=float) + 0.5) / float(n)) * total
-
     points: list[Location] = []
     for target in targets:
         idx = int(np.searchsorted(cumulative, target, side="right"))
@@ -739,6 +768,54 @@ def uniform_samples_from_region(
         x = prox + ratio * (dist - prox)
         points.append((branch, _normalize_loc_x(x, epsilon=epsilon)))
     return normalize_locset_points(points, epsilon=epsilon)
+
+
+def _total_length_um(entries: list[tuple[int, float, float, float]]) -> float:
+    # The last cumulative sum, not np.sum: the same number the arc-length
+    # mapping ends on.
+    return float(np.cumsum(np.asarray([item[3] for item in entries], dtype=float))[-1])
+
+
+def uniform_samples_from_region(
+    morpho: Morphology,
+    *,
+    intervals: tuple[Interval, ...],
+    count: object,
+    epsilon: float = EPSILON,
+) -> tuple[Location, ...]:
+    n = coerce_positive_count("count", count)
+    entries = _sample_entries(morpho, intervals, epsilon=epsilon)
+    if not entries:
+        raise ValueError("UniformSamples cannot sample from an empty or zero-length region.")
+    total = _total_length_um(entries)
+    targets = ((np.arange(n, dtype=float) + 0.5) / float(n)) * total
+    return _points_at_arc_lengths(entries, targets, epsilon=epsilon)
+
+
+def _step_samples_from_region(
+    morpho: Morphology,
+    *,
+    intervals: tuple[Interval, ...],
+    step_um: float,
+    epsilon: float = EPSILON,
+) -> tuple[Location, ...]:
+    """Locations at arc lengths ``(k + 1/2) * step_um`` along the concatenated region.
+
+    ``n = floor(T / step_um * (1 + STEP_COUNT_SLACK))`` locations, ``T`` the
+    total length; a final partial step gets none.
+    """
+    entries = _sample_entries(morpho, intervals, epsilon=epsilon)
+    if not entries:
+        raise ValueError("StepSamples cannot sample from an empty or zero-length region.")
+    total = _total_length_um(entries)
+    n = int(np.floor(total / step_um * (1.0 + STEP_COUNT_SLACK)))
+    if n == 0:
+        raise ValueError(
+            f"StepSamples step {step_um!r} um exceeds the region's total length {total!r} um; "
+            "use a smaller step or UniformSamples(region, 1)."
+        )
+    targets = (np.arange(n, dtype=float) + 0.5) * step_um
+    return _points_at_arc_lengths(entries, targets, epsilon=epsilon)
 
 
 def random_samples_from_region(

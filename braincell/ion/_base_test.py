@@ -41,7 +41,7 @@ from braincell.ion._base import Species
 from braincell.ion._base import _RadialShellGeometry
 from braincell.ion._testing import make_shell_ion
 from braincell.mech import get_registry
-from braincell.quad import get_integrator
+from braincell.quad import get_integrator, list_integrators
 from braincell.quad.protocol import DiffEqState
 
 
@@ -1084,6 +1084,80 @@ class IonDirectConstructionUnitTest(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.simplefilter("error", FutureWarning)
             CalciumDetailed(1, Ci_initializer=braintools.init.Constant(1e-4 * u.mM))
+
+
+class _NoSignatureSolver:
+    """A solver whose signature cannot be read (``inspect.signature`` raises)."""
+
+    calls = ()
+
+    @property
+    def __signature__(self):
+        raise ValueError("no signature available")
+
+    def __call__(self, *args, **kwargs):
+        self.calls += ((args, kwargs),)
+
+
+class StepSolverDispatchTest(unittest.TestCase):
+    """``_step_solver`` passes ``excluded_paths`` by signature, not by retrying on ``TypeError`` (MECH-27)."""
+
+    def _ion(self, solver):
+        from braincell.ion import CdpStC_MA2020_GoC
+
+        ion = make_shell_ion(CdpStC_MA2020_GoC, size=1)
+        ion.init_state(_CONTRACT_V[:1])
+        ion.solver = solver
+        return ion
+
+    def test_type_error_inside_an_accepting_solver_propagates_after_one_call(self):
+        calls = []
+
+        def solver(target, *args, excluded_paths=()):
+            calls.append(excluded_paths)
+            raise TypeError("unit error inside solver while handling excluded_paths")
+
+        ion = self._ion(solver)
+        with self.assertRaisesRegex(TypeError, "unit error inside solver"):
+            ion._step_solver(_CONTRACT_V[:1])
+        self.assertEqual(calls, [(("channels",),)])
+
+    def test_var_keyword_solver_receives_excluded_paths(self):
+        calls = []
+
+        def solver(target, *args, **kwargs):
+            calls.append(kwargs)
+
+        self._ion(solver)._step_solver(_CONTRACT_V[:1])
+        self.assertEqual(calls, [{"excluded_paths": (("channels",),)}])
+
+    def test_solver_without_the_keyword_gets_positional_arguments_only(self):
+        calls = []
+
+        def solver(target, V, recursive_child):
+            calls.append((target, V, recursive_child))
+
+        ion = self._ion(solver)
+        ion._step_solver(_CONTRACT_V[:1], recursive_child=False)
+        self.assertEqual(len(calls), 1)
+        self.assertIs(calls[0][0], ion)
+        self.assertIs(calls[0][2], False)
+
+    def test_solver_without_a_readable_signature_gets_no_excluded_paths(self):
+        solver = _NoSignatureSolver()
+        self._ion(solver)._step_solver(_CONTRACT_V[:1])
+        self.assertEqual(len(solver.calls), 1)
+        self.assertEqual(solver.calls[0][1], {})
+
+    def test_registry_dispatch_is_unchanged(self):
+        # The two registered steps that take ``excluded_paths`` still get it;
+        # the rest never did, because the old retry dropped it for them. None
+        # takes ``**kwargs``, so none could forward it to a step that rejects it.
+        steps = {name: get_integrator(name) for name in list_integrators()}
+        steps = {name: step for name, step in steps.items() if not step.__module__.endswith("_test")}
+        accepting = {name for name, step in steps.items() if ionbase._accepts_excluded_paths(step)}
+        self.assertGreater(len(steps), 20)
+        self.assertEqual(accepting, {"backward_euler", "ind_exp_euler"})
 
 
 if __name__ == "__main__":

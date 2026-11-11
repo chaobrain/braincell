@@ -289,6 +289,16 @@
   Ci_initializer=2.4e-4 * u.mM)`). Results equal the undeclared default
   bit for bit.
 
+- A `TypeError` raised inside a custom ion solver that accepts
+  `excluded_paths` now propagates (MECH-27). A kinetic ion called its solver
+  with `excluded_paths` and, on a `TypeError` naming that keyword, called it
+  again without, so such an error (a unit error, say) was swallowed and the
+  step ran twice. Whether the solver takes the keyword is now read from its
+  signature (a parameter of that name or `**kwargs`); a solver whose
+  signature cannot be read is called without it. The registered solvers are
+  dispatched as before: `backward_euler` and `ind_exp_euler` get
+  `excluded_paths`, the others do not.
+
 - The `K_HH1952` docstring said its defaults do not reproduce Hodgkin and
   Huxley's 6.3 degC kinetics; they do (MECH-19b). `temp` and `temp_ref` both
   default to 36 degC, so the Q10 factor is 1 and the gate runs the published

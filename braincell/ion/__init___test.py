@@ -15,15 +15,17 @@
 
 """Package-level guards for :mod:`braincell.ion`.
 
-Two concerns live here because both are properties of the package as a
-whole: the docstring conformance sweep over every covered module, and the
-re-export completeness of ``braincell/ion/__init__.py``.
+Three concerns live here because all are properties of the package as a
+whole: the docstring conformance sweep over every covered module, the
+re-export completeness of ``braincell/ion/__init__.py``, and the static
+unit-safety sweep.
 """
 
 import unittest
+from pathlib import Path
 
 import braincell.ion as ion
-from braincell._testing import DocstringConformanceTests, ReExportTests
+from braincell._testing import DocstringConformanceTests, ReExportTests, UnitSafetyGuardTests
 from braincell.ion import _base, calcium, chloride, nonspecific, potassium, sodium
 
 # Extended by one module per docstring task. A module is listed only once
@@ -86,6 +88,13 @@ class IonReExportTest(ReExportTests, unittest.TestCase):
     package = ion
     reexport_sources = (calcium, chloride, nonspecific, potassium, sodium)
     require_sorted_all = True
+
+
+class IonUnitSafetyTest(UnitSafetyGuardTests, unittest.TestCase):
+    """No bare-number reads or ``TypeError`` fallbacks (MECH-27)."""
+
+    package_dir = Path(__file__).resolve().parent
+    allowlist = (("_testing.py", "make_shell_ion", "get_mantissa", "fixture: the same unit is put back."),)
 
 
 if __name__ == "__main__":

@@ -20,8 +20,10 @@ Not a test module: the leading underscore keeps pytest from collecting it.
 
 from __future__ import annotations
 
+import ast
 import inspect
 import re
+from pathlib import Path
 from types import ModuleType
 from typing import Iterator
 
@@ -181,3 +183,127 @@ class DocstringConformanceTests:
         live = {name for _, name, _ in self._symbols()}
         dead = sorted(n for n in self.no_primary_source if n not in live)
         self.assertEqual(dead, [], f"allowlist names no longer public: {dead}")
+
+
+_BARE_NUMBER_CALLS = frozenset({"get_mantissa", "get_magnitude"})
+_CATCHES_TYPE_ERROR = frozenset({"TypeError", "Exception", "BaseException"})
+# NMODL unit conversions (``(1e12)`` pS to S, ``(1e6)`` C/ms to mA, ``(1e-3)``):
+# applied to quantities that carry units they convert twice.
+_UNIT_FACTORS = {1e6: "1e6", 1e12: "1e12", 1e-3: "1e-3"}
+
+
+def _caught_names(node: ast.expr) -> list[str]:
+    if isinstance(node, ast.Tuple):
+        return [name for elt in node.elts for name in _caught_names(elt)]
+    return [node.id] if isinstance(node, ast.Name) else [node.attr] if isinstance(node, ast.Attribute) else []
+
+
+def _unit_factor(node: ast.expr) -> str | None:
+    while isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        node = node.operand
+    if isinstance(node, ast.Constant) and type(node.value) in (int, float):
+        return _UNIT_FACTORS.get(node.value)
+    return None
+
+
+class _UnitSafetyVisitor(ast.NodeVisitor):
+    def __init__(self, check_factors: bool):
+        self.check_factors = check_factors
+        self.scope: list[str] = []
+        self.hits: list[tuple[str, str, int]] = []
+
+    def _hit(self, pattern: str, node: ast.AST) -> None:
+        self.hits.append((".".join(self.scope) or "<module>", pattern, node.lineno))
+
+    def _scoped(self, node) -> None:
+        self.scope.append(node.name)
+        self.generic_visit(node)
+        self.scope.pop()
+
+    visit_FunctionDef = visit_AsyncFunctionDef = visit_ClassDef = _scoped
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if node.id in _BARE_NUMBER_CALLS:
+            self._hit(node.id, node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        if node.attr in _BARE_NUMBER_CALLS:
+            self._hit(node.attr, node)
+        elif node.attr in ("mantissa", "magnitude"):
+            self._hit(f".{node.attr}", node)
+        self.generic_visit(node)
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        caught = node.type is None or _CATCHES_TYPE_ERROR.intersection(_caught_names(node.type))
+        if caught and not isinstance(node.body[-1], ast.Raise):
+            self._hit("except TypeError", node)
+        self.generic_visit(node)
+
+    def _factor(self, node, op, operands) -> None:
+        if self.check_factors and isinstance(op, (ast.Mult, ast.Div)):
+            for label in filter(None, map(_unit_factor, operands)):
+                self._hit(f"factor {label}", node)
+
+    def visit_BinOp(self, node: ast.BinOp) -> None:
+        self._factor(node, node.op, (node.left, node.right))
+        self.generic_visit(node)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        self._factor(node, node.op, (node.value,))
+        self.generic_visit(node)
+
+
+def unit_safety_hits(source: str, *, check_factors: bool = False) -> list[tuple[str, str, int]]:
+    """Return ``(qualname, pattern, line)`` for each construct that can hide a unit error.
+
+    Reported: ``get_mantissa``/``get_magnitude`` under any prefix and the
+    ``.mantissa``/``.magnitude`` attributes, which assume a unit instead of
+    converting; an ``except`` catching ``TypeError`` (alone, in a tuple, via
+    ``Exception``/``BaseException`` or bare) whose body does not end in
+    ``raise``, which turns an error into a fallback; and, with
+    ``check_factors``, a literal ``1e6``, ``1e12`` or ``1e-3`` multiplying or
+    dividing anything. ``qualname`` joins the enclosing classes and functions
+    with dots, or is ``"<module>"``.
+    """
+    visitor = _UnitSafetyVisitor(check_factors)
+    visitor.visit(ast.parse(source))
+    return visitor.hits
+
+
+class UnitSafetyGuardTests:
+    """Assertions shared by the per-package unit-safety guards.
+
+    Mix into a :class:`unittest.TestCase` subclass that sets ``package_dir``.
+    Each non-test ``.py`` file in that directory is parsed, not imported;
+    every :func:`unit_safety_hits` hit must match an ``allowlist`` entry
+    ``(file name, qualname, pattern, reason)``, and every entry a hit.
+    ``check_factors`` turns on the unit-factor check.
+    """
+
+    package_dir: Path | None = None
+    allowlist: tuple[tuple[str, str, str, str], ...] = ()
+    check_factors: bool = False
+
+    def _unit_safety_hits(self) -> list[tuple[str, str, str, int]]:
+        if "_hits" not in type(self).__dict__:
+            paths = sorted(p for p in Path(self.package_dir).glob("*.py") if not p.name.endswith("_test.py"))
+            type(self)._hits = [
+                (path.name, *hit)
+                for path in paths
+                for hit in unit_safety_hits(path.read_text(), check_factors=self.check_factors)
+            ]
+        return type(self)._hits
+
+    def test_no_unlisted_unit_unsafe_construct(self):
+        listed = {entry[:3] for entry in self.allowlist}
+        unlisted = [f"{f}:{line} {q}: {p}" for f, q, p, line in self._unit_safety_hits() if (f, q, p) not in listed]
+        self.assertEqual(unlisted, [], "convert with .to_decimal(unit) or re-raise; else allowlist it with a reason")
+
+    def test_unit_safety_allowlist_has_no_dead_entries(self):
+        live = {hit[:3] for hit in self._unit_safety_hits()}
+        dead = [entry[:3] for entry in self.allowlist if entry[:3] not in live]
+        self.assertEqual(dead, [], f"allowlist entries that match nothing: {dead}")
+
+    def test_unit_safety_allowlist_entries_have_reasons(self):
+        bad = [entry[:3] for entry in self.allowlist if len(entry) != 4 or not entry[3].strip()]
+        self.assertEqual(bad, [], f"allowlist entries without a reason: {bad}")

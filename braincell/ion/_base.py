@@ -31,6 +31,7 @@ common ion patterns:
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from typing import Any, Callable, ClassVar
 
@@ -687,6 +688,23 @@ class DynamicNernstIon(brainstate.mixin.Mixin):
         raise NotImplementedError
 
 
+def _accepts_excluded_paths(solver) -> bool:
+    """Return True when ``solver`` takes an ``excluded_paths`` keyword.
+
+    True for a keyword parameter of that name or a ``**kwargs``; False when
+    the signature cannot be read, so such a solver is called without it.
+    """
+    try:
+        parameters = inspect.signature(solver).parameters.values()
+    except ValueError:
+        return False
+    keyword = (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    return any(
+        (p.name == "excluded_paths" and p.kind in keyword) or p.kind is inspect.Parameter.VAR_KEYWORD
+        for p in parameters
+    )
+
+
 class KineticIon(IndependentIntegration):
     """Template for NMODL-style kinetic ion species.
 
@@ -926,13 +944,12 @@ class KineticIon(IndependentIntegration):
             )
 
     def _step_solver(self, V, recursive_child: bool = True):
-        args = (V, recursive_child)
-        try:
-            self.solver(self, *args, excluded_paths=(("channels",),))
-        except TypeError as exc:
-            if "excluded_paths" not in str(exc):
-                raise
-            self.solver(self, *args)
+        # Decided from the signature, not by catching ``TypeError``: a retry
+        # would also swallow a ``TypeError`` raised inside the solver.
+        if _accepts_excluded_paths(self.solver):
+            self.solver(self, V, recursive_child, excluded_paths=(("channels",),))
+        else:
+            self.solver(self, V, recursive_child)
 
     def species_values(self):
         """Return the current full visible species view."""

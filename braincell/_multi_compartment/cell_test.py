@@ -58,7 +58,6 @@ from braincell.morph._testing import (
     make_tree_s,
     make_tree_t,
     make_tree_u,
-    simulate_remove_leaf,
     simulate_replace_geometry,
     stretched,
 )
@@ -655,7 +654,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         cell = Cell(morpho)
         cell.place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
             cell.n_cv
@@ -668,7 +667,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         cell = Cell(morpho)
         cell.place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
             cell.init_state()
@@ -679,9 +678,56 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         cell = Cell(morpho)
         cell.place(at("axon", 0.5), _index_probe_synapse())
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         self.assertEqual(_placed_branches(cell), [(1, "axon")])
+
+    def test_an_expression_on_a_removed_branch_names_the_placement(self):
+        # The expression follows the name; once no branch has it, the next
+        # rebuild says which declaration lost its branch instead of a bare
+        # KeyError: 'dend'.
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.place(at("dend", 0.5), _index_probe_synapse())
+
+        morpho.remove("dend")
+
+        pattern = r"Cell\.place\(\.\.\.\) at cell_test\.py:\d+ locates its mechanisms on branch 'dend'.*does not have"
+        with self.assertRaisesRegex(KeyError, pattern):
+            cell.n_cv
+        with self.assertRaisesRegex(KeyError, pattern):
+            cell.init_state()
+        self.assertFalse(cell._initialized)
+
+    def test_an_expression_follows_a_new_branch_of_the_removed_name(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        cell.place(at("dend", 0.5), _index_probe_synapse())
+
+        morpho.remove("dend")
+        morpho.axon.dend = _extra_branch()
+
+        self.assertEqual(_placed_branches(cell), [(3, "dend")])
+        self.assertEqual(cell.morpho.dend.parent.name, "axon")
+
+    def test_an_unknown_branch_name_names_the_placement_and_rolls_back(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        rules = cell.place_rules
+
+        with self.assertRaisesRegex(KeyError, r"Cell\.place\(\.\.\.\) at cell_test\.py:\d+ .*branch 'dned'"):
+            cell.place(at("dned", 0.5), _index_probe_synapse())
+        self.assertEqual(cell.place_rules, rules)
+
+    def test_per_member_expressions_on_a_removed_branch_name_the_placement(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho, pop_size=2)
+        cell.place([at("dend", 0.5), at("apical", 0.5)], _index_probe_synapse())
+
+        morpho.remove("dend")
+
+        with self.assertRaisesRegex(KeyError, r"Cell\.place\(\.\.\.\) at cell_test\.py:\d+ .*branch 'dend'"):
+            cell.n_cv
 
     def test_a_mask_placement_survives_an_append(self):
         morpho = make_tree_u()
@@ -712,7 +758,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         batch = LocsetBatch.from_columns(np.asarray([[2], [3]], dtype=np.int64), np.asarray([[0.5], [0.5]]))
         cell.place(batch, _index_probe_synapse())
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         with self.assertRaisesRegex(RuntimeError, _BATCH_PLACE_STALE):
             cell.n_cv
@@ -723,7 +769,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         mask = at("axon", 0.5).evaluate(morpho)
         cell.place([mask, at("apical", 0.5)], _index_probe_synapse())
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
             cell.n_cv
@@ -733,7 +779,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         cell = Cell(morpho, pop_size=2)
         cell[[0]].place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
             cell.n_cv
@@ -743,7 +789,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         cell = Cell(morpho)
         cell.loc(at("axon", 0.5).evaluate(morpho)).place(_index_probe_synapse())
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
             cell.n_cv
@@ -754,7 +800,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         cell.place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
         rules = cell.place_rules
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
             cell.place(at("apical", 0.5), _index_probe_synapse())
@@ -769,7 +815,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         rules = cell.place_rules
         early_view = cell[[0]]
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
             cell[[0]]
@@ -783,7 +829,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         cell.place(at("axon", 0.5).evaluate(first), _index_probe_synapse())
         cell.morphology = make_tree_u()
 
-        simulate_remove_leaf(first, "dend")
+        first.remove("dend")
 
         self.assertEqual(_placed_branches(cell), [(2, "axon")])
 
@@ -792,7 +838,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         # the tree as it now is holds current indices.
         morpho = make_tree_u()
         cell = Cell(morpho)
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         cell.place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
 
@@ -804,7 +850,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         morpho = make_tree_u()
         cell = Cell(morpho, cv_policy=CVPerBranchList((1, 2, 1, 1)))
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
         morpho.soma.extra = _extra_branch()
 
         with self.assertRaisesRegex(RuntimeError, _CV_LIST_STALE):
@@ -815,7 +861,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         cell = Cell(morpho)
         cell.cv_policy = CVPerBranchList((1, 2, 1, 1))
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
         morpho.soma.extra = _extra_branch()
 
         with self.assertRaisesRegex(RuntimeError, _CV_LIST_STALE):
@@ -824,7 +870,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
     def test_cv_per_branch_list_can_be_assigned_again_after_a_removal(self):
         morpho = make_tree_u()
         cell = Cell(morpho, cv_policy=CVPerBranchList((1, 2, 1, 1)))
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         cell.cv_policy = CVPerBranchList((1, 2, 1))
 
@@ -835,7 +881,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         # revision its indices were declared at.
         morpho = make_tree_u()
         cell = Cell(morpho, cv_policy=CVPerBranchList((1, 2, 1, 1)))
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         with self.assertRaisesRegex(ValueError, "cv_per_branch length must match"):
             cell.cv_policy = CVPerBranchList((1, 2, 1, 1))
@@ -862,7 +908,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         )
         cell = Cell(morpho, cv_policy=policy)
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
         morpho.soma.extra = _extra_branch()
 
         with self.assertRaisesRegex(RuntimeError, r"cv_policy CompositeByTypePolicy\(.*default branch index"):
@@ -873,7 +919,7 @@ class IndexHeldDeclarationTest(unittest.TestCase):
         cell = Cell(morpho, cv_policy=MaxCVLen(40.0 * u.um))
         cell.place(at("axon", 0.5), _index_probe_synapse())
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         fresh = Cell(cold_rebuild(morpho), cv_policy=MaxCVLen(40.0 * u.um))
         fresh.place(at("axon", 0.5), _index_probe_synapse())

@@ -50,7 +50,6 @@ from braincell.morph._testing import (
     make_tree_t,
     make_tree_w,
     morph_fingerprint,
-    simulate_remove_leaf,
     simulate_replace_geometry,
     stretched,
 )
@@ -932,11 +931,7 @@ class MorphoFrozenSnapshotTest(unittest.TestCase):
 
 
 class MorphoDetachedViewTest(unittest.TestCase):
-    """A view of a branch that an edit removed answers geometry questions, not tree questions.
-
-    There is no public delete yet (MORPH-2); ``simulate_remove_leaf`` removes
-    a leaf through the edit gate the way the delete will.
-    """
+    """A view of a branch that ``Morphology.remove`` removed answers geometry questions, not tree questions."""
 
     def setUp(self) -> None:
         self.tree = _make_tree_u()
@@ -945,7 +940,7 @@ class MorphoDetachedViewTest(unittest.TestCase):
         self.apical = self.tree.apical
         self.assertEqual((self.axon.index, self.apical.index), (2, 3))
         self.revision_before = self.tree.revision
-        simulate_remove_leaf(self.tree, "dend")
+        self.tree.remove("dend")
 
     def test_tree_questions_raise_with_the_branch_name(self) -> None:
         questions = {
@@ -1003,19 +998,22 @@ class MorphoDetachedViewTest(unittest.TestCase):
         self.assertFalse(tree._reindexed_after(after_remove))
         self.assertTrue(tree._reindexed_after(self.revision_before))
 
-    def test_simulate_remove_leaf_rejects_without_a_trace(self) -> None:
+    def test_a_rejected_removal_leaves_no_trace_and_a_branch_with_children_goes_whole(self) -> None:
         tree = _make_tree_u()
         tree.axon.tip = _short_axon()
         before = (tree.revision, tree.n_branches)
-        for label, name, error in (
-            ("unknown", "nope", KeyError),
-            ("root", "soma", ValueError),
-            ("not a leaf", "axon", ValueError),
-        ):
+        for label, name, error in (("unknown", "nope", KeyError), ("root", "soma", ValueError)):
             with self.subTest(label):
                 with self.assertRaises(error):
-                    simulate_remove_leaf(tree, name)
+                    tree.remove(name)
                 self.assertEqual((tree.revision, tree.n_branches), before)
+
+        tip = tree.tip
+        removed = tree.remove("axon")
+
+        self.assertEqual([b.name for b in removed.branches], ["axon", "tip"])
+        self.assertEqual([b.name for b in tree.branches], ["soma", "dend", "apical"])
+        self.assertIn("detached", repr(tip))
 
 
 class MorphoEditTableTest(unittest.TestCase):
@@ -1084,7 +1082,7 @@ class MorphoEditTableTest(unittest.TestCase):
     def test_a_wrong_reindex_declaration_is_reported(self) -> None:
         cases = [
             (
-                EditCase("removal declared as keeping indices", "delete", lambda t: simulate_remove_leaf(t, "d2")),
+                EditCase("removal declared as keeping indices", "delete", lambda t: t.remove("d2")),
                 r"watermark: .* reindex=False(.|\n)*index: default indices moved \{'axon': \(4, 3\)\}",
             ),
             (
@@ -1346,9 +1344,171 @@ class MorphoSubtreeTest(unittest.TestCase):
     def test_a_detached_view_is_rejected(self) -> None:
         tree = make_tree_w()
         view = tree.d2
-        simulate_remove_leaf(tree, "d2")
+        tree.remove("d2")
         with self.assertRaisesRegex(RuntimeError, r"'d2'.*detached.*subtree\(\).*by name"):
             tree.subtree(view)
+
+
+_W_SOMA = _pb([[0, 0, 0], [20, 0, 0]], (5.0, 5.0), "soma")
+_W_DEND = _pb([[20, 0, 0], [50, 40, 0], [110, 40, 0]], (2.0, 1.5, 1.0), "basal_dendrite")
+_W_D1 = _pb([[110, 40, 0], [140, 80, 0]], (1.0, 0.5), "basal_dendrite")
+_W_D2 = _pb([[110, 40, 0], [150, 10, 0]], (1.0, 0.5), "basal_dendrite")
+_W_AXON = _pb([[0, 0, 0], [-30, 0, 0]], (0.5, 0.5), "axon")
+
+
+def _edit_state(tree: Morphology) -> tuple:
+    """Everything a rejected edit must leave as it was."""
+    return morph_fingerprint(tree), tree.revision, tree.naming_state(), tree._reindex_revision
+
+
+class MorphoRemoveTest(_RoundTripMixin, unittest.TestCase):
+    """``Morphology.remove(target)`` drops a subtree, returns it, and detaches its views (tree W)."""
+
+    def test_removing_the_leaf_d2(self) -> None:
+        tree = make_tree_w()
+        held_d2, held_axon = tree.d2, tree.axon
+        revision = tree.revision
+
+        removed = tree.remove("d2")
+
+        self.assertEqual(tree.revision, revision + 1)
+        self.assertTrue(tree._reindexed_after(revision))
+        self.assertEqual([(b.name, b.index) for b in tree.branches], [("soma", 0), ("dend", 1), ("d1", 2), ("axon", 3)])
+        with self.assertRaisesRegex(RuntimeError, r"'d2'.*detached.*by name"):
+            held_d2.index
+        self.assertEqual(held_d2.name, "d2")
+        np.testing.assert_allclose(_um(held_d2.branch.length), 50.0, rtol=1e-12)
+        self.assertEqual(held_axon.index, 3)
+        self.assertEqual(tree.n_branches, 4)
+        np.testing.assert_allclose(_um(tree.total_length), 210.0, rtol=1e-12)
+        self.assertEqual([b.name for b in removed.branches], ["d2"])
+        self.assertIsNone(removed.root.parent)
+        np.testing.assert_allclose(_um(removed.total_length), 50.0, rtol=1e-12)
+        self.assert_round_trips(
+            tree,
+            _build(
+                ("soma", _W_SOMA, None, None, None),
+                ("dend", _W_DEND, "soma", 1.0, 0.0),
+                ("d1", _W_D1, "dend", 1.0, 0.0),
+                ("axon", _W_AXON, "soma", 0.0, 0.0),
+            ),
+        )
+
+    def test_removing_the_subtree_at_dend(self) -> None:
+        tree = make_tree_w()
+        held = {name: getattr(tree, name) for name in ("dend", "d1", "d2")}
+        expected_removed = tree.subtree("dend")
+
+        removed = tree.remove("dend")
+
+        self.assertEqual([(b.name, b.index) for b in tree.branches], [("soma", 0), ("axon", 1)])
+        np.testing.assert_allclose(_um(tree.total_length), 50.0, rtol=1e-12)
+        for name, view in held.items():
+            with self.subTest(name):
+                self.assertIn("detached", repr(view))
+                with self.assertRaises(RuntimeError):
+                    view.parent
+        self.assertEqual(removed, expected_removed)
+        self.assertEqual([b.name for b in removed.branches], ["dend", "d1", "d2"])
+        self.assertEqual(
+            [(e.parent.name, e.child.name, e.parent_x, e.child_x) for e in removed.edges],
+            [("dend", "d1", 1.0, 0.0), ("dend", "d2", 1.0, 0.0)],
+        )
+        np.testing.assert_allclose(_um(removed.total_length), 210.0, rtol=1e-12)
+        self.assert_round_trips(tree, _build(("soma", _W_SOMA, None, None, None), ("axon", _W_AXON, "soma", 0.0, 0.0)))
+
+    def test_a_view_selects_the_branch_to_remove(self) -> None:
+        tree = make_tree_w()
+        removed = tree.remove(tree.d1)
+        self.assertEqual(removed.root.name, "d1")
+        self.assertEqual([b.name for b in tree.branches], ["soma", "dend", "d2", "axon"])
+
+    def test_a_removed_name_can_be_used_again(self) -> None:
+        tree = make_tree_w()
+        held_d2 = tree.d2
+        tree.remove("d2")
+
+        new_d2 = tree.attach(parent="dend", child_branch=_W_D2, child_name="d2")
+
+        self.assertEqual(new_d2.index, 4)
+        self.assertIn("detached", repr(held_d2))
+        with self.assertRaises(RuntimeError):
+            held_d2.index
+        # Same structure as W, but d2 now comes last in default order.
+        self.assertNotEqual(tree, make_tree_w())
+
+    def test_the_auto_naming_counter_does_not_move_back(self) -> None:
+        tree = make_tree_s()
+        names = [tree.attach(parent="soma", child_branch=make_basal()).name for _ in range(2)]
+        self.assertEqual(names, ["basal_dendrite_0", "basal_dendrite_1"])
+
+        tree.remove("basal_dendrite_1")
+
+        self.assertEqual(tree.naming_state(), {"basal_dendrite": 2})
+        self.assertEqual(tree.attach(parent="soma", child_branch=make_basal()).name, "basal_dendrite_2")
+
+    def test_the_root_cannot_be_removed_and_the_hint_works(self) -> None:
+        tree = make_tree_w()
+        before = _edit_state(tree)
+        with self.assertRaisesRegex(ValueError, r"root.*subtree\(name\)"):
+            tree.remove("soma")
+        self.assertEqual(_edit_state(tree), before)
+        # The suggested recovery: copy out the part to keep, then edit the copy.
+        part = tree.subtree("dend")
+        part.remove("d2")
+        self.assertEqual([b.name for b in part.branches], ["dend", "d1"])
+
+    def test_bad_targets_are_rejected_without_a_trace(self) -> None:
+        tree = make_tree_w()
+        other = make_tree_w()
+        for label, target, error in (
+            ("unknown name", "nope", KeyError),
+            ("not a name or view", 3, TypeError),
+            ("view of another tree", other.d2, ValueError),
+        ):
+            with self.subTest(label):
+                before = _edit_state(tree)
+                with self.assertRaises(error):
+                    tree.remove(target)
+                self.assertEqual(_edit_state(tree), before)
+        self.assertEqual(other, make_tree_w())
+        self.assertEqual(other.revision, make_tree_w().revision)
+
+    def test_a_detached_view_is_rejected(self) -> None:
+        tree = make_tree_w()
+        held = tree.d2
+        tree.remove("d2")
+        before = _edit_state(tree)
+        with self.assertRaisesRegex(RuntimeError, r"'d2'.*detached.*remove\(\).*by name"):
+            tree.remove(held)
+        self.assertEqual(_edit_state(tree), before)
+
+    def test_a_frozen_tree_rejects_before_checking_arguments(self) -> None:
+        snapshot = frozen_snapshot(make_tree_w())
+        before = _edit_state(snapshot)
+        for target in ("d2", "nope"):
+            with self.subTest(target):
+                with self.assertRaisesRegex(RuntimeError, "read-only snapshot"):
+                    snapshot.remove(target)
+                self.assertEqual(_edit_state(snapshot), before)
+
+    def test_del_points_to_remove_and_changes_nothing(self) -> None:
+        tree = make_tree_w()
+        before = _edit_state(tree)
+        with self.assertRaisesRegex(
+            AttributeError, r"cannot be deleted \(tried 'dend'\).*Morphology\.remove\('dend'\)"
+        ):
+            del tree.soma.dend
+        with self.assertRaises(AttributeError) as caught:
+            del tree.soma.length
+        self.assertNotIn("remove", str(caught.exception))
+        self.assertEqual(_edit_state(tree), before)
+
+    def test_a_deep_chain_is_removed_without_recursion(self) -> None:
+        tree = make_deep_chain_tree(1200)
+        removed = tree.remove("seg_0")
+        self.assertEqual(removed.n_branches, 1199)
+        self.assertEqual(tree.n_branches, 1)
 
 
 class MorphoBranchDerivedPropertyTest(unittest.TestCase):
@@ -1442,7 +1602,7 @@ class MorphoReservedNameTest(unittest.TestCase):
     def test_copy_and_edit_method_names_are_reserved(self) -> None:
         # Each new public method takes a name away from branches: a tree or a
         # checkpoint that used it can no longer be built (the changelog says so).
-        for name in ("clone", "subtree"):
+        for name in ("clone", "subtree", "remove"):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(ValueError, "reserved by the Morphology API"):
                     self._attach_named(self._tree(), name)

@@ -130,6 +130,22 @@ def caller_origin() -> str | None:
     return f"{os.path.basename(frame.f_code.co_filename)}:{frame.f_lineno}"
 
 
+def missing_branch_name(morpho: Morphology, error: KeyError) -> str | None:
+    """Return the branch name ``error`` reports missing from ``morpho``, else ``None``.
+
+    A location expression such as ``at("dend", 0.5)`` looks its branch up
+    by name when it is evaluated, which for a Cell declaration is at every
+    rebuild; :meth:`Morphology.branch` raises ``KeyError(name)`` once an edit
+    has removed that branch. Callers turn it into an error that names their
+    declaration. Any other ``KeyError`` gives ``None`` and is re-raised as
+    it is.
+    """
+    name = error.args[0] if len(error.args) == 1 else None
+    if not isinstance(name, str) or any(view.name == name for view in morpho.branches):
+        return None
+    return name
+
+
 @dataclass
 class _MechBucket:
     cable: CableProperty
@@ -200,6 +216,22 @@ class _RegionCache:
             (int(branch_id), float(branch_x), str(name))
             for branch_id, branch_x, name in zip(mask.branch_id, mask.branch_x, names)
         )
+
+
+def _place_rule_locations(rule: PlaceRule, cache: _RegionCache) -> list:
+    """Evaluate a place rule's locations: ``(points, population indices)`` pairs."""
+    if rule.aligned:
+        assert isinstance(rule.locset, LocsetBatch)
+        assert rule.population_indices is not None
+        return [
+            (cache.points(rule.locset[row]), (int(index),))
+            for row, index in zip(range(len(rule.locset)), rule.population_indices)
+        ]
+    assert not isinstance(rule.locset, LocsetBatch)
+    population_indices = (
+        (None,) if rule.population_indices is None else tuple(int(index) for index in rule.population_indices)
+    )
+    return [(cache.points(rule.locset), population_indices)]
 
 
 def default_paint_rules() -> tuple[PaintRule, ...]:
@@ -737,19 +769,18 @@ def build_cv_mechanisms(
     seen_names: set[str] = set()
     placement_id = 0
     for rule in place_rules:
-        if rule.aligned:
-            assert isinstance(rule.locset, LocsetBatch)
-            assert rule.population_indices is not None
-            location_groups = zip(
-                (cache.points(rule.locset[index]) for index in range(len(rule.locset))),
-                ((int(index),) for index in rule.population_indices),
-            )
-        else:
-            assert not isinstance(rule.locset, LocsetBatch)
-            population_indices = (
-                (None,) if rule.population_indices is None else tuple(int(index) for index in rule.population_indices)
-            )
-            location_groups = ((cache.points(rule.locset), population_indices),)
+        try:
+            location_groups = _place_rule_locations(rule, cache)
+        except KeyError as error:
+            name = missing_branch_name(morpho, error)
+            if name is None:
+                raise
+            where = "" if rule.origin is None else f" at {rule.origin}"
+            raise KeyError(
+                f"Cell.place(...){where} locates its mechanisms on branch {name!r}, which the morphology "
+                f"(revision {morpho.revision}) does not have: an edit removed it, or it never existed. Attach "
+                f"a branch named {name!r} again, or declare a new Cell with locations on branches the tree has."
+            ) from error
 
         for locations, population_indices in location_groups:
             for branch_id, x, display_name in locations:

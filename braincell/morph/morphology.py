@@ -727,8 +727,9 @@ class Morphology:
         still valid.
 
         Each successful edit call (:meth:`attach`, ``morpho.soma.dend =
-        branch``, ``morpho.soma[0.5].dend = branch``) advances it by exactly
-        one, whether it changes the structure or only the geometry. Reads
+        branch``, ``morpho.soma[0.5].dend = branch``, :meth:`remove`)
+        advances it by exactly one, whether it changes the structure or only
+        the geometry. Reads
         never advance it, and an edit that raises leaves it, the tree and
         :meth:`naming_state` unchanged.
 
@@ -1906,6 +1907,93 @@ class Morphology:
         """
         return _morpho_from_records(self._subtree_records(self._resolve_branch_ref(target, what="subtree()")))
 
+    def remove(self, target: ParentRef) -> "Morphology":
+        """Remove a branch and all its descendants; return what was removed.
+
+        Parameters
+        ----------
+        target : str or MorphoBranch
+            A non-root branch of this tree, by name or by a view that is
+            still in it.
+
+        Returns
+        -------
+        Morphology
+            The removed subtree as a new tree, equal to what
+            :meth:`subtree` returned for ``target`` before the call. It can
+            be inspected, or attached elsewhere.
+
+        Raises
+        ------
+        RuntimeError
+            If this morphology is the read-only snapshot of an initialized
+            Cell (checked first), or ``target`` is a view of a branch that
+            an edit already removed.
+        KeyError
+            If no branch is called ``target``.
+        TypeError
+            If ``target`` is neither a ``str`` nor a :class:`MorphoBranch`.
+        ValueError
+            If ``target`` is a view of another morphology's branch, or is the
+            root: a morphology always has exactly one root. Copy out the part
+            to keep with :meth:`subtree` instead.
+
+        See Also
+        --------
+        subtree : Copy a branch and its descendants without removing them.
+
+        Notes
+        -----
+        :attr:`revision` advances by one. Every view of a removed branch is
+        detached: its name and geometry stay readable, while its index,
+        parent and children raise :class:`RuntimeError`. The remaining
+        branches keep their order; the default index of each one created
+        after the removed branches moves down. Integer branch indices held
+        from before the call -- a resolved ``LocsetMask`` placed on a Cell,
+        a ``CVPerBranchList`` policy -- are therefore rejected at the Cell's
+        next rebuild, while location expressions such as ``at("axon", 0.5)``
+        are evaluated again and follow the edit.
+
+        The removed names are free again: attaching a new branch under one of
+        them works, and declarations that name it then follow the new
+        branch. The auto-naming counters do not move back. A call that
+        raises changes nothing.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> from braincell import Branch, Morphology
+            >>> soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+            >>> dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+            >>> axon = Branch.from_lengths(lengths=[50.0] * u.um, radii=[0.5, 0.5] * u.um, type="axon")
+            >>> tree = Morphology.from_root(soma, name="soma")
+            >>> tree.soma.dend = dend
+            >>> tree.dend.tip = dend
+            >>> tree.soma.axon = axon
+            >>> tree.axon.index
+            3
+            >>> removed = tree.remove("dend")
+            >>> [branch.name for branch in removed.branches]
+            ['dend', 'tip']
+            >>> [(branch.name, branch.index) for branch in tree.branches]
+            [('soma', 0), ('axon', 1)]
+        """
+        self._require_editable()
+        node_id = self._resolve_branch_ref(target, what="remove()")
+        node = self._nodes[node_id]
+        if node._parent_id is None:
+            raise ValueError(
+                f"Cannot remove the root branch {node._name!r}: a Morphology always has exactly one root. "
+                "To keep part of the tree, copy it out with subtree(name)."
+            )
+        removed = _morpho_from_records(self._subtree_records(node_id))
+        node_ids = self._subtree_node_ids(node_id)
+        with self._edit(reindex=True):
+            self._unregister_subtree(node_ids)
+        return removed
+
     def __getattr__(self, name: str) -> object:
         # Underscore-prefixed names never name a branch. Failing fast avoids
         # unbounded recursion when pickle / copy.deepcopy probe for
@@ -2031,8 +2119,8 @@ class Morphology:
         place rule, a per-branch CV list) records the revision it resolved
         them at. Appending, replacing geometry in place and transforming
         keep every existing default index, so those indices stay valid; a
-        removal shifts the later ones down and the consumer must re-resolve
-        or fail.
+        removal (:meth:`remove`) shifts the later ones down and the consumer
+        must re-resolve or fail.
         """
         return self._reindex_revision > revision
 
@@ -2208,6 +2296,18 @@ class Morphology:
             parent_ids[record.name] = node_id
             new_ids.append(node_id)
         return new_ids
+
+    def _unregister_subtree(self, node_ids: list[int]) -> None:
+        """Drop a subtree from the tables; the caller holds the gate.
+
+        ``node_ids`` is :meth:`_subtree_node_ids` of a non-root node, so its
+        first entry is the subtree's root. Its views detach: the
+        ``_nodes`` entry no longer is them.
+        """
+        root = self._nodes[node_ids[0]]
+        del self._nodes[root._parent_id]._children[root._name]
+        for node_id in node_ids:
+            del self._name_to_id[self._nodes.pop(node_id)._name]
 
     def _validate_parent_x(self, parent: "MorphoBranch", parent_x: float) -> None:
         _check_parent_x_value(parent_x)
@@ -2424,19 +2524,21 @@ class MorphoBranch:
     A view is live: while its branch is in the tree it always reports the
     current geometry, index, parent and children, so an index read before
     an edit may differ from one read after it.  A branch's parent never
-    changes.  If an edit removes the branch, the view is *detached*: its
-    ``name``, ``branch`` and the delegated geometry stay readable, while
-    every question about its place in the tree (``index``, ``branch_id``,
-    ``index_by``, ``branch_order``, ``parent``, ``parent_id``,
-    ``parent_x``, ``child_x``, ``children``, ``n_children``, child lookup)
-    and every attachment through it raise :class:`RuntimeError`; look the
-    branch up again by name on the current tree.  Names are the stable way
-    to refer to a branch across edits.
+    changes.  If an edit removes the branch (:meth:`Morphology.remove`),
+    the view is *detached*: its ``name``, ``branch`` and the delegated
+    geometry stay readable, while every question about its place in the
+    tree (``index``, ``branch_id``, ``index_by``, ``branch_order``,
+    ``parent``, ``parent_id``, ``parent_x``, ``child_x``, ``children``,
+    ``n_children``, child lookup) and every attachment through it raise
+    :class:`RuntimeError`; look the branch up again by name on the current
+    tree.  Names are the stable way to refer to a branch across edits.
 
     The view's own attributes are read-only: assigning to a name starting
     with ``_``, or deleting any attribute, raises :class:`AttributeError`,
     because a change made that way would bypass the morphology's
     :attr:`~Morphology.revision` and leave cached results stale.
+    ``del morpho.soma.dend`` does not remove ``dend`` either; call
+    :meth:`Morphology.remove`.
 
     Examples
     --------
@@ -2703,7 +2805,13 @@ class MorphoBranch:
         self._require_attached(f"attaching child {key!r}")._insert_child(self._node_id, value, child_name=key)
 
     def __delattr__(self, key: str) -> None:
-        raise AttributeError(f"MorphoBranch attributes cannot be deleted (tried {key!r}).")
+        message = f"MorphoBranch attributes cannot be deleted (tried {key!r})."
+        if key in self._children:
+            # ``del morpho.soma.dend`` reads like a removal; removing a whole
+            # subtree implicitly is too easy to do by accident, so point to
+            # the explicit method instead.
+            message += f" To remove the branch and its subtree, call Morphology.remove({key!r})."
+        raise AttributeError(message)
 
     def __dir__(self) -> list[str]:
         return sorted(

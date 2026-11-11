@@ -70,7 +70,6 @@ __all__ = [
     "make_tree_u",
     "make_tree_w",
     "morph_fingerprint",
-    "simulate_remove_leaf",
     "simulate_replace_geometry",
     "stretched",
 ]
@@ -206,45 +205,6 @@ def make_deep_chain_tree(n_branches: int = 1200) -> Morphology:
         tree.attach(parent=parent, child_branch=child, child_name=name, parent_x=1.0)
         parent = name
     return tree
-
-
-def simulate_remove_leaf(morpho: Morphology, name: str) -> None:
-    """Remove the leaf branch ``name`` through the edit gate, as a delete will.
-
-    There is no public delete yet (MORPH-2). This stand-in lets tests see
-    what a removal does to held views (they detach), to the default indices
-    of later branches (they shift down) and to the index watermark (it
-    moves): it checks first, then edits the private node tables inside
-    ``Morphology._edit(reindex=True)``. Replace it with the public delete
-    once that lands.
-
-    Parameters
-    ----------
-    morpho : Morphology
-        Tree to edit in place.
-    name : str
-        Name of a non-root branch with no children.
-
-    Raises
-    ------
-    KeyError
-        If no branch is called ``name``.
-    ValueError
-        If ``name`` is the root or has children.
-    RuntimeError
-        If ``morpho`` is frozen.
-    """
-    node_id = morpho._name_to_id[name]
-    node = morpho._nodes[node_id]
-    if node._parent_id is None:
-        raise ValueError(f"cannot remove the root branch {name!r}.")
-    if node._children:
-        raise ValueError(f"branch {name!r} has children; only a leaf can be removed.")
-    parent = morpho._nodes[node._parent_id]
-    with morpho._edit(reindex=True):
-        del parent._children[name]
-        del morpho._nodes[node_id]
-        del morpho._name_to_id[name]
 
 
 def simulate_replace_geometry(morpho: Morphology, name: str, branch: Branch) -> None:
@@ -455,10 +415,10 @@ class EditCase:
         :func:`make_tree_t`.
     reindex : bool
         Whether the edit can change the default index of a branch that
-        existed before it. True for a removal or a whole-subtree
-        replacement, which must move the index watermark; False for an
-        append, an in-place replacement, a spliced copy or a transform,
-        which must keep every existing default index.
+        existed before it. True for a removal
+        (:meth:`Morphology.remove`), which must move the index watermark;
+        False for an append, an in-place replacement, a spliced copy or a
+        transform, which must keep every existing default index.
     """
 
     name: str
@@ -497,7 +457,11 @@ def _stretch_dend(morpho: Morphology) -> None:
 
 
 def _remove_d2(morpho: Morphology) -> None:
-    simulate_remove_leaf(morpho, "d2")
+    morpho.remove("d2")
+
+
+def _remove_dend_subtree(morpho: Morphology) -> None:
+    morpho.remove("dend")
 
 
 def _stretch_dend_bypassing_the_gate(morpho: Morphology) -> None:
@@ -511,6 +475,7 @@ EDIT_CASES: tuple[EditCase, ...] = (
     EditCase("attach by attribute", "append", _attach_by_attribute),
     EditCase("replace dend's geometry in place", "replace", _stretch_dend),
     EditCase("remove the leaf d2", "delete", _remove_d2, reindex=True),
+    EditCase("remove the subtree at dend", "delete", _remove_dend_subtree, reindex=True),
 )
 
 #: Edits that skip the gate on purpose: every layer's check must fail on them.

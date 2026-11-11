@@ -110,7 +110,7 @@ __all__ = [
 #: Removed names and their replacements, raised as ``AttributeError``.
 _REMOVED_ATTRIBUTES = {
     'rk2_step': (
-        "braincell.quad.rk2_step was Ralston's second-order method; use "
+        "it was Ralston's second-order method; use "
         "braincell.quad.ralston2_step (same numbers), or heun2_step for Heun's method."
     ),
     'get_registry': "use braincell.quad.integrator_info(name) and braincell.quad.list_integrators().",

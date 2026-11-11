@@ -758,6 +758,18 @@ class IndexHeldDeclarationTest(unittest.TestCase):
             cell.place(at("apical", 0.5), _index_probe_synapse())
         self.assertEqual(cell.place_rules, rules)
 
+    def test_a_population_view_declaration_after_the_removal_is_rolled_back(self):
+        morpho = make_tree_u()
+        cell = Cell(morpho, pop_size=2)
+        cell.place(at("axon", 0.5).evaluate(morpho), _index_probe_synapse())
+        rules = cell.place_rules
+
+        simulate_remove_leaf(morpho, "dend")
+
+        with self.assertRaisesRegex(RuntimeError, _MASK_PLACE_STALE):
+            cell[[0]].place(at("apical", 0.5), _index_probe_synapse())
+        self.assertEqual(cell.place_rules, rules)
+
     def test_a_mask_on_a_morphology_reassigned_away_is_not_checked(self):
         first = make_tree_u()
         cell = Cell(first)

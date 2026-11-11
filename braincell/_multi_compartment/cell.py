@@ -1515,8 +1515,9 @@ class Cell(_CellFacade, HHTypedNeuron):
                 "LocsetBatch batch rows must match the selected population size, "
                 f"got {len(locset)!r} rows for {len(normalized_indices)!r} cells."
             )
+        previous_rules = self._place_rules
         self._place_rules = merge_place_rules(
-            self._place_rules,
+            previous_rules,
             (
                 normalize_place_rule(
                     locset,
@@ -1527,7 +1528,11 @@ class Cell(_CellFacade, HHTypedNeuron):
                 ),
             ),
         )
-        self.discretize()
+        try:
+            self.discretize()
+        except Exception:
+            self._place_rules = previous_rules
+            raise
 
     def _place_per_cell(self, population_indices, locsets, mechanisms) -> None:
         """Append one independently sized locset row per selected cell."""

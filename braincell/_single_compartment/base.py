@@ -13,13 +13,14 @@
 # limitations under the License.
 # ==============================================================================
 
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, Optional, Tuple, Union
 
 import brainstate
 import braintools
 import brainunit as u
 
 from braincell._base_channel import IonChannel
+from braincell._base_ion import Ion
 from braincell._base_neuron import HHTypedNeuron, _zero_spike_like
 from braincell._misc import cast_like as _cast_like
 from braincell._typing import Initializer, Size
@@ -164,28 +165,29 @@ class SingleCompartment(HHTypedNeuron):
         """
         return self.nodes(IonChannel, allowed_hierarchy=(1, 1))
 
-    @staticmethod
-    def _neuron_driven(channels: Dict[str, IonChannel]) -> List[IonChannel]:
-        """Select the channels whose integration this neuron drives.
+    def _run_driven_hook(self, hook: str, channels: Dict[str, IonChannel]) -> None:
+        """Call one integration hook on the mechanisms this neuron's solver advances.
 
-        A channel carrying the :class:`~braincell.IndependentIntegration`
+        A channel or ion carrying the :class:`~braincell.IndependentIntegration`
         marker advances its own state in ``ind_update``, so the neuron's
         ``pre_integral`` / ``compute_derivative`` / ``post_integral`` hooks
-        must skip it — stepping it there as well would integrate it twice
-        per step. :meth:`update` deliberately does the opposite and calls
-        ``ind_update`` on every channel, including these.
+        skip it — stepping it there as well would integrate it twice per
+        step. The dependent channels under such an ion (a kinetic ion's HH
+        calcium channel) are still the solver's. :meth:`update` calls
+        ``ind_update`` on every channel, including the marked ones.
 
         Parameters
         ----------
+        hook : str
+            ``"pre_integral"``, ``"compute_derivative"`` or ``"post_integral"``.
         channels : dict of str to IonChannel
             The result of :meth:`_ion_channels`.
-
-        Returns
-        -------
-        list of IonChannel
-            The subset this neuron is responsible for stepping.
         """
-        return [ch for ch in channels.values() if not isinstance(ch, IndependentIntegration)]
+        for ch in channels.values():
+            if not isinstance(ch, IndependentIntegration):
+                getattr(ch, hook)(self.V.value)
+            elif isinstance(ch, Ion):
+                ch._run_on_dependent_children(ch._channels(), hook, self.V.value)
 
     @property
     def area(self):
@@ -247,8 +249,7 @@ class SingleCompartment(HHTypedNeuron):
         I_ext : float, optional
             External current input. Default is 0 nA/cm^2.
         """
-        for ch in self._neuron_driven(self._ion_channels()):
-            ch.pre_integral(self.V.value)
+        self._run_driven_hook("pre_integral", self._ion_channels())
 
     def compute_derivative(self, I_ext=0.0 * u.nA / u.cm**2):
         """
@@ -278,8 +279,7 @@ class SingleCompartment(HHTypedNeuron):
             if contribution is not None:
                 I_ext = I_ext + contribution
         self.V.derivative = I_ext / self.C
-        for ch in self._neuron_driven(channels):
-            ch.compute_derivative(self.V.value)
+        self._run_driven_hook("compute_derivative", channels)
 
     def post_integral(self, I_ext=0.0 * u.nA / u.cm**2):
         """
@@ -294,8 +294,7 @@ class SingleCompartment(HHTypedNeuron):
             External current input. Default is 0 nA/cm^2.
         """
         self.V.value = self.sum_delta_inputs(init=self.V.value)
-        for ch in self._neuron_driven(self._ion_channels()):
-            ch.post_integral(self.V.value)
+        self._run_driven_hook("post_integral", self._ion_channels())
 
     def update(self, I_ext=0.0 * u.nA / u.cm**2):
         """

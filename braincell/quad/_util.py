@@ -138,6 +138,32 @@ def split_diffeq_states(module: DiffEqModule, *, excluded_paths=()):
     return all_states, diffeq_states, other_states
 
 
+def check_unlisted_writes(trace, state_ids) -> None:
+    """Raise if a derivative evaluation wrote a state outside ``state_ids``.
+
+    ``state_ids`` holds the ids of the states found by graph traversal of the
+    integrated module; the step writes back only those. A state outside the
+    graph may be read -- it is a constant of the step, such as the cable
+    geometry a :class:`braincell.Cell` keeps in its runtime -- but a write to
+    it would be lost.
+
+    Parameters
+    ----------
+    trace : brainstate.StateTraceStack
+        The trace of one derivative evaluation.
+    state_ids : set of int
+        Ids of the states the step knows about.
+
+    Raises
+    ------
+    ValueError
+        If a state outside ``state_ids`` was written.
+    """
+    for st, written in zip(trace.states, trace.been_writen):
+        if written and id(st) not in state_ids:
+            raise ValueError(f'State {st} is not in the state list, but compute_derivative() writes it.')
+
+
 def _check_diffeq_state_derivative(state: DiffEqState, dt: u.Quantity):
     def _fn_checking(state_val, state_derivative):
         a = u.get_unit(state_derivative) * u.get_unit(dt)
@@ -217,10 +243,7 @@ def _transform_diffeq_module_into_dimensionless_fn(
             derivative_dimensionless = _dict_attr_to_arr(diffeq_states, 'derivative', method=method)
             other_vals = {key: st.value for key, st in other_states.items()}
 
-        # check if all states exist in the trace
-        for st in trace.states:
-            if id(st) not in all_state_ids:
-                raise ValueError(f'State {st} is not in the state list.')
+        check_unlisted_writes(trace, all_state_ids)
         return derivative_dimensionless, other_vals
 
     return vector_field, diffeq_states, other_states

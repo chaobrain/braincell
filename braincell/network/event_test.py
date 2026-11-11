@@ -554,6 +554,22 @@ class ScheduledEventCountTest(unittest.TestCase):
             seen += int(np.sum(netstim_expected)) + int(np.sum(flat_expected))
         self.assertGreater(seen, 0)
 
+    def test_delays_that_do_not_fit_the_rows_take_the_matrix_path(self) -> None:
+        source = NetStim(size=2, start=[0.0, 0.5] * u.ms, number=[4, 3], interval=[0.25, 0.1] * u.ms)
+        sequence = EventSequence.from_times([[0.0, 0.25] * u.ms, [0.5] * u.ms])
+        rows = np.asarray([0, 1, 1])
+        one_delay = np.asarray([0.1]) * u.ms
+        for t in (0.0 * u.ms, 0.1 * u.ms, 0.6 * u.ms):
+            np.testing.assert_array_equal(
+                sequence.event_count(rows, t=t, delay=one_delay, dt=self.DT),
+                _reference_flat_count(sequence.events, rows, t=t, delay=one_delay, dt=self.DT),
+            )
+        two_delays = np.asarray([0.0, 0.1]) * u.ms
+        with self.assertRaises(ValueError) as expected:
+            _reference_netstim_count(source, rows, t=0.0 * u.ms, delay=two_delays, dt=self.DT)
+        with self.assertRaises(type(expected.exception)):
+            source.event_count(rows, t=0.0 * u.ms, delay=two_delays, dt=self.DT)
+
 
 class EventSourceTest(unittest.TestCase):
     def test_threshold_equality_directions_and_surrogate_override(self):

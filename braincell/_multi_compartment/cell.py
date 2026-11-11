@@ -2511,10 +2511,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         running snapshot does not have; :meth:`run` and ``Network.run`` warn
         when it is.
         """
-        if not self._initialized or self._snapshot_source_revision is None:
-            return False
         revision = self._declaration_morpho.revision
-        if revision == self._snapshot_warned_revision:
+        if self._snapshot_warned_revision in (None, revision):  # not initialized, or already said
             return False
         self._snapshot_warned_revision = revision
         return True

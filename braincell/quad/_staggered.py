@@ -89,6 +89,9 @@ def staggered_step(target: DiffEqModule, *args):
        updates; submodules marked for independent integration dispatch to
        their configured solvers. The exact family ordering is selected by
        ``target.ion_channel_update_order``.
+    4. The target's delta inputs (``add_delta_input``, brainpy
+       ``DeltaProj``) are added to the voltage, as the ``post_integral`` of
+       the other solvers does: they take no part in the step they end.
 
     This is a first-order Lie/semi-implicit split: the voltage phase reads the
     old mechanism state, and the mechanism phase reads the new voltage. It is
@@ -156,7 +159,7 @@ def staggered_step(target: DiffEqModule, *args):
 
     # voltage integration
     with jax.named_scope("braincell:staggered:dhs_voltage_step"):
-        dhs_voltage_step(target, *args, t=t, dt=dt)
+        _dhs_voltage_solve(target, *args, t=t, dt=dt)
 
     with jax.named_scope("braincell:staggered:cv_to_point_after_voltage"):
         point_V = target._dhs_point_voltage(target.V.value)
@@ -172,6 +175,19 @@ def staggered_step(target: DiffEqModule, *args):
         raise ValueError(
             f"ion_channel_update_order must be 'family' or 'integration', got {target.ion_channel_update_order!r}."
         )
+    _apply_delta_inputs(target)
+
+
+def _apply_delta_inputs(target) -> None:
+    """End a point-tree step as the other solvers' ``post_integral`` does.
+
+    The target adds its delta inputs (``add_delta_input``, brainpy
+    ``DeltaProj``) to the voltage after every state has advanced.
+    """
+    apply = getattr(target, "_apply_delta_inputs", None)
+    if apply is not None:
+        with jax.named_scope("braincell:staggered:delta_inputs"):
+            apply(point_tree=True)
 
 
 @dataclass(frozen=True)
@@ -284,7 +300,9 @@ def dhs_voltage_step(target, *args, t: T = None, dt: DT = None):
 
     Note that this advances the voltage *only*; selecting it directly leaves
     gating variables and ion concentrations frozen. ``"staggered"`` is the
-    solver that pairs it with a channel update.
+    solver that pairs it with a channel update. Like the ``post_integral``
+    of the other solvers, the step ends by adding the target's delta inputs
+    (``add_delta_input``, brainpy ``DeltaProj``) to the voltage.
 
     The static topology metadata produced by ``_build_dhs_static_source``
     (row lookup tables, edge ordering, recursive-doubling jump table) is
@@ -292,6 +310,16 @@ def dhs_voltage_step(target, *args, t: T = None, dt: DT = None):
     from runtime cable arrays, and cached only outside tracing. Per-step
     numerical operands follow the current JAX precision, retaining units on
     voltage and ``dt * conductance`` factors.
+    """
+    _dhs_voltage_solve(target, *args, t=t, dt=dt)
+    _apply_delta_inputs(target)
+
+
+def _dhs_voltage_solve(target, *args, t: T = None, dt: DT = None):
+    """The voltage solve of :func:`dhs_voltage_step`, without the step's end.
+
+    :func:`staggered_step` advances the mechanisms after it and then ends the
+    step itself.
     """
     if not hasattr(target, "node_tree") or not hasattr(target, "node_scheduling"):
         raise TypeError(f"dhs_voltage_step(...) requires a node-tree aware target, got {type(target)}.")

@@ -1430,7 +1430,7 @@ class DeltaInputTest(unittest.TestCase):
     def test_reduction_model_rejects_delta_inputs(self) -> None:
         # A reduction has no membrane voltage for the delta to move.
         cell = bc.Cell(bc.Morphology.from_soma())
-        cell.add_reduction("reduced", _NoopReduction())
+        cell.add_reduction("reduced", bc.EventAccumulatorReduction(alpha=0.5, threshold=0.05))
         cell.use_model("reduced")
         cell.add_delta_input("kick", _KICK)
         with self.assertRaisesRegex(ValueError, r"'reduced'.*kick"):

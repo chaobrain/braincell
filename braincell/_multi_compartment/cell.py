@@ -118,6 +118,7 @@ from braincell._multi_compartment.lumped import (
     as_current_density,
     build_lumped_runtime,
     warn_stiff_gates,
+    with_delta_inputs,
 )
 from braincell.morph.morphology import Morphology as _Morphology
 
@@ -2361,6 +2362,15 @@ class Cell(_CellFacade, HHTypedNeuron):
                 )
         return output
 
+    def _raise_if_reduction_has_delta_inputs(self) -> None:
+        """A reduction model has no membrane voltage for a delta input to move."""
+        if self.delta_inputs:
+            raise ValueError(
+                f"Cell model {self._selected_model_name!r} is a reduction without a membrane voltage, so the "
+                f"delta inputs {tuple(self.delta_inputs)!r} (add_delta_input, brainpy DeltaProj) cannot apply; "
+                "remove them, or select the detailed model with use_model('detailed') before init_state()."
+            )
+
     def _publish_reduction_output(self, output, *, initialize: bool = False) -> None:
         output = self._validate_reduction_output(output)
         if initialize:
@@ -2434,6 +2444,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._connection_weight_declarations = tuple((call, call.weight) for call in store._calls)
         self._V_th_declaration = self._V_th
         if self._uses_reduction:
+            self._raise_if_reduction_has_delta_inputs()
             self._init_reduction_state(batch_size=batch_size)
             self._runtime_generation += 1
             return
@@ -3328,13 +3339,33 @@ class Cell(_CellFacade, HHTypedNeuron):
             if hasattr(node, "_cached_total_current"):
                 delattr(node, "_cached_total_current")
 
+    def _apply_delta_inputs(self, *, point_tree: bool = False) -> None:
+        """Add the delta inputs to ``V``, the last part of every solver step.
+
+        ``add_delta_input`` (brainpy ``DeltaProj``) registers a voltage
+        increment. As in ``SingleCompartment``, a step adds it after the
+        voltage and the mechanism states have advanced: it takes no part in
+        the step it ends, and the spike test of that step sees it. The
+        generic solvers call this from :meth:`post_integral`; the
+        ``"staggered"`` and ``"dhs_voltage"`` steps call it last with
+        ``point_tree=True``, which shifts their stored point-tree voltage by
+        the same increment, each point by its representative CV's.
+        """
+        if not self.delta_inputs:
+            return
+        before = self.V.value
+        self.V.value = with_delta_inputs(self, before)
+        if point_tree:
+            increment = self.V.value - before
+            self._point_V.value = self._point_V.value + increment[..., self._runtime.point_to_representative_cv_np]
+
     def post_integral(self):
         """Finish one solver step: add delta inputs, then run the mechanism hooks."""
         self._raise_if_not_initialized("post_integral()")
         if self._is_lumped:
             self._direct_step_clamps_prepared = False
             return self._lumped_runtime.post_integral(self._lumped_I_ext.value)
-        self.V.value = self.sum_delta_inputs(init=self.V.value)
+        self._apply_delta_inputs()
         self._update_boundary_voltage()
         self._run_integrated_hook("post_integral", self.V.value)
         self._direct_step_clamps_prepared = False
@@ -3484,7 +3515,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         ``brainpy.state.AlignPostProj`` and ``CurrentProj`` call this on
         their ``post`` model with their synaptic output (e.g. ``COBA``), a
         callable of the membrane voltage. Registering an input also drops
-        the compiled loops of :meth:`run`, so the next ``run`` includes it.
+        the compiled loops of :meth:`run` (and of the owning
+        :class:`~braincell.Network`), so the next run includes it.
 
         Parameters
         ----------
@@ -3527,7 +3559,74 @@ class Cell(_CellFacade, HHTypedNeuron):
             True
         """
         super().add_current_input(key, inp, label=label)
+        self._drop_compiled_loops()
+
+    def add_delta_input(self, key, inp, label=None):
+        """Register a voltage increment, the entry brainpy's ``DeltaProj`` uses.
+
+        Every solver adds the registered inputs to ``V`` at the end of each
+        step, after the voltage and the mechanism states have advanced, as
+        ``SingleCompartment`` does; the spike test of the step sees them.
+        Registering an input also drops the compiled loops of :meth:`run`
+        (and of the owning :class:`~braincell.Network`), so the next run
+        includes it.
+
+        Parameters
+        ----------
+        key : str
+            Unique name of the input.
+        inp : callable or Quantity
+            A voltage (e.g. ``1.0 * u.mV``), added once and then removed
+            (brainpy's rule), or a callable without arguments returning one,
+            called at every step.
+        label : str, optional
+            brainpy's grouping label.
+
+        Raises
+        ------
+        ValueError
+            If ``key`` is already registered with a different input.
+
+        Notes
+        -----
+        The step that adds the inputs raises ``ValueError``:
+
+        - if they do not broadcast to ``V.value.shape``, which is
+          ``(batch,) + pop_size`` on a lumped cell and
+          ``(batch,) + pop_size + (n_cv,)`` on a cable cell, where one value
+          per member has shape ``pop_size + (1,)``;
+        - on a Cell running a reduction model, which has no membrane
+          voltage (``init_state`` raises when an input is already there).
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainstate
+            >>> import brainunit as u
+            >>> import braincell as bc
+            >>> cell = bc.Cell.point(2, V_init=-65 * u.mV)
+            >>> cell = cell.paint(bc.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-65 * u.mV))
+            >>> cell.init_state()
+            >>> cell.add_delta_input("kick", 5.0 * u.mV)
+            >>> with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms):
+            ...     _ = cell.update()
+            >>> cell.V.value
+            Quantity([-60. -60.], "mV")
+        """
+        super().add_delta_input(key, inp, label=label)
+        self._drop_compiled_loops()
+
+    def _drop_compiled_loops(self) -> None:
+        """Drop the compiled loops of :meth:`run` and of the owning Network.
+
+        They trace the input tables (``add_current_input``,
+        ``add_delta_input``) once, so a later registration would be missed.
+        """
         self._run_loop_cache.clear()
+        owner = self.network_owner
+        if owner is not None:
+            owner._drop_compiled_loops()
 
     def _begin_step(self):
         """Apply prepared discrete synaptic events at step start.
@@ -3641,6 +3740,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         if brainstate.environ.get("dt", None) is None:
             raise ValueError("Cell.update(...) requires brainstate.environ['dt'] to be set.")
         if self._uses_reduction:
+            self._raise_if_reduction_has_delta_inputs()
             output = self._reduction_models[self._selected_model_name].update(self._pending_reduction_inputs)
             self._publish_reduction_output(output)
             return self.spike.value

@@ -479,7 +479,7 @@ class StaggeredStepGuardTest(unittest.TestCase):
         cell._update_ion_channel_families = lambda point_V: calls.append("family")
         cell._update_ion_channels_by_integration = lambda point_V: calls.append("integration")
 
-        with patch("braincell.quad._staggered.dhs_voltage_step", lambda *args, **kwargs: calls.append("voltage")):
+        with patch("braincell.quad._staggered._dhs_voltage_solve", lambda *args, **kwargs: calls.append("voltage")):
             with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
                 staggered_step(cell)
 
@@ -503,7 +503,7 @@ class StaggeredStepGuardTest(unittest.TestCase):
         cell._update_ion_channel_families = lambda point_V: calls.append("family")
         cell._update_ion_channels_by_integration = lambda point_V: calls.append("integration")
 
-        with patch("braincell.quad._staggered.dhs_voltage_step", lambda *args, **kwargs: calls.append("voltage")):
+        with patch("braincell.quad._staggered._dhs_voltage_solve", lambda *args, **kwargs: calls.append("voltage")):
             with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
                 staggered_step(cell)
 
@@ -793,6 +793,59 @@ class StaggeredFloat32AccumulationTest(unittest.TestCase):
                 V = (V + dt * 0.1 * -70.0) / (1.0 + dt * 0.1)
             with self.subTest(dt=dt):
                 self.assertAlmostEqual(self.f64[str(dt)]["V"], V, delta=1e-10)
+
+
+
+class StaggeredDeltaInputTest(unittest.TestCase):
+    """CELL-33: the point-tree steps add delta inputs last, as ``post_integral`` does."""
+
+    @staticmethod
+    def _dendrite(solver):
+        """60 um x 2 um, 3 CVs, leak 0.1 mS/cm^2 at -70 mV: isopotential under a uniform kick."""
+        branch = Branch.from_lengths(lengths=[60.0] * u.um, radii=[2.0, 2.0] * u.um, type="dendrite")
+        cell = Cell(Morphology.from_root(branch), cv_policy=CVPerBranch(3), V_init=-65.0 * u.mV, solver=solver)
+        cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV))
+        cell.init_state()
+        return cell
+
+    def test_kick_each_step_follows_the_implicit_euler_recursion(self):
+        # The axial terms cancel, so every CV follows
+        # V <- (V + dt k E) / (1 + dt k) + kick with k = 0.1 / ms. Every point
+        # of the stored tree moves with it: before CELL-33 the kick was
+        # ignored, and without shifting the tree the boundary points would
+        # lag the last kick.
+        dt = 0.025
+        for solver in ("staggered", "dhs_voltage"):
+            with self.subTest(solver=solver), jax.enable_x64(True), brainstate.environ.context(precision=64):
+                cell = self._dendrite(solver)
+                cell.add_delta_input("kick", lambda: 0.5 * u.mV)
+
+                def step(index):
+                    with brainstate.environ.context(t=index * dt * u.ms):
+                        cell.update()
+
+                with brainstate.environ.context(dt=dt * u.ms):
+                    brainstate.transform.for_loop(step, np.arange(40))
+                V = -65.0
+                for _ in range(40):
+                    V = (V + dt * 0.1 * -70.0) / (1.0 + dt * 0.1) + 0.5
+                np.testing.assert_allclose(cell.V.value.to_decimal(u.mV), V, rtol=0.0, atol=1e-10)
+                point_V = cell._point_voltage_for_mechanisms().to_decimal(u.mV)
+                self.assertEqual(point_V.shape[-1], cell.runtime.n_point)
+                np.testing.assert_allclose(point_V, V, rtol=0.0, atol=1e-10)
+
+    def test_delta_inputs_end_the_step(self):
+        calls = []
+        cell = self._dendrite("staggered")
+        cell._integrate_runtime_synapse_dynamics = lambda point_V: calls.append("synapse_dynamics")
+        cell._update_ion_channel_families = lambda point_V: calls.append("family")
+        cell._apply_delta_inputs = lambda **kwargs: calls.append(("delta", kwargs))
+        with patch("braincell.quad._staggered._dhs_voltage_solve", lambda *args, **kwargs: calls.append("voltage")):
+            with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+                staggered_step(cell)
+                dhs_voltage_step(cell)
+        delta = ("delta", {"point_tree": True})
+        self.assertEqual(calls, ["voltage", "synapse_dynamics", "family", delta, "voltage", delta])
 
 
 if __name__ == "__main__":

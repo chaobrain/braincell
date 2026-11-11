@@ -119,6 +119,7 @@ __all__ = [
     "build_lumped_runtime",
     "stiff_gates",
     "warn_stiff_gates",
+    "with_delta_inputs",
 ]
 
 #: Point mechanisms a lumped Cell accepts in ``place``.
@@ -200,6 +201,47 @@ def as_current_density(value, *, area, shape, what: str):
     density = value / area if dim == _CURRENT_DIM else value
     density = u.Quantity(density).in_unit(CURRENT_DENSITY_UNIT)
     return u.math.broadcast_to(density, shape)
+
+
+def with_delta_inputs(owner, V):
+    """Return ``V`` plus the delta inputs registered on ``owner``.
+
+    ``owner.add_delta_input`` (the entry of brainpy's ``DeltaProj``)
+    registers a voltage increment; brainpy's rule applies: a callable is
+    called with no arguments at every step, a value is added once and
+    removed.
+
+    Parameters
+    ----------
+    owner : Cell
+        The Cell holding the inputs.
+    V : Quantity
+        The voltage the inputs are added to, ``owner.V.value``.
+
+    Returns
+    -------
+    Quantity
+        ``V`` itself when no input is registered, otherwise ``V`` plus every
+        input.
+
+    Raises
+    ------
+    ValueError
+        If the inputs do not broadcast to the shape of ``V``, which the sum
+        would change; the message names the inputs and the shape.
+    """
+    keys = tuple(owner.delta_inputs or ())
+    if not keys:
+        return V
+    total = owner.sum_delta_inputs(init=V)
+    shape = tuple(u.math.shape(V))
+    if tuple(u.math.shape(total)) != shape:
+        raise ValueError(
+            f"Delta inputs {keys!r} do not broadcast to the voltage shape {shape}: their sum has shape "
+            f"{tuple(u.math.shape(total))}. V is shaped (batch,) + pop_size on a lumped Cell and "
+            "(batch,) + pop_size + (n_cv,) on a cable Cell, where one value per member has shape pop_size + (1,)."
+        )
+    return total
 
 
 class LumpedRuntime(SingleCompartment):
@@ -355,6 +397,19 @@ class LumpedRuntime(SingleCompartment):
         with state_grouping(False):
             for layout, node in self._synapses():
                 node.reset_state(self.synapse_voltage(layout), batch_size=batch_size)
+
+    def sum_delta_inputs(self, init, *args, **kwargs):
+        """Add the owning Cell's delta inputs (``add_delta_input``, brainpy ``DeltaProj``).
+
+        :class:`~braincell.SingleCompartment`'s ``post_integral`` calls this
+        at the end of every solver step, after the voltage and the mechanism
+        states have advanced, so an input moves ``V`` for the spike test of
+        that step and for the steps after it (:func:`with_delta_inputs`).
+        """
+        owner = None if self._owner_ref is None else self._owner_ref()
+        if owner is None:
+            return super().sum_delta_inputs(init, *args, **kwargs)
+        return with_delta_inputs(owner, init)
 
     def membrane_current(self, I_ext):
         """Total membrane current density per member, the terms of :meth:`compute_derivative`.

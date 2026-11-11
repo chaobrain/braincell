@@ -269,5 +269,88 @@ class SplitNetworkRunTest(unittest.TestCase):
         self._check(dict(start=0.25 * u.ms, interval=0.25 * u.ms, number=19), split_steps(200, points))
 
 
+
+def _resting_one_cv_cell(kind, solver, pop_size=2):
+    """A soma 20 um x 10 um with a leak at its reversal, -65 mV."""
+    if kind == "lumped":
+        cell = braincell.Cell.point(pop_size, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, solver=solver)
+    else:
+        morphology = braincell.Morphology.from_soma(length=20.0 * u.um, radius=10.0 * u.um)
+        cell = braincell.Cell(
+            morphology, pop_size=pop_size, cv_policy=braincell.CVPerBranch(), V_init=-65.0 * u.mV, solver=solver
+        )
+    cell.paint(AllRegion(), braincell.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    return cell
+
+
+_DELTA_PATHS = (("lumped", "rk4"), ("cable", "rk4"), ("cable", "staggered"))
+
+
+class NetworkDeltaInputTest(unittest.TestCase):
+    """CELL-33: Network-managed cells add delta inputs; a later input drops the compiled loops."""
+
+    def test_delta_projection_drives_update_in_successive_loops(self):
+        # On main the lumped and "staggered" cells never consumed a kick (the
+        # second loop raised ValueError: key already defined), and the second
+        # loop of the "rk4" cable cell raised UnexpectedTracerError: update()
+        # reused the loop traced with the first loop's input.
+        import brainpy
+
+        kicks = np.asarray([[1.0, 0.5], [2.0, 0.0], [0.0, 1.5]])
+        for kind, solver in _DELTA_PATHS:
+            with self.subTest(kind=kind, solver=solver), _float64():
+                finals = []
+                for managed in (True, False):
+                    cell = _resting_one_cv_cell(kind, solver)
+                    shape = (2,) if kind == "lumped" else (2, 1)
+                    proj = brainpy.state.DeltaProj(comm=lambda x, shape=shape: x.reshape(shape) * u.mV, post=cell)
+                    if managed:
+                        network = Network("kicked")
+                        network.add_population("cells", cell)
+                        network.prepare_run(dt=DT)
+                        advance = network.update
+                    else:
+                        cell.init_state()
+                        advance = cell.update
+
+                    def step(index, kick, proj=proj, advance=advance):
+                        with brainstate.environ.context(t=index * DT):
+                            proj(kick)
+                            advance()
+                        return index
+
+                    with brainstate.environ.context(dt=DT):
+                        for first in (0, 3):
+                            brainstate.transform.for_loop(step, np.arange(first, first + 3), kicks)
+                    finals.append(cell.V.value.to_decimal(u.mV).reshape(-1))
+                # Six kicks: 3 + 2 mV per member, the leak relaxing them a little.
+                np.testing.assert_allclose(finals[0], [-59.0, -61.0], atol=0.2)
+                np.testing.assert_allclose(finals[0], finals[1], rtol=0.0, atol=1e-12)
+
+    def test_run_includes_inputs_added_after_a_run(self):
+        # On main the second Network.run reused the loop traced without them.
+        def kick():
+            return 0.25 * u.mV
+
+        def drive(V):
+            return u.math.full_like(u.get_mantissa(V), 10.0) * u.uA / u.cm**2
+
+        for kind, solver in _DELTA_PATHS:
+            for entry in ("delta", "current"):
+                with self.subTest(kind=kind, solver=solver, input=entry):
+                    cell = _resting_one_cv_cell(kind, solver)
+                    network = Network("late_input")
+                    network.add_population("cells", cell)
+                    network.run(dt=DT, duration=0.5 * u.ms)
+                    np.testing.assert_allclose(cell.V.value.to_decimal(u.mV), -65.0)
+                    if entry == "delta":
+                        cell.add_delta_input("kick", kick)
+                    else:
+                        cell.add_current_input("drive", drive)
+                    network.run(dt=DT, duration=0.5 * u.ms)
+                    # 20 kicks of 0.25 mV, or 10 uA/cm^2 for 0.5 ms, less the leak.
+                    self.assertGreater(float(np.min(cell.V.value.to_decimal(u.mV))), -61.0)
+
+
 if __name__ == "__main__":
     unittest.main()

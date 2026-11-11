@@ -38,6 +38,7 @@ reader-agnostic and tested on its own here rather than through a parser.
 import numpy as np
 
 __all__ = [
+    "DegenerateContourError",
     "MIN_SYNTHETIC_LENGTH_UM",
     "approximate_contour_by_circle",
     "bbox_xy",
@@ -66,6 +67,14 @@ and be rejected downstream.
 
 #: Padding added around a single-contour soma bounding box, in micrometres.
 _SINGLE_CONTOUR_BBOX_PAD_UM = 0.5
+
+
+class DegenerateContourError(ValueError):
+    """A soma contour that cannot be sampled along a major and a minor axis.
+
+    The message is the geometric reason only; readers add the file and the
+    location.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -426,6 +435,26 @@ def _interp_strict(xp: np.ndarray, fp: np.ndarray, x_values: np.ndarray) -> np.n
     return np.interp(x_values, xp, fp)
 
 
+def _resample_by_xy_perimeter(contour: np.ndarray, num: int) -> tuple[np.ndarray, np.ndarray]:
+    """Resample a contour uniformly along its xy perimeter, as NEURON does.
+
+    NEURON's ``contourcenter`` accumulates the perimeter from x and y only
+    (the z row of its work matrix stays zero) and interpolates all three
+    coordinates over it. On a planar contour this is :func:`contour_center`.
+    """
+    contour = np.asarray(contour, dtype=float)
+    x, y, z = contour[:, 0], contour[:, 1], contour[:, 2]
+    segment_lengths = np.sqrt(np.diff(x) ** 2 + np.diff(y) ** 2)
+    perimeter = np.zeros(len(contour), dtype=float)
+    perimeter[1:] = np.cumsum(segment_lengths)
+    uniform = np.linspace(0.0, perimeter[-1], num)
+    x_new = np.interp(uniform, perimeter, x)
+    y_new = np.interp(uniform, perimeter, y)
+    z_new = np.interp(uniform, perimeter, z)
+    mean = np.array([x_new.mean(), y_new.mean(), z_new.mean()], dtype=float)
+    return mean, np.stack([x_new, y_new, z_new], axis=1)
+
+
 def principal_axis_sampling(
     contour: np.ndarray,
     *,
@@ -441,24 +470,50 @@ def principal_axis_sampling(
     n_samples : int, optional
         Number of points along the major axis.
     arclength_resample : int, optional
-        Resolution of the arc-length resampling done first.
+        Number of samples of the uniform resampling done first.
 
     Returns
     -------
-    xy : numpy.ndarray
-        Shape ``(n_samples, 2)`` positions along the major axis.
+    points : numpy.ndarray
+        Shape ``(n_samples, 3)`` positions along the major axis.
     diameters : numpy.ndarray
         Shape ``(n_samples,)`` outline width measured across the minor
         axis at each position.
 
+    Raises
+    ------
+    DegenerateContourError
+        If the points are collinear, or if the minor axis is parallel to z,
+        so that the outline has no width in the xy plane.
+
     Notes
     -----
-    This reproduces NEURON's 21-point principal-axis conversion of a single
-    ``CellBody`` contour.
+    This follows NEURON 9.0's ``contour2centroid`` (``import3d_gui.hoc``)
+    step by step:
+
+    1. Resample the contour at ``arclength_resample`` points spaced evenly
+       along its **xy** perimeter, interpolating x, y and z; the mean of
+       those samples is the centre. NEURON leaves z out of the perimeter,
+       so a non-planar contour is not resampled by 3D arc length here.
+    2. Form the 3x3 scatter matrix of the centred samples. The major axis
+       is the eigenvector of the largest eigenvalue; the minor axis is the
+       eigenvector of the middle eigenvalue with its z component set to 0,
+       then normalized. NEURON stops with "Failed to compute soma centroid
+       from contour." when that vector is shorter than 1e-6 times the major
+       axis, and so does this function.
+    3. Project the samples on both axes, split the outline at its extreme
+       points into two sides along the major axis, and interpolate the
+       width between them at ``n_samples`` evenly spaced positions. The
+       output points are ``mean + major * d``, so they leave the plane of
+       the first point when the contour is not planar.
+
+    A planar contour gives the same samples as the earlier xy-only version
+    to within rounding (1e-13 um on the shipped files).
 
     The sign of an eigenvector is arbitrary, so the major axis needs a
-    deterministic orientation convention. Making the dominant component
-    positive is sufficient to reproduce NEURON's pt3d ordering.
+    deterministic orientation convention. NEURON 9.0 makes the dominant
+    component positive ("major axis points in positive direction"); NEURON
+    8.2 had no such rule and can order the 21 points the other way round.
 
     Two earlier attempts at this are deliberately gone:
 
@@ -475,21 +530,24 @@ def principal_axis_sampling(
        ``+0.18209`` and ``-0.18209``), so the test fires on numerical noise
        rather than on traversal direction.
     """
-    mean, resampled = contour_center(contour, num=arclength_resample)
-    mean_xy = mean[:2]
+    if contour_is_collinear(contour):
+        raise DegenerateContourError("its points are collinear")
+    mean, resampled = _resample_by_xy_perimeter(contour, arclength_resample)
 
-    pts = np.ascontiguousarray(resampled[:, :2])
-    cov = np.cov(pts - mean_xy, rowvar=False)
-    _, eigvecs = np.linalg.eigh(cov)
-    major = eigvecs[:, 1]
-    minor = eigvecs[:, 0]
+    pts = resampled - mean
+    _, eigvecs = np.linalg.eigh(pts.T @ pts)
+    major = eigvecs[:, 2]
     if major[np.argmax(np.abs(major))] < 0.0:
         major = -major
+    minor = eigvecs[:, 1].copy()
+    minor[2] = 0.0
+    if np.linalg.norm(minor) < 1e-6 * np.linalg.norm(major):
+        raise DegenerateContourError("its minor axis is parallel to z")
     major = major / np.linalg.norm(major)
     minor = minor / np.linalg.norm(minor)
 
-    d = (pts - mean_xy) @ major
-    rad = (pts - mean_xy) @ minor
+    d = pts @ major
+    rad = pts @ minor
 
     index_max = int(np.argmax(d))
     index_min = int(np.argmin(d))
@@ -509,14 +567,14 @@ def principal_axis_sampling(
 
     d_all_sorted = np.sort(np.concatenate([d_side1_new, d_side2_new]))
     d_interp = np.linspace(float(d_all_sorted[1]), float(d_all_sorted[-2]), n_samples)
-    xy_interp = mean_xy[None, :] + d_interp[:, None] * major[None, :]
+    points = mean[None, :] + d_interp[:, None] * major[None, :]
 
     rad1_interp = _interp_strict(d_side1_new, rad_side1_new, d_interp)
     rad2_interp = _interp_strict(d_side2_new, rad_side2_new, d_interp)
     diam_interp = np.abs(rad1_interp - rad2_interp)
     diam_interp[0] = 0.5 * (diam_interp[0] + diam_interp[1])
     diam_interp[-1] = 0.5 * (diam_interp[-1] + diam_interp[-2])
-    return xy_interp, diam_interp
+    return points, diam_interp
 
 
 def contour_to_centroid(contour: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -530,17 +588,20 @@ def contour_to_centroid(contour: np.ndarray) -> tuple[np.ndarray, np.ndarray, np
     Returns
     -------
     points : numpy.ndarray
-        Shape ``(21, 3)`` cable points, held at the contour's own z.
+        Shape ``(21, 3)`` cable points along the contour's major axis, see
+        :func:`principal_axis_sampling`.
     radii : numpy.ndarray
         Shape ``(21,)`` radii, half the sampled diameters.
     center : numpy.ndarray
         Shape ``(3,)`` arc-length centroid of the contour.
+
+    Raises
+    ------
+    DegenerateContourError
+        As :func:`principal_axis_sampling`.
     """
-    xy, diameters = principal_axis_sampling(contour, n_samples=21)
+    points, diameters = principal_axis_sampling(contour, n_samples=21)
     center, _ = contour_center(contour)
-    contour = np.asarray(contour, dtype=float)
-    z_value = float(contour[0, 2]) if len(contour) else 0.0
-    points = np.column_stack([xy, np.full(len(diameters), z_value, dtype=float)])
     return points, 0.5 * np.asarray(diameters, dtype=float), center
 
 

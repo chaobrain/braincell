@@ -29,6 +29,8 @@ from neuron_diff import (
     compare_asc_with_neuron,
     compare_morphology_with_neuron,
     compare_swc_with_neuron,
+    compute_braincell_metrics,
+    compute_neuron_metrics,
     load_asc_morphology,
     load_swc_morphology,
     supported_metric_names,
@@ -142,6 +144,20 @@ class NeuronDiffTest(unittest.TestCase):
         self.assertEqual(comparison["braincell"]["n_branches"]["value"], 4)
         self.assertEqual(comparison["braincell"]["n_bifurcations"]["value"], 1)
         self.assertEqual(comparison["braincell"]["max_branch_order"]["value"], 2)
+
+    def test_compute_metrics_match_the_comparison(self) -> None:
+        path = self._write_swc(
+            """
+            1 1 0 0 0 8 -1
+            2 3 0 10 0 2 1
+            3 3 10 20 0 1.5 2
+            """
+        )
+
+        comparison = compare_swc_with_neuron(path)
+
+        self.assertEqual(compute_braincell_metrics(path), comparison["braincell"])
+        self.assertEqual(compute_neuron_metrics(load_swc_morphology(path)), comparison["neuron"])
 
     def test_compare_swc_with_neuron_reports_bent_tree_distance_metrics(self) -> None:
         path = self._write_swc(

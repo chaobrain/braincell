@@ -67,7 +67,7 @@ def _float64():
         yield
 
 
-def make_event_cell(solver="staggered"):
+def make_event_cell(solver="staggered", cv_per_branch=3):
     """One 600 um x 0.5 um passive dendrite (3 CVs) with an ExpSyn at x = 0.
 
     Leak 0.1 mS/cm^2 at -65 mV, cm 1 uF/cm^2, Ra 100 ohm cm; ExpSyn tau 2 ms,
@@ -76,7 +76,7 @@ def make_event_cell(solver="staggered"):
     branch = braincell.Branch.from_lengths(lengths=[600.0] * u.um, radii=[0.5, 0.5] * u.um, type="dendrite")
     cell = braincell.Cell(
         braincell.Morphology.from_root(branch, name="dend"),
-        cv_policy=braincell.CVPerBranch(cv_per_branch=3),
+        cv_policy=braincell.CVPerBranch(cv_per_branch=cv_per_branch),
         V_init=-65.0 * u.mV,
         solver=solver,
     )
@@ -249,6 +249,147 @@ class SplitCellRunTest(unittest.TestCase):
         whole.run(dt=DT, duration=120 * DT)
         reference = next(iter(whole.runtime_objects(ExpSyn, allowed_hierarchy=(1, 1)).values()))
         np.testing.assert_allclose(node.g.value.to_decimal(u.uS), reference.g.value.to_decimal(u.uS), rtol=1e-12)
+
+
+class UpdateLoopTest(unittest.TestCase):
+    """CELL-35: an ``update()`` loop matches ``run``, events on the first step included.
+
+    ``run`` prepares its first boundary when no step has; ``update()`` must do
+    the same, or an event at the start time after ``init_state`` or
+    ``reset_state`` is never delivered.
+    """
+
+    N = 80
+
+    def setUp(self):
+        self.enterContext(_float64())
+
+    @staticmethod
+    def _cell(solver, start):
+        """The one-CV event cell, driven by ``NetStim(start, number=1)`` or, for
+        ``start=None``, by a bound input of 1e-4 uS on every boundary."""
+        cell, synapse = make_event_cell(solver, cv_per_branch=1)
+        if start is None:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                cell.bind_synapse_input("syn", 1e-4)
+        else:
+            braincell.connect("drive", source=braincell.NetStim(start=start, number=1), synapse=synapse, weight=WEIGHT)
+        cell.init_state()
+        return cell
+
+    @staticmethod
+    def _updates(cell, first, last, *, traced=True):
+        """``(g in uS, V in mV)`` before each ``update()`` of steps ``[first, last)``.
+
+        ``traced=False`` calls ``update()`` eagerly, one step at a time.
+        """
+
+        def step(index):
+            with brainstate.environ.context(t=index * DT):
+                state = (_synapse(cell).g.value.to_decimal(u.uS), cell.V.value.to_decimal(u.mV))
+                cell.update()
+            return state
+
+        with brainstate.environ.context(dt=DT):
+            if traced:
+                g, v = brainstate.transform.for_loop(step, np.arange(first, last))
+            else:
+                g, v = zip(*(step(index) for index in range(first, last)))
+        return np.asarray(g), np.asarray(v)
+
+    def test_update_loop_matches_run_with_an_event_at_the_start(self):
+        for solver in ("staggered", "rk4"):
+            for start in (0.0 * u.ms, 1.0 * u.ms, None):
+                with self.subTest(solver=solver, start=start):
+                    looped = self._cell(solver, start)
+                    trajectory = self._updates(looped, 0, self.N)
+                    ran = self._cell(solver, start)
+                    expected = traces(ran.run(dt=DT, duration=self.N * DT).samples)
+                    for name, actual, reference in zip(("g", "V"), trajectory, expected):
+                        np.testing.assert_allclose(
+                            actual.reshape(reference.shape), reference, rtol=1e-12, atol=0.0, err_msg=name
+                        )
+                    for actual, expected in ((looped, ran), (_synapse(looped), _synapse(ran))):
+                        np.testing.assert_allclose(
+                            _state(actual), _state(expected), rtol=1e-12, atol=0.0, err_msg=type(actual).__name__
+                        )
+                    if start == 0.0 * u.ms:
+                        # The event acts in step 0: g is non-zero from the second sample on.
+                        self.assertEqual(float(trajectory[0][0, 0]), 0.0)
+                        np.testing.assert_allclose(trajectory[0][1, 0], 0.005 * np.exp(-0.025 / 2.0), rtol=1e-9)
+
+    def test_first_update_after_reset_delivers_the_start_event_again(self):
+        cell = self._cell("rk4", 0.0 * u.ms)
+        first = self._updates(cell, 0, 4)
+        cell.reset_state()
+        again = self._updates(cell, 0, 4)
+        self.assertGreater(float(first[0][1, 0]), 0.0)
+        for actual, expected in zip(again, first):
+            np.testing.assert_array_equal(actual, expected)
+        # Eager calls decide outside a trace and deliver the event once too.
+        cell.reset_state()
+        for actual, expected in zip(self._updates(cell, 0, 4, traced=False), first):
+            np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=0.0)
+
+    def test_lumped_cell_update_loop_delivers_the_start_event(self):
+        def cell():
+            model = braincell.Cell.point(1, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, solver="rk4")
+            model.paint(AllRegion(), mech.Channel("IL", name="leak", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+            model.place(mech.Synapse(ExpSyn, name="syn", tau=2.0 * u.ms, e=0.0 * u.mV))
+            braincell.connect(
+                "drive",
+                source=braincell.NetStim(start=0.0 * u.ms, number=1),
+                synapse=model.synapses["syn"],
+                weight=WEIGHT,
+            )
+            model.init_state()
+            return model
+
+        looped = cell()
+        self._updates(looped, 0, self.N)
+        ran = cell()
+        ran.run(dt=DT, duration=self.N * DT)
+        for actual, expected in ((looped, ran), (_synapse(looped), _synapse(ran))):
+            np.testing.assert_allclose(_state(actual), _state(expected), rtol=1e-12, atol=0.0)
+        np.testing.assert_allclose(_state(_synapse(ran)), 0.005 * np.exp(-2.0 / 2.0), rtol=1e-9)
+
+    def test_update_and_run_continue_each_other_without_redelivery(self):
+        # Events at 0 ms and 1 ms (step 40); the first segment starts with an
+        # event, the second at one.
+        def cell():
+            model, synapse = make_event_cell("rk4", cv_per_branch=1)
+            for name, start in (("first", 0.0 * u.ms), ("split", 1.0 * u.ms)):
+                braincell.connect(name, source=braincell.NetStim(start=start, number=1), synapse=synapse, weight=WEIGHT)
+            model.init_state()
+            return model
+
+        whole = cell()
+        whole.run(dt=DT, duration=self.N * DT)
+        then_run = cell()
+        self._updates(then_run, 0, 40)
+        then_run._set_current_time(40 * DT)
+        then_run.run(dt=DT, duration=40 * DT)
+        then_update = cell()
+        then_update.run(dt=DT, duration=40 * DT)
+        self._updates(then_update, 40, self.N)
+        for model in (then_run, then_update):
+            np.testing.assert_allclose(_state(_synapse(model)), _state(_synapse(whole)), rtol=1e-12, atol=0.0)
+            np.testing.assert_allclose(_state(model), _state(whole), rtol=1e-12, atol=0.0)
+        self.assertGreater(float(_state(_synapse(whole))[0]), 0.0)
+
+
+def _synapse(cell):
+    """The one runtime ExpSyn of a cable or lumped cell."""
+    (synapse,) = cell.runtime_objects(ExpSyn).values()
+    return synapse
+
+
+def _state(model):
+    """A cell's ``V`` in mV or a synapse's ``g`` in uS, as a numpy array."""
+    if isinstance(model, ExpSyn):
+        return np.asarray(model.g.value.to_decimal(u.uS))
+    return np.asarray(model.V.value.to_decimal(u.mV))
 
 
 if __name__ == "__main__":

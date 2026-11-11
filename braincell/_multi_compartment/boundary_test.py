@@ -477,8 +477,8 @@ class EventTest(_Float64Case):
         reference = np.asarray([-46.02427839636623, -52.88874609950384, -56.8186080770654])
         for solver, (low, high), bound in (("rk4", (14.0, 18.0), 1.5e-8), ("ralston2", (3.8, 4.3), None)):
             with self.subTest(solver=solver):
-                # One 5 ms run: Cell.run split at the event time delivers it twice
-                # (the same on every solver; not part of this change).
+                # One 5 ms run. A run split at the event time delivers it once
+                # (CELL-34); run_test covers that.
                 errors = [
                     float(
                         np.max(

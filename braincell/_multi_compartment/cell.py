@@ -3370,7 +3370,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         -----
         The standalone update order is:
 
-        1. Apply prepared runtime synapse events.
+        1. Apply prepared runtime synapse events. The first step after
+           ``init_state()`` or ``reset_state()`` prepares them first, as
+           :meth:`run` does, so an event at the start time is delivered.
         2. Advance voltage and mechanism dynamics through ``self.solver``.
         3. Detect and store the current spike.
         4. Prepare discrete event payloads for the next step.
@@ -3446,6 +3448,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             external = as_current_density(
                 I_ext, area=self._lumped_runtime.area, shape=tuple(self.V.value.shape), what="I_ext"
             )
+        self._prepare_first_synapse_inputs(t=self._resolve_t())
         self._prepare_step_clamps()
         self._begin_step()
         with brainstate.environ.context(_braincell_step_clamps_prepared=True):
@@ -3675,20 +3678,24 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._next_synapse_inputs_prepared.value = jnp.asarray(True)
 
     def _prepare_first_synapse_inputs(self, *, t) -> None:
-        """Prepare the inputs of a run's first boundary ``t`` unless a step did.
+        """Prepare the inputs of the boundary ``t`` a run or ``update()`` starts at, unless a step did.
 
         Every ``Cell.run`` step and every ``update()`` prepares the boundary
-        that follows it, so a run continuing either finds its first boundary
-        prepared. Preparing it again would deliver each event on it twice
-        (CELL-34); only the first step after ``init_state`` or
-        ``reset_state`` prepares here. The test is on a state, not a Python
-        flag, so it holds inside jitted loops.
+        that follows it, so a run or ``update()`` continuing either finds its
+        boundary prepared. Preparing it again would deliver each event on it
+        twice (CELL-34); only the first step after ``init_state`` or
+        ``reset_state`` prepares here, so an event at the start time is
+        delivered once whichever drives that step (CELL-35). The test is on a
+        state, not a Python flag, so it holds inside jitted loops.
         """
-        brainstate.transform.cond(
-            self._next_synapse_inputs_prepared.value,
-            lambda: None,
-            lambda: self._prepare_next_synapse_inputs(t=t),
-        )
+        prepared = self._next_synapse_inputs_prepared.value
+        if not is_traced_value(prepared):
+            # An eager call: decide here, since ``cond`` would trace the
+            # preparation on every call, taken or not.
+            if not bool(prepared):
+                self._prepare_next_synapse_inputs(t=t)
+            return
+        brainstate.transform.cond(prepared, lambda: None, lambda: self._prepare_next_synapse_inputs(t=t))
 
     def _apply_runtime_synapse_events(self, point_V):
         """Apply bound discrete events to all runtime synapses.

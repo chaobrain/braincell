@@ -103,6 +103,6 @@ cv.stiffness(cv.channel_class(cv.load_case("ma20_goc/nav1p6_ma20_goc", "vc_steps
 `validation/neuron/_convergence_test.py` 在每个 PR 运行，并对 registry 的全部
 通道类做奇点扫描。按家族的收敛测试标 `slow`：
 `tests/test_convergence_calcium.py`（本机约 1.7 分钟）、
-`tests/test_convergence_potassium.py`（本机约 TIMING）。标 `slow` 的模块（按家族的
+`tests/test_convergence_potassium.py`（本机约 40 秒）。标 `slow` 的模块（按家族的
 收敛测试与 `tests/test_catalogue_*.py`）只在每日 CI 的 `slow_tests_neuron` job 中
 运行（`pytest tests -m slow`），PR 的 channel job 用 `-m "not slow"` 跳过它们。

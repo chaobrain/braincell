@@ -35,7 +35,7 @@ Choose a neighboring algorithm in `braincell/quad/` as an implementation and tes
 State whether it supports general ODEs or requires Cell's specialized voltage interface.
 
 Use analytical solutions to check single-step error and multi-step convergence. Validate stage hooks, units, state shapes, and compiled loops.
-Cell-specific algorithms also need coverage for multiple CVs, branching, and boundary inputs. How explicit solvers receive boundary inputs is not settled yet; discuss it in an issue first.
+Cell-specific algorithms also need coverage for multiple CVs, branching, and boundary inputs. A clamp or synapse on a branch end or branch point sits on a row without membrane capacitance: `staggered` solves that row with the CV rows, and `Cell.compute_derivative()` solves it at every call (three Newton steps, in `braincell/_multi_compartment/boundary.py`), so a step built on `compute_derivative` receives these inputs without extra work. Point inputs are assembled once, by `point_input_current` in `braincell/_multi_compartment/currents.py`; a new point mechanism that injects current adds itself there.
 
 ## Complete the contribution
 

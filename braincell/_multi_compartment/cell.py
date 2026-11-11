@@ -103,7 +103,7 @@ from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad.protocol import DiffEqGroupState, IndependentIntegration, state_grouping
 from braincell.mech import CableProperty, CVContext, Density, Point, Synapse as SynapsePlacement
-from braincell._multi_compartment import currents, field_resolution, probes, run as run_module
+from braincell._multi_compartment import boundary, currents, field_resolution, probes, run as run_module
 from braincell._compute import bridge
 from braincell._multi_compartment.synapses import SynapseView, _SynapseStore, raise_on_name_type_conflict
 from braincell._multi_compartment.clamps import ClampView, _ClampStore
@@ -1189,6 +1189,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         # Set by ``pre_integral`` when a solver step is called directly, so
         # its stages read the clamp current sampled for this step.
         self._direct_step_clamps_prepared = False
+        # Algebraic boundary rows of the derivative solvers, built on first use.
+        self._boundary_rows_cache: boundary.BoundaryRows | None = None
         self._runtime_cvs_cache: tuple[RuntimeCVView, ...] | None = None
         self._runtime_nodes_cache: tuple[RuntimeNodeView, ...] | None = None
         self._synapse_store_cache: _SynapseStore | None = None
@@ -2454,6 +2456,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         # Initialization consumes that snapshot; it must never silently rerun a
         # policy or create a second grid generation.
         _ = self._discretization
+        self._boundary_rows_cache = None
         self._runtime_batch_size = None if batch_size is None else int(batch_size)
         store = self._get_connection_store()
         self._connection_weight_declarations = tuple((call, call.weight) for call in store._calls)
@@ -2690,6 +2693,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._runtime_cvs_cache = None
         self._runtime_nodes_cache = None
         self._node_scheduling_cache.clear()
+        self._boundary_rows_cache = None
         self._run_loop_cache.clear()
         self._compiled_recording_cache.clear()
 
@@ -2886,12 +2890,46 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._point_V.value = point_values
 
     def _point_voltage_for_mechanisms(self, cv_values=None):
-        """Return the electrical point voltage used by the active solver."""
+        """Return the electrical point voltage point mechanisms, events and records read.
+
+        Midpoints carry ``cv_values``. A boundary (algebraic) point carries the
+        voltage last solved for it: by DHS at every point for the
+        ``"staggered"`` and ``"dhs_voltage"`` solvers, and by the boundary-row
+        solve of the other solvers (in ``pre_integral`` and ``post_integral``)
+        at every boundary with a clamp or synapse. A boundary without one
+        carries its representative CV's voltage under the other solvers.
+        """
 
         values = self.V.value if cv_values is None else cv_values
-        if self._solver_name in {"staggered", "dhs_voltage"} and hasattr(self, "_point_V"):
+        if self._solver_name in {"staggered", "dhs_voltage"}:
             return self._dhs_point_voltage(values)
-        return bridge.cv_to_point(values, self._runtime)
+        return boundary.point_voltage(self._boundary_rows(), values, self._point_V.value)
+
+    def _boundary_rows(self) -> boundary.BoundaryRows:
+        """Return the algebraic points that carry a clamp or synapse (cached)."""
+        if self._boundary_rows_cache is None:
+            self._boundary_rows_cache = boundary.build_boundary_rows(self._runtime, self.cvs)
+        return self._boundary_rows_cache
+
+    def _solve_boundary_rows(self, V):
+        """Solve the boundary rows at ``V``; return the derivative term and the voltages.
+
+        Returns ``None`` when no boundary carries an input. The cached point
+        voltage is the Newton start value.
+        """
+        rows = self._boundary_rows()
+        if not rows.has_inputs:
+            return None
+        guess = self._point_V.value.to_decimal(u.mV)[..., rows.input_ids]
+        return boundary.solve_boundary(self, rows, V, t=self._resolve_t(), guess=guess)
+
+    def _update_boundary_voltage(self) -> None:
+        """Store the boundary voltages solved at the current ``V`` in ``_point_V``."""
+        solved = self._solve_boundary_rows(self.V.value)
+        if solved is None:
+            return
+        cached = self._point_V.value.to_decimal(u.mV)
+        self._point_V.value = u.Quantity(cached.at[..., self._boundary_rows().input_ids].set(solved[1]), u.mV)
 
     def _cv_to_point_unchecked(self, cv_values):
         return bridge.cv_to_point(cv_values, self._runtime)
@@ -2940,6 +2978,10 @@ class Cell(_CellFacade, HHTypedNeuron):
             self._direct_step_clamps_prepared = True
         if self._is_lumped:
             return self._lumped_runtime.pre_integral(self._lumped_I_ext.value)
+        # Events applied at step start, or a write to V between steps, move
+        # the boundary voltages; re-solve them for the hooks and as the
+        # Newton start of every stage.
+        self._update_boundary_voltage()
         self._run_integrated_hook("pre_integral", self.V.value)
 
     def compute_derivative(self):
@@ -3018,7 +3060,13 @@ class Cell(_CellFacade, HHTypedNeuron):
         return -u.math.matmul(axial_operator, V_mv[..., None])[..., 0]
 
     def compute_voltage_derivative(self, V):
-        return self.compute_membrane_derivative(V) + self.compute_axial_derivative(V)
+        derivative = self.compute_membrane_derivative(V) + self.compute_axial_derivative(V)
+        # The axial operator eliminates the boundary rows as if they had no
+        # input; add what their clamps and synapses change.
+        solved = self._solve_boundary_rows(V)
+        if solved is None:
+            return derivative
+        return derivative + solved[0]
 
     def _top_level_ion_channel_nodes(self):
         return tuple(self.nodes(IonChannel, allowed_hierarchy=(1, 1)).items())
@@ -3214,7 +3262,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             layout = self._runtime.layouts[layout_id]
             if layout.point_index is None:
                 raise ValueError(f"Synapse layout {layout.id!r} is missing point_index.")
-            point_V = bridge.cv_to_point(cv_V, self._runtime)
+            point_V = self._point_voltage_for_mechanisms(cv_V)
             return (layout.gather_points(point_V),)
         return self._channel_update_args(path, node, cv_V)
 
@@ -3263,6 +3311,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             self._direct_step_clamps_prepared = False
             return self._lumped_runtime.post_integral(self._lumped_I_ext.value)
         self.V.value = self.sum_delta_inputs(init=self.V.value)
+        self._update_boundary_voltage()
         self._run_integrated_hook("post_integral", self.V.value)
         self._direct_step_clamps_prepared = False
 
@@ -3748,7 +3797,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             local_indices = synapse_store.runtime_rows(connection.synapse_id).astype(np.int32)
             drives[layout_id] = drives[layout_id].at[local_indices].add(contribution)
 
-        point_v = None if self._uses_reduction else self._cv_to_point(self.V.value)
+        point_v = None if self._uses_reduction else self._point_voltage_for_mechanisms(self.V.value)
         for layout in layouts:
             if layout.id not in drives:
                 continue
@@ -3765,7 +3814,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         layout = self._runtime.layouts[int(layout_id)]
         synapse = self._runtime.get_runtime_node(layout.id)
         if point_v is None:
-            point_v = self._cv_to_point(self.V.value)
+            point_v = self._point_voltage_for_mechanisms(self.V.value)
         args = (layout.gather_points(point_v),)
         synapse.apply_events(drive, *args)
 

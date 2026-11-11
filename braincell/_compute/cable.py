@@ -111,16 +111,32 @@ def axial_coefficients(cable: CableArrays, topology: CableTopology):
     batch_shape = capacitance.shape[:-1]
     row_c = jnp.ones(batch_shape + (topology.n_point,), dtype=capacitance.dtype)
     row_c = row_c.at[..., topology.cv_rows].set(capacitance)
+    # S / μF converts to 1/ms by 1e3. Resistance inputs must be positive.
+    conductance_ms = _edge_conductance_mS(prox, dist, topology)
+    parent = conductance_ms / row_c[..., topology.parent_rows]
+    child = conductance_ms / row_c[..., topology.child_rows]
+    return u.Quantity(row_c, u.uF), u.Quantity(parent, u.ms**-1), u.Quantity(child, u.ms**-1)
+
+
+def _edge_conductance_mS(prox, dist, topology: CableTopology):
+    """Return the conductance of every point-tree edge in mS from half-CV resistances in ohm."""
+    batch_shape = prox.shape[:-1]
     resistance = jnp.concatenate((prox, dist), axis=-1)
     role_r = resistance[..., topology.role_half_indices]
     n_edge = len(topology.parent_rows)
     sum_r = jnp.zeros(batch_shape + (n_edge,), dtype=resistance.dtype).at[..., topology.role_edge_ids].add(role_r)
     sum_g = jnp.zeros(batch_shape + (n_edge,), dtype=resistance.dtype).at[..., topology.role_edge_ids].add(1.0 / role_r)
-    # S / μF converts to 1/ms by 1e3. Resistance inputs must be positive.
-    conductance_ms = 1e3 * jnp.where(topology.series_edges, 1.0 / sum_r, sum_g)
-    parent = conductance_ms / row_c[..., topology.parent_rows]
-    child = conductance_ms / row_c[..., topology.child_rows]
-    return u.Quantity(row_c, u.uF), u.Quantity(parent, u.ms**-1), u.Quantity(child, u.ms**-1)
+    return 1e3 * jnp.where(topology.series_edges, 1.0 / sum_r, sum_g)
+
+
+def edge_conductance(cable: CableArrays, topology: CableTopology):
+    """Return the conductance of every point-tree edge, ``(..., n_edge)`` in mS.
+
+    The same values :func:`axial_coefficients` divides by the row
+    capacitance (1 mS / 1 μF = 1 /ms), in ``topology``'s edge order.
+    """
+    prox, dist = jnp.broadcast_arrays(cable.resistance_prox.to_decimal(u.ohm), cable.resistance_dist.to_decimal(u.ohm))
+    return u.Quantity(_edge_conductance_mS(prox, dist, topology), u.mS)
 
 
 def axial_matrix(cable: CableArrays, topology: CableTopology):

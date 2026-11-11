@@ -43,7 +43,12 @@ from braincell._compute import bridge
 if TYPE_CHECKING:
     from braincell._multi_compartment.cell import Cell
 
-__all__ = ["total_membrane_current", "total_membrane_current_point", "total_membrane_rate_point"]
+__all__ = [
+    "point_input_current",
+    "total_membrane_current",
+    "total_membrane_current_point",
+    "total_membrane_rate_point",
+]
 
 _CURRENT_DENSITY = u.nA / u.cm**2
 
@@ -101,18 +106,47 @@ def total_membrane_rate_point(host: "Cell", *, point_V, point_capacitance, t):
     rate_cv = rate_cv + bridge.point_to_cv(input_density, runtime) / host._current_capacitance()
 
     rate_point = bridge.cv_to_point(rate_cv, runtime)
+    point_current = point_input_current(host, point_V=point_V, t=t)
+    return rate_point + point_current / point_capacitance
+
+
+def point_input_current(host: "Cell", *, point_V, t, layout_ids=None):
+    """Return the absolute inward current of clamps and synapses on every point.
+
+    The staggered rate and the boundary rows of the derivative solvers both
+    read the point inputs from here, so the two agree on what enters an
+    algebraic (boundary) row.
+
+    Parameters
+    ----------
+    host : Cell
+        Initialized cable cell.
+    point_V : Quantity
+        ``(..., n_point)`` point voltage the synapse currents are evaluated at.
+    t : Quantity[time]
+        Stage time, passed to the clamp lookup (a prepared step holds one value).
+    layout_ids : collection of int, optional
+        Evaluate only these synapse layouts. ``None`` evaluates all of them.
+
+    Returns
+    -------
+    Quantity
+        ``(..., n_point)`` current in ``nA``, inward positive.
+    """
+    runtime = host.runtime
     point_current = host._solver_clamp_point_current(t=t)
     with jax.named_scope("braincell:point_membrane_rate:synapses"):
         for key, synapse in host.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
             if not isinstance(synapse, RuntimeSynapse):
                 continue
             layout_id = layout_id_from_key(key)
+            if layout_ids is not None and layout_id not in layout_ids:
+                continue
             layout = runtime.layouts[layout_id]
             contribution = _synapse_absolute_current_point(runtime, layout, synapse, point_V)
             if contribution is not None:
                 point_current = point_current + contribution
-
-    return rate_point + point_current / point_capacitance
+    return point_current
 
 
 def _point_mechanism_current(host: "Cell", *, point_V, t):

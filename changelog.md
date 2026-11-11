@@ -381,6 +381,28 @@
   (`IL` 0.3 mS/cm^2, E -65 mV) a 10 uA/cm^2 input added between two 1 ms
   runs left V at -65 mV. Registering an input now drops the compiled loops.
 
+- Clamps and synapses on a branch end or a branch point now act on the
+  membrane under every solver other than `"staggered"` (CELL-2a). The
+  explicit Runge-Kutta solvers (`"rk4"`, `"ralston2"`, `"dopri5"`, ...),
+  `"exp_euler"`, `"ind_exp_euler"`, `"backward_euler"` and `"crank_nicolson"`
+  eliminated these points (they have no membrane capacitance) as if nothing
+  were placed there, so the inputs were lost: one 600 um dendrite in 3 CVs with
+  a 0.05 nA clamp and an ExpSyn at x = 0 stayed at -65 mV, where the cable
+  equation gives -35.73 mV at the first CV after 5 ms. `Cell.compute_derivative()`
+  now solves each such point's row at every evaluation (three Newton steps) and
+  adds the current it passes to the neighbouring CVs; the explicit solvers
+  converge at their order (rk4 error 3.6e-9 mV at dt = 0.025 ms), current is
+  conserved, and gradients reach the input (d sum V / d g was 0). Models with
+  nothing placed on a branch end or branch point give bitwise the same results
+  as before. The solved voltage at those points is also what mechanisms,
+  events and records read under these solvers: a synapse current recorded with
+  `observe.synapse(...).current()` at a branch end was evaluated at 0 mV
+  (0 nA for an ExpSyn with `e = 0 mV`) and now uses the point's voltage, and
+  the deprecated `StateProbe` at a point carrying a clamp or synapse returns
+  that voltage instead of its CV's (as it already did under `"staggered"`). Network and direct event
+  delivery to a synapse at a branch end also passes that voltage instead of
+  0 mV, under every solver; the built-in synapses do not read it.
+
 - A solver step called directly on a `Cell` now samples the current clamps
   as `update()` does (CELL-2c): once per main step, at `t + dt / 2`, with every
   Runge-Kutta stage reading that value. Before, `braincell.quad.rk4_step(cell)`

@@ -51,7 +51,14 @@ if TYPE_CHECKING:
     from braincell._compute.state import CellRuntimeState
     from braincell._multi_compartment.cell import Cell
 
-__all__ = ["NEWTON_STEPS", "BoundaryRows", "build_boundary_rows", "point_voltage", "solve_boundary"]
+__all__ = [
+    "NEWTON_STEPS",
+    "BoundaryRows",
+    "build_boundary_rows",
+    "point_voltage",
+    "solve_boundary",
+    "stage_point_voltage",
+]
 
 #: Newton steps per solve. A boundary current affine in ``V_b`` (every built-in
 #: clamp and synapse) is solved exactly by the first step. For a nonlinear one,
@@ -242,3 +249,14 @@ def point_voltage(rows: BoundaryRows, V_cv, cached):
     if not rows.has_inputs:
         return point
     return point.at[..., rows.input_ids].set(cached[..., rows.input_ids])
+
+
+def stage_point_voltage(rows: BoundaryRows, V_cv, V_b):
+    """Return the point voltage of one derivative stage.
+
+    As :func:`point_voltage`, but the algebraic points with an input carry
+    ``V_b``, the ``(..., n_b)`` voltage in mV that :func:`solve_boundary`
+    solved at ``V_cv``, instead of the cached value.
+    """
+    point = u.math.asarray(V_cv)[..., rows.point_source_cv]
+    return point.at[..., rows.input_ids].set(u.Quantity(V_b, u.mV))

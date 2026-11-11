@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""CELL-2a: clamps and synapses on branch ends and branch points under the derivative solvers.
+"""CELL-2a, CELL-2b: clamps and synapses on branch ends and branch points under the derivative solvers.
 
 Models (passive leak 0.1 mS/cm^2 at -65 mV, cm 1 uF/cm^2, Ra 100 ohm cm,
 V_init -65 mV; ExpSyn tau 2 ms, e 0 mV, g written after init_state; clamps on
@@ -30,6 +30,9 @@ The reference V(5 ms) values eliminate the boundary rows of the full point
 system exactly at every evaluation and integrate with scipy DOP853 at
 rtol = atol = 1e-13. "Same scheme" references step that reduced right-hand
 side, written here in numpy, with the braintools kernel braincell wraps.
+
+CELL-2b: a boundary synapse's own dynamics read the voltage each stage
+solves; ``VdepExpSyn`` (below) makes the decay voltage dependent to show it.
 """
 
 import contextlib
@@ -111,6 +114,7 @@ def _inputs(model, case):
             "syn": ((left, "syn", G0),),
             "both": ((left, "syn", G0), (left, "clamp", CLAMP)),
             "mid_clamp": ((RootLocation(0.5), "clamp", CLAMP),),
+            "mid_syn": ((RootLocation(0.5), "syn", G0),),
             "event": ((left, "syn", 0.0),),
         }[case]
     if model == "M2":
@@ -770,6 +774,110 @@ class StateProbeTest(_Float64Case):
                 self.assertEqual(float(np.ravel(sampled.to_decimal(u.mV))[0]), float(point[0, 0].to_decimal(u.mV)))
                 # The clamp current enters CV 0 through the half-CV conductance: V_b > V_0.
                 self.assertGreater(float(point[0, 0].to_decimal(u.mV)), float(cell.V.value[0, 0].to_decimal(u.mV)))
+
+
+class VdepExpSyn(ExpSyn):
+    """Test-only ExpSyn whose decay slows with depolarization: tau_eff = tau exp((V + 65 mV) / 20 mV)."""
+
+    def compute_derivative(self, V_post=None):
+        self.g.derivative = -self.g.value / (self.tau * u.math.exp((V_post.to_decimal(u.mV) + 65.0) / 20.0))
+
+
+class StageVoltageTest(_Float64Case):
+    """CELL-2b: a boundary synapse's ``compute_derivative`` reads each stage's solved voltage.
+
+    M1 with ``VdepExpSyn`` at x = 0, g(0) = 0.005 uS written after init or
+    delivered by ``NetStim(start=0 ms)``. The reference (V and g at 5 ms)
+    eliminates the boundary row at every evaluation, the synapse's decay
+    reading the boundary voltage, with scipy DOP853 at rtol = atol = 1e-13.
+    """
+
+    REFERENCE_V = [-32.37431604018209, -45.148232275931605, -51.39266036664959]
+    REFERENCE_G = 0.003448936082850147  # uS
+    DTS = (0.05, 0.025, 0.0125)
+
+    @staticmethod
+    def _cell(solver="rk4", case="syn", *, netstim=False, batch_size=None):
+        if netstim:
+            return _build("M1", "event", solver, synapse=VdepExpSyn, netstim=(0.0, G0), batch_size=batch_size)
+        return _build("M1", case, solver, synapse=VdepExpSyn, batch_size=batch_size)
+
+    def _errors(self, solver, *, netstim=False):
+        """``(V errors, g errors)`` at 5 ms over ``DTS``."""
+        V_errors, g_errors = [], []
+        for dt in self.DTS:
+            cell = self._cell(solver, netstim=netstim)
+            V = _run(cell, dt, segments=(5.0,))[-1].ravel()
+            g = np.asarray(_synapse_node(cell).g.value.to_decimal(u.uS)).ravel()
+            V_errors.append(float(np.max(np.abs(V - np.asarray(self.REFERENCE_V)))))
+            g_errors.append(float(np.max(np.abs(g - self.REFERENCE_G))))
+        return V_errors, g_errors
+
+    def _assert_ratios(self, errors, low, high):
+        for ratio in (errors[0] / errors[1], errors[1] / errors[2]):
+            self.assertTrue(low <= ratio <= high, errors)
+
+    def test_rk4_and_staggered_converge_to_one_reference(self):
+        for netstim in (False, True):
+            with self.subTest(netstim=netstim):
+                V_errors, g_errors = self._errors("rk4", netstim=netstim)
+                self.assertLessEqual(V_errors[1], 1e-8)
+                self.assertLessEqual(g_errors[1], 2e-12)
+                self._assert_ratios(V_errors, 14.0, 18.0)
+                self._assert_ratios(self._errors("staggered", netstim=netstim)[0], 1.9, 2.1)
+
+    def test_midpoint_synapse_takes_the_unchanged_path(self):
+        with mock.patch.object(boundary, "solve_boundary", wraps=boundary.solve_boundary) as solve:
+            V = _run(self._cell(case="mid_syn"), 0.025, segments=(5.0,))[-1].ravel()
+        self.assertEqual(solve.call_count, 0)
+        np.testing.assert_allclose(
+            V, [-40.73827086276335, -33.957355200401544, -40.738270862763336], rtol=0, atol=1e-12
+        )
+
+    def test_segments_reset_and_batch(self):
+        whole = self._cell()
+        whole_V = _run(whole, 0.025, segments=(5.0,))[-1]
+        np.testing.assert_array_equal(_run(self._cell(), 0.025)[-1], whole_V)
+        whole.reset_state()
+        node = _synapse_node(whole)
+        node.g.value = u.Quantity(jnp.full(node.g.value.shape, G0), u.uS)
+        np.testing.assert_array_equal(_run(whole, 0.025, segments=(5.0,))[-1], whole_V)
+        batch = _run(self._cell(batch_size=2), 0.025, segments=(5.0,))[-1].reshape(2, 3)
+        np.testing.assert_allclose(batch, np.broadcast_to(whole_V.reshape(1, 3), (2, 3)), rtol=0, atol=1e-12)
+
+    def test_gradient_matches_central_difference(self):
+        cell = self._cell()
+        node = _synapse_node(cell)
+
+        def objective(g0):
+            cell.reset_state()
+            cell.V.value = u.Quantity(jnp.full(cell.V.value.shape, -65.0), u.mV)
+            node.g.value = u.Quantity(jnp.broadcast_to(g0, node.g.value.shape), u.uS)
+
+            def step(i):
+                with brainstate.environ.context(t=i * 0.025 * u.ms):
+                    cell.update()
+                return cell.V.value
+
+            trace = brainstate.transform.for_loop(step, jnp.arange(40))
+            return jnp.sum(trace[-1].to_decimal(u.mV))
+
+        with brainstate.environ.context(dt=0.025 * u.ms):
+            g0 = jnp.asarray(G0)
+            gradient = float(brainstate.transform.grad(objective)(g0))
+            eps = 1e-6
+            central = float((objective(g0 + eps) - objective(g0 - eps)) / (2 * eps))
+        self.assertGreater(abs(central), 1e3)
+        self.assertLessEqual(abs(gradient - central) / abs(central), 1e-6)
+
+    def test_stage_point_voltage(self):
+        cell = self._cell()
+        rows = cell._boundary_rows()
+        V = u.Quantity(jnp.asarray([[-60.0, -62.0, -64.0]]), u.mV)
+        point = boundary.stage_point_voltage(rows, V, jnp.asarray([[-40.0]]))
+        expected = np.asarray(V.to_decimal(u.mV))[..., rows.point_source_cv]
+        expected[..., rows.input_ids] = -40.0
+        np.testing.assert_array_equal(np.asarray(point.to_decimal(u.mV)), expected)
 
 
 if __name__ == "__main__":

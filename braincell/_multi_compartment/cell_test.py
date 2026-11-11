@@ -1496,7 +1496,7 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
         synapse = _RuntimeSynapse(size=1, name=None)
 
         cell.runtime_objects = lambda *args, **kwargs: {("layout_0",): synapse}
-        cell._runtime_node_phase_args = lambda path, node, point_V: ("syn_arg",)
+        cell._runtime_node_phase_args = lambda path, node, cv_V, stage_point_V=None: ("syn_arg",)
         cell._top_level_ion_channel_nodes = lambda: ((("layout_0",), synapse),)
         synapse.ind_update = lambda *args, **kwargs: calls.append(("ind", args))
 

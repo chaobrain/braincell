@@ -40,6 +40,7 @@ from braincell.filter import (
     BranchRangeFilter,
     BranchSlice,
     RadiusRangeRegion,
+    RegionMask,
     RegionSetOp,
     SubtreeRegion,
     TreeDistanceRegion,
@@ -609,6 +610,39 @@ class RadiusRangeRegionTest(unittest.TestCase):
                         ),
                         [],
                     )
+
+    def test_the_brute_force_checks_catch_a_wrong_mask(self) -> None:
+        # Without this, a helper that never reports would make the two tests above vacuous.
+        tree = make_tree_r()
+        right = tree.select(RadiusRangeRegion(0.55 * u.um, 1.5 * u.um))
+        wrong = RegionMask(((1, 0.2, 1.0),) + right.intervals[1:])
+        self.assertEqual(brute_force_mismatches(tree, right, radius_um, 0.55, 1.5, "both", samples=1001), [])
+        problems = brute_force_mismatches(tree, wrong, radius_um, 0.55, 1.5, "both", samples=1001)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("branch 1 (dend)", problems[0])
+        checked, problems = crossing_errors(tree, wrong, radius_um, 0.55, 1.5)
+        self.assertEqual(checked, 3)  # dend 0.2, d1 1/6, d2 5/6; the axon ends sit on its jumps
+        self.assertEqual(len(problems), 1)
+        self.assertIn("end 0.2 has f =", problems[0])
+        # An end at a bound but displaced along a steep taper fails the bisection check.
+        nudged = RegionMask(((1, 5 / 18 + 1e-11, 1.0),) + right.intervals[1:])
+        checked, problems = crossing_errors(tree, nudged, radius_um, 0.55, 1.5)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("from the root", problems[0])
+
+    def test_a_constant_value_is_judged_by_closed(self) -> None:
+        for closed, at_minimum, at_maximum in (
+            ("both", True, True),
+            ("left", True, False),
+            ("right", False, True),
+            ("neither", False, False),
+        ):
+            region = RadiusRangeRegion(1 * u.um, 2 * u.um, closed)
+            with self.subTest(closed=closed):
+                self.assertEqual(region._accepts(1.0), at_minimum)
+                self.assertEqual(region._accepts(2.0), at_maximum)
+                self.assertTrue(region._accepts(1.5))
+                self.assertFalse(region._accepts(2.5))
 
     def test_needs_no_3d_points(self) -> None:
         tree = make_tree_u()

@@ -284,6 +284,7 @@ class CellRuntimeState:
                     else []
                 ),
                 "synapse_ids": np.asarray(logical_ids, dtype=np.int64),
+                "cv_index": np.asarray(synapse_store.cv_id[store_rows], dtype=np.int32),
             }
             layout_id += 1
 
@@ -334,6 +335,7 @@ class CellRuntimeState:
                 placement_index=placement_index,
                 population_index=population_indices,
                 synapse_index=None if synapse_ids is None else np.asarray(synapse_ids, dtype=np.int64),
+                cv_index=entry.get("cv_index"),
             )
             layouts.append(layout_spec)
             layout_mechanisms[layout_spec.id] = mechanism

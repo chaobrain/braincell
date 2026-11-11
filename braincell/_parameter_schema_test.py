@@ -51,6 +51,7 @@ _DIMENSIONLESS = {
     "phi",
     "Nannuli",
     "valence",
+    "P",  # GabaA_JE2011: bicarbonate share of the conductance
 }
 
 # Bare-number defaults of physical quantities whose unit is only documented.

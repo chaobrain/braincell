@@ -23,13 +23,14 @@ Responsibilities:
    declared electrical points.
 """
 
+import functools
 from typing import TYPE_CHECKING
 
 import brainunit as u
 import jax
 import jax.numpy as jnp
 
-from braincell._base_channel import IonChannel, Synapse as RuntimeSynapse
+from braincell._base_channel import IonChannel, IonInfo, Synapse as RuntimeSynapse
 from braincell._misc import (
     profile_barrier_current as _profile_barrier_current,
     profiler_call_name as _call_name,
@@ -177,7 +178,7 @@ def _synapse_absolute_current_point(runtime: CellRuntimeState, layout, syn, poin
     local_voltage = layout.gather_points(point_V)
     try:
         contrib = jax.named_call(
-            syn.current,
+            syn.current if syn.ion_type is None else functools.partial(synapse_current, runtime, layout, syn),
             name=_call_name("braincell:membrane_current:synapse_current", (f"layout_{layout.id}",), syn),
         )(local_voltage)
     except (TypeError, ValueError, RuntimeError, ArithmeticError) as exc:
@@ -192,6 +193,71 @@ def _synapse_absolute_current_point(runtime: CellRuntimeState, layout, syn, poin
     else:
         contrib_point = jnp.zeros(point_V.shape, dtype=jnp.asarray(contrib).dtype)
     return layout.scatter_add_points(contrib_point, contrib)
+
+
+def synapse_current(runtime: CellRuntimeState, layout, syn, local_voltage):
+    """Return one synapse layout's point currents, passing ion state when it reads an ion."""
+    if syn.ion_type is None:
+        return syn.current(local_voltage)
+    ion_info = runtime.get_ion(runtime.bound_ion_keys[layout.id][0]).pack_info()
+    return syn.current(local_voltage, _synapse_row_ion_info(layout, ion_info))
+
+
+def _synapse_row_selector(layout) -> tuple:
+    """Index of each synapse row's owning ``(population, CV)`` entry in CV space."""
+    return (Ellipsis, layout.population_index, layout.cv_index) if layout.is_packed else (Ellipsis, layout.cv_index)
+
+
+def _synapse_row_ion_info(layout, ion_info: IonInfo) -> IonInfo:
+    """Take each array field of a CV-space :class:`IonInfo` at the synapse rows' CVs.
+
+    Scalar fields (a Python ``int`` valence, a shared ``Co``) pass through.
+    """
+    selector = _synapse_row_selector(layout)
+    return IonInfo(*(field[selector] if u.math.ndim(field) > 0 else field for field in ion_info))
+
+
+class _SynapseIonCurrent:
+    """External-current callback adding one synapse layout's ion current to its ion.
+
+    ``ion_current`` (an absolute point current) is summed per owning CV and
+    divided by that CV's area, giving the ion a ``(..., n_cv)`` current density.
+    """
+
+    def __init__(self, host: "Cell", layout, syn, ion_key: str):
+        self.host = host
+        self.layout = layout
+        self.syn = syn
+        self.ion_key = ion_key
+        # Read by ``braincell.ion._base._total_current_input``: a dynamic ion
+        # must not integrate this current without the step-start snapshot.
+        self.requires_snapshot = f"synapse {type(syn).__name__!r} writes its current into ion {ion_key!r}"
+
+    def __call__(self, V, ion_info):
+        runtime = self.host._runtime
+        local_voltage = self.layout.gather_points(self.host._point_voltage_for_mechanisms(V))
+        rows = self.syn.ion_current(local_voltage, _synapse_row_ion_info(self.layout, ion_info))
+        total = u.Quantity(jnp.zeros(u.math.shape(V), dtype=u.get_mantissa(rows).dtype), rows.unit)
+        total = total.at[_synapse_row_selector(self.layout)].add(rows)
+        return total / runtime.current_cable().area
+
+
+def register_synapse_ion_currents(host: "Cell") -> tuple[_SynapseIonCurrent, ...]:
+    """Register each ion-reading synapse layout's ion current on its ion.
+
+    Returns the callbacks, one per layout whose synapse class sets ``ion_type``.
+    """
+    runtime = host._runtime
+    callbacks = []
+    for layout in runtime.layouts:
+        syn = runtime.runtime_nodes.get(layout.id)
+        if not isinstance(syn, RuntimeSynapse) or syn.ion_type is None:
+            continue
+        ion_key = runtime.bound_ion_keys[layout.id][0]
+        callback = _SynapseIonCurrent(host, layout, syn, ion_key)
+        runtime.get_ion(ion_key).register_external_current(("synapse", layout.id), callback)
+        callbacks.append(callback)
+    return tuple(callbacks)
 
 
 def _clamp_density(host: "Cell", *, t, dtype):

@@ -27,6 +27,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._compute.state import CellRuntimeState
+from braincell._multi_compartment.currents import synapse_current
 from braincell.mech import (
     CurrentProbe,
     Density,
@@ -239,13 +240,7 @@ def _sample_current_probe_point(
             layout_id = synapse_view._store.layout_id(synapse_type)
             layout = runtime.layouts[layout_id]
             node = runtime.get_runtime_node(layout_id)
-            local_voltage = layout.gather_points(point_V)
-            current = _probe_current_value(
-                node,
-                local_voltage,
-                None,
-                probe_name=_probe_name(declaration),
-            )
+            current = synapse_current(runtime, layout, node, layout.gather_points(point_V))
             selected = current[..., synapse_view.runtime_index]
             return _pack_synapse_probe_rows(rcell, synapse_view, selected)
 

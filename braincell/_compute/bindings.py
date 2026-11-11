@@ -406,7 +406,18 @@ def _instantiate_runtime_node(
         for key, value in params.items():
             if isinstance(value, RuntimeParameterState) and not isinstance(getattr(node, key), brainstate.nn.Param):
                 setattr(node, key, value)
-        return node, (), None
+        if runtime_cls.ion_type is None:
+            return node, (), None
+        # A synapse reading an ion binds to the family's only instance, with the
+        # channel resolution rule (``KeyError`` for none, ``ValueError`` for two).
+        ion_key = _resolve_ion_instance_key(
+            family_key=_root_type_to_family(runtime_cls.ion_type),
+            selector=None,
+            ions=ions,
+            ion_aliases=ion_aliases,
+            ion_family_candidates=ion_family_candidates,
+        )
+        return node, (ion_key,), ion_key
 
     if layout.target != "density" or layout.layout != "dense":
         return None, (), None

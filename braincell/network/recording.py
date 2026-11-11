@@ -573,6 +573,8 @@ def _sample_synapse_field(view, field: str):
 
 
 def _sample_synapse_current(cell, view):
+    from braincell._multi_compartment.currents import synapse_current
+
     point_v = cell._point_voltage_for_mechanisms(cell.V.value)
     groups = []
     for positions, selected in _synapse_type_groups(view):
@@ -585,7 +587,7 @@ def _sample_synapse_current(cell, view):
             if layout.population_index is None
             else point_v[..., layout.population_index, layout.point_index]
         )
-        current = node.current(local_v)
+        current = synapse_current(cell.runtime, layout, node, local_v)
         groups.append((positions, current[..., selected.runtime_index]))
     return _scatter_group_values(groups, len(view))
 

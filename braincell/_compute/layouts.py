@@ -121,6 +121,8 @@ class MechanismLayout:
     placement_index: np.ndarray | None = None
     population_index: np.ndarray | None = None
     synapse_index: np.ndarray | None = None
+    #: Owning CV of each synapse row (the placement's CV); ``None`` otherwise.
+    cv_index: np.ndarray | None = None
 
     @property
     def is_packed(self) -> bool:

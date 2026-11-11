@@ -14,3 +14,13 @@ Exponential-Decay Synapses
 
    ExpSyn
    Exp2Syn
+
+Ion-Coupled Synapses
+--------------------
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+   GabaA_JE2011

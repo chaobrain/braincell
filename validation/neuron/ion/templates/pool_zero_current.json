@@ -1,0 +1,8 @@
+{
+  "meta": {"label": "Zero-current relaxation: no channel, membrane held at v_init; the pool relaxes from its initial state."},
+  "base": {
+    "morphology": {"length_um": 20.0, "diam_um": 20.0},
+    "simulation": {"dt_ms": 0.025, "duration_ms": 40.0, "v_init_mV": -70.0, "temperature_celsius": 25.0}
+  },
+  "voltage_clamp": {"kind": "steps", "hold_mV": -70.0, "hold_ms": 5.0, "test_mV": [-70.0], "test_ms": 20.0, "tail_ms": 15.0}
+}

@@ -1,73 +1,86 @@
 # ion
 
-最小化的 ion-vs-NEURON 对照目录。
+Calcium-pool comparisons against NEURON. Each configuration puts one pool,
+with or without one calcium channel, on a single soma (L = diam = 20 um) and
+runs it under up to three protocols; the limits come from one tolerance table.
 
-当前目录现在包含这些最小 notebook：
+| File | Contents |
+|---|---|
+| `configs/<model>/<name>.json` | One pool: its `.mod` sources under `data/`, the NEURON and BrainCell names of the pool, its states and parameters, the channel and its gates (the channel_no_conc layout plus `pool_name`, `pool_states`, `ci_state`) |
+| `templates/pool_*.json` | The protocols, see below |
+| `runner.py` | Loads a configuration, runs both sides and returns the metrics (`compare_protocol`) |
+| `tolerances.py` | The T1 entries; every other configuration and protocol is T0 |
+| `runner_test.py` | Configurations, templates and table, without NEURON (pull-request tier) |
+| `tolerances_test.py` | Every configuration within the table, with its root causes patched at T0, and a pump-rate counterexample (`slow`, daily tier) |
+| `chloride_test.py` | `Cldif_JE2011` against ModelDB 148253 (local only, see below) |
+| `gaba_test.py` | `GabaA_JE2011` with `Cldif_JE2011` against ModelDB 148253 (local only, see below) |
 
-- `cdpcam_ma2024_pc_zero_ica.ipynb`
-- `cdphva_su2015_dcn_zero_ica.ipynb`
-- `cdpstc_ma2020_goc_zero_ica.ipynb`
-- `cdpstc_ma2020_goc_with_cahva.ipynb`
-- `cdpstc_ma2020_goc_with_cav2p1_ri21_sc.ipynb`
-- `cdpstc_ma2020_goc_with_cav3p1.ipynb`
-- `toy_ca_binding_kinetic_su2015_dcn.ipynb`
-- `toy_ca_binding_source_kinetic_su2015_dcn.ipynb`
-- `toy_ca_pump_factor_with_cahva_su2015_dcn.ipynb`
-- `toy_diam_factor_kinetic_su2015_dcn.ipynb`
+## Protocols
 
-它们分别覆盖：
+| Template | Protocol | Metrics |
+|---|---|---|
+| `pool_zero_current` | No channel; the membrane is held at `v_init`. The pool relaxes from its initial state or from `defaults.initial_states` (written after `finitialize`) | `e_Ci`, `e_pool` |
+| `pool_vc` | `SEClamp` -70 -> -10 -> -70 mV (5, 20, 25 ms). BrainCell replays NEURON's voltage, so both pools see the current of the same voltage | `e_I`, `e_s`, `e_Ci`, `e_pool` |
+| `pool_cc` | `IClamp` pulse 5-25 ms (0.005 nA unless the configuration sets `current_clamp.amp_nA`); both sides solve V | `e_V`, `e_Ci`, `e_pool` |
 
-- `CdpCAM_MA24_PC` 在 **不插入 Ca channel**、因此 `ica = 0` 时的 PC calcium-pool / CB / CAM 稳态回归
-- `CdpHVA_SU15_DCN` 在 **不插入 Ca channel**、因此 `ica = 0` 时的 `cai/Ci` 回归
-- `CdpStC_MA20_GoC` 在 **不插入 Ca channel**、因此 `ica = 0` 时的 GoC calcium-pool 回归
-- `CdpStC_MA20_GoC + CaHVA_MA20_GoC` 的 NEURON-vs-BrainCell 耦合轨迹
-- `CdpStC_MA20_GoC + Cav2p1_RI21_SC` 的 NEURON-vs-BrainCell 跨来源耦合轨迹
-- `CdpStC_MA20_GoC + Cav3p1_MA20_GoC` 的 NEURON-vs-BrainCell 耦合轨迹
-- 若干 DCN toy kinetic ion，用于隔离验证 binding/source/pump/factor/geometry 行为
+All run at `dt = 0.025 ms` in double precision; sample `i` of both sides is the
+state at `t = i dt`, so the initial state is compared too. `e_Ci` is the
+largest `Ci` difference over the protocol's largest NEURON `cai`; `e_pool` is
+the same ratio for each listed pool state over its own largest value, the
+largest of these; `e_I`, `e_s` and `e_V` are the channel suite's metrics
+(`validation/neuron/_tolerance.py`). T0 is `1e-10` for `e_Ci` and `e_pool`.
 
-`chloride_test.py` 在单段上对照 `Cldif_JE2011` 与 ModelDB 148253 的 `cldifus`（零电流弛豫，T0）。`cldif.mod` 没有许可声明，是否入库待维护者决定；在此之前测试只在 `BRAINCELL_JE2011_MOD_DIR` 指向含该文件（`ModelDBRepository/148253@1d737a0`，SHA-256 由测试核对）的目录时运行，否则跳过：
+## Results
+
+With BrainCell's defaults, the kinetic pools differ from NEURON by `e_Ci`
+`1.7e-7` to `2.0e-4`: NEURON iterates its implicit `sparse` step, BrainCell's
+`backward_euler` takes one linearized step (class (d)). The other T1 entries
+are the CdpHVA pool's explicit update in NEURON, NEURON's forward-difference
+conductance and the unfrozen GHK channels under current clamp. Each is a
+heading of [known differences](../known-differences.md); with every named
+cause patched, all 22 runs are T0 (`tolerances_test.py`).
+
+The configurations replace the earlier notebooks: GoC `CdpStC_MA2020_GoC`
+with CaHVA, Cav3.1 and the SC Cav2.1; PC `CdpCAM_MA2024_PC` with Cav3.1 and
+Cav3.2, and against the original `cdp5_CAM` at the whole-cell pump density;
+DCN `CdpHVA_SU2015_DCN`; and the four DCN toy kinetic pools.
+
+## Running
+
+The runner compiles every configuration's sources into one library and loads
+it once; run the suite in its own process, apart from `channel_no_conc`,
+whose libraries define the same channels.
+
+```bash
+pytest -q validation/neuron/ion -m "not slow"   # pull-request tier
+pytest -q validation/neuron/ion -m slow         # daily tier, about 40 s
+```
+
+```python
+from validation.neuron.ion import runner
+
+result = runner.compare_protocol("goc_ma2020/cdpstc_ma20_goc", "pool_vc")
+result["e_Ci"], result["neuron"]["cai"], result["braincell"]["cai"]
+```
+
+A new configuration lists its `.mod` files, names and templates; a pool
+whose NEURON state for `cai` is not `cai` itself names it in `ci_state`. A
+difference above T0 needs its cause, a patch that removes it and an entry in
+`tolerances.py`.
+
+`chloride_test.py` compares `Cldif_JE2011` with ModelDB 148253's `cldifus` on
+one segment, as a zero-current relaxation and with `Cl_Leak` under current
+clamp (T0). `cldif.mod` has no license
+statement and whether it may be committed awaits the maintainers' decision;
+until then the test runs only when `BRAINCELL_JE2011_MOD_DIR` points to a
+directory with that file (`ModelDBRepository/148253@1d737a0`, SHA-256 checked
+by the test), and skips otherwise:
 
 ```bash
 BRAINCELL_JE2011_MOD_DIR=/path/to/148253 pytest -q validation/neuron/ion/chloride_test.py
 ```
 
-`gaba_test.py` 在同一单段上对照 `GabaA_JE2011` + `Cldif_JE2011` 与 `gaba` + `cldifus`（NetStim 驱动，1005 ms，T0），需要同一目录中还有 `gabaA_Cl.mod`（SHA-256 由测试核对），条件与跳过方式同上。
-
-当前刻意不做：
-
-- 通用 JSON config / batch workflow
-- 多 mechanism 批量对照
-- 更大范围的参数扫描或自动拟合
-- 与 `channel_no_conc` 同级别的大型 compare harness
-
-这一目录的目标只是给 imported ion template 建一个最小、可解释、可继续扩展的起点。
-
-补充说明：
-
-- 当前本地 NEURON 环境里，`CaLVA/CdpLVA` 的 DCN `x86_64` 机制如果需要重编，先按仓库根目录 `agent.md` 的说明，把 `CPP/CC/CXX` 切到 `/usr/bin` 下的系统编译器再编。
-- GoC 的耦合 notebook 默认都从 `data/cerebellum/goc_ma2020/x86_64` 加载机制。
-- 如果当前 `GoC/x86_64` 里没有你要的 channel 组合，先在 `data/cerebellum/goc_ma2020` 下重编；如果当前 Python / Jupyter 进程已经加载过旧的 `libnrnmech.so`，需要先重启 kernel 再运行 notebook。
-- `cdpstc_ma2020_goc_with_cahva.ipynb` 的最小编译命令：
-
-```bash
-CPP=/usr/bin/cpp CC=/usr/bin/cc CXX=/usr/bin/c++ \
-nrnivmodl ion/CdpStC_MA20_GoC.mod channel/CaHVA_MA20_GoC.mod
-```
-
-- `cdpstc_ma2020_goc_with_cav2p1_ri21_sc.ipynb` 混合了 GoC 的 ion 和 SC 的 channel，建议在临时目录下编译：
-
-```bash
-tmpdir=$(mktemp -d)
-cd "$tmpdir"
-CPP=/usr/bin/cpp CC=/usr/bin/cc CXX=/usr/bin/c++ \
-nrnivmodl \
-  ~/braincell-ion_dyn/data/cerebellum/goc_ma2020/mechanisms/ion/CdpStC_MA20_GoC.mod \
-  ~/braincell-ion_dyn/data/cerebellum/sc_ma2021/mechanisms/channel/Cav2p1_RI21_SC.mod
-```
-
-- `cdpstc_ma2020_goc_with_cav3p1.ipynb` 的最小编译命令：
-
-```bash
-CPP=/usr/bin/cpp CC=/usr/bin/cc CXX=/usr/bin/c++ \
-nrnivmodl ion/CdpStC_MA20_GoC.mod channel/Cav3p1_MA20_GoC.mod
-```
+`gaba_test.py` compares `GabaA_JE2011` with `Cldif_JE2011` against `gaba` with
+`cldifus` on the same segment (NetStim-driven, 1005 ms, T0). It also needs
+`gabaA_Cl.mod` in that directory (SHA-256 checked by the test) and skips the
+same way.

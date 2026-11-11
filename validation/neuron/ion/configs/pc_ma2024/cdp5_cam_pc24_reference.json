@@ -1,0 +1,15 @@
+{
+  "meta": {"label": "PC CdpCAM MA24 against the original PC24 cdp5_CAM, at the whole-cell pump density"},
+  "identity": {"mod_files": ["cerebellum/pc_ma2024/reference/cdp5_CAM.mod"]},
+  "defaults": {
+    "simulation": {"temperature_celsius": 36.0},
+    "pool_params": {"TotalPump_mol_cm2": 5e-8}
+  },
+  "mapping": {
+    "pool_name": {"neuron": "cdp5_CAM", "braincell": "CdpCAM_MA2024_PC"},
+    "ci_state": "ca",
+    "pool_states": {"common": ["mg", "Buff2", "Buff2_ca", "CB", "CB_f_ca", "CB_ca_s", "CB_ca_ca", "PV", "PV_ca", "PV_mg", "pump", "CAM0", "CAM1C", "CAM2C", "CAM1N2C", "CAM1N", "CAM2N", "CAM2N1C", "CAM1C1N", "CAM4"], "units": {"pump": "mol/cm2"}},
+    "pool_params": {"TotalPump_mol_cm2": {"neuron": "TotalPump", "braincell": "TotalPump", "unit": "mol/cm2"}}
+  },
+  "templates": ["../../templates/pool_zero_current.json"]
+}

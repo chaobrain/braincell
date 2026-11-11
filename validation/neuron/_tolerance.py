@@ -20,7 +20,10 @@ absolute voltage difference (mV, current clamp); ``e_s``, the largest
 absolute difference over all compared states; ``e_I``, the largest absolute
 current difference over the largest NEURON current magnitude of the whole
 protocol (voltage clamp), so that commands that barely activate a channel do
-not amplify rounding. A non-finite sample on either side raises ``ValueError``.
+not amplify rounding. The ion-pool suite adds ``e_Ci``, the largest ``Ci``
+difference over the protocol's largest NEURON ``cai``, and ``e_pool``, the same
+ratio for every other pool state (each over its own largest value), the
+largest of these. A non-finite sample on either side raises ``ValueError``.
 
 Tier T0 (the class integrates the ``.mod`` equations, constants and initial
 values) has the limits :data:`T0_LIMITS`. T1 is an explained difference of
@@ -35,14 +38,21 @@ import re
 
 import numpy as np
 
-T0_LIMITS = {"e_V": 1e-6, "e_I": 1e-10, "e_s": 1e-10}
+T0_LIMITS = {"e_V": 1e-6, "e_I": 1e-10, "e_s": 1e-10, "e_Ci": 1e-10, "e_pool": 1e-10}
 """T0 limit of each metric."""
 
 CURRENT_CLAMP_PROTOCOLS = ("vinit_celsius", "dc", "ac")
 VOLTAGE_CLAMP_PROTOCOLS = ("vc_steps", "vc_ramp")
+POOL_PROTOCOL_METRICS = {
+    "pool_zero_current": ("e_Ci", "e_pool"),
+    "pool_vc": ("e_I", "e_s", "e_Ci", "e_pool"),
+    "pool_cc": ("e_V", "e_Ci", "e_pool"),
+}
+"""Metrics of the ion-pool protocols (``validation/neuron/ion``)."""
 PROTOCOL_METRICS = {
     **{name: ("e_V",) for name in CURRENT_CLAMP_PROTOCOLS},
     **{name: ("e_I", "e_s") for name in VOLTAGE_CLAMP_PROTOCOLS},
+    **POOL_PROTOCOL_METRICS,
 }
 """Metrics asserted for each protocol."""
 
@@ -95,7 +105,8 @@ class ToleranceEntry:
 
     ``limits`` raises the listed metrics above T0; the protocol's other
     metrics keep their T0 limit. ``section`` is the known-differences heading
-    that explains the ``deviation_class`` (``"c"`` or ``"d"``).
+    that explains the ``deviation_class`` (``"c"`` or ``"d"``). Two entries of
+    one configuration and protocol, for two causes, list different metrics.
     """
 
     config: str
@@ -130,30 +141,30 @@ class ToleranceTable:
     """Look up the limit of a metric for a configuration and protocol."""
 
     def __init__(self, entries: Iterable[ToleranceEntry]):
-        self._entries: dict[tuple[str, str], ToleranceEntry] = {}
-        for entry in entries:
-            key = (entry.config, entry.protocol)
-            if key in self._entries:
-                raise ValueError(f"duplicate tolerance entry for {key!r}.")
-            self._entries[key] = entry
+        self._entries = tuple(entries)
+        self._limits: dict[tuple[str, str, str], ToleranceEntry] = {}
+        for entry in self._entries:
+            for metric in entry.limits:
+                key = (entry.config, entry.protocol, metric)
+                if key in self._limits:
+                    raise ValueError(f"duplicate tolerance entry for {key!r}.")
+                self._limits[key] = entry
 
     @property
     def entries(self) -> tuple[ToleranceEntry, ...]:
-        return tuple(self._entries.values())
+        return self._entries
 
     def tier(self, config: str, protocol: str) -> str:
-        return "T1" if (config, protocol) in self._entries else "T0"
+        return "T1" if any((e.config, e.protocol) == (config, protocol) for e in self._entries) else "T0"
 
     def limit(self, config: str, protocol: str, metric: str) -> float:
         """Return the limit; T0 unless an entry raises it."""
         if metric not in PROTOCOL_METRICS.get(protocol, ()):
             raise ValueError(f"metric {metric!r} does not apply to protocol {protocol!r}.")
-        entry = self._entries.get((config, protocol))
-        if entry is not None and metric in entry.limits:
-            return float(entry.limits[metric])
-        return T0_LIMITS[metric]
+        entry = self._limits.get((config, protocol, metric))
+        return T0_LIMITS[metric] if entry is None else float(entry.limits[metric])
 
     def missing_sections(self, document: str) -> list[str]:
         """Return the entry sections that are not headings of ``document`` (Markdown)."""
         headings = {match.strip() for match in re.findall(r"^#+\s+(.+?)\s*#*$", document, flags=re.MULTILINE)}
-        return sorted({entry.section for entry in self._entries.values()} - headings)
+        return sorted({entry.section for entry in self._entries} - headings)

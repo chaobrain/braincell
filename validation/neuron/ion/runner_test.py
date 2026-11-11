@@ -1,0 +1,111 @@
+# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+"""Fast checks of the ion-pool configurations, templates and tolerance table (no NEURON run)."""
+
+from pathlib import Path
+import unittest
+from unittest import mock
+
+import numpy as np
+
+from validation.neuron import _clamp
+from validation.neuron._tolerance import POOL_PROTOCOL_METRICS
+from validation.neuron.ion import runner
+from validation.neuron.ion.tolerances import KNOWN_DIFFERENCES, TABLE
+
+NOTEBOOK_POOLS = {
+    "CdpStC_MA2020_GoC",
+    "CdpCAM_MA2024_PC",
+    "CdpHVA_SU2015_DCN",
+    "ToyCaBindingKinetic_SU2015_DCN",
+    "ToyCaBindingSourceKinetic_SU2015_DCN",
+    "ToyCaPumpFactorKinetic_SU2015_DCN",
+    "ToyDiamFactorKinetic_SU2015_DCN",
+}
+"""The pools of the ion notebooks these configurations replaced."""
+
+
+def _cases():
+    for config in runner.config_names():
+        for template in runner.load_config(config)["templates"]:
+            yield runner.load_case(config, Path(template).stem)
+
+
+class PoolConfigurationTest(unittest.TestCase):
+    def test_every_configuration_resolves_under_its_templates(self):
+        from braincell.mech import get_registry
+
+        registry, cases = get_registry(), list(_cases())
+        self.assertEqual(len(runner.config_names()), 11)
+        self.assertEqual(len(cases), 22)
+        for case in cases:
+            with self.subTest(config=case.config, protocol=case.protocol):
+                self.assertTrue(all(path.is_file() for path in case.mod_files))
+                registry.get("ion", case.pool[1])
+                self.assertEqual(case.channel is None, case.protocol == "pool_zero_current")
+                if case.channel is not None:
+                    registry.get("channel", case.channel.braincell)
+                    self.assertTrue(case.channel.gates)
+                    # A channel with zero conductance compares nothing (L32).
+                    self.assertTrue(case.channel.params and all(p.value > 0 for p in case.channel.params))
+                self.assertEqual(case.n_steps * case.simulation["dt_ms"], case.simulation["duration_ms"])
+
+    def test_the_notebook_pools_are_covered_with_a_relaxation(self):
+        relaxing = {case.pool[1] for case in _cases() if case.protocol == "pool_zero_current"}
+        self.assertLessEqual(NOTEBOOK_POOLS, relaxing)
+
+    def test_unknown_names_and_protocols_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "does not list"):
+            runner.load_case("goc_ma2020/cdpstc_ma20_goc_cav3p1", "pool_zero_current")
+        raw = runner.load_config("goc_ma2020/cdpstc_ma20_goc")
+        mapping = raw["mapping"]
+        broken = {
+            "needs a channel": {**raw, "mapping": {k: v for k, v in mapping.items() if k != "impl_name"}},
+            "unknown unit": {
+                **raw,
+                "mapping": {**mapping, "channel_params": {"g_max_S_cm2": {**mapping["channel_params"]["g_max_S_cm2"], "unit": "mS"}}},
+            },
+            "no mapping": {**raw, "defaults": {"channel_params": {"gbar": 1.0}}},
+        }
+        for message, config in broken.items():
+            with self.subTest(message), mock.patch.object(runner, "load_config", lambda name, config=config: config):
+                with self.assertRaisesRegex(ValueError, message):
+                    runner.load_case("goc_ma2020/cdpstc_ma20_goc", "pool_vc")
+
+    def test_protocol_commands(self):
+        vc = runner.load_case("goc_ma2020/cdpstc_ma20_goc", "pool_vc")
+        (command,) = _clamp.protocol_commands(vc.voltage_clamp, vc.simulation["dt_ms"])
+        self.assertEqual(command.size, 2000)
+        np.testing.assert_array_equal(command[[0, 199, 200, 999, 1000, 1999]], [-70, -70, -10, -10, -70, -70])
+        zero = runner.load_case("goc_ma2020/cdpstc_ma20_goc", "pool_zero_current")
+        (held,) = _clamp.protocol_commands(zero.voltage_clamp, zero.simulation["dt_ms"])
+        np.testing.assert_array_equal(held, np.full(1600, -70.0))
+        cc = runner.load_case("goc_ma2020/cdpstc_ma20_goc_cav2p1_ri21_sc", "pool_cc")
+        self.assertEqual(dict(cc.current_clamp), {"delay_ms": 5.0, "dur_ms": 20.0, "amp_nA": 0.5})
+
+
+class PoolToleranceTableTest(unittest.TestCase):
+    def test_entries_name_listed_protocols_and_documented_causes(self):
+        listed = {(case.config, case.protocol) for case in _cases()}
+        for entry in TABLE.entries:
+            with self.subTest(config=entry.config, protocol=entry.protocol):
+                self.assertIn((entry.config, entry.protocol), listed)
+                self.assertIn(entry.protocol, POOL_PROTOCOL_METRICS)
+        self.assertEqual(TABLE.missing_sections(KNOWN_DIFFERENCES.read_text()), [])
+
+
+if __name__ == "__main__":
+    unittest.main()

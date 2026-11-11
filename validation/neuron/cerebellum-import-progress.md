@@ -23,7 +23,7 @@ move on 2026-09-07 did not rerun comparisons or advance their validation status.
 
 | Work | Location |
 | --- | --- |
-| Calcium-pool and ion comparisons | [Ion examples](ion/README.md) |
+| Calcium-pool and ion comparisons | [Ion pool configurations and runner](ion/README.md) |
 | Channel comparisons | [Channel examples](channel_no_conc/README.md) |
 | Whole-cell comparisons | [Cell examples](cell/README.md) |
 | PC MA2024 validation target | [PC comparison notebook](cell/pc_ma2024/run.ipynb) |

@@ -1,0 +1,16 @@
+{
+  "meta": {"label": "PC CdpCAM MA24 pool with Cav3.2 MA24"},
+  "identity": {
+    "mod_files": ["cerebellum/pc_ma2024/mechanisms/ion/CdpCAM_MA24_PC.mod", "cerebellum/pc_ma2024/mechanisms/channel/Cav3p2_MA24_PC.mod"]
+  },
+  "defaults": {"channel_params": {"g_max_S_cm2": 0.0008}},
+  "mapping": {
+    "pool_name": {"neuron": "CdpCAM_MA24_PC", "braincell": "CdpCAM_MA2024_PC"},
+    "ci_state": "ca",
+    "pool_states": {"common": ["mg", "Buff2", "Buff2_ca", "CB", "CB_f_ca", "CB_ca_s", "CB_ca_ca", "PV", "PV_ca", "PV_mg", "pump", "CAM0", "CAM1C", "CAM2C", "CAM1N2C", "CAM1N", "CAM2N", "CAM2N1C", "CAM1C1N", "CAM4"], "units": {"pump": "mol/cm2"}},
+    "impl_name": {"neuron": "Cav3p2_MA24_PC", "braincell": "Cav3p2_MA2024_PC"},
+    "gate_names": {"common": ["m", "h"]},
+    "channel_params": {"g_max_S_cm2": {"neuron": "gcabar", "braincell": "g_max", "unit": "S/cm2"}}
+  },
+  "templates": ["../../templates/pool_vc.json", "../../templates/pool_cc.json"]
+}

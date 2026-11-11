@@ -1,0 +1,19 @@
+{
+  "meta": {"label": "DCN CdpHVA SU15 pool with CaHVA SU15 (GHK)"},
+  "identity": {
+    "mod_files": ["cerebellum/dcn_su2015/mechanisms/ion/CdpHVA_SU15_DCN.mod", "cerebellum/dcn_su2015/mechanisms/channel/CaHVA_SU15_DCN.mod"]
+  },
+  "defaults": {
+    "simulation": {"temperature_celsius": 36.0},
+    "channel_params": {"perm_cm_s": 7.5e-06},
+    "current_clamp": {"amp_nA": 0.05},
+    "initial_states": {"Ci": 8e-05}
+  },
+  "mapping": {
+    "pool_name": {"neuron": "CdpHVA_SU15_DCN", "braincell": "CdpHVA_SU2015_DCN"},
+    "impl_name": {"neuron": "CaHVA_SU15_DCN", "braincell": "CaHVA_SU2015_DCN"},
+    "gate_names": {"common": ["m"]},
+    "channel_params": {"perm_cm_s": {"neuron": "perm", "braincell": "perm", "unit": "cm/s"}}
+  },
+  "templates": ["../../templates/pool_zero_current.json", "../../templates/pool_vc.json", "../../templates/pool_cc.json"]
+}

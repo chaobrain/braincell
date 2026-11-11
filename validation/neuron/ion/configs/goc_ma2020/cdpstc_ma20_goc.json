@@ -1,0 +1,19 @@
+{
+  "meta": {"label": "GoC CdpStC MA20 pool with CaHVA MA20"},
+  "identity": {
+    "mod_files": ["cerebellum/goc_ma2020/mechanisms/ion/CdpStC_MA20_GoC.mod", "cerebellum/goc_ma2020/mechanisms/channel/CaHVA_MA20_GoC.mod"]
+  },
+  "defaults": {"channel_params": {"g_max_S_cm2": 0.00046}},
+  "mapping": {
+    "pool_name": {"neuron": "CdpStC_MA20_GoC", "braincell": "CdpStC_MA2020_GoC"},
+    "ci_state": "ca",
+    "pool_states": {
+      "common": ["mg", "Buff2", "Buff2_ca", "PV", "PV_ca", "PV_mg", "pump", "CAM0", "CAM1C", "CAM2C", "CAM1N2C", "CAM1N", "CAM2N", "CAM2N1C", "CAM1C1N", "CAM4"],
+      "units": {"pump": "mol/cm2"}
+    },
+    "impl_name": {"neuron": "CaHVA_MA20_GoC", "braincell": "CaHVA_MA2020_GoC"},
+    "gate_names": {"common": ["s", "u"]},
+    "channel_params": {"g_max_S_cm2": {"neuron": "gcabar", "braincell": "g_max", "unit": "S/cm2"}}
+  },
+  "templates": ["../../templates/pool_zero_current.json", "../../templates/pool_vc.json", "../../templates/pool_cc.json"]
+}

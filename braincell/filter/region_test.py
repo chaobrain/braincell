@@ -18,18 +18,23 @@
 import unittest
 
 import brainunit as u
+import numpy as np
 
+import braincell
 from braincell import Branch, Morphology
-from braincell.filter._testing import make_apical, make_soma
+from braincell.filter._testing import fixture_morphologies, make_apical, make_soma
 from braincell.filter import (
+    AllRegion,
     BranchInFilter,
     BranchRangeFilter,
     BranchSlice,
     RegionSetOp,
+    SubtreeRegion,
     branch_in,
     branch_range,
 )
 from braincell.filter import region as region_mod
+from braincell.morph._testing import make_tree_t
 
 
 def _soma_dend_axon_tree(*, with_tuft: bool = False) -> Morphology:
@@ -357,6 +362,158 @@ class RegionExprOperatorsRejectNonRegionTest(unittest.TestCase):
         region = BranchSlice(branch_index=0, prox=0.0, dist=1.0)
         with self.assertRaises(TypeError):
             _ = region - [1, 2, 3]
+
+
+def _from_points(points, radii, type_name: str) -> Branch:
+    return Branch.from_points(
+        points=np.asarray(points, dtype=float) * u.um,
+        radii=np.asarray(radii, dtype=float) * u.um,
+        type=type_name,
+    )
+
+
+def _tree_b() -> Morphology:
+    """Seven branches with a fork, a reversed child and children on both of its ends.
+
+    ``d2`` hangs on ``dend``'s distal end by its x=1 end (``child_x=1``), so
+    its x=0 end is the tip; ``d2tip`` attaches at that tip and ``d2side`` at
+    the end facing the parent. Default order: soma, dend, d1, d2, d2tip,
+    axon, d2side (indices 0-6).
+    """
+    tree = Morphology.from_root(_from_points([[0, 0, 0], [20, 0, 0]], [5, 5], "soma"), name="soma")
+    tree.attach(
+        parent="soma", child_name="dend", child_branch=_from_points([[20, 0, 0], [80, 0, 0]], [2, 1], "basal_dendrite")
+    )
+    tree.attach(
+        parent="dend",
+        child_name="d1",
+        child_branch=_from_points([[80, 0, 0], [120, 30, 0]], [1, 0.5], "basal_dendrite"),
+    )
+    tree.attach(
+        parent="dend",
+        child_name="d2",
+        child_x=1.0,
+        child_branch=_from_points([[120, -30, 0], [80, 0, 0]], [0.5, 1], "basal_dendrite"),
+    )
+    tree.attach(
+        parent="d2",
+        child_name="d2tip",
+        parent_x=0.0,
+        child_branch=_from_points([[120, -30, 0], [150, -30, 0]], [0.5, 0.4], "basal_dendrite"),
+    )
+    tree.attach(
+        parent="soma",
+        child_name="axon",
+        parent_x=0.0,
+        child_branch=_from_points([[0, 0, 0], [-30, 0, 0]], [0.5, 0.5], "axon"),
+    )
+    tree.attach(
+        parent="d2",
+        child_name="d2side",
+        parent_x=1.0,
+        child_branch=_from_points([[80, 0, 0], [80, 20, 0]], [0.5, 0.5], "basal_dendrite"),
+    )
+    return tree
+
+
+def _leak(name: str = "IL"):
+    return braincell.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV, name=name)
+
+
+class SubtreeRegionTest(unittest.TestCase):
+    """MORPH-9a: a branch and all its topological descendants, each whole."""
+
+    def setUp(self) -> None:
+        self.tree = _tree_b()
+
+    def test_tree_b_layout_is_as_documented(self) -> None:
+        self.assertEqual(
+            [
+                (b.name, None if b.parent is None else (b.parent.name, b.parent_x, b.child_x))
+                for b in self.tree.branches
+            ],
+            [
+                ("soma", None),
+                ("dend", ("soma", 1.0, 0.0)),
+                ("d1", ("dend", 1.0, 0.0)),
+                ("d2", ("dend", 1.0, 1.0)),
+                ("d2tip", ("d2", 0.0, 0.0)),
+                ("axon", ("soma", 0.0, 0.0)),
+                ("d2side", ("d2", 1.0, 0.0)),
+            ],
+        )
+
+    def test_selects_the_root_and_every_descendant_whatever_child_x(self) -> None:
+        select = lambda expr: self.tree.select(expr).intervals  # noqa: E731
+        self.assertEqual(
+            select(SubtreeRegion("dend")),
+            ((1, 0.0, 1.0), (2, 0.0, 1.0), (3, 0.0, 1.0), (4, 0.0, 1.0), (6, 0.0, 1.0)),
+        )
+        self.assertEqual(select(SubtreeRegion("d2")), ((3, 0.0, 1.0), (4, 0.0, 1.0), (6, 0.0, 1.0)))
+        self.assertEqual(self.tree.select(SubtreeRegion(3)), self.tree.select(SubtreeRegion("d2")))
+        self.assertEqual(select(SubtreeRegion("d1")), ((2, 0.0, 1.0),))
+        self.assertEqual(select(SubtreeRegion("axon")), ((5, 0.0, 1.0),))
+        self.assertEqual(select(SubtreeRegion(np.int64(2))), ((2, 0.0, 1.0),))
+        self.assertEqual(self.tree.select(SubtreeRegion("soma")), self.tree.select(AllRegion()))
+
+    def test_a_partial_root_is_written_with_region_algebra(self) -> None:
+        self.assertEqual(
+            self.tree.select(SubtreeRegion("dend") - BranchSlice(1, 0.0, 0.5)).intervals,
+            ((1, 0.5, 1.0), (2, 0.0, 1.0), (3, 0.0, 1.0), (4, 0.0, 1.0), (6, 0.0, 1.0)),
+        )
+
+    def test_selects_the_branches_morphology_subtree_copies(self) -> None:
+        fixtures = fixture_morphologies()
+        self.assertGreaterEqual(len(fixtures), 15)
+        for name, tree in fixtures:
+            with self.subTest(name):
+                for branch in tree.branches:
+                    selected = {tree.branches[i].name for i, _, _ in tree.select(SubtreeRegion(branch.name)).intervals}
+                    copied = {b.name for b in tree.subtree(branch.name).branches}
+                    self.assertEqual(selected, copied, branch.name)
+
+    def test_editing_the_copy_leaves_the_selection_alone(self) -> None:
+        copy = self.tree.subtree("d2")
+        self.assertEqual([b.name for b in copy.branches], ["d2", "d2tip", "d2side"])
+        before = self.tree.select(SubtreeRegion("d2"))
+        copy.remove("d2tip")
+        self.assertEqual(self.tree.select(SubtreeRegion("d2")), before)
+
+    def test_construction_rejects_roots_that_are_not_a_name_or_an_index(self) -> None:
+        for root in (True, 1.0, None):
+            with self.subTest(root=root), self.assertRaisesRegex(TypeError, "branch name .str. or index"):
+                SubtreeRegion(root)
+        with self.assertRaisesRegex(TypeError, r"SubtreeRegion\('dend'\)"):
+            SubtreeRegion(self.tree.dend)
+
+    def test_unknown_roots_raise_at_select_and_at_paint(self) -> None:
+        cases = (
+            ("nope", KeyError, "nope"),
+            (99, IndexError, r"Branch index 99 is out of range \[0, 7\)"),
+            (-1, IndexError, r"Branch index -1 is out of range \[0, 7\)"),
+        )
+        for root, error, message in cases:
+            expr = SubtreeRegion(root)
+            with self.subTest(root=root, step="select"), self.assertRaisesRegex(error, message):
+                _tree_b().select(expr)
+            with self.subTest(root=root, step="paint"), self.assertRaisesRegex(error, message):
+                braincell.Cell(_tree_b(), cv_policy=braincell.CVPerBranch()).paint(expr, _leak())
+
+    def test_a_cell_paints_exactly_the_subtree(self) -> None:
+        def painted(region):
+            cell = braincell.Cell(make_tree_t(), cv_policy=braincell.CVPerBranch())
+            cell.paint(region, braincell.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-70.0 * u.mV, name="leak"))
+            cell.init_state()
+            names = ("soma", "dend", "d1", "d2", "axon")
+            return len(cell.channels), {n: cell.on(branch_in("name", [n])).channels.names for n in names}
+
+        count, per_branch = painted(SubtreeRegion("dend"))
+        self.assertEqual(count, 3)
+        self.assertEqual(
+            per_branch,
+            {"soma": (), "dend": ("leak",), "d1": ("leak",), "d2": ("leak",), "axon": ()},
+        )
+        self.assertEqual((count, per_branch), painted(branch_in("name", ["dend", "d1", "d2"])))
 
 
 class RegionModuleAllTest(unittest.TestCase):

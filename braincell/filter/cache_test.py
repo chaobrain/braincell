@@ -25,7 +25,7 @@ Three things are live and tested here:
   different morphology, or the same morphology after any edit; every row
   of the morphology edit table is checked against a cold rebuild.
 
-The reserved surface is pinned too, so implementing one of the five
+The reserved surface is pinned too, so implementing one of the four
 without wiring the cache up fails loudly.
 """
 
@@ -52,6 +52,7 @@ from braincell.morph._testing import (
     stretched,
 )
 from braincell.filter.region import (
+    EmptyRegion,
     EuclideanDistanceRegion,
     RadiusRangeRegion,
     RegionExpr,
@@ -290,6 +291,57 @@ class SelectionCacheEditTableTest(unittest.TestCase):
                 tree.select(expr, cache=cache)
                 self.assertGreaterEqual(len(cache._masks), 2)
 
+    def test_the_subtree_entries_change_with_the_edits_that_move_branches(self) -> None:
+        # Each subtree entry of the battery must change under some rows, or
+        # its freshness check above could never fail.
+        battery = dict(SELECTION_BATTERY)
+        expected = {
+            "subtree by index": {
+                "attach a leaf at a terminal",
+                "remove the leaf d2",
+                "remove the subtree at dend",
+                "graft a two-branch tree onto d1",
+                "reattach d2 under the axon",
+            },
+            "subtree by name": {
+                "attach by attribute",
+                "remove the leaf d2",
+                "remove the subtree at dend",
+                "reattach d2 under the axon",
+            },
+        }
+        for label, rows in expected.items():
+            changed = set()
+            for case in EDIT_CASES:
+                before = make_tree_t().select(battery[label]).intervals
+                edited = make_tree_t()
+                case.edit(edited)
+                if edited.select(battery[label]).intervals != before:
+                    changed.add(case.name)
+            with self.subTest(label):
+                self.assertTrue(rows <= {case.name for case in EDIT_CASES}, rows)
+                self.assertEqual(changed, rows)
+
+    def test_a_warm_subtree_follows_an_attach_under_it(self) -> None:
+        # Tree T, a leaf attached under d1 (inside dend's subtree): the warm
+        # cache must not replay the three-branch subtree from before the edit.
+        tree = make_tree_t()
+        cache = SelectionCache()
+        expr = SubtreeRegion("dend") | EmptyRegion()
+        self.assertEqual(tree.select(expr, cache=cache).intervals, ((1, 0.0, 1.0), (2, 0.0, 1.0), (3, 0.0, 1.0)))
+
+        tip = Branch.from_points(
+            points=np.array([[150.0, 30, 5], [170, 50, 5]]) * u.um,
+            radii=np.array([0.5, 0.5]) * u.um,
+            type="apical_dendrite",
+        )
+        tree.attach(parent="d1", child_branch=tip, child_name="tip")
+
+        self.assertEqual(
+            tree.select(expr, cache=cache).intervals,
+            ((1, 0.0, 1.0), (2, 0.0, 1.0), (3, 0.0, 1.0), (5, 0.0, 1.0)),
+        )
+
     def test_a_warm_cache_follows_an_in_place_replacement(self) -> None:
         # Tree S, dend stretched from 100 um to 200 um through the edit gate.
         # Skipping the gate, the same cache returns the warm-up rows.
@@ -308,7 +360,7 @@ class SelectionCacheEditTableTest(unittest.TestCase):
 
 
 class ReservedCacheConsumersTest(unittest.TestCase):
-    """The five expressions that would populate the cache are unimplemented.
+    """The four expressions that would populate the cache are unimplemented.
 
     When any of them grows a real implementation it must also start filling
     the matching ``SelectionCache`` dict — these assertions turn that into a
@@ -329,10 +381,6 @@ class ReservedCacheConsumersTest(unittest.TestCase):
     def test_euclidean_distance_region_is_reserved(self) -> None:
         with self.assertRaises(NotImplementedError):
             EuclideanDistanceRegion(minimum=0.0 * u.um, maximum=10.0 * u.um).evaluate(self.tree)
-
-    def test_subtree_region_is_reserved(self) -> None:
-        with self.assertRaises(NotImplementedError):
-            SubtreeRegion(root_branch_index=0).evaluate(self.tree)
 
     def test_step_samples_locset_is_reserved(self) -> None:
         with self.assertRaises(NotImplementedError):

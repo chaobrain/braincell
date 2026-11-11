@@ -1914,6 +1914,8 @@ class Morphology:
         See Also
         --------
         clone : Copy the whole tree, auto-naming counters included.
+        braincell.filter.SubtreeRegion : Select the same branches on this
+            tree, e.g. to ``paint`` them, without copying.
 
         Notes
         -----

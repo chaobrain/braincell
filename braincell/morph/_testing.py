@@ -474,7 +474,7 @@ def _stretch_dend_bypassing_the_gate(morpho: Morphology) -> None:
     object.__setattr__(morpho.dend, "_branch", stretched(morpho.dend.branch))
 
 
-#: One row per kind of edit; MORPH-2, MORPH-3 and MORPH-9 add theirs here.
+#: One row per kind of edit; MORPH-2 and MORPH-3 added theirs here.
 EDIT_CASES: tuple[EditCase, ...] = (
     EditCase("attach a leaf at a terminal", "append", _attach_at_terminal),
     EditCase("attach at the soma's proximal end", "append", _attach_at_soma_proximal_end),

@@ -51,6 +51,7 @@ from braincell._discretization.mechanism import (
     default_paint_rules,
     merge_paint_rules,
     merge_place_rules,
+    missing_branch_name,
     normalize_paint_rules,
     normalize_place_rule,
 )
@@ -311,6 +312,23 @@ class RegionCacheTest(unittest.TestCase):
 # =============================================================================
 # Mechanism lowering
 # =============================================================================
+
+
+class MissingBranchNameTest(unittest.TestCase):
+    """Only a ``KeyError`` for a branch name the tree lacks is claimed; any other is re-raised as it is."""
+
+    def test_a_name_the_tree_does_not_have(self) -> None:
+        morpho = make_two_branch_morpho()
+        names = [branch.name for branch in morpho.branches]
+        self.assertEqual(missing_branch_name(morpho, KeyError("nope")), "nope")
+        for label, error in (
+            ("a name the tree has", KeyError(names[-1])),
+            ("not a str", KeyError(3)),
+            ("several arguments", KeyError("nope", "more")),
+            ("no argument", KeyError()),
+        ):
+            with self.subTest(label):
+                self.assertIsNone(missing_branch_name(morpho, error))
 
 
 class CoverageFractionTest(unittest.TestCase):

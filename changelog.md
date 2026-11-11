@@ -80,6 +80,30 @@
 
 ### New Features
 
+- **`Morphology.principal_axes()` and `Morphology.align_principal_axes()`
+  find and apply a tree's principal axes; `braincell.morph.PrincipalAxes`
+  holds the result** (MORPH-3c). `principal_axes()` returns `origin`, the
+  length-weighted centroid of the soma (all `"soma"` branches together, or
+  the root branch when there is none), `axes`, a `(3, 3)` array whose rows
+  are unit vectors by decreasing variance, and `variances` in um². Every
+  segment counts as a uniform line weighted by its length, so splitting
+  segments or resampling a reconstruction does not change the result. The
+  first two axes point to the side of the soma where the tree's centroid
+  lies (the largest component is made positive when there is no such side),
+  and the third is their cross product, so aligning never mirrors a cell.
+  Where variances are equal, as for a tree on one line, the axes in their
+  plane come from x, y and z in that order. `align_principal_axes()` moves
+  every point `p` to `axes @ (p - origin)` in one edit: the soma's centroid
+  goes to the origin and the axes to x, y and z, whatever the tree's pose
+  before. Both need 3-D points on every branch and otherwise raise
+  `ValueError` naming the branches without; `principal_axes()` also works on
+  a frozen tree. The morphology tutorial has a new section, "Transform a
+  tree", covering `translate`, `rotate`, `scale`, both methods and closing a
+  gap at an edited joint, and the morphology concept page no longer calls
+  `Morphology` immutable. `principal_axes` and `align_principal_axes` are now
+  reserved branch names: a checkpoint that holds a branch with either name no
+  longer loads. No branch in this repository uses them.
+
 - **`Morphology.scale(factor, *, origin=None, subtree=None)` scales a tree by
   one factor in every direction** (MORPH-3b). Segment lengths, both radii and
   the 3-D points (about `origin`, `(0, 0, 0)` um unless given) are multiplied

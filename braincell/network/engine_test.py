@@ -269,11 +269,12 @@ class SplitNetworkRunTest(unittest.TestCase):
         self._check(dict(start=0.25 * u.ms, interval=0.25 * u.ms, number=19), split_steps(200, points))
 
 
-
 def _resting_one_cv_cell(kind, solver, pop_size=2):
     """A soma 20 um x 10 um with a leak at its reversal, -65 mV."""
     if kind == "lumped":
-        cell = braincell.Cell.point(pop_size, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, solver=solver)
+        cell = braincell.Cell.point(
+            pop_size, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, solver=solver
+        )
     else:
         morphology = braincell.Morphology.from_soma(length=20.0 * u.um, radius=10.0 * u.um)
         cell = braincell.Cell(

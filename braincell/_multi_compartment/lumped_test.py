@@ -1252,7 +1252,6 @@ class ExternalInputOnCableCellTest(unittest.TestCase):
         self.assertGreater(float(np.min(cell.V.value.to_decimal(u.mV))), -60.0)
 
 
-
 # ---------------------------------------------------------------------------
 # CELL-33: delta inputs -- add_delta_input and brainpy DeltaProj.
 # ---------------------------------------------------------------------------

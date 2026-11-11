@@ -795,7 +795,6 @@ class StaggeredFloat32AccumulationTest(unittest.TestCase):
                 self.assertAlmostEqual(self.f64[str(dt)]["V"], V, delta=1e-10)
 
 
-
 class StaggeredDeltaInputTest(unittest.TestCase):
     """CELL-33: the point-tree steps add delta inputs last, as ``post_integral`` does."""
 

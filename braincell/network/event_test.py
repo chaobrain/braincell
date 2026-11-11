@@ -37,7 +37,7 @@ from braincell.network.event import (
     _resolve_cell_location_cv,
 )
 from braincell.filter import RootLocation, at
-from braincell.morph._testing import make_tree_u, simulate_remove_leaf
+from braincell.morph._testing import make_tree_u
 
 
 def _two_cv_population(size=2):
@@ -542,7 +542,7 @@ class VoltageCrossingIndexHeldLocationTest(unittest.TestCase):
         detector = VoltageCrossingSource(cell, location=at("axon", 0.5).evaluate(morpho))
         np.testing.assert_array_equal(detector.cv_id, [2])
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         pattern = r"VoltageCrossingSource location .*LocsetMask.*revision \d+.*at\(\"axon\", 0\.5\)"
         with self.assertRaisesRegex(RuntimeError, pattern):
@@ -555,10 +555,30 @@ class VoltageCrossingIndexHeldLocationTest(unittest.TestCase):
         cell = Cell(morpho)
         detector = VoltageCrossingSource(cell, location=at("axon", 0.5))
 
-        simulate_remove_leaf(morpho, "dend")
+        morpho.remove("dend")
 
         (cv_id,) = detector.cv_id
         self.assertEqual(morpho.branch(index=cell.cvs[cv_id].branch_id).name, "axon")
+
+    def test_an_expression_on_a_removed_branch_names_the_detector(self) -> None:
+        morpho = make_tree_u()
+        cell = Cell(morpho)
+        detector = VoltageCrossingSource(cell, location=at("dend", 0.5))
+
+        morpho.remove("dend")
+
+        pattern = r"VoltageCrossingSource location AtLocation\(branch='dend'.*names branch 'dend'.*does not have"
+        with self.assertRaisesRegex(KeyError, pattern):
+            detector.cv_id
+        # Reusing the name gives the expression a branch to follow again.
+        morpho.soma.dend = Branch.from_lengths(lengths=[40.0] * u.um, radii=[1.0, 1.0] * u.um, type="basal_dendrite")
+        (cv_id,) = detector.cv_id
+        self.assertEqual(morpho.branch(index=cell.cvs[cv_id].branch_id).name, "dend")
+
+    def test_an_unknown_branch_name_names_the_detector_at_construction(self) -> None:
+        cell = Cell(make_tree_u())
+        with self.assertRaisesRegex(KeyError, r"VoltageCrossingSource location .*names branch 'dned'"):
+            VoltageCrossingSource(cell, location=at("dned", 0.5))
 
     def test_a_mask_location_survives_an_append(self) -> None:
         morpho = make_tree_u()
@@ -576,7 +596,7 @@ class VoltageCrossingIndexHeldLocationTest(unittest.TestCase):
         detector = VoltageCrossingSource(cell, location=at("axon", 0.5).evaluate(first))
         cell.morphology = make_tree_u()
 
-        simulate_remove_leaf(first, "dend")
+        first.remove("dend")
 
         np.testing.assert_array_equal(detector.cv_id, [2])
 

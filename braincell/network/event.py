@@ -608,7 +608,7 @@ class VoltageCrossingSource(EventSource):
             location = RootLocation(0.5)
         if not hasattr(location, "evaluate") and not (hasattr(location, "branch_id") and hasattr(location, "branch_x")):
             raise TypeError("VoltageCrossingSource.location must be a location expression or resolved locset mask.")
-        location_cv_ids = _resolve_cell_location_cvs(root, location)
+        location_cv_ids = _resolve_detector_location_cvs(root, location)
         if location_cv_ids.size == 0:
             raise ValueError("VoltageCrossingSource.location must resolve to at least one morphology location.")
         if direction not in {"rising", "falling"}:
@@ -705,7 +705,7 @@ class VoltageCrossingSource(EventSource):
                     "replaced, so they no longer name the same branches. Recreate the detector with a location "
                     'expression such as at("axon", 0.5).'
                 )
-            cv_ids = _resolve_cell_location_cvs(self.cells, self.location)
+            cv_ids = _resolve_detector_location_cvs(self.cells, self.location)
             n_location = int(np.max(self._location_indices)) + 1
             if len(cv_ids) != n_location:
                 raise RuntimeError("Detector location count changed; recreate the detector and its connections.")
@@ -832,6 +832,23 @@ def _resolve_cell_location_cv(cell, location) -> int:
     if cv_ids.size != 1:
         raise ValueError(f"Event source location must resolve to one point, got {cv_ids.size!r}.")
     return int(cv_ids[0])
+
+
+def _resolve_detector_location_cvs(cell, location) -> np.ndarray:
+    """:func:`_resolve_cell_location_cvs` for a detector, naming it when its branch is gone."""
+    from braincell._discretization.mechanism import missing_branch_name
+
+    try:
+        return _resolve_cell_location_cvs(cell, location)
+    except KeyError as error:
+        name = missing_branch_name(cell.morpho, error)
+        if name is None:
+            raise
+        raise KeyError(
+            f"VoltageCrossingSource location {location!r} names branch {name!r}, which the morphology "
+            f"(revision {cell.morpho.revision}) does not have: an edit removed it, or it never existed. "
+            f"Attach a branch named {name!r} again, or recreate the detector on a branch the tree has."
+        ) from error
 
 
 def _resolve_cell_location_cvs(cell, location) -> np.ndarray:

@@ -80,6 +80,27 @@
 
 ### New Features
 
+- **`Morphology.remove(target)` removes a branch and all its descendants**
+  (MORPH-2b). It returns the removed part as a new tree, equal to what
+  `subtree(target)` returned before the call, so it can be inspected or
+  attached elsewhere. `target` is a branch name or a view of a branch in the
+  tree. The root cannot be removed (`ValueError`; copy the part to keep with
+  `subtree(name)`), and a frozen tree raises `RuntimeError`; a call that
+  raises changes nothing. Views of the removed branches are detached: their
+  name and geometry stay readable, while `index`, `parent`, `children` and
+  attaching to them raise `RuntimeError`. Branches created after the removed
+  ones move down in default order, so a Cell input held by branch index (a
+  resolved `LocsetMask` given to `place`, a `CVPerBranchList` policy, a
+  `VoltageCrossingSource` at a `LocsetMask`) raises at the Cell's next
+  rebuild; a location expression such as `at("axon", 0.5)` is evaluated again
+  and follows the edit. The removed names are free again: a branch attached
+  under one of them is a new branch, and a held view of the old one stays
+  detached. The auto-naming counters do not move back. `del
+  morpho.soma.dend` still raises `AttributeError`, and now says to call
+  `Morphology.remove("dend")`. `remove` is now a reserved branch name: a
+  checkpoint that holds a branch named `remove` no longer loads. No branch in
+  this repository uses that name.
+
 - **`Morphology.clone()` and `Morphology.subtree(target)`** (MORPH-2a).
   `tree.clone()` returns an independent copy that compares equal to `tree`
   and has the same auto-naming counters (`naming_state()`).
@@ -281,6 +302,17 @@
 
 ### Changes & Improvements
 
+- **A Cell declaration whose branch name is gone says which declaration it
+  is** (MORPH-2b). A location expression names its branch, such as
+  `at("dend", 0.5)` given to `Cell.place` or to `VoltageCrossingSource`, and
+  is evaluated again at every rebuild. Once `dend` was removed, the next grid
+  read raised a bare `KeyError: 'dend'`. It still raises `KeyError`, now
+  reading `Cell.place(...) at <file>:<line> locates its mechanisms on branch
+  'dend', which the morphology (revision N) does not have: ...` (or
+  `VoltageCrossingSource location ... names branch 'dend' ...`), with what to
+  do next. A misspelt name at `place` time gets the same message. Attaching a
+  new branch named `dend` makes the expression follow it.
+
 - **Deprecation warnings name their releases and point at the calling line**
   (API-7). Each braincell deprecation now reads `<name> is deprecated since
   braincell <since> and will be removed in braincell <removed_in>. Use
@@ -402,8 +434,8 @@
   replacing or transforming a branch in place, keep every existing index, so
   these declarations stay valid. A location expression such as
   `at("axon", 0.5)` is evaluated again at each rebuild and follows any edit.
-  Unedited morphologies behave as before. No public edit moves existing
-  indices yet; the check takes effect once branch removal lands.
+  Unedited morphologies behave as before. `Morphology.remove` is the first
+  public edit that moves them.
 
 - A current input registered with `Cell.add_current_input` after a
   `Cell.run` is now included by the next `run` (CELL-23). `run` reuses its

@@ -404,6 +404,67 @@ class NeuronDiffTest(unittest.TestCase):
         self.assertAlmostEqual(comparison["neuron"]["total_length"]["value"], 17.58960153598011, delta=1e-6)
         self.assertAlmostEqual(comparison["neuron"]["total_area"]["value"], 88.30454830410312, delta=1e-6)
 
+    def test_compare_asc_with_neuron_matches_untyped_tree(self) -> None:
+        # A tree with no type marker: NEURON makes it a dend_0 section and the
+        # importer a custom branch (MORPH-5c).
+        path = self._write_asc(
+            """
+            ("CellBody"
+              (CellBody)
+              (0 0 0 0)
+              (4 0 0 0)
+              (0 4 0 0)
+              (-4 0 0 0)
+            )
+            ( (Color Red)
+              (0 0 0 1)
+              (5 0 0 1)
+              (10 0 0 1)
+            )
+            ( (Dendrite)
+              (0 0 0 1)
+              (0 5 0 1)
+              (0 10 0 1)
+            )
+            """
+        )
+
+        comparison = compare_asc_with_neuron(path)
+
+        _assert_same_soma_orientation(self, comparison)
+        for metric_name in comparison["selected_metrics"]:
+            _assert_zero_diff(self, comparison, metric_name)
+        self.assertAlmostEqual(comparison["neuron"]["total_length"]["value"], 27.63631, delta=1e-5)
+        self.assertAlmostEqual(comparison["neuron"]["total_area"]["value"], 119.634685, delta=1e-6)
+
+    def test_compare_asc_with_neuron_matches_soma_contour_found_by_name(self) -> None:
+        # No (CellBody) marker: NEURON takes the contour named "Soma" as the
+        # soma, and so does the importer (MORPH-5c).
+        path = self._write_asc(
+            """
+            ("Soma"
+              (Closed)
+              (0 0 0 0)
+              (4 0 0 0)
+              (0 4 0 0)
+              (-4 0 0 0)
+            )
+            ( (Dendrite)
+              (0 0 0 1)
+              (0 5 0 1)
+              (0 10 0 1)
+            )
+            """
+        )
+
+        comparison = compare_asc_with_neuron(path)
+
+        _assert_same_soma_orientation(self, comparison)
+        for metric_name in comparison["selected_metrics"]:
+            _assert_zero_diff(self, comparison, metric_name)
+        self.assertAlmostEqual(comparison["neuron"]["total_length"]["value"], 17.63631, delta=1e-5)
+        self.assertAlmostEqual(comparison["neuron"]["total_area"]["value"], 88.218759, delta=1e-6)
+
     def test_supported_metric_names_no_longer_exposes_n_3d_points(self) -> None:
         metric_names = supported_metric_names()
         self.assertEqual(metric_names, supported_metric_names(include_optional=True))

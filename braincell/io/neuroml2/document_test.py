@@ -459,16 +459,17 @@ class ParseDocumentTest(_DocumentTestCase):
         self.assertTrue(document.segments[0].is_sphere)
 
     def test_ignored_elements_are_listed(self) -> None:
+        # One element name at each level: cell, morphology, segment, segmentGroup.
         path = self.write(
             f"{_HEADER}"
             '  <cell id="c">\n'
-            "    <notes>a cell</notes>\n"
+            '    <biophysicalProperties id="bio"><membraneProperties/></biophysicalProperties>\n'
             '    <morphology id="m">\n'
-            '      <segment id="0"><annotation/><proximal x="0" y="0" z="0" diameter="8"/>'
+            "      <notes>a morphology</notes>\n"
+            '      <segment id="0"><property tag="color" value="red"/><proximal x="0" y="0" z="0" diameter="8"/>'
             '<distal x="8" y="0" z="0" diameter="8"/></segment>\n'
-            '      <segmentGroup id="soma_group"><property tag="color" value="red"/><member segment="0"/></segmentGroup>\n'
+            '      <segmentGroup id="soma_group"><annotation/><member segment="0"/></segmentGroup>\n'
             "    </morphology>\n"
-            "    <biophysicalProperties id=\"bio\"><membraneProperties/></biophysicalProperties>\n"
             "  </cell>\n"
             "</neuroml>\n"
         )
@@ -476,6 +477,7 @@ class ParseDocumentTest(_DocumentTestCase):
         document = parse_document(path)
 
         self.assertEqual(document.ignored_elements, ("annotation", "biophysicalProperties", "notes", "property"))
+        self.assertEqual(document.segment_groups["soma_group"], (0,))
 
     def test_document_without_namespace_and_cell2capools(self) -> None:
         path = self.write(

@@ -49,7 +49,6 @@ from braincell.morph._testing import (
     SABOTAGE_CASES,
     make_tree_s,
     make_tree_t,
-    simulate_replace_geometry,
     stretched,
 )
 from braincell.filter.region import (
@@ -299,7 +298,7 @@ class SelectionCacheEditTableTest(unittest.TestCase):
         expr = UniformSamples(AllRegion(), 4) + at("soma", 0.5)
 
         warm = tree.select(expr, cache=cache)
-        simulate_replace_geometry(tree, "dend", stretched(tree.dend.branch))
+        tree.replace("dend", stretched(tree.dend.branch))
         edited = tree.select(expr, cache=cache)
 
         np.testing.assert_array_equal(warm.branch_id, [0, 1, 1, 2, 0])

@@ -80,6 +80,31 @@
 
 ### New Features
 
+- **`Morphology.translate(offset, *, subtree=None)` and
+  `Morphology.rotate(angle=None, axis=None, *, matrix=None, origin=None,
+  subtree=None)` move a tree in space** (MORPH-3a). Both change the tree in
+  place and return `None`; `clone()` first to keep the original. They move
+  only the 3-D points: segment lengths and radii are kept as they are, so
+  lengths, areas, volumes and path distances stay the same to the last bit,
+  and a declared Cell keeps its CV grid while its CV positions move. Names,
+  topology and branch indices do not change, so Cell inputs held by branch
+  index stay valid. `rotate` takes an angle with an angle unit
+  (`90 * u.degree`; a bare number raises `TypeError`) about `"x"`, `"y"`,
+  `"z"` or any direction, by the right-hand rule, or a `(3, 3)` rotation
+  matrix such as scipy's `Rotation.as_matrix()`; a reflection, a
+  non-orthonormal matrix and Euler angles are not accepted. Rotation is about
+  `origin`, `(0, 0, 0)` um unless given. `subtree=` limits either call to one
+  branch and its descendants, which closes the 3-D gap that `replace`,
+  `graft` or `reattach` can leave at a joint: `translate(gap,
+  subtree=child)` with `gap` the parent's joint point minus the child's first
+  point, after which `to_swc` succeeds. A branch without 3-D points (`Branch.from_lengths`) in
+  scope raises `ValueError` naming it. Cells have no position of their own;
+  the `position` fields of `CVContext` and `SamplingContext` equal
+  `local_position`, and transforming the morphology is how a cell is moved.
+  `translate` and `rotate` are now reserved branch names: a checkpoint that
+  holds a branch named `translate` or `rotate` no longer loads. No branch in
+  this repository uses either name.
+
 - **`Morphology.reattach(target, *, parent, parent_x=1.0, child_x=None)`
   moves a subtree within a tree** (MORPH-2e). `target` and all its
   descendants are cut from their parent and attached to `parent`; names,

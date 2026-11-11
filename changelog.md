@@ -190,6 +190,20 @@
   mechanism) with a fixed-concentration chloride ion and with `Cldif_JE2011`
   under current clamp.
 
+- **GABA_A synapse that reads and writes chloride, `GabaA_JE2011`** (MECH-32).
+  `braincell.synapse.GabaA_JE2011` (Jedlicka et al. 2011, `gabaA_Cl.mod`) is
+  an `Exp2Syn`-shaped conductance split between chloride (`1 - P`) and
+  bicarbonate (`P`, default 0.18); its `E_Cl` comes from the Cell's chloride
+  ion on the synapse's CV, and its chloride current goes into that ion, so a
+  `Cldif_JE2011` pool accumulates chloride and `E_GABA` rises with activity.
+  It matches NEURON (`gaba` + `cldifus`) on one segment. New, optional
+  `Synapse` API: a class attribute `ion_type` (default `None`) and a method
+  `ion_current(V_post, ion_info)` (default `None`); a synapse with
+  `ion_type` set implements `current(V_post, ion_info)`. Synapses without
+  `ion_type` (`ExpSyn`, `Exp2Syn`, user subclasses) are unchanged. A Cell
+  with such a synapse writing into a dynamic ion raises `ValueError` in
+  `init_state` when `cache_ion_total_current=False`.
+
 ### Changes & Improvements
 
 - **Parameter unit errors name the mechanism, the value and the declaring

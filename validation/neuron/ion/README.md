@@ -31,6 +31,8 @@
 BRAINCELL_JE2011_MOD_DIR=/path/to/148253 pytest -q validation/neuron/ion/chloride_test.py
 ```
 
+`gaba_test.py` 在同一单段上对照 `GabaA_JE2011` + `Cldif_JE2011` 与 `gaba` + `cldifus`（NetStim 驱动，1005 ms，T0），需要同一目录中还有 `gabaA_Cl.mod`（SHA-256 由测试核对），条件与跳过方式同上。
+
 当前刻意不做：
 
 - 通用 JSON config / batch workflow

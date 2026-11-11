@@ -486,12 +486,22 @@ def _total_current_input(ion, V):
     ``uses_total_current``; otherwise the step-start snapshot
     ``_cached_total_current`` when the Cell has set one (so the pool does not
     see a current from channel states already advanced later in the step),
-    else ``ion.current(V, include_external=True)``.
+    else ``ion.current(V, include_external=True)``. Without a snapshot, an
+    external current registered by a Cell synapse raises ``ValueError``.
     """
     if not type(ion).uses_total_current:
         return None
     if hasattr(ion, "_cached_total_current"):
         return ion._cached_total_current
+    for fun in ion.external_currents.values():
+        owner = getattr(fun, "requires_snapshot", None)
+        if owner is not None:
+            # A synapse current read here would be differentiated through the
+            # synapse's states by this ion's integrator.
+            raise ValueError(
+                f"{owner}, but no step-start ion-current snapshot is set; "
+                "use a Cell solver that caches ion currents (staggered)."
+            )
     return ion.current(V, include_external=True)
 
 

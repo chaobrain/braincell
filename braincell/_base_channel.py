@@ -521,12 +521,22 @@ class Synapse(IonChannel):
     by name at the call site. ``current()`` always returns an inward-positive
     total point current. Discrete input is passed directly to
     :meth:`apply_events`; event buffers are owned by runtime routing.
+
+    A synapse whose current is carried partly by one ion family sets
+    ``ion_type`` to that family's :class:`~braincell.Ion` class (for example
+    ``Chloride``). A :class:`~braincell.Cell` then calls
+    ``current(V_post, ion_info)`` with the :class:`IonInfo` of the family's
+    only ion instance, taken row by row on the CV that owns each placement,
+    and adds :meth:`ion_current` to that ion's current, divided by the CV
+    area. Synapses with ``ion_type = None`` (the default) keep the
+    ``current(V_post)`` signature and never touch an ion.
     """
 
     __module__ = 'braincell'
 
     states: Mapping[str, StateSpec] = {}
     event_input = NoEventInput()
+    ion_type = None
 
     def __init__(self, size: Size, name: Optional[str] = None):
         super().__init__(size=size, name=name)
@@ -594,6 +604,25 @@ class Synapse(IonChannel):
     def apply_events(self, payload, V_post=None):
         """Apply one already-aggregated event payload vector."""
         _ = payload, V_post
+
+    def ion_current(self, V_post, ion_info):
+        """Return the part of :meth:`current` carried by ``ion_type``.
+
+        Parameters
+        ----------
+        V_post : brainunit.Quantity
+            Postsynaptic voltage, one entry per synapse row.
+        ion_info : IonInfo
+            The ``ion_type`` ion's state on each row's CV.
+
+        Returns
+        -------
+        brainunit.Quantity or None
+            Inward-positive point current in the unit of :meth:`current`;
+            ``None`` (the default) when the synapse carries no ion current.
+        """
+        _ = V_post, ion_info
+        return None
 
 
 def _broadcast_synapse_initial(initial, shape, *, batch_size=None):

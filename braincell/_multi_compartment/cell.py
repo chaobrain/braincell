@@ -2356,6 +2356,15 @@ class Cell(_CellFacade, HHTypedNeuron):
             return
         self._runtime = CellRuntimeState.from_cell(self)
         self._runtime.refresh_geometry()
+        for callback in currents.register_synapse_ion_currents(self):
+            ion = self._runtime.get_ion(callback.ion_key)
+            if not self.cache_ion_total_current and getattr(type(ion), "uses_total_current", False):
+                # Without the step-start snapshot the ion's own integrator
+                # would differentiate through the synapse's states.
+                raise ValueError(
+                    f"{callback.requires_snapshot}, whose concentration integrates its total current; "
+                    "this needs cache_ion_total_current=True."
+                )
 
         self._in_size = self.varshape
         self._out_size = self.varshape

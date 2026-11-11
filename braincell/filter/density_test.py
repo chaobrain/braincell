@@ -22,6 +22,8 @@ surface: argument validation, the deprecation contract on the two legacy
 field helpers, and the log-density evaluation each frozen density performs.
 """
 
+import re
+import sys
 import unittest
 import warnings
 from types import SimpleNamespace
@@ -47,6 +49,27 @@ class DeprecationContractTest(unittest.TestCase):
             density.exponential("branch_x", 0.2)
         with self.assertWarnsRegex(DeprecationWarning, "filter.metric"):
             density.gaussian("branch_x", 0.5, 0.2)
+
+    def _expect(self, name: str):
+        removed_in = re.escape(density._REMOVED_IN)
+        return self.assertWarnsRegex(
+            DeprecationWarning,
+            rf"^braincell\.filter\.density\.{name}\(\) is deprecated since braincell 0\.3 and will be removed in "
+            rf"braincell {removed_in}\. Use a callable built from braincell\.filter\.metric instead\.$",
+        )
+
+    def test_exponential_warns_at_the_calling_line(self) -> None:
+        # API-7: the warning names the removal release and the replacement, at the calling line.
+        with self._expect("exponential") as caught:
+            line, built = sys._getframe().f_lineno, density.exponential("branch_x", 0.2, "decreasing")
+        self.assertEqual((caught.filename, caught.lineno), (__file__, line))
+        self.assertEqual(built, density._ExponentialDensity("branch_x", 0.2, -1.0))
+
+    def test_gaussian_warns_at_the_calling_line(self) -> None:
+        with self._expect("gaussian") as caught:
+            line, built = sys._getframe().f_lineno, density.gaussian("branch_x", 0.5, 0.2)
+        self.assertEqual((caught.filename, caught.lineno), (__file__, line))
+        self.assertEqual(built, density._GaussianDensity("branch_x", 0.5, 0.2))
 
     def test_spatial_gaussian_is_not_deprecated(self) -> None:
         # It has no field-name indirection to replace, so it is the one

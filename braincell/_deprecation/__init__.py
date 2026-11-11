@@ -156,8 +156,8 @@ def user_frame(frame, skip=frozenset()):
 def _emit(message: str, category: type[Warning], frame, stacklevel: int) -> None:
     """Issue the warning as ``warnings.warn`` would from ``frame``.
 
-    Without a frame, ``warnings.warn`` is called with ``stacklevel`` counted
-    from the caller of ``_emit``.
+    Without a frame, it falls back to ``warnings.warn``, with ``stacklevel``
+    counted as if the caller of ``_emit`` had called it.
     """
     if frame is None:
         warnings.warn(message, category, stacklevel=stacklevel + 1)
@@ -320,7 +320,7 @@ class Deprecation:
                 frame = frame.f_back
             if frame is not None and _is_internal(frame.f_code):
                 return  # braincell's own use: nothing for the user to change
-        _emit(message, self.category, frame, stacklevel=2)
+        _emit(message, self.category, frame, stacklevel=3)
 
 
 def _is_fromlist_probe(frame) -> bool:

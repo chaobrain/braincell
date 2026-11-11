@@ -133,7 +133,10 @@ def module_step_from_ode(ode_step: Callable) -> Callable:
     1. calls ``target.pre_integral(*args)``;
     2. evaluates ``target.compute_derivative(*args)`` once at the current
        time; every :class:`DiffEqState` it writes is integrated (writing any
-       other state raises ``ValueError``);
+       other state raises ``ValueError``). A :class:`DiffEqState` it only
+       reads must belong to an :class:`~braincell.quad.IndependentIntegration`
+       submodule, which the host advances through ``ind_update``; the stages
+       read it as a constant. Any other unwritten one raises ``ValueError``;
     3. calls ``ode_step(f, y0, t)``, where ``f(y, t_stage)`` writes ``y``
        into those states, sets ``t_stage`` as the environment time and
        returns their derivatives;

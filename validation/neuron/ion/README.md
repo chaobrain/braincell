@@ -4,7 +4,8 @@ Ion-pool comparisons against NEURON. Each configuration puts one pool,
 with or without one channel of its ion, on a single soma (L = diam = 20 um
 unless it sets `defaults.morphology`) and runs it under up to three
 protocols; the limits come from one tolerance table. The pool's ion is
-calcium unless `mapping.ion` names another family (`ca1999` uses sodium).
+calcium unless `mapping.ion` names another family (`ca1999` uses sodium,
+`bo2010` potassium).
 
 | File | Contents |
 |---|---|
@@ -15,6 +16,7 @@ calcium unless `mapping.ion` names another family (`ca1999` uses sodium).
 | `runner_test.py` | Configurations, templates and table, without NEURON (pull-request tier) |
 | `tolerances_test.py` | Every configuration within the table, with its root causes patched at T0, and a pump-rate counterexample (`slow`, daily tier) |
 | `sodium_test.py` | The `ca1999` configuration (Canavier's soma, `SodiumDetailed`), with a volume-factor counterexample (`slow`, local only, see below) |
+| `potassium_test.py` | The `bo2010` configuration (Botta's potassium pool, `PotassiumDetailedFH`), with the implicit-Euler patch and a depth counterexample (`slow`, local only, see below) |
 | `chloride_test.py` | `Cldif_JE2011` against ModelDB 148253 (local only, see below) |
 | `gaba_test.py` | `GabaA_JE2011` with `Cldif_JE2011` against ModelDB 148253 (local only, see below) |
 
@@ -83,6 +85,22 @@ and `sodium_test.py` skips unless `BRAINCELL_CA1999_MOD_DIR` points to them.
 
 ```bash
 BRAINCELL_CA1999_MOD_DIR=/path/to/6763 pytest -q validation/neuron/ion/sodium_test.py -m slow
+```
+
+`bo2010/potassium_detailed_fh` is Botta et al.'s (2010) potassium pool,
+`PotassiumDetailedFH` with `K_Leak` against `K_conc.mod` (ModelDB 127021,
+`ModelDBRepository/127021@fa2e53a`) with the testing `kleak.mod`: 23 degC,
+`ki` 140 and `ko` 5 mM, 200 ms under 0.05 nA. The pool's `Co` is a state, so
+the configuration lists NEURON's `ko` (read from the segment) as a pool state
+and `e_pool` measures it. `K_conc.mod` writes the influx as
+`ik / (2 FARADAY d)`: its `d = 0.2 um` is BrainCell's `d = d_o = 0.4 um`.
+NEURON's implicit Euler step against BrainCell's exponential one makes it T1
+(class (c), `tolerances.py`); `potassium_test.py` checks the first-step
+factor, T0 with an implicit-Euler patch, and a 0.1 % error of `d_o` on that
+patched run. It skips unless `BRAINCELL_BO2010_MOD_DIR` points to the file:
+
+```bash
+BRAINCELL_BO2010_MOD_DIR=/path/to/127021 pytest -q validation/neuron/ion/potassium_test.py -m slow
 ```
 
 `chloride_test.py` compares `Cldif_JE2011` with ModelDB 148253's `cldifus` on

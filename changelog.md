@@ -216,6 +216,19 @@
   Canavier (1999) soma with the pump off matches NEURON (`nadifl.mod` and
   `leak.mod`, ModelDB 6763).
 
+- **Dynamic extracellular potassium, `PotassiumDetailedFH`** (MECH-37). Like
+  `PotassiumDetailed`, with `Co` a state too: the Frankenhaeuser-Hodgkin
+  space, a thin layer of finite volume outside the membrane of each
+  compartment, `dCo/dt = -I/(zF d_o) + beta_o (Co_rest - Co)`, so `E_K`
+  follows both concentrations. Parameters `d`, `d_o`, `beta`, `beta_o`,
+  `C_rest`, `Co_rest`, `Ci_initializer` and `Co_initializer` (no parameter is
+  named `Co`, which is the state); record it with
+  `observe.ion(name).state("Co")`. The space is not shared between
+  compartments or cells. Botta et al.'s (2010) `K_conc.mod` (ModelDB 127021)
+  is this model with `d = d_o` twice the `.mod` file's `d` (it writes the
+  influx as `ik / (2 FARADAY d)`); against NEURON the pools differ by
+  `e_V = 4.7e-5 mV` over 200 ms, from NEURON's implicit Euler update.
+
 ### Changes & Improvements
 
 - **Parameter unit errors name the mechanism, the value and the declaring

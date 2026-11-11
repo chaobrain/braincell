@@ -15,17 +15,25 @@
 # ==============================================================================
 
 
+import functools
 import unittest
 
 import brainunit as u
 import jax.numpy as jnp
+import numpy as np
 
 from braincell._base_ion import Ion
 from braincell._base_neuron import HHTypedNeuron
 from braincell.channel.potassium import K_TM1991
 from braincell.ion._base import InitNernstIon
-from braincell.ion._testing import V as _V, DynamicShellIonContractTests, FixedIonContractTests
-from braincell.ion.potassium import Potassium, PotassiumDetailed, PotassiumFixed, PotassiumInitNernst
+from braincell.ion._testing import V as _V, DynamicShellIonContractTests, FixedIonContractTests, run_float64
+from braincell.ion.potassium import (
+    Potassium,
+    PotassiumDetailed,
+    PotassiumDetailedFH,
+    PotassiumFixed,
+    PotassiumInitNernst,
+)
 
 
 class PotassiumBaseTest(unittest.TestCase):
@@ -179,6 +187,121 @@ class PotassiumDetailedTest(DynamicShellIonContractTests, unittest.TestCase):
         self.assertTrue(u.math.allclose(ion.C_rest, 54.4 * u.mM))
         ion.init_state(_V([-65.0]))
         self.assertTrue(u.math.allclose(ion.Ci.value, 54.4 * u.mM))
+
+
+# Botta et al. (2010) K_conc.mod at one point: ki 140, ko 5 mM, 23 degC, the
+# .mod file's d = 0.2 um (0.4 um at z = 1) and beta = 1.3 /ms; a 1 mS/cm2
+# potassium leak at V = -60 mV gives ik = 2.5038634e-2 mA/cm2 (outward).
+_BOTTA_POINT = dict(
+    temp=u.celsius2kelvin(23.0),
+    d=0.4 * u.um,
+    d_o=0.4 * u.um,
+    beta=1.3 / u.ms,
+    beta_o=1.3 / u.ms,
+    C_rest=140.0 * u.mM,
+    Co_rest=5.0 * u.mM,
+    Ci_initializer=140.0 * u.mM,
+    Co_initializer=5.0 * u.mM,
+)
+_BOTTA_I = -2.5038634e-2 * u.mA / u.cm**2
+
+
+def _fh_cable_cell(V_init=-100.0 * u.mV, **ion_kwargs):
+    """A one-CV cable Cell, L = diam = 15 um, with the FH ion ``k`` and ``K_Leak``."""
+    import braincell as bc
+
+    branch = bc.Branch.from_lengths(lengths=[15.0] * u.um, radii=[7.5, 7.5] * u.um)
+    cell = bc.Cell(bc.Morphology.from_root(branch), cv_policy=bc.CVPerBranch(1), V_init=V_init)
+    cell.paint(bc.mech.Ion("PotassiumDetailedFH", name="k", **ion_kwargs))
+    cell.paint(bc.mech.Channel("K_Leak", g_max=1.0 * u.mS / u.cm**2))
+    cell.record("ci", bc.observe.ion(name="k").state("Ci"))
+    cell.record("co", bc.observe.ion(name="k").state("Co"))
+    return cell
+
+
+def _fh_x64_report() -> dict:
+    """Float64 measurements, run in a fresh process by ``_fh_float64``."""
+    import brainstate
+
+    brainstate.environ.set(precision=64)
+    V = _V([-60.0])
+    ion = PotassiumDetailedFH(size=1, **_BOTTA_POINT)
+    ion.init_state(V)
+    rates = []
+    for current in (_BOTTA_I, _BOTTA_I.to(u.amp / u.meter**2), _BOTTA_I.in_unit(u.uA / u.cm**2)):
+        ion._cached_total_current = jnp.ones(1) * current
+        ion.compute_derivative(V)
+        rates.append([float(np.asarray(s.derivative.to_decimal(u.mM / u.ms))[0]) for s in (ion.Ci, ion.Co)])
+    d, d_o = 1.0, 0.25  # um
+    result = _fh_cable_cell(d=d * u.um, d_o=d_o * u.um).run(dt=0.025 * u.ms, duration=10.0 * u.ms)
+    ci = np.asarray(result.samples["ci"].values.to_decimal(u.mM))[:, 0]
+    co = np.asarray(result.samples["co"].values.to_decimal(u.mM))[:, 0]
+    return {
+        "E": float(np.asarray(ion.E.to_decimal(u.mV))[0]),
+        "rates": rates,
+        "content": (ci * d + co * d_o).tolist(),
+        "co_change": float(co[-1] - co[0]),
+    }
+
+
+@functools.cache
+def _fh_float64() -> dict:
+    return run_float64(
+        "import json; from braincell.ion.potassium_test import _fh_x64_report; print(json.dumps(_fh_x64_report()))"
+    )
+
+
+class PotassiumDetailedFHTest(DynamicShellIonContractTests, unittest.TestCase):
+    """``PotassiumDetailedFH``: the shell-ion tests plus the extracellular ``Co`` state."""
+
+    ION_CLASS = PotassiumDetailedFH
+    LEAK = "K_Leak"
+    INWARD_V_INIT = -100.0 * u.mV  # below E_K (-82 mV at the defaults)
+
+    def test_defaults(self) -> None:
+        ion = PotassiumDetailedFH(size=1)
+        for name, value in (("C_rest", 54.4 * u.mM), ("Co_rest", 2.5 * u.mM), ("d", 1.0 * u.um), ("d_o", 1.0 * u.um)):
+            self.assertTrue(u.math.allclose(getattr(ion, name), value), name)
+        ion.init_state(_V([-65.0]))
+        self.assertTrue(u.math.allclose(ion.Ci.value, 54.4 * u.mM))
+        self.assertTrue(u.math.allclose(ion.Co.value, 2.5 * u.mM))
+        self.assertEqual(ion.Co.value.shape, (1,))
+
+    def test_botta_point_rates_and_reversal(self) -> None:
+        report = _fh_float64()
+        np.testing.assert_allclose(report["E"], -85.038634, rtol=1e-7)
+        # -ik / (2 F 0.2 um): the outward current lowers Ci and raises Co by as much.
+        np.testing.assert_allclose(report["rates"], [[-6.4876788e-3, 6.4876788e-3]] * 3, rtol=1e-7)
+
+    def test_content_is_conserved_without_relaxation(self) -> None:
+        report = _fh_float64()
+        content = np.asarray(report["content"])
+        self.assertLess(report["co_change"], -1e-3)  # the inward leak current drains the space
+        np.testing.assert_allclose(content, np.full_like(content, content[0]), rtol=1e-10)
+
+    def test_co_is_recorded_and_finite_in_a_cell(self) -> None:
+        result = _fh_cable_cell().run(dt=0.025 * u.ms, duration=5.0 * u.ms)
+        co = np.asarray(result.samples["co"].values.to_decimal(u.mM))[:, 0]
+        ci = np.asarray(result.samples["ci"].values.to_decimal(u.mM))[:, 0]
+        self.assertTrue(np.all(np.isfinite(co)) and np.all(np.isfinite(ci)))
+        self.assertTrue(np.all(np.diff(co) <= 0.0) and co[-1] < co[0] < 2.5 + 1e-6)
+
+    def test_reset_state_restores_co_to_its_initializer(self) -> None:
+        V = _V([-65.0, -60.0])
+        ion = PotassiumDetailedFH(size=2, Co_initializer=4.0 * u.mM)
+        ion.init_state(V)
+        ion.Co.value = jnp.array([7.0, 8.0]) * u.mM
+        ion.reset_state(V)
+        np.testing.assert_allclose(np.asarray(ion.Co.value.to_decimal(u.mM)), [4.0, 4.0])
+        ion.reset_state(V, batch_size=3)
+        self.assertEqual(ion.Co.value.shape, (3, 2))
+
+    def test_declared_co_initializer_reaches_the_state_in_a_cell(self) -> None:
+        cell = _fh_cable_cell(V_init=-82.0 * u.mV, Co_initializer=4.0 * u.mM, Co_rest=4.0 * u.mM, beta_o=0.5 / u.ms)
+        result = cell.run(dt=0.025 * u.ms, duration=1.0 * u.ms)
+        co = np.asarray(result.samples["co"].values.to_decimal(u.mM))[:, 0]
+        np.testing.assert_allclose(co[0], 4.0, rtol=1e-6)
+        self.assertTrue(np.all(np.isfinite(co)))
 
 
 if __name__ == "__main__":

@@ -191,7 +191,8 @@ UNCOVERED = {
     "KK2A_HM1992": f"{_NO_MOD}; {_HM1992}",
     "KK2B_HM1992": f"{_NO_MOD}; {_HM1992}",
     "KNI_Ya1989": f"{_MODELDB} ModelDB 3817 IM.mod, which ships taumax = 1000 ms and gkbar = 1e-6 S/cm2",
-    "K_Leak": f"{_NO_MOD}; no source model: an ohmic leak at E_K with a placeholder default",
+    "K_Leak": "no source model: an ohmic leak at E_K with a placeholder default; its testing kleak.mod "
+    "drives a dynamic potassium ion under validation/neuron/ion (MECH-37)",
     "K_TM1991": f"{_MODELDB} ModelDB 3670 HH2.mod, whose rate factor tadj = 3^((celsius - 36)/10) is 1 at 36 degC",
     "Na_Ba2002": f"{_MODELDB} ModelDB 3670 HH2.mod: Traub-Miles rates with V_sh = -50 mV and q10 = 3 (MECH-6c)",
     "Na_Leak": f"{_NO_MOD}; no source model: an ohmic leak at E_Na with a placeholder default; "

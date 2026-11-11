@@ -344,6 +344,27 @@ Class (c), the current clamps of `cdphva_su15_dcn` and
   BrainCell's linearization, together with the cause above (or NEURON's
   kinetic iteration for the toy pool), gives `e_V = 4.9e-13` and `5.2e-13 mV`.
 
+### K_conc.mod implicit Euler update
+
+Class (c), `bo2010/potassium_detailed_fh` (`PotassiumDetailedFH` against
+  Botta et al.'s (2010) `K_conc.mod`, ModelDB 127021): the `.mod` file asks
+  for `METHOD derivimplicit`, an implicit Euler step, and BrainCell advances
+  the pool's `Ci` and `Co` with the exponential Euler step of the cable
+  Cell, exact for these linear relaxations while the step-start current
+  holds. With a relaxation rate `beta` the step `dt` changes a pool by
+  `(1 - exp(-x)) / beta` times its rate in BrainCell and `dt / (1 + x)` in
+  NEURON, `x = beta dt`. With `beta = 0.075 /ms` and `dt = 0.025 ms` the
+  first step's change of `ko` differs by the factor
+  `(1 - exp(-x)) (1 + x) / x = 1.00093633` to `1.4e-12`; over 200 ms under
+  0.05 nA (`ko` 5 to 5.0244 mM) the runs differ by `e_V = 4.7e-5 mV`,
+  `e_Ci = 6.3e-8` and `e_pool = 1.8e-6` (`Co`). Scaling BrainCell's
+  derivatives by `log(1 + x) / x`, which turns its exponential step into the
+  implicit one, gives `e_V = 5.5e-13 mV`, `e_Ci = 0` and `e_pool = 1.8e-16`.
+  On that patched run an extracellular depth `d_o` off by 0.1 % gives
+  `e_pool = 4.9e-6` and `e_V = 1.2e-4 mV`; under the default update the same
+  `e_pool` is inside the T1 limit `5e-6`, so the test checks sensitivity on
+  the patched run. With `beta = 0` both updates are explicit Euler.
+
 ## Locating a difference with the voltage clamp
 
 The `channel_no_conc` voltage-clamp templates (`vc_steps`, `vc_ramp`) clamp

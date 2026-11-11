@@ -233,6 +233,7 @@ _ION_DEFAULT_ATTRS = {
     "Ci": "default_Ci",
     "Ci_initializer": "default_Ci",
     "Co": "default_Co",
+    "Co_initializer": "default_Co",
     "valence": "default_valence",
 }
 
@@ -299,7 +300,7 @@ class Ion(IonChannel, Container):
 
     @classmethod
     def _default_unit_prototype(cls, name: str, default):
-        """Give ``Ci``, ``Co``, ``Ci_initializer`` and ``valence`` defaults of ``None`` their class default."""
+        """Give ``Ci``, ``Co``, their initializers and ``valence`` defaults of ``None`` their class default."""
         attr = _ION_DEFAULT_ATTRS.get(name)
         if attr is not None and (default is None or callable(default)) and hasattr(cls, attr):
             return getattr(cls, attr)

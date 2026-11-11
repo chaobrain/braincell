@@ -24,11 +24,20 @@ import brainunit as u
 from braincell._base_ion import Ion
 from braincell._typing import Initializer, Size
 from braincell.mech import register_ion
-from braincell.ion._base import DynamicNernstIon, FixedIon, InitNernstIon, _shell_influx
+from braincell.ion._base import (
+    DynamicNernstIon,
+    FixedIon,
+    InitNernstIon,
+    _initial_state_value,
+    _shell_influx,
+    _total_current_input,
+)
+from braincell.quad.protocol import state
 
 __all__ = [
     'Potassium',
     'PotassiumDetailed',
+    'PotassiumDetailedFH',
     'PotassiumFixed',
     'PotassiumInitNernst',
 ]
@@ -345,3 +354,181 @@ class PotassiumDetailed(Potassium, DynamicNernstIon):
     def derivative(self, Ci, V, total_current=None):
         _ = V
         return _shell_influx(self, total_current) + self.beta * (self.C_rest - Ci)
+
+
+@register_ion("PotassiumDetailedFH")
+class PotassiumDetailedFH(Potassium, DynamicNernstIon):
+    r"""Dynamic intra- and extracellular potassium in a Frankenhaeuser--Hodgkin space.
+
+    :class:`PotassiumDetailed` with the extracellular concentration a
+    state too: a thin layer of finite volume outside the membrane, the
+    Frankenhaeuser--Hodgkin space, receives the potassium the membrane releases. Both concentrations
+    relax to their own resting values,
+
+    .. math::
+
+        \frac{dC_i}{dt} = \frac{I}{z F d} + \beta\,(C_{rest} - C_i),
+        \qquad
+        \frac{dC_o}{dt} = -\frac{I}{z F d_o} + \beta_o\,(C_{o,rest} - C_o),
+
+    and :math:`E = \frac{RT}{zF}\ln(C_o / C_i)` follows both. :math:`I` is
+    the potassium current density (positive inward, own channels plus
+    registered external currents, or the Cell's step-start snapshot),
+    read once per derivative evaluation for both equations; :math:`z` is
+    the ``valence`` (+1), :math:`d` the intracellular and :math:`d_o` the
+    extracellular volume per unit membrane area. The space is local to
+    each compartment: neighbouring compartments and other cells do not
+    share it, and nothing diffuses between them. The equations are those
+    of the potassium pool of Botta et al. (2010) [1]_.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        The size of the simulation target, typically the number of
+        neurons or compartments. Forwarded unchanged to
+        :class:`Potassium`.
+    temp : array-like or callable, optional
+        Absolute temperature of the Nernst equation. Defaults to 36
+        degrees Celsius (``309.15 K``).
+    d : array-like or callable, optional
+        Intracellular volume per unit membrane area. Defaults to
+        ``1.0 um``.
+    d_o : array-like or callable, optional
+        Extracellular (space) volume per unit membrane area. Defaults to
+        ``1.0 um``.
+    beta : array-like or callable, optional
+        Relaxation rate of ``Ci`` toward ``C_rest``. Defaults to
+        ``0.0 /ms`` (no relaxation).
+    beta_o : array-like or callable, optional
+        Relaxation rate of ``Co`` toward ``Co_rest``. Defaults to
+        ``0.0 /ms``.
+    C_rest : array-like or callable, optional
+        Concentration ``Ci`` relaxes toward. Defaults to ``54.4 mM``.
+    Co_rest : array-like or callable, optional
+        Concentration ``Co`` relaxes toward. Defaults to ``2.5 mM``.
+    Ci_initializer : array-like or callable, optional
+        Initial ``Ci``. Defaults to a constant ``54.4 mM``
+        (:attr:`Potassium.default_Ci`).
+    Co_initializer : array-like or callable, optional
+        Initial ``Co``. Defaults to a constant ``2.5 mM``
+        (:attr:`Potassium.default_Co`).
+    name : str or None, optional
+        Runtime ion instance name. Defaults to ``None``.
+    **channels
+        Channel instances to attach to this ion, forwarded unchanged to
+        :class:`Potassium`.
+
+    See Also
+    --------
+    PotassiumDetailed : The same intracellular pool with a fixed ``Co``.
+    braincell.channel.K_Leak : A potassium leak that reads this ion's
+        ``E``.
+
+    Notes
+    -----
+    ``Ci`` and ``Co`` are both created by ``init_state`` and restored to
+    their initializers by ``reset_state``; record ``Co`` in a Cell with
+    ``observe.ion(name).state("Co")``. Before ``init_state``, ``Co``
+    holds the family default ``2.5 mM``.
+
+    No constructor parameter is called ``Co``: a :class:`~braincell.Cell`
+    replaces every declared constructor parameter with a runtime
+    parameter of the same name, which would overwrite the ``Co`` state.
+    The extracellular values are therefore ``Co_rest`` and
+    ``Co_initializer``.
+
+    Botta et al. write the influx of both potassium concentrations as
+    ``ik / (2 FARADAY d)``, the divalent form of a calcium pool, in
+    ``K_conc.mod`` (ModelDB 127021). For a monovalent ion that is the
+    :math:`z = 1` equation above with twice the depth: the ``.mod`` file's
+    ``d = 0.2 um`` is ``d = d_o = 0.4 um`` here. Its ``beta`` (1.3 /ms in
+    the ``.mod`` file, 0.075 /ms in the published simulation) is both
+    ``beta`` and ``beta_o``, and ``ki0`` / ``ko0`` (140 / 5 mM) are
+    ``C_rest`` / ``Co_rest`` and the initial values.
+
+    The influx is not rectified. No literature source fixes the defaults:
+    ``d = d_o = 1 um`` is :class:`~braincell.ion.CalciumDetailed`'s,
+    and ``54.4 / 2.5 mM`` are the potassium family's conventional
+    concentrations. Every value carries its unit.
+
+    References
+    ----------
+    .. [1] Botta, P., de Souza, F. M. S., Sangrey, T., De Schutter, E., &
+           Valenzuela, C. F. (2010). Alcohol excites cerebellar Golgi cells
+           by inhibiting the Na+/K+ ATPase. Neuropsychopharmacology, 35(9),
+           1984-1996.
+           doi:10.1038/npp.2010.76
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell.ion import PotassiumDetailedFH
+        >>> k = PotassiumDetailedFH(1, d=0.4 * u.um, d_o=0.4 * u.um)
+        >>> k.init_state(u.math.full(1, -65.0) * u.mV)
+        >>> k.Co.value
+        Quantity([2.5], "mM")
+    """
+
+    __module__ = 'braincell.ion'
+    uses_total_current = True
+
+    def __init__(
+        self,
+        size: Size,
+        temp: Initializer = u.celsius2kelvin(36.0),
+        d: Initializer = 1.0 * u.um,
+        d_o: Initializer = 1.0 * u.um,
+        beta: Initializer = 0.0 / u.ms,
+        beta_o: Initializer = 0.0 / u.ms,
+        C_rest: Initializer = 54.4 * u.mM,
+        Co_rest: Initializer = 2.5 * u.mM,
+        Ci_initializer: Initializer = braintools.init.Constant(54.4 * u.mM),
+        Co_initializer: Initializer = braintools.init.Constant(2.5 * u.mM),
+        name: Optional[str] = None,
+        **channels,
+    ):
+        super().__init__(size, name=name, **channels)
+        self._init_dynamic_nernst_ion(temp=temp, Ci_initializer=Ci_initializer)
+        self.d = braintools.init.param(d, self.varshape, allow_none=False)
+        self.d_o = braintools.init.param(d_o, self.varshape, allow_none=False)
+        self.beta = braintools.init.param(beta, self.varshape, allow_none=False)
+        self.beta_o = braintools.init.param(beta_o, self.varshape, allow_none=False)
+        self.C_rest = braintools.init.param(C_rest, self.varshape, allow_none=False)
+        self.Co_rest = braintools.init.param(Co_rest, self.varshape, allow_none=False)
+        # Public, unlike ``_Ci_initializer``: a Cell replaces the attribute
+        # named after each declared parameter, and only ``Ci_initializer``
+        # is mapped to a private name.
+        self.Co_initializer = Co_initializer
+
+    def _ion_init_state_hook(self, V, batch_size: int = None):
+        """Create the ``Ci`` and ``Co`` states from their initializers."""
+        super()._ion_init_state_hook(V, batch_size)
+        self.Co = state(_initial_state_value(self.Co_initializer, self.varshape, batch_size))
+
+    def _ion_reset_state_hook(self, V, batch_size: int = None):
+        """Reset ``Ci`` and ``Co`` to their initializers."""
+        super()._ion_reset_state_hook(V, batch_size)
+        self.Co.value = _initial_state_value(self.Co_initializer, self.varshape, batch_size)
+
+    def _ion_compute_derivative_hook(self, V):
+        """Write ``Ci.derivative`` and ``Co.derivative`` from one current reading."""
+        total_current = _total_current_input(self, V)
+        self.Ci.derivative = self.derivative(self.Ci.value, V, total_current=total_current)
+        self.Co.derivative = self.derivative_Co(self.Co.value, V, total_current=total_current)
+
+    def derivative(self, Ci, V, total_current=None):
+        """Return ``dCi/dt = I / (z F d) + beta (C_rest - Ci)``."""
+        _ = V
+        return _shell_influx(self, total_current) + self.beta * (self.C_rest - Ci)
+
+    def derivative_Co(self, Co, V, total_current=None):
+        """Return ``dCo/dt = -I / (z F d_o) + beta_o (Co_rest - Co)``.
+
+        The current that raises ``Ci`` leaves the space outside the
+        membrane, hence the minus sign.
+        """
+        _ = V
+        efflux = self._drive_current(total_current) / (self.valence * u.faraday_constant * self.d_o)
+        return -efflux + self.beta_o * (self.Co_rest - Co)

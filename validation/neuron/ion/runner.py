@@ -30,7 +30,8 @@ A template under ``templates/`` defines a protocol on a single soma:
 
 Optional configuration keys: ``defaults.concentrations`` (``Ci``, ``Co`` in mM:
 NEURON's ``<ion>i``/``<ion>o`` written before ``finitialize``, BrainCell's
-``Ci_initializer``/``Co``), channel parameters mapped on one side only, and
+``Ci_initializer`` and ``Co``, or ``Co_initializer`` for a pool whose ``Co`` is
+a state), pool and channel parameters mapped on one side only, and
 ``defaults.braincell_mechanisms`` (further ions and channels, ``[kind, class,
 {parameter: [value, unit]}]``) for what NEURON's channel mechanism computes
 beyond the pool's ion. ``identity.external_mod_files`` names sources outside
@@ -42,7 +43,8 @@ unset.
 Sample ``i`` of both sides is the state at ``t = i dt``. Metrics (see
 ``_tolerance``): ``e_Ci`` (``Ci`` over the protocol's largest NEURON ``cai``),
 ``e_pool`` (each other pool state over its own largest NEURON value, the
-largest of these), ``e_I`` and ``e_s`` (channel current and gates, voltage
+largest of these; a NEURON pool state named ``<ion>o`` is the segment's
+extracellular concentration, BrainCell's ``Co``), ``e_I`` and ``e_s`` (channel current and gates, voltage
 clamp) and ``e_V`` (current clamp).
 
 All configurations' sources are compiled into one library, loaded once per
@@ -79,6 +81,7 @@ UNITS = {
     "cm/s": lambda u: u.cm / u.second,
     "mV": lambda u: u.mV,
     "um": lambda u: u.um,
+    "/ms": lambda u: 1.0 / u.ms,
 }
 """Units a configuration may give a BrainCell parameter or state (NEURON's units)."""
 
@@ -354,7 +357,10 @@ def run_neuron(case: PoolCase, *, initialize=None) -> dict[str, np.ndarray]:
             restore.append(lambda default=default, old=getattr(h, default): setattr(h, default, old))
             setattr(h, default, value)
         observables = {"cai": lambda: getattr(segment, ci_name)}
-        observables.update({f"pool:{b}": (lambda n=n: getattr(pool, n)) for n, b in case.states})
+        # A concentration the pool writes lives on the ion (segment.ko), not on the mechanism.
+        observables.update(
+            {f"pool:{b}": (lambda n=n: getattr(segment if n == f"{case.ion}o" else pool, n)) for n, b in case.states}
+        )
         if case.channel is not None:
             section.insert(case.channel.neuron)
             mechanism = getattr(segment, case.channel.neuron)
@@ -455,9 +461,9 @@ def run_braincell(case: PoolCase, voltages_mV=None, *, pool_solver=None) -> dict
     kwargs = {p.braincell: p.quantity() for p in case.pool_params if p.braincell}
     if "Ci" in case.concentrations:
         kwargs["Ci_initializer"] = case.concentrations["Ci"] * u.mM
-    if "Co" in case.concentrations:
-        kwargs["Co"] = case.concentrations["Co"] * u.mM
     accepted = inspect.signature(pool_cls.__init__).parameters
+    if "Co" in case.concentrations:
+        kwargs["Co_initializer" if "Co_initializer" in accepted else "Co"] = case.concentrations["Co"] * u.mM
     for name, value in case.initial.items():
         value = value * UNITS[case.state_units.get(name, "mM")](u)
         if f"{name}_initializer" in accepted:

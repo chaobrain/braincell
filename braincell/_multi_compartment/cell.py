@@ -3666,9 +3666,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._raise_if_not_initialized("_prepare_next_synapse_inputs()")
         # Neither the packed reduction inputs nor the lumped synapses (whose
         # voltage is their member's V) bind point voltages here.
-        point_V = (
-            None if self._uses_reduction or self._is_lumped else self._point_voltage_for_mechanisms(self.V.value)
-        )
+        point_V = None if self._uses_reduction or self._is_lumped else self._point_voltage_for_mechanisms(self.V.value)
         if t is None:
             self._prepare_runtime_synapse_inputs(point_V)
         else:

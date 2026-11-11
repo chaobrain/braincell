@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<neuroml xmlns="http://www.neuroml.org/schema/neuroml2" id="doc">
+  <cell id="branched">
+    <morphology id="branched_morph">
+      <segment id="0" name="soma">
+        <proximal x="0" y="0" z="0" diameter="10"/>
+        <distal x="0" y="10" z="0" diameter="10"/>
+      </segment>
+      <segment id="1" name="dend_a">
+        <parent segment="0"/>
+        <proximal x="0" y="10" z="0" diameter="4"/>
+        <distal x="0" y="30" z="0" diameter="3"/>
+      </segment>
+      <segment id="2" name="dend_b">
+        <parent segment="1"/>
+        <proximal x="0" y="30" z="0" diameter="2"/>
+        <distal x="0" y="50" z="0" diameter="2"/>
+      </segment>
+      <segment id="3" name="dend_c">
+        <parent segment="2"/>
+        <distal x="0" y="70" z="0" diameter="1.5"/>
+      </segment>
+      <segment id="4" name="side">
+        <parent segment="2" fractionAlong="0.25"/>
+        <proximal x="0" y="35" z="0" diameter="1"/>
+        <distal x="10" y="35" z="0" diameter="1"/>
+      </segment>
+      <segment id="5" name="base">
+        <parent segment="3" fractionAlong="0"/>
+        <distal x="-10" y="50" z="0" diameter="1"/>
+      </segment>
+      <segment id="6" name="tip1">
+        <parent segment="3"/>
+        <distal x="5" y="80" z="0" diameter="1"/>
+      </segment>
+      <segment id="7" name="tip2">
+        <parent segment="3"/>
+        <distal x="-5" y="80" z="0" diameter="1"/>
+      </segment>
+      <segment id="8" name="axon0">
+        <parent segment="0" fractionAlong="0"/>
+        <proximal x="0" y="0" z="0" diameter="1"/>
+        <distal x="0" y="-40" z="0" diameter="1"/>
+      </segment>
+      <segment id="9" name="mid">
+        <parent segment="0" fractionAlong="0.5"/>
+        <proximal x="5" y="5" z="0" diameter="2"/>
+        <distal x="25" y="5" z="0" diameter="2"/>
+      </segment>
+      <segmentGroup id="soma_group" neuroLexId="sao1044911821"><member segment="0"/></segmentGroup>
+      <segmentGroup id="axon_group" neuroLexId="GO:0030424"><member segment="8"/></segmentGroup>
+      <segmentGroup id="trunk" neuroLexId="sao864921383"><member segment="1"/><member segment="2"/><member segment="3"/></segmentGroup>
+      <segmentGroup id="dendrite_group" neuroLexId="GO:0030425">
+        <include segmentGroup="trunk"/>
+        <member segment="4"/><member segment="5"/><member segment="6"/><member segment="7"/><member segment="9"/>
+      </segmentGroup>
+      <segmentGroup id="distal_tree"><subTree><from segment="3"/></subTree></segmentGroup>
+      <segmentGroup id="trunk_path"><path><from segment="1"/><to segment="3"/></path></segmentGroup>
+    </morphology>
+  </cell>
+</neuroml>

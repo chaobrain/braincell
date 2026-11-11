@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<neuroml xmlns="http://www.neuroml.org/schema/neuroml2" id="doc">
+  <cell id="sphere">
+    <morphology id="sphere_morph">
+      <segment id="0" name="soma">
+        <proximal x="1" y="2" z="3" diameter="12"/>
+        <distal x="1" y="2" z="3" diameter="12"/>
+      </segment>
+      <segment id="1" name="dend">
+        <parent segment="0"/>
+        <proximal x="1" y="2" z="3" diameter="2"/>
+        <distal x="1" y="42" z="3" diameter="1"/>
+      </segment>
+      <segment id="2" name="dend2">
+        <parent segment="0"/>
+        <proximal x="1" y="2" z="3" diameter="2"/>
+        <distal x="1" y="-38" z="3" diameter="1"/>
+      </segment>
+      <segmentGroup id="soma_group"><member segment="0"/></segmentGroup>
+      <segmentGroup id="dendrite_group"><member segment="1"/><member segment="2"/></segmentGroup>
+    </morphology>
+  </cell>
+</neuroml>

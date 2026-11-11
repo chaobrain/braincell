@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<neuroml xmlns="http://www.neuroml.org/schema/neuroml2" id="doc">
+  <morphology id="shared">
+    <segment id="0"><proximal x="0" y="0" z="0" diameter="8"/><distal x="8" y="0" z="0" diameter="8"/></segment>
+    <segment id="1"><parent segment="0"/><distal x="30" y="0" z="0" diameter="2"/></segment>
+    <segmentGroup id="soma_group"><member segment="0"/></segmentGroup>
+  </morphology>
+  <cell id="a" morphology="shared"/>
+  <cell id="b">
+    <morphology id="b_morph">
+      <segment id="0"><proximal x="0" y="0" z="0" diameter="6"/><distal x="6" y="0" z="0" diameter="6"/></segment>
+    </morphology>
+  </cell>
+</neuroml>

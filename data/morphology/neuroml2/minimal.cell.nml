@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<neuroml xmlns="http://www.neuroml.org/schema/neuroml2" id="minimal_doc">
+  <cell id="minimal">
+    <morphology id="minimal_morph">
+      <segment id="0" name="soma">
+        <proximal x="0" y="0" z="0" diameter="10"/>
+        <distal x="0" y="10" z="0" diameter="10"/>
+      </segment>
+      <segment id="1" name="trunk_a">
+        <parent segment="0"/>
+        <proximal x="0" y="10" z="0" diameter="4"/>
+        <distal x="0" y="30" z="0" diameter="3"/>
+      </segment>
+      <segment id="2" name="trunk_b">
+        <parent segment="1"/>
+        <proximal x="0" y="30" z="0" diameter="2"/>
+        <distal x="0" y="50" z="0" diameter="2"/>
+      </segment>
+      <segment id="3" name="side">
+        <parent segment="2" fractionAlong="0.25"/>
+        <distal x="10" y="35" z="0" diameter="1"/>
+      </segment>
+      <segment id="4" name="axon">
+        <parent segment="0" fractionAlong="0"/>
+        <proximal x="0" y="0" z="0" diameter="1"/>
+        <distal x="0" y="-40" z="0" diameter="1"/>
+      </segment>
+      <segment id="5" name="mid">
+        <parent segment="0" fractionAlong="0.5"/>
+        <proximal x="5" y="5" z="0" diameter="2"/>
+        <distal x="25" y="5" z="0" diameter="2"/>
+      </segment>
+      <segmentGroup id="soma_group" neuroLexId="GO:0043025"><member segment="0"/></segmentGroup>
+      <segmentGroup id="axon_group" neuroLexId="GO:0030424"><member segment="4"/></segmentGroup>
+      <segmentGroup id="trunk" neuroLexId="sao864921383"><member segment="1"/><member segment="2"/></segmentGroup>
+      <segmentGroup id="dendrite_group" neuroLexId="GO:0030425">
+        <include segmentGroup="trunk"/><member segment="3"/><member segment="5"/>
+      </segmentGroup>
+      <segmentGroup id="distal_part"><subTree><from segment="2"/></subTree></segmentGroup>
+    </morphology>
+  </cell>
+</neuroml>

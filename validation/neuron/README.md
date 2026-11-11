@@ -15,6 +15,12 @@ Use a repository checkout with BrainCell, NEURON and a working `nrnivmodl`
 compiler installed. Run comparisons in double precision. For NEURON 8.2's Python
 compiler wrapper, install `setuptools<81` to provide `pkg_resources`.
 
+The ASC comparisons in `morph/` need NEURON 9.0 or later. Before 9.0, NEURON
+could lay a single-contour soma out from its far end; the comparison then
+reports `soma orientation differs` with both start points and the NEURON
+version, and its distance metrics disagree (see the SC entry in
+[known differences](known-differences.md)).
+
 ```bash
 python -m validation.neuron._mechanisms bc_ma2025 --kind cell
 pytest -q validation/neuron/cable/tests

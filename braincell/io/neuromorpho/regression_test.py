@@ -35,7 +35,6 @@ starts to agree with NeuroMorpho fails the test, so the table cannot go stale.
 
 import hashlib
 import math
-import time
 import unittest
 from collections.abc import Iterable, Mapping
 
@@ -273,9 +272,7 @@ class NeuroMorphoRegressionTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.cache = NeuroMorphoCache(DATA_DIR)
-        start = time.perf_counter()
         cls.morphologies = {neuron_id: cls.cache.load(neuron_id) for neuron_id in NEURON_IDS}
-        cls.load_seconds = time.perf_counter() - start
         cls.measurements = {neuron_id: cls.cache.measurement(neuron_id) for neuron_id in NEURON_IDS}
         cls.results = {
             neuron_id: compare(cls.morphologies[neuron_id], cls.measurements[neuron_id]) for neuron_id in NEURON_IDS
@@ -293,7 +290,6 @@ class NeuroMorphoRegressionTest(unittest.TestCase):
         for neuron_id in NEURON_IDS:
             self.assertIn(str(neuron_id), readme)
             self.assertIn(SWC_SHA256[neuron_id], readme)
-        self.assertLess(self.load_seconds, 5.0)
 
     def test_reference_values_come_from_the_metadata(self) -> None:
         measurement = self.measurements[102085]

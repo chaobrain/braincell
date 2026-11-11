@@ -25,7 +25,7 @@ Three things are live and tested here:
   different morphology, or the same morphology after any edit; every row
   of the morphology edit table is checked against a cold rebuild.
 
-The reserved surface is pinned too, so implementing one of the four
+The reserved surface is pinned too, so implementing one of the three
 without wiring the cache up fails loudly.
 """
 
@@ -169,6 +169,13 @@ class LocsetCacheThreadingTest(unittest.TestCase):
 
         self.assertIs(region.seen[0], self.cache)
 
+    def test_step_samples_forwards_the_cache_to_its_region(self) -> None:
+        region = _SpyRegion()
+
+        StepSamples(region=region, step=5.0 * u.um).evaluate(self.tree, self.cache)
+
+        self.assertIs(region.seen[0], self.cache)
+
     def test_locset_set_op_forwards_the_cache_to_both_operands(self) -> None:
         left, right = _SpyLocset(), _SpyLocset(points=((1, 0.5),))
 
@@ -277,7 +284,8 @@ class SelectionCacheEditTableTest(unittest.TestCase):
         # see that, or a passing row above proves nothing.
         for case in SABOTAGE_CASES:
             with self.subTest(case.name):
-                with self.assertRaisesRegex(AssertionError, r"selection cache: .*\n  lengths"):
+                # Both entries that read segment lengths must see the stale replay.
+                with self.assertRaisesRegex(AssertionError, r"selection cache: .*\n  lengths.*\n  step samples"):
                     assert_selection_fresh(self, case)
 
     def test_every_battery_expression_memoizes_its_operands(self) -> None:
@@ -360,7 +368,7 @@ class SelectionCacheEditTableTest(unittest.TestCase):
 
 
 class ReservedCacheConsumersTest(unittest.TestCase):
-    """The four expressions that would populate the cache are unimplemented.
+    """The three expressions that would populate the cache are unimplemented.
 
     When any of them grows a real implementation it must also start filling
     the matching ``SelectionCache`` dict — these assertions turn that into a
@@ -381,10 +389,6 @@ class ReservedCacheConsumersTest(unittest.TestCase):
     def test_euclidean_distance_region_is_reserved(self) -> None:
         with self.assertRaises(NotImplementedError):
             EuclideanDistanceRegion(minimum=0.0 * u.um, maximum=10.0 * u.um).evaluate(self.tree)
-
-    def test_step_samples_locset_is_reserved(self) -> None:
-        with self.assertRaises(NotImplementedError):
-            StepSamples(region=AllRegion(), step=5.0 * u.um).evaluate(self.tree)
 
 
 if __name__ == "__main__":

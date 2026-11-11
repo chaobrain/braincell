@@ -27,9 +27,13 @@ what makes the expected results checkable by eye.
 
 import unittest
 
+import brainunit as u
+import numpy as np
+
 from braincell.filter import helper as helper_mod
 from braincell.filter.helper import (
     EPSILON,
+    _length_scalar_um,
     complement_region_intervals,
     difference_region_intervals,
     intersect_region_intervals,
@@ -203,6 +207,37 @@ class ComplementRegionIntervalsTest(unittest.TestCase):
         # right cannot conjure a branch the caller never asked about.
         result = complement_region_intervals([(5, 0.0, 1.0)], n_branches=2)
         self.assertEqual(result, ((0, 0.0, 1.0), (1, 0.0, 1.0)))
+
+
+class LengthScalarUmTest(unittest.TestCase):
+    """The scalar length check shared by StepSamples and the range regions."""
+
+    def test_a_scalar_length_becomes_micrometres(self) -> None:
+        self.assertEqual(_length_scalar_um(30 * u.um, name="step"), 30.0)
+        self.assertEqual(_length_scalar_um(0.03 * u.mmeter, name="step"), 30.0)
+        self.assertEqual(_length_scalar_um(np.array([5.0]) * u.um, name="step", positive=True), 5.0)
+        self.assertEqual(_length_scalar_um(0 * u.um, name="minimum"), 0.0)
+        self.assertIsNone(_length_scalar_um(None, name="maximum", allow_none=True))
+
+    def test_bad_inputs_raise_the_same_errors_as_step_samples(self) -> None:
+        for value, error, message in (
+            (5.0, TypeError, "step must satisfy unit um"),
+            (5 * u.ms, TypeError, "step must satisfy unit um"),
+            (None, TypeError, "step cannot be None"),
+            (0 * u.um, ValueError, "step must be > 0"),
+            (-5 * u.um, ValueError, "step must be > 0"),
+            (np.inf * u.um, ValueError, "step must be finite"),
+            (np.nan * u.um, ValueError, "step must be finite"),
+            (np.array([5.0, 6.0]) * u.um, ValueError, "step"),
+        ):
+            with self.subTest(value=value), self.assertRaisesRegex(error, message):
+                _length_scalar_um(value, name="step", positive=True)
+
+    def test_a_non_positive_check_still_rejects_negative_lengths(self) -> None:
+        with self.assertRaisesRegex(ValueError, "minimum must be >= 0"):
+            _length_scalar_um(-1 * u.um, name="minimum")
+        with self.assertRaisesRegex(ValueError, "minimum must be finite"):
+            _length_scalar_um(np.inf * u.um, name="minimum", allow_none=True)
 
 
 if __name__ == "__main__":

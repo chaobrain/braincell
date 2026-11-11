@@ -14,6 +14,7 @@
 # ==============================================================================
 
 
+import copy
 import pickle
 import unittest
 
@@ -23,6 +24,7 @@ import numpy as np
 import braincell
 from braincell import Branch, Morphology
 from braincell.filter._testing import make_soma, make_soma_dend_tree
+from braincell.morph._testing import make_tree_t
 from braincell.filter import (
     AllRegion,
     AtLocation,
@@ -38,11 +40,14 @@ from braincell.filter import (
     RandomSamples,
     RegionAnchors,
     RootLocation,
+    SelectionCache,
+    StepSamples,
     Terminals,
     UniformSamples,
     at,
     branch_in,
 )
+from braincell.filter import helper
 from braincell.filter import locset as locset_mod
 
 
@@ -445,6 +450,122 @@ class RegionAnchorsTest(unittest.TestCase):
         self.assertEqual(hash(expr), hash(RegionAnchors(branch_in("type", "axon"), 0.5)))
         self.assertNotEqual(expr, RegionAnchors(branch_in("type", "axon"), 0.25))
         self.assertEqual(pickle.loads(pickle.dumps(expr)), expr)
+
+
+class StepSamplesTest(unittest.TestCase):
+    """MORPH-10b: locations a fixed physical step apart, half a step in, continuing across branches."""
+
+    def setUp(self) -> None:
+        self.tree = _tree_d()
+
+    def points(self, expr):
+        return self.tree.select(expr).points
+
+    def test_locations_on_tree_d(self) -> None:
+        self.assertEqual(
+            self.points(StepSamples(AllRegion(), 25 * u.um)),
+            ((0, 0.625), (1, 0.175), (1, 0.425), (1, 0.675)),
+        )
+        self.assertEqual(
+            self.tree.select(StepSamples(AllRegion(), 25 * u.um)).display_names,
+            ("soma(0.625)", "dend(0.175)", "dend(0.425)", "dend(0.675)"),
+        )
+        thirty = ((0, 0.75), (1, 0.25), (1, 0.55), (1, 0.85))
+        self.assertEqual(self.points(StepSamples(AllRegion(), 30 * u.um)), thirty)
+        self.assertEqual(self.points(StepSamples(AllRegion(), 0.03 * u.mmeter)), thirty)
+        self.assertEqual(self.points(UniformSamples(AllRegion(), 4)), thirty)
+        self.assertEqual(
+            self.points(StepSamples(BranchSlice(1, 0.5, 1.0), 10 * u.um)),
+            ((1, 0.55), (1, 0.65), (1, 0.75), (1, 0.85), (1, 0.95)),
+        )
+        self.assertEqual(self.points(StepSamples(AllRegion(), 120 * u.um)), ((1, 0.4),))
+        self.assertEqual(self.points(StepSamples(AllRegion(), 70 * u.um)), ((1, 0.15),))
+        five = self.points(StepSamples(AllRegion(), np.array([5.0]) * u.um))
+        self.assertEqual(len(five), 24)
+        self.assertEqual(five[:2], ((0, 0.125), (0, 0.375)))
+        self.assertEqual(five[-1], (1, 0.975))
+
+    def test_a_step_that_divides_the_length_matches_uniform_samples(self) -> None:
+        tree = make_tree_t()
+        regions = (
+            AllRegion(),
+            branch_in("name", ["dend", "d2"]),
+            BranchSlice([1, 3, 4], [0.1, 0.0, 0.3], [0.7, 0.4, 1.0]),
+        )
+        for region in regions:
+            entries = helper._sample_entries(tree, tree.select(region).intervals, epsilon=helper.EPSILON)
+            total = sum(entry[3] for entry in entries)
+            for n in range(1, 201):
+                with self.subTest(region=region, n=n):
+                    stepped = tree.select(StepSamples(region, (total / n) * u.um))
+                    uniform = tree.select(UniformSamples(region, n))
+                    self.assertEqual(len(stepped.points), n)
+                    np.testing.assert_array_equal(stepped.branch_id, uniform.branch_id)
+                    # Locations are stored rounded to 12 decimals; the two may land one unit apart.
+                    units = np.abs(np.rint(stepped.branch_x * 1e12) - np.rint(uniform.branch_x * 1e12))
+                    self.assertLessEqual(float(units.max()), 1.0)
+
+    def test_a_step_that_divides_the_length_up_to_rounding_keeps_its_last_location(self) -> None:
+        soma = Branch.from_lengths(lengths=np.array([0.3]) * u.um, radii=np.array([1.0, 1.0]) * u.um, type="soma")
+        tree = Morphology.from_root(soma, name="soma")
+        self.assertEqual(0.3 / 0.1, 2.9999999999999996)
+        self.assertEqual(
+            tree.select(StepSamples(AllRegion(), 0.1 * u.um)).points,
+            ((0, 0.166666666667), (0, 0.5), (0, 0.833333333333)),
+        )
+
+    def test_value_semantics(self) -> None:
+        thirty = StepSamples(AllRegion(), 30 * u.um)
+        self.assertEqual(thirty, StepSamples(AllRegion(), 0.03 * u.mmeter))
+        self.assertEqual(hash(thirty), hash(StepSamples(AllRegion(), 0.03 * u.mmeter)))
+        self.assertNotEqual(thirty, StepSamples(AllRegion(), 25 * u.um))
+        self.assertNotEqual(thirty, StepSamples(branch_in("name", "dend"), 30 * u.um))
+        self.assertNotEqual(thirty, UniformSamples(AllRegion(), 4))
+        self.assertEqual(repr(thirty), 'StepSamples(region=AllRegion(), step=Quantity(30, "um"))')
+        self.assertEqual(pickle.loads(pickle.dumps(thirty)), thirty)
+        self.assertEqual(copy.deepcopy(thirty), thirty)
+        # Equal steps in different units are one cache key.
+        cache = SelectionCache()
+        both = StepSamples(AllRegion(), 25 * u.um) + StepSamples(AllRegion(), 0.025 * u.mmeter)
+        self.assertEqual(len(self.tree.select(both, cache=cache).points), 8)
+        self.assertEqual(len(cache._masks), 2)
+
+    def test_construction_rejects_bad_steps_and_regions(self) -> None:
+        for step, message in (
+            (5.0, "must satisfy unit um"),
+            (5 * u.ms, "must satisfy unit um"),
+            (None, "cannot be None"),
+        ):
+            with self.subTest(step=step), self.assertRaisesRegex(TypeError, message):
+                StepSamples(AllRegion(), step)
+        with self.assertRaisesRegex(TypeError, "StepSamples.region expects RegionExpr, got str"):
+            StepSamples("dend", 5 * u.um)
+        for step, message in (
+            (0 * u.um, "must be > 0"),
+            (-5 * u.um, "must be > 0"),
+            (np.inf * u.um, "must be finite"),
+            (np.nan * u.um, "must be finite"),
+            (np.array([5.0, 6.0]) * u.um, "StepSamples.step"),
+        ):
+            with self.subTest(step=step), self.assertRaisesRegex(ValueError, message):
+                StepSamples(AllRegion(), step)
+
+    def test_empty_or_too_short_regions_raise_at_select_and_at_place(self) -> None:
+        synapse = braincell.mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms, e=0.0 * u.mV)
+        cases = (
+            (StepSamples(EmptyRegion(), 5 * u.um), r"StepSamples cannot sample from an empty or zero-length region"),
+            (StepSamples(BranchSlice(1, 0.3, 0.3 + 1e-13), 5 * u.um), "empty or zero-length region"),
+            (
+                StepSamples(AllRegion(), 1000 * u.um),
+                r"1000\.0 um exceeds the region's total length 120\.0 um.*UniformSamples\(region, 1\)",
+            ),
+        )
+        for expr, message in cases:
+            with self.subTest(expr=expr, step="select"), self.assertRaisesRegex(ValueError, message):
+                self.tree.select(expr)
+            cell = braincell.Cell(_tree_d(), cv_policy=braincell.CVPerBranch())
+            with self.subTest(expr=expr, step="place"), self.assertRaisesRegex(ValueError, message):
+                cell.place(expr, synapse)
 
 
 class LocsetSetOpValidationTest(unittest.TestCase):

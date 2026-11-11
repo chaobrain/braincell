@@ -56,6 +56,7 @@ from braincell.filter import (
     LocsetMask,
     RegionAnchors,
     RootLocation,
+    StepSamples,
     Terminals,
     at,
     branch_in,
@@ -582,8 +583,8 @@ class TestCellDeclaration(unittest.TestCase):
         self.assertEqual([item.cv_id for item in placements], [0, 1])
         self.assertEqual(placements[0].point_id, placements[1].point_id)
 
-    def test_region_anchors_place_in_row_order_and_keep_repeats(self):
-        """MORPH-10a: one placement per RegionAnchors row, in order; junction rows share a point."""
+    def test_region_anchors_and_step_samples_place_in_row_order(self):
+        """One placement per locset row, in order; junction rows share a point (MORPH-10a, MORPH-10b)."""
         soma = Branch.from_lengths(lengths=np.array([20.0]) * u.um, radii=np.array([5.0, 5.0]) * u.um, type="soma")
         dend = Branch.from_lengths(
             lengths=np.array([40.0, 60.0]) * u.um, radii=np.array([2.0, 1.5, 1.0]) * u.um, type="basal_dendrite"
@@ -607,6 +608,11 @@ class TestCellDeclaration(unittest.TestCase):
         repeated = RegionAnchors(dend_region, 0.5) + RegionAnchors(dend_region, 0.5)
         self.assertEqual(placed(repeated), ([("dend", 0.5, 1, 3)] * 2, 2))
         self.assertEqual(placed(repeated.unique()), ([("dend", 0.5, 1, 3)], 1))
+        # MORPH-10b: StepSamples counts its steps across the junction.
+        self.assertEqual(
+            placed(StepSamples(AllRegion(), 25 * u.um)),
+            ([("soma", 0.625, 0, 1), ("dend", 0.175, 1, 3), ("dend", 0.425, 1, 3), ("dend", 0.675, 1, 3)], 4),
+        )
 
 
 def _edit_probe_cell(morpho: Morphology) -> Cell:

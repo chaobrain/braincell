@@ -803,17 +803,106 @@ def sample(
     )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class StepSamples(LocsetExpr):
+    """Place locations a fixed physical step apart along a region.
+
+    Parameters
+    ----------
+    region : RegionExpr
+        The region to sample.
+    step : brainunit.Quantity
+        Arc length between consecutive locations, a positive, finite scalar
+        length such as ``25 * u.um`` (a one-element array is accepted).
+
+    Returns
+    -------
+    LocsetMask
+        From :meth:`~LocsetExpr.evaluate`: with ``T`` the region's total
+        length and ``h`` the step, ``n = floor(T / h)`` locations at arc
+        lengths ``(k + 1/2) * h``, ``k = 0 ... n - 1``, along the
+        concatenated region, in increasing arc length and without repeats.
+        The first location is half a step in; a final partial step gets no
+        location.
+
+    Raises
+    ------
+    TypeError
+        At construction, if ``region`` is not a :class:`RegionExpr`, or
+        ``step`` is ``None``, a bare number or not a length.
+    ValueError
+        At construction, if ``step`` is not a scalar, or is zero, negative,
+        infinite or NaN. At evaluation (``select``, ``Cell.place``), if the
+        region is empty or has zero length once normalized, or if the step
+        is longer than the region (``n = 0``).
+
+    See Also
+    --------
+    UniformSamples : A given number of locations, evenly spaced.
+
+    Notes
+    -----
+    The region's intervals are concatenated as in :class:`UniformSamples`:
+    in ascending branch index and then ``prox``, dropping intervals of zero
+    length. The step count runs on across branches, so a location can fall
+    on any branch the region touches, and arc lengths map back to each
+    branch the same way. When the step divides ``T`` into ``n`` equal parts,
+    the result equals ``UniformSamples(region, n)``. The count ``floor(T / h)``
+    allows a relative slack of ``1e-9``, so that ``0.3 um`` sampled every
+    ``0.1 um`` gives three locations although ``0.3 / 0.1`` is
+    ``2.9999999999999996`` in floating point.
+
+    ``step`` keeps the quantity it was given, but equality and hashing use
+    its value in micrometres: ``StepSamples(r, 30 * u.um)`` equals
+    ``StepSamples(r, 0.03 * u.mmeter)``, and both can key a
+    :class:`SelectionCache`.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> import numpy as np
+        >>> from braincell import Branch, Morphology
+        >>> from braincell.filter import AllRegion, StepSamples
+        >>> soma = Branch.from_lengths(lengths=np.array([20.0]) * u.um, radii=np.array([5.0, 5.0]) * u.um, type="soma")
+        >>> dend = Branch.from_lengths(
+        ...     lengths=np.array([40.0, 60.0]) * u.um, radii=np.array([2.0, 1.5, 1.0]) * u.um, type="basal_dendrite"
+        ... )
+        >>> tree = Morphology.from_root(soma, name="soma")
+        >>> tree.soma.dend = dend
+        >>> tree.select(StepSamples(AllRegion(), 25 * u.um)).points
+        ((0, 0.625), (1, 0.175), (1, 0.425), (1, 0.675))
+        >>> tree.select(StepSamples(AllRegion(), 30 * u.um)).points
+        ((0, 0.75), (1, 0.25), (1, 0.55), (1, 0.85))
+    """
+
     region: RegionExpr
     step: Quantity
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.region, RegionExpr):
+            raise TypeError(f"StepSamples.region expects RegionExpr, got {type(self.region).__name__!s}.")
+        object.__setattr__(
+            self, "_step_um", helper._length_scalar_um(self.step, name="StepSamples.step", positive=True)
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if type(other) is not type(self):
+            return NotImplemented
+        return self.region == other.region and self._step_um == other._step_um
+
+    def __hash__(self) -> int:
+        return hash((type(self), self.region, self._step_um))
 
     def _evaluate(
         self,
         morpho: Morphology,
         cache: SelectionCache | None = None,
     ) -> LocsetMask:
-        raise NotImplementedError
+        mask = evaluate_cached(self.region, morpho, cache)
+        points = helper._step_samples_from_region(morpho, intervals=mask.intervals, step_um=self._step_um)
+        return LocsetMask(points=points, display_names=_display_names_for_points(morpho, points))
 
 
 @dataclass(frozen=True)

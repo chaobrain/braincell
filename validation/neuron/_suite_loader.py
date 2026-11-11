@@ -42,11 +42,13 @@ def use_double_precision() -> None:
     float32 errors left on these cases (up to about 3e-4 mV) still exceed
     those tolerances.
 
-    ``brainstate.environ.set`` is process-global, so whichever module runs
-    first decides for everyone. Each suite calls this from the helper module
-    every one of its tests imports, rather than relying on a sibling suite
-    having happened to set it: run either package alone and the comparison
-    tests would otherwise fail.
+    ``brainstate.environ.set`` is process-global. Each suite calls this when
+    imported, from the helper module every one of its tests imports, so that
+    import-time code and a ``python <suite>.py`` run get float64. Under
+    pytest, the root ``conftest.py`` restores the session's precision once
+    collection ends, so that tests outside validation/neuron are not run in
+    float64; ``validation/neuron/conftest.py`` sets float64 around the tests
+    of this package instead.
     """
     brainstate.environ.set(precision=64)
 

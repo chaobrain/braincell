@@ -63,11 +63,7 @@ the generated XPlane file:
 
 ```bash
 python benchmarks/profiling/parse_xplane_trace.py \
-<<<<<<<< HEAD:benchmarks/profiling/README.md
   --trace-dir benchmarks/profiling/artifacts/braincell-trace \
-========
-  --trace-dir /tmp/braincell-trace \
->>>>>>>> a7a6e94 (refactor: separate optimization APIs, workflows and performance evidence):examples/profiling/README.md
   --mode leaf
 ```
 
@@ -140,11 +136,7 @@ Then print the per-level GPU table:
 
 ```bash
 python benchmarks/profiling/parse_xplane_trace.py \
-<<<<<<<< HEAD:benchmarks/profiling/README.md
   --trace-dir benchmarks/profiling/artifacts/dhs-level-pop32 \
-========
-  --trace-dir /tmp/dhs-level-pop32 \
->>>>>>>> a7a6e94 (refactor: separate optimization APIs, workflows and performance evidence):examples/profiling/README.md
   --scope-prefix braincell:dhs_toy \
   --mode leaf \
   --dhs-level-table \
@@ -180,11 +172,7 @@ Parse the real levels with:
 
 ```bash
 python benchmarks/profiling/parse_xplane_trace.py \
-<<<<<<<< HEAD:benchmarks/profiling/README.md
   --trace-dir benchmarks/profiling/artifacts/pc-real-dhs-levels \
-========
-  --trace-dir /tmp/pc-real-dhs-levels \
->>>>>>>> a7a6e94 (refactor: separate optimization APIs, workflows and performance evidence):examples/profiling/README.md
   --scope-prefix braincell:dhs \
   --mode leaf \
   --dhs-level-table
@@ -235,11 +223,7 @@ nsys profile \
   --cpuctxsw=none \
   --capture-range=cudaProfilerApi \
   --capture-range-end=stop \
-<<<<<<<< HEAD:benchmarks/profiling/README.md
   -o benchmarks/profiling/artifacts/braincell-neuron-compare \
-========
-  -o /tmp/braincell-neuron-compare \
->>>>>>>> a7a6e94 (refactor: separate optimization APIs, workflows and performance evidence):examples/profiling/README.md
   python benchmarks/profiling/profile_simulation.py \
     --case neuron_compare_cell \
     --platform cuda \

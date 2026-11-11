@@ -15,7 +15,7 @@ Biophysically detailed brain cell modeling in BrainX. This file holds the rules 
 4. Split a diff over ~1500 lines (deletions and generated files aside) into PRs that can be reviewed alone.
 5. A bug fix starts with a test that reproduces it.
 6. Docs, examples and `changelog.md` change in the same PR as the code they describe.
-7. Breaking a public API needs a deprecation warning that ships in at least one minor release first.
+7. Breaking a public API needs a deprecation, declared with `braincell._deprecation.Deprecation`, that ships in at least one minor release first ([conventions](docs/developer/conventions.md#deprecation)).
 8. Before pushing, run `pre-commit run --all-files` and the tests your change affects, the latter with `--cov=braincell --cov-report=xml` followed by `diff-cover coverage.xml --compare-branch=origin/main --fail-under=90`; the PR body lists the commands and their results.
 9. A PR merges when `ci-ok` passes and a code owner other than the author approves (`.github/CODEOWNERS`).
 10. After writing code, list the edge cases it handles and the tests that cover them.

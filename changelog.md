@@ -264,6 +264,18 @@
 
 ### Changes & Improvements
 
+- **Deprecation warnings name their releases and point at the calling line**
+  (API-7). Each braincell deprecation now reads `<name> is deprecated since
+  braincell <since> and will be removed in braincell <removed_in>. Use
+  <replacement> instead.` and is attributed to the line that used the
+  deprecated API, also through a subclass `__init__`, brainstate's node
+  metaclass or a dataclass, so a script or notebook shows it by default.
+  braincell's own uses no longer warn: an unnamed probe placed on a Cell
+  warned a second time, from `dataclasses.py`, when the Cell named it, and now
+  warns once. Warning categories are unchanged; silence them all with
+  `warnings.filterwarnings("ignore", message=".* is deprecated since
+  braincell", category=DeprecationWarning)`.
+
 - **A lumped Cell warns at `init_state` when its explicit solver meets a
   stiff HH gate** (CELL-29). An explicit Runge-Kutta solver (the default
   `ralston2` included) integrates the gates with `V`, and is stable on a
@@ -626,6 +638,22 @@
 
 ### Deprecations
 
+- **`braincell.mech.StateProbe`, `braincell.mech.MechanismProbe`,
+  `braincell.mech.CurrentProbe` and `braincell.mech.ProbeMechanism`** (API-7)
+  are deprecated since 0.3; removal planned for 0.4. Use
+  `Cell.record(..., braincell.observe.*)`, e.g.
+  `cell.record("v", braincell.observe.state("V"))` for a `StateProbe`. They
+  have warned since 0.2.0 without naming a release; the warning now does.
+- **`braincell.Cell.bind_synapse_input()`** (API-7) is deprecated since 0.3;
+  removal planned for 0.4. Use an `EventSource` with `braincell.connect()`.
+  It has warned since 0.2.0 without naming a release; the warning now does.
+- **`braincell.filter.density.exponential()` and
+  `braincell.filter.density.gaussian()`** (API-7) are deprecated since 0.3;
+  removal planned for 0.4. Use a callable built from `braincell.filter.metric`:
+  `density.exponential("branch_x", 0.2)` is
+  `lambda context: np.exp(metric.branch_x(context) / 0.2)`. They have warned
+  since 0.2.0 without naming a release; the warning now does.
+
 - **Constructing an invalid mechanism declaration** (MECH-26).
   `bc.mech.Channel`, `bc.mech.Ion` and `bc.mech.Synapse` now check literal
   parameters (quantities, numbers, arrays) and parameter names when the class
@@ -853,6 +881,33 @@ channels already pass, or moves code they already shared.
   discovered while scanning `pairs`" — makes a reordering of `pairs`
   silently change which state is eliminated, and will be removed. All
   shipped channels now declare it explicitly.
+
+### Errata
+
+Added after the release (API-7): changes 0.2.0 shipped without an entry, and
+one correction.
+
+- **25 names were removed from `__all__` without a deprecation:**
+  - `braincell.network` (18), replaced by the network redesign with no
+    one-to-one successor: `Connection`, `ConnectionBlock`, `ContactMethod`,
+    `ContactTable`, `EdgeMethod`, `EdgeSet`, `NetworkRunResult`, `Projection`,
+    `ProjectionContactContext`, `ProjectionEdgeContext`, `all_pairs`,
+    `by_post`, `dense`, `explicit_contacts`, `lower_connections`, `pairs`,
+    `per_edge`, `probability`;
+  - `braincell.quad` (6 step functions, no replacement): `cn_exp_euler_step`,
+    `cn_rk4_step`, `exp_exp_euler_step`, `implicit_exp_euler_step`,
+    `implicit_rk4_step`, `splitting_step`;
+  - `braincell.mech.NetStim`, a `Point` declaration in 0.1.0; the
+    `braincell.NetStim` of 0.2.0 is an `EventSource`, a different type.
+- **The 19 channel aliases deprecated in 0.1.0 were removed.** Use the name
+  without the leading `I`: `INa_HH1952`, `INa_Ba2002`, `INa_TM1991`,
+  `IK_HH1952`, `IK_TM1991`, `IK_Leak`, `IKDR_Ba2002`, `IKNI_Ya1989`,
+  `IKA1_HM1992`, `IKA2_HM1992`, `IKK2A_HM1992`, `IKK2B_HM1992`,
+  `ICaN_IS2008`, `ICaL_IS2008`, `ICaT_HM1992`, `ICaT_HP1992`, `ICaHT_HM1992`,
+  `ICaHT_Re1993` and `IAHP_De1994` (e.g. `braincell.channel.Na_HH1952`).
+- **Correction to Deprecations:** a `Markov` subclass that does not declare
+  `dependent_state` does not warn; 0.2.0 raises `ValueError` when the class is
+  created.
 
 
 ## Version 0.1.0

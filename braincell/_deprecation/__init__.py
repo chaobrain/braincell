@@ -255,7 +255,9 @@ class Deprecation:
                 f"{self.name}: removed_in={self.removed_in!r} must be a later release than since={self.since!r}."
             )
         if self.category not in _CATEGORIES:
-            raise TypeError(f"{self.name}: category must be DeprecationWarning or FutureWarning; got {self.category!r}.")
+            raise TypeError(
+                f"{self.name}: category must be DeprecationWarning or FutureWarning; got {self.category!r}."
+            )
         if self.replacement is None and not self.note:
             raise ValueError(f"{self.name}: without a replacement, note= must say what to do instead.")
         previous = _REGISTRY.setdefault(self.name, self)

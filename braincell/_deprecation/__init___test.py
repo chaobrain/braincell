@@ -15,6 +15,7 @@
 
 """Tests for the deprecation helper, and the library-wide deprecation checks (API-7)."""
 
+import ast
 import contextlib
 import dataclasses
 import io
@@ -457,7 +458,9 @@ class LibraryDeprecationsTest(unittest.TestCase):
 
     def test_no_deprecation_starts_after_the_next_release(self) -> None:
         early = [f"{item.name} (since={item.since})" for item in self.items if dep._minor(item.since) > self.next_minor]
-        self.assertEqual(early, [], f"checked {len(self.items)} deprecations; since cannot be later than the next minor")
+        self.assertEqual(
+            early, [], f"checked {len(self.items)} deprecations; since cannot be later than the next minor"
+        )
 
     def test_the_changelog_announces_each_deprecation(self) -> None:
         if not _CHANGELOG.is_file():
@@ -531,6 +534,25 @@ class CommandLineTest(unittest.TestCase):
             dep.main(["0.3.0"])
         self.assertEqual(exit_.exception.code, 2)
         self.assertIn("'MAJOR.MINOR'", stderr.getvalue())
+
+
+class ModuleScopeTest(unittest.TestCase):
+    def test_module_scope_imports_only_the_standard_library(self) -> None:
+        # Every braincell package imports this module (``braincell.mech`` included, a leaf
+        # otherwise), so it must not import braincell back at module scope.
+        imported = []
+        for path in sorted(Path(dep.__file__).parent.glob("*.py")):
+            if path.name.endswith("_test.py"):
+                continue
+            for node in ast.parse(path.read_text(encoding="utf-8")).body:
+                if isinstance(node, ast.Import):
+                    imported += [(path.name, alias.name) for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    imported.append((path.name, node.module))
+        allowed = sys.stdlib_module_names | {"__future__"}
+        outside = [(name, module) for name, module in imported if module.split(".")[0] not in allowed]
+        # ``__main__.py`` runs the command line; nothing imports it.
+        self.assertEqual(outside, [("__main__.py", "braincell._deprecation")], f"checked {len(imported)} imports")
 
 
 class UserFrameTest(unittest.TestCase):

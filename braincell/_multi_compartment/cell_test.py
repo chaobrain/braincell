@@ -1320,8 +1320,10 @@ class CellGenericSolverTest(unittest.TestCase):
 
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
             limit = 2.0 * final_V("staggered", 0.00025) - final_V("staggered", 0.0005)
-            self.assertLessEqual(abs(final_V("rk4", 0.005) - limit), 1e-5)
-            self.assertLessEqual(abs(final_V("ralston2", 0.001) - limit), 1e-4)
+            # Measured: rk4 1.2e-7 mV, ralston2 1.25e-5 mV; staggered itself is
+            # 0.21 mV off at dt = 0.005 ms here, so it is not the yardstick.
+            self.assertLessEqual(abs(final_V("rk4", 0.005) - limit), 5e-7)
+            self.assertLessEqual(abs(final_V("ralston2", 0.001) - limit), 5e-5)
             gap = {dt: abs(final_V("ind_exp_euler", dt) - limit) for dt in (0.005, 0.001)}
             self.assertGreaterEqual(gap[0.005] / gap[0.001], 3.0)
             net, _ = network("exp_euler")

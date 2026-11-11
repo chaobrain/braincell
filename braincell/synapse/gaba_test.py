@@ -150,6 +150,22 @@ def _x64_report() -> dict:
             cell.runtime.get_ion("cl").external_currents.clear()
         report[f"ci-removed-{remove}"] = float(_samples(net, 1005.0)["ci"][-1, 0])
 
+    # CELL-19: generic Cell solvers against the Richardson limit of staggered
+    # (first order), V (mV) and Ci (mM) at 1 ms.
+    def final(solver, dt):
+        cell = _cell((0.5, bc.mech.Synapse("GabaA_JE2011", name="s")), ion="Cldif_JE2011", solver=solver)
+        _network(cell, ("s", 0.0005), start=0.1, interval=0.3).run(dt=dt * u.ms, duration=1.0 * u.ms)
+        values = (cell.V.value.to_decimal(u.mV), cell.runtime.get_ion("cl").Ci.value.to_decimal(u.mM))
+        return [float(np.asarray(value).reshape(-1)[0]) for value in values]
+
+    half, quarter = final("staggered", 0.0005), final("staggered", 0.00025)
+    limit = [2.0 * b - a for a, b in zip(half, quarter)]
+    report["generic"] = {
+        f"{solver}-{dt}": [got - want for got, want in zip(final(solver, dt), limit)]
+        for solver, dt in (("rk4", 0.005), ("ralston2", 0.001), ("ind_exp_euler", 0.001))
+    }
+    report["generic-ci-rise"] = limit[1] - 5.0
+
     # At a branch end the chloride current is divided by the area that
     # normalizes the synapse's point current.
     cell = _cell((1.0, bc.mech.Synapse("GabaA_JE2011", name="s", P=0.0)), ion="Cldif_JE2011", n_cv=2)
@@ -271,6 +287,31 @@ class GabaAFloat32CellTest(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(samples["ci"])))
         self.assertGreater(samples["ci"][-1, 0], 5.0 + 1e-3)
         self.assertLess(np.min(samples["i"]), 0.0)  # outward at V > E_GABA
+
+
+class GabaAGenericSolverTest(unittest.TestCase):
+    """CELL-19: a generic Cell solver snapshots the chloride current after its step.
+
+    ``Cldif_JE2011`` integrates its total current, which includes the GABA
+    current; under ``ralston2`` and ``ind_exp_euler`` it used to raise in
+    ``run``. Measured in the float64 report.
+    """
+
+    def test_generic_solvers_converge_to_the_staggered_limit(self) -> None:
+        report = _float64_report()
+        self.assertGreater(report["generic-ci-rise"], 4e-3)  # mM
+        # Limits about 4x the measured gaps (comments). Ci's gap is first order
+        # through the pool's own backward Euler subsolver, as under staggered
+        # (2.2e-5 mM at dt = 0.005 ms).
+        for case, (tol_v, tol_ci) in {
+            "rk4-0.005": (5e-6, 1e-4),  # 1.2e-6 mV, 2.4e-5 mM
+            "ralston2-0.001": (4e-6, 2e-5),  # 9.3e-7 mV, 4.8e-6 mM
+            "ind_exp_euler-0.001": (7e-3, 2e-5),  # 1.6e-3 mV (first order), 5.2e-6 mM
+        }.items():
+            with self.subTest(case=case):
+                gap_v, gap_ci = report["generic"][case]
+                self.assertLessEqual(abs(gap_v), tol_v)
+                self.assertLessEqual(abs(gap_ci), tol_ci)
 
 
 class GabaAGuardTest(unittest.TestCase):

@@ -113,7 +113,6 @@ from braincell._multi_compartment.density_views import ChannelView, IonView
 from braincell._multi_compartment.geometry import GeometryView
 from braincell._multi_compartment.lumped import (
     CABLE_ONLY_SOLVERS,
-    CLAMP_TYPES,
     CURRENT_DENSITY_UNIT as _LUMPED_CURRENT_UNIT,
     LumpedClamps,
     as_current_density,
@@ -728,6 +727,8 @@ class CellView(DiscreteView, _CellFacade):
             return values[self._scope.pair_cv_id]
         local = {population: i for i, population in enumerate(self._population_indices)}
         rows = np.asarray([local[p] for p, _ in self._scope.pairs], dtype=np.int32)
+        if self._cell._is_lumped:
+            return values[rows]
         return values[rows, self._scope.pair_cv_id]
 
     @V_th.setter
@@ -738,6 +739,10 @@ class CellView(DiscreteView, _CellFacade):
     def V(self):
         """Return initialized membrane voltage gathered over selected cells."""
         self._cell._raise_if_not_initialized("CellView.V")
+        if self._cell._is_lumped:
+            # No CV axis: a spatial selection reads the member of each pair.
+            populations = self._scope.pair_population_index if self._scope.spatially_restricted else self._population_indices
+            return self._cell.V.value[..., np.asarray(populations, dtype=np.int32)]
         if self._scope.spatially_restricted:
             if len(self._cell.pop_size) == 0:
                 return self._cell.V.value[..., self._scope.pair_cv_id]
@@ -760,6 +765,8 @@ class CellView(DiscreteView, _CellFacade):
                 batch_size=self._cell._runtime_batch_size,
                 detailed=False,
             )
+        if self._cell._is_lumped:
+            return self._cell.spike.value[..., np.asarray(self._population_indices, dtype=np.int32)]
         return _select_population_value(
             self._cell.spike.value,
             population_indices=self._population_indices,
@@ -824,6 +831,9 @@ class CellView(DiscreteView, _CellFacade):
         """
         scope = self._scope
         if not scope.spatially_restricted:
+            if self._cell._is_lumped and args and isinstance(args[0], Point):
+                # A lumped Cell has one site, as in Cell.place without a locset.
+                args = (self._cell.cv_midpoints, *args)
             if not args:
                 raise TypeError("CellView.place(locset, *mechanisms) needs a locset on a population view.")
             locset, *mechanisms = args
@@ -1040,7 +1050,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         Control-volume splitting policy; defaults to :class:`CVPerBranch`.
         :class:`Lumped` makes a lumped (point) cell: ``V``, ``spike`` and
         mechanism states have shape ``pop_size`` with no CV axis, and the
-        cell has a single site at the CV midpoint. See :meth:`point`.
+        cell has a single site at the CV midpoint. Its views, trainable
+        parameters, synapses, recordings and ``Network`` populations give
+        what the same declarations give with ``CVPerBranch()`` on the one-CV
+        soma; views and recordings drop that one-CV axis. :attr:`runtime`
+        is the one-CV layout state the lumped mechanisms run on. See
+        :meth:`point`.
     V_th : Quantity
         Spike-detection threshold (default ``0. mV``). An integer-valued
         quantity such as ``0 * u.mV`` is converted to the default float dtype.
@@ -1296,8 +1311,6 @@ class Cell(_CellFacade, HHTypedNeuron):
         if not isinstance(value, CVPolicy):
             raise TypeError(f"cv_policy must be CVPolicy, got {type(value).__name__!s}.")
         lumped = isinstance(value, Lumped)
-        if lumped:
-            self._raise_if_lumped_unsupported_declarations()
         solver = _resolve_cell_solver(self._solver_declaration, lumped=lumped)
         previous = self._discretization_policy, self._cv_policy_index_basis
         self._discretization_policy = value
@@ -1314,33 +1327,6 @@ class Cell(_CellFacade, HHTypedNeuron):
     def _is_lumped(self) -> bool:
         """Whether this cell runs the lumped (point) runtime."""
         return isinstance(self._discretization_policy, Lumped)
-
-    def _raise_if_lumped(self, what: str) -> None:
-        if self._is_lumped:
-            raise NotImplementedError(
-                f"{what} is not supported on a lumped Cell (cv_policy=Lumped()) yet; "
-                "use a cable policy such as CVPerBranch() for now."
-            )
-
-    def _raise_if_lumped_unsupported_declarations(self) -> None:
-        """Reject declarations a lumped runtime cannot run before switching to it."""
-        if self._reduction_models:
-            raise NotImplementedError(
-                "A reduction model (add_reduction) is not supported on a lumped Cell (cv_policy=Lumped()) yet; "
-                "this cell already has one."
-            )
-        for rule in self._place_rules:
-            for mechanism in rule.mechanisms:
-                if isinstance(mechanism, SynapsePlacement):
-                    raise NotImplementedError(
-                        "Placing a synapse is not supported on a lumped Cell (cv_policy=Lumped()) yet; "
-                        "this cell already places one."
-                    )
-                if not isinstance(mechanism, CLAMP_TYPES):
-                    raise NotImplementedError(
-                        f"A lumped Cell (cv_policy=Lumped()) places current clamps only; "
-                        f"this cell places a {type(mechanism).__name__}."
-                    )
 
     @classmethod
     def point(
@@ -1362,8 +1348,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         Shorthand for ``Cell(Morphology.from_soma(length=length,
         radius=radius), pop_size=pop_size, cv_policy=Lumped(), ...)``. The
         cell is an ordinary :class:`Cell`: paint mechanisms on it, place
-        current clamps on its one site, record and ``run`` it. ``V`` and
-        ``spike`` have shape ``pop_size`` (plus a leading batch axis).
+        clamps and synapses on its one site, read and write it through its
+        views, train its parameters, record and ``run`` it, and add it to a
+        :class:`~braincell.Network`. ``V`` and ``spike`` have shape
+        ``pop_size`` (plus a leading batch axis).
 
         Parameters
         ----------
@@ -1544,6 +1532,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         )
         try:
             self.discretize()
+            if self._is_lumped:
+                self._check_lumped_sites()
         except Exception:
             self._place_rules = previous_rules
             raise
@@ -1580,6 +1570,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._place_rules = merge_place_rules(previous_rules, tuple(incoming))
         try:
             self.discretize()
+            if self._is_lumped:
+                self._check_lumped_sites()
         except Exception:
             self._place_rules = previous_rules
             raise
@@ -1610,7 +1602,8 @@ class Cell(_CellFacade, HHTypedNeuron):
                 from braincell.trainable._targets import require_unbound
 
                 require_unbound(self, "threshold", "V_th", pop * self.n_cv + cv, "threshold")
-                current = bridge.fill_like(self.varshape, self.V_th)
+                # A lumped Cell's threshold has no CV axis (shape pop_size).
+                current = self.V_th if self._is_lumped else bridge.fill_like(self.varshape, self.V_th)
             else:
                 current = self._V_init_materialized.value
             # Flatten the population axes for the logical selector's indices.
@@ -1620,10 +1613,11 @@ class Cell(_CellFacade, HHTypedNeuron):
             pending[name] = updated.reshape(shape)
         for name, value in pending.items():
             if name == "V_init":
-                self._runtime_V_init.value = value
-                mask = self._runtime_V_init_mask.value
-                flat_mask = mask.reshape((self._population_size, self.n_cv)) if self.pop_size else mask
-                self._runtime_V_init_mask.value = flat_mask.at[indices].set(True).reshape(mask.shape)
+                if not self._is_lumped:
+                    self._runtime_V_init.value = value
+                    mask = self._runtime_V_init_mask.value
+                    flat_mask = mask.reshape((self._population_size, self.n_cv)) if self.pop_size else mask
+                    self._runtime_V_init_mask.value = flat_mask.at[indices].set(True).reshape(mask.shape)
                 self._V_init_materialized.value = value
             elif self._V_th_parameter is not None:
                 self._V_th_parameter.value = value
@@ -1743,9 +1737,6 @@ class Cell(_CellFacade, HHTypedNeuron):
             If the locset is omitted on a cable cell.
         ValueError
             On a lumped cell, if a location is not the CV midpoint.
-        NotImplementedError
-            On a lumped cell, for a synapse or any point mechanism other than
-            a current clamp.
         IndexError
             If a :class:`~braincell.filter.LocsetMask` or
             :class:`~braincell.filter.LocsetBatch` names a branch the
@@ -1781,15 +1772,6 @@ class Cell(_CellFacade, HHTypedNeuron):
                     "(cv_policy=Lumped()) has a single site to place on by default."
                 )
             locset = self.cv_midpoints
-        if self._is_lumped:
-            for mechanism in mechanisms:
-                if isinstance(mechanism, SynapsePlacement):
-                    self._raise_if_lumped("Placing a synapse")
-                if not isinstance(mechanism, CLAMP_TYPES):
-                    raise NotImplementedError(
-                        "A lumped Cell (cv_policy=Lumped()) places current clamps only "
-                        f"(CurrentClamp, SineClamp, FunctionClamp); got {type(mechanism).__name__}."
-                    )
         self._validate_synapse_names(mechanisms)
         if _is_per_cell_locset_sequence(locset):
             if len(self.pop_size) != 1:
@@ -2210,33 +2192,7 @@ class Cell(_CellFacade, HHTypedNeuron):
     @property
     def synapses(self) -> SynapseView:
         """Return a view over all logical point-synapse instances."""
-        self._raise_if_lumped("The synapse view (cell.synapses)")
         return SynapseView(self)
-
-    # Views over regions, CVs and density mechanisms index the CV axis, which
-    # a lumped Cell does not have; CELL-24 decides their lumped form.
-
-    def _with_scope(self, scope: _CellScope) -> "CellView":
-        self._raise_if_lumped("A Cell view (cell[...], cell.on(...), cell.loc(...), cell.soma, cell.cv[...])")
-        return super()._with_scope(scope)
-
-    @property
-    def channels(self) -> ChannelView:
-        """Return the density-channel view of the whole cell."""
-        self._raise_if_lumped("The channel view (cell.channels)")
-        return super().channels
-
-    @property
-    def ions(self) -> IonView:
-        """Return the ion view of the whole cell."""
-        self._raise_if_lumped("The ion view (cell.ions)")
-        return super().ions
-
-    @property
-    def geometry(self) -> GeometryView:
-        """Return the runtime geometry view of the whole cell."""
-        self._raise_if_lumped("The geometry view (cell.geometry)")
-        return super().geometry
 
     @property
     def clamps(self) -> ClampView:
@@ -2268,7 +2224,6 @@ class Cell(_CellFacade, HHTypedNeuron):
     def add_reduction(self, name: str, model):
         """Register one interchangeable reduced model under a Cell-local name."""
         self._raise_if_initialized("add a reduction model")
-        self._raise_if_lumped("add_reduction()")
         if not isinstance(name, str) or not name:
             raise ValueError("Reduction model name must be a non-empty string.")
         if name == "detailed":
@@ -2487,15 +2442,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._runtime = CellRuntimeState.from_cell(self)
         self._ind_update_after_solver = self._check_solver_against_mechanisms()
         self._runtime.refresh_geometry()
-        for callback in currents.register_synapse_ion_currents(self):
-            ion = self._runtime.get_ion(callback.ion_key)
-            if not self.cache_ion_total_current and getattr(type(ion), "uses_total_current", False):
-                # Without the step-start snapshot the ion's own integrator
-                # would differentiate through the synapse's states.
-                raise ValueError(
-                    f"{callback.requires_snapshot}, whose concentration integrates its total current; "
-                    "this needs cache_ion_total_current=True."
-                )
+        self._register_synapse_ion_currents()
 
         self._in_size = self.varshape
         self._out_size = self.varshape
@@ -2565,7 +2512,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._runtime_nodes_cache = self._build_runtime_node_views()
 
     def _check_solver_against_mechanisms(self) -> bool:
-        """Reject a solver that cannot advance this cable Cell's mechanisms.
+        """Reject a solver that cannot advance this Cell's mechanisms.
 
         Returns
         -------
@@ -2587,13 +2534,26 @@ class Cell(_CellFacade, HHTypedNeuron):
         if any(self._solver_fn is get_integrator(name) for name in _BLOCK_SOLVERS):
             synapses = sorted({type(synapse).__name__ for _, synapse in self._runtime.iter_synapse_layouts()})
             if synapses:
+                staggered = "" if self._is_lumped else "'staggered', "
                 raise ValueError(
                     f"solver {self._solver_name!r} cannot advance a Cell with point synapses "
                     f"({', '.join(synapses)}): it integrates all states as one block per cell, and "
-                    "synapse states have no CV axis. Use 'staggered', 'ind_exp_euler' or an explicit "
+                    f"synapse states have no CV axis. Use {staggered}'ind_exp_euler' or an explicit "
                     "Runge-Kutta solver such as 'ralston2'."
                 )
         return True
+
+    def _register_synapse_ion_currents(self) -> None:
+        """Add each ion-reading synapse's ion current to its ion (``_SynapseIonCurrent``)."""
+        for callback in currents.register_synapse_ion_currents(self):
+            ion = self._runtime.get_ion(callback.ion_key)
+            if not self.cache_ion_total_current and getattr(type(ion), "uses_total_current", False):
+                # Without the step-start snapshot the ion's own integrator
+                # would differentiate through the synapse's states.
+                raise ValueError(
+                    f"{callback.requires_snapshot}, whose concentration integrates its total current; "
+                    "this needs cache_ion_total_current=True."
+                )
 
     def _init_lumped_state(self, *, batch_size=None) -> None:
         """Build the lumped runtime: SingleCompartment math with no CV axis."""
@@ -2605,8 +2565,14 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         self._V_init_materialized = RuntimeParameterState(V_init)
         self._V_th = V_th
-        runtime, channels = build_lumped_runtime(self, V_init=V_init, V_th=V_th)
+        # The runtime reads both through its owner, so CellView.set() and a
+        # trainable spike threshold reach it.
+        self._V_th_parameter = RuntimeParameterState(V_th)
+        runtime, channels, runtime_state = build_lumped_runtime(self, V_init=V_init, V_th=V_th)
         self._lumped_runtime = runtime
+        self._runtime = runtime_state
+        self._check_solver_against_mechanisms()
+        self._register_synapse_ion_currents()
         self._lumped_clamps = LumpedClamps(
             self,
             density_unit=_LUMPED_CURRENT_UNIT,
@@ -2623,6 +2589,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         warn_stiff_gates(runtime, channels, solver=self._solver_fn, solver_name=self._solver_name, stacklevel=3)
         self.V = runtime.V
         self.spike = runtime.spike
+        self._event_previous_V = brainstate.ShortTermState(self.V.value)
+        self._next_synapse_inputs_prepared = brainstate.ShortTermState(jnp.asarray(False))
         self._lumped_I_ext = brainstate.ShortTermState(self._zero_lumped_current())
         self._step_clamp_components = brainstate.ShortTermState(
             u.Quantity(jnp.zeros((self._lumped_clamps.n_component,), dtype=float), u.nA)
@@ -2630,6 +2598,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._current_time_state.value = 0.0 * u.ms
         self._initialized = True
         self._view_generation += 1
+
+    def _lumped_membrane_current(self):
+        return self._lumped_runtime.membrane_current(self._lumped_I_ext.value)
 
     def _zero_lumped_current(self):
         return u.Quantity(jnp.zeros(self.pop_size, dtype=float), _LUMPED_CURRENT_UNIT)
@@ -2732,8 +2703,6 @@ class Cell(_CellFacade, HHTypedNeuron):
     @property
     def runtime(self) -> CellRuntimeState:
         self._raise_if_not_initialized("runtime")
-        if self._is_lumped:
-            raise RuntimeError("A lumped Cell (cv_policy=Lumped()) has no cable runtime.")
         if self._uses_reduction:
             raise RuntimeError("Detailed Cell runtime is unavailable while a reduction model is selected.")
         return self._runtime
@@ -2892,6 +2861,8 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     def _cv_to_point(self, cv_values):
         self._raise_if_not_initialized("_cv_to_point()")
+        if self._is_lumped:
+            return u.math.broadcast_to(cv_values[..., None], u.math.shape(cv_values) + (self._runtime.n_point,))
         return bridge.cv_to_point(cv_values, self._runtime)
 
     def _initial_point_voltage(self, cv_values):
@@ -2924,6 +2895,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         """
 
         values = self.V.value if cv_values is None else cv_values
+        if self._is_lumped:
+            return u.math.broadcast_to(values[..., None], u.math.shape(values) + (self._runtime.n_point,))
         if self._solver_name in {"staggered", "dhs_voltage"}:
             return self._dhs_point_voltage(values)
         return boundary.point_voltage(self._boundary_rows(), values, self._point_V.value)
@@ -3073,6 +3046,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         """Refresh cable-derived runtime values without rebuilding the grid."""
         self._raise_if_not_initialized("refresh geometry")
         self._runtime.refresh_geometry()
+        if self._is_lumped:
+            # The lumped runtime reads area and cm from the geometry states.
+            self._run_loop_cache.clear()
+            return
         self.C = bridge.broadcast_to_shape(self._runtime.cable.cm, self.pop_size + (self.n_cv,), name="Cell.C")
         self._run_loop_cache.clear()
 
@@ -3539,11 +3516,13 @@ class Cell(_CellFacade, HHTypedNeuron):
         delivered; it does not integrate continuous synapse dynamics.
         """
         self._raise_if_not_initialized("_begin_step()")
-        if self._is_lumped:
-            return
         self._next_synapse_inputs_prepared.value = jnp.asarray(False)
         if self._uses_reduction:
             self._pending_reduction_inputs = self._reduction_input_runtime.take_inputs()
+            return
+        if self._is_lumped:
+            if self._runtime.event_buffers:
+                self._apply_runtime_synapse_events(self._cv_to_point(self.V.value))
             return
         point_V = self._point_voltage_for_mechanisms(self.V.value)
         self._apply_runtime_synapse_events(point_V)
@@ -3558,7 +3537,9 @@ class Cell(_CellFacade, HHTypedNeuron):
                 return
             step_t = self._resolve_t() if t is None else t
             step_dt = brainstate.environ.get_dt() if dt is None else dt
-            density, components = self._lumped_clamps.evaluate(step_t + 0.5 * step_dt)
+            density, components = self._lumped_clamps.evaluate(
+                step_t + 0.5 * step_dt, area=self._lumped_runtime.area
+            )
             self._lumped_I_ext.value = density
             if components is not None:
                 self._step_clamp_components.value = components
@@ -3642,6 +3623,8 @@ class Cell(_CellFacade, HHTypedNeuron):
             I_ext = self._lumped_I_ext.value
             if external is not None:
                 I_ext = I_ext + external
+            # VoltageCrossingSource compares the voltage before and after the step.
+            self._event_previous_V.value = self.V.value
             with jax.named_scope("braincell:cell_update:lumped"):
                 return self._lumped_runtime.update(I_ext)
 
@@ -3681,9 +3664,11 @@ class Cell(_CellFacade, HHTypedNeuron):
         ``_next_synapse_inputs_prepared`` flag this method sets.
         """
         self._raise_if_not_initialized("_prepare_next_synapse_inputs()")
-        if self._is_lumped:
-            return
-        point_V = None if self._uses_reduction else self._point_voltage_for_mechanisms(self.V.value)
+        # Neither the packed reduction inputs nor the lumped synapses (whose
+        # voltage is their member's V) bind point voltages here.
+        point_V = (
+            None if self._uses_reduction or self._is_lumped else self._point_voltage_for_mechanisms(self.V.value)
+        )
         if t is None:
             self._prepare_runtime_synapse_inputs(point_V)
         else:
@@ -3701,8 +3686,6 @@ class Cell(_CellFacade, HHTypedNeuron):
         ``reset_state`` prepares here. The test is on a state, not a Python
         flag, so it holds inside jitted loops.
         """
-        if self._is_lumped:
-            return
         brainstate.transform.cond(
             self._next_synapse_inputs_prepared.value,
             lambda: None,
@@ -3808,8 +3791,6 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     def _apply_direct_live_connection_events(self) -> None:
         """Route live direct sources and run target handlers at this boundary."""
-        if self._is_lumped:
-            return
         live_connections = self.connections._call_views(scheduled=False)
         if not live_connections:
             return
@@ -3974,14 +3955,6 @@ class Cell(_CellFacade, HHTypedNeuron):
                 f"expected {self._runtime_batch_size!r}, got {requested_batch!r}."
             )
         self._direct_step_clamps_prepared = False
-        if self._is_lumped:
-            self._lumped_runtime.reset_state(batch_size)
-            self._lumped_I_ext.value = self._zero_lumped_current()
-            self._step_clamp_components.value = u.Quantity(
-                jnp.zeros_like(self._step_clamp_components.value.mantissa), u.nA
-            )
-            self._current_time_state.value = 0.0 * u.ms
-            return
         if self._uses_reduction:
             self.connections.reset_runtime()
             self._reduction_input_runtime.clear_event_buffers()
@@ -3989,6 +3962,21 @@ class Cell(_CellFacade, HHTypedNeuron):
             self._publish_reduction_output(output)
             self._pending_reduction_inputs = self._reduction_input_runtime.take_inputs()
             self._next_synapse_inputs_prepared.value = jnp.asarray(False)
+            self._current_time_state.value = 0.0 * u.ms
+            return
+        if self._is_lumped:
+            if self.trainables.bindings():
+                self.trainables.materialize()
+            self.connections.reset_runtime()
+            for layout_id in self._runtime.event_buffers:
+                self._runtime.clear_event_buffer(layout_id)
+            self._next_synapse_inputs_prepared.value = jnp.asarray(False)
+            self._lumped_runtime.reset_state(batch_size)
+            self._event_previous_V.value = self.V.value
+            self._lumped_I_ext.value = self._zero_lumped_current()
+            self._step_clamp_components.value = u.Quantity(
+                jnp.zeros_like(self._step_clamp_components.value.mantissa), u.nA
+            )
             self._current_time_state.value = 0.0 * u.ms
             return
         if self.trainables.bindings():
@@ -4085,7 +4073,7 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     def sample_probes(self) -> dict[str, object]:
         self._raise_if_not_initialized("sample_probes()")
-        if self._uses_reduction or self._is_lumped:
+        if self._uses_reduction:
             return {}
         return probes.sample_probes(self)
 

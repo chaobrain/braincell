@@ -50,15 +50,21 @@ import warnings
 import weakref
 from typing import TYPE_CHECKING, NamedTuple
 
+import brainstate
 import braintools
 import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._compute.bindings import apply_subsolver_schedule, install_channel_on_ions
+from braincell._compute.bindings import (
+    _instantiate_runtime_node,
+    apply_subsolver_schedule,
+    install_channel_on_ions,
+)
 from braincell._compute.bridge import _ION_GEOMETRY_ATTRS, broadcast_to_shape
 from braincell._compute.ions import (
     _build_ion_alias_map,
+    _ion_runtime_attr_name,
     _placeholder_family_keys,
     _runtime_ion_species_key,
     _supported_ion_runtime_params,
@@ -75,19 +81,29 @@ from braincell._compute.layouts import (
     _time_lt,
 )
 from braincell._compute.parameters import (
+    RuntimeParameterState,
+    set_runtime_parameter_value,
     density_error_context,
     density_parameter_names,
     density_parameter_schema,
     density_parameter_value,
     spatial_callable_source,
 )
+from braincell._compute.state import CellRuntimeState
 from braincell._misc import is_traced_value
 from braincell._single_compartment import SingleCompartment
 from braincell.channel._base import HH
 from braincell.ion import build_placeholder_ions
-from braincell.mech import CurrentClamp, Density, FunctionClamp, SineClamp, get_registry
+from braincell.mech import (
+    CurrentClamp,
+    Density,
+    FunctionClamp,
+    SineClamp,
+    Synapse as SynapsePlacement,
+    get_registry,
+)
 from braincell.quad import get_integrator, integrator_info, list_integrators
-from braincell.quad.protocol import IndependentIntegration
+from braincell.quad.protocol import IndependentIntegration, state_grouping
 
 if TYPE_CHECKING:
     from braincell._multi_compartment.cell import Cell
@@ -164,24 +180,26 @@ def as_current_density(value, *, area, shape, what: str):
         If ``value`` does not broadcast to ``shape``.
     """
     dim = u.get_dim(value)
-    if dim == _CURRENT_DIM:
-        density = value / area
-    elif dim == _CURRENT_DENSITY_DIM:
-        density = value
-    else:
+    if dim not in (_CURRENT_DIM, _CURRENT_DENSITY_DIM):
         unit = u.get_unit(value)
         raise u.UnitMismatchError(
             f"{what} on a lumped Cell must be a current (e.g. nA) or a current density "
             f"(e.g. uA/cm^2); got a value {'without units' if unit.is_unitless else f'in {unit}'}."
         )
-    density = u.Quantity(density).in_unit(CURRENT_DENSITY_UNIT)
+    # Checked on ``value``, before dividing by ``area`` (shaped ``pop_size``).
+    value_shape = tuple(u.math.shape(value))
     try:
-        return u.math.broadcast_to(density, shape)
+        broadcasts = np.broadcast_shapes(value_shape, tuple(shape)) == tuple(shape)
     except ValueError:
+        broadcasts = False
+    if not broadcasts:
         raise ValueError(
-            f"{what} has shape {tuple(u.math.shape(density))}, which does not broadcast to the "
+            f"{what} has shape {value_shape}, which does not broadcast to the "
             f"voltage shape {tuple(shape)} ((batch,) + pop_size) of the lumped Cell."
-        ) from None
+        )
+    density = value / area if dim == _CURRENT_DIM else value
+    density = u.Quantity(density).in_unit(CURRENT_DENSITY_UNIT)
+    return u.math.broadcast_to(density, shape)
 
 
 class LumpedRuntime(SingleCompartment):
@@ -218,7 +236,9 @@ class LumpedRuntime(SingleCompartment):
 
     __module__ = "braincell._multi_compartment.lumped"
 
-    def __init__(self, size, *, area, C, V_th, V_initializer, spk_fun, solver, ion_channels, owner=None):
+    def __init__(
+        self, size, *, area, C, V_th, V_initializer, spk_fun, solver, ion_channels, owner=None, synapses=(), n_point=1
+    ):
         super().__init__(
             size,
             C=C,
@@ -230,11 +250,154 @@ class LumpedRuntime(SingleCompartment):
         )
         self._cv_area = area
         self._owner_ref = None if owner is None else weakref.ref(owner)
+        # Point synapses live one level down, so the SingleCompartment hooks
+        # (which call every direct channel with ``V``) do not reach them; this
+        # runtime calls them with the voltage of each synapse row instead.
+        self._synapse_layouts = tuple(layout for layout, _ in synapses)
+        self._n_point = int(n_point)
+        self.synapse_nodes = _LumpedSynapses(synapses) if synapses else None
+
+    def _layout_runtime(self):
+        owner = None if self._owner_ref is None else self._owner_ref()
+        return None if owner is None else owner._runtime
 
     @property
     def area(self):
-        """Membrane area of the Cell's one CV."""
-        return self._cv_area
+        """Membrane area of the Cell's one CV, from the geometry View's current values."""
+        runtime = self._layout_runtime()
+        if runtime is None or runtime.geometry is None:
+            return self._cv_area
+        return runtime.current_cable().area[..., 0]
+
+    @property
+    def C(self):
+        """Specific membrane capacitance, from the geometry View's ``cm``."""
+        runtime = self._layout_runtime()
+        if runtime is None or runtime.geometry is None:
+            return self._C
+        return runtime.geometry["cm"].value[..., 0]
+
+    @C.setter
+    def C(self, value):
+        self._C = value
+
+    @property
+    def V_th(self):
+        """Spike threshold: the owning Cell's ``V_th`` (``CellView.set``, trainable)."""
+        owner = None if self._owner_ref is None else self._owner_ref()
+        parameter = None if owner is None else getattr(owner, "_V_th_parameter", None)
+        return self._V_th if parameter is None else parameter.value
+
+    @V_th.setter
+    def V_th(self, value):
+        self._V_th = value
+
+    @property
+    def V_initializer(self):
+        """Initial voltage: the owning Cell's ``V_init`` (``CellView.set``)."""
+        owner = None if self._owner_ref is None else self._owner_ref()
+        parameter = None if owner is None else getattr(owner, "_V_init_materialized", None)
+        return self._V_initializer if parameter is None else parameter.value
+
+    @V_initializer.setter
+    def V_initializer(self, value):
+        self._V_initializer = value
+
+    def _synapses(self):
+        if self.synapse_nodes is None:
+            return ()
+        return tuple((layout, getattr(self.synapse_nodes, f"layout_{layout.id}")) for layout in self._synapse_layouts)
+
+    def synapse_voltage(self, layout, V=None):
+        """Voltage of each row of one synapse layout: its member's ``V``."""
+        V = self.V.value if V is None else V
+        return layout.gather_points(u.math.broadcast_to(V[..., None], u.math.shape(V) + (self._n_point,)))
+
+    def _synapse_density(self, V):
+        from braincell._multi_compartment.currents import synapse_current
+
+        total = None
+        for layout, node in self._synapses():
+            rows = synapse_current(self._layout_runtime(), layout, node, self.synapse_voltage(layout, V))
+            if rows is None:
+                continue
+            members = u.Quantity(
+                jnp.zeros(u.math.shape(V) + (self._n_point,), dtype=u.get_mantissa(rows).dtype), u.get_unit(rows)
+            )
+            members = u.math.sum(layout.scatter_add_points(members, rows), axis=-1)
+            total = members if total is None else total + members
+        return None if total is None else (total / self.area).in_unit(CURRENT_DENSITY_UNIT)
+
+    def _run_synapse_hook(self, hook: str):
+        for layout, node in self._synapses():
+            getattr(node, hook)(self.synapse_voltage(layout))
+
+    def pre_integral(self, I_ext=0.0 * u.nA / u.cm**2):
+        super().pre_integral(I_ext)
+        self._run_synapse_hook("pre_integral")
+
+    def compute_derivative(self, I_ext=0.0 * u.nA / u.cm**2):
+        super().compute_derivative(I_ext)
+        self._run_synapse_hook("compute_derivative")
+
+    def post_integral(self, I_ext=0.0 * u.nA / u.cm**2):
+        super().post_integral(I_ext)
+        self._run_synapse_hook("post_integral")
+
+    def init_state(self, batch_size=None):
+        super().init_state(batch_size)
+        with state_grouping(False):
+            for layout, node in self._synapses():
+                node.init_state(self.synapse_voltage(layout), batch_size=batch_size)
+
+    def reset_state(self, batch_size=None):
+        super().reset_state(batch_size)
+        with state_grouping(False):
+            for layout, node in self._synapses():
+                node.reset_state(self.synapse_voltage(layout), batch_size=batch_size)
+
+    def membrane_current(self, I_ext):
+        """Total membrane current density per member, the terms of :meth:`compute_derivative`.
+
+        Parameters
+        ----------
+        I_ext : Quantity
+            The clamp (and external) current density of this step.
+
+        Returns
+        -------
+        Quantity
+            Channel, synapse, clamp and current-input density in nA/cm^2,
+            shaped like ``V``; a cable Cell's ``observe.membrane_current()``.
+        """
+        V = self.V.value
+        total = self.sum_current_inputs(I_ext, V)
+        for channel in self._ion_channels().values():
+            contribution = channel.current(V)
+            if contribution is not None:
+                total = total + contribution
+        return u.Quantity(total).in_unit(u.nA / u.cm**2)
+
+    def update(self, I_ext=0.0 * u.nA / u.cm**2):
+        """One step of :class:`~braincell.SingleCompartment`.
+
+        An ion whose concentration integrates its total current, and which
+        carries an ion-reading synapse's current, reads a snapshot taken at
+        the step-start voltage (the cable Cell's ``cache_ion_total_current``):
+        its integrator must not differentiate through the synapse's states.
+        """
+        snapshot = []
+        for node in self._ion_channels().values():
+            if getattr(type(node), "uses_total_current", False) and any(
+                getattr(fun, "requires_snapshot", None) is not None for fun in node.external_currents.values()
+            ):
+                node._cached_total_current = node.current(self.V.value, include_external=True)
+                snapshot.append(node)
+        try:
+            return super().update(I_ext)
+        finally:
+            for node in snapshot:
+                del node._cached_total_current
 
     def sum_current_inputs(self, init, *args, **kwargs):
         """Add the owning Cell's current inputs, each as a current density.
@@ -265,6 +428,10 @@ class LumpedRuntime(SingleCompartment):
             If an input is neither a current nor a current density; the
             message names its key.
         """
+        if self.synapse_nodes is not None and args:
+            synaptic = self._synapse_density(args[0])
+            if synaptic is not None:
+                init = init + synaptic
         owner = None if self._owner_ref is None else self._owner_ref()
         inputs = None if owner is None else owner.current_inputs
         if not inputs:
@@ -277,6 +444,15 @@ class LumpedRuntime(SingleCompartment):
             if not callable(item):
                 del inputs[key]
         return init
+
+
+class _LumpedSynapses(brainstate.nn.Module):
+    """Container of a lumped runtime's synapse nodes, one per synapse type."""
+
+    def __init__(self, synapses) -> None:
+        super().__init__()
+        for layout, node in synapses:
+            setattr(self, f"layout_{layout.id}", node)
 
 
 class LumpedChannel(NamedTuple):
@@ -307,7 +483,9 @@ class StiffGate(NamedTuple):
     V: float
 
 
-def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> tuple[LumpedRuntime, tuple[LumpedChannel, ...]]:
+def build_lumped_runtime(
+    cell: "Cell", *, V_init, V_th
+) -> tuple[LumpedRuntime, tuple[LumpedChannel, ...], CellRuntimeState]:
     """Lower the one CV of a lumped ``cell`` into a :class:`LumpedRuntime`.
 
     Parameters
@@ -323,6 +501,8 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> tuple[LumpedRuntime, 
         Engine with mechanisms of size ``cell.pop_size``.
     channels : tuple of LumpedChannel
         Its channels in declaration order, with the ions each reads.
+    state : CellRuntimeState
+        Layouts and parameter states of its mechanisms.
 
     Raises
     ------
@@ -345,6 +525,8 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> tuple[LumpedRuntime, 
     class_candidates: dict[str, list[str]] = {}
     schedule_pairs: list[tuple[Density, object]] = []
     channel_declarations: list[Density] = []
+    nodes: dict[int, object] = {}
+    bound_ion_keys: dict[int, tuple[str, ...]] = {}
 
     # Discretization has already rejected an ion or channel painted twice on
     # the CV, so each instance name appears once here.
@@ -366,6 +548,7 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> tuple[LumpedRuntime, 
                 f"on {runtime_cls.__name__!r}."
             )
         node = runtime_cls(size=pop_size, name=name, **_resolve_params(declaration, context, cell.paint_rules))
+        nodes[id(declaration)] = node
         ions[name] = node
         family_candidates.setdefault(species_key, []).append(name)
         class_candidates.setdefault(runtime_cls.__name__, []).append(name)
@@ -391,6 +574,7 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> tuple[LumpedRuntime, 
     for index, declaration in enumerate(channel_declarations):
         runtime_cls = registry.get("channel", declaration.class_name)
         node = runtime_cls(size=pop_size, **_resolve_params(declaration, context, cell.paint_rules))
+        nodes[id(declaration)] = node
         bound_keys, owner = install_channel_on_ions(
             node,
             runtime_cls=runtime_cls,
@@ -400,6 +584,7 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> tuple[LumpedRuntime, 
             ion_family_candidates=frozen_candidates,
             layout_id=index,
         )
+        bound_ion_keys[id(declaration)] = tuple(bound_keys)
         if owner is None:
             root_channels[_unique_key(root_channels, ions, declaration.instance_name)] = node
         schedule_pairs.append((declaration, node))
@@ -409,6 +594,16 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> tuple[LumpedRuntime, 
         channels.append(LumpedChannel(label, node, tuple(ions[key] for key in bound_keys)))
 
     apply_subsolver_schedule(schedule_pairs, solver=cell.subsolver, substeps=cell.substeps)
+
+    state, synapses = _adapt_cable_layouts(
+        cell,
+        nodes=nodes,
+        ions=ions,
+        ion_aliases=ion_aliases,
+        family_candidates=frozen_candidates,
+        class_candidates=class_candidates,
+        bound_ion_keys=bound_ion_keys,
+    )
 
     runtime = LumpedRuntime(
         pop_size,
@@ -420,8 +615,95 @@ def build_lumped_runtime(cell: "Cell", *, V_init, V_th) -> tuple[LumpedRuntime, 
         solver=cell.solver,
         ion_channels={**ions, **root_channels},
         owner=cell,
+        synapses=synapses,
+        n_point=state.n_point,
     )
-    return runtime, tuple(channels)
+    return runtime, tuple(channels), state
+
+
+def _adapt_cable_layouts(cell, *, nodes, ions, ion_aliases, family_candidates, class_candidates, bound_ion_keys):
+    """Shape adapter: the single-CV cable layouts and buffers drive the lumped nodes.
+
+    Buffers keep the cable shape ``pop_size + (1,)``; each lumped node reads a
+    mirror state shaped ``pop_size`` that ``_sync_runtime_node_param`` refreshes
+    from its buffer (``buffer[..., 0]``) after every write.
+    """
+
+    runtime = CellRuntimeState.from_cell(cell, build_nodes=False)
+    pop_size = tuple(cell.pop_size)
+    mirrors = {}
+    synapses = []
+    for layout in runtime.layouts:
+        mechanism = runtime.layout_mechanisms[layout.id]
+        if isinstance(mechanism, Density):
+            node = nodes[id(mechanism)]
+            runtime.runtime_nodes[layout.id] = node
+            is_ion = mechanism.category == "ion"
+            for (layout_id, name), buffer in runtime.state_buffers.items():
+                if layout_id != layout.id or not isinstance(buffer, RuntimeParameterState):
+                    continue
+                attr = _ion_runtime_attr_name(type(node), name) if is_ion else name
+                if is_ion and name.endswith("_initializer"):
+                    mirrors[(layout.id, name)] = (buffer, _mirror_ion_initializer(node, attr, name, buffer, pop_size))
+                    continue
+                current = vars(node).get(attr)
+                if (
+                    current is None
+                    or callable(current)
+                    or isinstance(current, brainstate.State)
+                    or type(current) in (bool, int)
+                ):
+                    continue
+                if isinstance(density_parameter_value(mechanism, name), braintools.init.Initialization):
+                    # The channel sampled this initializer (a cable Cell rejects it); the buffer takes its values.
+                    set_runtime_parameter_value(buffer, u.math.broadcast_to(current, pop_size)[..., None])
+                mirror = RuntimeParameterState(buffer.dense_value(masked=True)[..., 0], axis="row", full_shape=pop_size)
+                setattr(node, attr, mirror)
+                mirrors[(layout.id, name)] = (buffer, mirror)
+        elif isinstance(mechanism, SynapsePlacement):
+            node, keys, _ = _instantiate_runtime_node(
+                layout=layout,
+                mechanism=mechanism,
+                state_buffers=runtime.state_buffers,
+                ions=ions,
+                ion_aliases=ion_aliases,
+                ion_family_candidates=family_candidates,
+                pop_size=pop_size,
+            )
+            runtime.runtime_nodes[layout.id] = node
+            runtime.bound_ion_keys[layout.id] = tuple(keys)
+            synapses.append((layout, node))
+    for layout in runtime.layouts:
+        mechanism = runtime.layout_mechanisms[layout.id]
+        if isinstance(mechanism, Density) and mechanism.category == "channel":
+            runtime.bound_ion_keys[layout.id] = bound_ion_keys[id(mechanism)]
+    runtime.ions.update(ions)
+    runtime.ion_aliases.update(ion_aliases)
+    runtime.ion_family_candidates.update(family_candidates)
+    runtime.ion_class_candidates.update({key: tuple(value) for key, value in class_candidates.items()})
+    runtime.lumped_mirrors = mirrors
+    return runtime, tuple(synapses)
+
+
+def _mirror_ion_initializer(node, attr, name, buffer, pop_size):
+    """Route an ion's ``*_initializer`` through a ``pop_size`` mirror of its buffer, as the cable ion does.
+
+    The ion keeps its own initializer for every member until a view or a
+    trainable writes the field: a write sets the member's entry of the
+    ``pop_size + (1,)`` override mask (shared with the cable layout), and the
+    member then starts from the mirror.
+    """
+    mirror = RuntimeParameterState(buffer.dense_value()[..., 0], axis="row", full_shape=pop_size)
+    mask = brainstate.LongTermState(jnp.zeros(buffer.full_shape, dtype=bool))
+    masks = vars(node).setdefault("_runtime_ion_initial_masks", {})
+    masks[name] = mask
+    default = getattr(node, attr)
+
+    def initialize(shape):
+        return u.math.where(mask.value[..., 0], mirror.value, braintools.init.param(default, shape))
+
+    setattr(node, attr, initialize)
+    return mirror
 
 
 def _is_explicit_step(fn) -> bool:
@@ -625,20 +907,20 @@ class LumpedClamps:
     def __init__(self, cell: "Cell", *, density_unit, with_components: bool = True) -> None:
         self.pop_size = tuple(cell.pop_size)
         self.with_components = bool(with_components)
-        (cv,) = cell.cvs
-        # nA -> density_unit over the CV area, applied once to the static tables.
+        # nA / cm^2 -> density_unit; the area is the geometry View's current one.
         self.density_unit = density_unit
-        self._per_area = float((1.0 * u.nA / cv.area).to_decimal(density_unit))
+        self._per_area = float((1.0 * u.nA / u.cm**2).to_decimal(density_unit))
         self.n_population = int(np.prod(self.pop_size, dtype=int))
         store = cell._get_clamp_store()
         self.n_component = len(store.id)
         self.state_buffers: dict[tuple[int, str], object] = {}
         self._entries: list[tuple[int, object]] = []
-        # ``Cell.place`` admits only clamps on a lumped Cell, and only on the
-        # whole population (population views raise), so every placement
+        # A population view places synapses only, so every clamp placement
         # covers every member. The clamp store numbers rows in placement
         # order, so concatenating per-placement currents gives store order.
         for placement in cell.point_placements:
+            if not isinstance(placement.mechanism, CLAMP_TYPES):
+                continue
             key = int(placement.id)
             self._allocate(key, placement.mechanism)
             self._entries.append((key, self._tabulate(key, placement.mechanism)))
@@ -698,8 +980,15 @@ class LumpedClamps:
         value = _eval_sine_clamp(self, layout_id=key, rows=rows, local_t=local_t)
         return jnp.broadcast_to(value.to_decimal(u.nA)[..., 0], self.pop_size)
 
-    def evaluate(self, t):
+    def evaluate(self, t, *, area):
         """Return ``(density, components)`` at time ``t``.
+
+        Parameters
+        ----------
+        t : Quantity
+            Sample time.
+        area : Quantity
+            Membrane area of the CV, scalar or shaped ``pop_size``.
 
         Returns
         -------
@@ -717,7 +1006,9 @@ class LumpedClamps:
             total = total + value
             if self.with_components:
                 parts.append(value.reshape(-1))
-        density = u.Quantity(jnp.broadcast_to(jnp.asarray(total) * self._per_area, self.pop_size), self.density_unit)
+        # nA / cm^2 first, as the cable runtime divides clamp currents by the point area.
+        density = jnp.asarray(total) / u.get_mantissa(area.to_decimal(u.cm**2)) * self._per_area
+        density = u.Quantity(jnp.broadcast_to(density, self.pop_size), self.density_unit)
         if not self.with_components:
             return density, None
         components = jnp.concatenate(parts) if parts else jnp.zeros((0,), dtype=float)

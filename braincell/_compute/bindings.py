@@ -1046,6 +1046,20 @@ def _sync_runtime_node_param(runtime: CellRuntimeState, *, layout_id: int, var_n
     node = runtime.runtime_nodes.get(int(layout_id))
     if node is None:
         return
+    mirrors = getattr(runtime, "lumped_mirrors", None)
+    if mirrors is not None and not runtime.layouts[int(layout_id)].kind.startswith("synapse:"):
+        # Lumped Cell: the node reads a ``pop_size`` mirror of the ``(..., 1)`` buffer.
+        entry = mirrors.get((int(layout_id), str(var_name)))
+        if entry is not None:
+            buffer, mirror = entry
+            mirror.value = buffer.dense_value(masked=True)[..., 0]
+            from braincell.ion._base import InitNernstIon
+
+            if isinstance(node, InitNernstIon):
+                node._update_reversal()
+            else:
+                node._on_param_updated(var_name, mirror)
+        return
     layout = runtime.layouts[int(layout_id)]
     kind = layout.kind
     if kind.startswith("ion:"):

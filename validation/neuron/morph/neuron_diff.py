@@ -24,6 +24,8 @@ import brainunit as u
 from braincell import Morphology
 
 __all__ = [
+    "SOMA_START_TOLERANCE_UM",
+    "check_soma_orientation",
     "compare_asc_with_neuron",
     "compare_morphology_with_neuron",
     "compare_swc_with_neuron",
@@ -36,6 +38,9 @@ __all__ = [
 ]
 
 _LOADED_NEURON_SECTIONS: list[Any] = []
+SOMA_START_TOLERANCE_UM = 1e-4
+"""Largest distance (um) between the two root start points before an ASC
+comparison reports that the somata are laid out in opposite directions."""
 _DEFAULT_METRIC_NAMES = (
     "total_length",
     "total_area",
@@ -205,6 +210,20 @@ def _braincell_metric_record(morpho: Morphology, metric: object, metric_name: st
     raise KeyError(f"Unsupported braincell metric {metric_name!r}.")
 
 
+def _load_braincell_morphology(path: Path, *, swc_options=None) -> Morphology:
+    if _morphology_kind(path) == "swc":
+        return Morphology.from_swc(path, options=swc_options)
+    return Morphology.from_asc(path)
+
+
+def _braincell_metrics(morpho: Morphology, metric_names: Sequence[str]) -> dict[str, dict[str, object]]:
+    metric = morpho.metric
+    return {
+        metric_name: _braincell_metric_record(morpho, metric, metric_name)
+        for metric_name in metric_names
+    }
+
+
 def compute_braincell_metrics(
     swc_filename: str | Path,
     *,
@@ -214,16 +233,7 @@ def compute_braincell_metrics(
 ) -> dict[str, dict[str, object]]:
     path = _validate_morphology_path(swc_filename)
     selected_metric_names = _resolve_metric_names(metric_names=metric_names, include_optional=include_optional)
-    kind = _morphology_kind(path)
-    if kind == "swc":
-        morpho = Morphology.from_swc(path, options=swc_options)
-    else:
-        morpho = Morphology.from_asc(path)
-    metric = morpho.metric
-    return {
-        metric_name: _braincell_metric_record(morpho, metric, metric_name)
-        for metric_name in selected_metric_names
-    }
+    return _braincell_metrics(_load_braincell_morphology(path, swc_options=swc_options), selected_metric_names)
 
 
 def _segment_length_um(sec: Any) -> float:
@@ -397,6 +407,13 @@ def _neuron_metric_record(state: dict[str, object], metric_name: str) -> dict[st
     raise KeyError(f"Unsupported neuron metric {metric_name!r}.")
 
 
+def _neuron_metrics(state: dict[str, object], metric_names: Sequence[str]) -> dict[str, dict[str, object]]:
+    return {
+        metric_name: _neuron_metric_record(state, metric_name)
+        for metric_name in metric_names
+    }
+
+
 def compute_neuron_metrics(
     neuron_sections: Sequence[Any],
     *,
@@ -404,11 +421,87 @@ def compute_neuron_metrics(
     include_optional: bool = False,
 ) -> dict[str, dict[str, object]]:
     selected_metric_names = _resolve_metric_names(metric_names=metric_names, include_optional=include_optional)
-    state = _build_neuron_state(neuron_sections)
+    return _neuron_metrics(_build_neuron_state(neuron_sections), selected_metric_names)
+
+
+def _format_point(point: Sequence[float]) -> str:
+    return "(" + ", ".join(f"{coordinate:.6f}" for coordinate in point) + ")"
+
+
+def check_soma_orientation(
+    neuron_points: Sequence[Sequence[float]],
+    braincell_points: Sequence[Sequence[float]],
+    *,
+    neuron_version: str | None = None,
+    tolerance_um: float = SOMA_START_TOLERANCE_UM,
+) -> dict[str, object]:
+    """Check that the two root sections start at the same end.
+
+    Both sides measure ``max_path_distance`` and ``max_euclidean_distance`` from
+    the root's first 3D point: NEURON from ``pt3d(0)`` of the root section,
+    BrainCell from the first point of the root branch. The two values are
+    comparable only when those points coincide. NEURON lays a single-contour
+    ASC soma out along the contour's major axis, and before NEURON 9.0 the
+    axis had an arbitrary sign; 9.0 points it in the positive direction, as
+    BrainCell's contour import does.
+
+    Parameters
+    ----------
+    neuron_points, braincell_points
+        The root section's 3D points (um) on each side, in order. Only the
+        first point of each is compared.
+    neuron_version
+        Reported in the reason; defaults to ``neuron.__version__``.
+    tolerance_um
+        Largest start-point distance (um) accepted as the same orientation.
+
+    Returns
+    -------
+    dict
+        ``value`` (the start-point distance, um), ``unit``, ``neuron_point``,
+        ``braincell_point``, ``neuron_version``, ``orientation_differs`` and
+        ``reason`` (``None`` unless the orientation differs). A difference is
+        reported in the record; it does not raise.
+    """
+
+    if neuron_version is None:
+        import neuron
+
+        neuron_version = str(neuron.__version__)
+    neuron_point = tuple(float(coordinate) for coordinate in neuron_points[0])
+    braincell_point = tuple(float(coordinate) for coordinate in braincell_points[0])
+    distance_um = math.dist(neuron_point, braincell_point)
+    differs = distance_um > tolerance_um
+    reason = None
+    if differs:
+        reason = (
+            f"soma orientation differs: NEURON root pt3d(0) = {_format_point(neuron_point)} um, "
+            f"BrainCell root first point = {_format_point(braincell_point)} um, "
+            f"{distance_um:.6g} um apart (NEURON {neuron_version}). Distances measured from the "
+            "root are not comparable; a single-contour ASC soma needs NEURON >= 9.0."
+        )
     return {
-        metric_name: _neuron_metric_record(state, metric_name)
-        for metric_name in selected_metric_names
+        "value": distance_um,
+        "unit": "um",
+        "neuron_point": neuron_point,
+        "braincell_point": braincell_point,
+        "neuron_version": neuron_version,
+        "orientation_differs": differs,
+        "reason": reason,
     }
+
+
+def _neuron_root_points(state: dict[str, object]) -> list[tuple[float, float, float]]:
+    h = _import_neuron_h()
+    sec = state["section_by_name"][state["roots"][0]]
+    return [
+        (float(h.x3d(i, sec=sec)), float(h.y3d(i, sec=sec)), float(h.z3d(i, sec=sec)))
+        for i in range(int(h.n3d(sec=sec)))
+    ]
+
+
+def _braincell_root_points(morpho: Morphology) -> list[tuple[float, ...]]:
+    return [tuple(map(float, point)) for point in morpho.root.branch.points.to_decimal(u.um)]
 
 
 def _compare_metric_records(
@@ -473,23 +566,31 @@ def compare_morphology_with_neuron(
     metric_names: Iterable[str] | None = None,
     include_optional: bool = False,
 ) -> dict[str, object]:
+    """Compare a morphology file read by BrainCell and by NEURON ``import3d``.
+
+    The result holds each side's metrics, their ``diff`` and
+    ``soma_start_distance``, the record of :func:`check_soma_orientation` for
+    the root sections. Check it before the distance metrics. Only ASC files
+    are checked for orientation; for SWC files ``orientation_differs`` is
+    ``None``, because an SWC soma is not laid out along a contour axis and its
+    start point can differ by construction (a one-point soma, for example).
+    """
+
     path = _validate_morphology_path(filename)
+    kind = _morphology_kind(path)
     selected_metric_names = _resolve_metric_names(metric_names=metric_names, include_optional=include_optional)
-    braincell_metrics = compute_braincell_metrics(
-        path,
-        swc_options=swc_options,
-        metric_names=selected_metric_names,
-        include_optional=include_optional,
-    )
-    neuron_metrics = compute_neuron_metrics(
-        load_neuron_morphology(path),
-        metric_names=selected_metric_names,
-        include_optional=include_optional,
-    )
+    morpho = _load_braincell_morphology(path, swc_options=swc_options)
+    braincell_metrics = _braincell_metrics(morpho, selected_metric_names)
+    neuron_state = _build_neuron_state(load_neuron_morphology(path))
+    neuron_metrics = _neuron_metrics(neuron_state, selected_metric_names)
+    soma_start = check_soma_orientation(_neuron_root_points(neuron_state), _braincell_root_points(morpho))
+    if kind != "asc":
+        soma_start.update(orientation_differs=None, reason=None)
     return {
         "path": str(path),
-        "kind": _morphology_kind(path),
+        "kind": kind,
         "selected_metrics": selected_metric_names,
+        "soma_start_distance": soma_start,
         "braincell": braincell_metrics,
         "neuron": neuron_metrics,
         "diff": {

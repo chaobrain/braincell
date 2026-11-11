@@ -21,7 +21,11 @@ import textwrap
 import unittest
 from pathlib import Path
 
+import neuron
+from neuron import h
+
 from neuron_diff import (
+    check_soma_orientation,
     compare_asc_with_neuron,
     compare_morphology_with_neuron,
     compare_swc_with_neuron,
@@ -44,6 +48,14 @@ def _assert_zero_diff(testcase: unittest.TestCase, comparison: dict[str, object]
     testcase.assertLessEqual(diff["abs_diff"], 1e-4, metric_name)
     if diff["rel_diff"] is not None:
         testcase.assertLessEqual(diff["rel_diff"], 1e-6, metric_name)
+
+
+def _assert_same_soma_orientation(testcase: unittest.TestCase, comparison: dict[str, object]) -> None:
+    # Distances are measured from the root's first point on both sides, so check
+    # that the two somata start at the same end before comparing any metric.
+    record = comparison["soma_start_distance"]
+    testcase.assertFalse(record["orientation_differs"], record["reason"])
+    testcase.assertLessEqual(record["value"], 1e-4)
 
 
 class NeuronDiffTest(unittest.TestCase):
@@ -90,6 +102,8 @@ class NeuronDiffTest(unittest.TestCase):
 
         comparison = compare_swc_with_neuron(path)
 
+        self.assertEqual(comparison["soma_start_distance"]["value"], 0.0)
+        self.assertIsNone(comparison["soma_start_distance"]["orientation_differs"])
         self.assertEqual(
             comparison["selected_metrics"],
             (
@@ -189,6 +203,7 @@ class NeuronDiffTest(unittest.TestCase):
         comparison = compare_asc_with_neuron(path)
 
         self.assertEqual(comparison["kind"], "asc")
+        _assert_same_soma_orientation(self, comparison)
         for metric_name in comparison["selected_metrics"]:
             _assert_zero_diff(self, comparison, metric_name)
 
@@ -218,6 +233,7 @@ class NeuronDiffTest(unittest.TestCase):
         comparison = compare_asc_with_neuron(path)
 
         self.assertEqual(comparison["kind"], "asc")
+        _assert_same_soma_orientation(self, comparison)
         for metric_name in comparison["selected_metrics"]:
             _assert_zero_diff(self, comparison, metric_name)
 
@@ -245,6 +261,7 @@ class NeuronDiffTest(unittest.TestCase):
         comparison = compare_asc_with_neuron(path)
 
         self.assertEqual(comparison["kind"], "asc")
+        _assert_same_soma_orientation(self, comparison)
         for metric_name in comparison["selected_metrics"]:
             _assert_zero_diff(self, comparison, metric_name)
 
@@ -274,6 +291,7 @@ class NeuronDiffTest(unittest.TestCase):
         comparison = compare_asc_with_neuron(path)
 
         self.assertEqual(comparison["kind"], "asc")
+        _assert_same_soma_orientation(self, comparison)
         for metric_name in comparison["selected_metrics"]:
             _assert_zero_diff(self, comparison, metric_name)
 
@@ -283,6 +301,7 @@ class NeuronDiffTest(unittest.TestCase):
         comparison = compare_morphology_with_neuron(path)
 
         self.assertEqual(comparison["kind"], "asc")
+        _assert_same_soma_orientation(self, comparison)
         self.assertEqual(comparison["path"], str(path))
         self.assertIn("n_branches", comparison["diff"])
         self.assertTrue(comparison["diff"]["n_branches"]["available"])
@@ -293,6 +312,7 @@ class NeuronDiffTest(unittest.TestCase):
         comparison = compare_morphology_with_neuron(path)
 
         self.assertEqual(comparison["kind"], "asc")
+        _assert_same_soma_orientation(self, comparison)
         for metric_name in comparison["selected_metrics"]:
             _assert_zero_diff(self, comparison, metric_name)
 
@@ -302,6 +322,7 @@ class NeuronDiffTest(unittest.TestCase):
         comparison = compare_morphology_with_neuron(path)
 
         self.assertEqual(comparison["kind"], "asc")
+        _assert_same_soma_orientation(self, comparison)
         for metric_name in comparison["selected_metrics"]:
             diff = comparison["diff"][metric_name]
             self.assertTrue(diff["available"], metric_name)
@@ -309,6 +330,35 @@ class NeuronDiffTest(unittest.TestCase):
                 self.assertLessEqual(diff["rel_diff"], 1e-6, metric_name)
             else:
                 self.assertLessEqual(diff["abs_diff"], 1e-4, metric_name)
+
+    def test_check_soma_orientation_reports_reversed_soma(self) -> None:
+        # NEURON 8.2 laid the SC soma out from its far end; reversing NEURON's own
+        # soma points reproduces that comparison without an older NEURON.
+        sections = load_asc_morphology(CEREBELLUM_FIXTURES["SC"])
+        soma = sections[0]
+        self.assertEqual(soma.name(), "soma[0]")
+        points = [
+            (h.x3d(i, sec=soma), h.y3d(i, sec=soma), h.z3d(i, sec=soma))
+            for i in range(int(h.n3d(sec=soma)))
+        ]
+        self.assertEqual(len(points), 21)
+
+        same = check_soma_orientation(points, points)
+        reversed_soma = check_soma_orientation(points, points[::-1])
+
+        self.assertFalse(same["orientation_differs"])
+        self.assertIsNone(same["reason"])
+        self.assertEqual(same["value"], 0.0)
+        self.assertTrue(reversed_soma["orientation_differs"])
+        # The reversed start point is the far end of the straight soma.
+        self.assertAlmostEqual(reversed_soma["value"], float(soma.L), delta=1e-5)
+        self.assertEqual(reversed_soma["neuron_point"], points[0])
+        self.assertEqual(reversed_soma["braincell_point"], points[-1])
+        self.assertEqual(reversed_soma["neuron_version"], neuron.__version__)
+        self.assertIn("soma orientation differs", reversed_soma["reason"])
+        self.assertIn(f"NEURON {neuron.__version__}", reversed_soma["reason"])
+        self.assertIn(f"{points[0][0]:.6f}", reversed_soma["reason"])
+        self.assertIn(f"{points[-1][0]:.6f}", reversed_soma["reason"])
 
     def test_supported_metric_names_no_longer_exposes_n_3d_points(self) -> None:
         metric_names = supported_metric_names()

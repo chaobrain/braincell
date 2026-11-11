@@ -1,16 +1,30 @@
 # Known numerical differences
 
-The following failures were reproduced on both the pre-migration commit
-`bd8e2f9` and the reorganized checkout on 2026-09-08, using NEURON 8.2.6,
-JAX 0.10.1 and double precision. The original assertions remain in place.
-
-- **SC morphology geometry:** the
-  [morphology comparison](morph/neuron_diff_test.py) reports maximum Euclidean
-  distance difference `8.559982695066495 um`, above its `1e-4 um` limit.
-  This uses the preserved IO fixture variant, not the whole-cell morphology.
+No comparison failure is open.
 
 Resolved:
 
+- **SC morphology geometry** (MORPH-5a): on 2026-09-08 the
+  [morphology comparison](morph/neuron_diff_test.py) reported a maximum
+  Euclidean distance difference of `8.559982695066495 um` for SC (the
+  preserved `morphology/io_fixture/SC.asc`, not the whole-cell morphology),
+  above its `1e-4 um` limit. This was reproduced on the pre-migration commit
+  `bd8e2f9` and the reorganized checkout with NEURON 8.2.6, JAX 0.10.1 and
+  double precision. The import was correct; NEURON had laid the soma out from
+  its far end. NEURON turns a single CellBody contour into 21 points along the
+  contour's major axis, and 8.2.6 leaves the axis's sign arbitrary. NEURON 9.0
+  points the axis in the positive direction (its largest-magnitude component
+  is made positive), as BrainCell's contour import does. The comparison
+  measures NEURON's distances from `pt3d(0)` of the root section, so with the
+  reversed soma they started from the far end, `8.742730733502144 um` (the
+  soma's length) away from BrainCell's first point: the largest tip distance
+  from there is `78.95299590285863 um`, against BrainCell's
+  `87.51297859792513 um`, and the difference is the recorded value. With
+  NEURON 9.0.2 (2026-11-12) the test passes: the difference is
+  `4.166256260873524e-06 um` (relative `4.8e-08`), and the root start points
+  are `7.8e-06 um` apart. The comparison now checks the root start points
+  before the metrics (`soma_start_distance`) and reports a reversed soma with
+  both points and the NEURON version.
 - **Sinusoidal channel stimulus** (MECH-15): the
   [comparison test](channel_no_conc/tests/test_compare.py) reported voltage MAE
   `0.015916517057767133 mV`, above its `2e-5 mV` limit (reproduced again on

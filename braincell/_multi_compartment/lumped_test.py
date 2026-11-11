@@ -199,6 +199,9 @@ class LumpedShapeLifecycleTest(unittest.TestCase):
         for cell in (reference, hooked):
             cell.init_state()
         with brainstate.environ.context(t=3.0 * u.ms, dt=DT):
+            # pre_integral samples the clamp for a directly called step
+            # (CELL-2c); the reference samples it as update() does.
+            reference._prepare_step_clamps()
             reference.compute_derivative()
             hooked.pre_integral()
             hooked.compute_derivative()

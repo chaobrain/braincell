@@ -317,6 +317,17 @@
 
 ### Bug Fixes
 
+- A solver step called directly on a `Cell` now samples the current clamps
+  as `update()` does (CELL-2c): once per main step, at `t + dt / 2`, with every
+  Runge-Kutta stage reading that value. Before, `braincell.quad.rk4_step(cell)`
+  (and the other explicit Runge-Kutta steps) re-sampled the clamps at each
+  stage time on a cable Cell, so a clamp switching on at 0.02 ms already
+  raised the middle CV by 0.164 mV in the first 0.025 ms step, where
+  `update()` keeps it at -65 mV; on a lumped Cell every solver step ignored
+  the clamps (V stayed at -65 mV instead of -64.90 mV). `Cell.pre_integral()`
+  now prepares the clamp current when the step was not prepared by
+  `update()`, `run()` or `Network.run`; those paths are unchanged.
+
 - A `Morphology.attach` without `child_name` that fails validation no longer
   consumes an auto-name suffix (MORPH-11). Before, on a soma-dend tree,
   `m.attach(parent="dend", child_branch=axon, parent_x=0.5)` raised

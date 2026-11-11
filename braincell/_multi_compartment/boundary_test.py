@@ -776,7 +776,6 @@ class StateProbeTest(_Float64Case):
                 self.assertGreater(float(point[0, 0].to_decimal(u.mV)), float(cell.V.value[0, 0].to_decimal(u.mV)))
 
 
-
 class VdepExpSyn(ExpSyn):
     """Test-only ExpSyn whose decay slows with depolarization: tau (V + 65 mV) / 20 mV, exponentiated."""
 

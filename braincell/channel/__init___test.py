@@ -32,6 +32,7 @@ from braincell._testing import DocstringConformanceTests, ReExportTests
 from braincell.channel import (
     _base,
     calcium,
+    chloride,
     hyperpolarization_activated,
     leaky,
     potassium,
@@ -46,6 +47,7 @@ from braincell.mech import get_registry
 _COVERED_MODULES = (
     _base,
     calcium,
+    chloride,
     hyperpolarization_activated,
     leaky,
     potassium,
@@ -73,6 +75,7 @@ _NO_PRIMARY_SOURCE = frozenset(
         "CaN_IS2008",
         "CaL_IS2008",
         "K_Leak",
+        "Cl_Leak",
         "K_Kv_test",
     }
 )

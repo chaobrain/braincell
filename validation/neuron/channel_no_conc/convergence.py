@@ -147,6 +147,7 @@ CONFIGS = (
 CLASSES = (
     ClassEntry("Kv3p4_MA2020_GoC", 0, False),  # 6.88 /ms, m gate at +60 mV
     ClassEntry("Nav1p6_MA2020_GoC", 5, True),  # 1.96e5 /ms at +60 mV
+    ClassEntry("Cl_Leak", None, False),  # stateless
     # calcium.py and potassium_calcium.py (Ci = the placeholder ion's, 36 degC).
     ClassEntry("AHP_De1994", -2, False),  # 0.09 /ms, p gate at -100 mV
     ClassEntry("CaHT_HM1992", 0, False),  # 6.83 /ms, p gate at +60 mV

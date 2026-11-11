@@ -52,6 +52,18 @@ class MappingSchemaTest(unittest.TestCase):
         self.assertEqual(normalized["impl_name"], {"common": "Kv1p1_MA2024_PC"})
         self.assertEqual(normalized["current"], "ik")
 
+    def test_loads_a_chloride_leak_without_gates(self) -> None:
+        payload = build_mapping_payload(
+            current="icl",
+            impl_name={"neuron": "clleak", "braincell": "Cl_Leak"},
+            gate_names={"common": []},
+        )
+        mapping_spec = mapping_schema.MappingSpec.from_mapping(payload)
+        self.assertEqual(mapping_spec.current_source.ion_name, "cl")
+        self.assertEqual(mapping_spec.gate_map, ())
+        with self.assertRaisesRegex(ValueError, "must be a list of strings"):
+            mapping_schema.MappingSpec.from_mapping(build_mapping_payload(gate_names={"common": "n"}))
+
     def test_rejects_mixed_common_and_side_specific_impl_names(self) -> None:
         payload = build_mapping_payload(
             impl_name={"common": "Kv", "neuron": "Kv", "braincell": "K_Kv_test"},

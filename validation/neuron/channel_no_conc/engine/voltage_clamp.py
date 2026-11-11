@@ -113,8 +113,9 @@ def compare_protocol(
     maps NEURON's voltage trace to the table BrainCell replays (tests use
     both to check the initialization order and the step alignment).
     ``skip_commands`` lists command indices left out, for a reference that is
-    not finite there. Returns ``e_I``, ``e_s``, ``clamp_error_mV`` (largest
-    ``|v - command|``), the ``case`` and the per-command traces of both sides.
+    not finite there. Returns ``e_I``, ``e_s`` (``None`` for a channel without
+    gates), ``clamp_error_mV`` (largest ``|v - command|``), the ``case`` and the
+    per-command traces of both sides.
     """
     case, commands = load_protocol(config_path, template_path)
     gate_map = case.mapping_spec.gate_map
@@ -133,7 +134,7 @@ def compare_protocol(
     return {
         "case": case,
         "e_I": _tolerance.relative_current_error(currents),
-        "e_s": _tolerance.max_abs_error(states),
+        "e_s": _tolerance.max_abs_error(states) if states else None,
         "clamp_error_mV": clamp_error,
         "commands": results,
     }

@@ -66,6 +66,8 @@ from braincell.channel.calcium import (
     Ca_ZH2019_IO_Frozen,
 )
 from braincell.channel.calcium import __all__ as _calcium_all
+from braincell.channel.chloride import Cl_Leak
+from braincell.channel.chloride import __all__ as _chloride_all
 from braincell.channel.hyperpolarization_activated import (
     HCN_HM1992,
     HCN1_MA2025_BC,
@@ -163,6 +165,7 @@ from braincell.channel.sodium import __all__ as _sodium_all
 __all__ = sorted(
     _base_all
     + _calcium_all
+    + _chloride_all
     + _hyperpolarization_activated_all
     + _leaky_all
     + _potassium_all

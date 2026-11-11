@@ -13,9 +13,11 @@
 # limitations under the License.
 # ==============================================================================
 
+import math
 import os
 from validation.neuron._paths import mechanism_build_dir
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -519,6 +521,41 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(sorted(result["gates"].keys()), ["m"])
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
+
+
+class ChlorideReversalTest(unittest.TestCase):
+    """NEURON computes ecl from cli/clo only under ion_style (clleak only READs ecl)."""
+
+    _CONFIG = CHANNEL_NO_CONC_ROOT / "configs" / "testing" / "cl_leak_testing.json"
+
+    def _initial_ecl(self, template: str) -> tuple[float, float]:
+        """Return NEURON's ecl after initialization and the hand-computed Nernst value."""
+        config = experiment_schema.load_sweep_config(self._CONFIG, CHANNEL_NO_CONC_ROOT / "templates" / f"{template}.json")
+        case = experiment_schema.ChannelNoConcCase.from_dict(experiment_schema.expand_cases(config)[0])
+        h, section, segment = neuron_runner._build_neuron_model(case, mapping_spec=case.mapping_spec)
+        try:
+            neuron_runner.initialize_neuron(h=h, section=section, segment=segment, case=case)
+            ecl = float(segment.ecl)
+        finally:
+            h.delete_section(sec=section)
+        # R = k_B N_A, F = e N_A (exact SI values), valence -1.
+        R, F = 1.380649e-23 * 6.02214076e23, 1.602176634e-19 * 6.02214076e23
+        T = case.simulation.temperature_celsius + 273.15
+        nernst = -1e3 * R * T / F * math.log(case.ion_state.Co_mM / case.ion_state.Ci_mM)
+        return ecl, nernst
+
+    def test_initial_ecl_is_the_nernst_potential(self) -> None:
+        for template in ("vinit_celsius", "dc", "ac"):
+            with self.subTest(template=template):
+                ecl, nernst = self._initial_ecl(template)
+                self.assertLessEqual(abs(ecl - nernst), 1e-9)
+                self.assertLessEqual(abs(ecl - (-87.50503300603127)), 1e-9)  # all three are at 36 degC
+
+    def test_without_ion_style_ecl_stays_zero(self) -> None:
+        with mock.patch.object(neuron_runner, "_use_nernst_reversal"):
+            ecl, nernst = self._initial_ecl("dc")
+        self.assertEqual(ecl, 0.0)
+        self.assertGreater(abs(ecl - nernst), 1e-9)
 
 
 if __name__ == "__main__":

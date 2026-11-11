@@ -885,6 +885,20 @@ class Nav1p6_MA2020_GoC(OhmicMarkov):
     default-precision rewrite) is recorded for this mechanism in the
     bibliography's ``MA2020`` import-deviations tables.
 
+    **Solver accuracy** (this class and its cell-model variants
+    ``Nav1p6_MA2024_PC``, ``Nav1p6_MA2025_BC`` and ``Nav1p6_RI2021_SC``).
+    With the Cell's default ``backward_euler`` and one substep at
+    ``dt = 0.025 ms``, the
+    voltage-clamp current is off by about 8 % of its peak
+    (``vc_steps``) and the error falls at first order in ``dt``; four
+    substeps bring it to about 2 %. ``exp_euler`` is exact while the
+    voltage is constant over a step; declare
+    ``bc.mech.Channel("Nav1p6_MA2020_GoC", solver="exp_euler", substeps=1)``
+    to use it for this channel. The transition matrix reaches a spectral
+    radius of about 2e5 /ms (at +60 mV), so the channel is stiff at
+    ``dt = 0.025 ms``: use ``backward_euler`` or ``exp_euler``, not an
+    explicit method.
+
     References
     ----------
     .. [1] Raman, I. M., & Bean, B. P. (2001). Inactivation and
@@ -1065,6 +1079,8 @@ class Nav1p6_MA2024_PC(Nav1p6_MA2020_GoC):
     No import deviation is recorded for this mechanism in the
     bibliography's ``MA2024`` import-deviations tables.
 
+    **Solver accuracy**: as for :class:`Nav1p6_MA2020_GoC` (see its Notes).
+
     References
     ----------
     .. [1] Raman, I. M., & Bean, B. P. (2001). Inactivation and
@@ -1144,6 +1160,8 @@ class Nav1p6_MA2025_BC(Nav1p6_MA2020_GoC):
     No import deviation is recorded for this mechanism in the
     bibliography's ``MA2025`` import-deviations tables.
 
+    **Solver accuracy**: as for :class:`Nav1p6_MA2020_GoC` (see its Notes).
+
     References
     ----------
     .. [1] Raman, I. M., & Bean, B. P. (2001). Inactivation and
@@ -1221,6 +1239,8 @@ class Nav1p6_RI2021_SC(Nav1p6_MA2020_GoC):
 
     No import deviation is recorded for this mechanism in the
     bibliography's ``RI2021`` import-deviations tables.
+
+    **Solver accuracy**: as for :class:`Nav1p6_MA2020_GoC` (see its Notes).
 
     References
     ----------
@@ -1344,6 +1364,19 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
 
     No import deviation is recorded for this mechanism in the
     bibliography's ``MA2025`` import-deviations tables.
+
+    **Solver accuracy** (this class and ``Nav1p1_RI2021_SC``). With
+    the Cell's default ``backward_euler`` and one substep at
+    ``dt = 0.025 ms``, the
+    voltage-clamp current is off by about 7 % of its peak
+    (``vc_steps``) and the error falls at first order in ``dt``; four
+    substeps bring it to about 2 %. ``exp_euler`` is exact while the
+    voltage is constant over a step; declare
+    ``bc.mech.Channel("Nav1p1_MA2025_BC", solver="exp_euler", substeps=1)``
+    to use it for this channel. The transition matrix reaches a spectral
+    radius of about 2e5 /ms (at +60 mV), so the channel is stiff at
+    ``dt = 0.025 ms``: use ``backward_euler`` or ``exp_euler``, not an
+    explicit method.
 
     References
     ----------
@@ -1475,6 +1508,8 @@ class Nav1p1_RI2021_SC(Nav1p1_MA2025_BC):
     No import deviation is recorded for this mechanism in the
     bibliography's ``RI2021`` import-deviations tables.
 
+    **Solver accuracy**: as for :class:`Nav1p1_MA2025_BC` (see its Notes).
+
     References
     ----------
     .. [1] Khaliq, Z. M., Gouwens, N. W., & Raman, I. M. (2003). The
@@ -1600,6 +1635,18 @@ class Nav_MA2020_GrC(OhmicMarkov):
 
     No import deviation is recorded for this mechanism in the
     bibliography's ``MA2020`` import-deviations tables.
+
+    **Solver accuracy.** With the Cell's default ``backward_euler``
+    and one substep at ``dt = 0.025 ms``, the
+    voltage-clamp current is off by about 14 % of its peak
+    (``vc_steps``) and the error falls at first order in ``dt``; four
+    substeps bring it to about 4 %. ``exp_euler`` is exact while the
+    voltage is constant over a step; declare
+    ``bc.mech.Channel("Nav_MA2020_GrC", solver="exp_euler", substeps=1)``
+    to use it for this channel. The transition matrix reaches a spectral
+    radius of about 3e6 /ms (at +60 mV), so the channel is stiff at
+    ``dt = 0.025 ms``: use ``backward_euler`` or ``exp_euler``, not an
+    explicit method.
 
     References
     ----------
@@ -1826,6 +1873,18 @@ class NaFHF_MA2020_GrC(Nav_MA2020_GrC):
 
     No import deviation is recorded for this mechanism in the
     bibliography's ``MA2020`` import-deviations tables.
+
+    **Solver accuracy.** With the Cell's default ``backward_euler``
+    and one substep at ``dt = 0.025 ms``, the
+    voltage-clamp current is off by about 20 % of its peak
+    (``vc_steps``) and the error falls at first order in ``dt``; four
+    substeps bring it to about 5 %. ``exp_euler`` is exact while the
+    voltage is constant over a step; declare
+    ``bc.mech.Channel("NaFHF_MA2020_GrC", solver="exp_euler", substeps=1)``
+    to use it for this channel. The transition matrix reaches a spectral
+    radius of about 6e6 /ms (at +60 mV), so the channel is stiff at
+    ``dt = 0.025 ms``: use ``backward_euler`` or ``exp_euler``, not an
+    explicit method.
 
     References
     ----------

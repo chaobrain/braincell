@@ -17,17 +17,19 @@
 
 The configurations are the JSON files under ``configs/``; the reasons are
 ``tolerances.UNCOVERED``. A new channel class registered without either fails
-here, as does a stale name in the list. Every case of every configuration
-compares a channel that conducts: its conductance (or permeability) is above
-zero.
+here, as does a stale name in the list. Every configuration lists the three
+current-clamp templates, and every case of every configuration compares a
+channel that conducts: its conductance (or permeability) is above zero.
 """
 
 from collections.abc import Iterable, Mapping
 import dataclasses
+from pathlib import Path
 import unittest
 
 import braincell.channel  # noqa: F401  (registers the channel classes)
 from braincell.mech import get_registry, register_channel
+from validation.neuron._tolerance import CURRENT_CLAMP_PROTOCOLS
 from validation.neuron.channel_no_conc.tolerances import UNCOVERED
 
 from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, load_module
@@ -57,6 +59,14 @@ def coverage_problems(registered: Iterable[str], configured: Iterable[str], unco
     problems += [f"{name}: configuration names an unregistered class" for name in sorted(configured - registered)]
     problems += [f"{name}: empty reason" for name, reason in sorted(uncovered.items()) if not reason.strip()]
     return problems
+
+
+def template_problems(model_config) -> list[str]:
+    """Return a message unless ``model_config`` lists each current-clamp template exactly once."""
+    stems = sorted(Path(path).stem for path in model_config.template_paths)
+    if stems == sorted(CURRENT_CLAMP_PROTOCOLS):
+        return []
+    return [f"{model_config.config_path.stem}: templates {stems}, expected {sorted(CURRENT_CLAMP_PROTOCOLS)}"]
 
 
 def conductance_problems(model_config) -> list[str]:
@@ -89,6 +99,19 @@ class ChannelCoverageTest(unittest.TestCase):
         self.assertGreater(len(CONFIGS), 90)
         self.assertEqual(coverage_problems(registered, configured, UNCOVERED), [])
         self.assertEqual(len(registered), len(configured) + len(UNCOVERED))
+
+    def test_every_configuration_lists_the_current_clamp_templates(self):
+        checked = [experiment_schema.load_model_config(path) for path in CONFIGS]
+        self.assertGreater(len(checked), 90)
+        self.assertEqual([problem for config in checked for problem in template_problems(config)], [])
+
+    def test_a_missing_or_repeated_template_fails(self):
+        config = experiment_schema.load_model_config(CHANNEL_NO_CONC_ROOT / "configs" / "ma25_bc" / "nav1p6_ma25_bc.json")
+        vinit = [path for path in config.template_paths if Path(path).stem == "vinit_celsius"]
+        for paths in (vinit, [*config.template_paths, *vinit]):
+            problems = template_problems(dataclasses.replace(config, template_paths=tuple(paths)))
+            self.assertEqual(len(problems), 1, problems)
+            self.assertTrue(problems[0].startswith("nav1p6_ma25_bc: templates"), problems)
 
     def test_every_configuration_compares_a_conducting_channel(self):
         checked = [experiment_schema.load_model_config(path) for path in CONFIGS]

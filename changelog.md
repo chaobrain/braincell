@@ -262,7 +262,10 @@
   change.
   The `Kca1p1_*` docstrings add the same guidance with their own numbers
   (MECH-23a): about 2 % at `dt = 0.025 ms` on `backward_euler`, 0.6 % with
-  four substeps, exact on `exp_euler`.
+  four substeps, exact on `exp_euler`. So do the eight sodium Markov
+  channels (MECH-23c): `Nav1p6_*` about 8 %, `Nav1p1_*` 7 %,
+  `Nav_MA2020_GrC` 14 % and `NaFHF_MA2020_GrC` 20 % on `backward_euler`,
+  2-5 % with four substeps, exact on `exp_euler`.
 
 - **Breaking:** braincell now requires `jax>=0.11` (it was `>=0.9`), in
   the base requirement and in the `cpu`, `cuda12`, `cuda13` and `tpu`

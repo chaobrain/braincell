@@ -78,7 +78,10 @@ runner 对 `cl_ion` 设 `ion_style`，使 `ecl` 按 `ion_state` 的浓度取 Ner
 - 参照：阶跃与松弛取 `dt = 0.025 ms` 的 `exp_euler`（电压在步内为常数时精确；
   HH 门在回放中换用 `exp_euler`，Markov 用 Cell 的 `subsolver`）；`dt` 取
   0.1、0.05、0.025、0.0125、0.00625 ms，每 0.1 ms 比较一次。斜坡不设参照，
-  用 0.05、0.025、0.0125 ms 三个解的相邻差与 Richardson 阶数。
+  用 0.05、0.025、0.0125 ms 三个解的相邻差与 Richardson 阶数；在这三个 `dt`
+  下仍未进入渐近区的配置在表项中写更细的三个 `dt`（`ramp_dts_ms`，现在只有
+  `builtin/na_hh1952_hh`）。无状态通道（`IL`、`Cl_Leak`）不换门积分器，
+  只比较 `e_I`。
 - 分类：所有 `dt` 的 `e_I`、`e_s` ≤ 1e-10 为"精确"；否则最小三个 `dt`
   的拟合阶数须在 [0.8, 1.2]，0.025 ms 下 ≤ 1e-2 为"收敛"，超过为"收敛但误差
   超过指引线"；出现非有限值或阶数在窗口外为"不收敛"（需修正，不写限值）。
@@ -97,12 +100,13 @@ cv.stiffness(cv.channel_class(cv.load_case("ma20_goc/nav1p6_ma20_goc", "vc_steps
 ```
 
 限值取实测的 1.5 倍，上取整到 1、2 或 5 乘 10 的幂（`cv.rounded_limit`）。
-表的覆盖检查（`COVERAGE_SCOPE`）现在要求代表配置 `nav1p6_ma20_goc` 与其类、钙家族
-（`calcium.py`、`potassium_calcium.py` 的 50 个类、45 个配置），以及钾家族
-（`potassium.py`、`potassium_sodium.py` 的 39 个类、31 个配置）；
-`validation/neuron/_convergence_test.py` 在每个 PR 运行，并对 registry 的全部
-通道类做奇点扫描。按家族的收敛测试标 `slow`：
+表的覆盖检查（`COVERAGE_SCOPE` 为 `None`）要求 registry 的每个通道类与
+`configs/` 的每个配置都有表项；三个家族的类与配置另写成 `*_FAMILY_*` 元组，由各
+家族的 slow 模块对照通道模块核对。`validation/neuron/_convergence_test.py` 在每个
+PR 运行，含覆盖检查、全部类的刚性分类、对 registry 全部通道类的奇点扫描，以及
+`testing/cl_leak_testing` 的收敛。按家族的收敛测试标 `slow`：
 `tests/test_convergence_calcium.py`（本机约 1.7 分钟）、
-`tests/test_convergence_potassium.py`（本机约 40 秒）。标 `slow` 的模块（按家族的
+`tests/test_convergence_potassium.py`（本机约 40 秒）、
+`tests/test_convergence_sodium_hcn_leak.py`（本机约 1.5 分钟）。标 `slow` 的模块（按家族的
 收敛测试与 `tests/test_catalogue_*.py`）只在每日 CI 的 `slow_tests_neuron` job 中
 运行（`pytest tests -m slow`），PR 的 channel job 用 `-m "not slow"` 跳过它们。

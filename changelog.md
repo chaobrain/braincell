@@ -80,6 +80,20 @@
 
 ### New Features
 
+- **`braincell.filter.TreeDistanceRegion(minimum, maximum, closed="both")`
+  selects the cable whose path distance from the soma lies in a range**
+  (MORPH-8b). It was exported but raised `NotImplementedError`. The distance
+  is the shortest path along the tree to the union of all soma branches (the
+  whole root branch when there is no soma), 0 on the soma: the same
+  `path_distance_from_soma` that callable cable and density parameters read
+  (`CVContext`, `braincell.filter.metric`), so a region and a parameter with
+  the same bound agree. Branches are cut exactly where the distance crosses a
+  bound; between two somata the distance can rise and then fall along one
+  branch, so one range can select two stretches of it. With the default
+  `closed="both"` the soma is in `TreeDistanceRegion(maximum=100 * u.um)`;
+  write `branch_in("type", "basal_dendrite") & TreeDistanceRegion(maximum=100 * u.um)`
+  for dendrites only. It reads lengths and topology only, so it needs no 3-D
+  points and is unchanged by moving or rotating the tree.
 - **`braincell.filter.RadiusRangeRegion(minimum, maximum, closed="both")`
   selects the cable whose local radius lies in a range** (MORPH-8a). It was
   exported but raised `NotImplementedError`. The radius is linear along each

@@ -94,7 +94,7 @@
   their default indices, so Cell inputs held by branch index stay valid, and
   the auto-naming counters do not change. 3-D continuity at the joint is not
   checked; `to_swc` reports a gap. Grafting the 681-branch CA1 reconstruction
-  onto a one-branch tree takes about 3 ms. `graft` is now a reserved branch
+  onto a one-branch tree takes about 1 ms. `graft` is now a reserved branch
   name: a checkpoint that holds a branch named `graft` no longer loads. No
   branch in this repository uses that name.
 

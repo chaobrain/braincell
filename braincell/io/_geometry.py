@@ -508,7 +508,7 @@ def principal_axis_sampling(
        the first point when the contour is not planar.
 
     A planar contour gives the same samples as the earlier xy-only version
-    to within rounding (1e-13 um on the shipped files).
+    to within rounding (3e-14 um on the shipped files).
 
     The sign of an eigenvector is arbitrary, so the major axis needs a
     deterministic orientation convention. NEURON 9.0 makes the dominant

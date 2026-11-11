@@ -376,6 +376,34 @@ class NeuronDiffTest(unittest.TestCase):
         self.assertIn(f"{points[0][0]:.6f}", reversed_soma["reason"])
         self.assertIn(f"{points[-1][0]:.6f}", reversed_soma["reason"])
 
+    def test_compare_asc_with_neuron_matches_nonplanar_contour(self) -> None:
+        # The contour's z runs 0, 1, 2, 1: NEURON samples the soma along the 3D
+        # major axis, which the importer follows (MORPH-5d).
+        path = self._write_asc(
+            """
+            ("CellBody"
+              (CellBody)
+              (0 0 0 0)
+              (4 0 1 0)
+              (0 4 2 0)
+              (-4 0 1 0)
+            )
+            ( (Dendrite)
+              (0 0 0 1)
+              (0 5 0 1)
+              (0 10 0 1)
+            )
+            """
+        )
+
+        comparison = compare_asc_with_neuron(path)
+
+        _assert_same_soma_orientation(self, comparison)
+        for metric_name in comparison["selected_metrics"]:
+            _assert_zero_diff(self, comparison, metric_name)
+        self.assertAlmostEqual(comparison["neuron"]["total_length"]["value"], 17.58960153598011, delta=1e-6)
+        self.assertAlmostEqual(comparison["neuron"]["total_area"]["value"], 88.30454830410312, delta=1e-6)
+
     def test_supported_metric_names_no_longer_exposes_n_3d_points(self) -> None:
         metric_names = supported_metric_names()
         self.assertEqual(metric_names, supported_metric_names(include_optional=True))

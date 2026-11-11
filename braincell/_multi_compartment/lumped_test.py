@@ -1416,15 +1416,52 @@ class DeltaInputTest(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, r"kick.*" + re.escape(str(voltage_shape))):
                         cell.update()
                 self.assertEqual(cell.V.value.shape, voltage_shape)
-        # Shapes that broadcast to V are accepted: a scalar, or one value per member.
-        for kind, value in (("lumped", np.arange(N) * u.mV), ("cable", np.arange(N)[:, None] * u.mV)):
-            with self.subTest(kind=kind, accepted=u.math.shape(value)):
-                cell = _one_cv_cell(kind, "rk4", pop_size=N)
-                cell.init_state()
+        # Shapes that broadcast to V are accepted: one value per member, or
+        # per batch row and member.
+        members = np.arange(N, dtype=float)
+        accepted = (
+            ("lumped", "rk4", None, members * u.mV, -65.0 + members),
+            ("cable", "rk4", None, members[:, None] * u.mV, -65.0 + members[:, None]),
+            ("cable", "staggered", None, members[:, None] * u.mV, -65.0 + members[:, None]),
+            ("lumped", "rk4", 2, np.stack([members, 2 * members]) * u.mV, -65.0 + np.stack([members, 2 * members])),
+        )
+        for kind, solver, batch_size, value, expected in accepted:
+            with self.subTest(kind=kind, solver=solver, batch_size=batch_size, accepted=u.math.shape(value)):
+                cell = _one_cv_cell(kind, solver, pop_size=N)
+                cell.init_state(batch_size=batch_size)
                 cell.add_delta_input("kick", value)
                 with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
                     cell.update()
-                np.testing.assert_allclose(cell.V.value.to_decimal(u.mV).reshape(-1), -65.0 + np.arange(N))
+                np.testing.assert_allclose(cell.V.value.to_decimal(u.mV), expected, rtol=0.0, atol=1e-5)
+
+    def test_direct_solver_calls_and_the_call_operator_add_the_kick(self) -> None:
+        # The solver step itself adds the delta, not only update().
+        for kind, solver in (("lumped", "rk4"), ("cable", "rk4"), ("cable", "staggered"), ("cable", "dhs_voltage")):
+            for entry in ("solver", "call"):
+                with self.subTest(kind=kind, solver=solver, entry=entry):
+                    cell = _one_cv_cell(kind, solver)
+                    cell.init_state()
+                    cell.add_delta_input("kick", _KICK)
+                    with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
+                        if entry == "solver":
+                            bc.quad.get_integrator(solver)(cell)
+                        else:
+                            cell()
+                    np.testing.assert_allclose(cell.V.value.to_decimal(u.mV), -60.0, rtol=0.0, atol=1e-5)
+
+    def test_runtime_without_its_cell_reads_its_own_inputs(self) -> None:
+        # The weak reference is dead once the Cell is gone; the runtime then
+        # behaves as the SingleCompartment it is.
+        cell = _one_cv_cell("lumped", "rk4")
+        cell.init_state()
+        runtime = cell._lumped_runtime
+        runtime._owner_ref = None
+        cell.add_delta_input("ignored", _KICK)
+        runtime.add_delta_input("own", 2.0 * u.mV)
+        runtime.post_integral()
+        np.testing.assert_allclose(runtime.V.value.to_decimal(u.mV), -63.0)
+        self.assertNotIn("own", runtime.delta_inputs)
+        self.assertIn("ignored", cell.delta_inputs)
 
     def test_reduction_model_rejects_delta_inputs(self) -> None:
         # A reduction has no membrane voltage for the delta to move.

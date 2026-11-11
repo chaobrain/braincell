@@ -203,7 +203,7 @@ def as_current_density(value, *, area, shape, what: str):
     return u.math.broadcast_to(density, shape)
 
 
-def with_delta_inputs(owner, V):
+def with_delta_inputs(owner, V, *args, **kwargs):
     """Return ``V`` plus the delta inputs registered on ``owner``.
 
     ``owner.add_delta_input`` (the entry of brainpy's ``DeltaProj``)
@@ -217,6 +217,9 @@ def with_delta_inputs(owner, V):
         The Cell holding the inputs.
     V : Quantity
         The voltage the inputs are added to, ``owner.V.value``.
+    *args, **kwargs
+        Passed on to ``owner.sum_delta_inputs`` (brainpy's ``label``, and
+        arguments for the callables).
 
     Returns
     -------
@@ -233,7 +236,7 @@ def with_delta_inputs(owner, V):
     keys = tuple(owner.delta_inputs or ())
     if not keys:
         return V
-    total = owner.sum_delta_inputs(init=V)
+    total = owner.sum_delta_inputs(V, *args, **kwargs)
     shape = tuple(u.math.shape(V))
     if tuple(u.math.shape(total)) != shape:
         raise ValueError(
@@ -409,7 +412,7 @@ class LumpedRuntime(SingleCompartment):
         owner = None if self._owner_ref is None else self._owner_ref()
         if owner is None:
             return super().sum_delta_inputs(init, *args, **kwargs)
-        return with_delta_inputs(owner, init)
+        return with_delta_inputs(owner, init, *args, **kwargs)
 
     def membrane_current(self, I_ext):
         """Total membrane current density per member, the terms of :meth:`compute_derivative`.

@@ -295,8 +295,7 @@ def _make_run_loop(
         with brainstate.environ.context(dt=dt):
             start_t = rcell.current_time
             times = start_t + u.math.arange(n_steps) * brainstate.environ.get_dt()
-            with brainstate.environ.context(t=start_t):
-                rcell._prepare_next_synapse_inputs()
+            rcell._prepare_first_synapse_inputs(t=start_t)
 
             def _step(t):
                 with brainstate.environ.context(t=t):

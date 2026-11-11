@@ -2536,6 +2536,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             u.Quantity(jnp.zeros(self._runtime.pop_size + (self._runtime.n_point,), dtype=float), u.nA)
         )
         self._point_V = brainstate.ShortTermState(self._initial_point_voltage(self.V.value))
+        self._next_synapse_inputs_prepared = brainstate.ShortTermState(jnp.asarray(False))
         self._current_time_state.value = 0.0 * u.ms
 
         cv_V = self.V.value
@@ -2642,6 +2643,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         output = model.init_state(self._reduction_input_runtime.context, batch_size=batch_size)
         self._publish_reduction_output(output, initialize=True)
         self._pending_reduction_inputs = self._reduction_input_runtime.take_inputs()
+        self._next_synapse_inputs_prepared = brainstate.ShortTermState(jnp.asarray(False))
         self._current_time_state.value = 0.0 * u.ms
         self._initialized = True
 
@@ -2689,7 +2691,13 @@ class Cell(_CellFacade, HHTypedNeuron):
             del self._lumped_runtime
             self._lumped_runtime = None
             self._lumped_clamps = None
-        for name in ("_step_clamp_components", "_step_clamp_point_current", "_point_V", "_lumped_I_ext"):
+        for name in (
+            "_step_clamp_components",
+            "_step_clamp_point_current",
+            "_point_V",
+            "_lumped_I_ext",
+            "_next_synapse_inputs_prepared",
+        ):
             if hasattr(self, name):
                 delattr(self, name)
         self._current_time_state.value = 0.0 * u.ms
@@ -3533,6 +3541,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._raise_if_not_initialized("_begin_step()")
         if self._is_lumped:
             return
+        self._next_synapse_inputs_prepared.value = jnp.asarray(False)
         if self._uses_reduction:
             self._pending_reduction_inputs = self._reduction_input_runtime.take_inputs()
             return
@@ -3666,23 +3675,39 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         In network execution, delayed arrivals are written by the network
         delivery layer before this preparation phase.
+
+        The prepared payload adds to the buffer, so a boundary must be
+        prepared once: ``_begin_step`` consumes it and clears the
+        ``_next_synapse_inputs_prepared`` flag this method sets.
         """
         self._raise_if_not_initialized("_prepare_next_synapse_inputs()")
         if self._is_lumped:
             return
-        if self._uses_reduction:
-            if t is None:
-                self._prepare_runtime_synapse_inputs(None)
-            else:
-                with brainstate.environ.context(t=t):
-                    self._prepare_runtime_synapse_inputs(None)
-            return
-        point_V = self._point_voltage_for_mechanisms(self.V.value)
+        point_V = None if self._uses_reduction else self._point_voltage_for_mechanisms(self.V.value)
         if t is None:
             self._prepare_runtime_synapse_inputs(point_V)
         else:
             with brainstate.environ.context(t=t):
                 self._prepare_runtime_synapse_inputs(point_V)
+        self._next_synapse_inputs_prepared.value = jnp.asarray(True)
+
+    def _prepare_first_synapse_inputs(self, *, t) -> None:
+        """Prepare the inputs of a run's first boundary ``t`` unless a step did.
+
+        Every ``Cell.run`` step and every ``update()`` prepares the boundary
+        that follows it, so a run continuing either finds its first boundary
+        prepared. Preparing it again would deliver each event on it twice
+        (CELL-34); only the first step after ``init_state`` or
+        ``reset_state`` prepares here. The test is on a state, not a Python
+        flag, so it holds inside jitted loops.
+        """
+        if self._is_lumped:
+            return
+        brainstate.transform.cond(
+            self._next_synapse_inputs_prepared.value,
+            lambda: None,
+            lambda: self._prepare_next_synapse_inputs(t=t),
+        )
 
     def _apply_runtime_synapse_events(self, point_V):
         """Apply bound discrete events to all runtime synapses.
@@ -3963,6 +3988,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             output = self._reduction_models[self._selected_model_name].reset_state(batch_size=batch_size)
             self._publish_reduction_output(output)
             self._pending_reduction_inputs = self._reduction_input_runtime.take_inputs()
+            self._next_synapse_inputs_prepared.value = jnp.asarray(False)
             self._current_time_state.value = 0.0 * u.ms
             return
         if self.trainables.bindings():
@@ -3981,6 +4007,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         )
         for layout_id in self._runtime.event_buffers:
             self._runtime.clear_event_buffer(layout_id)
+        self._next_synapse_inputs_prepared.value = jnp.asarray(False)
         with state_grouping(True):
             for path, channel in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
                 args = self._runtime_node_phase_args(path, channel, self.V.value)
@@ -4088,7 +4115,10 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         If :meth:`init_state` has not been called yet, ``run`` calls it
         automatically. Once initialized the cell will *not* be
-        re-initialized on subsequent ``run`` invocations.
+        re-initialized on subsequent ``run`` invocations: each ``run`` (or
+        :meth:`update`) continues from where the last one stopped, so
+        splitting a run into segments, at event times included, gives the
+        same trajectory as one run.
         """
         owner = self.network_owner
         if owner is not None:

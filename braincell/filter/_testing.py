@@ -28,6 +28,7 @@ The second half is the selection-cache layer of the morphology edit table
 :func:`assert_selection_fresh`.
 """
 
+import warnings
 from typing import Callable, Mapping
 
 import brainunit as u
@@ -35,7 +36,8 @@ import brainunit as u
 from braincell import Branch, Morphology
 from braincell.filter.cache import SelectionCache
 from braincell.filter.locset import BranchPoints, LocsetMask, RootLocation, Terminals, UniformSamples, at
-from braincell.filter.region import AllRegion, branch_in
+from braincell.filter.region import AllRegion, EmptyRegion, SubtreeRegion, branch_in
+from braincell.io._testing import FIXTURE_DIR
 from braincell.morph._testing import EditCase, assert_layer_fresh, make_tree_t
 
 # Re-exported so the filter tests keep a single import site for fixtures.
@@ -51,6 +53,7 @@ from braincell.morph._testing import (  # noqa: F401
 __all__ = [
     "SELECTION_BATTERY",
     "assert_selection_fresh",
+    "fixture_morphologies",
     "make_apical",
     "make_axon",
     "make_basal",
@@ -67,13 +70,25 @@ def make_single_branch_tree(*, length: float = 10.0, radius: float = 1.0) -> Mor
     return Morphology.from_root(root, name="soma")
 
 
+def fixture_morphologies() -> list[tuple[str, Morphology]]:
+    """Every morphology under ``FIXTURE_DIR``: the SWC files, then the ASC files."""
+    paths = sorted(FIXTURE_DIR.glob("*.swc")) + sorted(FIXTURE_DIR.glob("*.asc"))
+    with warnings.catch_warnings():
+        # Some fixtures repeat a sample; the reader keeps it as a zero-length segment and says so.
+        warnings.filterwarnings("ignore", r"from_points\(\) produced \d+ zero-length segment", UserWarning)
+        return [
+            (path.name, Morphology.from_swc(path) if path.suffix == ".swc" else Morphology.from_asc(path))
+            for path in paths
+        ]
+
+
 # --------------------------------------------------------------------------- #
 # Selection-cache layer of the edit table
 # --------------------------------------------------------------------------- #
 
 #: Expressions a ``SelectionCache`` serves after an edit, one per thing a mask
-#: can depend on: segment lengths, topology, branch type, and the name ->
-#: index mapping. Each is a composite whose operands are all hashable, because
+#: can depend on: segment lengths, topology, branch type, the name -> index
+#: mapping, and subtree membership by index and by name. Each is a composite whose operands are all hashable, because
 #: the cache memoizes operands only; a top-level leaf would never be cached
 #: and could not go stale.
 SELECTION_BATTERY: tuple[tuple[str, object], ...] = (
@@ -81,6 +96,10 @@ SELECTION_BATTERY: tuple[tuple[str, object], ...] = (
     ("topology", Terminals() + BranchPoints()),
     ("types", (branch_in("type", "basal_dendrite") | branch_in("type", "axon")) & AllRegion()),
     ("names", at("soma", 0.5) + at("axon", 1.0)),
+    # Two entries, not one union: "reattach d2 under the axon" moves d2 from
+    # one subtree to the other, and a union of both would not change.
+    ("subtree by index", SubtreeRegion(1) | EmptyRegion()),
+    ("subtree by name", SubtreeRegion("axon") | EmptyRegion()),
 )
 
 

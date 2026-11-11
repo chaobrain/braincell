@@ -17,10 +17,11 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from numbers import Integral
 
 from brainunit import Quantity
 
-from braincell.morph.morphology import Morphology
+from braincell.morph.morphology import MorphoBranch, Morphology
 from braincell.filter import helper
 from braincell.filter.cache import SelectionCache, evaluate_cached
 
@@ -265,14 +266,111 @@ class EuclideanDistanceRegion(RegionExpr):
 
 @dataclass(frozen=True)
 class SubtreeRegion(RegionExpr):
-    root_branch_index: int
+    """Select a branch and all of its descendants, each branch whole.
+
+    Parameters
+    ----------
+    root_branch_index : str or int
+        The root of the subtree: a branch name (recommended), or a
+        default-order branch index (a Python or NumPy integer).
+
+    Returns
+    -------
+    RegionMask
+        From :meth:`~RegionExpr.evaluate`: one ``(i, 0.0, 1.0)`` interval for
+        the root branch and for each of its descendants, in ascending branch
+        index. A leaf selects only itself; the morphology's root selects the
+        whole tree, like :class:`AllRegion`.
+
+    Raises
+    ------
+    TypeError
+        At construction, if ``root_branch_index`` is neither a ``str`` nor an
+        integer (``bool``, ``float`` and ``None`` included), or is a
+        :class:`~braincell.MorphoBranch` view; pass the view's name instead.
+    KeyError
+        At evaluation (``select``, ``Cell.paint``), if no branch has the
+        given name.
+    IndexError
+        At evaluation, if the index is negative or out of range. Negative
+        indices do not wrap around.
+
+    See Also
+    --------
+    braincell.Morphology.subtree : Copy a branch and its descendants into a
+        new tree.
+
+    Notes
+    -----
+    This is a selection on the tree it is evaluated on, not a copy: the
+    intervals index that tree. :meth:`braincell.Morphology.subtree` instead
+    returns a new morphology whose branch indices start from 0, so its
+    indices cannot be used to paint the original tree.
+
+    "Descendants" are topological: every branch whose parent chain reaches
+    the root. Which end of a child faces its parent (``child_x``) does not
+    matter, because each descendant is selected whole. The region reads the
+    topology only, so moving, rotating or scaling the tree does not change
+    it. To start partway along the root branch, subtract a slice:
+    ``SubtreeRegion("dend") - BranchSlice(1, 0.0, 0.5)``.
+
+    In a :class:`~braincell.Cell` declaration, refer to the root by name. An
+    index names whatever branch holds that index when the expression is
+    evaluated, so after a ``remove`` it can silently select another branch;
+    a name raises ``KeyError`` once its branch is gone.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell import Branch, Morphology
+        >>> from braincell.filter import BranchSlice, SubtreeRegion
+        >>> soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
+        >>> dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[2.0, 1.0] * u.um, type="basal_dendrite")
+        >>> axon = Branch.from_lengths(lengths=[200.0] * u.um, radii=[0.5, 0.5] * u.um, type="axon")
+        >>> tree = Morphology.from_root(soma, name="soma")
+        >>> tree.soma.dend = dend
+        >>> tree.dend.tip = dend
+        >>> tree.soma.axon = axon
+        >>> [branch.name for branch in tree.branches]
+        ['soma', 'dend', 'tip', 'axon']
+        >>> tree.select(SubtreeRegion("dend")).intervals
+        ((1, 0.0, 1.0), (2, 0.0, 1.0))
+        >>> tree.select(SubtreeRegion("dend") - BranchSlice(1, 0.0, 0.5)).intervals
+        ((1, 0.5, 1.0), (2, 0.0, 1.0))
+    """
+
+    root_branch_index: int | str
+
+    def __post_init__(self) -> None:
+        root = self.root_branch_index
+        if isinstance(root, MorphoBranch):
+            raise TypeError(
+                "SubtreeRegion takes a branch name or index, not a MorphoBranch view; "
+                f"pass its name, e.g. SubtreeRegion({root.name!r})."
+            )
+        if isinstance(root, bool) or not isinstance(root, (Integral, str)):
+            raise TypeError(f"SubtreeRegion root must be a branch name (str) or index (int), got {root!r}.")
 
     def _evaluate(
         self,
         morpho: Morphology,
         cache: SelectionCache | None = None,
     ) -> RegionMask:
-        raise NotImplementedError
+        root = self.root_branch_index
+        if isinstance(root, str):
+            view = morpho.branch(name=root)
+        else:
+            view = morpho.branches[helper._coerce_branch_index(root, len(morpho.branches))]
+        # Iterative: a deep reconstruction would overflow Python's recursion limit.
+        found: list[int] = []
+        stack = [view]
+        while stack:
+            current = stack.pop()
+            found.append(current.index)
+            stack.extend(current.children)
+        return RegionMask(helper.normalize_region_intervals(tuple((index, 0.0, 1.0) for index in found)))
 
 
 @dataclass(frozen=True)

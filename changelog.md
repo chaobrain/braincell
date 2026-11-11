@@ -80,6 +80,21 @@
 
 ### New Features
 
+- **`braincell.filter.SubtreeRegion(root)` selects a branch and all its
+  descendants** (MORPH-9a). It was exported but raised `NotImplementedError`.
+  `root` is a branch name or a default-order index; prefer the name, because
+  an index names whatever branch holds it when the expression is evaluated
+  (after a `remove`, another one). The region is the root branch and every
+  branch below it, each selected whole, whichever end of a child faces its
+  parent; a leaf selects itself and the root of the tree selects everything.
+  It reads the topology only, so it needs no 3-D points and transforms do not
+  change it. To start partway along the root, subtract a slice:
+  `SubtreeRegion("dend") - BranchSlice(1, 0.0, 0.5)`. A root that is not a
+  `str` or an integer, or a `MorphoBranch` view, raises `TypeError` at
+  construction; an unknown name raises `KeyError` and an out-of-range or
+  negative index `IndexError` when the region is evaluated (`select`,
+  `Cell.paint`). Unlike `Morphology.subtree(name)`, which copies the branches
+  into a new tree indexed from 0, it selects them on the tree itself.
 - **`Morphology.principal_axes()` and `Morphology.align_principal_axes()`
   find and apply a tree's principal axes; `braincell.morph.PrincipalAxes`
   holds the result** (MORPH-3c). `principal_axes()` returns `origin`, the

@@ -296,6 +296,48 @@ class LumpedShapeLifecycleTest(unittest.TestCase):
             traces.append(cell.run(dt=DT, duration=2.0 * u.ms).samples["v"].values.to_decimal(u.mV))
         np.testing.assert_array_equal(traces[0], traces[1])
 
+    def test_declared_ci_initializer_matches_the_class_default(self) -> None:
+        # MECH-38: a declared ``Ci_initializer`` reached the ion as a bare
+        # scalar, ``Ci`` started rank-0, and the first step's ``(1,)`` update
+        # broke the ``scan`` carry. The class default is the same Constant.
+        def run(**declared):
+            cell = bc.Cell(
+                bc.Morphology.from_soma(length=15.0 * u.um, radius=7.5 * u.um),
+                cv_policy=bc.Lumped(),
+                V_init=-60.0 * u.mV,
+            )
+            cell.paint(AllRegion(), bc.mech.Ion("CalciumDetailed", name="ca", **declared))
+            cell.paint(AllRegion(), bc.mech.Channel("CaT_HM1992", name="cat"))
+            cell.record("v", bc.observe.state("v"))
+            cell.init_state()
+            ion = cell._lumped_runtime.ion_channels["ca"]
+            initial_shape = ion.Ci.value.shape
+            v = cell.run(dt=DT, duration=1.0 * u.ms).samples["v"].values.to_decimal(u.mV)
+            return initial_shape, v, np.asarray(ion.Ci.value.to_decimal(u.mM))
+
+        shape, v, ci = run()
+        self.assertEqual(shape, (1,))
+        self.assertEqual(v.shape, (40, 1))
+        for declared in (2.4e-4 * u.mM, braintools.init.Constant(2.4e-4 * u.mM)):
+            with self.subTest(Ci_initializer=declared):
+                got_shape, got_v, got_ci = run(Ci_initializer=declared)
+                self.assertEqual(got_shape, shape)
+                np.testing.assert_array_equal(got_v, v)
+                np.testing.assert_array_equal(got_ci, ci)
+
+    def test_declared_ci_initializer_keeps_the_batch_axis(self) -> None:
+        cell = bc.Cell.point(N, V_init=-60.0 * u.mV)
+        cell.paint(AllRegion(), bc.mech.Ion("CalciumDetailed", name="ca", Ci_initializer=2.4e-4 * u.mM))
+        cell.paint(AllRegion(), bc.mech.Channel("CaT_HM1992", name="cat"))
+        cell.init_state(batch_size=2)
+        ion = cell._lumped_runtime.ion_channels["ca"]
+        self.assertEqual(ion.Ci.value.shape, (2, N))
+        cell.run(dt=DT, duration=0.5 * u.ms)
+        cell.reset_state(batch_size=2)
+        ion = cell._lumped_runtime.ion_channels["ca"]
+        self.assertEqual(ion.Ci.value.shape, (2, N))
+        np.testing.assert_allclose(ion.Ci.value.to_decimal(u.mM), np.full((2, N), 2.4e-4), rtol=1e-6)
+
     def test_reset_returns_to_declaring(self) -> None:
         cell = _point_cell(hh=False)
         cell.init_state()

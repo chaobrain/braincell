@@ -264,6 +264,19 @@
 
 ### Bug Fixes
 
+- A lumped Cell (`cv_policy=Lumped()`, `Cell.point`) with a declared
+  `Ci_initializer` on a `DynamicNernstIon` (`CalciumDetailed`,
+  `CalciumFirstOrder`, `CdpHVA_SU2015_DCN`, `CdpLVA_SU2015_DCN`) now runs
+  (MECH-38). The declared value reached the ion as a bare scalar, `Ci` started
+  with shape `()` instead of `pop_size`, and `run` raised `TypeError: scan body
+  function carry input and carry output must have equal types` (or `ValueError:
+  Cannot stack arrays` under `exp_euler`). A `DynamicNernstIon` now broadcasts
+  its `Ci` initializer to the state shape on `init_state` and `reset_state`, as
+  kinetic pools already did for their species, so the same declaration also
+  works on a directly built `SingleCompartment` (`CalciumDetailed(1,
+  Ci_initializer=2.4e-4 * u.mM)`). Results equal the undeclared default
+  bit for bit.
+
 - The `K_HH1952` docstring said its defaults do not reproduce Hodgkin and
   Huxley's 6.3 degC kinetics; they do (MECH-19b). `temp` and `temp_ref` both
   default to 36 degC, so the Q10 factor is 1 and the gate runs the published

@@ -1776,6 +1776,14 @@
   comparisons do, and the largest difference is 2.8e-7 mV. Both sides deliver
   every event at the same step. The notebook stores its outputs.
 
+- The known numerical differences of the NEURON validation explain why the
+  `K_Kv_test` voltage-clamp ramp (`testing/kv_testing`, `vc_ramp`) agrees
+  with NEURON to `e_I = 5.8e-11` instead of `3.2e-16` since MECH-23b: one
+  ramp sample lies `4.0e-9 mV` from 25 mV, where `kv.mod`'s rate, `0/0` at
+  25 mV, keeps about seven significant digits and BrainCell's `exprel` form
+  keeps all of them. The
+  difference stays within its `1e-10` limit.
+
 - `pip install braincell[doc]` installs `numba`. brainevent needs it to run
   `brainstate.nn.EventFixedProb` on CPU, so without it the brainpy network
   notebooks (the tutorials' Overview and the E–I network example) fail on

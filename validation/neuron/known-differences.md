@@ -171,6 +171,24 @@ Class (c), `kdr_zh19_io` (`vc_ramp`): the `.mod` evaluates `a_n` at
   of `-41 mV` and are T0. Copying the `.mod` branch into BrainCell gives
   `e_I = 1.0e-15`, `e_s = 2.2e-16`.
 
+### K_Kv_test near v12
+
+`testing/kv_testing` (`vc_ramp`) is T0 but not at round-off: `e_I = 5.8e-11`,
+  `e_s = 7.6e-11` against the `1e-10` limit (2026-11-12, main `a932c19`,
+  NEURON 9.0.2, JAX 0.12.0.1). `kv.mod` computes `ntau` with `rateconst`,
+  `r (v - th) / (1 - exp(-(v - th)/q))`, which is `0/0` at `v12 = 25 mV` and
+  loses digits near it. Since MECH-23b BrainCell evaluates the same rate
+  with `exprel` and takes the limit at `v12`. The ramp's sample at
+  `t = 130.025 ms` lies `4.0e-9 mV` below 25 mV; there `kv.mod`'s `ntau` is
+  off by `1.1e-7` relative to a 50-digit evaluation, and BrainCell's by at
+  most `2.2e-16`. `n` lags `n_inf` by `0.117` on the ramp, so that one step
+  moves NEURON's `n` by `7.6e-11`; the offset then decays as `n` relaxes.
+  Before that sample the two sides agree to `2.5e-16`. Evaluating the
+  `.mod`'s form in BrainCell, as before MECH-23b, gives `e_I = 3.2e-16`,
+  `e_s = 2.5e-16`. The difference grows as `1 / |v - v12|` at the nearest
+  sample, so a ramp sample closer to 25 mV could exceed T0. `vc_steps` has no
+  step to 25 mV and stays at round-off.
+
 ### Kca2.2 steady-state initialization
 
 Class (c), `kca2p2` (GoC, GrC, BC, SC): these `.mod` files initialize with

@@ -703,6 +703,69 @@ class DhsMidpointClampPopulationTest(unittest.TestCase):
             np.testing.assert_allclose(population_v[member], single_v[0], rtol=1e-12, atol=1e-12)
 
 
+class DhsBatchedPopulationTest(unittest.TestCase):
+    """A batch axis in front of a population: each batch row runs as an unbatched Cell.
+
+    On main ``init_state(batch_size=2)`` on a ``pop_size > 1`` cable Cell made
+    ``staggered`` and ``dhs_voltage`` raise ``ValueError: Incompatible types
+    for broadcasting`` in ``_build_dhs_numeric_state``: the per-member
+    coefficients (``pop_size + (n_point,)``) were broadcast to the flattened
+    ``batch * pop`` solve rows.
+    """
+
+    KICK = np.asarray([0.0, 7.0])  # mV added to V in batch row 1 after init_state
+
+    @staticmethod
+    def _cell(solver, batch_size):
+        branch = Branch.from_lengths(lengths=[60.0] * u.um, radii=[5.0, 3.0] * u.um, type="soma")
+        cell = Cell(
+            Morphology.from_root(branch), pop_size=3, cv_policy=CVPerBranch(3), V_init=-65.0 * u.mV, solver=solver
+        )
+        cell.paint(
+            AllRegion(),
+            mech.Ion("SodiumFixed", E=50.0 * u.mV),
+            mech.Ion("PotassiumFixed", E=-77.0 * u.mV),
+            mech.Channel("Na_HH1952", g_max=120.0 * u.mS / u.cm**2),
+            mech.Channel("K_HH1952", g_max=36.0 * u.mS / u.cm**2),
+            mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+        )
+        cell.place(RootLocation(x=0.0), CurrentClamp(delay=0.5 * u.ms, durations=3.0 * u.ms, amplitudes=0.3 * u.nA))
+        cell.init_state(batch_size=batch_size)
+        # Members differ in Ra and cm, so each solve row needs its own member's
+        # coefficients. The geometry rows run member by member, CV by CV.
+        cell.geometry.set(
+            Ra=np.repeat([100.0, 300.0, 100.0], 3) * u.ohm * u.cm,
+            cm=np.repeat([1.0, 1.0, 2.0], 3) * u.uF / u.cm**2,
+        )
+        return cell
+
+    @staticmethod
+    def _voltages(cell, kick):
+        cell.V.value = cell.V.value + kick * u.mV
+        dt = 0.025 * u.ms
+
+        def step(index):
+            with brainstate.environ.context(t=index * dt):
+                cell.update()
+                return cell.V.value
+
+        with brainstate.environ.context(dt=dt):
+            return np.asarray(brainstate.transform.for_loop(step, np.arange(200)).to_decimal(u.mV))
+
+    def test_batch_rows_equal_unbatched_runs(self):
+        for solver in ("staggered", "dhs_voltage"):
+            with self.subTest(solver=solver), jax.enable_x64(True), brainstate.environ.context(precision=64):
+                batched = self._voltages(self._cell(solver, 2), self.KICK.reshape(2, 1, 1))
+                self.assertEqual(batched.shape, (200, 2, 3, 3))
+                for row, kick in enumerate(self.KICK):
+                    alone = self._voltages(self._cell(solver, None), kick)
+                    np.testing.assert_allclose(batched[:, row], alone, rtol=1e-12, atol=0.0)
+                # The rows and the members took different paths.
+                self.assertGreater(np.abs(batched[:, 1] - batched[:, 0]).max(), 1.0)
+                self.assertGreater(np.abs(batched[:, :, 1] - batched[:, :, 0]).max(), 1e-3)
+                self.assertGreater(np.abs(batched[:, :, 2] - batched[:, :, 0]).max(), 1e-3)
+
+
 class DhsMultistepClampTest(unittest.TestCase):
     def test_multistep_current_clamp_voltage_step_handles_zero_linearization(self):
         soma = Branch.from_lengths(

@@ -837,6 +837,15 @@
   branch of that type raise `ValueError` naming the type and the types the
   morphology has, instead of `TypeError: branch ids must be a one-dimensional
   integer selection.`
+- A cable `Cell` with `pop_size > 1` runs under `"staggered"` (the default)
+  and `"dhs_voltage"` after `init_state(batch_size=...)`. The voltage solve
+  flattens the batch and population axes into one row per solve, but
+  broadcast the per-member axial coefficients (`pop_size + (n_point,)`) to
+  those rows directly, so the first step raised `ValueError: Incompatible
+  types for broadcasting`. The coefficients now repeat over the batch axis;
+  each batch row equals the unbatched run within 6e-16 relative in float64
+  (members with different `Ra` and `cm`, HH channels and a clamp, 200 steps).
+  Unbatched cells and `pop_size=1` are unchanged.
 - `backward_euler` and `crank_nicolson` now solve a cable `Cell` as one block
   per cell, as `exp_euler` does (CELL-31a). Both steps used to merge the states
   with `'stack'` whatever the host declared, so a `Cell` with more than one CV

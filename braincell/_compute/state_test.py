@@ -323,14 +323,22 @@ class PopulationResponseHeterogeneityTest(unittest.TestCase):
             V_init=-60.0 * u.mV,
         )
         amp = u.Quantity(jnp.asarray([[0.00, 0.03], [0.06, 0.12]]), u.nA)
+        cell.loc(at("soma", 0.5)).record("v", "V")
+        cell[1, :].loc(at("soma", 0.5)).record("second_row", "V")
         cell.place(
             at("soma", 0.5),
             CurrentClamp(delay=0.1 * u.ms, durations=0.8 * u.ms, amplitudes=amp),
         )
         result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
-        # Recordings need a one-dimensional pop_size: check the steps and the
-        # population shape of the state the run advanced.
-        self.assertEqual((len(result.time),) + tuple(cell.V.value.shape[:2]), (20, 2, 2))
+        # One row per member, in C order over the population axes.
+        trace = result.traces["v"]
+        self.assertEqual(trace.shape, (20, 4))
+        self.assertEqual([row.population_index for row in result.samples["v"].schema.rows], [0, 1, 2, 3])
+        peaks = np.asarray(u.math.max(trace, axis=0).to_decimal(u.mV)).reshape(2, 2)
+        self.assertTrue(np.all(np.diff(peaks.ravel()) > 0.0), peaks)
+        np.testing.assert_array_equal(
+            result.traces["second_row"].to_decimal(u.mV), trace[:, 2:].to_decimal(u.mV)
+        )
 
     def test_population_cells_can_have_different_current_clamp_delays(self) -> None:
         cell = Cell(_build_tree(), pop_size=(2,))

@@ -36,7 +36,7 @@ from braincell.mech import CVContext, Channel, Ion
 from braincell.morph.branch import Branch
 from braincell.morph.morphology import Morphology
 from braincell._compute._testing import _build_tree
-from braincell._compute.layouts import CLAMP_KINDS, ClampRoutingTable, build_clamp_routing_table
+from braincell._compute.layouts import CLAMP_KINDS, ClampRoutingTable, MechanismLayout, build_clamp_routing_table
 
 
 @_dataclass
@@ -489,6 +489,49 @@ class DensityLayoutMaskingUnderJit(unittest.TestCase):
         mantissa = cell.runtime.state_buffers[(layout.id, "g_max")].mantissa
         total = float(jax.jit(lambda x: jnp.asarray(x).sum())(mantissa))
         self.assertGreater(total, 0.0)
+
+
+def _packed_layout(population_index):
+    return MechanismLayout(
+        id=7,
+        kind="Exp2Syn",
+        target="point",
+        layout="sparse",
+        point_index=np.zeros(len(population_index), dtype=np.int32),
+        point_mask=None,
+        n_active=len(population_index),
+        source_cv_ids=(0,),
+        population_index=np.asarray(population_index, dtype=np.int32),
+    )
+
+
+class PopulationSlotsTest(unittest.TestCase):
+    """CELL-31b: each packed row's slot within its population entry."""
+
+    def test_rows_are_ranked_within_their_entry_in_row_order(self):
+        owner, slot, width = _packed_layout([2, 0, 2, 1, 2, 0]).population_slots
+        np.testing.assert_array_equal(owner, [2, 0, 2, 1, 2, 0])
+        np.testing.assert_array_equal(slot, [0, 0, 1, 0, 2, 1])
+        self.assertEqual(width, 3)
+        self.assertEqual(slot.dtype, np.int64)
+
+    def test_the_table_is_built_once_per_layout(self):
+        layout = _packed_layout([0, 1])
+        self.assertIs(layout.population_slots, layout.population_slots)
+
+    def test_a_broadcast_layout_has_no_slots(self):
+        layout = MechanismLayout(
+            id=1,
+            kind="CurrentClamp",
+            target="point",
+            layout="sparse",
+            point_index=np.zeros(1, dtype=np.int32),
+            point_mask=None,
+            n_active=1,
+            source_cv_ids=(0,),
+        )
+        with self.assertRaisesRegex(ValueError, "not packed"):
+            layout.population_slots
 
 
 class TestBuildClampRoutingTable(unittest.TestCase):

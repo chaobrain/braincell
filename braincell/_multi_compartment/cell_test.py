@@ -68,6 +68,7 @@ from braincell.filter import (
     branch_range,
 )
 from braincell.mech import StateProbe
+from braincell.quad._util import split_diffeq_states
 from braincell.morph._testing import (
     EDIT_CASES,
     SABOTAGE_CASES,
@@ -2352,19 +2353,17 @@ class CellGenericSolverTest(unittest.TestCase):
                         for key in states:
                             np.testing.assert_allclose(states[key], ref_states[key], rtol=1e-12, atol=1e-300)
 
-    def test_block_solvers_reject_point_synapses_at_init_state(self):
+    def test_block_solvers_advance_a_cable_cell_with_point_synapses(self):
+        # CELL-19 rejected these at init_state; CELL-31b puts each synapse row
+        # in its cell's block (convergence: CellBlockSolverPointSynapseTest).
         for name in ("exp_euler", "backward_euler", "crank_nicolson"):
             with self.subTest(solver=name):
                 cell = _mechanism_cell(name, "none")
                 cell.place(at("soma", 0.5), mech.Synapse("Exp2Syn", name="syn"))
-                with self.assertRaisesRegex(
-                    ValueError, rf"solver '{name}' cannot advance a Cell with point synapses \(Exp2Syn\)"
-                ):
-                    cell.init_state()
-                self.assertFalse(cell._initialized)
-                cell.solver = "ralston2"
                 cell.init_state()
+                self.assertTrue(cell._initialized)
                 cell.run(dt=0.025 * u.ms, duration=0.05 * u.ms)
+                self.assertTrue(np.all(np.isfinite(np.asarray(cell.V.value.to_decimal(u.mV)))))
 
     def test_point_synapses_in_a_network_converge_under_generic_solvers(self):
         # Exp2Syn driven by a NetStim. The explicit solvers integrate the
@@ -2396,9 +2395,270 @@ class CellGenericSolverTest(unittest.TestCase):
             self.assertLessEqual(abs(final_V("ralston2", 0.001) - limit), 5e-5)
             gap = {dt: abs(final_V("ind_exp_euler", dt) - limit) for dt in (0.005, 0.001)}
             self.assertGreaterEqual(gap[0.005] / gap[0.001], 3.0)
-            net, _ = network("exp_euler")
-            with self.assertRaisesRegex(ValueError, "solver 'exp_euler' cannot advance a Cell with point synapses"):
-                net.init_state()
+            # CELL-31b: exp_euler is second order with the synapse in the
+            # block; measured 1.64e-5 mV at dt = 0.001 ms.
+            self.assertLessEqual(abs(final_V("exp_euler", 0.001) - limit), 2.5e-5)
+
+
+_EXP2SYN = dict(tau1=0.5 * u.ms, tau2=5.0 * u.ms, e=0.0 * u.mV)
+_BLOCK_SOLVER_NAMES = ("exp_euler", "crank_nicolson", "backward_euler")
+
+
+def _synapse_cell(solver, model, **kwargs):
+    """The CELL-31b models.
+
+    - ``"S"``: the CELL-19 soma (``IL`` 0.1 mS/cm^2 at -70 mV) with an Exp2Syn
+      at its midpoint.
+    - ``"P"``: S with ``pop_size=2`` and an ExpSyn at the x = 0 end (an
+      algebraic boundary point) of cell 0 only: two synapse rows in cell 0, one
+      in cell 1.
+    - ``"G"``: the CELL-19 GABA model, ``GabaA_JE2011`` writing ``Cldif_JE2011``
+      (the ion-current snapshot path).
+    """
+    if model == "G":
+        branch = Branch.from_lengths(lengths=[20.0] * u.um, radii=[0.5, 0.5] * u.um)
+        cell = Cell(
+            Morphology.from_root(branch), cv_policy=CVPerBranch(1), V_init=-70.0 * u.mV, solver=solver, **kwargs
+        )
+        cell.paint(AllRegion(), mech.Channel("IL", g_max=0.0274578 * u.mS / u.cm**2, E=-70.0 * u.mV))
+        cell.paint(AllRegion(), mech.Ion("Cldif_JE2011", name="cl"))
+        cell.place(RootLocation(0.5), mech.Synapse("GabaA_JE2011", name="s"))
+        return cell
+    cell = Cell(_soma_tree(), pop_size=2 if model == "P" else 1, cv_policy=CVPerBranch(), solver=solver, **kwargs)
+    cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV))
+    cell.place(at("soma", 0.5), mech.Synapse("Exp2Syn", name="a", **_EXP2SYN))
+    if model == "P":
+        cell[0:1].place(at("soma", 0.0), mech.Synapse("ExpSyn", name="b", tau=2.0 * u.ms, e=0.0 * u.mV))
+    return cell
+
+
+def _synapse_network(solver, model):
+    """A model of :func:`_synapse_cell` driven by NetStims: events at 0.1, 0.4, 0.7 ms (and 0.25, 0.45, 0.65 ms)."""
+    cell = _synapse_cell(solver, model)
+    net = braincell.Network(name=f"cell31b_{model.lower()}")
+    stim = net.add_population("stim", NetStim(size=1, start=0.1 * u.ms, interval=0.3 * u.ms, number=3))
+    post = net.add_population("post", cell)
+    if model == "G":
+        net.connect("s", source=stim, synapse=post.synapses["s"], weight=0.0005 * u.uS)
+        return net, cell
+    net.connect("a", source=stim, synapse=post.synapses["a"], weight=0.01 * u.uS)
+    if model == "P":
+        stim2 = net.add_population("stim2", NetStim(size=1, start=0.25 * u.ms, interval=0.2 * u.ms, number=3))
+        net.connect("b", source=stim2, synapse=post.synapses["b"], weight=0.02 * u.uS)
+    return net, cell
+
+
+@functools.lru_cache(maxsize=None)
+def _synapse_run(model, solver, dt_ms):
+    """``(V per cell, other DiffEqStates)`` at 1 ms; call under float64."""
+    net, cell = _synapse_network(solver, model)
+    net.init_state()
+    net.run(dt=dt_ms * u.ms, duration=1.0 * u.ms)
+    return _diffeq_values(cell)
+
+
+def _gaba_block_solver_report() -> dict:
+    """CELL-31b on G; run in a float64 subprocess by :func:`_gaba_block_solver_numbers`.
+
+    ``{"<solver>/<dt>": (max |V - reference| in mV, max |Ci - reference| in mM)}``
+    against rk4 at dt = 0.00025 ms.
+    """
+    with brainstate.environ.context(precision=64):
+        ref_V, ref_states = _synapse_run("G", "rk4", 0.00025)
+        report = {}
+        for name in _BLOCK_SOLVER_NAMES:
+            for dt_ms in (0.005, 0.001):
+                V, states = _synapse_run("G", name, dt_ms)
+                ci = "ion_channels.cl.Ci"
+                report[f"{name}/{dt_ms}"] = (
+                    float(np.max(np.abs(V - ref_V))),
+                    float(np.max(np.abs(states[ci] - ref_states[ci]))),
+                )
+    return report
+
+
+@functools.cache
+def _gaba_block_solver_numbers() -> dict:
+    # In a subprocess, as _kinetic_integration_numbers: in one process a
+    # Cldif_JE2011 Cell run at one precision makes the next one fail at the
+    # other (JaxRuntimeError at init_state; on main too).
+    code = (
+        "import json; from braincell._multi_compartment.cell_test import _gaba_block_solver_report; "
+        "print(json.dumps(_gaba_block_solver_report()))"
+    )
+    env = dict(os.environ, JAX_ENABLE_X64="1", JAX_PLATFORMS="cpu")
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
+    if result.returncode != 0:
+        raise AssertionError(result.stderr)
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+class CellBlockSolverPointSynapseTest(unittest.TestCase):
+    """CELL-31b: the block solvers advance point synapses, each row in a slot of its cell's block."""
+
+    #: Per solver: the bound on |V - reference| at dt 0.005 and 0.001 ms (mV), about
+    #: 1.5 times the measured worst cell of S and P, and the window of their ratio.
+    BOUNDS = {
+        "exp_euler": (6e-4, 2.5e-5, (20.0, 30.0)),
+        "crank_nicolson": (6e-4, 2.4e-5, (20.0, 30.0)),
+        "backward_euler": (1.6e-1, 3.2e-2, (4.0, 6.0)),
+    }
+
+    def test_block_solvers_keep_their_order_with_point_synapses(self):
+        # Measured (S; P cell 0) at dt 0.005 -> 0.001 ms against rk4 at 0.001 ms:
+        # exp_euler 4.14e-4 -> 1.65e-5; 4.36e-5 -> 1.73e-6. crank_nicolson
+        # 3.63e-4 -> 1.45e-5; 3.90e-4 -> 1.56e-5. backward_euler 1.84e-2 ->
+        # 3.86e-3; 1.06e-1 -> 2.12e-2. The window rules out a first-order
+        # splitting of the synapses (exp_euler's ratio would be 5).
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for model in ("S", "P"):
+                reference = _synapse_run(model, "rk4", 0.001)[0]
+                for name, (coarse, fine, (low, high)) in self.BOUNDS.items():
+                    with self.subTest(model=model, solver=name):
+                        error = {dt: np.abs(_synapse_run(model, name, dt)[0] - reference) for dt in (0.005, 0.001)}
+                        self.assertLessEqual(float(error[0.005].max()), coarse)
+                        self.assertLessEqual(float(error[0.001].max()), fine)
+                        ratio = error[0.005] / error[0.001]
+                        self.assertTrue(np.all((low <= ratio) & (ratio <= high)), error)
+
+    def test_gaba_writing_a_chloride_pool_converges(self):
+        # The snapshot path: Cl- current read after the block from the new V and
+        # synapse states. Reference: rk4 at dt 0.00025 ms (rk4 itself is only
+        # about 1.3rd order here: Cldif_JE2011 advances after the main step).
+        # Measured V: exp_euler 2.62e-5 -> 1.15e-6, crank_nicolson 2.06e-5 ->
+        # 7.25e-7, backward_euler 6.42e-4 -> 1.39e-4 mV; Ci at most 2.26e-5 ->
+        # 3.58e-6 mM.
+        bounds = {
+            "exp_euler": (4e-5, 1.8e-6),
+            "crank_nicolson": (3.1e-5, 1.1e-6),
+            "backward_euler": (9.6e-4, 2.1e-4),
+        }
+        report = _gaba_block_solver_numbers()
+        for name, (coarse, fine) in bounds.items():
+            with self.subTest(solver=name):
+                for dt, bound, ci_bound in ((0.005, coarse, 3.4e-5), (0.001, fine, 5.4e-6)):
+                    gap_V, gap_ci = report[f"{name}/{dt}"]
+                    self.assertLessEqual(gap_V, bound)
+                    self.assertLessEqual(gap_ci, ci_bound)
+
+    def test_an_unused_slot_leaves_its_cell_as_if_alone(self):
+        # P's cell 1 has one synapse row and one zero slot; it is S.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for name in _BLOCK_SOLVER_NAMES:
+                with self.subTest(solver=name):
+                    alone = _synapse_run("S", name, 0.005)[0]
+                    np.testing.assert_allclose(_synapse_run("P", name, 0.005)[0][1:], alone, rtol=1e-12, atol=0)
+
+    def test_segments_and_reset_state_repeat_one_run(self):
+        # Ten 0.1 ms segments (the events fall on segment ends), then
+        # reset_state and one 1 ms run: both equal one 1 ms run.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for model in ("S", "P"):
+                for name in _BLOCK_SOLVER_NAMES:
+                    with self.subTest(model=model, solver=name):
+                        once = _synapse_run(model, name, 0.005)[0]
+                        net, cell = _synapse_network(name, model)
+                        net.init_state()
+                        for _ in range(10):
+                            net.run(dt=0.005 * u.ms, duration=0.1 * u.ms)
+                        np.testing.assert_allclose(_diffeq_values(cell)[0], once, rtol=1e-12, atol=0)
+                        net.reset_state()
+                        net.run(dt=0.005 * u.ms, duration=1.0 * u.ms)
+                        np.testing.assert_allclose(_diffeq_values(cell)[0], once, rtol=1e-12, atol=0)
+
+    def test_batch_members_match_the_unbatched_cell(self):
+        # A Network has no batch axis (CELL-15): drive the Cell alone through
+        # a written conductance, B = 0.01 uS and A = 0.
+        def final_V(name, batch_size):
+            cell = _synapse_cell(name, "S")
+            cell.init_state(batch_size=batch_size)
+            for _, node in cell._runtime.iter_synapse_layouts():
+                node.A.value = u.math.zeros_like(node.A.value)
+                node.B.value = u.math.zeros_like(node.B.value) + 0.01 * u.uS
+            cell.run(dt=0.005 * u.ms, duration=1.0 * u.ms)
+            return np.asarray(cell.V.value.to_decimal(u.mV), dtype=np.float64).reshape(batch_size or 1, -1)
+
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for name in _BLOCK_SOLVER_NAMES:
+                with self.subTest(solver=name):
+                    alone = final_V(name, None)
+                    batched = final_V(name, 2)
+                    self.assertGreater(float(alone[0, 0]), -69.0)  # the conductance moved V
+                    for member in batched:
+                        np.testing.assert_allclose(member, alone[0], rtol=1e-12, atol=0)
+
+    def test_cells_without_synapses_keep_the_merged_layout(self):
+        # No synapse state: the hook returns None and the step merges as before
+        # (BlockLayoutTest checks the merged layout against the former merging).
+        returned = []
+        declare = Cell._diffeq_block_layout
+
+        def spy(self, diffeq_states, merging):
+            layout = declare(self, diffeq_states, merging)
+            returned.append(layout)
+            return layout
+
+        with mock.patch.object(Cell, "_diffeq_block_layout", spy):
+            for mechanism in ("none", "markov", "kinetic_child"):
+                for name in _BLOCK_SOLVER_NAMES:
+                    _run_to_1ms(_mechanism_cell(name, mechanism), 0.025)
+            for name in _BLOCK_SOLVER_NAMES:
+                _final_V(_dendrite_600um(name, 30, hh=True), 0.025, 0.05)
+        self.assertGreaterEqual(len(returned), 12)
+        self.assertTrue(all(layout is None for layout in returned))
+        cell = _synapse_cell("exp_euler", "P")
+        cell.init_state()
+        cell.run(dt=0.025 * u.ms, duration=0.025 * u.ms)
+        diffeq = split_diffeq_states(cell)[1]
+        layout = cell._diffeq_block_layout(diffeq, "concat")
+        self.assertEqual(layout.pop_shape, (2,))
+        # Exp2Syn A, B and ExpSyn g: rows over the population.
+        self.assertEqual(len(layout.slots), 3)
+
+    def test_a_disabled_ion_current_cache_still_needs_the_snapshot(self):
+        # The block solvers' rejection used to come first; the snapshot check
+        # now names the synapse.
+        for name in _BLOCK_SOLVER_NAMES:
+            with self.subTest(solver=name):
+                cell = _synapse_cell(name, "G", cache_ion_total_current=False)
+                with self.assertRaisesRegex(ValueError, "GabaA_JE2011.*cache_ion_total_current=True"):
+                    cell.init_state()
+
+    def test_slots_follow_the_placement_after_reset(self):
+        # The slot table belongs to the runtime's layouts, so reset() and a new
+        # placement rebuild it: cell 1 gains an ExpSyn, which lands in its own
+        # slot (k stays 1), and with equal conductances both cells agree.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            cell = _synapse_cell("exp_euler", "P")
+            cell.init_state()
+            cell.run(dt=0.005 * u.ms, duration=0.1 * u.ms)
+            cell.reset()
+            cell[1:2].place(at("soma", 0.0), mech.Synapse("ExpSyn", name="b", tau=2.0 * u.ms, e=0.0 * u.mV))
+            cell.init_state()
+            slots = {
+                type(node).__name__: (layout.population_slots, node)
+                for layout, node in cell._runtime.iter_synapse_layouts()
+            }
+            (owner, slot, width), expsyn = slots["ExpSyn"]
+            np.testing.assert_array_equal(owner, [0, 1])
+            np.testing.assert_array_equal(slot, [0, 0])
+            self.assertEqual(width, 1)
+            expsyn.g.value = u.math.zeros_like(expsyn.g.value) + 0.005 * u.uS
+            cell.run(dt=0.005 * u.ms, duration=1.0 * u.ms)
+            V = np.asarray(cell.V.value.to_decimal(u.mV), dtype=np.float64).ravel()
+            self.assertGreater(V[0], -69.0)
+            np.testing.assert_allclose(V[1], V[0], rtol=1e-12, atol=0)
+
+    def test_a_lumped_cell_still_rejects_point_synapses(self):
+        for name in _BLOCK_SOLVER_NAMES:
+            with self.subTest(solver=name):
+                cell = Cell.point(1, length=20.0 * u.um, radius=10.0 * u.um, solver=name)
+                cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV))
+                cell.place(at("soma", 0.5), mech.Synapse("Exp2Syn", name="a", **_EXP2SYN))
+                with self.assertRaisesRegex(
+                    ValueError, rf"solver '{name}' cannot advance a Cell with point synapses \(Exp2Syn\)"
+                ):
+                    cell.init_state()
 
 
 class DiscretizationTracksAMutatedMorphologyTest(unittest.TestCase):

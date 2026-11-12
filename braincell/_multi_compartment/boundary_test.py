@@ -692,11 +692,20 @@ class OtherSolversTest(_Float64Case):
         for ratio in (errors[0] / errors[1], errors[1] / errors[2]):
             self.assertTrue(1.9 <= ratio <= 2.1, errors)
 
-    def test_block_solvers_still_reject_synapses(self):
-        for solver in ("exp_euler", "backward_euler", "crank_nicolson"):
+    def test_block_solvers_with_a_boundary_synapse(self):
+        # CELL-31b: the ExpSyn at x = 0 sits in its cell's block; its current
+        # reaches the derivative through the boundary solve. Measured ratios:
+        # exp_euler 3.99, crank_nicolson 4.00, backward_euler 1.99.
+        dts = (0.05, 0.025, 0.0125)
+        for solver, (low, high) in (
+            ("exp_euler", (3.8, 4.2)),
+            ("crank_nicolson", (3.8, 4.2)),
+            ("backward_euler", (1.9, 2.1)),
+        ):
             with self.subTest(solver=solver):
-                with self.assertRaisesRegex(ValueError, "point synapses"):
-                    _build("M1", "syn", solver)
+                errors = [_error("M1", "syn", solver, dt) for dt in dts]
+                for ratio in (errors[0] / errors[1], errors[1] / errors[2]):
+                    self.assertTrue(low <= ratio <= high, errors)
 
 
 class EventVoltageTest(_Float64Case):

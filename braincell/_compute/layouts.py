@@ -41,6 +41,7 @@ compiler.
 
 from __future__ import annotations
 
+import functools
 import warnings
 from dataclasses import dataclass, fields, is_dataclass
 from typing import TYPE_CHECKING, Literal
@@ -128,6 +129,39 @@ class MechanismLayout:
     def is_packed(self) -> bool:
         """Whether point instances are stored once across the population."""
         return self.population_index is not None
+
+    @functools.cached_property
+    def population_slots(self) -> tuple[np.ndarray, np.ndarray, int]:
+        """Each packed row's population entry, its rank among that entry's rows, and the most rows of any entry.
+
+        The block solvers place row ``r`` in slot ``slot[r]`` of entry
+        ``owner[r]``, so a population entry's rows stay in its own block
+        (CELL-31b). Built with numpy on first use and kept with this
+        (immutable) layout, so a new ``init_state`` builds a new table.
+
+        Returns
+        -------
+        owner : np.ndarray
+            ``population_index`` as ``int64``, one entry per row.
+        slot : np.ndarray
+            The row's rank among the rows of its entry, in row order.
+        width : int
+            The largest number of rows of one entry; at least 1.
+
+        Raises
+        ------
+        ValueError
+            If the layout is not packed (no ``population_index``).
+        """
+        if not self.is_packed:
+            raise ValueError(f"Layout {self.id!r} is not packed over the population.")
+        owner = np.asarray(self.population_index, dtype=np.int64).reshape(-1)
+        order = np.argsort(owner, kind="stable")
+        ranked = owner[order]
+        slot = np.empty_like(owner)
+        slot[order] = np.arange(owner.size, dtype=np.int64) - np.searchsorted(ranked, ranked, side="left")
+        width = int(np.bincount(owner).max()) if owner.size else 1
+        return owner, slot, max(width, 1)
 
     @property
     def spatial_axis_len(self) -> int:

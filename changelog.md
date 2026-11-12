@@ -80,6 +80,30 @@
 
 ### New Features
 
+- **The block solvers advance point synapses on a cable `Cell`** (CELL-31b).
+  `exp_euler`, `backward_euler` and `crank_nicolson` used to reject a cable
+  `Cell` with a point synapse at `init_state`: a synapse state holds one row
+  per synapse across the population and has no CV axis, so it could not be
+  merged with `V`. Each row now goes into a slot of its own cell's block,
+  next to that cell's `V`, so every cell stays one block and the solvers keep
+  their order. Cells may carry different numbers of synapses; unused slots
+  stay zero. On the CELL-19 soma with an `Exp2Syn` driven by a `NetStim`
+  (float64, 1 ms), `V` is off from `rk4` by 4.1e-4 / 1.7e-5 mV under
+  `exp_euler` at dt = 0.005 / 0.001 ms. The figures are 3.6e-4 / 1.5e-5 mV
+  under `crank_nicolson` and 1.8e-2 / 3.9e-3 mV under `backward_euler`
+  (first order). A `GabaA_JE2011` writing `Cldif_JE2011` converges the same
+  way. Batches, `reset_state` and segmented runs give the same numbers as one
+  run.
+  - A block holds `n_cv * n_s + sum_l k_l * m_l` states: `n_s` states per
+    CV, `k_l` the most synapses of type `l` on one cell, `m_l` the states of
+    one. A step costs the cube of that per cell. With 1000 one-CV cells with
+    one or two synapses each, `exp_euler` costs about 180 times as much per
+    step as `ralston2` (14 times without the synapses), `backward_euler`
+    about 7 times and `crank_nicolson` about 12 times. For cells with many
+    synapses, use `staggered`, `ind_exp_euler` or an explicit Runge-Kutta
+    solver.
+  - A lumped cell still rejects these three solvers with point synapses.
+  - Models without point synapses are unchanged.
 - **`braincell.morph` exports its classes** (MORPH-4a). `Branch`, `Morphology`
   and the six branch types (`Soma`, `Dendrite`, `Axon`, `BasalDendrite`,
   `ApicalDendrite`, `CustomBranch`) can now be imported from `braincell.morph`
@@ -1134,7 +1158,8 @@
   a point synapse they now raise `ValueError` at `init_state` naming the solver
   and the synapse class, where `Network.run` raised `TypeError: Cannot
   concatenate arrays with different numbers of dimensions` or `ValueError:
-  Cannot stack arrays ...`. A user callable still owns the whole step.
+  Cannot stack arrays ...`; CELL-31b (New Features) lifts this on a cable
+  Cell. A user callable still owns the whole step.
 - A kinetic ion (e.g. `CdpStC_MA2020_GoC`) now runs on a lumped Cell under its
   default `"ralston2"` and every other explicit solver, and a Markov channel on
   a `SingleCompartment` under its default (CELL-19); both raised `ValueError:

@@ -587,7 +587,7 @@ def export_regression(root, report=None):
         "the method is not faster. Stable gain: faster in every round and a median ratio ≥ 1.10.",
         "",
         "| device | model | entry | method | ratio per round | median ratio | per-step ratio | extra cold s "
-        "| break-even runs | stable gain | check max |V|, |g| error |",
+        "| break-even runs | stable gain | check: max V, g error |",
         "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- |",
     ]
     for s in summary:

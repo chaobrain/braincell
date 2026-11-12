@@ -31,8 +31,10 @@ from braincell._multi_compartment.run_test import (
     WEIGHT,
     _float64,
     assert_same_trajectory,
+    hh_y_cable,
     make_event_cell,
     split_steps,
+    update_loop_voltage,
 )
 from braincell.filter import AllRegion, at
 from braincell.filter import RandomSamples
@@ -1132,6 +1134,26 @@ class NetworkDefaultSeedTest(unittest.TestCase):
         self.assertGreater(float(v.max()), -60.0)
         np.testing.assert_allclose(v[:, 1], v[:, 0], rtol=1e-12)
         np.testing.assert_allclose(v[:, 2], v[:, 0], rtol=1e-12)
+
+
+
+class NetworkAxialOperatorTest(unittest.TestCase):
+    """CELL-50: the network run loop builds each Cell's axial operator once, before its steps."""
+
+    N = 40
+
+    def test_run_matches_the_cell_update_loop(self):
+        for solver in ("staggered", "rk4"):
+            with self.subTest(solver=solver), _float64():
+                looped = hh_y_cable(solver)
+                looped.init_state()
+                expected = np.asarray(update_loop_voltage(looped, self.N))
+                network = Network("cable")
+                network.add_population("cells", hh_y_cable(solver))
+                result = network.run(dt=DT, duration=self.N * DT)
+                actual = np.asarray(result.samples["cells"]["v"].values.to_decimal(u.mV))
+                np.testing.assert_allclose(actual, expected.reshape(actual.shape), rtol=1e-12, atol=0.0)
+                self.assertGreater(float(actual[-1].max()), 20.0)
 
 
 if __name__ == "__main__":

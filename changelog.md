@@ -583,6 +583,21 @@
 
 ### Changes & Improvements
 
+- **A scheduled source costs a lookup per step, not a pass over its
+  schedule** (CELL-18a). `NetStim.event_count` and
+  `EventSequence.event_count`, which `Cell.run` and `Network.run` call on
+  every step for each connection from a scheduled source, compared every
+  connection row with every event at every step. They now compute the
+  arrival steps once, when the step is traced, and each step searches the
+  sorted steps; rows with the same source and delay share their arrivals.
+  `Network.run` of 500 steps on CPU: a `NetStim(number=4000)` into 4000
+  rows took 4.9 ms per step and now 0.041 ms (the first call, which
+  compiles, 15.7 s and now 6.7 s); an `EventSequence` of 20,000 events
+  into 4000 rows 41 ms and now 0.055 ms per step. A `NetStim(number=10**6)`
+  wired straight to one synapse made `Cell.run` cost 240 us per step, and
+  `number=10**5` 164 us; both now cost 5-7 us. The counts, and so every
+  trajectory, are the same as before, bit for bit.
+
 - **NeuroMorpho metrics have an offline regression** (MORPH-7a).
   `data/morphology/neuromorpho/` now holds seven NeuroMorpho.Org neurons
   (standardized SWC and the `metadata.json` that `NeuroMorphoClient.download`

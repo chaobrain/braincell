@@ -29,12 +29,14 @@ import numpy as np
 import braincell as bc
 from braincell import Branch, CVPerBranch, Cell, EventSequence, EventTable, Morphology, NetStim
 from braincell.network.event import (
+    _SCHEDULE_HORIZON_KEY,
     EventSourceView,
     VoltageCrossingSource,
     _build_event_schedule,
     _counter_draws_check,
     _counter_draws_supported,
     _resolve_cell_location_cv,
+    _round_half_up_steps,
 )
 from braincell.filter import RootLocation, at
 from braincell.morph._testing import make_tree_u
@@ -369,6 +371,204 @@ class NetStimLargeNumberTest(unittest.TestCase):
             source._event_table(until_ms=1000.0).time.to_decimal(u.ms)[:8],
             reference.event_times.to_decimal(u.ms)[0],
         )
+
+
+def _reference_netstim_count(source, source_index, *, t, delay, dt):
+    """``NetStim.event_count`` as written before CELL-18a: the full arrival matrix every call."""
+    source._ensure_schedule(until_ms=brainstate.environ.get(_SCHEDULE_HORIZON_KEY, None))
+    source_index = np.asarray(source_index, dtype=np.int32)
+    times = u.math.asarray(source._event_times_ms[source_index])
+    mask = u.math.asarray(source._event_mask[source_index])
+    delay_ms = u.math.asarray(delay.to_decimal(u.ms))
+    if getattr(delay_ms, "ndim", 0) == 0:
+        delay_ms = u.math.broadcast_to(delay_ms, source_index.shape)
+    arrivals = times + delay_ms[..., None]
+    t_ms = u.math.asarray(t.to_decimal(u.ms))
+    dt_ms = u.math.asarray(dt.to_decimal(u.ms))
+    arrival_steps = _round_half_up_steps(arrivals / dt_ms)
+    current_step = _round_half_up_steps(t_ms / dt_ms)
+    return u.math.sum(mask & (arrival_steps == current_step), axis=-1)
+
+
+def _reference_flat_count(table, source_index, *, t, delay, dt):
+    """``EventSequence.event_count`` as written before CELL-18a."""
+    source_index = np.asarray(source_index, dtype=np.int64).reshape(-1)
+    delay_ms = u.math.asarray(delay.to_decimal(u.ms))
+    if getattr(delay_ms, "ndim", 0) == 0:
+        delay_ms = u.math.broadcast_to(delay_ms, source_index.shape)
+    event_sources = u.math.asarray(table.source_index)
+    event_times = u.math.asarray(table.time.to_decimal(u.ms))
+    arrivals = event_times[None, :] + delay_ms[:, None]
+    selected_source = event_sources[None, :] == u.math.asarray(source_index)[:, None]
+    arrival_steps = _round_half_up_steps(arrivals / u.math.asarray(dt.to_decimal(u.ms)))
+    current_step = _round_half_up_steps(u.math.asarray(t.to_decimal(u.ms)) / u.math.asarray(dt.to_decimal(u.ms)))
+    return u.math.sum(selected_source & (arrival_steps == current_step), axis=-1)
+
+
+def _half_tie_times(dt_ms: float, count: int) -> np.ndarray:
+    """Event times whose float32 step ratio sits a few ulp from a half-step tie.
+
+    Each one rounds to a different step when ``time / dt`` is evaluated as a
+    division than as a product with ``1 / dt``, so these pin the arithmetic
+    itself, not only its usual outcome.
+    """
+    rng = np.random.default_rng(18)
+    dt32 = np.float32(dt_ms)
+    ratios = rng.integers(1, 400, size=200_000).astype(np.float32) + np.float32(0.5)
+    offsets = rng.integers(-6, 7, size=ratios.size)
+    for step in range(6):
+        toward = np.where(offsets > 0, np.inf, -np.inf).astype(np.float32)
+        ratios = np.where(np.abs(offsets) > step, np.nextafter(ratios, toward), ratios)
+    times = (ratios * dt32).astype(np.float32)
+
+    def rounded(values):
+        half = np.floor(values) + np.float32(0.5)
+        ulp = np.spacing(np.abs(values))
+        return np.floor(np.where(np.abs(values - half) <= 4 * ulp, half, values) + np.float32(0.5))
+
+    divided, multiplied = rounded(times / dt32), rounded(times * (np.float32(1.0) / dt32))
+    return times[divided != multiplied][:count].astype(np.float64)
+
+
+class ScheduledEventCountTest(unittest.TestCase):
+    """CELL-18a: scheduled ``event_count`` returns the counts of the full arrival matrix.
+
+    Each case is evaluated at every step of a compiled loop, as ``Cell.run``
+    does, and eagerly at a few times, against the matrix formula above.
+    """
+
+    DT = 0.025 * u.ms
+
+    def _assert_matches(self, count, reference, steps, any_event=True):
+        times = np.arange(steps) * self.DT
+
+        def stepped(fn):
+            with brainstate.environ.context(dt=self.DT):
+                return brainstate.transform.for_loop(lambda t: (fn(t), reference(t)), times)
+
+        actual, expected = stepped(count)
+        self.assertEqual(actual.shape, expected.shape)
+        self.assertEqual(actual.dtype, expected.dtype)
+        np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
+        self.assertEqual(int(np.sum(np.asarray(expected))) > 0, any_event)
+        for t in (0.0 * u.ms, 0.5 * u.ms, 0.5125 * u.ms, 1.0499 * u.ms):
+            eager, eager_expected = count(t), reference(t)
+            self.assertEqual(np.shape(eager), np.shape(eager_expected))
+            np.testing.assert_array_equal(np.asarray(eager), np.asarray(eager_expected))
+
+    def _netstim_cases(self):
+        heterogeneous = NetStim(
+            size=4,
+            start=[0.0, 0.3, 1.025, 2.0] * u.ms,
+            number=[5, 0, 7, 3],
+            interval=[0.5, 1.0, 0.025, 0.7] * u.ms,
+            noise=[0.0, 0.0, 0.5, 1.0],
+            seed=18,
+        )
+        rows = np.asarray([0, 0, 1, 2, 2, 3, 3, 2, -1])
+        delays = np.asarray([0.0, 0.0125, 0.0, 0.5, 0.5, 1.0, 0.075, 0.0375, 0.2]) * u.ms
+        ties = _half_tie_times(0.025, 64)
+        tie_source = NetStim(size=ties.size, start=ties * u.ms, number=2, interval=0.0125 * u.ms)
+        return (
+            ("heterogeneous rows and delays", heterogeneous, rows, delays),
+            ("scalar delay", heterogeneous, rows, 0.25 * u.ms),
+            ("scalar index", heterogeneous, np.asarray(2), 0.0 * u.ms),
+            ("two-dimensional index", heterogeneous, np.asarray([[0, 2, 3], [3, 3, 2]]), 0.05 * u.ms),
+            ("delay in microseconds", heterogeneous, rows[:3], np.asarray([0.0, 12.5, 25.0]) * u.us),
+            ("half-step ties", tie_source, np.arange(ties.size), 0.0 * u.ms),
+            ("half-step ties shifted by a delay", tie_source, np.arange(ties.size), 0.1 * u.ms),
+        )
+
+    def test_netstim_counts_match_the_arrival_matrix(self) -> None:
+        for name, source, rows, delay in self._netstim_cases():
+            with self.subTest(name):
+                self._assert_matches(
+                    lambda t: source.event_count(rows, t=t, delay=delay, dt=self.DT),
+                    lambda t: _reference_netstim_count(source, rows, t=t, delay=delay, dt=self.DT),
+                    steps=480,
+                )
+
+    def test_event_sequence_counts_match_the_arrival_matrix(self) -> None:
+        ties = _half_tie_times(0.025, 32)
+        source_index = np.concatenate([[0, 0, 0, 3, 3, 4, 4, 4], np.full(ties.size, 5)])
+        times = np.concatenate([[2.0, 0.5, 0.5, 1.0125, 7.5, 0.0, 0.025, 0.0375], ties])
+        sequence = EventSequence(size=6, events=EventTable(source_index=source_index, time=times * u.ms))
+        rows = np.asarray([4, 0, 0, 3, 1, 4, 2, 5, 5])
+        cases = (
+            ("heterogeneous delays", rows, np.asarray([0.0, 0.0125, 0.5, 0.0, 0.1, 1.0, 0.0, 0.0, 0.1]) * u.ms),
+            ("scalar delay", rows, 0.25 * u.ms),
+            ("rows without events", np.asarray([1, 2]), 0.0 * u.ms),
+        )
+        for name, index, delay in cases:
+            with self.subTest(name):
+                self._assert_matches(
+                    lambda t: sequence.event_count(index, t=t, delay=delay, dt=self.DT),
+                    lambda t: _reference_flat_count(sequence.events, index, t=t, delay=delay, dt=self.DT),
+                    steps=480,
+                    any_event=name != "rows without events",
+                )
+
+    def test_counts_match_at_float64(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            self.test_netstim_counts_match_the_arrival_matrix()
+            self.test_event_sequence_counts_match_the_arrival_matrix()
+
+    def test_empty_schedules_count_nothing(self) -> None:
+        silent = NetStim(size=3, number=0)
+        empty = EventSequence(size=2, events=EventTable(source_index=np.zeros(0, int), time=np.zeros(0) * u.ms))
+        for count, reference in (
+            (
+                lambda t: silent.event_count(np.asarray([0, 2]), t=t, delay=0.0 * u.ms, dt=self.DT),
+                lambda t: _reference_netstim_count(silent, np.asarray([0, 2]), t=t, delay=0.0 * u.ms, dt=self.DT),
+            ),
+            (
+                lambda t: empty.event_count(np.asarray([1, 0, 1]), t=t, delay=0.0 * u.ms, dt=self.DT),
+                lambda t: _reference_flat_count(empty.events, np.asarray([1, 0, 1]), t=t, delay=0.0 * u.ms, dt=self.DT),
+            ),
+        ):
+            for t in (0.0 * u.ms, 1.0 * u.ms):
+                actual, expected = count(t), reference(t)
+                self.assertEqual(actual.dtype, expected.dtype)
+                np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
+
+    def test_traced_delay_counts_match_the_arrival_matrix(self) -> None:
+        source = NetStim(size=2, start=[0.0, 0.5] * u.ms, number=[4, 3], interval=[0.25, 0.1] * u.ms)
+        sequence = EventSequence.from_times([[0.0, 0.25] * u.ms, [0.5] * u.ms])
+        rows = np.asarray([0, 1, 1])
+
+        @jax.jit
+        def counts(delay_ms, t_ms):
+            delay, t = delay_ms * u.ms, t_ms * u.ms
+            return (
+                source.event_count(rows, t=t, delay=delay, dt=self.DT),
+                _reference_netstim_count(source, rows, t=t, delay=delay, dt=self.DT),
+                sequence.event_count(rows, t=t, delay=delay, dt=self.DT),
+                _reference_flat_count(sequence.events, rows, t=t, delay=delay, dt=self.DT),
+            )
+
+        seen = 0
+        for t_ms in np.arange(0, 60) * 0.025:
+            netstim, netstim_expected, flat, flat_expected = counts(np.asarray([0.0, 0.1, 0.0125]), t_ms)
+            np.testing.assert_array_equal(netstim, netstim_expected)
+            np.testing.assert_array_equal(flat, flat_expected)
+            seen += int(np.sum(netstim_expected)) + int(np.sum(flat_expected))
+        self.assertGreater(seen, 0)
+
+    def test_delays_that_do_not_fit_the_rows_take_the_matrix_path(self) -> None:
+        source = NetStim(size=2, start=[0.0, 0.5] * u.ms, number=[4, 3], interval=[0.25, 0.1] * u.ms)
+        sequence = EventSequence.from_times([[0.0, 0.25] * u.ms, [0.5] * u.ms])
+        rows = np.asarray([0, 1, 1])
+        one_delay = np.asarray([0.1]) * u.ms
+        for t in (0.0 * u.ms, 0.1 * u.ms, 0.6 * u.ms):
+            np.testing.assert_array_equal(
+                sequence.event_count(rows, t=t, delay=one_delay, dt=self.DT),
+                _reference_flat_count(sequence.events, rows, t=t, delay=one_delay, dt=self.DT),
+            )
+        two_delays = np.asarray([0.0, 0.1]) * u.ms
+        with self.assertRaises(ValueError) as expected:
+            _reference_netstim_count(source, rows, t=0.0 * u.ms, delay=two_delays, dt=self.DT)
+        with self.assertRaises(type(expected.exception)):
+            source.event_count(rows, t=0.0 * u.ms, delay=two_delays, dt=self.DT)
 
 
 class EventSourceTest(unittest.TestCase):

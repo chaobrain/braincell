@@ -1830,6 +1830,15 @@
   at a new `dt` counts from the time reached, as before. `start_time` and
   `stop_time` of a first `Network.run` are arrays of the run precision, as
   those of later runs already were, instead of Python floats.
+- The stellate-cell (`sc_ma2021`) mechanisms compile under NEURON 9.
+  `CdpStC_RI21_SC.mod` declared the ion variable `cao` again in a
+  `CONSTANT` block, which NEURON 9 rejects, so
+  `python -m validation.neuron._mechanisms sc_ma2021` and the stellate
+  whole-cell comparison failed. `cao` is now read from the calcium ion, as in
+  the Golgi, granule and Purkinje versions of the file; no equation uses it,
+  and it is 2 mM after `finitialize` in all 130 segments of the stellate
+  cell. `validation/neuron/_mechanisms_test.py` checks that no vendored MOD
+  file re-declares an ion variable as a constant.
 
 ### Documentation
 

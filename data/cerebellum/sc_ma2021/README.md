@@ -16,6 +16,10 @@
 该目录中的 `.mod` 文件基于上述公开模型整理而来。
 在本地整理过程中，这些文件可能包含轻微修改、提取或重分类，但整体来源与上述模型一致。
 
+- `mechanisms/ion/CdpStC_RI21_SC.mod` (upstream `cdp5StCmod.mod`, 2026-11-12): `CONSTANT { cao = 2 (mM) }`
+  is commented out and `cao` is declared in `ASSIGNED`, because NEURON 9 rejects re-declaring a
+  `USEION` variable as a constant. No equation uses `cao`; the ion supplies 2 mM by default.
+
 ## Folder content
 
 机制源文件在 `mechanisms/` 下按 channel、ion、synapse、other 分类；形态在 `morphology/`。

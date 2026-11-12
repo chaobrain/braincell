@@ -16,11 +16,31 @@
 """Build isolation and cache invalidation for reference mechanisms."""
 
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from validation.neuron import _mechanisms
+from validation.neuron._paths import DATA_ROOT
+
+_COMMENT_BLOCK = re.compile(r"^\s*COMMENT\b.*?^\s*ENDCOMMENT\b", re.M | re.S)
+_USEION = re.compile(r"\bUSEION\s+\w+\s+([^\n}]*)")
+_CONSTANT = re.compile(r"^\s*CONSTANT\s*\{(.*?)\}", re.M | re.S)
+
+
+def _useion_redeclared_as_constant(text: str) -> set[str]:
+    """Return the ion variables that a MOD source also declares in a CONSTANT block."""
+    text = _COMMENT_BLOCK.sub("", text)
+    text = re.sub(r"[:?].*", "", text)
+    ion = {
+        name
+        for statement in _USEION.findall(text)
+        for name in re.findall(r"[A-Za-z_]\w*", statement)
+        if name not in ("READ", "WRITE", "VALENCE", "REPRESENTS")
+    }
+    constant = {m.group(1) for body in _CONSTANT.findall(text) for m in re.finditer(r"^\s*([A-Za-z_]\w*)", body, re.M)}
+    return ion & constant
 
 
 class MechanismBuildTest(unittest.TestCase):
@@ -74,3 +94,24 @@ class MechanismBuildTest(unittest.TestCase):
                 one = _mechanisms.compile_mechanisms("fixture", files=[source])
                 two = _mechanisms.compile_mechanisms("fixture", files=[source, other])
                 self.assertNotEqual(one, two)
+
+
+class MechanismSourceTest(unittest.TestCase):
+    def test_no_ion_variable_is_redeclared_as_constant(self):
+        # NEURON 9's nocmodl rejects it ("cao used in USEION statement can not
+        # be re-declared in a CONSTANT block"), which breaks the whole build.
+        self.assertEqual(
+            _useion_redeclared_as_constant("NEURON { USEION ca READ cao, cai WRITE cai }\nCONSTANT { cao = 2 (mM) }\n"),
+            {"cao"},
+        )
+        self.assertEqual(
+            _useion_redeclared_as_constant("NEURON { USEION ca READ cao }\n: CONSTANT { cao = 2 (mM) }\n"), set()
+        )
+        sources = sorted(DATA_ROOT.rglob("*.mod"))
+        self.assertGreaterEqual(len(sources), 100)  # the scan saw the vendored sources
+        offenders = {}
+        for source in sources:
+            names = _useion_redeclared_as_constant(source.read_text(encoding="utf-8", errors="replace"))
+            if names:
+                offenders[source.relative_to(DATA_ROOT).as_posix()] = sorted(names)
+        self.assertEqual(offenders, {}, f"checked {len(sources)} MOD files")

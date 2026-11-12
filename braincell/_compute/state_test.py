@@ -336,9 +336,7 @@ class PopulationResponseHeterogeneityTest(unittest.TestCase):
         self.assertEqual([row.population_index for row in result.samples["v"].schema.rows], [0, 1, 2, 3])
         peaks = np.asarray(u.math.max(trace, axis=0).to_decimal(u.mV)).reshape(2, 2)
         self.assertTrue(np.all(np.diff(peaks.ravel()) > 0.0), peaks)
-        np.testing.assert_array_equal(
-            result.traces["second_row"].to_decimal(u.mV), trace[:, 2:].to_decimal(u.mV)
-        )
+        np.testing.assert_array_equal(result.traces["second_row"].to_decimal(u.mV), trace[:, 2:].to_decimal(u.mV))
 
     def test_population_cells_can_have_different_current_clamp_delays(self) -> None:
         cell = Cell(_build_tree(), pop_size=(2,))

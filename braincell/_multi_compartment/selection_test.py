@@ -431,7 +431,9 @@ class GridSelectionTest(unittest.TestCase):
                 for name in sorted(properties):
                     with self.subTest(kind=kind, view=label, property=name):
                         if name in _ONE_AXIS_PROPERTIES:
-                            with self.assertRaisesRegex(ValueError, "requires a one-dimensional pop_size; got \\(2, 3\\)"):
+                            with self.assertRaisesRegex(
+                                ValueError, "requires a one-dimensional pop_size; got \\(2, 3\\)"
+                            ):
                                 getattr(on_grid, name)
                             continue
                         try:
@@ -443,7 +445,7 @@ class GridSelectionTest(unittest.TestCase):
                             getattr(on_grid, name)
 
     def test_grid_views_reject_writes_and_state_reads(self) -> None:
-        cell = _grid("lumped")
+        cell = _grid("cable")
         cell.init_state()
         uses = {
             "set": lambda: cell[1, 2].set(V_init=-60.0 * u.mV),
@@ -465,7 +467,9 @@ class GridSelectionTest(unittest.TestCase):
         cell = _grid("lumped")
         for target in (cell, cell[0]):
             with self.subTest(target=target):
-                with self.assertRaisesRegex(ValueError, r"observe.output\(\.\.\.\) requires a one-dimensional pop_size"):
+                with self.assertRaisesRegex(
+                    ValueError, r"observe.output\(\.\.\.\) requires a one-dimensional pop_size"
+                ):
                     target.record("out", braincell.observe.output("spike"))
                 self.assertEqual(dict(cell.recordings), {})
         with self.assertRaisesRegex(ValueError, "one-dimensional pop_size"):

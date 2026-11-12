@@ -258,7 +258,24 @@ class RecordingSpec:
 
 @dataclass(frozen=True)
 class RecordingRow:
-    """Static metadata for one column in a SampleBlock."""
+    """Static metadata for one column in a SampleBlock.
+
+    ``population_index`` is the flat index of the row's population member:
+    on a multi-dimensional ``pop_size``, its position in C order over the
+    population axes (``np.ravel_multi_index``), the index a spike's
+    ``source_id`` uses. A whole-Cell recording lists members in that order,
+    then CVs (or points, clamps, mechanisms) within each member.
+
+    Examples
+    --------
+    >>> import brainunit as u
+    >>> import braincell
+    >>> cell = braincell.Cell.point((2, 3), V_init=-65.0 * u.mV)
+    >>> _ = cell[1, 2].record("V", "V")
+    >>> result = cell.run(dt=0.025 * u.ms, duration=0.1 * u.ms)
+    >>> [row.population_index for row in result.samples["V"].schema.rows]
+    [5]
+    """
 
     population_index: int
     cv_id: int | None
@@ -478,19 +495,16 @@ def _observable_rows_and_sampler(cell, spec: RecordingSpec):
 
         if getattr(cell, "_is_lumped", False):
             # A lumped Cell's V has no CV axis: every pair is (member, the one CV).
-            # Recording scopes need a one-dimensional pop_size, as on cable cells.
             def sample():
                 pop = np.asarray([pair[0] for pair in spec.scope.pairs], dtype=np.int32)
-                return cell.V.value[..., pop]
+                return _flat_members(cell, cell.V.value, cv_axis=False)[..., pop]
 
             return rows, sample
 
         def sample():
             cv = np.asarray([pair[1] for pair in spec.scope.pairs], dtype=np.int32)
-            if len(cell.pop_size) == 0:
-                return cell.V.value[..., cv]
             pop = np.asarray([pair[0] for pair in spec.scope.pairs], dtype=np.int32)
-            return cell.V.value[..., pop, cv]
+            return _flat_members(cell, cell.V.value, cv_axis=True)[..., pop, cv]
 
         return rows, sample
 
@@ -503,7 +517,7 @@ def _observable_rows_and_sampler(cell, spec: RecordingSpec):
 
             def sample():
                 return _scatter_group_values(
-                    [(positions, selected.get(observable.field)) for positions, selected in groups],
+                    [(positions, _rows_last(cell, selected.get(observable.field))) for positions, selected in groups],
                     len(view),
                 )
 
@@ -525,9 +539,9 @@ def _observable_rows_and_sampler(cell, spec: RecordingSpec):
         rows = tuple(_spatial_row(cell, pair, field="membrane_current") for pair in spec.scope.pairs)
 
         def sample():
+            pop = np.asarray([pair[0] for pair in spec.scope.pairs], dtype=np.int32)
             if getattr(cell, "_is_lumped", False):
-                pop = np.asarray([pair[0] for pair in spec.scope.pairs], dtype=np.int32)
-                return cell._lumped_membrane_current()[..., pop]
+                return _flat_members(cell, cell._lumped_membrane_current(), cv_axis=False)[..., pop]
             total = currents.total_membrane_current(
                 cell,
                 V_cv=cell.V.value,
@@ -535,10 +549,7 @@ def _observable_rows_and_sampler(cell, spec: RecordingSpec):
                 pop=False,
             )
             cv = np.asarray([pair[1] for pair in spec.scope.pairs], dtype=np.int32)
-            if len(cell.pop_size) == 0:
-                return total[..., cv]
-            pop = np.asarray([pair[0] for pair in spec.scope.pairs], dtype=np.int32)
-            return total[..., pop, cv]
+            return _flat_members(cell, total, cv_axis=True)[..., pop, cv]
 
         return rows, sample
 
@@ -703,10 +714,8 @@ def _density_group_current(cell, rows):
         # A lumped node's current has no CV axis; its one CV is index 0.
         current = current[..., None]
     cv_ids = np.asarray([item.cv_id for item in rows], dtype=np.int32)
-    if len(cell.pop_size) == 0:
-        return current[..., cv_ids]
     population_indices = np.asarray([item.population_index for item in rows], dtype=np.int32)
-    return current[..., population_indices, cv_ids]
+    return _flat_members(cell, current, cv_axis=True)[..., population_indices, cv_ids]
 
 
 def _density_owner_groups(view):
@@ -748,6 +757,30 @@ def _scatter_group_values(groups, size: int):
         mantissa = values.to_decimal(unit) if unit is not None else values
         output = output.at[..., positions].set(mantissa)
     return u.Quantity(output, unit) if unit is not None else output
+
+
+def _flat_members(cell, value, *, cv_axis: bool):
+    """``value`` with the population axes of a multi-dimensional ``pop_size`` merged into one, in C order.
+
+    ``value`` is shaped ``(batch,) + pop_size`` (a lumped Cell) or
+    ``(batch,) + pop_size + (n_cv,)``, without the batch axis when there is
+    none. The merged axis is indexed by a recording row's flat
+    ``population_index``.
+    """
+    rank = len(cell.pop_size)
+    if rank == 1:
+        return value
+    shape = tuple(value.shape)
+    stop = len(shape) - (1 if cv_axis else 0)
+    members = int(np.prod(cell.pop_size, dtype=np.int64))
+    return u.math.reshape(value, shape[: stop - rank] + (members,) + shape[stop:])
+
+
+def _rows_last(cell, value):
+    """Move the row axis that a density view's ``get`` stacks first behind the batch axis."""
+    if cell._runtime_batch_size is None:
+        return value
+    return u.math.moveaxis(value, 0, -1)
 
 
 def _spatial_row(cell, pair, *, field: str, contributor_ids=()) -> RecordingRow:

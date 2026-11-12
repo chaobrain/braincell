@@ -614,9 +614,7 @@ _GRID_OBSERVABLES = {
 
 def _hh_population(kind: str, pop_size, amplitudes) -> braincell.Cell:
     if kind == "lumped":
-        cell = braincell.Cell.point(
-            pop_size, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, solver="rk4"
-        )
+        cell = braincell.Cell.point(pop_size, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, solver="rk4")
     else:
         soma = braincell.Branch.from_lengths(lengths=[60.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
         cell = braincell.Cell(
@@ -831,7 +829,9 @@ class MultiDimensionalPopulationTest(unittest.TestCase):
         cell[:, 2].soma.record("column", "V")
         cell.cv_policy = braincell.CVPerBranch(5)
         result = cell.run(dt=_GRID_DT, duration=2.0 * u.ms)
-        members = {name: [(row[0], row[1]) for row in _row_keys(result.samples[name])] for name in ("selected", "column")}
+        members = {
+            name: [(row[0], row[1]) for row in _row_keys(result.samples[name])] for name in ("selected", "column")
+        }
         self.assertEqual(members["selected"], [(3, 2), (4, 2)])
         self.assertEqual(members["column"], [(member, cv) for member in (2, 5) for cv in range(5)])
         whole = _values(result.samples["V"])

@@ -50,6 +50,11 @@ class _Undeclarable:
 class _CellScope:
     """Static population/spatial selection without owning model arrays.
 
+    ``population_indices`` are flat root members (C order over a
+    multi-dimensional ``pop_size``), in the order of ``population_shape``,
+    the shape of the selected members: ``pop_size`` at the root, and what
+    indexing that grid gives after a population selection.
+
     ``target`` is the declaration-level expression the spatial selection was
     made with, which view ``paint``/``place`` forward to the root Cell:
     ``None`` for the whole cell, a region expression (``on``, ``soma``,
@@ -60,6 +65,7 @@ class _CellScope:
 
     population_indices: tuple[int, ...]
     pairs: tuple[tuple[int, int], ...]
+    population_shape: tuple[int, ...] = ()
     coverage: tuple[tuple[int, float], ...] = ()
     locations: tuple[_LocationRow, ...] = ()
     exact_branch_ids: tuple[int, ...] | None = None
@@ -68,9 +74,10 @@ class _CellScope:
 
     @classmethod
     def root(cls, cell) -> "_CellScope":
-        populations = tuple(range(cell._population_size))
+        shape = tuple(int(size) for size in cell.pop_size)
+        populations = tuple(range(int(np.prod(shape, dtype=np.int64))))
         pairs = tuple((population, cv_id) for population in populations for cv_id in range(cell.n_cv))
-        return cls(population_indices=populations, pairs=pairs)
+        return cls(population_indices=populations, pairs=pairs, population_shape=shape)
 
     def replayed(self, cell) -> "_CellScope":
         """Make this selection again on ``cell``'s current grid from what it was declared with.
@@ -81,7 +88,7 @@ class _CellScope:
         after. A ``_Undeclarable`` target cannot be replayed; the caller
         checks for it first.
         """
-        scope = cell._root_scope().select_population(self.population_indices)
+        scope = cell._root_scope().select_members(self.population_indices, self.population_shape)
         if self.target is None:
             return scope
         if isinstance(self.target, (RegionExpr, RegionMask)):
@@ -105,11 +112,31 @@ class _CellScope:
         return dict(self.coverage)
 
     def select_population(self, local_selection) -> "_CellScope":
-        local = _normalize_selection(local_selection, size=len(self.population_indices), name="Cell population")
-        selected = tuple(self.population_indices[index] for index in local)
+        """Select members relative to this scope.
+
+        On a one-dimensional selection: an integer, a slice, or a
+        one-dimensional integer sequence (a tuple too) of members. On a
+        multi-dimensional one (a ``pop_size`` such as ``(2, 3)``): NumPy basic
+        indexing, one integer or slice per leading axis, so ``[1, 2]`` is one
+        member, ``[0]`` a row and ``[:, 1]`` a column.
+        """
+        shape = self.population_shape or (len(self.population_indices),)
+        if len(shape) > 1:
+            local, new_shape = _normalize_grid_selection(local_selection, shape=shape, name="Cell population")
+        else:
+            local = _normalize_selection(local_selection, size=len(self.population_indices), name="Cell population")
+            new_shape = (len(local),)
+        return self._with_members(tuple(self.population_indices[index] for index in local), new_shape)
+
+    def select_members(self, members, shape) -> "_CellScope":
+        """Select flat root ``members`` (as stored by another scope), keeping their ``shape``."""
+        return self._with_members(tuple(int(member) for member in members), tuple(shape))
+
+    def _with_members(self, selected: tuple[int, ...], shape: tuple[int, ...]) -> "_CellScope":
         order = {population: rank for rank, population in enumerate(selected)}
         return replace(
             self,
+            population_shape=shape,
             population_indices=selected,
             pairs=tuple(sorted((pair for pair in self.pairs if pair[0] in order), key=lambda pair: order[pair[0]])),
             locations=tuple(
@@ -344,6 +371,34 @@ def _normalize_selection(selection, *, size: int, name: str) -> tuple[int, ...]:
     if any(index < 0 or index >= size for index in selected):
         raise IndexError(f"{name} selection is outside [0, {size!r}): {selected!r}.")
     return tuple(selected)
+
+
+def _normalize_grid_selection(selection, *, shape: tuple[int, ...], name: str):
+    """Index a multi-dimensional member grid with integers and slices, as NumPy does.
+
+    Returns the selected flat positions in C order and the shape of the
+    selection: the axes indexed by an integer are dropped, and a selection
+    of one member has shape ``(1,)``, as on a one-dimensional population.
+    """
+    entries = selection if isinstance(selection, tuple) else (selection,)
+    if len(entries) > len(shape):
+        raise IndexError(
+            f"{name} selection has {len(entries)} indices for members of shape {shape!r}; give at most one per axis."
+        )
+    for axis, entry in enumerate(entries):
+        if isinstance(entry, slice):
+            continue
+        if isinstance(entry, (int, np.integer)) and not isinstance(entry, (bool, np.bool_)):
+            if not -shape[axis] <= int(entry) < shape[axis]:
+                raise IndexError(f"{name} index {int(entry)!r} is outside axis {axis} of size {shape[axis]!r}.")
+            continue
+        raise TypeError(
+            f"{name} selection of members of shape {shape!r} takes one integer or slice per axis, "
+            f"as in cell[1, 2] or cell[:, 1]; got {entry!r}. Integer sequences select members only on a "
+            "one-dimensional selection, such as cell[0][[0, 2]]."
+        )
+    grid = np.arange(int(np.prod(shape, dtype=np.int64)), dtype=np.int64).reshape(shape)[tuple(entries)]
+    return tuple(int(item) for item in grid.reshape(-1).tolist()), (tuple(grid.shape) or (1,))
 
 
 def _normalize_global_ids(ids, *, name: str) -> tuple[int, ...]:

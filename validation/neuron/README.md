@@ -81,6 +81,10 @@ so a new slow module needs no workflow change.
   then `ion -m slow` in a separate process (the pool comparisons,
   `ion/tolerances_test.py`).
 
+`synapse/reference_test.py` (ExpSyn and Exp2Syn against NEURON's built-in
+mechanisms, no compiled models, about 7 s) is in neither tier yet; run it by
+hand with `pytest -q validation/neuron/synapse/reference_test.py`.
+
 Reproduce both tiers locally after compiling the channel models as above:
 
 ```bash

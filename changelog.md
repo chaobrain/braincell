@@ -1009,6 +1009,20 @@
   areas (`ClampRoutingTable.midpoint_area`). Nothing read it, and it went
   stale after `geometry.set`. A current clamp on a CV midpoint still divides
   by the current CV area at each step.
+- **An invalid synapse parameter given through a Cell names the synapse**
+  (CELL-44). A non-positive time constant, `tau1 >= tau2` in `Exp2Syn`, or
+  a `GabaA_JE2011` value out of range, declared with `braincell.mech.Synapse`,
+  failed at `init_state` with only `Mechanism parameter 'tau' must be > 0.`
+  or `Exp2Syn requires tau1 < tau2.`. The message now names the synapse and
+  its `place` call, as the finite-value and unit checks already did:
+  `Synapse 's' (ExpSyn) parameter 'tau' must be > 0. Placed on ...`.
+  `SynapseView.set` names the synapse too. The exception types and the
+  calls that raise them are unchanged. `ExpSyn` and `Exp2Syn` also gained
+  reference tests in a Cell: against the exact solution on the step grid
+  (conductance within 1e-12 relative, events rounded to the step and
+  counted), and against NEURON's built-in mechanisms in
+  `validation/neuron/synapse/reference_test.py` (V within 1e-9 mV). That
+  test replaces the synapse comparison runners, which no longer ran.
 
 ### Bug Fixes
 

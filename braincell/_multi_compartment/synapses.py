@@ -211,8 +211,63 @@ class _SynapseStore:
                     spec.validate(value, parameter, owner=owner, source=source)
                     values.append(value)
                 columns[parameter] = _stack_synapse_values(values, parameter=parameter)
-            runtime_cls.validate_parameter_values(columns)
+            try:
+                runtime_cls.validate_parameter_values(columns)
+            except ValueError as exc:
+                raise self._name_the_invalid_declaration(runtime_cls, columns, rows, contexts, exc) from None
             self.parameter_columns[synapse_type] = columns
+
+    def _name_the_invalid_declaration(self, runtime_cls, columns, rows, contexts, error: ValueError) -> ValueError:
+        """Return ``error`` naming a declaration whose own rows fail the type's check.
+
+        ``validate_parameter_values`` checks the columns of every synapse of a
+        type at once (positive time constants, ``tau1 < tau2``), so its message
+        cannot say which ``place`` declared the bad value. This runs only after
+        that check failed, so a valid store pays nothing for it. It halves the
+        failing range of declarations until one is left, about ``2 log2(n)``
+        checks for ``n`` declarations (one per cell with per-cell locations),
+        and finds the first failing declaration when the check is elementwise.
+        When neither half fails alone (a check relating rows of different
+        declarations), ``error`` is returned as is.
+        """
+        mechanisms = [self.mechanism[store_row] for store_row in rows.tolist()]
+        code_by_id: dict[int, int] = {}
+        codes = np.asarray([code_by_id.setdefault(id(item), len(code_by_id)) for item in mechanisms], dtype=np.int64)
+        order = np.argsort(codes, kind="stable")
+        bounds = np.searchsorted(codes[order], np.arange(len(code_by_id) + 1))
+        values = {
+            name: (np.asarray(column.to_decimal(column.unit)), column.unit)
+            if isinstance(column, u.Quantity)
+            else (np.asarray(column), None)
+            for name, column in columns.items()
+        }
+
+        def failure(first: int, last: int) -> ValueError | None:
+            selected = order[bounds[first] : bounds[last]]
+            subset = {
+                name: array[selected] if unit is None else u.Quantity(array[selected], unit)
+                for name, (array, unit) in values.items()
+            }
+            try:
+                runtime_cls.validate_parameter_values(subset)
+            except ValueError as exc:
+                return exc
+            return None
+
+        first, last, found = 0, len(code_by_id), error
+        while last - first > 1:
+            middle = (first + last) // 2
+            for low, high in ((first, middle), (middle, last)):
+                narrower = failure(low, high)
+                if narrower is not None:
+                    first, last, found = low, high, narrower
+                    break
+            else:
+                return error
+        mechanism = mechanisms[int(order[bounds[first]])]
+        fallback = describe_mechanism("synapse", mechanism.synapse_type, mechanism.instance_name)
+        owner, source = contexts.get(id(mechanism), (fallback, None))
+        return _name_the_synapse(found, owner, source)
 
     def bind_runtime(self, synapse_type: str, layout_id: int, logical_ids: np.ndarray) -> None:
         """Bind logical ids to the rows of one materialized runtime node."""
@@ -708,7 +763,10 @@ class SynapseView(DiscreteView):
             proposed[parameter] = _set_last_axis(proposed[parameter], rows, normalized)
         for parameter in normalized_updates:
             type(node).parameter_info()[parameter].validate(proposed[parameter], parameter, owner=owner)
-        type(node).validate_parameter_values(proposed)
+        try:
+            type(node).validate_parameter_values(proposed)
+        except ValueError as exc:
+            raise _name_the_synapse(exc, owner) from None
 
         for parameter, updated in proposed.items():
             if parameter not in normalized_updates:
@@ -925,6 +983,29 @@ def _select_declared_parameter_value(value, *, logical_id: int, store: _SynapseS
     else:
         raise ValueError(f"Synapse parameter shape {shape!r} cannot broadcast to {layout.size!r} logical instances.")
     return u.Quantity(selected, value.unit) if isinstance(value, u.Quantity) else selected
+
+
+#: How a type's ``validate_parameter_values`` names a parameter when it does
+#: not know which synapse it checks (``braincell.mech.positive``).
+_UNNAMED_PARAMETER = "Mechanism parameter "
+
+
+def _name_the_synapse(error: ValueError, owner: str, source: str | None = None) -> ValueError:
+    """Return a ``ValueError`` saying which synapse ``error`` is about.
+
+    The message takes the form of the per-value checks (``<owner> parameter
+    '<name>' ...``, then ``source``) when ``error`` names a parameter the
+    way :func:`braincell.mech.positive` does, and ``<owner>: <message>``
+    otherwise (``Exp2Syn requires tau1 < tau2.``).
+    """
+    message = str(error)
+    if message.startswith(_UNNAMED_PARAMETER):
+        message = f"{owner} parameter {message[len(_UNNAMED_PARAMETER) :]}"
+    else:
+        message = f"{owner}: {message}"
+    if source:
+        message = f"{message} {source[:1].upper()}{source[1:]}"
+    return ValueError(message)
 
 
 def _take_vector_items(value, indices):

@@ -27,8 +27,19 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._misc import freeze_array, normalize_loop_outputs, scalar_decimal, validate_time_quantity
-from braincell._multi_compartment.run import _duration_steps, _recording_time_mask
+from braincell._misc import (
+    freeze_array,
+    is_traced_value,
+    normalize_loop_outputs,
+    scalar_decimal,
+    validate_time_quantity,
+)
+from braincell._multi_compartment.run import (
+    _duration_steps,
+    _recording_time_mask,
+    check_step_limit,
+    host_clock_start,
+)
 from braincell._multi_compartment.synapses import SynapseView
 from braincell.network.connection import NetworkConnections, PairingSpec, _UNSET, _connect_with_pairing_seed
 from braincell.network.recording import EventSeries, SampleBlock
@@ -140,7 +151,8 @@ class Network:
         self._scheduled_dt_ms: float | None = None
         self._cell_lifecycle_active = False
         self._initialized = False
-        self._source_current_time = 0.0 * u.ms
+        # Steps run by a Network without Cell populations (its Cells keep their own clocks).
+        self._source_step = 0
         from braincell.trainable._network import NetworkTrainables
 
         self.trainables = NetworkTrainables(self)
@@ -435,9 +447,10 @@ class Network:
 
         Notes
         -----
-        ``Network.reset_state`` resets runtime state in place. It does not call
-        ``Cell.reset()``, which would tear down runtime objects and return the
-        cell to the declaration phase.
+        ``Network.reset_state`` resets runtime state in place, and the step
+        count to 0 (``t = 0``). It does not call ``Cell.reset()``, which
+        would tear down runtime objects and return the cell to the
+        declaration phase.
         """
         _reject_batch_size(batch_size)
         uninitialized = [
@@ -453,9 +466,16 @@ class Network:
         with self._cell_lifecycle():
             for population in self._cell_populations().values():
                 population.cell.reset_state()
+        if self._prepared_run is not None:
+            # update() counts steps on the clocks prepare_run() set, without
+            # resetting them itself (a compiled loop would rewrite a constant
+            # on every step): set them again, at t = 0.
+            dt = self._prepared_run[2]
+            for population in self._cell_populations().values():
+                population.cell._set_clock(0.0 * u.ms, 0, dt)
         for state in self._delivery_state_cache.values():
             _reset_delivery_state(state)
-        self._source_current_time = 0.0 * u.ms
+        self._source_step = 0
         return self
 
     def run(
@@ -469,12 +489,28 @@ class Network:
     ) -> NetworkResult:
         """Run the network for ``duration`` at fixed step ``dt``.
 
+        Raises
+        ------
+        ValueError
+            If the run would take the step count past ``2**31 - 1`` (14.9 h
+            at ``dt = 0.025 ms``); nothing has run. :meth:`reset_state`
+            starts the count again.
+
         Warns
         -----
         RuntimeWarning
             Once per edit, made after initialization, of the morphology a
             population Cell was declared with: each Cell runs on the
             snapshot taken at its ``init_state``.
+
+        Notes
+        -----
+        The network counts its steps: step ``k`` of a run starts at
+        ``t = (n + k)·dt``, where ``n`` is the number of steps run since
+        initialization or :meth:`reset_state` by ``run`` and
+        :meth:`update`. Each time is one rounding of a product, in the run
+        precision, so a run split into segments, or into ``update()``
+        calls, steps at the same times as one run, however long it is.
         """
         from braincell.network.event import _schedule_horizon
 
@@ -509,25 +545,24 @@ class Network:
             brainevent_backend=brainevent_backend,
         )
         ordered_population_names = setup.ordered_population_names
-        start_t = self._common_start_time(ordered_population_names)
         n_steps = _duration_steps(duration, dt)
-        relative_times = u.math.arange(n_steps) * dt
+        start_ms = self._start_clocks(ordered_population_names, dt=dt, n_steps=n_steps, prefix="Network.run(...)")
         n_recording = setup.n_recording
         n_event = setup.n_event
         # NetStim events up to one step past the end cover every arrival the
         # loop delivers; later events are not generated.
-        until_ms = scalar_decimal(start_t, u.ms) + (n_steps + 1) * scalar_decimal(dt, u.ms)
+        until_ms = start_ms + (n_steps + 1) * scalar_decimal(dt, u.ms)
         cached_loop = self._network_run_loop(
             setup=setup,
             setup_key=setup_key,
             dt=dt,
-            n_steps=int(relative_times.shape[0]),
+            n_steps=n_steps,
             schedule_key=self._prepare_netstim_schedules(until_ms=until_ms),
         )
         values = self._take_value_inputs(ordered_population_names)
         try:
             with _schedule_horizon(until_ms):
-                times, samples_over_time = cached_loop.runner(start_t, relative_times, values)
+                times, start_t, stop_t, samples_over_time = cached_loop.runner(values)
         except BaseException:
             self._restore_value_inputs(values)
             raise
@@ -543,7 +578,6 @@ class Network:
 
         samples = {}
         recording_index = 0
-        stop_t = start_t + n_steps * dt
         for population_name in ordered_population_names:
             samples[population_name] = {}
             for compiled in setup.compiled_recordings[population_name]:
@@ -570,7 +604,6 @@ class Network:
             event_sources=setup.event_sources,
             event_values=event_values,
         )
-        self._source_current_time = stop_t
         return NetworkResult(
             time=times,
             traces=traces,
@@ -638,8 +671,9 @@ class Network:
             event_backend=event_backend,
             brainevent_backend=brainevent_backend,
         )
-        self._common_start_time(setup.ordered_population_names)
-        # update() runs for an unknown number of steps: generate every event.
+        # update() runs for an unknown number of steps: each eager call checks
+        # the step limit, and every event is generated.
+        self._start_clocks(setup.ordered_population_names, dt=dt, n_steps=0, prefix="Network.prepare_run(...)")
         cached = self._network_run_loop(
             setup=setup,
             setup_key=key,
@@ -664,11 +698,20 @@ class Network:
         ------
         RuntimeError
             If :meth:`prepare_run` has not been called outside tracing.
+        ValueError
+            If called eagerly with the step count at its limit,
+            ``2**31 - 1``. Inside a compiled loop the count is not
+            checked, as that would cost a host round trip per step: keep
+            such a loop within the limit (14.9 h at ``dt = 0.025 ms``).
 
         Notes
         -----
         Compose with ``brainstate.transform.for_loop`` or ``scan``. No event
         tables or host-side recording conversions are built here.
+
+        The step starts at ``t = n·dt`` and advances the step count ``n``
+        by one, as in :meth:`run`: a loop of ``update()`` calls steps at the
+        times of one ``run``.
         """
         if self._prepared_run is None:
             raise RuntimeError("Call Network.prepare_run() before update().")
@@ -676,15 +719,19 @@ class Network:
         if cached.runner is None:
             # A Cell registered an input since the loop was traced.
             cached = _CachedRunLoop(
-                runner=self._make_network_run_loop(setup=setup, dt=dt, delivery_state=cached.delivery_state),
+                runner=self._make_network_run_loop(setup=setup, dt=dt, n_steps=1, delivery_state=cached.delivery_state),
                 delivery_state=cached.delivery_state,
             )
             self._prepared_run = (setup, cached, dt)
+        step = self.populations[setup.ordered_population_names[0]].cell._clock_step.value
+        if not is_traced_value(step):
+            # Inside a compiled loop the count is a tracer: checking it would
+            # cost a host round trip per step.
+            check_step_limit(step, 1, dt=dt, prefix="Network.update()")
         self.trainables.materialize()
-        first = self.populations[setup.ordered_population_names[0]].cell
         values = self._take_value_inputs(setup.ordered_population_names)
         try:
-            cached.runner(first.current_time, u.math.zeros((1,)) * dt, values)
+            cached.runner(values)
         except BaseException:
             self._restore_value_inputs(values)
             raise
@@ -835,6 +882,7 @@ class Network:
                 runner=self._make_network_run_loop(
                     setup=setup,
                     dt=dt,
+                    n_steps=n_steps,
                     delivery_state=delivery_state,
                 ),
                 delivery_state=delivery_state,
@@ -847,16 +895,26 @@ class Network:
         *,
         setup: _RunSetup,
         dt,
+        n_steps: int,
         delivery_state,
     ):
-        """Create a persistent jitted scan for one network run shape."""
+        """Create a persistent jitted scan of ``n_steps`` steps for one network run shape.
+
+        The loop takes the value inputs and returns ``(times, start time,
+        stop time, samples)``. Step ``k`` runs at ``origin + (step + k)·dt`` of the
+        Cells' clocks, which :meth:`_start_clocks` made equal; the step count
+        is a state, so a later segment reuses the loop (CELL-45).
+        """
         delivery_blocks = setup.delivery_blocks
         ordered_population_names = setup.ordered_population_names
         compiled_recordings = setup.compiled_recordings
         event_sources = setup.event_sources
+        cells = tuple(self.populations[name].cell for name in ordered_population_names)
 
-        def _run_loop(start_t, relative_times, values):
-            times = start_t + relative_times
+        def _run_loop(values):
+            origin = cells[0]._clock_origin.value
+            step = cells[0]._clock_step.value
+            times = origin + (step + jnp.arange(n_steps, dtype=jnp.int32)) * dt
             with brainstate.environ.context(dt=dt):
 
                 def _step(t):
@@ -925,10 +983,10 @@ class Network:
                 else:
                     samples_over_time = brainstate.transform.for_loop(_step, times)
 
-            end_t = start_t + int(times.shape[0]) * dt
-            for population in self._cell_populations().values():
-                population.cell._set_current_time(end_t)
-            return times, samples_over_time
+            end_step = (step + n_steps).astype(jnp.int32)
+            for cell in cells:
+                cell._clock_step.value = end_step
+            return times, origin + step * dt, origin + end_step * dt, samples_over_time
 
         return brainstate.transform.jit(_run_loop)
 
@@ -941,16 +999,33 @@ class Network:
             until_ms=until_ms,
         )
 
-    def _common_start_time(self, names: tuple[str, ...]):
-        first = self.populations[names[0]].cell.current_time
-        for name in names[1:]:
-            current = self.populations[name].cell.current_time
-            if not np.allclose(
-                np.asarray(current.to_decimal(u.ms), dtype=float),
-                np.asarray(first.to_decimal(u.ms), dtype=float),
-            ):
-                raise ValueError("Network populations must have the same current_time.")
-        return first
+    def _start_clocks(self, names: tuple[str, ...], *, dt, n_steps: int, prefix: str) -> float:
+        """Give the Cells named ``names`` one clock counting steps of ``dt``; return its time in ms.
+
+        The Cells must be at the same ``current_time``. They take the clock
+        of the first, counting from its time if it last ran at another
+        ``dt`` (``Cell._clock_start``); the run loop reads it from the
+        first and advances them all. Raises ``ValueError``, before changing
+        any clock, when ``n_steps`` more steps would pass the step limit.
+        The usual call, on clocks already shared and counting ``dt``, only
+        reads them on the host.
+        """
+        cells = [self.populations[name].cell for name in names]
+        clocks = [cell._clock_host() for cell in cells]
+        times = [origin + step * clock_dt for origin, step, clock_dt in clocks]
+        if not np.allclose(times[1:], times[0]):
+            raise ValueError("Network populations must have the same current_time.")
+        origin_ms, step, counts_dt = host_clock_start(clocks[0], dt)
+        check_step_limit(step, n_steps, dt=dt, prefix=prefix)
+        if not counts_dt:
+            origin, step_value = cells[0]._clock_start(dt)
+            for cell in cells:
+                cell._set_clock(origin, step_value, dt)
+        elif any(clock != clocks[0] for clock in clocks[1:]):
+            first = cells[0]
+            for cell in cells[1:]:
+                cell._set_clock(first._clock_origin.value, first._clock_step.value, first._clock_dt.value)
+        return origin_ms + step * scalar_decimal(dt, u.ms)
 
     def _cell_populations(self) -> dict[str, Population]:
         return {name: population for name, population in self.populations.items() if population.kind == "cell"}
@@ -1085,9 +1160,11 @@ class Network:
         elif not np.isclose(self._scheduled_dt_ms, dt_ms):
             raise RuntimeError("Network runtime dt is fixed after the first run.")
         n_steps = _duration_steps(duration, dt)
-        start_t = self._source_current_time
-        stop_t = start_t + n_steps * dt
-        times = start_t + u.math.arange(n_steps) * dt
+        check_step_limit(self._source_step, n_steps, dt=dt, prefix="Network.run(...)")
+        step = self._source_step
+        times = 0.0 * u.ms + (step + u.math.arange(n_steps)) * dt
+        start_t = 0.0 * u.ms + step * dt
+        stop_t = 0.0 * u.ms + (step + n_steps) * dt
         events = self._result_events(
             times=times,
             start_t=start_t,
@@ -1095,7 +1172,7 @@ class Network:
             event_sources={},
             event_values=(),
         )
-        self._source_current_time = stop_t
+        self._source_step = step + n_steps
         return NetworkResult(
             time=times,
             traces={},

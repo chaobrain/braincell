@@ -275,6 +275,210 @@ class SplitNetworkRunTest(unittest.TestCase):
         self._check(dict(start=0.25 * u.ms, interval=0.25 * u.ms, number=19), split_steps(200, points))
 
 
+#: The steps of the three events of ``_clocked_network``: 100, 409.6 and 800 ms
+#: at dt 0.025 ms, whole multiples of dt in float64.
+_EVENT_STEPS = (4000, 16384, 32000)
+_CLOCK_STEPS = 32010
+
+
+def _clock_cell():
+    """A passive soma (20 um x 10 um, leak 0.1 mS/cm^2 at -65 mV) with an ExpSyn (tau 2 ms, e 0 mV); records V and g."""
+    branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+    cell = braincell.Cell(
+        braincell.Morphology.from_root(branch), cv_policy=braincell.CVPerBranch(1), V_init=-65.0 * u.mV
+    )
+    cell.paint(AllRegion(), braincell.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    cell.place(at(0, 0.5), braincell.mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV))
+    cell.record("V", "V")
+    cell.record("g", braincell.observe.synapse(name="exp").state("g"))
+    return cell
+
+
+def _clocked_network():
+    """``_clock_cell`` driven by an EventSequence at ``_EVENT_STEPS`` (weight 0.001 uS, no delay); ``(network, cell)``."""
+    cell = _clock_cell()
+    network = Network("clock")
+    post = network.add_population("post", cell)
+    stim = network.add_population("stim", braincell.EventSequence.from_times([np.asarray(_EVENT_STEPS) * DT]))
+    network.connect("drive", source=stim, synapse=post.synapses["exp"], weight=0.001 * u.uS)
+    return network, cell
+
+
+def _clock_samples(results):
+    """``(t in ms, V in mV, g in uS)`` per step of one or more ``Network.run`` results of ``_clocked_network``."""
+    result = braincell.NetworkResult.concat(tuple(results))
+    samples = result.samples["post"]
+    return (
+        np.asarray(result.time.to_decimal(u.ms)),
+        np.asarray(samples["V"].values.to_decimal(u.mV)).reshape(-1),
+        np.asarray(samples["g"].values.to_decimal(u.uS)).reshape(-1),
+    )
+
+
+def _update_loop(network, cell, n_steps):
+    """``(t before each update in ms, V and g after it)``, from one compiled loop of ``n_steps`` ``update()`` calls."""
+    (synapse,) = cell.runtime_objects(braincell.synapse.ExpSyn).values()
+
+    def step(_):
+        t = cell.current_time.to_decimal(u.ms)
+        network.update()
+        return t, cell.V.value.to_decimal(u.mV).reshape(-1)[0], synapse.g.value.to_decimal(u.uS).reshape(-1)[0]
+
+    loop = brainstate.transform.jit(lambda: brainstate.transform.for_loop(step, np.arange(n_steps)))
+    return tuple(np.asarray(values) for values in loop())
+
+
+def _jumps(g):
+    """Indices where ``g`` jumps up by an event."""
+    return np.flatnonzero(np.diff(g, prepend=0.0) > 1e-4).tolist()
+
+
+class NetworkClockTest(unittest.TestCase):
+    """CELL-45: one run, split runs and ``update()`` loops step at ``t = step·dt``, with no accumulated time."""
+
+    def test_update_loops_split_runs_and_one_run_step_at_the_same_times(self):
+        # main: in float32, 32010 update() calls ended at 800.443176 ms and
+        # the events acted at updates 4000, 16387 and 31992.
+        for precision, float_type, rtol in ((32, np.float32, 1e-6), (64, np.float64, 1e-12)):
+            context = _float64() if precision == 64 else brainstate.environ.context(precision=32)
+            with self.subTest(precision=precision), context:
+                network, _ = _clocked_network()
+                whole = _clock_samples((network.run(dt=DT, duration=_CLOCK_STEPS * DT),))
+                network, _ = _clocked_network()
+                steps = (800,) * (_CLOCK_STEPS // 800) + (_CLOCK_STEPS % 800,)
+                split = _clock_samples(network.run(dt=DT, duration=n * DT) for n in steps)
+                network, cell = _clocked_network()
+                network.prepare_run(dt=DT)
+                with brainstate.environ.context(dt=DT):
+                    times, V, g = _update_loop(network, cell, _CLOCK_STEPS)
+
+                expected_times = np.arange(_CLOCK_STEPS).astype(float_type) * float_type(0.025)
+                for t in (whole[0], split[0], times):
+                    np.testing.assert_array_equal(t, expected_times)
+                np.testing.assert_array_equal(cell._clock_step.value, _CLOCK_STEPS)
+                np.testing.assert_array_equal(
+                    cell.current_time.to_decimal(u.ms), float_type(_CLOCK_STEPS) * float_type(0.025)
+                )
+                # A sample is taken before its step, update() is read after it.
+                self.assertEqual(_jumps(whole[2]), [step + 1 for step in _EVENT_STEPS])
+                self.assertEqual(_jumps(g), list(_EVENT_STEPS))
+                for name, actual, expected in (("V", split[1], whole[1]), ("g", split[2], whole[2])):
+                    np.testing.assert_allclose(actual, expected, rtol=rtol, atol=0.0, err_msg=name)
+                for name, actual, expected in (("V", V[:-1], whole[1][1:]), ("g", g[:-1], whole[2][1:])):
+                    np.testing.assert_allclose(actual, expected, rtol=rtol, atol=0.0, err_msg=name)
+
+    def test_reset_state_restarts_the_clock_of_update(self):
+        network, cell = _clocked_network()
+        network.prepare_run(dt=DT)
+        with brainstate.environ.context(dt=DT):
+            first = _update_loop(network, cell, 50)
+            network.reset_state()
+            np.testing.assert_array_equal(cell.current_time.to_decimal(u.ms), 0.0)
+            again = _update_loop(network, cell, 50)
+        np.testing.assert_array_equal(again[0], first[0])
+        np.testing.assert_array_equal(cell.current_time.to_decimal(u.ms), np.float32(50) * np.float32(0.025))
+        # run() after the update() loop continues its count.
+        result = network.run(dt=DT, duration=10 * DT)
+        np.testing.assert_array_equal(
+            result.time.to_decimal(u.ms), np.arange(50, 60).astype(np.float32) * np.float32(0.025)
+        )
+
+    def test_the_step_count_stops_at_its_int32_limit(self):
+        network, cell = _clocked_network()
+        network.run(dt=DT, duration=DT)
+        cell._clock_step.value = np.int32(2**31 - 10)
+        before = np.asarray(cell.current_time.to_decimal(u.ms))
+        with self.assertRaisesRegex(ValueError, r"2147483647 steps \(14\.9 h at dt"):
+            network.run(dt=DT, duration=20 * DT)
+        np.testing.assert_array_equal(cell._clock_step.value, 2**31 - 10)
+        np.testing.assert_array_equal(cell.current_time.to_decimal(u.ms), before)
+        network.run(dt=DT, duration=9 * DT)
+        np.testing.assert_array_equal(cell._clock_step.value, 2**31 - 1)
+        network.reset_state()
+        network.run(dt=DT, duration=20 * DT)
+        np.testing.assert_array_equal(cell._clock_step.value, 20)
+
+        network, cell = _clocked_network()
+        network.prepare_run(dt=DT)
+        cell._clock_step.value = np.int32(2**31 - 1)
+        with brainstate.environ.context(dt=DT), self.assertRaisesRegex(ValueError, "2147483647"):
+            network.update()
+
+        network = Network("sources")
+        network.add_population("stim", braincell.NetStim())
+        network._source_step = 2**31 - 10
+        with self.assertRaisesRegex(ValueError, "2147483647"):
+            network.run(dt=DT, duration=20 * DT)
+
+    def test_segments_reuse_the_compiled_loops(self):
+        # The step count is a state, not a key of the loop caches, nor a
+        # constant of their traces (L40): counted with the step body's calls.
+        def counted(cell):
+            calls = [0]
+            begin_step = cell._begin_step
+
+            def counting(*args, **kwargs):
+                calls[0] += 1
+                return begin_step(*args, **kwargs)
+
+            cell._begin_step = counting
+            return calls
+
+        network, cell = _clocked_network()
+        network.init_state()
+        calls = counted(cell)
+        for index in range(5):
+            if index == 3:
+                network.reset_state()
+            network.run(dt=DT, duration=20 * DT)
+        self.assertEqual(calls[0], 1)
+        self.assertEqual(len(network._network_run_loop_cache), 1)
+        np.testing.assert_array_equal(cell._clock_step.value, 40)
+
+        network, cell = _clocked_network()
+        network.prepare_run(dt=DT)
+        calls = counted(cell)
+        with brainstate.environ.context(dt=DT):
+            for index in range(5):
+                if index == 3:
+                    network.reset_state()
+                network.update()
+        self.assertEqual(calls[0], 1)
+        np.testing.assert_array_equal(cell._clock_step.value, 2)
+
+    def test_a_cell_run_alone_before_joining_keeps_its_time(self):
+        # A Cell that ran on its own at another dt joins with its time: the
+        # Network counts from there.
+        cell = _clock_cell()
+        cell.run(dt=2 * DT, duration=6 * DT)
+        network = Network("late")
+        network.add_population("post", cell)
+        result = network.run(dt=DT, duration=4 * DT)
+        np.testing.assert_allclose(result.time.to_decimal(u.ms), 0.15 + 0.025 * np.arange(4), rtol=1e-6)
+        np.testing.assert_allclose(cell.current_time.to_decimal(u.ms), 0.25, rtol=1e-6)
+        np.testing.assert_array_equal(cell._clock_step.value, 4)
+
+        # Two such Cells at the same time on different clocks share the first's.
+        first, second = _clock_cell(), _clock_cell()
+        first.run(dt=DT, duration=10 * DT)
+        second.run(dt=2 * DT, duration=10 * DT)
+        network = Network("joined")
+        network.add_population("first", first)
+        network.add_population("second", second)
+        network.run(dt=DT, duration=4 * DT)
+        for cell in (first, second):
+            np.testing.assert_array_equal(cell._clock_step.value, 14)
+            np.testing.assert_array_equal(cell.current_time.to_decimal(u.ms), np.float32(14) * np.float32(0.025))
+        # At different times they cannot run together.
+        late = _clock_cell()
+        late.run(dt=DT, duration=12 * DT)
+        network = Network("apart")
+        network.add_population("first", _clock_cell())
+        network.add_population("late", late)
+        with self.assertRaisesRegex(ValueError, "same current_time"):
+            network.run(dt=DT, duration=4 * DT)
+
+
 def _resting_one_cv_cell(kind, solver, pop_size=2):
     """A soma 20 um x 10 um with a leak at its reversal, -65 mV."""
     if kind == "lumped":

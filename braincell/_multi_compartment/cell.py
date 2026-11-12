@@ -1248,7 +1248,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._runtime_V_init_mask = None
         self._root_scope_cache: _CellScope | None = None
 
-        self._current_time_state = brainstate.ShortTermState(0.0 * u.ms)
+        # The clock (CELL-45): runs take their k-th step at
+        # ``origin + (step + k)·dt``, one rounding from an integer count,
+        # rather than adding ``dt`` to a time that has already been rounded.
+        self._clock_origin = brainstate.ShortTermState(0.0 * u.ms)
+        self._clock_step = brainstate.ShortTermState(jnp.asarray(0, dtype=jnp.int32))
+        self._clock_dt = brainstate.ShortTermState(0.0 * u.ms)
         self._node_scheduling_cache: dict[tuple[str, int], object] = {}
         self._run_loop_cache: dict[tuple[object, ...], object] = {}
 
@@ -2854,7 +2859,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         )
         self._point_V = brainstate.ShortTermState(self._initial_point_voltage(self.V.value))
         self._next_synapse_inputs_prepared = brainstate.ShortTermState(jnp.asarray(False))
-        self._current_time_state.value = 0.0 * u.ms
+        self._reset_clock()
 
         cv_V = self.V.value
         with state_grouping(True):
@@ -2951,7 +2956,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._step_clamp_components = brainstate.ShortTermState(
             u.Quantity(jnp.zeros((self._lumped_clamps.n_component,), dtype=float), u.nA)
         )
-        self._current_time_state.value = 0.0 * u.ms
+        self._reset_clock()
         self._initialized = True
         self._view_generation += 1
 
@@ -2971,7 +2976,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._publish_reduction_output(output, initialize=True)
         self._pending_reduction_inputs = self._reduction_input_runtime.take_inputs()
         self._next_synapse_inputs_prepared = brainstate.ShortTermState(jnp.asarray(False))
-        self._current_time_state.value = 0.0 * u.ms
+        self._reset_clock()
         self._initialized = True
 
     def reset(self) -> None:
@@ -3033,7 +3038,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         ):
             if hasattr(self, name):
                 delattr(self, name)
-        self._current_time_state.value = 0.0 * u.ms
+        self._reset_clock()
 
         self._runtime = None
         self._reduction_input_runtime = None
@@ -3264,11 +3269,63 @@ class Cell(_CellFacade, HHTypedNeuron):
 
     @property
     def current_time(self):
+        """The time at which the next step starts.
+
+        ``origin + n·dt`` of the Cell's step count ``n`` (see :meth:`run`);
+        0 after :meth:`init_state` and :meth:`reset_state`.
+        """
         self._raise_if_not_initialized("current_time")
-        return self._current_time_state.value
+        return self._clock_origin.value + self._clock_step.value * self._clock_dt.value
 
     def _set_current_time(self, value) -> None:
-        self._current_time_state.value = value
+        """Count the next steps from ``value``: the clock's origin moves there, its step count restarts."""
+        self._clock_origin.value = value
+        self._clock_step.value = jnp.asarray(0, dtype=jnp.int32)
+
+    def _reset_clock(self) -> None:
+        """Back to ``t = 0`` with no step counted, as after construction."""
+        self._clock_origin.value = 0.0 * u.ms
+        self._clock_step.value = jnp.asarray(0, dtype=jnp.int32)
+        self._clock_dt.value = 0.0 * u.ms
+
+    def _clock_start(self, dt):
+        """Return ``(origin, step)``: a run at ``dt`` takes its ``k``-th step at ``origin + (step + k)·dt``.
+
+        The clock counts steps of the ``dt`` it last ran at. A run at
+        another ``dt`` counts from :attr:`current_time` instead (origin
+        there, step 0), so changing ``dt`` keeps the time reached. The
+        choice is a ``where`` on the stored ``dt``, so it holds inside a
+        compiled function called again after a run at another ``dt``.
+        """
+        origin = self._clock_origin.value
+        step = self._clock_step.value
+        clock_dt = self._clock_dt.value
+        same = u.math.asarray(clock_dt.to_decimal(u.ms)) == u.math.asarray(dt.to_decimal(u.ms))
+        origin = u.math.where(same, origin, origin + step * clock_dt)
+        step = jnp.where(same, step, 0).astype(jnp.int32)
+        return origin, step
+
+    def _clock_host(self):
+        """``(origin in ms, step, dt in ms)`` of the clock as host numbers, or ``None`` inside a trace.
+
+        Host reads cost a few microseconds where eager array arithmetic on
+        the states costs about a hundred: the eager entry points of ``run``
+        decide with these.
+        """
+        step = self._clock_step.value
+        if is_traced_value(step):
+            return None
+        return (
+            scalar_decimal(self._clock_origin.value, u.ms),
+            int(step),
+            scalar_decimal(self._clock_dt.value, u.ms),
+        )
+
+    def _set_clock(self, origin, step, dt) -> None:
+        """Store a clock that has counted ``step`` steps of ``dt`` from ``origin``."""
+        self._clock_origin.value = origin
+        self._clock_step.value = jnp.asarray(step, dtype=jnp.int32)
+        self._clock_dt.value = dt
 
     # ------------------------------------------------------------------
     # Repr
@@ -4550,7 +4607,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             self._publish_reduction_output(output)
             self._pending_reduction_inputs = self._reduction_input_runtime.take_inputs()
             self._next_synapse_inputs_prepared.value = jnp.asarray(False)
-            self._current_time_state.value = 0.0 * u.ms
+            self._reset_clock()
             return
         if self._is_lumped:
             if self.trainables.bindings():
@@ -4565,7 +4622,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             self._step_clamp_components.value = u.Quantity(
                 jnp.zeros_like(self._step_clamp_components.value.mantissa), u.nA
             )
-            self._current_time_state.value = 0.0 * u.ms
+            self._reset_clock()
             return
         if self.trainables.bindings():
             self.trainables.materialize()
@@ -4576,7 +4633,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._point_V.value = self._initial_point_voltage(self.V.value)
         self.spike.value = _zero_spike_like(self.V.value)
         self._event_previous_V.value = self.V.value
-        self._current_time_state.value = 0.0 * u.ms
+        self._reset_clock()
         self._step_clamp_components.value = u.Quantity(jnp.zeros_like(self._step_clamp_components.value.mantissa), u.nA)
         self._step_clamp_point_current.value = u.Quantity(
             jnp.zeros_like(self._step_clamp_point_current.value.mantissa), u.nA
@@ -4683,6 +4740,19 @@ class Cell(_CellFacade, HHTypedNeuron):
         :meth:`update`) continues from where the last one stopped, so
         splitting a run into segments, at event times included, gives the
         same trajectory as one run.
+
+        The cell counts the steps it runs: step ``k`` of a run starts at
+        ``t = origin + (n + k)·dt``, where ``n`` counts the steps run at
+        this ``dt`` and ``origin`` is 0, or the :attr:`current_time` at
+        which ``dt`` last changed. Each time is one rounding of a product,
+        so segments step at the times of one run, however long it is.
+        :meth:`reset_state` returns to ``t = 0``.
+
+        Raises
+        ------
+        ValueError
+            If the run would take the step count past ``2**31 - 1`` (14.9 h
+            at ``dt = 0.025 ms``); checked when ``run`` is not traced.
 
         Warns
         -----

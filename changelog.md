@@ -1765,6 +1765,23 @@
   `benchmarks/profiling/profile_simulation.py` reset its `Network` before
   initializing it, and gave its `ExpSyn` synapses a `weight`, which they no
   longer take.
+- Time no longer drifts in loops of `Network.update()` or in `Network.run`
+  and `Cell.run` split into segments (CELL-45). Each step started at the
+  previous time plus `dt`, rounded in the run precision, so in float32 a
+  loop of 32010 `update()` calls at `dt = 0.025 ms` ended at 800.443176 ms
+  instead of 800.25 ms, and events at 100, 409.6 and 800 ms acted at updates
+  4000, 16387 and 31992 instead of 4000, 16384 and 32000 (main `aba2709`).
+  Split runs of 800 steps started 6338 of 32010 steps at other times than one
+  run in float32, 10841 in float64 (within 6.1e-5 and 1.1e-13 ms). A Network
+  and a Cell now count their steps, and step `k` of a run starts at
+  `(n + k)·dt`, one rounding: one run, split runs and `update()` loops step
+  at the same times. One run from `t = 0` is unchanged sample for sample, in
+  float32 and float64; a float32 `update()` loop now matches it. The count is
+  an int32: a run that would take it past `2**31 - 1` steps (14.9 h at
+  0.025 ms) raises `ValueError`, and `reset_state()` restarts it. A `Cell.run`
+  at a new `dt` counts from the time reached, as before. `start_time` and
+  `stop_time` of a first `Network.run` are arrays of the run precision, as
+  those of later runs already were, instead of Python floats.
 
 ### Documentation
 

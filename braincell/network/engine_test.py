@@ -458,6 +458,26 @@ class NetworkClockTest(unittest.TestCase):
         np.testing.assert_allclose(cell.current_time.to_decimal(u.ms), 0.25, rtol=1e-6)
         np.testing.assert_array_equal(cell._clock_step.value, 4)
 
+        # Two such Cells at the same time on different clocks share the first's.
+        first, second = _clock_cell(), _clock_cell()
+        first.run(dt=DT, duration=10 * DT)
+        second.run(dt=2 * DT, duration=10 * DT)
+        network = Network("joined")
+        network.add_population("first", first)
+        network.add_population("second", second)
+        network.run(dt=DT, duration=4 * DT)
+        for cell in (first, second):
+            np.testing.assert_array_equal(cell._clock_step.value, 14)
+            np.testing.assert_array_equal(cell.current_time.to_decimal(u.ms), np.float32(14) * np.float32(0.025))
+        # At different times they cannot run together.
+        late = _clock_cell()
+        late.run(dt=DT, duration=12 * DT)
+        network = Network("apart")
+        network.add_population("first", _clock_cell())
+        network.add_population("late", late)
+        with self.assertRaisesRegex(ValueError, "same current_time"):
+            network.run(dt=DT, duration=4 * DT)
+
 
 def _resting_one_cv_cell(kind, solver, pop_size=2):
     """A soma 20 um x 10 um with a leak at its reversal, -65 mV."""

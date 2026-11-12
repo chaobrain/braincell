@@ -9,8 +9,6 @@ lib/
 
 development
 /.codex
-/examples/convert_mod/
-/.claudegitignore
 
 brainpy/dyn/tests/data
 examples/dynamics_simulation/data
@@ -258,6 +256,10 @@ docs/_static/js/brainx-header.js
 /examples/**/artifacts/
 /validation/**/artifacts/
 /benchmarks/**/artifacts/
+# ...except the reference outputs the MOD conversion walkthrough commits.
+!/examples/convert_mod/nmodl/examples/artifacts/
+# The MOD converter's default output, written beside generate_braincell.py.
+/examples/convert_mod/nmodl/examples/generated_*.py
 
 # Generated benchmark figures stay in ignored artifacts, not reviewed results.
 /benchmarks/performance/optim_gradient_scaling/results/**/figures/

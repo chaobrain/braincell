@@ -598,6 +598,15 @@
   `number=10**5` 164 us; both now cost 5-7 us. The counts, and so every
   trajectory, are the same as before, bit for bit.
 
+- **Connection summaries read each row once** (CELL-18d). `repr` of a
+  `ConnectionView` or of `Network.connections`, `str(Network)` and
+  `ConnectionView.connect_names` looked up every row's connect name once per
+  connect call. They now group the rows by call in one pass, and
+  `connect_name` indexes a table of call names. `repr(ConnectionView)` of
+  20,000 rows from 400 connects took 1.5 s and now takes 3.5 ms;
+  `str(Network)` with 128 connects and 6,400 rows took 237 ms and now
+  0.7 ms. The text is unchanged.
+
 - **NeuroMorpho metrics have an offline regression** (MORPH-7a).
   `data/morphology/neuromorpho/` now holds seven NeuroMorpho.Org neurons
   (standardized SWC and the `metadata.json` that `NeuroMorphoClient.download`

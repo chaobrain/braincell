@@ -656,3 +656,181 @@ class UserMaterialImportTests:
         bad = [entry[:2] for entry in self.allowlist if len(entry) != 3 or not entry[2].strip()]
         bad += [entry[:1] for entry in self.unparsable if len(entry) != 2 or not entry[1].strip()]
         self.assertEqual(bad, [], f"allowlist entries without a reason: {bad}")
+
+
+#: NEURON's only built-in mechanism with a ``TABLE`` (``h.usetable_hh``).
+_NEURON_TABLED_BUILTINS = frozenset({"hh"})
+_MOD_COMMENT_BLOCK = re.compile(r"^\s*COMMENT\b.*?^\s*ENDCOMMENT\b", re.MULTILINE | re.DOTALL)
+_MOD_NAME = re.compile(r"\b(?:SUFFIX|POINT_PROCESS|ARTIFICIAL_CELL)\s+(\w+)")
+_FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def tabled_mechanisms(mod_dir: Path) -> tuple[frozenset[str], int]:
+    """Return the NEURON mechanisms that interpolate their rates from a ``TABLE``.
+
+    The set is NEURON's built-in ``hh`` plus the name (``SUFFIX`` or
+    ``POINT_PROCESS``) of every MOD file under ``mod_dir`` with a ``TABLE``
+    statement outside comments. The count is the number of MOD files read.
+    """
+    names, count = set(_NEURON_TABLED_BUILTINS), 0
+    for path in sorted(Path(mod_dir).rglob("*.mod")):
+        count += 1
+        text = _MOD_COMMENT_BLOCK.sub("", path.read_text(encoding="utf-8", errors="replace"))
+        text = re.sub(r"[:?].*", "", text)
+        name = _MOD_NAME.search(text)
+        if name and re.search(r"\bTABLE\b", text):
+            names.add(name.group(1))
+    return frozenset(names), count
+
+
+def _string(node: ast.AST | None) -> str | None:
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def _called_name(call: ast.Call) -> str | None:
+    if isinstance(call.func, ast.Name):
+        return call.func.id
+    return call.func.attr if isinstance(call.func, ast.Attribute) else None
+
+
+def _scope_nodes(scope: ast.AST) -> Iterator[ast.AST]:
+    """Yield the nodes of a module or function body, without those of nested functions."""
+    stack = list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        yield node
+        if not isinstance(node, (*_FUNCTIONS, ast.Lambda)):
+            stack.extend(ast.iter_child_nodes(node))
+
+
+def _neuron_inserts(trees: list[ast.AST]) -> tuple[set[str], list[str]]:
+    """Return the mechanisms that ``section.insert(name)`` calls insert, and the calls left unresolved.
+
+    A name resolves when it is a string literal, a variable its function
+    assigns only string literals, or a parameter of a helper that these trees
+    call with a string literal in that place. A NEURON point process with a
+    table is created as ``h.<Name>(...)``, so every attribute call is
+    returned too; the caller intersects with the tabled names.
+    """
+    names, unresolved, helpers = set(), [], {}
+    for tree in trees:
+        for scope in (tree, *(node for node in ast.walk(tree) if isinstance(node, _FUNCTIONS))):
+            nodes = list(_scope_nodes(scope))
+            literals: dict[str, set[str | None]] = {}
+            for node in nodes:
+                if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                    literals.setdefault(node.targets[0].id, set()).add(_string(node.value))
+            params = (
+                [a.arg for a in (*scope.args.posonlyargs, *scope.args.args)] if isinstance(scope, _FUNCTIONS) else []
+            )
+            if params[:1] in (["self"], ["cls"]):
+                params = params[1:]
+            for node in nodes:
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                    continue
+                names.add(node.func.attr)  # h.<PointProcess>(...)
+                if node.func.attr != "insert" or len(node.args) != 1 or node.keywords:
+                    continue  # Section.insert takes one name; list.insert takes two arguments
+                arg = node.args[0]
+                if _string(arg) is not None:
+                    names.add(_string(arg))
+                elif isinstance(arg, ast.Name) and arg.id in literals and None not in literals[arg.id]:
+                    names.update(literals[arg.id])
+                elif isinstance(arg, ast.Name) and arg.id in params:
+                    helpers[scope.name] = (params.index(arg.id), arg.id, ast.unparse(node))
+                else:
+                    unresolved.append(ast.unparse(node))
+    for helper, (index, param, text) in helpers.items():
+        calls = [n for tree in trees for n in ast.walk(tree) if isinstance(n, ast.Call) and _called_name(n) == helper]
+        args = [
+            c.args[index] if index < len(c.args) else next((k.value for k in c.keywords if k.arg == param), None)
+            for c in calls
+        ]
+        if not args or any(_string(a) is None for a in args):
+            unresolved.append(f"{text} in {helper}()")
+        names.update(_string(a) for a in args if _string(a) is not None)
+    return names, unresolved
+
+
+def _rate_table_switches(trees: list[ast.AST]) -> set[str]:
+    """Return the mechanisms whose ``usetable_`` the code sets; ``"*"`` stands for any mechanism.
+
+    ``h.usetable_<mech> = ...`` and ``setattr(h, "usetable_<mech>", ...)`` set
+    one; ``setattr(h, f"usetable_{name}", ...)`` and a call to
+    ``disable_rate_table`` (the channel comparison runner's helper) set any.
+    """
+    found = set()
+    for node in (n for tree in trees for n in ast.walk(tree)):
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Store) and node.attr.startswith("usetable_"):
+            found.add(node.attr.removeprefix("usetable_"))
+        elif isinstance(node, ast.Call) and _called_name(node) == "disable_rate_table":
+            found.add("*")
+        elif isinstance(node, ast.Call) and _called_name(node) == "setattr" and len(node.args) >= 2:
+            key = node.args[1]
+            if (_string(key) or "").startswith("usetable_"):
+                found.add(_string(key).removeprefix("usetable_"))
+            elif isinstance(key, ast.JoinedStr) and (_string(key.values[0]) or "").startswith("usetable_"):
+                found.add("*")
+    return found
+
+
+def neuron_rate_table_gaps(
+    root: Path, tabled: frozenset[str]
+) -> tuple[list[str], dict[str, list[str]], dict[str, list[str]], list[str]]:
+    """Find NEURON comparison code that inserts a mechanism with a table and leaves the table on.
+
+    NEURON interpolates the rates of a mechanism with a ``TABLE`` (the built-in
+    ``hh``: 200 intervals from -100 to 100 mV); BrainCell evaluates them
+    exactly, so a comparison that keeps the table shows a gap that is not
+    BrainCell's (0.165 mV in a NetStim comparison). Code that inserts such a
+    mechanism sets ``usetable_<mech> = 0`` or calls a helper that does.
+
+    Parameters
+    ----------
+    root : Path
+        The directory whose ``.py`` files and notebook code cells are read
+        (``artifacts/`` and notebook checkpoints skipped). Paths are reported
+        relative to its parent's parent, i.e. the repository root for
+        ``<repo>/validation/neuron``.
+    tabled : frozenset of str
+        The mechanisms with a table (:func:`tabled_mechanisms`).
+
+    Returns
+    -------
+    scanned : list of str
+        Every file read.
+    matched : dict of str to list of str
+        For each file that inserts a tabled mechanism or a mechanism whose name
+        is not a literal (and so might have a table): the tabled names and the
+        unresolved ``insert`` calls.
+    gaps : dict of str to list of str
+        The entries of ``matched`` whose table the file does not switch off.
+    unparsable : list of str
+        Files with code that does not parse.
+    """
+    root = Path(root)
+    base = root.parent.parent
+    scanned, matched, gaps, unparsable = [], {}, {}, []
+    for path in sorted(root.rglob("*")):
+        if path.suffix not in (".py", ".ipynb") or {"artifacts", ".ipynb_checkpoints"} & set(path.parts):
+            continue
+        name = path.relative_to(base).as_posix()
+        scanned.append(name)
+        text = path.read_text(encoding="utf-8")
+        trees = []
+        for source in [text] if path.suffix == ".py" else _notebook_python(text):
+            try:
+                trees.append(ast.parse(source))
+            except SyntaxError:
+                if name not in unparsable:
+                    unparsable.append(name)
+        inserted, unresolved = _neuron_inserts(trees)
+        found = sorted(inserted & tabled) + sorted(unresolved)
+        if not found:
+            continue
+        matched[name] = found
+        switched = _rate_table_switches(trees)
+        missing = [item for item in found if "*" not in switched and item not in switched]
+        if missing:
+            gaps[name] = missing
+    return scanned, matched, gaps, unparsable

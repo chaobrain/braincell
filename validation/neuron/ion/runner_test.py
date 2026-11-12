@@ -16,6 +16,7 @@
 """Fast checks of the ion-pool configurations, templates and tolerance table (no NEURON run)."""
 
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -178,6 +179,20 @@ class ExternalSourcesTest(unittest.TestCase):
 
         d = runner.Parameter(None, "d", runner.DIAM_FRACTION, 0.25).quantity()
         self.assertEqual(d(SimpleNamespace(diam_mid=15.0 * u.um)), 3.75 * u.um)
+
+
+class RateTableTest(unittest.TestCase):
+    def test_a_table_is_switched_off_and_restored(self):
+        h = SimpleNamespace(usetable_hh=1.0)
+        undo = runner._rate_table_off(h, "hh")
+        self.assertEqual(h.usetable_hh, 0)
+        undo()
+        self.assertEqual(h.usetable_hh, 1.0)
+
+    def test_a_mechanism_without_a_table_is_left_alone(self):
+        h = SimpleNamespace()
+        runner._rate_table_off(h, "pas")()
+        self.assertEqual(vars(h), {})
 
 
 class PoolToleranceTableTest(unittest.TestCase):

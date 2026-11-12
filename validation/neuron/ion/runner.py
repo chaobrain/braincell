@@ -342,6 +342,19 @@ def _set(h, section, mechanism: str, name: str, value: float) -> Callable[[], No
     return lambda: setattr(h, global_name, old)
 
 
+def _rate_table_off(h, mechanism: str) -> Callable[[], None]:
+    """Make a mechanism with a ``TABLE`` compute its rates exactly; return a function that restores the table.
+
+    NMODL ``TABLE`` interpolates the rates on a voltage grid, which BrainCell
+    does not; a mechanism without a table has no ``usetable_`` and is left alone.
+    """
+    if not hasattr(h, f"usetable_{mechanism}"):
+        return lambda: None
+    old = getattr(h, f"usetable_{mechanism}")
+    setattr(h, f"usetable_{mechanism}", 0)
+    return lambda: setattr(h, f"usetable_{mechanism}", old)
+
+
 def run_neuron(case: PoolCase, *, initialize=None) -> dict[str, np.ndarray]:
     """Run ``case`` in NEURON; return ``v``, ``cai``, pool states, ``ica`` and gates from ``t = 0``.
 
@@ -382,6 +395,9 @@ def run_neuron(case: PoolCase, *, initialize=None) -> dict[str, np.ndarray]:
         for suffix, params in case.neuron_mechanisms:
             section.insert(suffix)
             restore += [_set(h, section, suffix, p.neuron, p.value) for p in params]
+        inserted = [case.pool[0], *([case.channel.neuron] if case.channel is not None else [])]
+        inserted += [suffix for suffix, _ in case.neuron_mechanisms]
+        restore += [_rate_table_off(h, name) for name in inserted]
 
         def set_initial_states(h, segment, **kwargs):
             kwargs["concentrations"] = {**(kwargs.get("concentrations") or {}), **concentrations} or None

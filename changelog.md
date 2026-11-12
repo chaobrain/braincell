@@ -1998,6 +1998,16 @@
   (n_point,)`, by population member and point; it raised `TypeError: Only
   scalar arrays can be converted to Python scalars`. The tutorial stores its
   outputs, which are unchanged.
+- NEURON comparisons switch off rate tables. NEURON interpolates the rates of
+  its built-in `hh`, and of every MOD mechanism with a `TABLE`, from a table;
+  BrainCell computes them exactly, so a comparison that keeps the table
+  reports a gap that is not BrainCell's (0.165 mV in the NetStim comparison).
+  A test in `braincell/__init___test.py` scans the `.py` files and notebooks
+  under `validation/neuron` (217 today) and fails on one that inserts such a
+  mechanism, or a mechanism by a non-literal name, without setting
+  `usetable_<mech>` or calling `disable_rate_table`. The ion pool comparisons
+  now switch off the table of every mechanism they insert; none of their 25
+  cases inserts one with a table, so their NEURON traces are unchanged.
 
 ### Deprecations
 

@@ -456,6 +456,215 @@ class CellArrivalStepTest(unittest.TestCase):
         np.testing.assert_array_equal(jumps, [4000, 16384, 32000])
 
 
+def _boundary_increments(cell, segments, read):
+    """Run ``segments`` (``(dt in ms, steps)``, ...) one step per ``Cell.run``; ``{boundary in ms: increase of read}``.
+
+    ``read(cell)`` is read after every step (L93), so each step's increase is
+    the boundary it started at.
+    """
+    increments, before = {}, read(cell)
+    for dt_ms, n_steps in segments:
+        for _ in range(n_steps):
+            t = round(float(np.asarray(cell.current_time.to_decimal(u.ms), dtype=np.float64)), 6)
+            cell.run(dt=dt_ms * u.ms, duration=dt_ms * u.ms)
+            after = read(cell)
+            if not np.isclose(after, before, rtol=0.0, atol=1e-3):
+                increments[t] = increments.get(t, 0.0) + after - before
+            before = after
+    return {t: int(np.rint(value)) for t, value in increments.items()}
+
+
+def _synapse_g(cell):
+    """The ExpSyn's g in uS (1 per arrival on the counting cells)."""
+    (synapse,) = cell.runtime_objects(ExpSyn).values()
+    return float(np.asarray(synapse.g.value.to_decimal(u.uS), dtype=np.float64).reshape(-1)[0])
+
+
+@contextlib.contextmanager
+def _rule_updates():
+    """Record ``(boundary in ms, pre arrivals, post events)`` of every PairSTDP update that runs."""
+    from braincell.plasticity import PairSTDP
+
+    records, update = [], PairSTDP.update
+
+    def recording(self, state, *, pre, post, dt):
+        t = brainstate.environ.get("t").to_decimal(u.ms)
+        jax.debug.callback(
+            lambda *values: records.append(tuple(float(np.asarray(value)) for value in values)),
+            t,
+            u.math.sum(pre),
+            u.math.sum(post),
+            ordered=True,
+        )
+        return update(self, state, pre=pre, post=post, dt=dt)
+
+    with mock.patch.object(PairSTDP, "update", recording):
+        yield records
+
+
+def _rule_cell(times):
+    """The counting cell's synapse fed through a PairSTDP rule (no decay) whose post events are ``times`` too.
+
+    Returns ``(cell, (source, post events))``.
+    """
+    cell = braincell.Cell(
+        braincell.Morphology.from_root(braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)),
+        cv_policy=braincell.CVPerBranch(1),
+        V_init=-65.0 * u.mV,
+    )
+    cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    cell.place(at(0, 0.5), mech.Synapse("ExpSyn", name="s", tau=1e9 * u.ms, e=-65.0 * u.mV))
+    events = braincell.EventSequence.from_times([np.asarray(times) * u.ms])
+    post = braincell.EventSequence.from_times([np.asarray(times) * u.ms])
+    rule = mech.ConnectionRule(
+        "PairSTDP",
+        A_plus=1e-6 * u.uS,
+        A_minus=1e-6 * u.uS,
+        tau_plus=1e9 * u.ms,
+        tau_minus=1e9 * u.ms,
+        signals={"post": post},
+    )
+    braincell.connect("learn", source=events, synapse=cell.synapses["s"], weight=1.0 * u.uS, plasticity=rule)
+    return cell, (events, post)
+
+
+class CellDtChangeBoundaryTest(unittest.TestCase):
+    """CELL-57: the boundary where ``Cell.run`` changes dt is the earlier run's, and each event arrives once.
+
+    The run at the old dt ends by preparing the boundary at the time reached,
+    t_c, with the events of its window there. The run at the new dt keeps
+    that boundary, skips the events it (or an earlier boundary) took, and
+    delivers the others on its own grid (CELL-48), no earlier than its first
+    new boundary. The expected boundaries are worked out by hand below; main
+    (8aa8e77) gave the counts in each comment.
+    """
+
+    #: name -> (event times in ms, segments ((dt in ms, steps), ...), {boundary in ms: events}).
+    CASES = {
+        # dt grows at 0.25 ms. The 0.025 ms boundary at 0.25 ms takes
+        # [0.2375, 0.2625): 0.2375 and 0.26. 0.265 and 0.27 ms are 0.3 and 0.4
+        # steps of 0.05 ms past 0.25 ms, on the boundary already prepared: they
+        # go to the first new one, 0.3 ms, with 0.28 (0.6 steps) and 0.3 ms.
+        # main lost 0.265 and 0.27 ms: {0.25: 2, 0.3: 2}.
+        "dt grows": ([0.2375, 0.26, 0.265, 0.27, 0.28, 0.3], ((0.025, 10), (0.05, 10)), {0.25: 2, 0.3: 4}),
+        # dt shrinks at 0.25 ms. The 0.05 ms boundary at 0.25 ms takes
+        # [0.225, 0.275): 0.23, 0.26, 0.27, 0.2625. 0.28 ms is 1.2 steps of
+        # 0.025 ms past 0.25 ms (0.275 ms), 0.3 ms 2 steps. main delivered
+        # 0.27 and 0.2625 ms again at 0.275 ms: {0.25: 4, 0.275: 3, 0.3: 1}.
+        "dt shrinks": ([0.23, 0.26, 0.27, 0.2625, 0.28, 0.3], ((0.05, 5), (0.025, 10)), {0.25: 4, 0.275: 1, 0.3: 1}),
+        # As above with 0.245 ms, in the half new step before the change
+        # (L94): the 0.05 ms boundary at 0.25 ms took it. main: {0.25: 5,
+        # 0.275: 3, 0.3: 1}.
+        "dt shrinks, an event just before": (
+            [0.23, 0.245, 0.26, 0.27, 0.2625, 0.28, 0.3],
+            ((0.05, 5), (0.025, 10)),
+            {0.25: 5, 0.275: 1, 0.3: 1},
+        ),
+        # dt grows at 0.075 ms, off the 0.05 ms grid: the new steps count from
+        # 0.075 ms (CELL-48). Its 0.025 ms boundary takes [0.0625, 0.0875):
+        # 0.065 and 0.08. 0.09, 0.095 and 0.1 ms are 0.3, 0.4 and 0.5 steps of
+        # 0.05 ms past it; with 0.13 ms (1.1 steps) they act at 0.125 ms. main:
+        # {0.075: 2, 0.125: 2}.
+        "dt grows off the grid": (
+            [0.065, 0.08, 0.09, 0.095, 0.1, 0.13],
+            ((0.025, 3), (0.05, 6)),
+            {0.075: 2, 0.125: 4},
+        ),
+        # Two changes: the 0.05 ms boundary at 0.25 ms takes [0.225, 0.275);
+        # one 0.0125 ms step then prepares 0.2625 ms, whose window
+        # [0.25625, 0.26875) holds nothing new. From 0.2625 ms, off the 0.025
+        # ms grid, 0.276 and 0.28 ms are 0.54 and 0.7 steps on: the first new
+        # boundary, 0.2875 ms; 0.3 ms is a tie at 1.5 steps (0.3125 ms). main
+        # delivered 0.265 ms again at 0.2625 ms and 0.27 at 0.2875 ms: {0.25:
+        # 4, 0.2625: 1, 0.2875: 2, 0.3125: 1}.
+        "two changes": (
+            [0.24, 0.255, 0.265, 0.27, 0.276, 0.28, 0.3],
+            ((0.05, 5), (0.0125, 1), (0.025, 6)),
+            {0.25: 4, 0.2875: 2, 0.3125: 1},
+        ),
+    }
+
+    def _contexts(self):
+        return ((32, brainstate.environ.context(precision=32)), (64, _float64()))
+
+    def test_each_event_arrives_once_at_the_boundary_of_the_rule(self):
+        for name, (times, segments, expected) in self.CASES.items():
+            for precision, context in self._contexts():
+                with self.subTest(case=name, precision=precision), context:
+                    cell = CellArrivalStepTest._counting_cell(times)
+                    cell.init_state()
+                    got = _boundary_increments(cell, segments, _synapse_g)
+                    self.assertEqual(got, expected)
+                    self.assertAlmostEqual(_synapse_g(cell), len(times), places=4)
+
+    def test_one_run_per_segment_delivers_as_one_step_per_run(self):
+        # The second segment as one run gives what one step per run gives,
+        # bitwise; both keep the boundary at the change.
+        for name, (times, segments, expected) in self.CASES.items():
+            for precision, context in self._contexts():
+                with self.subTest(case=name, precision=precision), context:
+                    stepped = CellArrivalStepTest._counting_cell(times)
+                    stepped.init_state()
+                    _boundary_increments(stepped, segments, lambda c: 0.0)
+                    whole = CellArrivalStepTest._counting_cell(times)
+                    for dt_ms, n_steps in segments:
+                        whole.run(dt=dt_ms * u.ms, duration=n_steps * dt_ms * u.ms)
+                    self.assertEqual(_synapse_g(whole), _synapse_g(stepped))
+                    np.testing.assert_array_equal(whole.V.value.mantissa, stepped.V.value.mantissa)
+
+    def test_a_rule_updates_once_per_boundary_and_receives_each_event_once(self):
+        # Scheduled rule rows and the rule's post events follow the same rule
+        # as the other rows. Each boundary the runs prepare updates the rule
+        # once; its arrivals are those of the boundary.
+        for name in ("dt grows", "dt shrinks"):
+            times, segments, expected = self.CASES[name]
+            for precision, context in self._contexts():
+                with self.subTest(case=name, precision=precision), context, _rule_updates() as updates:
+                    cell, _ = _rule_cell(times)
+                    for dt_ms, n_steps in segments:
+                        cell.run(dt=dt_ms * u.ms, duration=n_steps * dt_ms * u.ms)
+                    jax.effects_barrier()
+                    # The first run prepares its boundaries 0 to n; a later one
+                    # finds its first prepared and prepares 1 to n.
+                    prepared, t_ms = [], 0.0
+                    for dt_ms, n_steps in segments:
+                        first = 1 if prepared else 0
+                        prepared += [round(t_ms + k * dt_ms, 6) for k in range(first, n_steps + 1)]
+                        t_ms += n_steps * dt_ms
+                    self.assertEqual([round(t, 6) for t, _, _ in updates], prepared)
+                    pre = {round(t, 6): int(n) for t, n, _ in updates if n}
+                    post = {round(t, 6): int(n) for t, _, n in updates if n}
+                    self.assertEqual(pre, expected)
+                    self.assertEqual(post, expected)
+                    x_pre = u.get_mantissa(cell.connections["learn"].rule_state("x_pre"))
+                    self.assertAlmostEqual(float(np.asarray(x_pre).reshape(-1)[0]), len(times), places=4)
+
+    def test_a_sum_count_synapse_counts_each_event_once(self):
+        # ExpSynSTD ("sum_count", U = 0.5, no recovery) keeps x = 0.5**K
+        # after K events, so each step's events are log2(x before / x after).
+        for name in ("dt grows", "dt shrinks"):
+            times, segments, expected = self.CASES[name]
+            for precision, context in self._contexts():
+                with self.subTest(case=name, precision=precision), context:
+                    cell = CellArrivalStepTest._counting_cell(times)
+                    cell.place(
+                        at(0, 0.5),
+                        mech.Synapse("ExpSynSTD", name="d", tau=1e9 * u.ms, U=0.5, tau_rec=1e9 * u.ms),
+                    )
+                    events = braincell.EventSequence.from_times([np.asarray(times) * u.ms])
+                    braincell.connect("d", source=events, synapse=cell.synapses["d"], weight=1.0 * u.uS)
+                    cell.init_state()
+                    (depressing,) = cell.runtime_objects(braincell.synapse.ExpSynSTD).values()
+
+                    def events_so_far(c):
+                        x = np.asarray(u.get_mantissa(depressing.x.value), dtype=np.float64).reshape(-1)[0]
+                        return -np.log2(float(x))
+
+                    got = _boundary_increments(cell, segments, events_so_far)
+                    self.assertEqual(got, expected)
+                    self.assertAlmostEqual(events_so_far(cell), len(times), places=4)
+
+
 class UpdateLoopTest(unittest.TestCase):
     """CELL-35: an ``update()`` loop matches ``run``, events on the first step included.
 

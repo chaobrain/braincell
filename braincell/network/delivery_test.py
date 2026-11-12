@@ -333,5 +333,88 @@ class DeliveryOrderTest(unittest.TestCase):
         self.assertEqual([route.weight for route in routes], [None, None])
 
 
+def _reference_delay_groups(blocks):
+    """``delivery_blocks(..., group_by_delay=True)`` before CELL-18g: one scan per delay."""
+    from braincell.network.delivery import DeliveryBlock, slice_weight
+
+    delivery = []
+    for block in blocks:
+        delay_steps = np.asarray(block.delay_steps, dtype=np.int32)
+        for delay_step in sorted(set(delay_steps.tolist())):
+            contact_indices = np.nonzero(delay_steps == int(delay_step))[0]
+            delivery.append(
+                DeliveryBlock(
+                    source=block,
+                    delay_steps=int(delay_step),
+                    pre_index=block.pre_index[contact_indices],
+                    flat_target_index=block.synapse_index[contact_indices].astype(np.int32, copy=False),
+                    weight=slice_weight(block.weight, contact_indices),
+                    weight_indices=contact_indices,
+                )
+            )
+    return tuple(delivery)
+
+
+class DelayGroupTest(unittest.TestCase):
+    """CELL-18g: each delay group lists its contacts, weights and indices as before."""
+
+    @staticmethod
+    def _block(rng, n, delays, weight_kind):
+        from braincell.network.lowering import ConnectionBlock
+
+        mantissa = rng.uniform(0.0, 1.0, n).astype(np.float32)
+        getter = None
+        if weight_kind == "quantity":
+            weight = u.Quantity(mantissa, u.uS)
+        elif weight_kind == "array":
+            weight = mantissa
+        else:
+            weight = None
+            getter = lambda: u.Quantity(jnp.asarray(mantissa), u.nS)  # noqa: E731
+        return ConnectionBlock(
+            pre_population="pre",
+            post_population="post",
+            synapse="syn",
+            layout_id=0,
+            n_active=n,
+            pre_index=rng.integers(0, 50, n).astype(np.int32),
+            post_index=rng.integers(0, 40, n).astype(np.int64),
+            synapse_index=rng.integers(0, 40, n).astype(np.int64),
+            weight=weight,
+            delay_steps=np.asarray(delays, dtype=np.int64),
+            event_source=None,
+            weight_getter=getter,
+        )
+
+    def test_groups_match_one_scan_per_delay(self) -> None:
+        from braincell.network.delivery import delivery_blocks
+
+        rng = np.random.default_rng(18)
+        blocks = (
+            self._block(rng, 200, rng.integers(0, 12, 200), "quantity"),
+            self._block(rng, 7, [3, 3, 3, 3, 3, 3, 3], "array"),
+            self._block(rng, 0, [], "quantity"),
+            self._block(rng, 30, rng.integers(0, 4, 30)[::-1], "getter"),
+            self._block(rng, 9, [5, 0, 5, 1, 0, 9, 9, 1, 5], "array"),
+        )
+        actual, expected = delivery_blocks(blocks, group_by_delay=True), _reference_delay_groups(blocks)
+        self.assertEqual(len(actual), len(expected))
+        for index, (got, want) in enumerate(zip(actual, expected)):
+            with self.subTest(index=index):
+                self.assertIs(got.source, want.source)
+                self.assertEqual(type(got.delay_steps), type(want.delay_steps))
+                self.assertEqual(got.delay_steps, want.delay_steps)
+                for name in ("pre_index", "flat_target_index", "weight_indices"):
+                    np.testing.assert_array_equal(getattr(got, name), getattr(want, name), err_msg=name)
+                    self.assertEqual(getattr(got, name).dtype, getattr(want, name).dtype, name)
+                got_weight, want_weight = got.weight, want.weight
+                self.assertEqual(type(got_weight), type(want_weight))
+                if isinstance(want_weight, u.Quantity):
+                    self.assertEqual(got_weight.unit, want_weight.unit)
+                    got_weight, want_weight = got_weight.mantissa, want_weight.mantissa
+                np.testing.assert_array_equal(np.asarray(got_weight), np.asarray(want_weight))
+                self.assertEqual(np.asarray(got_weight).dtype, np.asarray(want_weight).dtype)
+
+
 if __name__ == "__main__":
     unittest.main()

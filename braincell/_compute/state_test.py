@@ -44,7 +44,7 @@ def _initial_samples(cell) -> dict:
 
 
 class CellRuntimeStateTest(unittest.TestCase):
-    """Runtime state construction, mutation, and probe sampling."""
+    """Runtime state construction, mutation, and recorded reads."""
 
     def test_synapse_mechanism_builds_sparse_runtime_node_and_event_buffer(self) -> None:
         cell = Cell(_build_tree())

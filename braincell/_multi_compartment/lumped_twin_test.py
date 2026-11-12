@@ -507,7 +507,7 @@ def _gaba_cell(kind, ion, solver):
 
 
 class LumpedSynapseTwinTest(LumpedTwinTestCase):
-    """A synapse that reads and writes chloride, deprecated probes and the solver rule."""
+    """A synapse that reads and writes chloride, and the solver rule."""
 
     def test_chloride_synapse(self) -> None:
         for ion in ("ChlorideInitNernst", "Cldif_JE2011"):

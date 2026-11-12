@@ -59,7 +59,7 @@ def _clamp_areas(areas_cm2, *, n_point: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 class RuntimeLayoutTest(unittest.TestCase):
-    """Layout construction, clamp evaluation, and probe layout allocation."""
+    """Layout construction and clamp evaluation."""
 
     def test_density_mechanism_builds_dense_layout_with_global_shape(self) -> None:
         cell = Cell(_build_tree())

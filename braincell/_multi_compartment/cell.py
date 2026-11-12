@@ -4917,10 +4917,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         ``dt`` keeps that boundary as it is, skips the events it took, and
         delivers the others on its own steps, counted from the time reached
         when that is not a multiple of the new ``dt``, but not on the step
-        at that time. So within half a step of the change an event can act
-        a step later than on the new grid: after 10 steps of 0.025 ms, at
-        ``dt = 0.05 ms`` events at 0.265 and 0.27 ms act at 0.3 ms, not
-        0.25 ms. A Cell run on its own after a Network at another ``dt``
+        at that time. So within half of the old step of the change an event
+        can act a step later or earlier than on the new grid: after 10
+        steps of 0.025 ms, at ``dt = 0.05 ms`` events at 0.265 and 0.27 ms
+        act at 0.3 ms, not 0.25 ms; after 5 steps of 0.05 ms, at
+        ``dt = 0.025 ms`` events at 0.2625 and 0.27 ms act at 0.25 ms, not
+        0.275 ms. A Cell run on its own after a Network at another ``dt``
         skips the events the Network delivered in the same way. A traced
         run (inside ``jax.jit``) has no host clock: it counts the arrivals
         on the grid from time 0, without this hand-over.

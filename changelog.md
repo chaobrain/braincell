@@ -2061,14 +2061,15 @@
   stays the earlier run's: the later run, or the Network's first step,
   leaves it as it is, skips the events it took, and delivers the others on
   its own steps, no earlier than the next one. Every event arrives once, and
-  a rule updates once per boundary. Within half a step of the change an
-  event can act a step later than on the new grid from the start: at
-  `dt = 0.05 ms` after 10 steps of 0.025 ms, events at 0.265 and 0.27 ms
-  act at 0.3 ms, not 0.25 ms. Runs that keep `dt`, and Networks whose
-  Cells did not run on their own, are unchanged bit for bit. The first
-  Network run after such a join compiles a loop of its own. A traced
-  `Cell.run` (inside `jax.jit`) still counts its arrivals from time 0,
-  without the hand-over.
+  a rule updates once per boundary. Within half of the old step of the
+  change an event can act a step later or earlier than on the new grid
+  from the start: at `dt = 0.05 ms` after 10 steps of 0.025 ms, events at
+  0.265 and 0.27 ms act at 0.3 ms, not 0.25 ms; at `dt = 0.025 ms` after
+  5 steps of 0.05 ms, those at 0.2625 and 0.27 ms act at 0.25 ms, not
+  0.275 ms. Runs that keep `dt`, and Networks whose Cells did not run on
+  their own, are unchanged bit for bit. The first Network run after such a
+  join compiles a loop of its own. A traced `Cell.run` (inside `jax.jit`)
+  still counts its arrivals from time 0, without the hand-over.
 
 ### Documentation
 

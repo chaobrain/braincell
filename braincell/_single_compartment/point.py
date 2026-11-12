@@ -1,4 +1,4 @@
-# Copyright 2024 BrainX Ecosystem Limited. All Rights Reserved.
+# Copyright 2026 BrainX Ecosystem Limited. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+
+"""Point-neuron math: the private base of the lumped Cell's engine.
+
+:class:`PointNeuron` integrates ``C dV/dt = sum of channel currents + I_ext``
+for a population with no spatial axis. The lumped Cell's engine
+(``LumpedRuntime``, ``braincell/_multi_compartment/lumped.py``) subclasses it
+and replaces the membrane area with that of the Cell's one CV.
+"""
 
 from typing import Callable, Dict, Optional, Tuple, Union
 
@@ -27,79 +35,54 @@ from braincell._typing import Initializer, Size
 from braincell.quad import get_integrator
 from braincell.quad.protocol import IndependentIntegration, state, state_grouping
 
-__all__ = [
-    'SingleCompartment',
-]
+__all__ = ["PointNeuron"]
 
 
-class SingleCompartment(HHTypedNeuron):
-    r"""Base class to model conductance-based neurons with single compartment.
+class PointNeuron(HHTypedNeuron):
+    r"""Conductance-based neuron population with no spatial axis.
 
-    The standard formulation for a conductance-based point neuron model is given as
+    The voltage of each member obeys
 
     .. math::
 
-        C_m {dV \over dt} = \sum_jg_j(E - V) + I_{ext}
+        C {dV \over dt} = \sum_j I_j(V) + I_{ext}
 
-    where :math:`g_j=\bar{g}_{j} M^x N^y` is the channel conductance, :math:`E` is the
-    reversal potential, :math:`M` is the activation variable, :math:`N` is the
-    inactivation variable, $\bar{g}_{j}$ is the maximum conductance.
+    where the :math:`I_j` are the currents of the ion channels and ions
+    attached to the neuron, all current densities. The solver advances ``V``
+    together with the states of the channels that do not integrate
+    themselves (:class:`~braincell.IndependentIntegration`); :meth:`update`
+    first calls every channel's ``ind_update``.
 
-    :math:`M` and :math:`N` have the dynamics of
-
-    .. math::
-
-        {d x \over dt} = \phi_x {x_\infty (V) - x \over \tau_x(V)}
-
-    where :math:`x \in [M, N]`, :math:`\phi_x` is a temperature-dependent factor,
-    :math:`x_\infty` is the steady state, and :math:`\tau_x` is the time constant.
-    Equivalently, the above equation can be written as:
-
-    .. math::
-
-        \frac{d x}{d t}=\phi_{x}\left(\alpha_{x}(1-x)-\beta_{x} x\right)
-
-    where :math:`\alpha_{x}` and :math:`\beta_{x}` are rate constants.
-
-    The implementations of $x$ please see ``braincell.ion``, and ``braincell.channel`` modules.
+    This is the base of the lumped :class:`~braincell.Cell`'s engine
+    (``LumpedRuntime``); it is not public. It holds the math of the point-neuron
+    class that braincell 0.3 removed: a point neuron is now written as
+    ``Cell.point(...)``.
 
     Parameters
     ----------
     size : int, sequence of int
-        The network size of this neuron group.
-    length : Union[brainstate.typing.ArrayLike, Callable], optional
-        Compartment length used to compute membrane area. Default is 10 um
-    radius : Union[brainstate.typing.ArrayLike, Callable], optional
-        Compartment radius used to compute membrane area. Default is 5 um
-    C : Union[brainstate.typing.ArrayLike, Callable], optional
-        Membrane capacitance. Default is 1.0 uF/cm²
-    V_th : Union[brainstate.typing.ArrayLike, Callable], optional
-        Threshold voltage for spike detection. Default is 0.0 mV
-    V_initializer : Union[brainstate.typing.ArrayLike, Callable], optional
-        Initial membrane potential distribution. Default is uniform between -70 mV and -60 mV
+        The population shape.
+    C : Initializer, optional
+        Specific membrane capacitance. Default is 1.0 uF/cm^2.
+    V_th : Initializer, optional
+        Spike threshold. Default is 0.0 mV.
+    V_initializer : Initializer, optional
+        Initial membrane potential. Default is uniform between -70 mV and
+        -60 mV.
     spk_fun : Callable, optional
-        Spike function for threshold crossing detection. Default is ReLU gradient
+        Surrogate spike function. Default is ``braintools.surrogate.ReluGrad()``.
     solver : str or Callable, optional
-        Numerical integration method, a name accepted by
-        :func:`braincell.quad.get_integrator` or a step function. Default is
-        ``'ralston2'`` (Ralston's second-order Runge-Kutta method).
+        A name accepted by :func:`braincell.quad.get_integrator` or a step
+        function. Default is ``'ralston2'``.
     name : str, optional
         The neuron group name.
-    **ion_channels : dict
-        Additional ion channels to include in the neuron model
-
-    Notes
-    -----
-    This class is subclassed from :class:`braincell.HHTypedNeuron`.
+    **ion_channels
+        Ions and channels to attach, keyed by attribute name.
     """
-
-    __module__ = 'braincell'
 
     def __init__(
         self,
         size: Size,
-        length: Initializer = 10.0 * u.um,
-        radius: Initializer = 5.0 * u.um,
         C: Initializer = 1.0 * u.uF / u.cm**2,
         V_th: Initializer = 0.0 * u.mV,
         V_initializer: Initializer = braintools.init.Uniform(-70 * u.mV, -60.0 * u.mV),
@@ -109,9 +92,6 @@ class SingleCompartment(HHTypedNeuron):
         **ion_channels,
     ):
         super().__init__(size, name=name, **ion_channels)
-        assert self.n_compartment == 1, "SingleCompartment neuron should have only one compartment."
-        self.length = braintools.init.param(length, self.varshape)
-        self.radius = braintools.init.param(radius, self.varshape)
         self.C = braintools.init.param(C, self.varshape)
         self.V_th = braintools.init.param(V_th, self.varshape)
         self.V_initializer = V_initializer
@@ -139,14 +119,12 @@ class SingleCompartment(HHTypedNeuron):
         """
         Get the number of compartments in this neuron model.
 
-        For the :class:`SingleCompartment` model, this always returns 1 since it's a point
-        neuron model with only one compartment. Multi-compartment models would
-        override this property to return their respective number of compartments.
+        A point neuron has one compartment.
 
         Returns
         -------
         int
-            The number of compartments, which is 1 for :class:`SingleCompartment` neurons.
+            The number of compartments, which is 1.
         """
         return 1
 
@@ -189,11 +167,6 @@ class SingleCompartment(HHTypedNeuron):
             elif isinstance(ch, Ion):
                 ch._run_on_dependent_children(ch._channels(), hook, self.V.value)
 
-    @property
-    def area(self):
-        """Membrane area used to convert injected current into current density."""
-        return 2.0 * u.math.pi * self.radius * self.length
-
     def init_state(self, batch_size=None):
         """
         Initialize the state of the neuron.
@@ -205,16 +178,11 @@ class SingleCompartment(HHTypedNeuron):
         ----------
         batch_size : int, optional
             The batch size for initialization. If None, no batch dimension is added.
-
-        Returns
-        -------
-        None
         """
-        # A SingleCompartment has no spatial axis, so its hidden states are
-        # plain (non-grouped) states. The scope is set explicitly rather than
-        # left to the default so that a program building both a
-        # SingleCompartment and a Cell is correct regardless of construction
-        # order.
+        # A point neuron has no spatial axis, so its hidden states are plain
+        # (non-grouped) states. The scope is set explicitly rather than left
+        # to the default so that a program building both a point neuron and
+        # a cable Cell is correct regardless of construction order.
         with state_grouping(False):
             self.V = state(braintools.init.param(self.V_initializer, self.varshape, batch_size))
             self.spike = brainstate.ShortTermState(_zero_spike_like(self.V.value))
@@ -262,8 +230,7 @@ class SingleCompartment(HHTypedNeuron):
         ----------
         I_ext : float, optional
             External current input, in the unit system of ``C``: a current
-            density with the default ``C`` in uF/cm^2. It is not converted
-            by ``area``.
+            density with the default ``C`` in uF/cm^2.
         """
         channels = self._ion_channels()
         I_ext = self.sum_current_inputs(I_ext, self.V.value)

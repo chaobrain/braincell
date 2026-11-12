@@ -27,12 +27,16 @@ the developer conventions.
 
 Run ``python -m braincell._deprecation MAJOR.MINOR`` before a release to list
 the deprecations due by that release.
+
+A name that a release removed is not a deprecation: :func:`removed_attributes`
+serves a module ``__getattr__`` whose error names the replacement.
 """
 
 from __future__ import annotations
 
 import argparse
 import dataclasses
+import dis
 import importlib
 import os
 import pkgutil
@@ -48,6 +52,7 @@ __all__ = [
     "import_all",
     "main",
     "registered",
+    "removed_attributes",
     "user_frame",
     "warn_at_user_frame",
 ]
@@ -58,6 +63,7 @@ _PACKAGE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + os.
 _DATACLASSES_FILE = os.path.abspath(dataclasses.__file__)
 _MINOR = re.compile(r"(\d+)\.(\d+)")
 _CATEGORIES = (DeprecationWarning, FutureWarning)
+_IMPORT_FROM = dis.opmap["IMPORT_FROM"]
 _PLACES = ("caller", "user")
 
 #: Every :class:`Deprecation` constructed so far, by name.
@@ -368,6 +374,54 @@ def deprecated_attributes(module: str, attributes: Mapping[str, tuple[Deprecatio
         if getframe is None or not _is_fromlist_probe(getframe(1)):
             deprecation.warn()
         return value
+
+    return __getattr__
+
+
+def _is_import_from(frame) -> bool:
+    """Whether ``frame`` is executing ``IMPORT_FROM``, the lookup of ``from M import X``."""
+    try:
+        return frame.f_code.co_code[frame.f_lasti] == _IMPORT_FROM
+    except (AttributeError, IndexError, TypeError):
+        return False
+
+
+def removed_attributes(module: str, attributes: Mapping[str, str]) -> Callable[[str], Any]:
+    """Return a module ``__getattr__`` for names that a release removed.
+
+    ``M.X`` raises ``AttributeError`` with ``attributes[X]`` as its message;
+    ``from M import X`` raises ``ImportError`` with the same message (Python
+    would otherwise replace the ``AttributeError`` of a module ``__getattr__``
+    with a bare "cannot import name"). ``hasattr(M, X)`` is ``False``. These
+    names are not deprecations and are not registered.
+
+    Parameters
+    ----------
+    module : str
+        The module's ``__name__``, for the ``AttributeError`` of other names.
+    attributes : Mapping
+        ``{name: message}``; each message names the release that removed the
+        name and what to use instead.
+
+    Returns
+    -------
+    callable
+        Assign it to the module's ``__getattr__``.
+    """
+    attributes = dict(attributes)
+    for name, message in attributes.items():
+        if not (isinstance(message, str) and message):
+            raise TypeError(f"{module}.{name}: expected a non-empty message; got {message!r}.")
+
+    def __getattr__(name: str) -> Any:
+        try:
+            message = attributes[name]
+        except KeyError:
+            raise AttributeError(f"module {module!r} has no attribute {name!r}") from None
+        getframe = getattr(sys, "_getframe", None)
+        if getframe is not None and _is_import_from(getframe(1)):
+            raise ImportError(message, name=module)
+        raise AttributeError(message)
 
     return __getattr__
 

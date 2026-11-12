@@ -3360,23 +3360,6 @@ class _MatMul(brainstate.nn.Module):
         return u.math.matmul(spikes, self.weight)
 
 
-class MultiCompartmentAliasTest(unittest.TestCase):
-    """``MultiCompartment`` is a second name for ``Cell``, not a subclass."""
-
-    def test_alias_is_the_same_object_everywhere_it_is_exported(self) -> None:
-        # Identity, not equality: a subclass or wrapper would break
-        # ``isinstance`` checks written against the other name.
-        self.assertIs(braincell.MultiCompartment, braincell.Cell)
-        self.assertIs(cell_module.MultiCompartment, cell_module.Cell)
-        self.assertIn("MultiCompartment", braincell.__all__)
-        self.assertIn("MultiCompartment", cell_module.__all__)
-
-    def test_instances_built_through_the_alias_are_cells(self) -> None:
-        cell = braincell.MultiCompartment(_soma_tree())
-        self.assertIsInstance(cell, braincell.Cell)
-        self.assertEqual(cell.pop_size, (1,))
-
-
 def _topology_cell(**kwargs) -> Cell:
     from braincell._discretization import CVPerBranch
     from braincell.morph._testing import make_soma_dend_tree

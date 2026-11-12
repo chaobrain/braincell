@@ -96,7 +96,7 @@ class BackwardEulerHostMergingTest(unittest.TestCase):
         np.testing.assert_allclose(x1, expected, rtol=0, atol=1e-12)
 
     def test_stack_host_gets_one_block_per_state_row(self):
-        # 'stack' (SingleCompartment, a plain DiffEqModule) solves each row on
+        # 'stack' (the lumped Cell's engine, a plain DiffEqModule) solves each row on
         # its own; jacrev over the last axis then sees the column sum of A,
         # here -1/tau, so x_1 = x_0 + dt f(x_0) / (1 + dt / tau).
         x0, x1, A = _one_coupled_step(_StackedCompartments)

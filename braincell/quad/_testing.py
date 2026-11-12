@@ -36,6 +36,7 @@ import brainunit as u
 import jax.numpy as jnp
 
 import braincell
+from braincell._single_compartment.point import PointNeuron
 from braincell.quad.protocol import DiffEqModule, DiffEqSingleState
 
 __all__ = [
@@ -163,8 +164,12 @@ def drive(method, dt_ms: float = 0.1, n_steps: int = 100, x0: float = 1.0, tau_m
     return float(m.x.value.to_decimal(u.mV)[0]), m
 
 
-class HH(braincell.SingleCompartment):
-    """One-compartment Hodgkin-Huxley neuron used as a solver reference model."""
+class HH(PointNeuron):
+    """One-compartment Hodgkin-Huxley neuron used as a solver reference model.
+
+    Built on :class:`PointNeuron`, the point-neuron base of the lumped Cell's
+    engine, with its defaults.
+    """
 
     def __init__(self, size, solver='rk4'):
         super().__init__(size, solver=solver)

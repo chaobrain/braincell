@@ -21,10 +21,10 @@ and :class:`DiffEqGroupState` — the :class:`DiffEqModule` mixin that
 declares a module integrable, and the host-scoped factory that chooses
 between the grouped and ungrouped classes.
 
-Which class a hidden state gets is a per-host decision:
-:class:`braincell.SingleCompartment` has no spatial axis and uses
-:class:`DiffEqSingleState`, while :class:`braincell.Cell` groups its
-trailing compartment axis with :class:`DiffEqGroupState`.
+Which class a hidden state gets is a per-host decision: a lumped
+:class:`braincell.Cell` (:meth:`~braincell.Cell.point`) has no spatial axis
+and uses :class:`DiffEqSingleState`, while a cable :class:`braincell.Cell`
+groups its trailing compartment axis with :class:`DiffEqGroupState`.
 """
 
 import contextlib
@@ -89,9 +89,9 @@ class DiffEqState(brainstate.mixin.Mixin):
 
     See Also
     --------
-    DiffEqSingleState : Concrete ungrouped state, used by
-        ``SingleCompartment``.
-    DiffEqGroupState : Concrete grouped state, used by ``Cell``.
+    DiffEqSingleState : Concrete ungrouped state, used by a lumped
+        ``Cell``.
+    DiffEqGroupState : Concrete grouped state, used by a cable ``Cell``.
     DiffEqModule : Container that owns and updates the states.
     """
 
@@ -173,7 +173,7 @@ class DiffEqSingleState(DiffEqState, brainstate.HiddenState):
     """An integrable hidden state with no trailing state axis.
 
     This is the state class used by every hidden variable owned by a
-    :class:`braincell.SingleCompartment`, which has no spatial axis: one
+    lumped :class:`braincell.Cell`, which has no spatial axis: one
     value per element of ``varshape``, and nothing to group.
 
     See Also
@@ -222,8 +222,8 @@ class DiffEqGroupState(DiffEqState, brainstate.HiddenGroupState):
 
     See Also
     --------
-    DiffEqSingleState : The ungrouped counterpart used by
-        ``SingleCompartment``.
+    DiffEqSingleState : The ungrouped counterpart used by a lumped
+        ``Cell``.
     state : Host-scoped factory that picks between the two.
 
     Examples
@@ -253,8 +253,8 @@ _STATE_GROUPING = contextvars.ContextVar('braincell_state_grouping', default=Fal
 def state_grouping(enabled: bool = True) -> Iterator[bool]:
     """Scope whether :func:`state` / :func:`hidden_state` group.
 
-    Channel, ion, and synapse code is shared by
-    :class:`braincell.SingleCompartment` and :class:`braincell.Cell`, so
+    Channel, ion, and synapse code is shared by the lumped and the cable
+    :class:`braincell.Cell`, so
     the correct hidden-state class cannot be chosen statically at the
     creation site. Instead the *host* publishes its identity for the
     duration of ``init_state`` / ``reset_state``, and the factories read
@@ -267,8 +267,8 @@ def state_grouping(enabled: bool = True) -> Iterator[bool]:
     Parameters
     ----------
     enabled : bool, default True
-        ``True`` inside a :class:`braincell.Cell`, ``False`` inside a
-        :class:`braincell.SingleCompartment`. Both hosts set it
+        ``True`` inside a cable :class:`braincell.Cell`, ``False`` inside a
+        lumped one. Both hosts set it
         explicitly, so a program that builds both is correct regardless
         of construction order.
 
@@ -377,8 +377,8 @@ class DiffEqModule(brainstate.mixin.Mixin):
       the integrated values have been written back. Use it to clamp
       states, project onto manifolds, or fire post-step events.
 
-    Concrete subclasses include :class:`braincell.SingleCompartment` and
-    :class:`braincell.Cell`. Solvers receive a :class:`DiffEqModule`
+    Concrete subclasses include :class:`braincell.Cell` and the
+    subclasses of :class:`braincell.HHTypedNeuron`. Solvers receive a :class:`DiffEqModule`
     as their ``target`` argument and read ``t``/``dt`` from the active
     :mod:`brainstate.environ` context.
 

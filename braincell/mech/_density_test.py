@@ -267,7 +267,7 @@ class DensityImmutabilityTest(unittest.TestCase):
 
 
 class _UnregisteredLeak(braincell.Channel):
-    """An ohmic leak no registry knows, as SingleCompartment users write them."""
+    """An ohmic leak no registry knows, as users write them by hand."""
 
     root_type = braincell.HHTypedNeuron
 

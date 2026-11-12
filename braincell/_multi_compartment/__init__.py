@@ -15,7 +15,7 @@
 
 """Multi-compartment cell declaration + runtime."""
 
-from braincell._multi_compartment.cell import Cell, CellView, MultiCompartment
+from braincell._multi_compartment.cell import Cell, CellView
 from braincell._multi_compartment.run import RunResult
 from braincell._multi_compartment.synapses import SynapseView
 from braincell._multi_compartment.clamps import ClampView
@@ -27,7 +27,6 @@ __all__ = [
     "ChannelView",
     "ClampView",
     "IonView",
-    "MultiCompartment",
     "RunResult",
     "SynapseView",
 ]

@@ -409,8 +409,7 @@ class Morphology:
         named ``soma`` because every public name of :class:`Morphology` is
         reserved and cannot be used as a branch name. The membrane
         area is the cylinder's lateral area :math:`2 \\pi r L`; the defaults
-        give the same area as :class:`braincell.SingleCompartment`'s default
-        ``length`` and ``radius``.
+        are those of :meth:`braincell.Cell.point`.
 
         Parameters
         ----------

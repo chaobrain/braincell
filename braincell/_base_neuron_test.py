@@ -59,9 +59,9 @@ class HHTypedNeuronGetSpikeTest(unittest.TestCase):
     """ARCH-04: get_spike lives on the shared base, not on each subclass."""
 
     def test_arrival_boundary_does_not_repeat_at_threshold(self):
-        from braincell._single_compartment.base import SingleCompartment
+        from braincell._single_compartment.point import PointNeuron
 
-        sc = SingleCompartment(size=1, V_th=0.0 * u.mV)
+        sc = PointNeuron(size=1, V_th=0.0 * u.mV)
         old, new = np.meshgrid([-1.0, 0.0, 1.0], [-1.0, 0.0, 1.0])
         actual = sc.get_spike(jnp.asarray(old) * u.mV, jnp.asarray(new) * u.mV)
         np.testing.assert_array_equal(actual, (old < 0) & (new >= 0))
@@ -70,23 +70,25 @@ class HHTypedNeuronGetSpikeTest(unittest.TestCase):
         self.assertTrue(hasattr(HHTypedNeuron, "get_spike"))
         self.assertTrue(callable(HHTypedNeuron.get_spike))
 
-    def test_single_compartment_inherits_get_spike(self) -> None:
-        from braincell._single_compartment.base import SingleCompartment
+    def test_point_neuron_inherits_get_spike(self) -> None:
+        from braincell._multi_compartment.lumped import LumpedRuntime
+        from braincell._single_compartment.point import PointNeuron
 
-        self.assertIs(
-            SingleCompartment.get_spike,
-            HHTypedNeuron.get_spike,
-            msg="SingleCompartment must not redefine get_spike after ARCH-04",
-        )
+        for cls in (PointNeuron, LumpedRuntime):
+            self.assertIs(
+                cls.get_spike,
+                HHTypedNeuron.get_spike,
+                msg=f"{cls.__name__} must not redefine get_spike after ARCH-04",
+            )
 
-        sc = SingleCompartment(size=1, V_th=0.0 * u.mV)
+        sc = PointNeuron(size=1, V_th=0.0 * u.mV)
         spk = sc.get_spike(jnp.array([-10.0]) * u.mV, jnp.array([10.0]) * u.mV)
         self.assertGreater(float(spk[0]), 0.0)
 
     def test_default_crossing_surrogate_gradient_and_finite_support(self) -> None:
-        from braincell._single_compartment.base import SingleCompartment
+        from braincell._single_compartment.point import PointNeuron
 
-        sc = SingleCompartment(size=1, V_th=0.0 * u.mV)
+        sc = PointNeuron(size=1, V_th=0.0 * u.mV)
 
         def crossing(last_v_mantissa, next_v_mantissa):
             last_v = jnp.asarray([last_v_mantissa]) * u.mV
@@ -104,12 +106,12 @@ class HHTypedNeuronGetSpikeTest(unittest.TestCase):
 
 
 class ValueInputStepTest(unittest.TestCase):
-    """CELL-36: the step that consumes value inputs, shared by SingleCompartment and Cell."""
+    """CELL-36: the step that consumes value inputs, shared by the point neuron and Cell."""
 
     def _neuron(self):
-        from braincell._single_compartment.base import SingleCompartment
+        from braincell._single_compartment.point import PointNeuron
 
-        return SingleCompartment(size=1)
+        return PointNeuron(size=1)
 
     def test_step_keeps_values_for_every_read_and_removes_them_at_its_end(self) -> None:
         neuron = self._neuron()

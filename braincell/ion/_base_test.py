@@ -688,10 +688,11 @@ class DynamicNernstIonCiShapeTest(unittest.TestCase):
                 self.assertEqual(ion.Ci.value.shape, (2, 3))
                 np.testing.assert_allclose(ion.Ci.value.to_decimal(u.mM), np.full((2, 3), 2.4e-4), rtol=1e-6)
 
-    def test_single_compartment_with_a_scalar_initializer_integrates(self) -> None:
+    def test_point_neuron_with_a_scalar_initializer_integrates(self) -> None:
         import braincell
+        from braincell._single_compartment.point import PointNeuron
 
-        cell = braincell.SingleCompartment(1, V_initializer=braintools.init.Constant(-60.0 * u.mV), solver="ralston2")
+        cell = PointNeuron(1, V_initializer=braintools.init.Constant(-60.0 * u.mV), solver="ralston2")
         cell.ca = CalciumDetailed(1, Ci_initializer=2.4e-4 * u.mM)
         cell.ca.add(cat=braincell.channel.CaT_HM1992(1))
         brainstate.nn.init_all_states(cell)

@@ -117,10 +117,10 @@ def backward_euler_step(target: DiffEqModule, *args, excluded_paths=()):
     target : DiffEqModule
         The module whose differential states are to be advanced. Its
         :class:`DiffEqState` leaves are merged as it declares in
-        ``diffeq_state_merging``: ``'stack'`` (the default, e.g.
-        :class:`braincell.SingleCompartment`) gives one
-        ``n_state x n_state`` system per neuron, ``'concat'``
-        (:class:`braincell.Cell`) one system per cell over all of its
+        ``diffeq_state_merging``: ``'stack'`` (the default, e.g. the
+        engine of a lumped :class:`braincell.Cell`) gives one
+        ``n_state x n_state`` system per neuron, ``'concat'`` (a cable
+        :class:`braincell.Cell`) one system per cell over all of its
         compartments, axial coupling included.
     *args
         Extra positional arguments forwarded to ``target``'s

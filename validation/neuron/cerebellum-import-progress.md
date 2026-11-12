@@ -61,9 +61,9 @@ recording API of ``Network`` for supported observation interfaces.
   notebooks before promoting it to a regression baseline.
 - Not every Cerebellum MOD file has a BrainCell counterpart. The completed import focus was the
   ion/channel subset needed by the PC and calcium-pool comparisons.
-- These comparisons do not establish kinetic-ion equivalence for a future unified single mode.
-  SingleCompartment has its own update path; compatibility scope remains an open design question
-  (single/multi-compartment unification).
+- These comparisons predate the lumped `Cell` (`Cell.point`) and do not establish kinetic-ion
+  equivalence for it. A lumped `Cell` keeps the point-neuron update order, in which a kinetic ion
+  advances before the solver; on a cable `Cell` it advances after it.
 - The original record reported targeted scheduling/runtime, calcium-ion, and PC channel tests.
   It did not include a dated run manifest or complete tolerance table, and those results were not
   rerun during this documentation move.

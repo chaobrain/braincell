@@ -144,8 +144,8 @@ def exp_euler_step(target: DiffEqModule, *args):
     ----------
     target : DiffEqModule
         The neuron model to advance. Must be an :class:`HHTypedNeuron`
-        subclass — currently :class:`SingleCompartment` (states are
-        stacked along ``[n_neuron, n_state]``) or
+        subclass — currently the engine of a lumped :class:`braincell.Cell`
+        (states are stacked along ``[n_neuron, n_state]``) or a cable
         :class:`braincell.Cell` (states are concatenated along
         ``[n_neuron, n_compartment * n_state]``).
     *args

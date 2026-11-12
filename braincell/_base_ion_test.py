@@ -27,6 +27,7 @@ import jax.numpy as jnp
 import braincell
 from braincell._base_channel import Channel, IonChannel, IonInfo
 from braincell._base_ion import Ion, MixIons, mix_ions
+from braincell._single_compartment.point import PointNeuron
 from braincell.ion import CalciumFixed, PotassiumFixed, SodiumFixed
 
 
@@ -417,7 +418,7 @@ class EmptyPoolCurrentTest(unittest.TestCase):
     """
 
     def _kca_cell(self):
-        cell = braincell.SingleCompartment(1, V_initializer=braintools.init.Constant(-65.0 * u.mV))
+        cell = PointNeuron(1, V_initializer=braintools.init.Constant(-65.0 * u.mV))
         cell.k = braincell.ion.PotassiumFixed(1, E=-90.0 * u.mV)
         cell.ca = braincell.ion.CalciumDetailed(1, C_rest=2.4e-4 * u.mM, tau=10.0 * u.ms, d=0.5 * u.um)
         cell.kca = braincell.mix_ions(cell.k, cell.ca)
@@ -458,7 +459,7 @@ class MixIonsPackingTest(unittest.TestCase):
     """Each mixed ion is packed once per lifecycle call, not once per channel."""
 
     def _pool(self, n_channels: int):
-        cell = braincell.SingleCompartment(4, V_initializer=braintools.init.Constant(-65.0 * u.mV))
+        cell = PointNeuron(4, V_initializer=braintools.init.Constant(-65.0 * u.mV))
         cell.k = braincell.ion.PotassiumFixed(4, E=-90.0 * u.mV)
         cell.ca = braincell.ion.CalciumDetailed(4, C_rest=2.4e-4 * u.mM, tau=10.0 * u.ms, d=0.5 * u.um)
         cell.kca = braincell.mix_ions(cell.k, cell.ca)

@@ -20,6 +20,7 @@ import textwrap
 import unittest
 from pathlib import Path
 from types import ModuleType
+from unittest import mock
 
 from braincell._testing import (
     UnitSafetyGuardTests,
@@ -372,7 +373,7 @@ class ApiReferenceGapsTest(unittest.TestCase):
         self.braincell = braincell
         self.public = {
             "braincell.Cell": braincell.Cell,
-            "braincell.MultiCompartment": braincell.Cell,
+            "braincell.CellAlias": braincell.Cell,
             "braincell.CVPerBranchList": braincell.CVPerBranchList,
             "braincell.mix_ions": braincell.mix_ions,
             "braincell.filter": braincell.filter,
@@ -391,12 +392,14 @@ class ApiReferenceGapsTest(unittest.TestCase):
     def test_alias_with_a_second_entry_is_duplicated(self):
         entries = [
             ("braincell.Cell", "a.rst"),
-            ("braincell.MultiCompartment", "b.rst"),
+            ("braincell.CellAlias", "b.rst"),
             ("braincell.CVPerBranchList", "a.rst"),
             ("braincell.mix_ions", "b.rst"),
         ]
-        duplicated = [(("braincell.Cell", "a.rst"), ("braincell.MultiCompartment", "b.rst"))]
-        self.assertEqual(api_reference_gaps(entries, self.public), ([], duplicated, [], []))
+        duplicated = [(("braincell.Cell", "a.rst"), ("braincell.CellAlias", "b.rst"))]
+        # A hypothetical second path to Cell.
+        with mock.patch.object(self.braincell, "CellAlias", self.braincell.Cell, create=True):
+            self.assertEqual(api_reference_gaps(entries, self.public), ([], duplicated, [], []))
 
     def test_entry_for_an_internal_object_is_not_public(self):
         entries = [

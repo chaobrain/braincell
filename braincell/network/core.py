@@ -243,11 +243,11 @@ def _model_size_and_kind(model) -> tuple[int, str]:
     if isinstance(model, (NetStim, EventSequence)):
         return int(model.size), "netstim" if isinstance(model, NetStim) else "event_sequence"
     if not isinstance(model, Cell):
-        # A pop_size alone is not enough: a SingleCompartment has one but
-        # none of the Cell runtime the Network drives.
+        # A pop_size alone is not enough: a hand-written HHTypedNeuron has
+        # one but none of the Cell runtime the Network drives.
         raise TypeError(
             f"Population model must be a Cell, NetStim, or EventSequence; got {type(model).__name__!s}. "
-            "A SingleCompartment cannot join a Network; build the neuron as a braincell.Cell."
+            "A neuron model that is not a Cell cannot join a Network; build the neuron as a braincell.Cell."
         )
     pop_size = tuple(model.pop_size)
     if not pop_size:

@@ -5,6 +5,26 @@
 
 ### Breaking Changes
 
+- **`braincell.SingleCompartment` and `braincell.MultiCompartment` are removed**
+  (CELL-28). A point neuron is a lumped `Cell`: build it with
+  `braincell.Cell.point(...)` and declare its ions and channels with `paint`.
+  `MultiCompartment` was an alias of `Cell`. There is no deprecation period;
+  this removal is an exception for 0.3 that the project lead approved. Both
+  names raise `AttributeError` (`ImportError` on `from braincell import ...`)
+  that names the replacement, and they are gone from `__all__` and the API
+  reference. A lumped `Cell` runs the same point-neuron math: with the same
+  mechanisms it reproduces a `SingleCompartment` within 1e-9 mV in float64. The
+  cells guide ("Coming from `SingleCompartment`") translates a model line by
+  line; in short:
+
+  | Old | New |
+  |---|---|
+  | `class HH(braincell.SingleCompartment)` with `super().__init__(size, length=..., radius=..., V_initializer=..., ...)` | `cell = braincell.Cell.point(size, length=..., radius=..., V_init=..., ...)`; `V_th`, `spk_fun` and `solver` (default `ralston2`) keep their names |
+  | `C=...` | `cell.paint(mech.CableProperty(membrane_capacitance=...))` |
+  | `self.na = ion.SodiumFixed(size, E=...)` and `self.na.add(INa=channel.Na_HH1952(size, g_max=...))` | `cell.paint(mech.Ion("SodiumFixed", E=...), mech.Channel("Na_HH1952", g_max=...))` |
+  | after `init_state()`, HH gates start at 0; `reset_state()` puts them at their steady state | after `init_state()`, gates start at their steady state, so old results are matched only by code that called `reset_state()` |
+  | `model.update(I_ext)` in a loop of your own | the same on the `Cell`, or `cell.place(mech.CurrentClamp(...))`, `cell.record(...)` and `cell.run(...)` |
+  | `braincell.MultiCompartment` | `braincell.Cell` (the same class) |
 - **`braincell.vis` is removed; plotting lives in `braintools.visualize.morphology`**
   (VIS-4a). The plots moved to braintools (0.5.0) and read neutral data
   (`MorphologyData`, `TopologyGraph`) instead of braincell objects. braincell

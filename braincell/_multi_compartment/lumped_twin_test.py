@@ -519,7 +519,7 @@ class LumpedSynapseTwinTest(LumpedTwinTestCase):
                             self.assertTwin(lumped[key], cable[key], 1e-10, msg=key)
                         continue
                     # A kinetic ion advances in ``ind_update``: before the solver on
-                    # a lumped Cell (the SingleCompartment schedule), after it on the
+                    # a lumped Cell (the point-neuron schedule), after it on the
                     # cable Cell, so the recorded Ci leads by one step.
                     cable_ci = cable["ci"].reshape(lumped["ci"].shape)
                     np.testing.assert_array_equal(lumped["ci"][1:], cable_ci[:-1])

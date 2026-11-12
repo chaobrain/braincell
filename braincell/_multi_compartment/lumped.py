@@ -20,8 +20,9 @@ the one-CV discretization, ``cvs``) and replaces only the runtime. At
 ``init_state`` this module lowers the single CV into:
 
 - :class:`LumpedRuntime`, a point-neuron engine with the voltage, derivative
-  and update of :class:`~braincell.SingleCompartment`, whose mechanisms are
-  instantiated with ``size=pop_size`` -- there is no CV axis;
+  and update of the private base
+  :class:`~braincell._single_compartment.point.PointNeuron`, whose mechanisms
+  are instantiated with ``size=pop_size`` -- there is no CV axis;
 - :class:`LumpedClamps`, which evaluates the placed current clamps with the
   same helpers as the cable runtime and returns their total current.
 
@@ -91,7 +92,7 @@ from braincell._compute.parameters import (
 )
 from braincell._compute.state import CellRuntimeState
 from braincell._misc import is_traced_value
-from braincell._single_compartment import SingleCompartment
+from braincell._single_compartment.point import PointNeuron
 from braincell.channel._base import HH
 from braincell.ion import build_placeholder_ions
 from braincell.mech import (
@@ -248,11 +249,12 @@ def with_delta_inputs(owner, V, *args, **kwargs):
     return total
 
 
-class LumpedRuntime(SingleCompartment):
+class LumpedRuntime(PointNeuron):
     """Point-neuron engine of a lumped Cell.
 
-    It is :class:`~braincell.SingleCompartment` with the membrane area of the
-    Cell's one CV in place of ``2 pi radius length``. The Cell calls
+    It is the point-neuron math of
+    :class:`~braincell._single_compartment.point.PointNeuron` with the
+    membrane area of the Cell's one CV. The Cell calls
     :meth:`update` with the clamp current density, plus any ``I_ext`` given
     to ``Cell.update``, as ``I_ext``; the current inputs registered on the
     Cell are summed by :meth:`sum_current_inputs`.
@@ -296,7 +298,7 @@ class LumpedRuntime(SingleCompartment):
         )
         self._cv_area = area
         self._owner_ref = None if owner is None else weakref.ref(owner)
-        # Point synapses live one level down, so the SingleCompartment hooks
+        # Point synapses live one level down, so the point-neuron hooks
         # (which call every direct channel with ``V``) do not reach them; this
         # runtime calls them with the voltage of each synapse row instead.
         self._synapse_layouts = tuple(layout for layout, _ in synapses)
@@ -421,8 +423,8 @@ class LumpedRuntime(SingleCompartment):
     def sum_delta_inputs(self, init, *args, **kwargs):
         """Add the owning Cell's delta inputs (``add_delta_input``, brainpy ``DeltaProj``).
 
-        :class:`~braincell.SingleCompartment`'s ``post_integral`` calls this
-        at the end of every solver step, after the voltage and the mechanism
+        The point-neuron ``post_integral`` calls this at the end of every
+        solver step, after the voltage and the mechanism
         states have advanced, so an input moves ``V`` for the spike test of
         that step and for the steps after it (:func:`with_delta_inputs`).
         """
@@ -455,7 +457,7 @@ class LumpedRuntime(SingleCompartment):
         return u.Quantity(total).in_unit(u.nA / u.cm**2)
 
     def update(self, I_ext=0.0 * u.nA / u.cm**2):
-        """One step of :class:`~braincell.SingleCompartment`.
+        """One step of the point-neuron math (:meth:`PointNeuron.update`).
 
         An ion whose concentration integrates its total current, and which
         carries an ion-reading synapse's current, reads a snapshot taken at
@@ -479,7 +481,7 @@ class LumpedRuntime(SingleCompartment):
         """Add the owning Cell's current inputs, each as a current density.
 
         ``compute_derivative`` calls this at every solver stage with the
-        stage voltage, as :class:`~braincell.SingleCompartment` does. Each
+        stage voltage, as the point-neuron base does. Each
         input -- a brainpy projection's output such as ``COBA``, or any
         callable registered with ``Cell.add_current_input`` -- may return a
         current or a current density (:func:`as_current_density`). A

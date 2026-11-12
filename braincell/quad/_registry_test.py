@@ -209,13 +209,16 @@ class CellSolverNameTest(unittest.TestCase):
         self.assertEqual(cell.solver_name, "heun2")
 
 
-class SingleCompartmentDefaultTest(unittest.TestCase):
+class PointNeuronDefaultTest(unittest.TestCase):
     def test_default_solver_is_ralston2(self):
-        class Leak(braincell.SingleCompartment):
+        from braincell._single_compartment.point import PointNeuron
+
+        class Leak(PointNeuron):
             def __init__(self):
                 super().__init__(1)
 
-        self.assertIs(Leak().solver, get_integrator("ralston2"))
+        leak = Leak()
+        self.assertIs(leak.solver, get_integrator("ralston2"))
 
 
 if __name__ == "__main__":

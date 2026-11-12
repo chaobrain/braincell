@@ -41,7 +41,7 @@ __all__ = [
 #: runtime behaviour test; add a value here only together with its test.
 TRIGGER_AGGREGATIONS = frozenset({"count"})
 #: The aggregations a :class:`ScalarEventInput` may declare, under the same rule.
-SCALAR_AGGREGATIONS = frozenset({"sum"})
+SCALAR_AGGREGATIONS = frozenset({"sum", "sum_count"})
 
 #: Values accepted before braincell 0.3 that the runtime never honoured
 #: (CELL-40): it summed every payload and counted every trigger.
@@ -49,7 +49,9 @@ _REMOVED_TRIGGER_AGGREGATIONS = ("any", "ordered")
 _REMOVED_SCALAR_AGGREGATIONS = ("ordered",)
 
 
-def _check_aggregation(contract: str, aggregation: str, allowed: frozenset, removed: tuple, runtime: str) -> None:
+def _check_aggregation(
+    contract: str, aggregation: str, allowed: frozenset, removed: tuple, runtime: str, replacement: str
+) -> None:
     if aggregation in allowed:
         return
     supported = ", ".join(repr(value) for value in sorted(allowed))
@@ -57,7 +59,7 @@ def _check_aggregation(contract: str, aggregation: str, allowed: frozenset, remo
         raise ValueError(
             f"{contract}(aggregation={aggregation!r}) was removed in braincell 0.3: the runtime always "
             f"{runtime} the events that reach one synapse row on one boundary, so {aggregation!r} never took "
-            f"effect. Use aggregation={supported}."
+            f"effect. Use aggregation={replacement!r}."
         )
     kind = "trigger" if contract == "TriggerEventInput" else "scalar"
     raise ValueError(f"Unsupported {kind}-event aggregation {aggregation!r}. Supported: {supported}.")
@@ -106,7 +108,7 @@ class TriggerEventInput(EventInput):
 
     def __init__(self, *, aggregation: str = "count") -> None:
         _check_aggregation(
-            "TriggerEventInput", aggregation, TRIGGER_AGGREGATIONS, _REMOVED_TRIGGER_AGGREGATIONS, "counted"
+            "TriggerEventInput", aggregation, TRIGGER_AGGREGATIONS, _REMOVED_TRIGGER_AGGREGATIONS, "counted", "count"
         )
         super().__init__(payload_kind="trigger", aggregation=aggregation)
 
@@ -120,10 +122,18 @@ class ScalarEventInput(EventInput):
     unit : brainunit.Unit
         Unit the payload must be compatible with, such as ``u.uS`` for a
         conductance increment.
-    aggregation : {"sum"}, optional
+    aggregation : {"sum", "sum_count"}, optional
         How the payloads of the events that reach one synapse row on one
-        boundary combine. ``"sum"``, the only value, passes their sum to
-        ``apply_events``.
+        boundary combine. ``"sum"`` (the default) passes their sum
+        ``sum(w * n)`` to ``apply_events(payload, V_post=None)``.
+        ``"sum_count"`` passes the same sum and, as the keyword argument
+        ``count``, the number of those events ``sum(n)``:
+        ``apply_events(payload, V_post=None, *, count)``. ``count`` is a
+        dimensionless float array shaped like ``payload`` that holds whole
+        numbers, zero on rows without events. Every delivery path counts:
+        scheduled sources, the Network's delay queues and zero-delay
+        delivery, a standalone Cell's live connections, and rows with a
+        plasticity rule.
 
     Raises
     ------
@@ -132,18 +142,33 @@ class ScalarEventInput(EventInput):
         0.3, but the runtime summed the payloads anyway; it is now rejected
         with a pointer to ``"sum"``.
 
+    Notes
+    -----
+    The events that reach one synapse row on one boundary form an unordered
+    multiset, so a ``"sum_count"`` model may depend on ``(sum(w * n),
+    sum(n))`` only, not on each event's payload or their order. A
+    ``"sum_count"`` synapse class needs an ``apply_events`` that accepts
+    ``count``; :func:`~braincell.mech.register_synapse` rejects it otherwise.
+    A reduction model receives payload sums without counts and rejects a
+    ``"sum_count"`` synapse at ``init_state``. See
+    :class:`braincell.synapse.ExpSynSTD` for a model that uses the count.
+
     Examples
     --------
     >>> import brainunit as u
     >>> from braincell.mech import ScalarEventInput
     >>> ScalarEventInput(u.uS).aggregation
     'sum'
+    >>> ScalarEventInput(u.uS, aggregation="sum_count").aggregation
+    'sum_count'
     """
 
     unit: object
 
     def __init__(self, unit, *, aggregation: str = "sum") -> None:
-        _check_aggregation("ScalarEventInput", aggregation, SCALAR_AGGREGATIONS, _REMOVED_SCALAR_AGGREGATIONS, "summed")
+        _check_aggregation(
+            "ScalarEventInput", aggregation, SCALAR_AGGREGATIONS, _REMOVED_SCALAR_AGGREGATIONS, "summed", "sum"
+        )
         super().__init__(payload_kind="scalar", aggregation=aggregation)
         object.__setattr__(self, "unit", unit)
 

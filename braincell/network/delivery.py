@@ -102,6 +102,11 @@ class DeliveryState:
         Per-target-layout current ring-buffer cursors.
     delivery_ops : tuple
         Backend-specific functions mapping pre spikes to flattened events.
+    count_rings : tuple
+        One event-count ring per queue, shaped like its ring buffer, for a
+        queue whose target layout declares
+        ``ScalarEventInput(aggregation="sum_count")``; ``None`` for every
+        other queue. Empty when no queue counts (CELL-12b).
 
     Notes
     -----
@@ -116,6 +121,11 @@ class DeliveryState:
     block_queue_indices: tuple[int, ...]
     queue_keys: tuple[tuple[str, int], ...]
     queue_sources: tuple[ConnectionBlock, ...]
+    count_rings: tuple = ()
+
+    def count_ring(self, queue_index: int):
+        """The event-count ring of one queue, or ``None`` if its target layout does not count."""
+        return self.count_rings[queue_index] if self.count_rings else None
 
 
 def route_source_event(block: DeliveryBlock) -> object:
@@ -357,6 +367,7 @@ def create_delivery_state(
     blocks: tuple[DeliveryBlock, ...],
     *,
     delivery_ops: tuple,
+    counted: frozenset = frozenset(),
 ) -> DeliveryState:
     """Create persistent mutable state for network event delivery.
 
@@ -366,6 +377,10 @@ def create_delivery_state(
         Static delivery blocks for the run setup.
     delivery_ops : tuple
         Backend-specific event delivery callables, one per block.
+    counted : frozenset of tuple, optional
+        The ``(post_population, layout_id)`` queues whose target layout
+        declares ``ScalarEventInput(aggregation="sum_count")``; each gets an
+        event-count ring beside its ring buffer (CELL-12b).
 
     Returns
     -------
@@ -406,6 +421,14 @@ def create_delivery_state(
         for index, source in enumerate(queue_sources)
     )
     ring_cursors = tuple(brainstate.ShortTermState(jnp.asarray(0, dtype=jnp.int32)) for _ in queue_keys)
+    count_rings = ()
+    if any(key in counted for key in queue_keys):
+        count_rings = tuple(
+            brainstate.ShortTermState(jnp.zeros_like(u.get_mantissa(ring_buffers[index].value)))
+            if key in counted
+            else None
+            for index, key in enumerate(queue_keys)
+        )
     return DeliveryState(
         ring_buffers=ring_buffers,
         ring_cursors=ring_cursors,
@@ -413,7 +436,22 @@ def create_delivery_state(
         block_queue_indices=tuple(block_queue_indices),
         queue_keys=tuple(queue_keys),
         queue_sources=tuple(queue_sources),
+        count_rings=count_rings,
     )
+
+
+def _route_counts(block: DeliveryBlock, pre_spike, contacts=None, *, dtype):
+    """Per-target event counts of one route: ``pre_spike`` gathered per contact and summed per synapse row.
+
+    ``contacts`` selects the contacts that take part (a boolean mask over
+    the route's contacts); all of them when ``None``.
+    """
+    counts = jnp.asarray(pre_spike, dtype=dtype)[jnp.asarray(block.pre_index)]
+    target = np.asarray(block.flat_target_index)
+    if contacts is not None:
+        counts = counts[np.flatnonzero(contacts)]
+        target = target[contacts]
+    return jnp.zeros((int(block.source.n_active),), dtype=dtype).at[jnp.asarray(target)].add(counts)
 
 
 def write_arrivals(
@@ -447,7 +485,13 @@ def write_arrivals(
         )
         post_population, layout_id = key
         cell = populations[post_population].cell
-        cell._write_event_arrival(layout_id, arrival)
+        count_ring = state.count_ring(index)
+        if count_ring is None:
+            cell._write_event_arrival(layout_id, arrival)
+            continue
+        count = count_ring.value[cursor]
+        count_ring.value = count_ring.value.at[cursor].set(jnp.zeros_like(count))
+        cell._write_event_arrival(layout_id, arrival, count=count)
 
 
 def enqueue_future_events(
@@ -483,6 +527,10 @@ def enqueue_future_events(
             state.ring_buffers[queue_index].value = (
                 state.ring_buffers[queue_index].value.at[target_cursor].add(event.reshape((block.source.n_active,)))
             )
+            count_ring = state.count_ring(queue_index)
+            if count_ring is not None:
+                counts = _route_counts(block, pre_spike, dtype=count_ring.value.dtype)
+                count_ring.value = count_ring.value.at[target_cursor].add(counts)
             continue
 
         positive = delay_steps > 0
@@ -497,6 +545,13 @@ def enqueue_future_events(
             jnp.asarray(block.flat_target_index[positive]),
         ].add(contact_event[positive])
         state.ring_buffers[queue_index].value = flat_ring.reshape(ring.shape)
+        count_ring = state.count_ring(queue_index)
+        if count_ring is not None:
+            counts = jnp.asarray(pre_spike, dtype=count_ring.value.dtype)[jnp.asarray(block.pre_index)]
+            count_ring.value = count_ring.value.at[
+                target_cursor,
+                jnp.asarray(block.flat_target_index[positive]),
+            ].add(counts[positive])
 
 
 def apply_immediate_events(
@@ -505,8 +560,13 @@ def apply_immediate_events(
     *,
     populations: dict,
 ) -> None:
-    """Apply zero-delay population events at their detection boundary."""
+    """Apply zero-delay population events at their detection boundary.
+
+    A queue with an event-count ring (a ``"sum_count"`` target layout) also
+    passes the per-row number of these events as ``count`` (CELL-12b).
+    """
     grouped = {}
+    grouped_counts = {}
     for index, block in enumerate(blocks):
         pre_spike = route_source_event(block)
         delay_steps = np.asarray(block.delay_steps, dtype=np.int32)
@@ -514,6 +574,7 @@ def apply_immediate_events(
         if delay_steps.ndim == 0:
             if int(delay_steps) != 0:
                 continue
+            immediate = None
             event = state.delivery_ops[index](pre_spike).reshape((n_active,))
         else:
             immediate = delay_steps == 0
@@ -524,8 +585,17 @@ def apply_immediate_events(
             event = event.at[jnp.asarray(block.flat_target_index[immediate])].add(contact_event[immediate])
         key = (block.source.post_population, int(block.source.layout_id))
         grouped[key] = event if key not in grouped else grouped[key] + event
+        count_ring = state.count_ring(state.block_queue_indices[index])
+        if count_ring is not None:
+            counts = _route_counts(block, pre_spike, immediate, dtype=count_ring.value.dtype)
+            grouped_counts[key] = counts if key not in grouped_counts else grouped_counts[key] + counts
     for (post_population, layout_id), event in grouped.items():
-        populations[post_population].cell._apply_synapse_layout_event_drive(layout_id, event)
+        cell = populations[post_population].cell
+        count = grouped_counts.get((post_population, layout_id))
+        if count is None:
+            cell._apply_synapse_layout_event_drive(layout_id, event)
+        else:
+            cell._apply_synapse_layout_event_drive(layout_id, event, count=count)
 
 
 def advance_delivery_state(state: DeliveryState) -> None:

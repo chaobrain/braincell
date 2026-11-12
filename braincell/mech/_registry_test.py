@@ -15,9 +15,12 @@
 
 import unittest
 
+import brainunit as u
+
 from braincell.mech import (
     MechanismEntry,
     MechanismRegistry,
+    ScalarEventInput,
     register_channel,
     register_ion,
     register_synapse,
@@ -283,6 +286,71 @@ class DecoratorRegistrationTest(unittest.TestCase):
             x = 42
 
         self.assertEqual(_TC2.x, 42)
+
+
+def _counting_synapse(apply_events, aggregation="sum_count"):
+    """A synapse class stand-in whose event input is ``aggregation`` and whose handler is ``apply_events``."""
+    return type(
+        "_Counting",
+        (),
+        {"event_input": ScalarEventInput(u.uS, aggregation=aggregation), "apply_events": apply_events},
+    )
+
+
+class SumCountHandlerTest(MechanismRegistryIsolationMixin, unittest.TestCase):
+    """A ``"sum_count"`` synapse's ``apply_events`` must accept ``count`` (CELL-12b)."""
+
+    def setUp(self) -> None:
+        self._snapshot_entries = dict(_REGISTRY._entries)
+        self._snapshot_aliases = dict(_REGISTRY._aliases)
+
+    def tearDown(self) -> None:
+        _REGISTRY._entries = self._snapshot_entries
+        _REGISTRY._aliases = self._snapshot_aliases
+
+    def test_register_synapse_rejects_a_handler_without_count(self) -> None:
+        def apply_events(self, payload, V_post=None):
+            pass
+
+        with self.assertRaisesRegex(TypeError, "'__test_std__' declares ScalarEventInput.*keyword argument count"):
+            register_synapse("__test_std__")(_counting_synapse(apply_events))
+        self.assertFalse(_REGISTRY.contains("synapse", "__test_std__"))
+
+    def test_handlers_that_take_count(self) -> None:
+        def keyword_only(self, payload, V_post=None, *, count):
+            pass
+
+        def with_default(self, payload, V_post=None, count=None):
+            pass
+
+        def any_keyword(self, payload, V_post=None, **kwargs):
+            pass
+
+        reg = self.make_registry()
+        for index, handler in enumerate((keyword_only, with_default, any_keyword)):
+            cls = _counting_synapse(handler)
+            reg.register(MechanismEntry(category="synapse", name=f"S{index}", cls=cls))
+            self.assertIs(reg.get("synapse", f"S{index}"), cls)
+
+    def test_only_sum_count_synapses_are_checked(self) -> None:
+        def apply_events(self, payload, V_post=None):
+            pass
+
+        reg = self.make_registry()
+        summing = _counting_synapse(apply_events, aggregation="sum")
+        reg.register(MechanismEntry(category="synapse", name="Summing", cls=summing))
+        reg.register(MechanismEntry(category="channel", name="Counting", cls=_counting_synapse(apply_events)))
+        self.assertIs(reg.get("synapse", "Summing"), summing)
+
+    def test_an_unregistered_class_is_checked_when_first_named(self) -> None:
+        def apply_events(self, payload, V_post=None):
+            pass
+
+        reg = self.make_registry()
+        cls = _counting_synapse(apply_events)
+        with self.assertRaisesRegex(TypeError, "keyword argument count"):
+            reg.key_for("synapse", cls)
+        self.assertFalse(reg.contains("synapse", "_Counting"))
 
 
 class BuiltinRegistrationTest(unittest.TestCase):

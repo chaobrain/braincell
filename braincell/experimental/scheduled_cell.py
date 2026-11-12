@@ -67,6 +67,12 @@ class ScheduledDeliveryCell(Cell):
                 f"Connections {tuple(call.name for call in rule_calls)!r} have plasticity rules, which this "
                 "experimental delivery plan does not support: it precomputes fixed-weight deliveries."
             )
+        counting = [layout.kind for layout in self._event_layouts() if self._event_count_state(layout.id) is not None]
+        if counting:
+            raise TypeError(
+                f"Synapse layouts {tuple(counting)!r} declare ScalarEventInput(aggregation='sum_count'), which this "
+                "experimental delivery plan does not support: it delivers payload sums without event counts."
+            )
         routes, plans, arrays = {}, [], []
         store = self._get_synapse_store()
         for layout in self._event_layouts():

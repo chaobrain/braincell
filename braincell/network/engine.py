@@ -876,6 +876,7 @@ class Network:
                 delivery_state = create_delivery_state(
                     setup.delivery_blocks,
                     delivery_ops=setup.delivery_ops,
+                    counted=self._counted_layouts(),
                 )
                 self._delivery_state_cache[setup_key] = delivery_state
             cached = _CachedRunLoop(
@@ -889,6 +890,15 @@ class Network:
             )
             self._network_run_loop_cache[key] = cached
         return cached
+
+    def _counted_layouts(self) -> frozenset:
+        """The ``(population, layout_id)`` pairs whose layout counts events (``"sum_count"``, CELL-12b)."""
+        return frozenset(
+            (name, int(layout_id))
+            for name, population in self._cell_populations().items()
+            if not population.cell._uses_reduction
+            for layout_id in population.cell._runtime.event_counts
+        )
 
     def _make_network_run_loop(
         self,
@@ -1215,3 +1225,6 @@ def _reset_delivery_state(state) -> None:
     for index in range(len(state.ring_buffers)):
         state.ring_buffers[index].value = u.math.zeros_like(state.ring_buffers[index].value)
         state.ring_cursors[index].value = np.asarray(0, dtype=np.int32)
+        count_ring = state.count_ring(index)
+        if count_ring is not None:
+            count_ring.value = jnp.zeros_like(count_ring.value)

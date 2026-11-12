@@ -95,7 +95,7 @@ class ScalarEventInputTest(unittest.TestCase):
         self.assertIs(contract.unit, u.uS)
 
     def test_every_supported_aggregation_is_accepted(self) -> None:
-        self.assertEqual(SCALAR_AGGREGATIONS, frozenset({"sum"}))
+        self.assertEqual(SCALAR_AGGREGATIONS, frozenset({"sum", "sum_count"}))
         for aggregation in SCALAR_AGGREGATIONS:
             self.assertEqual(ScalarEventInput(u.uS, aggregation=aggregation).aggregation, aggregation)
 
@@ -203,6 +203,19 @@ class AggregationBehaviourTest(unittest.TestCase):
         self.assertGreater(two[-1], 0.0)
         np.testing.assert_allclose(two, one, rtol=1e-12, atol=0.0)
 
+    def case_scalar_sum_count(self) -> None:
+        """Two 0.005 uS rows on one boundary pass the sum and a count of 2 (CELL-12b).
+
+        ``ExpSynSTD`` (``U = 0.5``, ``x = 1``) releases ``(W / K)(1 - 0.5^K)``:
+        0.0075 uS for two 0.005 uS events and 0.005 uS for one 0.01 uS event,
+        where ``"sum"`` would give both the same.
+        """
+        two = _g_after_events("ExpSynSTD", [0.005, 0.005] * u.uS)
+        one = _g_after_events("ExpSynSTD", [0.01] * u.uS)
+        self.assertEqual(two[0], 0.0)
+        self.assertGreater(two[-1], 0.0)
+        np.testing.assert_allclose(two, 0.75 * one, rtol=1e-12, atol=0.0)
+
     def case_trigger_count(self) -> None:
         """A trigger synapse hit twice on one boundary gets a count of 2."""
         name = "_CELL40TriggerCount"
@@ -215,6 +228,7 @@ class AggregationBehaviourTest(unittest.TestCase):
     #: ``(contract, aggregation) -> behaviour case``; one per allowed value.
     CASES = {
         ("ScalarEventInput", "sum"): case_scalar_sum,
+        ("ScalarEventInput", "sum_count"): case_scalar_sum_count,
         ("TriggerEventInput", "count"): case_trigger_count,
     }
 
@@ -226,6 +240,9 @@ class AggregationBehaviourTest(unittest.TestCase):
 
     def test_scalar_sum(self) -> None:
         self.CASES[("ScalarEventInput", "sum")](self)
+
+    def test_scalar_sum_count(self) -> None:
+        self.CASES[("ScalarEventInput", "sum_count")](self)
 
     def test_trigger_count(self) -> None:
         self.CASES[("TriggerEventInput", "count")](self)

@@ -114,6 +114,12 @@ def build_reduction_input_runtime(cell) -> ReductionInputRuntime:
         layouts.append(layout)
         group_schemas.append(schema)
         if isinstance(event_input, ScalarEventInput):
+            if event_input.aggregation == "sum_count":
+                raise TypeError(
+                    f"Synapse type {synapse_type!r} declares ScalarEventInput(aggregation='sum_count'), but a "
+                    "reduction model receives payload sums without event counts. Select the detailed model "
+                    "(use_model('detailed')) or use a synapse with aggregation='sum'."
+                )
             zero = u.Quantity(np.zeros((schema.size,), dtype=float), event_input.unit)
         elif isinstance(event_input, TriggerEventInput):
             zero = np.zeros((schema.size,), dtype=np.int32)

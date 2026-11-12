@@ -30,7 +30,8 @@ consume its events. Every read at a boundary sees the state before it:
   scheduled row. A live source detected in step ``m`` with a delay of ``k``
   steps arrives at ``t_{m + max(k, 1)}``.
 - A row with a scheduled source, or a live source and ``k >= 1``, delivers
-  ``n * w(t_n-)`` here, not through the Network's weighted delay ring: a
+  ``n * w(t_n-)`` here (and ``n`` to a ``"sum_count"`` synapse's event
+  count, CELL-12b), not through the Network's weighted delay ring: a
   live call keeps a history of its sources' spike counts instead, one
   column per distinct source (fan-out rows share it). A live row with
   ``k = 0`` keeps the Network's immediate path, at the end of the detection
@@ -379,6 +380,11 @@ class RuleBinding:
             mantissa = _event_mantissa(template, state["w"])
             drive = jnp.zeros_like(_raw(template)).at[..., plan.synapse_rows].add(payload * mantissa)
             cell._set_event_buffer(plan.layout_id, template + _rewrap(template, drive))
+            count_state = cell._event_count_state(plan.layout_id)
+            if count_state is not None:
+                # A "sum_count" synapse also receives the number of events (CELL-12b).
+                counts = jnp.zeros_like(drive).at[..., plan.synapse_rows].add(payload.astype(drive.dtype))
+                count_state.value = count_state.value + counts
         signals = {}
         if self.post is not None:
             signals["post"] = self._post_counts(t=t, dt=dt)

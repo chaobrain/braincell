@@ -28,7 +28,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell.network.event import NetStim, boundary_step, round_half_up_steps_host
+from braincell.network.event import EventSequence, NetStim, boundary_step, round_half_up_steps_host
 
 METHODS = ("current", "scan", "cursor", "bucket")
 
@@ -39,7 +39,7 @@ class EventPlan:
 
     Parameters
     ----------
-    source : NetStim
+    source : NetStim or EventSequence
         Immutable scheduled source used as the reference implementation.
     source_index : numpy.ndarray
         One source index per connection.
@@ -148,8 +148,9 @@ def prepare_events(source, source_index, *, delay, dt, n_steps, start_step=0, me
 
     Parameters
     ----------
-    source : NetStim
-        Generated, immutable event schedule.
+    source : NetStim or EventSequence
+        Immutable event schedule. A NetStim generates its events up to the
+        end of the window, as ``Network.run`` does, not all of them.
     source_index : array-like
         Nonempty one-dimensional integer source indices, one per connection.
     delay : brainunit.Quantity
@@ -179,14 +180,16 @@ def prepare_events(source, source_index, *, delay, dt, n_steps, start_step=0, me
     -----
     Quantization uses the production rule: ``(time + delay) / dt`` rounded at
     float64 on the host, including its half-tie snapping, so a float32 and a
-    float64 run see the same arrival steps (CELL-46). Compact bucket
+    float64 run see the same arrival steps (CELL-46). The steps are integers
+    compared with integer steps, so a float32 window has no limit below the
+    int32 step count (CELL-9). Compact bucket
     preparation sorts the integer arrival table on the host and transfers the
     compact arrays to the device. Its preparation time and temporary memory
     must be accounted for.
     """
     began = time.perf_counter()
-    if not isinstance(source, NetStim):
-        raise TypeError("source must be a NetStim")
+    if not isinstance(source, (NetStim, EventSequence)):
+        raise TypeError("source must be a NetStim or an EventSequence")
     if method not in METHODS:
         raise ValueError("unknown query method")
     for name, value, lower in (("n_steps", n_steps, 1), ("start_step", start_step, 0), ("block_size", block_size, 1)):
@@ -215,17 +218,11 @@ def prepare_events(source, source_index, *, delay, dt, n_steps, start_step=0, me
             raise ValueError("integer time multiplication would overflow; use a floating time step")
         clock_dtype = np.dtype("float64" if jax.config.jax_enable_x64 else "float32")
     clock_limits = np.finfo(clock_dtype)
-    # Four-ULP half-tie snapping reaches a half step at this magnitude.
-    # Beyond it even integer step ratios need not map to themselves.
-    if start_step + n_steps > 2 ** (clock_limits.nmant - 3):
-        raise ValueError("window exceeds the clock precision's half-tie resolution")
     with np.errstate(over="ignore", under="ignore"):
         clock_dt = np.asarray(dt_ms, dtype=clock_dtype)
     if not np.isfinite(clock_dt) or clock_dt <= 0 or last_time > clock_limits.max:
         raise ValueError("time grid is not representable in the selected clock precision")
-    source._ensure_schedule()
-    times = np.asarray(source._event_times_ms[index])
-    mask = np.asarray(source._event_mask[index])
+    times, mask = _event_matrix(source, index, until_ms=float(dt_ms) * (start_step + n_steps + 1))
     if times.shape[1] and (np.any(~np.isfinite(times[mask])) or np.any(times[mask] < 0)):
         raise ValueError("valid event times must be finite and nonnegative")
     # NetStim pads only at the end; enforcing this permits one cursor per row.
@@ -282,3 +279,27 @@ def prepare_events(source, source_index, *, delay, dt, n_steps, start_step=0, me
     return EventPlan(
         source, index, delay, dt, method, int(start_step), int(n_steps), int(block_size), arrays, preparation
     )
+
+
+def _event_matrix(source, index, *, until_ms):
+    """``(times in ms, mask)`` of the selected sources' events, one padded row per entry of ``index``.
+
+    A NetStim generates its events up to ``until_ms`` (more when its
+    schedule is small, see its Notes); an EventSequence's flat table is
+    grouped by source, in time order.
+    """
+    if isinstance(source, NetStim):
+        source._ensure_schedule(until_ms=until_ms)
+        return np.asarray(source._event_times_ms[index]), np.asarray(source._event_mask[index])
+    event_source = np.asarray(source.events.source_index)
+    event_ms = np.asarray(source.events.time.to_decimal(u.ms), dtype=np.float64)
+    order = np.lexsort((event_ms, event_source))
+    event_ms = event_ms[order]
+    per_source = np.bincount(event_source, minlength=source.size)
+    first = np.concatenate([[0], np.cumsum(per_source)[:-1]])
+    width = int(per_source[index].max(initial=0))
+    column = np.arange(width)
+    mask = column[None, :] < per_source[index][:, None]
+    position = np.minimum(first[index][:, None] + column[None, :], max(event_ms.size - 1, 0))
+    times = np.where(mask, event_ms[position] if event_ms.size else 0.0, 0.0)
+    return times, mask

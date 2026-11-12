@@ -128,7 +128,7 @@ def prepare_delivery(
 
     Parameters
     ----------
-    source : braincell.NetStim
+    source : braincell.NetStim or braincell.EventSequence
         Immutable source schedule.
     source_index, target_index : array-like
         One source and target index per connection.

@@ -500,12 +500,48 @@ class Network:
     ) -> NetworkResult:
         """Run the network for ``duration`` at fixed step ``dt``.
 
+        Parameters
+        ----------
+        dt : brainunit.Quantity
+            Fixed time step.
+        duration : brainunit.Quantity
+            Length of this segment, an integer multiple of ``dt``.
+        delay_quantization : str, optional
+            How connection delays round to steps: ``"nearest"`` (default),
+            ``"ceil"``, ``"floor"`` or ``"strict"``.
+        event_backend : str, optional
+            Delivery of live events: ``"auto"`` (default, which is
+            ``"scatter"``), ``"scatter"`` or ``"brainevent"``.
+        brainevent_backend : str or None, optional
+            Backend of ``brainevent.csrmv`` under ``"brainevent"``.
+        scheduled_delivery : {None, "direct", "padded"}, optional
+            How the rows of scheduled sources (``NetStim``,
+            ``EventSequence``) reach their synapses. ``None``, the default,
+            counts each row's arrivals on every step. ``"direct"`` and
+            ``"padded"`` plan the arrivals of this run's steps on the host
+            before the loop; see Notes. Rows with a plasticity rule keep
+            the rule's path, and live sources the delay queues.
+
+        Returns
+        -------
+        NetworkResult
+            Samples and events of the half-open segment
+            ``[start_time, stop_time)``.
+
         Raises
         ------
         ValueError
             If the run would take the step count past ``2**31 - 1`` (14.9 h
             at ``dt = 0.025 ms``); nothing has run. :meth:`reset_state`
-            starts the count again.
+            starts the count again. Also if ``scheduled_delivery`` is not
+            one of its values, before anything is initialized.
+        PaddingLimitError
+            A ``ValueError``, if a ``"padded"`` plan would exceed its limits
+            (Notes); nothing has run.
+        RuntimeError
+            If ``dt``, ``delay_quantization``, the backends or
+            ``scheduled_delivery`` differ from the first run's (or
+            :meth:`prepare_run`'s).
 
         Warns
         -----
@@ -522,6 +558,62 @@ class Network:
         :meth:`update`. Each time is one rounding of a product, in the run
         precision, so a run split into segments, or into ``update()``
         calls, steps at the same times as one run, however long it is.
+
+        **Scheduled delivery** (``scheduled_delivery``, CELL-9). The
+        arrivals of the run's steps ``[n, n + steps)`` are planned on the
+        host before the compiled loop: for each synapse layout, one record
+        per step and row that has arrivals, holding their number. The
+        plan's arrays are arguments of the loop, so a later window of the
+        same length reuses the compiled loop. The plans of the last four
+        windows are kept: a run after :meth:`reset_state`, or after a
+        weight change (weights, trainable ones included, are read on every
+        step), builds no plan. Each event arrives at the step, and with
+        the weight, of the default path, so the results are the default
+        path's (to rounding where several rows reach one synapse).
+
+        - ``"direct"`` stores the records in step order with one offset per
+          step and reads the current step's: storage grows with the
+          records, the steps and the rows. It is reverse-differentiable to
+          first order only: forward mode (``jax.jvp``, ``jacfwd``) through it
+          raises ``TypeError`` when traced.
+        - ``"padded"`` stores ``steps x width`` slots, ``width`` being the
+          most records any step has, rounded up to a power of two so that
+          windows of one length share a shape. It raises
+          :class:`~braincell.network.scheduled.PaddingLimitError` before the
+          run when the slots would take more than 256 MiB, or the steps
+          times the needed width would exceed 8 times the records; it does
+          not fall back to another method. It differentiates as ordinary
+          JAX code, forward mode included.
+
+        Try ``"direct"`` when many scheduled rows have few arrivals per
+        step, above all when rows share synapses, or when a source's
+        schedule is much longer than the run; ``"padded"`` within its
+        limits. Keep the default for small models: preparing a plan costs
+        more than it saves. The method is part of the runtime
+        configuration, fixed after the first run as ``event_backend`` is;
+        a first run that raised ``PaddingLimitError`` fixes nothing.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> import braincell
+            >>> from braincell.filter import at
+            >>> cell = braincell.Cell(
+            ...     braincell.Morphology.from_soma(length=20.0 * u.um, radius=10.0 * u.um), pop_size=1
+            ... )
+            >>> _ = cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms))
+            >>> net = braincell.Network("demo", seed=1)
+            >>> post = net.add_population("post", cell)
+            >>> stim = net.add_population(
+            ...     "stim", braincell.NetStim(size=1, start=1.0 * u.ms, interval=2.0 * u.ms, number=5)
+            ... )
+            >>> _ = net.connect("drive", source=stim, synapse=post.synapses["s"], weight=0.001 * u.uS)
+            >>> first = net.run(dt=0.025 * u.ms, duration=5.0 * u.ms, scheduled_delivery="direct")
+            >>> second = net.run(dt=0.025 * u.ms, duration=5.0 * u.ms, scheduled_delivery="direct")
+            >>> second.events["stim"]["spike"].time  # the second window's events, planned before it ran
+            Quantity([5. 7. 9.], "ms")
         """
         from braincell.network.event import _schedule_horizon
 
@@ -678,11 +770,59 @@ class Network:
             Event delivery backend, as in :meth:`run`.
         brainevent_backend : str or None, optional
             Backend for the sparse event operator.
+        scheduled_delivery : {None, "direct", "padded"}, optional
+            As in :meth:`run`. The plan :meth:`update` reads covers every
+            event, steps ``[0, last arrival + 1)`` of each synapse layout,
+            and is built once, here: a training loop of ``update()`` calls,
+            split over several ``for_loop`` calls or rerun after
+            :meth:`reset_state`, uses it throughout. Steps past the last
+            arrival receive nothing, as on the default path.
 
         Returns
         -------
         Network
             This initialized and prepared network.
+
+        Raises
+        ------
+        ValueError
+            If ``scheduled_delivery`` is not one of its values; or
+            ``PaddingLimitError`` if a ``"padded"`` plan exceeds its limits.
+        RuntimeError
+            If the configuration differs from an earlier run's.
+
+        Notes
+        -----
+        ``"direct"`` supports first-order reverse differentiation of the
+        ``update()`` rollout (``jax.grad``, ``brainstate.transform.grad``)
+        only; forward mode through it (``jax.jvp``, ``jacfwd``) raises
+        ``TypeError`` when traced. ``"padded"`` differentiates as ordinary
+        JAX code. Either way the gradients with respect to weights and
+        synapse parameters are the default path's.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainstate
+            >>> import brainunit as u
+            >>> import jax.numpy as jnp
+            >>> import braincell
+            >>> from braincell.filter import at
+            >>> cell = braincell.Cell(
+            ...     braincell.Morphology.from_soma(length=20.0 * u.um, radius=10.0 * u.um), pop_size=1
+            ... )
+            >>> _ = cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms))
+            >>> net = braincell.Network("train", seed=1)
+            >>> post = net.add_population("post", cell)
+            >>> stim = net.add_population(
+            ...     "stim", braincell.NetStim(size=1, start=1.0 * u.ms, interval=2.0 * u.ms, number=5)
+            ... )
+            >>> _ = net.connect("drive", source=stim, synapse=post.synapses["s"], weight=0.001 * u.uS)
+            >>> _ = net.prepare_run(dt=0.025 * u.ms, scheduled_delivery="direct")
+            >>> spikes = brainstate.transform.for_loop(lambda _: net.update()["post"], jnp.arange(400))
+            >>> spikes.shape
+            (400, 1, 1)
         """
         validate_time_quantity(dt, name="dt", prefix="Network.prepare_run")
         event_backend = normalize_event_backend(event_backend)

@@ -163,8 +163,7 @@ def _values(result, cell, *, rule=False):
 
 def _concat(parts):
     return {
-        name: (parts[-1][name] if name == "w" else np.concatenate([part[name] for part in parts]))
-        for name in parts[0]
+        name: (parts[-1][name] if name == "w" else np.concatenate([part[name] for part in parts])) for name in parts[0]
     }
 
 
@@ -451,7 +450,9 @@ def _overflow_model():
 def _state(net, cell):
     """``(t in ms, step, V, g)``: what a run that raised at its entry must leave as it was."""
     net.init_state()
-    node = cell.runtime.get_runtime_node(cell.synapses["exp"]._store.layout_id(str(cell.synapses["exp"].synapse_type[0])))
+    node = cell.runtime.get_runtime_node(
+        cell.synapses["exp"]._store.layout_id(str(cell.synapses["exp"].synapse_type[0]))
+    )
     return (
         float(cell.current_time.to_decimal(u.ms)),
         int(cell._clock_step.value),
@@ -683,6 +684,41 @@ def _two_populations():
         cell.record("V", "V")
         cells[name] = cell
     return net
+
+
+class ClockOriginTest(unittest.TestCase):
+    """A Cell that ran at another ``dt`` before joining starts the Network's window at its time."""
+
+    @_float64
+    def test_the_window_starts_at_the_cell_time_on_the_dt_grid(self):
+        out = {}
+        for method in (None, "direct"):
+            branch = bc.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+            cell = bc.Cell(
+                bc.Morphology.from_root(branch), cv_policy=bc.CVPerBranch(1), pop_size=1, V_init=-65.0 * u.mV
+            )
+            cell.place(LocsetMask.from_columns([0, 0], [0.5, 0.5]), bc.mech.Synapse("ExpSyn", name="exp"))
+            cell.record("g", bc.observe.synapse(name="exp").state("g"))
+            sequence = _sequence([0.5, 1.2, 1.5, 2.0, 2.05], size=2)
+            bc.connect(
+                "drive",
+                source=sequence,
+                synapse=cell.synapses["exp"][[0, 1]],
+                weight=0.001 * u.uS,
+                delay=np.array([0.0, 0.3]) * u.ms,
+            )
+            cell.init_state()
+            cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)  # the clock's origin moves to 1 ms below
+            net = bc.Network("origin", seed=1)
+            net.add_population("post", cell)
+            net.add_population("stim", sequence)
+            result = net.run(dt=DT, duration=2.0 * u.ms, **({} if method is None else {"scheduled_delivery": method}))
+            out[method] = np.asarray(u.get_mantissa(result.samples["post"]["g"].values))
+            if method is not None:
+                self.assertEqual(cell._clock_host(), (1.0, 80, 0.025))
+                self.assertEqual(net._scheduled_plans.preparation["start_step"], 40)
+        self.assertGreater(np.max(out[None]), 0.0)
+        np.testing.assert_allclose(out["direct"], out[None], rtol=RTOL, atol=ATOL)
 
 
 class LayoutsTest(unittest.TestCase):

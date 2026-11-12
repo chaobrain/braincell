@@ -35,6 +35,9 @@ class ScheduledDeliveryCell(Cell):
     setup and before the first compiled rollout. The plan is immutable for this
     instance; build a new instance to change method, schedule, topology or grid.
     Only physical additive event buffers are supported by this experiment.
+    Connections with a plasticity rule are left to the rule, as in
+    ``Network.run(..., scheduled_delivery=...)``; a ``"sum_count"`` layout
+    also receives its event counts (CELL-9).
     """
 
     def prepare_scheduled_delivery(self, *, method, dt, n_steps, start_step=0, block_size=128):
@@ -61,18 +64,6 @@ class ScheduledDeliveryCell(Cell):
         if method not in ("current", "scan", "bucket", "direct", "padded"):
             raise ValueError("unknown experimental delivery method")
         self._raise_if_not_initialized("prepare_scheduled_delivery")
-        rule_calls = self._get_connection_store().rule_calls()
-        if rule_calls:
-            raise TypeError(
-                f"Connections {tuple(call.name for call in rule_calls)!r} have plasticity rules, which this "
-                "experimental delivery plan does not support: it precomputes fixed-weight deliveries."
-            )
-        counting = [layout.kind for layout in self._event_layouts() if self._event_count_state(layout.id) is not None]
-        if counting:
-            raise TypeError(
-                f"Synapse layouts {tuple(counting)!r} declare ScalarEventInput(aggregation='sum_count'), which this "
-                "experimental delivery plan does not support: it delivers payload sums without event counts."
-            )
         routes, plans, arrays = {}, [], []
         store = self._get_synapse_store()
         for layout in self._event_layouts():
@@ -80,7 +71,9 @@ class ScheduledDeliveryCell(Cell):
             if not isinstance(template, u.Quantity):
                 raise TypeError("experimental adapter requires physical event buffers")
             entries = []
-            for connection in self.connections._call_views(scheduled=True):
+            for call, connection in self.connections._call_items(scheduled=True):
+                if call.plasticity is not None:
+                    continue  # its rule delivers it (``advance_rules``)
                 if store.layout_id(str(connection.synapse_type[0])) != int(layout.id):
                     continue
                 targets = store.runtime_rows(connection.synapse_id).astype(np.int32)
@@ -115,14 +108,24 @@ class ScheduledDeliveryCell(Cell):
             return super()._evaluate_contact_inputs(layout, t=t, template=template, scheduled_only=scheduled_only)
         step = _boundary_step(t, self._scheduled_delivery_dt)
         output = jnp.zeros(template.size, dtype=u.get_mantissa(template).dtype)
+        # A "sum_count" layout also receives the arrivals' numbers (CELL-12b).
+        count_state = self._event_count_state(layout.id)
+        counts = None if count_state is None else jnp.zeros_like(output)
         for index, connection, plan, targets in routes.get(int(layout.id), ()):
             raw_weight = jnp.asarray(_connection_event_weight(template, connection.weight))
             weights = jnp.broadcast_to(raw_weight, (len(connection),))
             arrays = self._scheduled_delivery_arrays.value[index]
             if plan.method in ("direct", "padded"):
                 drive = plan.deliver(arrays, step, u.Quantity(weights, template.unit)).to_decimal(template.unit)
+                if counts is not None:
+                    ones = u.Quantity(jnp.ones_like(weights), template.unit)
+                    counts = counts + plan.deliver(arrays, step, ones).to_decimal(template.unit)
             else:
                 _, count = plan.query(arrays, jnp.empty(0, dtype=jnp.int32), step)
                 drive = jnp.zeros_like(output).at[targets].add(count * weights)
+                if counts is not None:
+                    counts = counts.at[targets].add(count.astype(counts.dtype))
             output = output + drive
+        if counts is not None:
+            count_state.value = count_state.value + counts.reshape(count_state.value.shape)
         return _rewrap_event_template(template, output.reshape(template.shape))

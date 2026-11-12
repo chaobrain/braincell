@@ -166,7 +166,10 @@ def _source_events(source) -> tuple[np.ndarray, np.ndarray]:
         return event_source, source._event_times_ms[event_source, column]
     if isinstance(source, EventSequence):
         return np.asarray(source.events.source_index), np.asarray(source.events.time.to_decimal(u.ms), dtype=np.float64)
-    raise TypeError(f"scheduled_delivery supports NetStim and EventSequence sources, not {type(source).__name__}.")
+    # A Network registers no other scheduled source.
+    raise TypeError(  # pragma: no cover
+        f"scheduled_delivery supports NetStim and EventSequence sources, not {type(source).__name__}."
+    )
 
 
 def _schedule_token(source):
@@ -225,8 +228,6 @@ def _routes(populations) -> tuple[_Route, ...]:
             template = runtime.get_event_buffer(layout.id)
             if np.ndim(template) != 1:  # pragma: no cover - event buffers are one row per synapse
                 raise NotImplementedError("scheduled_delivery needs one-dimensional event buffers.")
-            for _, view in calls:
-                _source_events(view.source)  # reject other source types here, before any plan
             routes.append(
                 _Route(
                     population=name,
@@ -237,9 +238,7 @@ def _routes(populations) -> tuple[_Route, ...]:
                     sources=tuple(view.source for _, view in calls),
                     source_index=tuple(np.asarray(view.source_index, dtype=np.int64) for _, view in calls),
                     delay_ms=tuple(np.asarray(view.delay.to_decimal(u.ms), dtype=np.float64) for _, view in calls),
-                    targets=np.concatenate(
-                        [store.runtime_rows(view.synapse_id).astype(np.int32) for _, view in calls]
-                    ),
+                    targets=np.concatenate([store.runtime_rows(view.synapse_id).astype(np.int32) for _, view in calls]),
                     n_targets=int(np.shape(template)[0]),
                     counted=cell._event_count_state(layout.id) is not None,
                 )

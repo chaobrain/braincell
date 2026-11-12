@@ -163,7 +163,7 @@ class ReExportTests:
 
 
 _RST_MODULE = re.compile(r"^\s*\.\. (?:currentmodule|module|automodule)::\s+(?P<name>\S+)\s*$")
-_RST_AUTO = re.compile(r"^\s*\.\. auto(?:class|function|data|exception|module)::\s+(?P<name>\S+)\s*$")
+_RST_AUTO = re.compile(r"^\s*\.\. (?:py:)?(?:auto)?(?:class|function|data|exception|module)::\s+(?P<name>[^\s(]+)")
 _RST_AUTOSUMMARY = re.compile(r"^(?P<indent>[ \t]*)\.\. autosummary::\s*$")
 
 
@@ -179,9 +179,11 @@ def api_reference_entries(apis_dir: Path) -> list[tuple[str, str]]:
 
     Reads every ``*.rst`` file in ``apis_dir``. An entry is a name in an
     ``.. autosummary::`` block (option lines skipped) or the target of an
-    ``.. autoclass::``, ``autofunction::``, ``autodata::``, ``autoexception::``
-    or ``automodule::`` directive. Names are resolved against the latest
-    ``.. currentmodule::`` (or ``module::`` / ``automodule::``).
+    object directive: ``autoclass``, ``autofunction``, ``autodata``,
+    ``autoexception`` or ``automodule``, or the same without ``auto`` (with or
+    without the ``py:`` prefix; a signature after the name is dropped). Names
+    are resolved against the latest ``.. currentmodule::`` (or ``module::`` /
+    ``automodule::``).
     """
     entries = []
     for page in sorted(Path(apis_dir).glob("*.rst")):

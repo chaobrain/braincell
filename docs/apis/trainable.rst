@@ -16,11 +16,11 @@ Parameter Sources
     parameterized
     scale
 
-.. autodata:: ParameterSource
-   :no-value:
+.. data:: ParameterSource
 
-   The type of a parameter source: what :func:`parameter`,
-   :func:`parameterized` and :func:`scale` return.
+   The type of a parameter source: the union of the source types that
+   :func:`parameter`, :func:`parameterized` and :func:`scale` return. Use it to
+   annotate a value that may be any of them.
 
 
 Managing Parameters

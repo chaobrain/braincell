@@ -326,6 +326,11 @@ Text after the list ends it.
 
 .. autofunction:: mix_ions
 .. autodata:: __version__
+.. py:data:: __version_info__
+
+   Written by hand.
+
+.. function:: connect(source, synapse)
 
 .. currentmodule:: braincell.filter
 
@@ -350,6 +355,8 @@ class ApiReferenceEntriesTest(unittest.TestCase):
                 ("braincell.CVPerBranchList", "braincell.rst"),
                 ("braincell.mix_ions", "braincell.rst"),
                 ("braincell.__version__", "braincell.rst"),
+                ("braincell.__version_info__", "braincell.rst"),
+                ("braincell.connect", "braincell.rst"),
                 ("braincell.Morphology", "braincell.rst"),
                 ("braincell.filter.at", "braincell.rst"),
             ],

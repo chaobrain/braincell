@@ -22,6 +22,8 @@ count, so a run split into segments steps at the same times as one run;
 the clock advances once after the scan.
 """
 
+import contextlib
+import functools
 import warnings
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -43,6 +45,7 @@ from braincell._misc import (
     validate_time_quantity,
 )
 from braincell.network.recording import EventSeries, SampleBlock, concat_sample_blocks
+from braincell.quad._staggered import axial_operator_per_run
 
 if TYPE_CHECKING:
     from braincell._multi_compartment.cell import Cell
@@ -232,6 +235,9 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     outputs, so short repeated runs are not dominated by eager array
     operations. A traced run (inside ``jax.jit`` or ``jax.grad``) cannot
     build sparse rows and uses a loop without the spike output.
+
+    The geometry is fixed for the run, so the program builds the axial
+    operator once, before the steps; each step reads it.
     """
     from braincell.network.event import _prepare_netstim_schedules, _schedule_horizon
 
@@ -575,7 +581,25 @@ def _make_run_loop(
                 recorded.append((values[index], None))
         return times, start_t, stop_t, tuple(recorded), spike_rows
 
-    return brainstate.transform.jit(_run_loop)
+    return brainstate.transform.jit(axial_operator_before_steps(_run_loop, (rcell,)))
+
+
+def axial_operator_before_steps(loop, cells):
+    """``loop``, building the axial operator of each of ``cells`` once, before the steps it traces.
+
+    The geometry is the same at every step of a run; built inside the step,
+    the operator would be built again at every step, and at every stage of
+    the generic solvers (CELL-50). See ``axial_operator_per_run``.
+    """
+
+    @functools.wraps(loop)
+    def built_once(*args):
+        with contextlib.ExitStack() as stack:
+            for cell in cells:
+                stack.enter_context(axial_operator_per_run(cell))
+            return loop(*args)
+
+    return built_once
 
 
 def _validate_time_quantity(value, *, name: str) -> None:

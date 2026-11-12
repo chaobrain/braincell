@@ -37,6 +37,7 @@ from braincell._misc import (
 from braincell._multi_compartment.run import (
     _duration_steps,
     _recording_time_mask,
+    axial_operator_before_steps,
     check_step_limit,
     host_clock_start,
 )
@@ -1003,7 +1004,7 @@ class Network:
                 cell._clock_step.value = end_step
             return times, origin + step * dt, origin + end_step * dt, samples_over_time
 
-        return brainstate.transform.jit(_run_loop)
+        return brainstate.transform.jit(axial_operator_before_steps(_run_loop, cells))
 
     def _prepare_netstim_schedules(self, *, until_ms: float | None) -> tuple:
         """Generate NetStim events up to ``until_ms``; return the loop-cache token."""

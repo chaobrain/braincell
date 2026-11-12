@@ -31,6 +31,7 @@ from braincell._multi_compartment.run_test import (
     WEIGHT,
     _float64,
     assert_same_trajectory,
+    axial_builds,
     hh_y_cable,
     make_event_cell,
     split_steps,
@@ -1154,6 +1155,13 @@ class NetworkAxialOperatorTest(unittest.TestCase):
                 actual = np.asarray(result.samples["cells"]["v"].values.to_decimal(u.mV))
                 np.testing.assert_allclose(actual, expected.reshape(actual.shape), rtol=1e-12, atol=0.0)
                 self.assertGreater(float(actual[-1].max()), 20.0)
+
+    def test_the_operator_is_built_once_before_the_steps(self):
+        for solver in ("staggered", "rk4"):
+            with self.subTest(solver=solver), _float64():
+                network = Network("cable")
+                network.add_population("cells", hh_y_cable(solver))
+                self.assertEqual(axial_builds(lambda: network.run(dt=DT, duration=4 * DT)), (0, 1))
 
 
 if __name__ == "__main__":

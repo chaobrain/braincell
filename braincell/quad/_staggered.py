@@ -26,6 +26,7 @@ Type responsibilities in this file:
   ``float64`` annotations.
 """
 
+import contextlib
 import functools
 import operator
 import os
@@ -214,6 +215,25 @@ class DHSStaticCache:
     diag_ms_inv: object
     lowers_ms_inv: object
     uppers_ms_inv: object
+
+
+@dataclass(frozen=True)
+class RunAxialOperator:
+    """A target's axial operator, built once before the steps of a compiled run (CELL-50).
+
+    One field is set, the one the target's solver reads: ``dhs`` (the DHS
+    static source and its cache) for ``"staggered"`` and ``"dhs_voltage"``,
+    ``cv_operator`` (:func:`build_cv_axial_operator`, mantissa in ms^-1) for
+    the other solvers.
+    """
+
+    cv_operator: object | None = None
+    dhs: tuple[DHSStaticSource, DHSStaticCache] | None = None
+
+
+#: The solvers that step the voltage with DHS: they read its static source,
+#: the others the CV operator.
+_DHS_SOLVERS = frozenset({"staggered", "dhs_voltage"})
 
 
 @dataclass(frozen=True)
@@ -446,7 +466,19 @@ def _build_node_tree_axial_matrix(target, *, node_tree, point_id_to_row) -> tupl
 
 
 def build_cv_axial_operator(target, *, node_tree, scheduling):
-    """Reduce the mixed node-tree axial system to a CV-midpoint operator."""
+    """Reduce the mixed node-tree axial system to a CV-midpoint operator.
+
+    Within :func:`axial_operator_per_run`, the operator built when the block
+    began.
+    """
+    built = _built_for_run(target)
+    if built is not None and built.cv_operator is not None:
+        return built.cv_operator
+    return _reduce_cv_axial_operator(target, node_tree=node_tree, scheduling=scheduling)
+
+
+def _reduce_cv_axial_operator(target, *, node_tree, scheduling):
+    """Assemble the node-tree axial matrix and eliminate its algebraic rows (:func:`build_cv_axial_operator`)."""
     _, dynamic_rows, axial_matrix, _row_capacitance = _build_node_tree_axial_matrix(
         target,
         node_tree=node_tree,
@@ -476,11 +508,66 @@ def build_cv_axial_operator(target, *, node_tree, scheduling):
     return jnp.where(eye, -jnp.sum(off_diagonal, axis=-1, keepdims=True), off_diagonal)
 
 
+def _geometry_is_traced(runtime) -> bool:
+    """Whether ``runtime``'s geometry states hold traced values (inside ``jit``, ``grad`` or a loop)."""
+    return getattr(runtime, "geometry", None) is not None and any(
+        is_traced_value(state.value) for state in runtime.geometry.values()
+    )
+
+
+def _built_for_run(target) -> RunAxialOperator | None:
+    """The operator :func:`axial_operator_per_run` built for ``target``, or ``None`` outside the block."""
+    return getattr(getattr(target, "_runtime", None), "run_axial_operator", None)
+
+
+@contextlib.contextmanager
+def axial_operator_per_run(target):
+    """Build ``target``'s axial operator once, for the steps traced inside the block.
+
+    A compiled run traces the geometry, so a step that builds the operator
+    builds it from the traced geometry at every step: the CV operator, with
+    the dense solve of its Schur complement, at every stage of the generic
+    solvers, and the DHS coefficients once a step. The geometry does not
+    change within a run, so the block builds the operator the solver reads
+    from the same traced values before the steps, and the steps read it as
+    a loop constant: the values are those each step built, and gradients
+    reach the geometry through it.
+
+    Outside a trace the runtime caches serve, and the block does nothing; so
+    it does for a lumped Cell and one running a reduction model, which have
+    no axial operator.
+    """
+    runtime = getattr(target, "_runtime", None)
+    if (
+        getattr(target, "_is_lumped", False)
+        or getattr(target, "_uses_reduction", False)
+        or not _geometry_is_traced(runtime)
+    ):
+        yield
+        return
+    node_tree = target.node_tree
+    scheduling = target.node_scheduling(algorithm="dhs")
+    with jax.named_scope("braincell:run:axial_operator"):
+        if target.solver_name in _DHS_SOLVERS:
+            source = _build_dhs_static_source(target, node_tree=node_tree, scheduling=scheduling)
+            built = RunAxialOperator(dhs=(source, _build_dhs_static_cache(source)))
+        else:
+            cv_operator = _reduce_cv_axial_operator(target, node_tree=node_tree, scheduling=scheduling)
+            built = RunAxialOperator(cv_operator=cv_operator)
+    previous = runtime.run_axial_operator
+    runtime.run_axial_operator = built
+    try:
+        yield
+    finally:
+        runtime.run_axial_operator = previous
+
+
 def _get_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSource:
     runtime = target._runtime
-    if getattr(runtime, "geometry", None) is not None and any(
-        is_traced_value(state.value) for state in runtime.geometry.values()
-    ):
+    built = _built_for_run(target)
+    if built is not None and built.dhs is not None:
+        return built.dhs[0]
+    if _geometry_is_traced(runtime):
         return _build_dhs_static_source(target, node_tree=node_tree, scheduling=scheduling)
     source = getattr(runtime, "dhs_source", None)
     if source is not None:
@@ -506,6 +593,9 @@ def _build_dhs_static_cache(source: DHSStaticSource) -> DHSStaticCache:
 
 def _get_dhs_static_cache(target, source: DHSStaticSource) -> DHSStaticCache:
     runtime = target._runtime
+    built = _built_for_run(target)
+    if built is not None and built.dhs is not None and built.dhs[0] is source:
+        return built.dhs[1]
     if is_traced_value(source.diag_ms_inv):
         return _build_dhs_static_cache(source)
     cache = getattr(runtime, "dhs_static_cache", None)

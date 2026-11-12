@@ -19,6 +19,7 @@ import contextlib
 import re
 import unittest
 import warnings
+from unittest import mock
 
 import brainstate
 import brainunit as u
@@ -33,6 +34,7 @@ from braincell._multi_compartment.run import (
 )
 from braincell._multi_compartment.selection_test import _cell
 from braincell.filter import AllRegion, RootLocation, at
+from braincell.quad import _staggered
 from braincell.synapse import ExpSyn
 
 DT = 0.025 * u.ms
@@ -976,6 +978,38 @@ def update_loop_voltage(cell, n_steps):
         return brainstate.transform.for_loop(step, np.arange(n_steps))
 
 
+def axial_builds(run):
+    """``(in a step, before the steps)``: the axial matrices ``run()`` assembles while tracing its loop.
+
+    Every solver's operator starts from this node-tree matrix (the CV
+    operator of the generic solvers, the DHS coefficients of
+    ``"staggered"``); one assembled in the step body of a compiled loop is
+    assembled again at every step.
+    """
+    counts = [0, 0]
+    in_step = [0]
+    for_loop = brainstate.transform.for_loop
+    assemble = _staggered._build_node_tree_axial_matrix
+
+    def counting_for_loop(*args, **kwargs):
+        in_step[0] += 1
+        try:
+            return for_loop(*args, **kwargs)
+        finally:
+            in_step[0] -= 1
+
+    def counting_assemble(*args, **kwargs):
+        counts[0 if in_step[0] else 1] += 1
+        return assemble(*args, **kwargs)
+
+    with (
+        mock.patch.object(brainstate.transform, "for_loop", counting_for_loop),
+        mock.patch.object(_staggered, "_build_node_tree_axial_matrix", counting_assemble),
+    ):
+        run()
+    return tuple(counts)
+
+
 class AxialOperatorPerRunTest(unittest.TestCase):
     """CELL-50: a compiled run builds the axial operator once, before its steps.
 
@@ -1003,6 +1037,44 @@ class AxialOperatorPerRunTest(unittest.TestCase):
                 # The run fires, and the CVs differ: the axial currents matter.
                 self.assertGreater(float(expected[-1].max()), 20.0)
                 self.assertGreater(float(np.ptp(expected[-1])), 30.0)
+
+    def test_the_operator_is_built_once_before_the_steps(self):
+        # On main 75b6104 every step built it: once (staggered, exp_euler),
+        # or at each stage (rk4 four times, ralston2 twice).
+        for solver in AXIAL_SOLVERS:
+            with self.subTest(solver=solver):
+                cell = hh_y_cable(solver)
+                cell.init_state()
+                self.assertEqual(axial_builds(lambda: cell.run(dt=DT, duration=4 * DT)), (0, 1))
+                # A later run reuses the compiled loop and builds nothing on the host.
+                self.assertEqual(axial_builds(lambda: cell.run(dt=DT, duration=4 * DT)), (0, 0))
+        with self.subTest(solver="rk4", run="traced"):
+            cell = hh_y_cable("rk4")
+            cell.init_state()
+            run = brainstate.transform.jit(lambda: cell.run(dt=DT, duration=4 * DT).traces["v"])
+            self.assertEqual(axial_builds(run), (0, 1))
+        with self.subTest(cell="lumped"):
+            # A lumped Cell has no axial operator.
+            cell = _hh_cell("lumped")
+            cell.init_state()
+            self.assertEqual(axial_builds(lambda: cell.run(dt=DT, duration=4 * DT)), (0, 0))
+
+    def test_a_run_that_fails_in_its_trace_leaves_no_operator_behind(self):
+        cell = hh_y_cable("rk4")
+        cell.init_state()
+        with mock.patch.object(braincell.Cell, "compute_axial_derivative", side_effect=RuntimeError("stage failed")):
+            with self.assertRaisesRegex(RuntimeError, "stage failed"):
+                cell.run(dt=DT, duration=4 * DT)
+        self.assertIsNone(cell.runtime.run_axial_operator)
+        cell.reset_state()
+        expected = hh_y_cable("rk4")
+        expected.init_state()
+        np.testing.assert_allclose(
+            cell.run(dt=DT, duration=4 * DT).traces["v"].to_decimal(u.mV),
+            expected.run(dt=DT, duration=4 * DT).traces["v"].to_decimal(u.mV),
+            rtol=1e-12,
+            atol=0.0,
+        )
 
     def test_gradients_through_run_match_the_update_loop(self):
         # Sodium g_max does not reach the operator; Ra does, through the

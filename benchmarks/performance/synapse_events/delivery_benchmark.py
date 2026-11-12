@@ -1161,8 +1161,13 @@ def check_regression(name, *, methods=("direct", "padded"), case=None, chunk=500
     return report
 
 
-def _regression_worker_failed(data, *, max_iqr, max_load, gpu):
-    """Why an accepted-looking worker must be re-run, or ``None``."""
+def _regression_worker_failed(data, *, max_iqr, max_load, gpu, sibling=None):
+    """Why an accepted-looking worker must be re-run, or ``None``.
+
+    ``sibling`` is ``None`` or ``(cpus, max_busy)``: re-run if any of these CPUs
+    (the hyperthread siblings of the pinned ones) was busier than ``max_busy``
+    over the worker's run.
+    """
     if data.get("status") != "ok":
         return None
     reasons = []
@@ -1172,6 +1177,13 @@ def _regression_worker_failed(data, *, max_iqr, max_load, gpu):
     load = max(data.get("load_start", 0.0), data.get("load_end", 0.0))
     if load >= max_load:
         reasons.append(f"load {load:.1f} >= {max_load}")
+    if sibling is not None:
+        cpus, max_busy = sibling
+        share = data.get("cpu_busy_share") or {}
+        for cpu in cpus:
+            busy = share.get(str(cpu))
+            if busy is not None and busy > max_busy:
+                reasons.append(f"CPU {cpu} {busy:.0%} busy > {max_busy:.0%}")
     status = data.get("gpu_start") or {}
     if gpu is not None:
         if status.get("utilization", 0.0) >= GPU_BUSY_UTILIZATION:
@@ -1236,6 +1248,8 @@ def run_regression(args, models):
         pause_s=args.pause,
         max_iqr=args.max_iqr,
         max_load=args.max_load,
+        sibling_cpus=args.sibling_cpus,
+        max_sibling_busy=args.max_sibling_busy,
         retries=args.retries,
         seed=args.seed,
         gpu=args.gpu,
@@ -1275,6 +1289,9 @@ def run_regression(args, models):
                                 max_iqr=args.max_iqr,
                                 max_load=args.max_load,
                                 gpu=args.gpu if device == "gpu" else None,
+                                sibling=None
+                                if args.max_sibling_busy is None
+                                else (args.sibling_cpus, args.max_sibling_busy),
                             )
                             record["attempts"].append(dict(file=path.name, status=data["status"], rerun=rerun))
                             record.update(file=path.name, status=data["status"], flagged=rerun)
@@ -1438,6 +1455,12 @@ def main(argv=None):
     regression.add_argument("--pause", type=float, default=3.0, help="seconds to wait after each worker")
     regression.add_argument("--max-iqr", type=float, default=0.1, help="re-run a worker above this IQR/median")
     regression.add_argument("--max-load", type=float, default=16.0, help="re-run a worker at this 1-min load")
+    regression.add_argument(
+        "--sibling-cpus", help="CPUs (the hyperthread siblings of --cpus) whose busy share --max-sibling-busy bounds"
+    )
+    regression.add_argument(
+        "--max-sibling-busy", type=float, help="re-run a worker if a --sibling-cpus CPU was busier (0-1) over its run"
+    )
     regression.add_argument("--retries", type=int, default=2, help="re-runs per worker at most")
     regression.add_argument("--seed", type=int, default=0, help="seed of the method order")
     regression.add_argument("--method", choices=REGRESSION_METHODS, help=argparse.SUPPRESS)
@@ -1466,8 +1489,14 @@ def main(argv=None):
     if args.phase == "regression":
         try:
             args.steps = tuple(int(n) for n in args.steps.split(","))
+            if args.sibling_cpus is not None:
+                args.sibling_cpus = tuple(int(c) for c in args.sibling_cpus.split(","))
         except ValueError:
-            parser.error("--steps must be comma-separated integers")
+            parser.error("--steps and --sibling-cpus must be comma-separated integers")
+        if (args.sibling_cpus is None) != (args.max_sibling_busy is None) or not (
+            args.max_sibling_busy is None or 0 <= args.max_sibling_busy < 1
+        ):
+            parser.error("--sibling-cpus and --max-sibling-busy go together, with a busy share in [0, 1)")
         args.entries = tuple(args.entries.split(","))
         if not args.steps or min(args.steps) < 1 or len(set(args.steps)) != len(args.steps):
             parser.error("--steps must be distinct positive step counts")

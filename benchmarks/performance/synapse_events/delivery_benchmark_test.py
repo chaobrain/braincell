@@ -482,6 +482,12 @@ class RegressionMeasurementTest(unittest.TestCase):
         # An idle context of a process computing on another GPU is recorded, not re-run.
         idle = dict(data, load_end=2.0, gpu_start=dict(utilization=0.0, compute_apps=[[6, 258.0], [9, 4000.0]]))
         self.assertIsNone(b._regression_worker_failed(idle, max_iqr=0.1, max_load=16, gpu=1))
+        # A busy hyperthread sibling of a pinned CPU triggers a re-run when bounded.
+        busy = dict(idle, cpu_busy_share={"0": 0.9, "1": 0.2, "2": 0.9, "3": 0.01})
+        self.assertIsNone(b._regression_worker_failed(busy, max_iqr=0.1, max_load=16, gpu=None))
+        reason = b._regression_worker_failed(busy, max_iqr=0.1, max_load=16, gpu=None, sibling=((1, 3), 0.05))
+        self.assertEqual(reason, "CPU 1 20% busy > 5%")
+        self.assertIsNone(b._regression_worker_failed(busy, max_iqr=0.1, max_load=16, gpu=None, sibling=((3, 5), 0.05)))
         self.assertIsNone(b._regression_worker_failed(dict(data, load_end=2.0), max_iqr=0.1, max_load=16, gpu=None))
         self.assertIsNone(
             b._regression_worker_failed(dict(status="not_applicable"), max_iqr=0.1, max_load=16, gpu=None)
@@ -567,8 +573,30 @@ class RegressionMeasurementTest(unittest.TestCase):
                     self.assertEqual(sorted(r["method"] for r in group), sorted(b.REGRESSION_METHODS))
                     self.assertEqual([r["method"] for r in group], group[0]["order"])
             self.assertEqual(manifest["protocol"]["steps"], [40])
+            self.assertIsNone(manifest["protocol"]["max_sibling_busy"])
             with self.assertRaises(SystemExit):
                 b.main(argv)
+            # A busy sibling CPU re-runs a worker up to --retries times, then flags it.
+            launched.clear()
+            results = iter([dict(iqr=0.01)] * 100)
+
+            def fake_busy(cmd, **kwargs):
+                fake(cmd, **kwargs)
+                path = Path(cmd[cmd.index("--out") + 1])
+                data = json.loads(path.read_text()) | dict(cpu_busy_share={"1": 0.5, "3": 0.0})
+                path.write_text(json.dumps(data))
+                return subprocess.CompletedProcess(cmd, 0)
+
+            sibling_argv = list(argv)
+            sibling_argv[sibling_argv.index("--out") + 1] = str(Path(tmp) / "sibling")
+            sibling_argv += ["--cases", "small", "--rounds", "1", "--methods", "default"]
+            sibling_argv += ["--sibling-cpus", "1,3", "--max-sibling-busy", "0.05", "--retries", "4"]
+            with patch.object(b.subprocess, "run", side_effect=fake_busy):
+                self.assertEqual(b.main(sibling_argv), 0)
+            manifest = json.loads((Path(tmp) / "sibling" / "manifest.json").read_text())
+            self.assertEqual(manifest["protocol"]["sibling_cpus"], [1, 3])
+            self.assertEqual(len(manifest["rows"][0]["attempts"]), 5)
+            self.assertEqual(manifest["rows"][0]["flagged"], "CPU 1 50% busy > 5%")
             # Without a lock the coordinator bounds the worker itself; a missing file is a failure.
             with patch.object(b.subprocess, "run", return_value=subprocess.CompletedProcess([], 124)) as run:
                 argv2 = [a for a in argv if a not in ("--lock", "/tmp/lock")]
@@ -608,6 +636,10 @@ class RegressionMeasurementTest(unittest.TestCase):
             ["--steps", "0"],
             ["--entries", "bad"],
             ["--retries", "-1"],
+            ["--sibling-cpus", "1,3"],
+            ["--max-sibling-busy", "0.05"],
+            ["--sibling-cpus", "a", "--max-sibling-busy", "0.05"],
+            ["--sibling-cpus", "1", "--max-sibling-busy", "1.5"],
             ["--methods", "bucket"],
             ["--cases", "bad"],
             ["--worker", "small"],

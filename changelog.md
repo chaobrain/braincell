@@ -84,9 +84,9 @@
   (CELL-31b, CELL-31c). `exp_euler`, `backward_euler` and `crank_nicolson`
   used to reject a `Cell` with a point synapse at `init_state`: a synapse
   state holds one row per synapse across the population and has no CV axis,
-  so it could not be merged with `V`. Each row now goes into a slot of its own cell's block,
-  next to that cell's `V`, so every cell stays one block and the solvers keep
-  their order. Cells may carry different numbers of synapses; unused slots
+  so it could not be merged with `V`. Each row now goes into a slot of its
+  own cell's block, next to that cell's `V`, so every cell stays one block
+  and the solvers keep their order. Cells may carry different numbers of synapses; unused slots
   stay zero. On the CELL-19 soma with an `Exp2Syn` driven by a `NetStim`
   (float64, 1 ms), `V` is off from `rk4` by 4.1e-4 / 1.7e-5 mV under
   `exp_euler` at dt = 0.005 / 0.001 ms. The figures are 3.6e-4 / 1.5e-5 mV

@@ -28,6 +28,7 @@ import numpy as np
 
 import braincell
 from braincell import mech
+from braincell._multi_compartment import run as run_module
 from braincell._multi_compartment.run import (
     RunResult,
     _validate_time_quantity,
@@ -921,22 +922,23 @@ def _step_loop_rewrites(cell):
     ]
 
 
+def _detector_cell():
+    """``_hh_cell("lumped")`` whose -20 mV detector drives its own ExpSyn (weight 1e-6 uS, tau 1e6 ms)."""
+    cell = _hh_cell("lumped")
+    cell.place(RootLocation(0.5), mech.Synapse("ExpSyn", name="self", tau=1e6 * u.ms, e=-65.0 * u.mV))
+    detector = braincell.VoltageCrossingSource(cell, threshold=-20.0 * u.mV)
+    braincell.connect("self", source=detector, synapse=cell.synapses["self"], weight=1e-6 * u.uS)
+    cell.record("V", "V")
+    cell.record("g", braincell.observe.synapse(name="self").state("g"))
+    return cell
+
+
 class RunLoopCarryTest(unittest.TestCase):
     """CELL-39: the run loop carries no state that every step rewrites before reading it."""
 
-    def _detector_cell(self):
-        """``_hh_cell("lumped")`` whose -20 mV detector drives its own ExpSyn (weight 1e-6 uS, tau 1e6 ms)."""
-        cell = _hh_cell("lumped")
-        cell.place(RootLocation(0.5), mech.Synapse("ExpSyn", name="self", tau=1e6 * u.ms, e=-65.0 * u.mV))
-        detector = braincell.VoltageCrossingSource(cell, threshold=-20.0 * u.mV)
-        braincell.connect("self", source=detector, synapse=cell.synapses["self"], weight=1e-6 * u.uS)
-        cell.record("V", "V")
-        cell.record("g", braincell.observe.synapse(name="self").state("g"))
-        return cell
-
     def test_no_carry_is_rewritten_by_every_step(self):
         cells = {"lumped": _hh_cell("lumped"), "cable": _hh_cell("cable"), "reduced": _reduced_cell()}
-        cells["detector"] = self._detector_cell()
+        cells["detector"] = _detector_cell()
         for name, cell in cells.items():
             with self.subTest(cell=name):
                 cell.init_state()
@@ -950,7 +952,7 @@ class RunLoopCarryTest(unittest.TestCase):
 
     def test_a_detector_reads_the_voltage_before_each_step(self):
         with _float64():
-            cell = self._detector_cell()
+            cell = _detector_cell()
             cell.init_state()
             result = cell.run(dt=DT, duration=20.0 * u.ms)
         V = np.asarray(result.samples["V"].values.to_decimal(u.mV))
@@ -972,6 +974,197 @@ class RunLoopCarryTest(unittest.TestCase):
                     np.asarray(cell._event_previous_V.value.to_decimal(u.mV)).reshape(-1),
                     np.asarray(last.to_decimal(u.mV)).reshape(-1),
                 )
+
+
+#: The spike output paths of ``Cell.run`` the tests run on this machine's
+#: backend, by the module switches each sets (CELL-49). The first packs
+#: the spike bits at every step; each other path must give its results.
+SPIKE_PATHS = {"per step": {}}
+
+
+@contextlib.contextmanager
+def _spike_path(name):
+    """Plans built inside take the spike output path ``name`` of :data:`SPIKE_PATHS`."""
+    with contextlib.ExitStack() as stack:
+        for switch, value in SPIKE_PATHS[name].items():
+            stack.enter_context(mock.patch.object(run_module, switch, value))
+        yield
+
+
+def _high_firing_cell(n=100, solver="rk4"):
+    """A population a quarter of whose rows spike at every step from step 2 (CELL-49).
+
+    ``Cell.point(n, length=20 um, radius=10 um, V_init=-65 mV, V_th=-65 mV)``
+    on ``solver`` with only ``IL`` (0.3 mS/cm^2, E -65 mV), driven by 1 nA
+    sin(2 pi t / 0.1 ms + phi_m), phi_m = (m mod 4) pi / 2 + pi / 4: at
+    dt = 0.025 ms a period is 4 steps, and on rk4 each member's V crosses
+    -65 mV upward once in each. ``V`` is recorded as ``"V"``.
+    """
+    cell = braincell.Cell.point(
+        n, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, V_th=-65.0 * u.mV, solver=solver
+    )
+    cell.paint(AllRegion(), mech.Channel("IL", name="leak", g_max=0.3 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    phase = (np.arange(n) % 4) * (np.pi / 2) + np.pi / 4
+    cell.add_current_input(
+        "drive", lambda V: 1.0 * u.nA * u.math.sin(2 * np.pi * (brainstate.environ.get("t") / (0.1 * u.ms)) + phase)
+    )
+    cell.record("V", "V")
+    return cell
+
+
+def _clamped_hh_cell(n=100):
+    """CELL-39's population: ``_hh_cell``'s lumped HH (rk4) under a 10 uA/cm^2 clamp from 5 to 45 ms."""
+    area = 2.0 * u.math.pi * (10.0 * u.um) * (20.0 * u.um)
+    cell = _hh_cell("lumped", n=n, amplitudes=None)
+    cell.place(
+        mech.CurrentClamp(
+            delay=5.0 * u.ms, durations=40.0 * u.ms, amplitudes=(10.0 * u.uA / u.cm**2 * area).in_unit(u.nA)
+        )
+    )
+    cell.record("V", "V")
+    return cell
+
+
+def _segments(*segments):
+    """A ``run(cell)`` of the ``(steps, dt)`` (or ``steps`` at ``DT``) segments, one after another."""
+    segments = tuple(segment if isinstance(segment, tuple) else (segment, DT) for segment in segments)
+
+    def run(cell):
+        return tuple(cell.run(dt=dt, duration=n * dt) for n, dt in segments)
+
+    return run
+
+
+def _outcome(build, run):
+    """``(results, clock)``: ``run(cell)``'s results of a fresh ``build()`` and its clock after them."""
+    cell = build()
+    results = run(cell)
+    return results, cell._clock_host()
+
+
+def assert_same_runs(actual, expected):
+    """Runs pairwise equal: spikes (time, source_id, count, metadata), times, recordings; floats to rtol 1e-12."""
+    np.testing.assert_equal(len(actual), len(expected))
+    for one, other in zip(actual, expected):
+        _assert_same_run(one, other)
+
+
+def _assert_same_run(actual, expected):
+    assert_same_events(actual.spikes, expected.spikes)
+    np.testing.assert_equal(dict(actual.spikes.metadata), dict(expected.spikes.metadata))
+    np.testing.assert_allclose(_ms(actual), _ms(expected), rtol=1e-12, atol=0.0)
+    np.testing.assert_equal(tuple(actual.samples), tuple(expected.samples))
+    for name, block in expected.samples.items():
+        values = actual.samples[name].values
+        np.testing.assert_equal(u.get_unit(values), u.get_unit(block.values))
+        np.testing.assert_allclose(u.get_mantissa(values), u.get_mantissa(block.values), rtol=1e-12, atol=0.0)
+
+
+class SpikeOutputPathTest(unittest.TestCase):
+    """CELL-49: each spike output path of ``Cell.run`` gives the result of packing the bits at every step."""
+
+    def setUp(self):
+        self.enterContext(_float64())
+
+    def assert_paths_match(self, build, run):
+        """Each path's ``run`` of a fresh ``build()`` gives the per-step path's results and clock; returns those."""
+        with _spike_path("per step"):
+            expected, clock = _outcome(build, run)
+        for name in tuple(SPIKE_PATHS)[1:]:
+            with self.subTest(path=name), _spike_path(name):
+                actual, actual_clock = _outcome(build, run)
+                assert_same_runs(actual, expected)
+                self.assertEqual(actual_clock, clock)
+        return expected
+
+    def test_a_quarter_of_the_high_firing_rows_spike_at_every_step(self):
+        with _spike_path("per step"):
+            spikes = _high_firing_cell().run(dt=DT, duration=64 * DT).spikes
+        per_step = np.bincount(np.rint(_ms(spikes) / 0.025).astype(int), minlength=64)
+        np.testing.assert_array_equal(per_step[2:], np.full(62, 25))
+
+    def test_step_counts_with_and_without_a_block_size(self):
+        # Blocks of 25, 32, 31 and 23 steps; 37 and 7 steps have no divisor in [8, 32].
+        for n_steps in (2000, 64, 31, 69, 37, 7):
+            with self.subTest(n_steps=n_steps):
+                (expected,) = self.assert_paths_match(_high_firing_cell, _segments(n_steps))
+                self.assertGreater(len(expected.spikes.source_id), 0)
+
+    def test_the_clamped_population(self):
+        for precision in (32, 64):
+            context = contextlib.nullcontext() if precision == 64 else brainstate.environ.context(precision=32)
+            with self.subTest(precision=precision), context:
+                (expected,) = self.assert_paths_match(_clamped_hh_cell, _segments(2000))
+                self.assertGreater(len(expected.spikes.source_id), 100)
+
+    def test_a_run_split_in_blocks_of_other_sizes_matches_one_run(self):
+        # 31 steps make one block of 31, 69 three of 23; one run of 100 makes four of 25.
+        with _spike_path("per step"):
+            expected, clock = _outcome(_high_firing_cell, _segments(100))
+        for name in SPIKE_PATHS:
+            with self.subTest(path=name), _spike_path(name):
+                actual, actual_clock = _outcome(_high_firing_cell, _segments(31, 69))
+                assert_same_runs((RunResult.concat(actual),), expected)
+                self.assertEqual(actual_clock, clock)
+
+    def test_a_cable_and_a_batch(self):
+        def batched():
+            drive = np.asarray([[0.0, 0.05, 0.1], [0.1, 0.0, 0.05]]) * u.nA
+            cell = _hh_cell("lumped", amplitudes=None)
+            cell.add_current_input("drive", lambda V: drive)
+            cell.init_state(batch_size=2)
+            return cell
+
+        def cable():
+            cell = _hh_cell("cable")
+            cell.loc(RootLocation(0.5)).record("v", "V")
+            return cell
+
+        for name, build in (("cable", cable), ("batch", batched)):
+            with self.subTest(name):
+                (expected,) = self.assert_paths_match(build, _segments(800))
+                self.assertGreater(len(expected.spikes.source_id), 0)
+
+    def test_a_reduction_model(self):
+        def reduced():
+            cell = _reduced_cell()
+            braincell.connect("drive", source=_netstim(), synapse=cell.synapses["input"], weight=0.2 * u.uS)
+            return cell
+
+        (expected,) = self.assert_paths_match(reduced, _segments((40, 0.1 * u.ms)))
+        np.testing.assert_allclose(_ms(expected.spikes), [0.3, 1.3, 2.3], rtol=1e-9)
+
+    def test_a_value_input_acts_on_the_first_step(self):
+        # A 20 nA pulse for one step of 0.025 ms lifts the soma (12.6 pF) by
+        # about 40 mV: every member fires at once, in the first run only.
+        def pulsed(cell):
+            cell.add_current_input("pulse", 20.0 * u.nA)
+            return (cell.run(dt=DT, duration=64 * DT), cell.run(dt=DT, duration=64 * DT))
+
+        pulsed_run, later = self.assert_paths_match(lambda: _hh_cell("lumped", amplitudes=None), pulsed)
+        np.testing.assert_array_equal(pulsed_run.spikes.source_id, [0, 1, 2])
+        self.assertEqual(len(later.spikes.source_id), 0)
+
+    def test_a_detector_reads_the_voltage_before_each_step(self):
+        (expected,) = self.assert_paths_match(_detector_cell, _segments(800))
+        g = np.asarray(expected.samples["g"].values.to_decimal(u.uS))
+        self.assertEqual(int((np.diff(g, axis=0) > 0.0).sum()), 3)
+
+    def test_the_arrivals_after_a_change_of_dt(self):
+        # CELL-48's runs (CellArrivalStepTest): segments of 3 then 22 steps
+        # (no block, then blocks of 22), of 10 then 20 (blocks of 10 and 20),
+        # and of 3, 5 and 13 steps (no block).
+        cases = {
+            "off the new grid": ((0.06,) + CellArrivalStepTest.TIMES, ((3, DT), (22, 2 * DT))),
+            "on the new grid": (CellArrivalStepTest.TIMES, ((10, DT), (20, 2 * DT))),
+            "two changes": ((0.425, 0.455, 0.475, 0.6, 1.06, 1.375), ((3, DT), (5, 2 * DT), (13, 4 * DT))),
+        }
+        for name, (times, segments) in cases.items():
+            with self.subTest(name):
+                *_, last = self.assert_paths_match(
+                    lambda times=times: CellArrivalStepTest._counting_cell(times), _segments(*segments)
+                )
+                self.assertGreater(float(np.asarray(last.samples["g"].values.to_decimal(u.uS)).max()), 4.5)
 
 
 def _synapse(cell):

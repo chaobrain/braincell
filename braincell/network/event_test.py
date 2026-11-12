@@ -698,6 +698,23 @@ class ScheduledEventCountTest(unittest.TestCase):
                 sequence.event_count(rows, t=t, delay=one_delay, dt=self.DT),
                 _reference_flat_count(sequence.events, rows, t=t, delay=one_delay, dt=self.DT),
             )
+        # A t that is not a scalar also takes the matrix path, here with a scalar delay.
+        seen = 0
+        for t_ms in (0.0, 0.25, 0.6, 0.85):
+            t = np.asarray([t_ms]) * u.ms
+            for actual, expected in (
+                (
+                    source.event_count(rows, t=t, delay=0.25 * u.ms, dt=self.DT),
+                    _reference_netstim_count(source, rows, t=t, delay=0.25 * u.ms, dt=self.DT),
+                ),
+                (
+                    sequence.event_count(rows, t=t, delay=0.25 * u.ms, dt=self.DT),
+                    _reference_flat_count(sequence.events, rows, t=t, delay=0.25 * u.ms, dt=self.DT),
+                ),
+            ):
+                np.testing.assert_array_equal(actual, expected)
+                seen += int(np.sum(expected))
+        self.assertGreater(seen, 0)
         two_delays = np.asarray([0.0, 0.1]) * u.ms
         with self.assertRaises(ValueError) as expected:
             _reference_netstim_count(source, rows, t=0.0 * u.ms, delay=two_delays, dt=self.DT)

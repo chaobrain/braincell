@@ -602,6 +602,160 @@ class PaddingLimitTest(unittest.TestCase):
         _assert_same(self, _values(net.run(dt=DT, duration=100 * DT, scheduled_delivery="padded"), cell), reference)
 
 
+#: The tail model's windows: 10 ms each (400 steps).
+TAIL_STEPS = 400
+TAIL_ROWS = 1000
+
+
+def _tail_starts_ms():
+    return np.asarray(brainstate.random.RandomState(7).uniform(0.0, 1.0, TAIL_ROWS))
+
+
+def _tail_model(*, source="netstim", layout="independent", synapse="ExpSyn"):
+    """CELL-53: a schedule whose second window holds only its tail, on 10 cells of 100 ExpSyn.
+
+    ``NetStim(size=1000, start=U[0, 1) ms, interval=1 ms, number=11)``,
+    delay 0.1 ms, weight 0.001 uS: the window [0, 400) holds the first ten
+    events of each row (1.26 slots per record), [400, 800) only the
+    eleventh (11.1 slots per record, above the limit of 8) at the same
+    width, so its padded plan is no larger than the first one's.
+    ``source="sequence"`` gives the same times as an EventSequence;
+    ``layout="shared"`` sends the 1000 rows to one synapse per cell.
+    """
+    branch = bc.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+    cell = bc.Cell(bc.Morphology.from_root(branch), cv_policy=bc.CVPerBranch(1), pop_size=10, V_init=-65.0 * u.mV)
+    cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    per_cell = 100 if layout == "independent" else 1
+    cell.place(
+        LocsetMask.from_columns(np.zeros(per_cell, dtype=int), np.full(per_cell, 0.5)),
+        bc.mech.Synapse(synapse, name="exp", tau=2.0 * u.ms, e=0.0 * u.mV),
+    )
+    net = bc.Network("tail", seed=1)
+    post = net.add_population("post", cell)
+    starts = _tail_starts_ms()
+    if source == "netstim":
+        model = bc.NetStim(size=TAIL_ROWS, start=starts * u.ms, interval=1.0 * u.ms, number=11, seed=7)
+    else:
+        model = bc.EventSequence.from_times(tuple((start + np.arange(11.0)) * u.ms for start in starts))
+    stim = net.add_population("stim", model)
+    # Synapse id = placement * 10 + member: row r reaches member r % 10.
+    targets = np.arange(TAIL_ROWS) if layout == "independent" else np.arange(TAIL_ROWS) % 10
+    net.connect(
+        "drive", source=stim, synapse=post.synapses["exp"][targets], weight=0.001 * u.uS, delay=0.1 * u.ms
+    )
+    cell.record("v", "V")
+    cell.record("g", bc.observe.synapse(name="exp").state("g"))
+    if synapse == "ExpSynSTD":
+        cell.record("x", bc.observe.synapse(name="exp").state("x"))
+    return net, cell
+
+
+def _tail_windows(net, cell, method=None):
+    extra = {} if method is None else {"scheduled_delivery": method}
+    parts, layouts = [], []
+    for _ in range(2):
+        parts.append(_values(net.run(dt=DT, duration=TAIL_STEPS * DT, **extra), cell))
+        if method is not None:
+            layouts.append(net._scheduled_plans.preparation["layouts"][0])
+    return _concat(parts), layouts
+
+
+def _tail_key(net):
+    (route,) = net._scheduled_plans.routes
+    return route.population, route.layout_id
+
+
+class LaterWindowTest(unittest.TestCase):
+    """CELL-53: a later window no larger than a padded plan the Network accepted has no ratio limit."""
+
+    _assert_unchanged = PaddingLimitTest._assert_unchanged
+
+    def _check(self, rtol=RTOL, v_atol=None, **model):
+        net, cell = _tail_model(**model)
+        reference, _ = _tail_windows(net, cell)
+        self.assertEqual(reference["v"].shape[0], 2 * TAIL_STEPS)  # one sample per step
+        self.assertGreater(np.max(reference["g"]), 0.0)
+        net, cell = _tail_model(**model)
+        got, (first, second) = _tail_windows(net, cell, "padded")
+        self.assertLessEqual(first["padding_ratio"], 8.0)
+        self.assertGreater(second["padding_ratio"], 8.0)
+        self.assertLessEqual(second["array_bytes"], first["array_bytes"])
+        _assert_same(self, got, reference, rtol=rtol, v_atol=v_atol)
+        return net, cell, reference
+
+    @_float64
+    def test_the_tail_of_a_schedule_runs_padded(self):
+        net, cell, reference = self._check()
+        # A run again after reset_state hits the cache: no plan is built.
+        with mock.patch.object(scheduled, "_build_plans", wraps=scheduled._build_plans) as built:
+            net.reset_state()
+            again, _ = _tail_windows(net, cell, "padded")
+        self.assertEqual(built.call_count, 0)
+        _assert_same(self, again, reference)
+
+    @_float64
+    def test_shared_synapses(self):
+        self._check(layout="shared")
+
+    @_float64
+    def test_sum_count_layout(self):
+        self._check(synapse="ExpSynSTD")
+
+    @_float64
+    def test_event_sequence_source(self):
+        self._check(source="sequence")
+
+    def test_float32(self):
+        with brainstate.environ.context(precision=32):
+            self._check(rtol=1e-6, v_atol=1e-6)
+
+    @_float64
+    def test_the_exemption_is_up_to_the_accepted_bytes(self):
+        net, cell = _tail_model()
+        net.run(dt=DT, duration=TAIL_STEPS * DT)
+        reference = _values(net.run(dt=DT, duration=TAIL_STEPS * DT), cell)
+        for margin, raises in ((0, False), (1, True)):
+            with self.subTest(margin=margin):
+                net, cell = _tail_model()
+                net.run(dt=DT, duration=TAIL_STEPS * DT, scheduled_delivery="padded")
+                plans = net._scheduled_plans
+                accepted = plans.preparation["layouts"][0]["array_bytes"]  # the second window's bytes too
+                self.assertEqual(plans.accepted, {_tail_key(net): accepted})
+                with mock.patch.dict(plans.accepted, {_tail_key(net): accepted - margin}):
+                    if raises:
+                        before = _state(net, cell)
+                        with self.assertRaises(PaddingLimitError) as caught:
+                            net.run(dt=DT, duration=TAIL_STEPS * DT, scheduled_delivery="padded")
+                        self.assertEqual(plans.accepted, {_tail_key(net): accepted - margin})
+                        self._assert_unchanged(before, _state(net, cell))
+                        self.assertIn("11.1 slots per record", str(caught.exception))
+                    else:
+                        got = _values(net.run(dt=DT, duration=TAIL_STEPS * DT, scheduled_delivery="padded"), cell)
+                        _assert_same(self, got, reference)
+
+    @_float64
+    def test_a_first_sparse_window_still_raises(self):
+        # The same tail with no accepted plan before it: after a topology
+        # change the plans, and what they accepted, are dropped.
+        net, cell = _tail_model()
+        net.run(dt=DT, duration=TAIL_STEPS * DT, scheduled_delivery="padded")
+        net._mark_topology_changed()
+        self.assertIsNone(net._scheduled_plans)
+        before = _state(net, cell)
+        with self.assertRaisesRegex(PaddingLimitError, "11.1 slots per record"):
+            net.run(dt=DT, duration=TAIL_STEPS * DT, scheduled_delivery="padded")
+        self._assert_unchanged(before, _state(net, cell))
+
+    @_float64
+    def test_a_refused_plan_is_not_accepted(self):
+        net, cell = _overflow_model()
+        with self.assertRaises(PaddingLimitError):
+            net.run(dt=DT, duration=100.0 * u.ms, scheduled_delivery="padded")
+        self.assertEqual(net._scheduled_plans.accepted, {})
+        net.run(dt=DT, duration=8 * DT, scheduled_delivery="padded")
+        self.assertEqual(net._scheduled_plans.accepted, {_tail_key(net): (2 * 8 * 1 + 10 + 1) * 4})
+
+
 class ConfigurationTest(unittest.TestCase):
     """Acceptance 5: the values ``scheduled_delivery`` accepts, and the fixed runtime configuration."""
 

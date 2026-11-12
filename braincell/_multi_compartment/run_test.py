@@ -979,7 +979,19 @@ class RunLoopCarryTest(unittest.TestCase):
 #: The spike output paths of ``Cell.run`` the tests run on this machine's
 #: backend, by the module switches each sets (CELL-49). The first packs
 #: the spike bits at every step; each other path must give its results.
-SPIKE_PATHS = {"per step": {}}
+#: "blocked" packs them every K steps where the step count has a divisor
+#: K in [8, 32] (and at every step otherwise); "compacted" also copies the
+#: grid back compacted, with room for all of it.
+SPIKE_PATHS = {
+    "per step": {"_BLOCKED_SPIKE_OUTPUT": False, "_COMPACT_SPIKE_COPY": False},
+    "blocked": {"_BLOCKED_SPIKE_OUTPUT": True, "_COMPACT_SPIKE_COPY": False},
+    "compacted": {
+        "_BLOCKED_SPIKE_OUTPUT": True,
+        "_COMPACT_SPIKE_COPY": True,
+        "_COMPACT_MIN_BYTES": 0,
+        "_COMPACT_CAPACITY_DIVISOR": 1,
+    },
+}
 
 
 @contextlib.contextmanager
@@ -1036,10 +1048,15 @@ def _segments(*segments):
 
 
 def _outcome(build, run):
-    """``(results, clock)``: ``run(cell)``'s results of a fresh ``build()`` and its clock after them."""
+    """``(results, clock, ports)``: ``run(cell)``'s results of a fresh ``build()``, its clock, its plans' spike ports."""
     cell = build()
-    results = run(cell)
-    return results, cell._clock_host()
+    with mock.patch.object(run_module, "_grid_events", wraps=run_module._grid_events) as whole:
+        results = run(cell)
+    ports = tuple(plan.spike_port for plan in cell._run_loop_cache.values())
+    if any(port.capacity for port in ports):
+        # A compacted copy with room for all of the grid is decoded as it is.
+        np.testing.assert_equal(whole.call_count, 0)
+    return results, cell._clock_host(), ports
 
 
 def assert_same_runs(actual, expected):
@@ -1067,15 +1084,20 @@ class SpikeOutputPathTest(unittest.TestCase):
         self.enterContext(_float64())
 
     def assert_paths_match(self, build, run):
-        """Each path's ``run`` of a fresh ``build()`` gives the per-step path's results and clock; returns those."""
+        """Each path's ``run`` of a fresh ``build()`` gives the per-step path's results and clock.
+
+        Returns those results and the spike ports of each path's plans.
+        """
+        ports = {}
         with _spike_path("per step"):
-            expected, clock = _outcome(build, run)
+            expected, clock, ports["per step"] = _outcome(build, run)
         for name in tuple(SPIKE_PATHS)[1:]:
             with self.subTest(path=name), _spike_path(name):
-                actual, actual_clock = _outcome(build, run)
+                actual, actual_clock, ports[name] = _outcome(build, run)
                 assert_same_runs(actual, expected)
                 self.assertEqual(actual_clock, clock)
-        return expected
+        self.assertTrue(all(port.block_steps is None and port.capacity is None for port in ports["per step"]))
+        return expected, ports
 
     def test_a_quarter_of_the_high_firing_rows_spike_at_every_step(self):
         with _spike_path("per step"):
@@ -1085,25 +1107,29 @@ class SpikeOutputPathTest(unittest.TestCase):
 
     def test_step_counts_with_and_without_a_block_size(self):
         # Blocks of 25, 32, 31 and 23 steps; 37 and 7 steps have no divisor in [8, 32].
-        for n_steps in (2000, 64, 31, 69, 37, 7):
+        for n_steps, block_steps in ((2000, 25), (64, 32), (31, 31), (69, 23), (37, None), (7, None)):
             with self.subTest(n_steps=n_steps):
-                (expected,) = self.assert_paths_match(_high_firing_cell, _segments(n_steps))
+                (expected,), ports = self.assert_paths_match(_high_firing_cell, _segments(n_steps))
                 self.assertGreater(len(expected.spikes.source_id), 0)
+                for name in ("blocked", "compacted"):
+                    (port,) = ports[name]
+                    self.assertEqual(port.block_steps, block_steps)
+                self.assertEqual(ports["compacted"][0].capacity, -(-n_steps * 13 // 4))
 
     def test_the_clamped_population(self):
         for precision in (32, 64):
             context = contextlib.nullcontext() if precision == 64 else brainstate.environ.context(precision=32)
             with self.subTest(precision=precision), context:
-                (expected,) = self.assert_paths_match(_clamped_hh_cell, _segments(2000))
+                (expected,), _ = self.assert_paths_match(_clamped_hh_cell, _segments(2000))
                 self.assertGreater(len(expected.spikes.source_id), 100)
 
     def test_a_run_split_in_blocks_of_other_sizes_matches_one_run(self):
         # 31 steps make one block of 31, 69 three of 23; one run of 100 makes four of 25.
         with _spike_path("per step"):
-            expected, clock = _outcome(_high_firing_cell, _segments(100))
+            expected, clock, _ = _outcome(_high_firing_cell, _segments(100))
         for name in SPIKE_PATHS:
             with self.subTest(path=name), _spike_path(name):
-                actual, actual_clock = _outcome(_high_firing_cell, _segments(31, 69))
+                actual, actual_clock, _ = _outcome(_high_firing_cell, _segments(31, 69))
                 assert_same_runs((RunResult.concat(actual),), expected)
                 self.assertEqual(actual_clock, clock)
 
@@ -1122,7 +1148,7 @@ class SpikeOutputPathTest(unittest.TestCase):
 
         for name, build in (("cable", cable), ("batch", batched)):
             with self.subTest(name):
-                (expected,) = self.assert_paths_match(build, _segments(800))
+                (expected,), _ = self.assert_paths_match(build, _segments(800))
                 self.assertGreater(len(expected.spikes.source_id), 0)
 
     def test_a_reduction_model(self):
@@ -1131,8 +1157,12 @@ class SpikeOutputPathTest(unittest.TestCase):
             braincell.connect("drive", source=_netstim(), synapse=cell.synapses["input"], weight=0.2 * u.uS)
             return cell
 
-        (expected,) = self.assert_paths_match(reduced, _segments((40, 0.1 * u.ms)))
+        (expected,), ports = self.assert_paths_match(reduced, _segments((40, 0.1 * u.ms)))
         np.testing.assert_allclose(_ms(expected.spikes), [0.3, 1.3, 2.3], rtol=1e-9)
+        # A reduction model's event counts are not packed: each step stores them.
+        for name in SPIKE_PATHS:
+            (port,) = ports[name]
+            self.assertEqual((port.packed, port.block_steps, port.capacity), (False, None, None))
 
     def test_a_value_input_acts_on_the_first_step(self):
         # A 20 nA pulse for one step of 0.025 ms lifts the soma (12.6 pF) by
@@ -1141,12 +1171,12 @@ class SpikeOutputPathTest(unittest.TestCase):
             cell.add_current_input("pulse", 20.0 * u.nA)
             return (cell.run(dt=DT, duration=64 * DT), cell.run(dt=DT, duration=64 * DT))
 
-        pulsed_run, later = self.assert_paths_match(lambda: _hh_cell("lumped", amplitudes=None), pulsed)
+        (pulsed_run, later), _ = self.assert_paths_match(lambda: _hh_cell("lumped", amplitudes=None), pulsed)
         np.testing.assert_array_equal(pulsed_run.spikes.source_id, [0, 1, 2])
         self.assertEqual(len(later.spikes.source_id), 0)
 
     def test_a_detector_reads_the_voltage_before_each_step(self):
-        (expected,) = self.assert_paths_match(_detector_cell, _segments(800))
+        (expected,), _ = self.assert_paths_match(_detector_cell, _segments(800))
         g = np.asarray(expected.samples["g"].values.to_decimal(u.uS))
         self.assertEqual(int((np.diff(g, axis=0) > 0.0).sum()), 3)
 
@@ -1161,10 +1191,52 @@ class SpikeOutputPathTest(unittest.TestCase):
         }
         for name, (times, segments) in cases.items():
             with self.subTest(name):
-                *_, last = self.assert_paths_match(
+                (*_, last), _ = self.assert_paths_match(
                     lambda times=times: CellArrivalStepTest._counting_cell(times), _segments(*segments)
                 )
                 self.assertGreater(float(np.asarray(last.samples["g"].values.to_decimal(u.uS)).max()), 4.5)
+
+    def test_a_count_over_the_capacity_copies_the_whole_grid(self):
+        # Room for one of the 4-byte groups: 64 steps of the high-firing grid have about 200 nonzero.
+        with _spike_path("per step"):
+            expected, _, _ = _outcome(_high_firing_cell, _segments(64))
+        with (
+            _spike_path("compacted"),
+            mock.patch.object(run_module, "_COMPACT_CAPACITY_DIVISOR", 10**9),
+            mock.patch.object(run_module, "_grid_events", wraps=run_module._grid_events) as whole,
+        ):
+            cell = _high_firing_cell()
+            actual = cell.run(dt=DT, duration=64 * DT)
+        (plan,) = cell._run_loop_cache.values()
+        port = plan.spike_port
+        self.assertEqual((port.block_steps, port.capacity), (32, 1))
+        self.assertEqual(whole.call_count, 1)
+        assert_same_runs((actual,), expected)
+
+    def test_a_grid_of_1_mib_is_compacted(self):
+        # 100 rows pack into 13 bytes a step; 80660 steps make 1048580 bytes.
+        cell = _high_firing_cell()
+        cell.init_state()
+        for n_steps, capacity in ((80659, None), (80660, 1048580 // 4 // 64)):
+            with self.subTest(n_steps=n_steps):
+                port = run_module._SpikePort.of(cell, n_steps=n_steps, path=(False, True))
+                self.assertEqual((port.block_steps, port.capacity), (None, capacity))
+        self.assertIsNone(run_module._SpikePort.of(cell, n_steps=80660, path=(True, False)).capacity)
+        self.assertEqual(run_module._SpikePort.of(cell, n_steps=80660, path=(True, False)).block_steps, 20)
+
+    def test_the_paths_follow_the_platform_of_the_spike_state(self):
+        cell = _high_firing_cell()
+        cell.init_state()
+        reduced = _reduced_cell()
+        reduced.init_state()
+        for on_gpu in (False, True):
+            with self.subTest(on_gpu=on_gpu), mock.patch.object(run_module, "_on_gpu", return_value=on_gpu):
+                self.assertEqual(run_module._spike_output_path(cell), (on_gpu, on_gpu))
+                self.assertEqual(run_module._spike_output_path(reduced), (False, False))
+                with _spike_path("blocked"):
+                    self.assertEqual(run_module._spike_output_path(cell), (True, False))
+        self.assertFalse(run_module._on_gpu(jax.device_put(np.zeros(3), jax.devices("cpu")[0])))
+        self.assertFalse(run_module._on_gpu(np.zeros(3) * u.mV))
 
 
 def _synapse(cell):

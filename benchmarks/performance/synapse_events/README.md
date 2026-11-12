@@ -8,9 +8,9 @@
 | --- | --- | --- |
 | [benchmark.py](benchmark.py) | 现有生产路径：smoke、scaling、activity、schedule、delay、declarations、controls；比较独立与共享 ExpSyn 布局 | [report.py](report.py) |
 | [query_benchmark.py](query_benchmark.py) | 比较 current、预计算 scan、cursor、bucket；覆盖表长度、密度、扇出、延迟和块大小 | [query_report.py](query_report.py) |
-| [delivery_benchmark.py](delivery_benchmark.py) | micro 比较查询与直接投递；full 比较真实 Cell/Network；controls 做四层对照；profile 采集诊断 | [delivery_report.py](delivery_report.py)、[controls_report.py](controls_report.py) |
+| [delivery_benchmark.py](delivery_benchmark.py) | micro 比较查询与直接投递；full 比较真实 Cell/Network；controls 做四层对照；profile 采集诊断；regression 在六类模型上对照生产入口 `scheduled_delivery` 与默认路径（见下文 [Production regression](#production-regression---phase-regression)） | [delivery_report.py](delivery_report.py)、[controls_report.py](controls_report.py) |
 
-`*_test.py` 为各脚本的同目录测试。可复用算法来自 `braincell.experimental`，本目录提供实验驱动；算法合同见 `braincell.experimental.scheduled_events` 与 `braincell.experimental.scheduled_delivery` 的模块文档。
+`*_test.py` 为各脚本的同目录测试。micro 与 profile 的查询和投递内核来自 `braincell.experimental`（算法合同见 `braincell.experimental.scheduled_events` 与 `braincell.experimental.scheduled_delivery` 的模块文档）；full、controls 与 regression 经生产入口 `Network.prepare_run`/`Network.run` 的 `scheduled_delivery` 参数选择方法，不再使用实验适配器 `ScheduledDeliveryCell`。
 
 生产基准中的 N 是逻辑 cell 数，M 是每 cell 的独立 NetStim 源数，每个目标恰好接受 M 个源。独立布局为每源一个 ExpSyn；共享布局为每 cell 一个 ExpSyn。查询实验中的 fanout 另外控制每源连接数。共享与独立是显式构造的两种模型，不能据此自动合并一般模型的独立状态。
 
@@ -56,7 +56,7 @@ CPU-only 时可以省略 `--gpu`。前两个驱动一次调用执行一套选定
 
 ## 计时与正确性边界
 
-- 完整模拟通过编译后的 `brainstate.transform.for_loop` 调用真实 `Network.update`；计时保留最终状态，不包括 `Network.run` 结果表物化。完整轨迹校验另外执行，不计入稳态时间。
+- full 与 controls 的完整模拟通过编译后的 `brainstate.transform.for_loop` 调用真实 `Network.update`；计时保留最终状态，不包括 `Network.run` 结果表物化。完整轨迹校验另外执行，不计入稳态时间。regression 另测 `Network.run` 入口，见下文。
 - 每次正式运行前 reset 并同步，计时结束等待设备计算完成。首次调用包含编译与执行，额外预热和正式计时次数分别报告；controls 另列 reset 成本。
 - 查询、查询加归约、投递加 ExpSyn 消费者各自独立编译。消费者使用 `ExpSyn.apply_events` 和精确指数衰减；它们没有完整膜电位积分，不能相加或从完整模型耗时中相减得到阶段占比。
 - current/scan/cursor/bucket 生成逐连接计数；direct/padded 直接归约目标输入。固定宽度 padded 有填充与存储限制，超限明确记录不适用。
@@ -77,6 +77,51 @@ CPU-only 时可以省略 `--gpu`。前两个驱动一次调用执行一套选定
 A/B 仅 production；C/D 的每个 worker 配对 production 与所选桶，候选由 case 固定，不额外传 `--methods`。选择全部六个 case 时，每设备每轮有六个进程、十条方法结果；这些数量不包含方法内部的首次执行、预热、计时与额外校验，运行前还须逐项确认。
 
 四组差值表示不同完整模型之间的整体变化。B−A 不是单独突触衰减耗时，D−C 也不是全部 event 时间。时钟检查采用最终量化步与半 dt 偏差界限；重复结果使用数值容差，不能将 float32 的逐位相等作为普遍保证。
+
+## Production regression (`--phase regression`)
+
+The regression compares `scheduled_delivery="direct"` and `"padded"` with the default path (`scheduled_delivery=None`, named `default`) on six models. Run time is 100 ms at dt = 0.025 ms (4000 steps). Weights are 0.001 uS and the delays zero, apart from the ring.
+
+| Model | Cells × scheduled rows per cell, events per source | Cell model and synapses |
+| --- | --- | --- |
+| `small`, `large`, `long`, `shared` | the `full` matrix: 1 × 10, 100 × 100, 10 × 10 with 10000 events per source, and `large` with one shared ExpSyn per cell | one passive CV, ExpSyn |
+| `active` | 20 × 50, 11 events per source (10 ms apart, phases U[0, 10) ms) | HH cable of 10 CVs (`ActiveCase`), one ExpSyn per source |
+| `mixed` | `active`, plus a live ring: the spike of cell i reaches the first 5 ExpSyn of cell i + 1, delay 1 ms, 0.003 uS | as `active` |
+
+Each worker is one fresh process that measures one (model, method, entry, device).
+
+- **Entries.** `run` calls `Network.run(duration=n·dt, scheduled_delivery=...)` after `reset_state()`. Its plan is the window [0, n), built by the first call of each step count; later calls hit the plan cache. The windows are single windows from step 0; the limits of `padded` over several consecutive windows are not measured here. `update` calls `Network.prepare_run(scheduled_delivery=...)`, whose plan covers every event, then a compiled `for_loop` of `n` `Network.update()` calls after a compiled reset.
+- **Timing.** For each step count of `--steps`, in order, the worker makes a first (compiling) call, `--warmup` untimed calls and `--repeat` timed calls. Resets are not timed. The timer stops when the Cell states are ready.
+- **Derived costs.** The per-step cost is the slope between the two step counts, and the per-run cost the intercept. Plan preparation (host build and upload), plan bytes and peak RSS are reported separately.
+- **Padding limit.** A `padded` plan over its limits raises `PaddingLimitError`. The worker records it as `not_applicable`, with the error message, the padding ratio and the time of the attempt. There is no fallback.
+- **Check.** One more untimed call saves the final V and g and the spikes (step and source). The report compares them across the methods of the same round.
+
+The coordinator runs the methods of each (round, model, entry) back to back, in an order seeded by `--seed`.
+
+- `--lock` holds a `flock` file for each worker, with the worker's timeout starting once the lock is held. `--cpus` pins workers with `taskset`, and `--single-thread` makes XLA's CPU backend single-threaded. `--pause` waits after each worker.
+- A worker is re-run, up to `--retries` times, if its IQR/median exceeds `--max-iqr`, if the 1-minute load reaches `--max-load`, or, on a GPU, if another process held the device when it started. Every attempt is kept.
+- Each worker records the load, the busy share of every CPU over its run, the GPU's utilization and processes, and `braincell.__file__`.
+
+```text
+python -m benchmarks.performance.synapse_events.delivery_benchmark --phase regression \
+  --devices <cpu|gpu> --gpu <device-index> --rounds <rounds> --warmup <warmup-count> --repeat <timed-count> \
+  --steps <n1,n2> --entries run,update --lock <lock-file> --cpus <cpu-list> --single-thread \
+  --timeout <worker-seconds> --budget-seconds <total-seconds> --out <new-run-directory>
+python -m benchmarks.performance.synapse_events.delivery_report <run-directory> --regression
+```
+
+The report writes `scheduled-production-regression-tables.md` and two CSV files into the run directory. They hold:
+
+- per-round and median times;
+- the per-step and per-run costs;
+- the paired ratios (default ÷ method, same round);
+- the break-even run count, (plan preparation + first call − default first call) ÷ (default run − method run);
+- the selection: a method faster in every round with a median ratio of at least 1.10, otherwise `default`.
+
+The correctness of the six models is checked by `check_regression`, without timing, in `delivery_benchmark_test.py`. Each method runs against the default path on both entries:
+
+- every step's V, g, scheduled input and spikes (update entry) and every step's V, the final g and the spike events (run entry);
+- tolerances: float64 `rtol = atol = 1e-12`; float32 `rtol = 3e-5`, with V `atol = 1e-4 mV` and g and input `atol = 1e-7 uS`.
 
 ## 报告、总结与原始文件
 

@@ -43,6 +43,8 @@ CONTROL_JOBS = {
     "active_direct": ("active", ("direct",)),
     "active_padded": ("active", ("padded",)),
 }
+#: Models of the regression phase: the ``full`` matrix and the active models.
+REGRESSION_MODELS = ("small", "large", "long", "shared", "active", "mixed")
 #: Methods of the regression phase: ``default`` is ``scheduled_delivery=None``.
 REGRESSION_METHODS = ("default", "direct", "padded")
 #: Entries of the regression phase: ``Network.run`` and ``prepare_run`` + ``update``.
@@ -353,7 +355,9 @@ def _plan_statistics(net):
         return dict(plan_prepare_s=0.0, array_bytes=0, plan_layouts=[])
     prep = plans.preparation
     return dict(
-        plan_prepare_s=prep["build_s"] + prep["upload_s"], array_bytes=int(prep["array_bytes"]), plan_layouts=prep["layouts"]
+        plan_prepare_s=prep["build_s"] + prep["upload_s"],
+        array_bytes=int(prep["array_bytes"]),
+        plan_layouts=prep["layouts"],
     )
 
 
@@ -415,7 +419,9 @@ def _capture_drive(work):
 
     The Cell's ``_evaluate_contact_inputs`` is wrapped on this instance, so
     the recorded input is the one the step used: under ``scheduled_delivery``
-    it comes from the plan, at the loop's integer step.
+    it comes from the plan, at the loop's integer step. The Network's compiled
+    step keeps the trace it was first called with, so wrap a workload before
+    it first runs.
     """
     import brainstate
     import brainunit as u
@@ -573,12 +579,14 @@ def measure_full(
             except Exception as exc:
                 profile_status = f"unavailable: {exc}"
         print(f"full {method}: validating ({time.perf_counter() - began:.1f}s)", flush=True)
-        check_reset, check = full_runner(work, record=True)
+        # A fresh workload: the input capture must be in place before the step is first traced.
+        check_work = make_full_workload(case, method, control=control)
+        check_reset, check = full_runner(check_work, record=True)
         jax.block_until_ready(check_reset())
         voltage, g, drive, spike = jax.device_get(check(steps)[2])
         checks = {}
         if validate_control:
-            checks = _check_control(work, case, control, voltage, g, drive)
+            checks = _check_control(check_work, case, control, voltage, g, drive)
             jax.block_until_ready(reset())
             repeated = jax.device_get(run(steps))
             checks.update(_check_reset_result(repeated[:2], result[:2]))
@@ -822,13 +830,13 @@ def build_regression_workload(name, method, *, prepare=True, case=None, recordin
 
 
 def _cpu_ticks():
-    """``{cpu: (total, idle)}`` jiffies of CPUs 0-3 from ``/proc/stat``; empty where unavailable."""
+    """``{cpu: (total, idle)}`` jiffies of every CPU from ``/proc/stat``; empty where unavailable."""
     ticks = {}
     try:
         with open("/proc/stat") as handle:
             for line in handle:
                 name, *values = line.split()
-                if name.startswith("cpu") and name[3:].isdigit() and int(name[3:]) < 4:
+                if name.startswith("cpu") and name[3:].isdigit():
                     values = [int(v) for v in values[:8]]
                     ticks[int(name[3:])] = (sum(values), values[3] + values[4])
     except OSError:
@@ -919,11 +927,13 @@ def measure_regression(name, method, entry, *, steps=(4000, 2000), warmup=2, rep
         work = build_regression_workload(name, method, prepare=entry == "update", case=case)
     except PaddingLimitError as exc:
         return result | dict(
-            status="not_applicable", reason=str(exc), padding_ratio=padding_ratio(exc),
+            status="not_applicable",
+            reason=str(exc),
+            padding_ratio=padding_ratio(exc),
             attempt_s=time.perf_counter() - began,
         )
     net, cell, node, states = work["net"], work["cell"], work["node"], work["states"]
-    result.update(build_s=work["build_seconds"], prepare_s=work["prepare_seconds"], n_cells=int(cell.V.value.shape[0]))
+    result.update(build_s=work["build_seconds"], prepare_s=work["prepare_seconds"])
     if entry == "update":
         result.update(plan=_plan_statistics(net))
     dt = case.dt_ms * u.ms
@@ -956,7 +966,9 @@ def measure_regression(name, method, entry, *, steps=(4000, 2000), warmup=2, rep
             first, _ = call(n)
         except PaddingLimitError as exc:
             return result | dict(
-                status="not_applicable", reason=str(exc), padding_ratio=padding_ratio(exc),
+                status="not_applicable",
+                reason=str(exc),
+                padding_ratio=padding_ratio(exc),
                 attempt_s=time.perf_counter() - began,
             )
         item = dict(first_call_s=first)
@@ -1117,12 +1129,14 @@ def check_regression(name, *, methods=("direct", "padded"), case=None, chunk=500
             spike_source=np.asarray(spike.source_id),
         )
     reference = results["default"]
+    per_cell = np.bincount(reference["spike_source"].astype(int), minlength=case.n)
+    report["spikes_per_cell"] = [int(per_cell.min()), int(per_cell.max())]
     for method, got in results.items():
         if method == "default":
             report["run"][method] = dict(status="ok", spikes=int(reference["spike_source"].size))
             continue
         error = {}
-        for label in ("V", "g"):
+        for label in ("V", "g"):  # V on every step, g at the end
             np.testing.assert_allclose(
                 got[label], reference[label], rtol=rtol, atol=atol[label], err_msg=f"{name} run {method} {label}"
             )
@@ -1150,6 +1164,17 @@ def _regression_worker_failed(data, *, max_iqr, max_load, gpu):
     return "; ".join(reasons) or None
 
 
+def _git(*args):
+    """Output of a git command in the checkout, or ``None`` without git."""
+    try:
+        with subprocess.Popen(
+            ["git", "-C", str(ROOT), *args], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+        ) as process:
+            return process.communicate()[0].strip()
+    except OSError:
+        return None
+
+
 def run_regression(args, models):
     """Coordinate the regression phase: one fresh worker per (round, model, entry, method, device).
 
@@ -1172,18 +1197,33 @@ def run_regression(args, models):
         ROOT / "braincell/_multi_compartment/cell.py",
     ]
     sources = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
-    try:
-        sha = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-        dirty = bool(subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain"], capture_output=True, text=True).stdout.strip())
-    except OSError:
-        sha, dirty = None, None
+    sha = _git("rev-parse", "HEAD")
+    status = _git("status", "--porcelain", "--untracked-files=no")
+    dirty = None if status is None else bool(status)
     devices = ("cpu", "gpu") if args.devices == "both" else (args.devices,)
     methods = tuple(args.methods.split(","))
     protocol = dict(
-        phase="regression", cases=list(models), entries=list(args.entries), methods=list(methods), devices=devices,
-        rounds=args.rounds, warmup=args.warmup, repeat=args.repeat, steps=list(args.steps), precision=args.precision,
-        cpus=args.cpus, lock=args.lock, pause_s=args.pause, max_iqr=args.max_iqr, max_load=args.max_load,
-        retries=args.retries, seed=args.seed, gpu=args.gpu, timeout=args.timeout, git_sha=sha, dirty=dirty,
+        phase="regression",
+        cases=list(models),
+        entries=list(args.entries),
+        methods=list(methods),
+        devices=devices,
+        rounds=args.rounds,
+        warmup=args.warmup,
+        repeat=args.repeat,
+        steps=list(args.steps),
+        precision=args.precision,
+        cpus=args.cpus,
+        lock=args.lock,
+        pause_s=args.pause,
+        max_iqr=args.max_iqr,
+        max_load=args.max_load,
+        retries=args.retries,
+        seed=args.seed,
+        gpu=args.gpu,
+        timeout=args.timeout,
+        git_sha=sha,
+        dirty=dirty,
         sources=sources,
     )
     manifest = dict(created_utc=datetime.now(timezone.utc).isoformat(), protocol=protocol, rows=[])
@@ -1195,8 +1235,15 @@ def run_regression(args, models):
                 random.Random(f"{args.seed}:{round_id}:{model}:{entry}").shuffle(order)
                 for method in order:
                     for device in devices:
-                        record = dict(device=device, case=model, entry=entry, method=method, round=round_id, order=order,
-                                      attempts=[])
+                        record = dict(
+                            device=device,
+                            case=model,
+                            entry=entry,
+                            method=method,
+                            round=round_id,
+                            order=order,
+                            attempts=[],
+                        )
                         for attempt in range(args.retries + 1):
                             stem = f"{device}_{model}_{entry}_{method}_r{round_id}_a{attempt}"
                             path = out / f"{stem}.json"
@@ -1206,12 +1253,18 @@ def run_regression(args, models):
                                 _launch_regression_worker(args, device, model, entry, method, out, stem)
                             data = json.loads(path.read_text())
                             rerun = _regression_worker_failed(
-                                data, max_iqr=args.max_iqr, max_load=args.max_load, gpu=args.gpu if device == "gpu" else None
+                                data,
+                                max_iqr=args.max_iqr,
+                                max_load=args.max_load,
+                                gpu=args.gpu if device == "gpu" else None,
                             )
                             record["attempts"].append(dict(file=path.name, status=data["status"], rerun=rerun))
                             record.update(file=path.name, status=data["status"], flagged=rerun)
-                            print(f"regression round {round_id} {device} {model} {entry} {method} attempt {attempt}: "
-                                  f"{data['status']}{'' if rerun is None else ' (' + rerun + ')'}", flush=True)
+                            print(
+                                f"regression round {round_id} {device} {model} {entry} {method} attempt {attempt}: "
+                                f"{data['status']}{'' if rerun is None else ' (' + rerun + ')'}",
+                                flush=True,
+                            )
                             if args.pause:
                                 time.sleep(args.pause)
                             if rerun is None or data["status"] != "ok":
@@ -1232,11 +1285,33 @@ def _launch_regression_worker(args, device, model, entry, method, out, stem):
         JAX_ENABLE_COMPILATION_CACHE="false",
     )
     if args.single_thread:
-        env["XLA_FLAGS"] = (env.get("XLA_FLAGS", "") + " --xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1").strip()
+        env["XLA_FLAGS"] = (
+            env.get("XLA_FLAGS", "") + " --xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1"
+        ).strip()
     cmd = [
-        args.python, "-m", __spec__.name, "--phase", "regression", "--worker", model, "--method", method,
-        "--entry", entry, "--devices", device, "--out", str(path), "--repeat", str(args.repeat),
-        "--warmup", str(args.warmup), "--steps", ",".join(map(str, args.steps)), "--precision", str(args.precision),
+        args.python,
+        "-m",
+        __spec__.name,
+        "--phase",
+        "regression",
+        "--worker",
+        model,
+        "--method",
+        method,
+        "--entry",
+        entry,
+        "--devices",
+        device,
+        "--out",
+        str(path),
+        "--repeat",
+        str(args.repeat),
+        "--warmup",
+        str(args.warmup),
+        "--steps",
+        ",".join(map(str, args.steps)),
+        "--precision",
+        str(args.precision),
     ]
     if device == "gpu":
         cmd += ["--gpu", str(args.gpu)]
@@ -1252,8 +1327,10 @@ def _launch_regression_worker(args, device, model, entry, method, out, stem):
         try:
             result = subprocess.run(cmd, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, timeout=timeout)
             if not path.exists():
-                _write_json(path, dict(status="timeout" if result.returncode == 124 else "failed",
-                                       error=f"exit {result.returncode}"))
+                _write_json(
+                    path,
+                    dict(status="timeout" if result.returncode == 124 else "failed", error=f"exit {result.returncode}"),
+                )
         except subprocess.TimeoutExpired:
             _write_json(path, dict(status="timeout", reason="worker deadline exceeded"))
 
@@ -1275,7 +1352,12 @@ def regression_worker(args):
         raise RuntimeError("requested backend was not selected")
     with brainstate.environ.context(precision=args.precision):
         data = measure_regression(
-            args.worker, args.method, args.entry, steps=args.steps, warmup=args.warmup, repeat=args.repeat,
+            args.worker,
+            args.method,
+            args.entry,
+            steps=args.steps,
+            warmup=args.warmup,
+            repeat=args.repeat,
             check_path=args.out.with_suffix(".npz"),
         )
     data.update(
@@ -1371,7 +1453,11 @@ def main(argv=None):
         args.entries = tuple(args.entries.split(","))
         if not args.steps or min(args.steps) < 1 or len(set(args.steps)) != len(args.steps):
             parser.error("--steps must be distinct positive step counts")
-        if not args.entries or any(e not in ENTRIES for e in args.entries) or len(set(args.entries)) != len(args.entries):
+        if (
+            not args.entries
+            or any(e not in ENTRIES for e in args.entries)
+            or len(set(args.entries)) != len(args.entries)
+        ):
             parser.error("--entries must be unique names of run, update")
         if args.retries < 0 or args.pause < 0:
             parser.error("--retries and --pause must be nonnegative")

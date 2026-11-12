@@ -50,6 +50,8 @@ def collect(root):
         manifest = json.loads(path.read_text())
         protocol = manifest["protocol"]
         phase = protocol["phase"]
+        if phase == "regression":
+            continue  # tabulated by export_regression
         expected = len(protocol["cases"]) * len(protocol["devices"]) * protocol["rounds"]
         if len(manifest["rows"]) != expected:
             failures.append(f"{path.parent.name}: incomplete workers {len(manifest['rows'])}/{expected}")
@@ -287,6 +289,343 @@ def export_report(root, report=None):
     return validation
 
 
+REGRESSION_FILENAME = "scheduled-production-regression-tables.md"
+#: Tolerances of the cross-method check of the timed workers (float32).
+_CHECK_RTOL, _CHECK_ATOL = 3e-5, dict(V=1e-4, g=1e-7)
+
+
+def _regression_worker(path, record, protocol):
+    """Flatten one accepted regression worker: per-step slope, per-run intercept, cold costs."""
+    data = json.loads(path.read_text())
+    row = dict(
+        device=record["device"],
+        case=record["case"],
+        entry=record["entry"],
+        method=record["method"],
+        round=record["round"],
+        status=data["status"],
+        flagged=record.get("flagged"),
+        attempts=len(record.get("attempts", [])),
+        sha=protocol.get("git_sha"),
+        file=path.name,
+    )
+    if data["status"] == "not_applicable":
+        return row | dict(
+            reason=data.get("reason", ""), padding_ratio=data.get("padding_ratio"), attempt_s=data.get("attempt_s")
+        )
+    if data["status"] != "ok":
+        return row | dict(reason=data.get("reason", data.get("error", "")))
+    steps = sorted(int(n) for n in data["timing"])
+    hi, lo = steps[-1], steps[0]
+    t_hi = data["timing"][str(hi)]["median_s"]
+    first = data["timing"][str(hi)]
+    if data["entry"] == "run":
+        plan = first.get("plan", dict(plan_prepare_s=0.0, array_bytes=0))
+    else:
+        plan = data.get("plan", dict(plan_prepare_s=0.0, array_bytes=0))
+    row.update(
+        steps=hi,
+        run_s=t_hi,
+        first_call_s=first["first_call_s"],
+        plan_prepare_s=plan["plan_prepare_s"],
+        array_bytes=plan["array_bytes"],
+        build_s=data.get("build_s"),
+        prepare_s=data.get("prepare_s"),
+        iqr_over_median=max(item["iqr_over_median"] for item in data["timing"].values()),
+        load=max(data.get("load_start", 0.0), data.get("load_end", 0.0)),
+        cpu_busy_share=data.get("cpu_busy_share", {}),
+        peak_rss_mb=data.get("peak_rss_mb"),
+        gpu_start=data.get("gpu_start"),
+        check=path.with_suffix(".npz") if path.with_suffix(".npz").exists() else None,
+    )
+    if hi != lo:
+        t_lo = data["timing"][str(lo)]["median_s"]
+        row["per_step_s"] = (t_hi - t_lo) / (hi - lo)
+        row["per_run_s"] = (hi * t_lo - lo * t_hi) / (hi - lo)
+    else:
+        row["per_step_s"], row["per_run_s"] = t_hi / hi, None
+    return row
+
+
+def collect_regression(root):
+    """Read every regression manifest under ``root``: accepted workers and failures.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Root of one or more ``--phase regression`` output directories.
+
+    Returns
+    -------
+    tuple
+        Flat worker rows and the list of failures (missing, failed, incomplete).
+    """
+    rows, failures = [], []
+    manifests = [
+        p
+        for p in sorted(Path(root).rglob("manifest.json"))
+        if json.loads(p.read_text())["protocol"].get("phase") == "regression"
+    ]
+    if not manifests:
+        failures.append("no regression manifests found")
+    for path in manifests:
+        manifest = json.loads(path.read_text())
+        protocol = manifest["protocol"]
+        expected = (
+            len(protocol["cases"])
+            * len(protocol["entries"])
+            * len(protocol["methods"])
+            * len(protocol["devices"])
+            * protocol["rounds"]
+        )
+        if len(manifest["rows"]) != expected:
+            failures.append(f"{path.parent.name}: incomplete workers {len(manifest['rows'])}/{expected}")
+        for record in manifest["rows"]:
+            worker = path.parent / record["file"]
+            if not worker.exists():
+                failures.append(f"missing {worker.name}")
+                continue
+            row = _regression_worker(worker, record, protocol)
+            if row["status"] not in ("ok", "not_applicable"):
+                failures.append(f"{worker.name}: {row['status']}")
+            rows.append(row)
+    return rows, failures
+
+
+def _check_pair(actual, expected):
+    """Largest V and g errors of two check runs; raises if beyond tolerance or the spikes differ."""
+    import numpy as np
+
+    a, e = np.load(actual), np.load(expected)
+    errors = {}
+    for label in ("V", "g"):
+        np.testing.assert_allclose(a[label], e[label], rtol=_CHECK_RTOL, atol=_CHECK_ATOL[label])
+        errors[label] = float(np.max(np.abs(a[label] - e[label]), initial=0))
+    for label in ("spike_step", "spike_source"):
+        np.testing.assert_array_equal(a[label], e[label])
+    return errors
+
+
+def aggregate_regression(rows):
+    """Paired per-round ratios, medians over rounds, break-even counts and the selection.
+
+    Parameters
+    ----------
+    rows : list of dict
+        Output of :func:`collect_regression`.
+
+    Returns
+    -------
+    tuple
+        Per-method summaries, per-(device, model, entry) selections, and
+        the failures of the cross-method checks.
+    """
+    groups = defaultdict(list)
+    for row in rows:
+        groups[(row["device"], row["case"], row["entry"], row["method"])].append(row)
+    baselines = {
+        (r["device"], r["case"], r["entry"], r["round"]): r
+        for r in rows
+        if r["method"] == "default" and r["status"] == "ok"
+    }
+    summary, check_failures = [], []
+    for key, members in sorted(groups.items()):
+        device, case, entry, method = key
+        ok = sorted((r for r in members if r["status"] == "ok"), key=lambda r: r["round"])
+        item = dict(device=device, case=case, entry=entry, method=method, rounds=len(members), ok_rounds=len(ok))
+        if not ok:
+            na = [r for r in members if r["status"] == "not_applicable"]
+            item.update(
+                status=na[0]["status"] if na else members[0]["status"],
+                padding_ratio=na[0].get("padding_ratio") if na else None,
+                reason=(na or members)[0].get("reason", ""),
+                attempt_s=statistics.median(r["attempt_s"] for r in na) if na else None,
+            )
+            summary.append(item)
+            continue
+        item["status"] = "ok"
+        for field in ("run_s", "per_step_s", "first_call_s", "plan_prepare_s", "array_bytes", "peak_rss_mb"):
+            values = [r[field] for r in ok if r.get(field) is not None]
+            item[field] = statistics.median(values) if values else None
+        fixed = [r["per_run_s"] for r in ok if r.get("per_run_s") is not None]
+        item["per_run_s"] = statistics.median(fixed) if fixed else None
+        item["run_s_rounds"] = [r["run_s"] for r in ok]
+        item["iqr_over_median"] = max(r["iqr_over_median"] for r in ok)
+        item["load"] = [min(r["load"] for r in ok), max(r["load"] for r in ok)]
+        item["flagged"] = [r["round"] for r in ok if r.get("flagged")]
+        item["sha"] = sorted({str(r["sha"]) for r in ok})
+        if method != "default":
+            ratios, step_ratios, errors = [], [], {}
+            for r in ok:
+                base = baselines.get((device, case, entry, r["round"]))
+                if base is None:
+                    continue
+                ratios.append(base["run_s"] / r["run_s"])
+                if r["per_step_s"] and base["per_step_s"]:
+                    step_ratios.append(base["per_step_s"] / r["per_step_s"])
+                if r.get("check") is not None and base.get("check") is not None:
+                    try:
+                        for label, value in _check_pair(r["check"], base["check"]).items():
+                            errors[label] = max(errors.get(label, 0.0), value)
+                    except AssertionError as exc:
+                        check_failures.append(f"{device}/{case}/{entry}/{method}/r{r['round']}: {str(exc)[:300]}")
+            item.update(
+                ratios=ratios,
+                ratio=statistics.median(ratios) if ratios else None,
+                step_ratio=statistics.median(step_ratios) if step_ratios else None,
+                check_errors=errors,
+            )
+        summary.append(item)
+    defaults = {
+        (s["device"], s["case"], s["entry"]): s for s in summary if s["method"] == "default" and s["status"] == "ok"
+    }
+    for item in summary:
+        base = defaults.get((item["device"], item["case"], item["entry"]))
+        if item["method"] == "default" or item["status"] != "ok" or base is None:
+            continue
+        cost = item["first_call_s"] - base["first_call_s"]
+        if item["entry"] == "update":
+            cost += item["plan_prepare_s"]  # the run entry's first call already includes it
+        saving = base["run_s"] - item["run_s"]
+        item["extra_cold_s"] = cost
+        item["break_even"] = "never" if saving <= 0 else (0.0 if cost <= 0 else cost / saving)
+        item["stable_gain"] = len(item["ratios"]) >= 3 and all(x > 1 for x in item["ratios"]) and item["ratio"] >= 1.1
+    selections = []
+    for (device, case, entry), base in sorted(defaults.items()):
+        candidates = [
+            s
+            for s in summary
+            if (s["device"], s["case"], s["entry"]) == (device, case, entry)
+            and s["method"] != "default"
+            and s.get("stable_gain")
+        ]
+        best = max(candidates, key=lambda s: s["ratio"], default=None)
+        selections.append(
+            dict(
+                device=device,
+                case=case,
+                entry=entry,
+                recommendation="default" if best is None else best["method"],
+                ratio=None if best is None else best["ratio"],
+                break_even=None if best is None else best["break_even"],
+            )
+        )
+    return summary, selections, check_failures
+
+
+def _fmt(value, scale=1.0, digits=2):
+    if value is None:
+        return "—"
+    if isinstance(value, str):
+        return value
+    return f"{value * scale:.{digits}f}"
+
+
+def export_regression(root, report=None):
+    """Write the regression tables (Markdown and CSV) for the runs under ``root``.
+
+    Parameters
+    ----------
+    root : pathlib.Path
+        Root of the ``--phase regression`` output directories.
+    report : pathlib.Path or None, optional
+        Output Markdown; defaults to ``scheduled-production-regression-tables.md`` in ``root``.
+
+    Returns
+    -------
+    dict
+        Counts, failures and the selection.
+    """
+    root = Path(root)
+    report = root / REGRESSION_FILENAME if report is None else Path(report)
+    rows, failures = collect_regression(root)
+    summary, selections, check_failures = aggregate_regression(rows)
+    failures = failures + check_failures
+    flat = [{k: (str(v) if isinstance(v, (Path, dict, list)) else v) for k, v in r.items()} for r in rows]
+    for name, items in (("regression_raw.csv", flat), ("regression_summary.csv", summary)):
+        with (root / name).open("w", newline="") as handle:
+            if items:
+                fields = sorted({k for item in items for k in item})
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                writer.writerows(items)
+    lines = [
+        "# Scheduled delivery on the production entry: data tables",
+        "",
+        "Generated by `delivery_report --regression` from the worker JSON files; medians over rounds. "
+        "`run` is one call of the longest step count (100 ms); per step is the slope between the two step "
+        "counts, per run the intercept. Ratios are default / method of the same round.",
+        "",
+        "## Timings",
+        "",
+        "| device | model | entry | method | rounds ok | run ms (per round) | per step µs | per run ms "
+        "| max IQR/median | load | first call s | plan prep s | plan KiB | peak RSS MB | flagged rounds |",
+        "| --- | --- | --- | --- | ---: | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- |",
+    ]
+    for s in summary:
+        if s["status"] != "ok":
+            ratio = "—" if s.get("padding_ratio") is None else f"{s['padding_ratio']:.3g}"
+            lines.append(
+                f"| {s['device']} | {s['case']} | {s['entry']} | {s['method']} | 0/{s['rounds']} "
+                f"| {s['status']} (padding ratio {ratio}) | — | — | — | — | — | — | — | — | — |"
+            )
+            continue
+        per_round = ", ".join(f"{x * 1e3:.2f}" for x in s["run_s_rounds"])
+        lines.append(
+            f"| {s['device']} | {s['case']} | {s['entry']} | {s['method']} | {s['ok_rounds']}/{s['rounds']} "
+            f"| {s['run_s'] * 1e3:.2f} ({per_round}) | {_fmt(s['per_step_s'], 1e6)} | {_fmt(s['per_run_s'], 1e3)} "
+            f"| {s['iqr_over_median']:.3f} | {s['load'][0]:.1f}–{s['load'][1]:.1f} | {s['first_call_s']:.2f} "
+            f"| {_fmt(s['plan_prepare_s'], 1, 3)} | {_fmt(s['array_bytes'], 1 / 1024, 1)} "
+            f"| {_fmt(s['peak_rss_mb'], 1, 0)} | {', '.join(map(str, s['flagged'])) or '—'} |"
+        )
+    lines += [
+        "",
+        "## Paired ratios and break-even",
+        "",
+        "Break-even: 100 ms runs after the first that repay the extra cold cost, (plan preparation + first call "
+        "− default first call) / (default run − method run); 0 when the first run already pays back, never when "
+        "the method is not faster. Stable gain: faster in every round and a median ratio ≥ 1.10.",
+        "",
+        "| device | model | entry | method | ratio per round | median ratio | per-step ratio | extra cold s "
+        "| break-even runs | stable gain | check max |V|, |g| error |",
+        "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- |",
+    ]
+    for s in summary:
+        if s["method"] == "default" or s["status"] != "ok":
+            continue
+        errors = s.get("check_errors") or {}
+        check = "—" if not errors else f"{errors.get('V', 0):.2g} mV, {errors.get('g', 0):.2g} uS"
+        lines.append(
+            f"| {s['device']} | {s['case']} | {s['entry']} | {s['method']} "
+            f"| {', '.join(f'{x:.2f}' for x in s['ratios'])} | {_fmt(s['ratio'])} | {_fmt(s['step_ratio'])} "
+            f"| {_fmt(s.get('extra_cold_s'))} | {_fmt(s.get('break_even'), 1, 1)} "
+            f"| {'yes' if s.get('stable_gain') else 'no'} | {check} |"
+        )
+    lines += [
+        "",
+        "## Selection",
+        "",
+        "| device | model | entry | recommendation | median ratio | break-even runs |",
+        "| --- | --- | --- | --- | ---: | ---: |",
+    ]
+    for item in selections:
+        lines.append(
+            f"| {item['device']} | {item['case']} | {item['entry']} | {item['recommendation']} "
+            f"| {_fmt(item['ratio'])} | {_fmt(item['break_even'], 1, 1)} |"
+        )
+    lines += ["", "## Not applicable, failures and checks", ""]
+    for s in summary:
+        if s["status"] != "ok":
+            lines.append(
+                f"- {s['device']}/{s['case']}/{s['entry']}/{s['method']}: {s['status']} — {s.get('reason', '')}"
+            )
+    lines.append(f"- {len(failures)} failures" + (":" if failures else "."))
+    lines += [f"  - {item}" for item in failures]
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text("\n".join(lines) + "\n")
+    return dict(rows=len(rows), aggregates=len(summary), failures=failures, selections=selections)
+
+
 def _plot(root, table):
     import matplotlib
 
@@ -339,7 +678,12 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--report", type=Path, help="Output Markdown; defaults to the input artifact directory")
+    parser.add_argument("--regression", action="store_true", help="tabulate --phase regression runs")
     args = parser.parse_args(argv)
+    if args.regression:
+        result = export_regression(args.directory, args.report)
+        print(json.dumps(result, indent=2))
+        return int(bool(result["failures"]))
     result = export_report(args.directory, args.report)
     print(json.dumps({k: v for k, v in result.items() if k not in ("excluded", "profiles")}, indent=2))
     return int(bool(result["failures"]))

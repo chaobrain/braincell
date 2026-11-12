@@ -94,7 +94,7 @@ from braincell._discretization.base import (
 )
 from braincell.filter import AllRegion, LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask, at
 from braincell.filter._index_refs import held_branch_indices
-from braincell.network.event import EventOutputCollection, _CellSpikeSource
+from braincell.network.event import EventOutputCollection, _CellSpikeSource, boundary_step
 from braincell.network.plasticity import advance_rules
 from braincell.network.recording import (
     RecordingSpec,
@@ -4322,7 +4322,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             self.spike.value = spk
         return spk
 
-    def _prepare_next_synapse_inputs(self, *, t=None):
+    def _prepare_next_synapse_inputs(self, *, t=None, step=None):
         """Prepare runtime synapse inputs for a later step.
 
         Notes
@@ -4338,6 +4338,11 @@ class Cell(_CellFacade, HHTypedNeuron):
         The prepared payload adds to the buffer, so a boundary must be
         prepared once: ``_begin_step`` consumes it and clears the
         ``_next_synapse_inputs_prepared`` flag this method sets.
+
+        ``t`` is the boundary's time; without it, the time the caller set.
+        ``step`` is the boundary's integer step on the ``dt`` grid, which the
+        scheduled arrivals are compared with (CELL-46); without it, they are
+        compared with ``t / dt`` rounded.
         """
         self._raise_if_not_initialized("_prepare_next_synapse_inputs()")
         # Neither the packed reduction inputs nor the lumped synapses (whose
@@ -4346,11 +4351,11 @@ class Cell(_CellFacade, HHTypedNeuron):
         if t is None:
             self._prepare_runtime_synapse_inputs(point_V)
         else:
-            with brainstate.environ.context(t=t):
+            with brainstate.environ.context(t=t), boundary_step(t, step):
                 self._prepare_runtime_synapse_inputs(point_V)
         self._next_synapse_inputs_prepared.value = jnp.asarray(True)
 
-    def _prepare_first_synapse_inputs(self, *, t) -> None:
+    def _prepare_first_synapse_inputs(self, *, t, step=None) -> None:
         """Prepare the inputs of the boundary ``t`` a run or ``update()`` starts at, unless a step did.
 
         Every ``Cell.run`` step and every ``update()`` prepares the boundary
@@ -4366,9 +4371,9 @@ class Cell(_CellFacade, HHTypedNeuron):
             # An eager call: decide here, since ``cond`` would trace the
             # preparation on every call, taken or not.
             if not bool(prepared):
-                self._prepare_next_synapse_inputs(t=t)
+                self._prepare_next_synapse_inputs(t=t, step=step)
             return
-        brainstate.transform.cond(prepared, lambda: None, lambda: self._prepare_next_synapse_inputs(t=t))
+        brainstate.transform.cond(prepared, lambda: None, lambda: self._prepare_next_synapse_inputs(t=t, step=step))
 
     def _apply_runtime_synapse_events(self, point_V):
         """Apply bound discrete events to all runtime synapses.

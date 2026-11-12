@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+import contextlib
 import json
 import os
 import subprocess
@@ -24,18 +25,24 @@ import brainstate
 import braintools
 import brainunit as u
 import jax
+import jax.numpy as jnp
 import numpy as np
 
 import braincell as bc
 from braincell import Branch, CVPerBranch, Cell, EventSequence, EventTable, Morphology, NetStim
 from braincell.network.event import (
+    _MAX_STEP,
     _SCHEDULE_HORIZON_KEY,
     EventSourceView,
     VoltageCrossingSource,
+    _ArrivalPlan,
     _resolve_cell_location_cv,
     _round_half_up_steps,
+    boundary_step,
+    round_half_up_steps_host,
 )
-from braincell.filter import RootLocation, at
+from braincell._misc import is_traced_value
+from braincell.filter import AllRegion, LocsetMask, RootLocation, at
 from braincell._random_test import default_key_data, drawn_seeds
 from braincell.morph._testing import make_tree_u
 
@@ -467,36 +474,43 @@ class NetStimDefaultSeedTest(unittest.TestCase):
         self.assertEqual(int(brainstate.transform.jit(lambda: NetStim(size=2, number=3).size)()), 2)
 
 
+def _reference_arrival_steps(arrivals_ms, delay, dt):
+    """Arrival steps of an arrival matrix: at float64 on the host (CELL-46), in the run precision when traced."""
+    if is_traced_value(delay) or is_traced_value(dt) or is_traced_value(arrivals_ms):
+        return _round_half_up_steps(u.math.asarray(arrivals_ms) / u.math.asarray(dt.to_decimal(u.ms)))
+    return round_half_up_steps_host(np.asarray(arrivals_ms, dtype=np.float64) / float(dt.to_decimal(u.ms)))
+
+
 def _reference_netstim_count(source, source_index, *, t, delay, dt):
-    """``NetStim.event_count`` as written before CELL-18a: the full arrival matrix every call."""
+    """``NetStim.event_count`` as the full arrival matrix every call (before CELL-18a), rounded as CELL-46 does."""
     source._ensure_schedule(until_ms=brainstate.environ.get(_SCHEDULE_HORIZON_KEY, None))
     source_index = np.asarray(source_index, dtype=np.int32)
-    times = u.math.asarray(source._event_times_ms[source_index])
-    mask = u.math.asarray(source._event_mask[source_index])
-    delay_ms = u.math.asarray(delay.to_decimal(u.ms))
+    mask = source._event_mask[source_index]
+    times = np.where(mask, source._event_times_ms[source_index], 0.0)
+    delay_ms = delay.to_decimal(u.ms)
+    if not is_traced_value(delay_ms):
+        delay_ms = np.asarray(delay_ms, dtype=np.float64)
     if getattr(delay_ms, "ndim", 0) == 0:
         delay_ms = u.math.broadcast_to(delay_ms, source_index.shape)
-    arrivals = times + delay_ms[..., None]
-    t_ms = u.math.asarray(t.to_decimal(u.ms))
-    dt_ms = u.math.asarray(dt.to_decimal(u.ms))
-    arrival_steps = _round_half_up_steps(arrivals / dt_ms)
-    current_step = _round_half_up_steps(t_ms / dt_ms)
-    return u.math.sum(mask & (arrival_steps == current_step), axis=-1)
+    arrival_steps = _reference_arrival_steps(times + delay_ms[..., None], delay, dt)
+    current_step = _round_half_up_steps(u.math.asarray(t.to_decimal(u.ms)) / u.math.asarray(dt.to_decimal(u.ms)))
+    return u.math.sum(u.math.asarray(mask) & (u.math.asarray(arrival_steps) == current_step), axis=-1)
 
 
 def _reference_flat_count(table, source_index, *, t, delay, dt):
-    """``EventSequence.event_count`` as written before CELL-18a."""
+    """``EventSequence.event_count`` as written before CELL-18a, rounded as CELL-46 does."""
     source_index = np.asarray(source_index, dtype=np.int64).reshape(-1)
-    delay_ms = u.math.asarray(delay.to_decimal(u.ms))
+    delay_ms = delay.to_decimal(u.ms)
+    if not is_traced_value(delay_ms):
+        delay_ms = np.asarray(delay_ms, dtype=np.float64)
     if getattr(delay_ms, "ndim", 0) == 0:
         delay_ms = u.math.broadcast_to(delay_ms, source_index.shape)
-    event_sources = u.math.asarray(table.source_index)
-    event_times = u.math.asarray(table.time.to_decimal(u.ms))
+    event_times = np.asarray(table.time.to_decimal(u.ms), dtype=np.float64)
     arrivals = event_times[None, :] + delay_ms[:, None]
-    selected_source = event_sources[None, :] == u.math.asarray(source_index)[:, None]
-    arrival_steps = _round_half_up_steps(arrivals / u.math.asarray(dt.to_decimal(u.ms)))
+    selected_source = np.asarray(table.source_index)[None, :] == source_index[:, None]
+    arrival_steps = _reference_arrival_steps(arrivals, delay, dt)
     current_step = _round_half_up_steps(u.math.asarray(t.to_decimal(u.ms)) / u.math.asarray(dt.to_decimal(u.ms)))
-    return u.math.sum(selected_source & (arrival_steps == current_step), axis=-1)
+    return u.math.sum(u.math.asarray(selected_source) & (u.math.asarray(arrival_steps) == current_step), axis=-1)
 
 
 def _half_tie_times(dt_ms: float, count: int) -> np.ndarray:
@@ -648,6 +662,32 @@ class ScheduledEventCountTest(unittest.TestCase):
             seen += int(np.sum(netstim_expected)) + int(np.sum(flat_expected))
         self.assertGreater(seen, 0)
 
+    def test_traced_dt_counts_match_the_arrival_matrix(self) -> None:
+        # CELL-46: a traced dt has no host value, so the arrivals are rounded
+        # in the run precision; the count runs without error.
+        source = NetStim(size=2, start=[0.0, 0.5] * u.ms, number=[4, 3], interval=[0.25, 0.1] * u.ms)
+        sequence = EventSequence.from_times([[0.0, 0.25] * u.ms, [0.5] * u.ms])
+        rows = np.asarray([0, 1, 1])
+        delay = np.asarray([0.0, 0.1, 0.0125]) * u.ms
+
+        @jax.jit
+        def counts(dt_ms, t_ms):
+            dt, t = dt_ms * u.ms, t_ms * u.ms
+            return (
+                source.event_count(rows, t=t, delay=delay, dt=dt),
+                _reference_netstim_count(source, rows, t=t, delay=delay, dt=dt),
+                sequence.event_count(rows, t=t, delay=delay, dt=dt),
+                _reference_flat_count(sequence.events, rows, t=t, delay=delay, dt=dt),
+            )
+
+        seen = 0
+        for t_ms in np.arange(0, 60) * 0.025:
+            netstim, netstim_expected, flat, flat_expected = counts(0.025, t_ms)
+            np.testing.assert_array_equal(netstim, netstim_expected)
+            np.testing.assert_array_equal(flat, flat_expected)
+            seen += int(np.sum(netstim_expected)) + int(np.sum(flat_expected))
+        self.assertGreater(seen, 0)
+
     def test_delays_that_do_not_fit_the_rows_take_the_matrix_path(self) -> None:
         source = NetStim(size=2, start=[0.0, 0.5] * u.ms, number=[4, 3], interval=[0.25, 0.1] * u.ms)
         sequence = EventSequence.from_times([[0.0, 0.25] * u.ms, [0.5] * u.ms])
@@ -663,6 +703,306 @@ class ScheduledEventCountTest(unittest.TestCase):
             _reference_netstim_count(source, rows, t=0.0 * u.ms, delay=two_delays, dt=self.DT)
         with self.assertRaises(type(expected.exception)):
             source.event_count(rows, t=0.0 * u.ms, delay=two_delays, dt=self.DT)
+
+
+DT_MS = 0.025
+
+#: Model A of the CELL-46 acceptance: event times of the ``EventSequence`` rows
+#: (half-step, quarter-step, round and delayed-half-step times) and their delays.
+_SEQUENCE_ROWS = (
+    0.0125 + 0.075 * np.arange(14),
+    0.03125 + 0.075 * np.arange(14),
+    np.asarray([100.0, 409.6, 800.0, 999.9875]),
+    0.5 + 0.1 * np.arange(20),
+)
+_SEQUENCE_DELAY = np.asarray([0.0, 0.0, 0.0, 0.0125])
+_N_STIM = 100
+_STIM_DELAY = np.linspace(0.0, 1.0, _N_STIM)
+
+
+def _float64():
+    stack = contextlib.ExitStack()
+    stack.enter_context(jax.enable_x64(True))
+    stack.enter_context(brainstate.environ.context(precision=64))
+    return stack
+
+
+def _precision(bits):
+    return _float64() if bits == 64 else brainstate.environ.context(precision=32)
+
+
+def _counting_cell(n_synapses):
+    """A passive cell at rest whose ExpSyn (tau 1e9 ms, e = rest) g counts the arrivals of each synapse."""
+    cell = Cell(
+        Morphology.from_root(Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)),
+        cv_policy=CVPerBranch(1),
+        V_init=-65.0 * u.mV,
+    )
+    cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    cell.place(
+        LocsetMask.from_columns(np.zeros(n_synapses, dtype=int), np.linspace(0.05, 0.95, n_synapses)),
+        bc.mech.Synapse("ExpSyn", name="s", tau=1e9 * u.ms, e=-65.0 * u.mV),
+    )
+    cell.record("g", bc.observe.synapse(name="s").state("g"))
+    return cell
+
+
+def _delivered(g):
+    """Per synapse, the sample of every arrival, read off the per-sample increments of ``g`` (1 uS each)."""
+    g = np.asarray(g, dtype=np.float64)
+    counts = np.rint(np.diff(g, axis=0, prepend=np.zeros((1, g.shape[1])))).astype(np.int64)
+    return [np.repeat(np.arange(g.shape[0]), counts[:, j]) for j in range(g.shape[1])]
+
+
+def _host_steps(times_ms, delay_ms, below):
+    steps = round_half_up_steps_host((np.asarray(times_ms, dtype=np.float64) + delay_ms) / DT_MS).astype(np.int64)
+    return np.sort(steps[steps < below])
+
+
+class ArrivalStepPrecisionTest(unittest.TestCase):
+    """CELL-46: float32 and float64 runs deliver every scheduled event at the step of the host float64 rule.
+
+    On main ``3e59b9f`` float32 rounded the arrivals in the run precision:
+    with the NetStim below, 146 of the 20342 arrivals in 1 s and 16146 of
+    the 200079 in 10 s fell one step late, and in model A 415 of 49970
+    arrivals were delivered one step late by ``Network.run``, an ``update()``
+    loop and ``Cell.run`` alike.
+    """
+
+    def test_plan_steps_equal_the_host_rule(self):
+        for seconds in (1.0, 10.0):
+            stop = seconds * 1000.0
+            for delay_ms in (np.zeros(200), np.linspace(0.0, 1.0, 200)):
+                for bits in (32, 64):
+                    with self.subTest(seconds=seconds, delay=float(delay_ms[-1]), bits=bits), _precision(bits):
+                        source = NetStim(
+                            size=200,
+                            start=0.0 * u.ms,
+                            interval=10.0 * u.ms,
+                            number=int(stop / 10.0 * 1.2) + 20,
+                            noise=1.0,
+                            seed=3,
+                        )
+                        source._ensure_schedule()
+                        rows, column = np.nonzero(source._event_mask)
+                        times = source._event_times_ms[rows, column]
+                        keep = times < stop
+                        rows, times = rows[keep], times[keep]
+                        plan = _ArrivalPlan.build(
+                            event_source=rows,
+                            event_time_ms=times,
+                            source_index=np.arange(200),
+                            t=0.0 * u.ms,
+                            delay=delay_ms * u.ms,
+                            dt=DT_MS * u.ms,
+                        )
+                        self.assertEqual(plan.steps.dtype, np.int32)
+                        self.assertEqual(plan.steps.size, times.size)
+                        expected = round_half_up_steps_host((times + delay_ms[rows]) / DT_MS)
+                        np.testing.assert_array_equal(np.sort(plan.steps), np.sort(expected).astype(np.int32))
+
+    def _model_a(self, mode, bits):
+        """Delivered samples of every arrival in model A over 1 s, and the host steps of its events."""
+        n_steps = 40000
+        starts = np.random.default_rng(11).uniform(0.0, 2.0, _N_STIM)
+        with _precision(bits):
+            cell = _counting_cell(_N_STIM + len(_SEQUENCE_ROWS))
+            stim = NetStim(size=_N_STIM, start=starts * u.ms, interval=2.0 * u.ms, number=600, noise=1.0, seed=11)
+            sequence = EventSequence.from_times([row * u.ms for row in _SEQUENCE_ROWS])
+            stim_rows = cell.synapses["s"][np.arange(_N_STIM)]
+            sequence_rows = cell.synapses["s"][_N_STIM + np.arange(len(_SEQUENCE_ROWS))]
+            if mode == "Cell.run":
+                bc.connect("drive", source=stim, synapse=stim_rows, weight=1.0 * u.uS, delay=_STIM_DELAY * u.ms)
+                bc.connect(
+                    "seq", source=sequence, synapse=sequence_rows, weight=1.0 * u.uS, delay=_SEQUENCE_DELAY * u.ms
+                )
+                g = cell.run(dt=DT_MS * u.ms, duration=n_steps * DT_MS * u.ms).samples["g"].values
+            else:
+                net = bc.Network("arrivals", seed=11)
+                post = net.add_population("post", cell)
+                net.add_population("stim", stim)
+                net.add_population("seq", sequence)
+                net.connect(
+                    "drive",
+                    source=stim,
+                    synapse=post.synapses["s"][np.arange(_N_STIM)],
+                    weight=1.0 * u.uS,
+                    delay=_STIM_DELAY * u.ms,
+                )
+                net.connect(
+                    "seq",
+                    source=sequence,
+                    synapse=post.synapses["s"][_N_STIM + np.arange(4)],
+                    weight=1.0 * u.uS,
+                    delay=_SEQUENCE_DELAY * u.ms,
+                )
+                if mode == "Network.run":
+                    g = net.run(dt=DT_MS * u.ms, duration=n_steps * DT_MS * u.ms).samples["post"]["g"].values
+                else:
+                    net.prepare_run(dt=DT_MS * u.ms)
+                    (synapse,) = cell.runtime_objects(bc.synapse.ExpSyn).values()
+
+                    def step(_):
+                        net.update()
+                        return synapse.g.value.reshape(-1)
+
+                    with brainstate.environ.context(dt=DT_MS * u.ms):
+                        loop = brainstate.transform.jit(lambda: brainstate.transform.for_loop(step, np.arange(n_steps)))
+                        g = loop()
+        delivered = _delivered(g.to_decimal(u.uS))
+        stim._ensure_schedule()
+        expected = [
+            _host_steps(stim._event_times_ms[j][stim._event_mask[j]], _STIM_DELAY[j], n_steps) for j in range(_N_STIM)
+        ]
+        expected += [_host_steps(row, _SEQUENCE_DELAY[r], n_steps) for r, row in enumerate(_SEQUENCE_ROWS)]
+        return delivered, expected
+
+    def test_runs_deliver_each_event_at_the_host_step_in_both_precisions(self):
+        # Samples are taken after a step: Network.run and Cell.run show an
+        # arrival at step s in sample s + 1; the update() loop, in sample s.
+        for mode, offset in (("Network.run", 1), ("update loop", 0), ("Cell.run", 1)):
+            delivered = {}
+            for bits in (32, 64):
+                with self.subTest(mode=mode, bits=bits):
+                    delivered[bits], expected = self._model_a(mode, bits)
+                    self.assertEqual(sum(e.size for e in expected), 49970 + 51)
+                    for got, want in zip(delivered[bits], expected):
+                        np.testing.assert_array_equal(got - offset, want)
+            for got32, got64 in zip(delivered[32], delivered[64]):
+                np.testing.assert_array_equal(got32, got64)
+
+    def test_large_step_counts_deliver_at_the_host_step(self):
+        # On main, float32 put 40 of 260 events a step late at 2**17, 120, 120
+        # and 88 a step early at 2**20, 1.5 * 2**20 and 2**22, and at
+        # 2**25 + 3, where t / dt cannot tell neighbouring steps apart,
+        # delivered the 260 events 1046 times.
+        fractions = np.asarray([0.0, 0.2, 0.25, 0.3, 0.4, 0.45, 0.49, 0.5, 0.51, 0.55, 0.6, 0.75, 0.8])
+        bases = (2**17, 2**20, 3 * 2**19, 2**22, 2**25 + 3)
+        n_steps = 160
+        rows = [np.concatenate([(base + 7 * np.arange(20) + frac) * DT_MS for base in bases]) for frac in fractions]
+        for bits in (32, 64):
+            with self.subTest(bits=bits), _precision(bits):
+                cell = _counting_cell(len(fractions))
+                net = bc.Network("large")
+                post = net.add_population("post", cell)
+                sequence = net.add_population("seq", EventSequence.from_times([row * u.ms for row in rows]))
+                net.connect(
+                    "seq", source=sequence, synapse=post.synapses["s"][np.arange(len(fractions))], weight=1.0 * u.uS
+                )
+                net.run(dt=DT_MS * u.ms, duration=DT_MS * u.ms)
+                for base in bases:
+                    cell._clock_step.value = jnp.asarray(base - 1, dtype=jnp.int32)
+                    before = net.run(dt=DT_MS * u.ms, duration=DT_MS * u.ms).samples["post"]["g"].values
+                    g = net.run(dt=DT_MS * u.ms, duration=n_steps * DT_MS * u.ms).samples["post"]["g"].values
+                    g = np.concatenate([before.to_decimal(u.uS)[-1:], g.to_decimal(u.uS)]) - before.to_decimal(u.uS)[-1]
+                    for frac, got in zip(fractions, _delivered(g[1:])):
+                        times = (base + 7 * np.arange(20) + frac) * DT_MS
+                        steps = _host_steps(times, 0.0, base + n_steps)
+                        np.testing.assert_array_equal(got + base - 1, steps[steps >= base], err_msg=f"{base} {frac}")
+
+    def test_segments_build_the_arrival_plans_once(self):
+        # The plans are built when the step is traced; later segments and a
+        # run after reset_state reuse the compiled loop (L40).
+        calls = []
+        original = _ArrivalPlan.build.__func__
+
+        def counted(cls, **kwargs):
+            calls.append(True)
+            return original(cls, **kwargs)
+
+        cell = _counting_cell(3)
+        net = bc.Network("segments")
+        post = net.add_population("post", cell)
+        stim = net.add_population("stim", NetStim(size=2, interval=1.0 * u.ms, number=50, noise=1.0, seed=2))
+        sequence = net.add_population("seq", EventSequence.from_times([[0.3, 0.6] * u.ms]))
+        net.connect(
+            "drive", source=stim, synapse=post.synapses["s"][np.arange(2)], weight=1.0 * u.uS, delay=[0.0, 0.1] * u.ms
+        )
+        net.connect("seq", source=sequence, synapse=post.synapses["s"][[2]], weight=1.0 * u.uS)
+        with mock.patch.object(_ArrivalPlan, "build", classmethod(counted)):
+            seen = []
+            for index in range(5):
+                if index == 3:
+                    net.reset_state()
+                net.run(dt=DT_MS * u.ms, duration=20 * DT_MS * u.ms)
+                seen.append(len(calls))
+        self.assertEqual(seen, [2, 2, 2, 2, 2])
+
+    def test_an_event_past_the_step_limit_is_never_delivered(self):
+        far = (2**31 + 5) * DT_MS
+        plan = _ArrivalPlan.build(
+            event_source=np.asarray([0, 0]),
+            event_time_ms=np.asarray([0.05, far]),
+            source_index=np.asarray([0]),
+            t=0.0 * u.ms,
+            delay=0.0 * u.ms,
+            dt=DT_MS * u.ms,
+        )
+        np.testing.assert_array_equal(plan.steps, [2, _MAX_STEP])
+        cell = _counting_cell(1)
+        net = bc.Network("far")
+        post = net.add_population("post", cell)
+        sequence = net.add_population("seq", EventSequence.from_times([[0.05, far] * u.ms]))
+        net.connect("seq", source=sequence, synapse=post.synapses["s"], weight=1.0 * u.uS)
+        g = net.run(dt=DT_MS * u.ms, duration=10 * DT_MS * u.ms).samples["post"]["g"].values.to_decimal(u.uS)
+        np.testing.assert_array_equal(np.asarray(g).reshape(-1), [0, 0, 0, 1, 1, 1, 1, 1, 1, 1])
+
+    def test_a_caller_t_rounds_in_the_run_precision(self):
+        # The loop's step is used only for the very t object it was set
+        # with; any other t is rounded as t / dt.
+        sequence = EventSequence.from_times([np.asarray([7, 9]) * DT_MS * u.ms])
+        rows = np.asarray([0])
+        dt = DT_MS * u.ms
+        t_loop = 9 * dt
+        with brainstate.environ.context(t=t_loop, dt=dt):
+            with boundary_step(t_loop, 7):
+                np.testing.assert_array_equal(sequence.event_count(rows, t=t_loop, delay=0.0 * u.ms, dt=dt), [1])
+                other = 9 * dt
+                np.testing.assert_array_equal(sequence.event_count(rows, t=other, delay=0.0 * u.ms, dt=dt), [1])
+                self.assertIsNot(other, t_loop)
+                np.testing.assert_array_equal(sequence.event_count(rows, t=8 * dt, delay=0.0 * u.ms, dt=dt), [0])
+            with boundary_step(t_loop, None):
+                np.testing.assert_array_equal(sequence.event_count(rows, t=t_loop, delay=0.0 * u.ms, dt=dt), [1])
+        # With step 8 for the loop's t there is no event, though t / dt = 9
+        # has one: the step comes from the loop, not from t.
+        with boundary_step(t_loop, 8):
+            np.testing.assert_array_equal(sequence.event_count(rows, t=t_loop, delay=0.0 * u.ms, dt=dt), [0])
+
+    def test_a_subclass_with_the_old_signature_works_in_a_network(self):
+        # The public signature is unchanged: a subclass that overrides
+        # event_count(source_index, *, t, delay, dt) receives the same
+        # keywords. One that passes its own t on gets t / dt rounded.
+        received = []
+
+        class Recording(EventSequence):
+            def event_count(self, source_index, *, t, delay, dt):
+                received.append(("t", "delay", "dt"))
+                return super().event_count(source_index, t=t, delay=delay, dt=dt)
+
+        class Leading(EventSequence):
+            def event_count(self, source_index, *, t, delay, dt):
+                return super().event_count(source_index, t=t + dt, delay=delay, dt=dt)
+
+        times = [np.asarray([0.3, 0.5125, 2.0]) * u.ms]
+        g = {}
+        for bits in (32, 64):
+            for name, kind in (("plain", EventSequence), ("recording", Recording), ("leading", Leading)):
+                with _precision(bits):
+                    cell = _counting_cell(1)
+                    net = bc.Network("custom")
+                    post = net.add_population("post", cell)
+                    sequence = net.add_population("seq", kind.from_times(times))
+                    self.assertIsInstance(sequence.model, kind)
+                    net.connect("seq", source=sequence, synapse=post.synapses["s"], weight=1.0 * u.uS)
+                    values = net.run(dt=DT_MS * u.ms, duration=100 * DT_MS * u.ms).samples["post"]["g"].values
+                    increments = np.diff(np.asarray(values.to_decimal(u.uS)).reshape(-1), prepend=0.0)
+                    g[bits, name] = np.flatnonzero(increments > 0.5)
+        self.assertTrue(received)
+        for bits in (32, 64):
+            # 0.3, 0.5125 (a half-step tie, to the later step) and 2.0 ms: steps 12, 21, 80, seen a sample later.
+            np.testing.assert_array_equal(g[bits, "plain"], [13, 22, 81])
+            np.testing.assert_array_equal(g[bits, "recording"], g[bits, "plain"])
+            np.testing.assert_array_equal(g[bits, "leading"], g[bits, "plain"] - 1)
 
 
 class EventSourceTest(unittest.TestCase):

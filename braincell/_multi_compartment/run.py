@@ -475,6 +475,8 @@ def _make_run_loop(
     selected samples for a fixed-shape schedule, or every step's values and
     ``None`` for a variable-length one (selected eagerly by the caller).
     """
+    from braincell.network.event import boundary_step, grid_step
+
     n_recordings = len(compiled_recordings)
     period_steps = tuple(_recording_steps(compiled.schema.period, dt) for compiled in compiled_recordings)
 
@@ -483,10 +485,14 @@ def _make_run_loop(
             origin, step = rcell._clock_start(dt)
             start_t = origin + step * dt
             times = origin + (step + jnp.arange(n_steps, dtype=jnp.int32)) * dt
-            rcell._prepare_first_synapse_inputs(t=start_t)
+            # The steps on the dt grid from time 0, which the event arrivals
+            # are compared with (CELL-46).
+            first = grid_step(origin, step, dt)
+            grid = first + jnp.arange(n_steps, dtype=jnp.int32)
+            rcell._prepare_first_synapse_inputs(t=start_t, step=first)
 
-            def _step(t):
-                with brainstate.environ.context(t=t):
+            def _step(t, s):
+                with brainstate.environ.context(t=t), boundary_step(t, s):
                     with jax.named_scope("braincell:cell_run:prepare_clamps"):
                         rcell._prepare_step_clamps(t=t, dt=brainstate.environ.get_dt())
                     with jax.named_scope("braincell:cell_run:sample_recordings"):
@@ -503,7 +509,7 @@ def _make_run_loop(
                     with jax.named_scope("braincell:cell_run:route_live_connections"):
                         rcell._apply_direct_live_connection_events()
                     with jax.named_scope("braincell:cell_run:prepare_next_synapse_inputs"):
-                        rcell._prepare_next_synapse_inputs(t=t + brainstate.environ.get_dt())
+                        rcell._prepare_next_synapse_inputs(t=t + brainstate.environ.get_dt(), step=s + 1)
                     with jax.named_scope("braincell:cell_run:sample_outputs"):
                         recording_snapshot = tuple(
                             pre_recording_snapshot[index] if item.phase == "pre" else item.sample()
@@ -518,7 +524,7 @@ def _make_run_loop(
             prepared = rcell._next_synapse_inputs_prepared
             previous_V = getattr(rcell, "_event_previous_V", None)
 
-            def _carried_step(index, t):
+            def _carried_step(index, t, s):
                 # Two states are rewritten by every step before anything reads
                 # them, so the loop need not carry them from step to step; on
                 # GPU each carried rewrite costs a device copy per step
@@ -529,7 +535,7 @@ def _make_run_loop(
                 # leaves the loop from its last step only.
                 flag = prepared.value
                 previous = None if previous_V is None else previous_V.value
-                outputs = _step(t)
+                outputs = _step(t, s)
                 prepared.value = flag
                 if previous_V is not None:
                     previous_V.value = u.math.where(index == n_steps - 1, previous_V.value, previous)
@@ -537,14 +543,14 @@ def _make_run_loop(
 
             if any(values):
 
-                def _step_with_values(index, t):
+                def _step_with_values(index, t, s):
                     # The value inputs act on the first step only.
                     with rcell._value_input_step(values, first=index == 0):
-                        return _carried_step(index, t)
+                        return _carried_step(index, t, s)
 
-                traces_over_time = brainstate.transform.for_loop(_step_with_values, jnp.arange(n_steps), times)
+                traces_over_time = brainstate.transform.for_loop(_step_with_values, jnp.arange(n_steps), times, grid)
             else:
-                traces_over_time = brainstate.transform.for_loop(_carried_step, jnp.arange(n_steps), times)
+                traces_over_time = brainstate.transform.for_loop(_carried_step, jnp.arange(n_steps), times, grid)
             stop_t = origin + (step + n_steps) * dt
             rcell._set_clock(origin, step + n_steps, dt)
 

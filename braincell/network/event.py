@@ -32,6 +32,7 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 import numpy as np
+from braincell._misc import is_traced_value
 from braincell._parameter_schema import RuntimeParameterState
 
 __all__ = [
@@ -49,6 +50,13 @@ _EAGER_SCHEDULE_ENTRIES = 1 << 20
 
 #: ``brainstate.environ`` key carrying the last event time a run can deliver.
 _SCHEDULE_HORIZON_KEY = "_braincell_netstim_horizon_ms"
+
+#: ``brainstate.environ`` key carrying ``(t, step)``: the integer step of the
+#: boundary ``t`` a run loop set (:func:`boundary_step`).
+_BOUNDARY_STEP_KEY = "_braincell_boundary_step"
+
+#: Arrival steps past the int32 step count, which no run reaches, are clipped to it.
+_MAX_STEP = 2**31 - 1
 
 
 class EventSource(ABC):
@@ -283,6 +291,22 @@ class EventSequence(EventSource):
         return True
 
     def event_count(self, source_index, *, t, delay, dt):
+        """Count delayed events assigned to the nearest fixed-step boundary.
+
+        An event at ``time`` arrives at ``time + delay`` and is delivered at
+        step ``t`` when the arrival lies in ``[t - dt / 2, t + dt / 2)``, as
+        in NEURON's fixed-step delivery; an exact half-step tie goes to the
+        later boundary.
+
+        The arrival step is ``(time + delay) / dt`` rounded at float64 on
+        the host, from the float64 event times and delays, so a float32 run
+        delivers each event at the step a float64 run does (CELL-46). Inside
+        ``Cell.run``, ``Network.run`` and ``Network.update()`` it is compared
+        with the loop's integer step. For a ``t`` the caller chose, the step
+        is ``t / dt`` rounded in the run precision. A ``delay`` or ``dt``
+        that is traced (an argument of a ``jax.jit`` function) has no host
+        value; its arrivals are then rounded in the run precision too.
+        """
         source_index = np.asarray(source_index, dtype=np.int64).reshape(-1)
         plan = _ArrivalPlan.build(
             event_source=self.events.source_index,
@@ -463,6 +487,15 @@ class NetStim(EventSource):
         class Notes). With a fixed ``delay`` and ``dt`` the arrival steps
         are computed once, when a compiled loop is traced, and each step
         looks its arrivals up in them.
+
+        The arrival step is ``(time + delay) / dt`` rounded at float64 on
+        the host, from the float64 event times and delays, so a float32 run
+        delivers each event at the step a float64 run does (CELL-46). Inside
+        ``Cell.run``, ``Network.run`` and ``Network.update()`` it is compared
+        with the loop's integer step. For a ``t`` the caller chose, the step
+        is ``t / dt`` rounded in the run precision. A ``delay`` or ``dt``
+        that is traced (an argument of a ``jax.jit`` function) has no host
+        value; its arrivals are then rounded in the run precision too.
         """
         self._ensure_schedule(until_ms=brainstate.environ.get(_SCHEDULE_HORIZON_KEY, None))
         source_index = np.asarray(source_index, dtype=np.int32)
@@ -478,17 +511,10 @@ class NetStim(EventSource):
         )
         if plan is not None:
             return plan.count(t=t, dt=dt)
-        times = u.math.asarray(self._event_times_ms[source_index])
-        mask = u.math.asarray(self._event_mask[source_index])
-        delay_ms = u.math.asarray(delay.to_decimal(u.ms))
-        if getattr(delay_ms, "ndim", 0) == 0:
-            delay_ms = u.math.broadcast_to(delay_ms, source_index.shape)
-        arrivals = times + delay_ms[..., None]
-        t_ms = u.math.asarray(t.to_decimal(u.ms))
-        dt_ms = u.math.asarray(dt.to_decimal(u.ms))
-        arrival_steps = _round_half_up_steps(arrivals / dt_ms)
-        current_step = _round_half_up_steps(t_ms / dt_ms)
-        selected = mask & (arrival_steps == current_step)
+        mask = self._event_mask[source_index]
+        times = np.where(mask, self._event_times_ms[source_index], 0.0)
+        arrival_steps = _matrix_arrival_steps(times, delay, dt, rows=source_index.shape)
+        selected = jnp.asarray(mask) & (arrival_steps == _boundary_step(t, dt))
         return u.math.sum(selected, axis=-1)
 
     @property
@@ -952,10 +978,11 @@ def round_half_up_steps_host(values: np.ndarray) -> np.ndarray:
     """Round non-negative step ratios, snapping numerical half ties upward.
 
     Host-side counterpart of :func:`_round_half_up_steps`, kept in numpy so
-    that delay quantization runs at float64. Shared by
+    that quantization runs at float64. Shared by
     :mod:`braincell.network.connection` and
     :mod:`braincell.network.lowering`, which quantize delays during
-    lowering, outside any trace.
+    lowering, outside any trace, and by the arrival steps of scheduled
+    events (CELL-46).
 
     Notes
     -----
@@ -976,7 +1003,8 @@ def round_half_up_steps_host(values: np.ndarray) -> np.ndarray:
 def _round_half_up_steps(values):
     """Round non-negative step ratios, snapping numerical half ties upward.
 
-    Trace-safe variant used inside the per-step event path. See
+    Trace-safe variant, for the step of a ``t`` the caller chose and for
+    arrivals whose ``delay`` or ``dt`` is traced. See
     :func:`round_half_up_steps_host` for why the host callers keep a
     separate numpy implementation.
     """
@@ -989,22 +1017,77 @@ def _round_half_up_steps(values):
     return u.math.floor(snapped + 0.5)
 
 
-@jax.jit
-def _arrival_steps(time_ms, delay_ms, dt_ms):
-    """Rounded arrival steps of (event time, delay) pairs.
+def boundary_step(t, step):
+    """Context in which the event counts of the boundary ``t`` use the integer ``step``.
 
-    The arithmetic of the arrival matrix in ``event_count``, compiled with
-    its operands as arguments, as they are inside a compiled run loop: XLA
-    may evaluate ``x / dt`` there as ``x * (1 / dt)``, which can round a
-    step ratio a few ulp from a half-step tie to the other step, and a
-    host computation would not reproduce that.
+    The run loops set it next to ``t``. ``step`` counts boundaries from time
+    0 on the ``dt`` grid, so it is compared with the arrival steps as it is,
+    without rounding ``t / dt`` in the run precision (CELL-46). A ``step``
+    of ``None`` clears an outer loop's step, for a ``t`` the caller chose.
     """
-    return _round_half_up_steps((time_ms + delay_ms) / dt_ms)
+    return brainstate.environ.context(**{_BOUNDARY_STEP_KEY: None if step is None else (t, step)})
 
 
-def _padded_size(size: int) -> int:
-    """Next power of two, so that few operand shapes compile."""
-    return 1 << max(int(size) - 1, 0).bit_length()
+def grid_step(origin, step, dt):
+    """The int32 step on the ``dt`` grid from time 0 of step ``step`` counted from ``origin``.
+
+    A Cell's clock counts its steps from an origin, which is 0 until a run
+    changes ``dt`` (CELL-45); the event arrival steps count from time 0.
+    """
+    offset = _round_half_up_steps(u.math.asarray(origin.to_decimal(u.ms)) / u.math.asarray(dt.to_decimal(u.ms)))
+    return (step + offset.astype(jnp.int32)).astype(jnp.int32)
+
+
+def _boundary_step(t, dt):
+    """The int32 step of the boundary ``t``.
+
+    It is the run loop's count when the loop set this ``t``
+    (:func:`boundary_step`). For a ``t`` the caller chose, it is ``t / dt``
+    rounded in the run precision.
+    """
+    pair = brainstate.environ.get(_BOUNDARY_STEP_KEY, None)
+    if pair is not None and pair[0] is t:
+        return jnp.asarray(pair[1], dtype=jnp.int32)
+    t_ms = u.math.asarray(t.to_decimal(u.ms))
+    dt_ms = u.math.asarray(dt.to_decimal(u.ms))
+    return _round_half_up_steps(t_ms / dt_ms).astype(jnp.int32)
+
+
+def _host_ms(value):
+    """The ms decimals of a time quantity as float64 numpy, or ``None`` when traced."""
+    decimal = value.to_decimal(u.ms)
+    if is_traced_value(decimal):
+        return None
+    return np.asarray(decimal, dtype=np.float64)
+
+
+def _host_arrival_steps(time_ms, delay_ms, dt_ms) -> np.ndarray:
+    """int32 arrival steps ``(time + delay) / dt``, rounded at float64 on the host.
+
+    The event times and delays are float64 declarations, so the step does
+    not depend on the run precision: a float32 run delivers an event at the
+    step a float64 run does (CELL-46).
+    """
+    ratio = (np.asarray(time_ms, dtype=np.float64) + delay_ms) / dt_ms
+    return np.minimum(round_half_up_steps_host(ratio), _MAX_STEP).astype(np.int32)
+
+
+def _matrix_arrival_steps(time_ms, delay, dt, *, rows):
+    """Arrival steps of ``time_ms + delay[..., None]``, one row of events per connection row.
+
+    At float64 on the host, unless ``delay`` or ``dt`` is traced; then in
+    the run precision.
+    """
+    delay_ms, dt_ms = _host_ms(delay), _host_ms(dt)
+    if delay_ms is None or dt_ms is None:
+        delay_ms = u.math.asarray(delay.to_decimal(u.ms))
+        if getattr(delay_ms, "ndim", 0) == 0:
+            delay_ms = u.math.broadcast_to(delay_ms, rows)
+        arrivals = u.math.asarray(time_ms) + delay_ms[..., None]
+        return _round_half_up_steps(arrivals / u.math.asarray(dt.to_decimal(u.ms))).astype(jnp.int32)
+    if delay_ms.ndim == 0:
+        delay_ms = np.broadcast_to(delay_ms, rows)
+    return jnp.asarray(_host_arrival_steps(time_ms, delay_ms[..., None], dt_ms))
 
 
 @dataclass(frozen=True)
@@ -1014,10 +1097,11 @@ class _ArrivalPlan:
     ``event_count`` used to rebuild the full ``(rows, events)`` arrival
     matrix and compare it with the current step on every step (CELL-18a).
     The arrival steps do not depend on ``t``, so they are computed once,
-    when the step is traced, and sorted. Rows that share a source and a
-    delay share their arrivals (a group). A step then costs one binary
-    search for the first arrival at that step, a read of at most
-    ``window`` arrivals (the most that share any step), and one gather
+    when the step is traced, at float64 on the host (CELL-46), and sorted;
+    ``count`` compares them with the loop's integer step. Rows that share a
+    source and a delay share their arrivals (a group). A step then costs
+    one binary search for the first arrival at that step, a read of at
+    most ``window`` arrivals (the most that share any step), and one gather
     from groups to rows.
     """
 
@@ -1037,14 +1121,11 @@ class _ArrivalPlan:
         """
         if not all(isinstance(value, u.Quantity) for value in (t, delay, dt)):
             return None
-        with jax.ensure_compile_time_eval():
-            delay_ms = u.math.asarray(delay.to_decimal(u.ms))
-            dt_ms = u.math.asarray(dt.to_decimal(u.ms))
-        if isinstance(delay_ms, jax.core.Tracer) or isinstance(dt_ms, jax.core.Tracer):
+        delay_ms, dt_ms = _host_ms(delay), _host_ms(dt)
+        if delay_ms is None or dt_ms is None:
             return None
         if np.ndim(dt_ms) != 0 or np.ndim(t.mantissa) != 0:
             return None
-        delay_ms = np.asarray(delay_ms)
         if delay_ms.ndim == 0:
             shape = source_index.shape
         elif one_dimensional and delay_ms.shape != source_index.shape:
@@ -1073,18 +1154,10 @@ class _ArrivalPlan:
         per_group = np.searchsorted(sorted_source, group_source, side="right") - lo
         n_pairs = int(per_group.sum())
         if n_pairs == 0:
-            return cls(np.zeros(0), np.zeros(0, np.int32), 0, row_group, len(keys), shape)
+            return cls(np.zeros(0, np.int32), np.zeros(0, np.int32), 0, row_group, len(keys), shape)
         pair_group = np.repeat(np.arange(len(keys), dtype=np.int32), per_group)
         pair_event = np.arange(n_pairs) + np.repeat(lo - (np.cumsum(per_group) - per_group), per_group)
-
-        padded = _padded_size(n_pairs)
-        pair_time = np.zeros(padded, dtype=np.float64)
-        pair_time[:n_pairs] = sorted_time[pair_event]
-        pair_delay = np.zeros(padded, dtype=row_delay.dtype)
-        pair_delay[:n_pairs] = group_delay[pair_group]
-        with jax.ensure_compile_time_eval():
-            steps = _arrival_steps(u.math.asarray(pair_time), jnp.asarray(pair_delay), dt_ms)
-            steps = np.asarray(steps)[:n_pairs]
+        steps = _host_arrival_steps(sorted_time[pair_event], group_delay[pair_group], dt_ms)
         by_step = np.argsort(steps, kind="stable")
         steps, pair_group = steps[by_step], pair_group[by_step]
         boundaries = np.flatnonzero(np.diff(steps) != 0)
@@ -1094,9 +1167,7 @@ class _ArrivalPlan:
     def count(self, *, t, dt):
         """Arrivals at the step of ``t``, one count per row."""
         count_dtype = jax.dtypes.canonicalize_dtype(np.int64)
-        t_ms = u.math.asarray(t.to_decimal(u.ms))
-        dt_ms = u.math.asarray(dt.to_decimal(u.ms))
-        current_step = _round_half_up_steps(t_ms / dt_ms)
+        current_step = _boundary_step(t, dt)
         if self.window == 0:
             return jnp.zeros(self.shape, dtype=count_dtype)
         steps = jnp.asarray(self.steps)
@@ -1114,16 +1185,10 @@ class _ArrivalPlan:
 def _flat_event_count(table: EventTable, *, source_index, t, delay, dt):
     """Count flat scheduled arrivals for one source index per connection row."""
     source_index = np.asarray(source_index, dtype=np.int64).reshape(-1)
-    delay_ms = u.math.asarray(delay.to_decimal(u.ms))
-    if getattr(delay_ms, "ndim", 0) == 0:
-        delay_ms = u.math.broadcast_to(delay_ms, source_index.shape)
-    event_sources = u.math.asarray(table.source_index)
-    event_times = u.math.asarray(table.time.to_decimal(u.ms))
-    arrivals = event_times[None, :] + delay_ms[:, None]
-    selected_source = event_sources[None, :] == u.math.asarray(source_index)[:, None]
-    arrival_steps = _round_half_up_steps(arrivals / u.math.asarray(dt.to_decimal(u.ms)))
-    current_step = _round_half_up_steps(u.math.asarray(t.to_decimal(u.ms)) / u.math.asarray(dt.to_decimal(u.ms)))
-    return u.math.sum(selected_source & (arrival_steps == current_step), axis=-1)
+    event_times = np.asarray(table.time.to_decimal(u.ms), dtype=np.float64)
+    arrival_steps = _matrix_arrival_steps(event_times[None, :], delay, dt, rows=source_index.shape)
+    selected_source = np.asarray(table.source_index)[None, :] == source_index[:, None]
+    return u.math.sum(jnp.asarray(selected_source) & (arrival_steps == _boundary_step(t, dt)), axis=-1)
 
 
 def _quantity_vector(value, *, unit, size: int, name: str) -> u.Quantity:

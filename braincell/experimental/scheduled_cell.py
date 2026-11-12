@@ -23,7 +23,7 @@ import numpy as np
 from braincell._multi_compartment.cell import Cell, _connection_event_weight, _rewrap_event_template
 from braincell.experimental.scheduled_delivery import prepare_delivery
 from braincell.experimental.scheduled_events import prepare_events
-from braincell.network.event import _round_half_up_steps
+from braincell.network.event import _boundary_step
 
 
 class ScheduledDeliveryCell(Cell):
@@ -113,7 +113,7 @@ class ScheduledDeliveryCell(Cell):
         routes = getattr(self, "_scheduled_delivery_routes", None)
         if routes is None or not scheduled_only:
             return super()._evaluate_contact_inputs(layout, t=t, template=template, scheduled_only=scheduled_only)
-        step = _round_half_up_steps(t.to_decimal(u.ms) / self._scheduled_delivery_dt.to_decimal(u.ms)).astype(jnp.int32)
+        step = _boundary_step(t, self._scheduled_delivery_dt)
         output = jnp.zeros(template.size, dtype=u.get_mantissa(template).dtype)
         for index, connection, plan, targets in routes.get(int(layout.id), ()):
             raw_weight = jnp.asarray(_connection_event_weight(template, connection.weight))

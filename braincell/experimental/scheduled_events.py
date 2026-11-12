@@ -28,7 +28,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from braincell.network.event import NetStim, _round_half_up_steps
+from braincell.network.event import NetStim, boundary_step, round_half_up_steps_host
 
 METHODS = ("current", "scan", "cursor", "bucket")
 
@@ -113,7 +113,9 @@ class EventPlan:
         """
         n = self.source_index.size
         if self.method == "current":
-            count = self.source.event_count(self.source_index, t=step * self.dt, delay=self.delay, dt=self.dt)
+            t = step * self.dt
+            with boundary_step(t, step):
+                count = self.source.event_count(self.source_index, t=t, delay=self.delay, dt=self.dt)
             return state, count.astype(jnp.int32)
         if self.method == "scan":
             return state, jnp.sum(arrays[0] == step, axis=1, dtype=jnp.int32)
@@ -175,10 +177,12 @@ def prepare_events(source, source_index, *, delay, dt, n_steps, start_step=0, me
 
     Notes
     -----
-    Quantization uses the production JAX expression on the selected device and
-    precision, including its half-tie snapping. Compact bucket preparation copies
-    the integer arrival table to the host to sort and then transfers the compact
-    arrays back. Its preparation time and temporary memory must be accounted for.
+    Quantization uses the production rule: ``(time + delay) / dt`` rounded at
+    float64 on the host, including its half-tie snapping, so a float32 and a
+    float64 run see the same arrival steps (CELL-46). Compact bucket
+    preparation sorts the integer arrival table on the host and transfers the
+    compact arrays to the device. Its preparation time and temporary memory
+    must be accounted for.
     """
     began = time.perf_counter()
     if not isinstance(source, NetStim):
@@ -239,13 +243,15 @@ def prepare_events(source, source_index, *, delay, dt, n_steps, start_step=0, me
     )
     if method != "current":
         began = time.perf_counter()
-        delays = jnp.broadcast_to(u.math.asarray(delay_ms), index.shape)
-        arrivals = u.math.asarray(times) + delays[:, None]
-        quantized = _round_half_up_steps(arrivals / u.math.asarray(dt_ms))
+        # Rounded at float64 on the host, as the default path rounds (CELL-46).
+        delays = np.broadcast_to(np.asarray(delay_ms, dtype=np.float64), index.shape)
+        arrivals = np.where(mask, times + delays[:, None], 0.0)
+        quantized = round_half_up_steps_host(arrivals / float(dt_ms))
         # Future values can exceed int32; clip before conversion, retaining all
         # in-window steps exactly and using a sentinel for masked entries.
         limit = start_step + n_steps
-        steps = jnp.where(jnp.asarray(mask), jnp.minimum(quantized, limit), limit).astype(jnp.int32)
+        host_steps = np.where(mask, np.minimum(quantized, limit), limit).astype(np.int32)
+        steps = jnp.asarray(host_steps)
         jax.block_until_ready(steps)
         preparation["quantize_cold_s"] = time.perf_counter() - began
         preparation["arrival_table_bytes"] = steps.size * steps.dtype.itemsize
@@ -258,7 +264,6 @@ def prepare_events(source, source_index, *, delay, dt, n_steps, start_step=0, me
                 jnp.asarray(mask.sum(axis=1), dtype=jnp.int32),
             )
         else:
-            host_steps = np.asarray(steps)
             preparation["device_to_host_s"] = time.perf_counter() - began
             began = time.perf_counter()
             connection, ordinal = np.nonzero((host_steps >= start_step) & (host_steps < limit) & mask)

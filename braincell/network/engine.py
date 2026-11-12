@@ -915,6 +915,8 @@ class Network:
         Cells' clocks, which :meth:`_start_clocks` made equal; the step count
         is a state, so a later segment reuses the loop (CELL-45).
         """
+        from braincell.network.event import boundary_step, grid_step
+
         delivery_blocks = setup.delivery_blocks
         ordered_population_names = setup.ordered_population_names
         compiled_recordings = setup.compiled_recordings
@@ -925,10 +927,13 @@ class Network:
             origin = cells[0]._clock_origin.value
             step = cells[0]._clock_step.value
             times = origin + (step + jnp.arange(n_steps, dtype=jnp.int32)) * dt
+            # The steps on the dt grid from time 0, which the event arrivals
+            # are compared with (CELL-46).
+            grid = grid_step(origin, step, dt) + jnp.arange(n_steps, dtype=jnp.int32)
             with brainstate.environ.context(dt=dt):
 
-                def _step(t):
-                    with brainstate.environ.context(t=t):
+                def _step(t, s):
+                    with brainstate.environ.context(t=t), boundary_step(t, s):
                         with jax.named_scope("braincell:network_run:prepare_clamps"):
                             for name in ordered_population_names:
                                 self.populations[name].cell._prepare_step_clamps(t=t, dt=dt)
@@ -979,19 +984,19 @@ class Network:
 
                 if values:
 
-                    def _step_with_values(index, t):
+                    def _step_with_values(index, t, s):
                         # The value inputs act on the first step only.
                         with contextlib.ExitStack() as stack:
                             for name, taken in values.items():
                                 cell = self.populations[name].cell
                                 stack.enter_context(cell._value_input_step(taken, first=index == 0))
-                            return _step(t)
+                            return _step(t, s)
 
                     samples_over_time = brainstate.transform.for_loop(
-                        _step_with_values, jnp.arange(times.shape[0]), times
+                        _step_with_values, jnp.arange(times.shape[0]), times, grid
                     )
                 else:
-                    samples_over_time = brainstate.transform.for_loop(_step, times)
+                    samples_over_time = brainstate.transform.for_loop(_step, times, grid)
 
             end_step = (step + n_steps).astype(jnp.int32)
             for cell in cells:

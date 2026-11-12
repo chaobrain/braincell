@@ -987,6 +987,21 @@
 - `ind_exp_euler` computes each state's update with
   `braintools.quad.ode_expeuler_step` (the same formula; trajectories are
   unchanged).
+- **The axial derivative of a multi-CV cable is exactly zero at a uniform
+  voltage** (CELL-42). `Cell.compute_axial_derivative`, which every solver
+  except `staggered` and `dhs_voltage` uses, evaluated `-A @ V`. Every row
+  of the axial operator `A` sums to zero, yet the product left about
+  eps * |A_ii| * |V| per row: at a uniform -65 mV on main `eae28f4`, up to
+  5.2e-10 mV/ms on the CA1 morphology with one CV per branch and 1.5e-8
+  mV/ms with three (float64), and 2.4e-4 mV/ms on a three-branch cable with
+  three CVs per branch (float32). It now evaluates `-A @ (V - V_0)`, `V_0`
+  the first CV's voltage, which gives 0 in all three: a cell with the same
+  mechanisms in every CV and no input now keeps a uniform voltage exactly
+  uniform. Other voltages change at rounding level:
+  50 ms of HH spiking on a three-branch cable moves by at most 3.4e-12
+  relative with `rk4`, `ralston2` and `exp_euler`. The cost per step is
+  unchanged on CPU (within 1 % on CA1 and on a 1000-member three-branch
+  cable with `rk4`, `ralston2` and `exp_euler`).
 - Docstrings of `CalciumFirstOrder` and the deep cerebellar nucleus
   mechanisms (`*_SU2015_DCN`, `Cdp*_SU2015_DCN`) state their sources more
   precisely (MECH-13). `CalciumFirstOrder` now cites Pinsky & Rinzel (1994),

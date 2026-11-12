@@ -1608,6 +1608,89 @@ class TestCellLifecycle(unittest.TestCase):
                         self.assertFalse(hasattr(target, name))
 
 
+def _y_cable(*, pop_size=1, cv_per_branch=1) -> Cell:
+    """A trunk of 100 um (radius 1 um) with two 100 um children (radius 0.5 um), V_init -65 mV."""
+    trunk = Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="dendrite")
+    morpho = Morphology.from_root(trunk, name="trunk")
+    for name in ("left", "right"):
+        child = Branch.from_lengths(lengths=[100.0] * u.um, radii=[0.5, 0.5] * u.um, type="dendrite")
+        morpho.attach(parent="trunk", child_branch=child, child_name=name)
+    return Cell(morpho, cv_policy=CVPerBranch(cv_per_branch), pop_size=pop_size, V_init=-65.0 * u.mV)
+
+
+def _ca1() -> Cell:
+    from braincell.io._testing import FIXTURE_DIR
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)  # coincident SWC points
+        morpho = Morphology.from_swc(FIXTURE_DIR / "CA1.swc")
+    return Cell(morpho, cv_policy=CVPerBranch(), V_init=-65.0 * u.mV)
+
+
+class CellAxialDerivativeTest(unittest.TestCase):
+    """CELL-42: the CV axial derivative of the generic solvers is exactly zero at a uniform voltage."""
+
+    @classmethod
+    def setUpClass(cls):
+        with brainstate.environ.context(precision=64):
+            cls.ca1 = _ca1()
+            cls.ca1.init_state()
+
+    @staticmethod
+    def _at(cell, value_mv):
+        V = u.math.full_like(cell.V.value, value_mv * u.mV)
+        return np.asarray(cell.compute_axial_derivative(V).to_decimal(u.mV / u.ms))
+
+    def test_a_uniform_voltage_gives_exactly_zero(self):
+        # -A @ V left eps * |A_ii| * |V| per row: up to 5.2e-10 mV/ms on CA1
+        # (diagonal up to 5.0e4 /ms) and 3.7e-14 mV/ms on the Y cable.
+        with brainstate.environ.context(precision=64):
+            cells = [
+                ("CA1", self.ca1),
+                ("Y", _y_cable()),
+                ("Y, 3 CVs per branch, 3 members", _y_cable(pop_size=3, cv_per_branch=3)),
+            ]
+            for name, cell in cells[1:]:
+                cell.init_state()
+            for name, cell in cells:
+                for value in (-65.0, 40.0, -1.0e3):
+                    with self.subTest(name, V=value):
+                        derivative = self._at(cell, value)
+                        self.assertGreater(derivative.size, 1)
+                        np.testing.assert_array_equal(derivative, 0.0)
+        with brainstate.environ.context(precision=32):
+            cell = _y_cable(cv_per_branch=3)
+            cell.init_state()
+            np.testing.assert_array_equal(self._at(cell, -65.0), 0.0)
+
+    def test_it_is_minus_the_operator_times_v(self):
+        rng = np.random.default_rng(0)
+        with brainstate.environ.context(precision=64):
+            members = _y_cable(pop_size=4, cv_per_branch=2)
+            members.init_state()
+            for name, cell in (("CA1", self.ca1), ("Y, 4 members", members)):
+                with self.subTest(name):
+                    V = (-65.0 + 20.0 * rng.standard_normal(cell.V.value.shape)) * u.mV
+                    operator = np.asarray(cell._get_axial_operator().to_decimal(u.ms**-1))
+                    expected = -np.einsum("...ik,...k->...i", operator, np.asarray(V.to_decimal(u.mV)))
+                    actual = np.asarray(cell.compute_axial_derivative(V).to_decimal(u.mV / u.ms))
+                    np.testing.assert_allclose(actual, expected, rtol=0.0, atol=1e-12 * np.abs(expected).max())
+
+    def test_a_traced_geometry_gives_the_same_derivative(self):
+        # Cell.run traces the geometry states, and with them the operator.
+        with brainstate.environ.context(precision=64):
+            cell = _y_cable(pop_size=2, cv_per_branch=2)
+            cell.init_state()
+            V = (-65.0 + 10.0 * np.random.default_rng(1).standard_normal(cell.V.value.shape)) * u.mV
+            eager = cell.compute_axial_derivative(V).to_decimal(u.mV / u.ms)
+            traced = brainstate.transform.jit(cell.compute_axial_derivative)(V).to_decimal(u.mV / u.ms)
+            np.testing.assert_allclose(traced, eager, rtol=1e-14)
+            uniform = u.math.full_like(cell.V.value, -65.0 * u.mV)
+            np.testing.assert_array_equal(
+                brainstate.transform.jit(cell.compute_axial_derivative)(uniform).mantissa, 0.0
+            )
+
+
 class CellMembraneLinearizerTest(unittest.TestCase):
     @staticmethod
     def _leak_cell(mode: str) -> Cell:

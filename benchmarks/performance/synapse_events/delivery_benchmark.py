@@ -853,8 +853,16 @@ def _busy_share(before, after):
     return share
 
 
+#: A worker is re-run if, when it starts, its GPU is at least this busy (percent) ...
+GPU_BUSY_UTILIZATION = 5.0
+#: ... or another process holds at least this much of its memory (MiB). A process
+#: whose JAX enumerated every GPU but computes on another one holds an idle context
+#: of about 260 MiB; that is recorded but does not trigger a re-run.
+GPU_BUSY_MIB = 1024.0
+
+
 def _gpu_status(gpu):
-    """Utilization, memory and compute processes of a physical GPU, from ``nvidia-smi``."""
+    """Utilization, memory and compute processes (pid, MiB) of a physical GPU, from ``nvidia-smi``."""
     if gpu is None:
         return None
     try:
@@ -863,9 +871,15 @@ def _gpu_status(gpu):
             query + ["--query-gpu=utilization.gpu,memory.used"], capture_output=True, text=True, timeout=30
         ).stdout.split(",")
         apps = subprocess.run(
-            query + ["--query-compute-apps=pid"], capture_output=True, text=True, timeout=30
-        ).stdout.split()
-        return dict(utilization=float(used[0]), memory_mib=float(used[1]), compute_pids=[int(p) for p in apps])
+            query + ["--query-compute-apps=pid,used_memory"], capture_output=True, text=True, timeout=30
+        ).stdout.splitlines()
+        apps = [[int(pid), float(mib)] for pid, mib in (line.split(",") for line in apps if line.strip())]
+        return dict(
+            utilization=float(used[0]),
+            memory_mib=float(used[1]),
+            compute_pids=[pid for pid, _ in apps],
+            compute_apps=apps,
+        )
     except (OSError, ValueError, IndexError, subprocess.SubprocessError) as exc:
         return dict(error=str(exc))
 
@@ -1159,8 +1173,12 @@ def _regression_worker_failed(data, *, max_iqr, max_load, gpu):
     if load >= max_load:
         reasons.append(f"load {load:.1f} >= {max_load}")
     status = data.get("gpu_start") or {}
-    if gpu is not None and any(pid != data.get("pid") for pid in status.get("compute_pids", [])):
-        reasons.append("another process on the GPU")
+    if gpu is not None:
+        if status.get("utilization", 0.0) >= GPU_BUSY_UTILIZATION:
+            reasons.append(f"GPU {status['utilization']:.0f}% busy at start")
+        held = [mib for pid, mib in status.get("compute_apps", []) if pid != data.get("pid") and mib >= GPU_BUSY_MIB]
+        if held:
+            reasons.append(f"another process holds {max(held):.0f} MiB of the GPU")
     return "; ".join(reasons) or None
 
 

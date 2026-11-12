@@ -471,12 +471,17 @@ class RegressionMeasurementTest(unittest.TestCase):
         self.assertEqual(b.padding_ratio(ValueError("needs 3244 bytes and 40 slots per record for")), 40.0)
         self.assertIsNone(b.padding_ratio(ValueError("other")))
         timing = {"4000": {"iqr_over_median": 0.05}, "2000": {"iqr_over_median": 0.2}}
-        data = dict(status="ok", timing=timing, load_start=1.0, load_end=17.0, gpu_start=dict(compute_pids=[5]))
+        gpu = dict(utilization=40.0, compute_apps=[[5, 2048.0], [6, 258.0]])
+        data = dict(status="ok", timing=timing, load_start=1.0, load_end=17.0, gpu_start=gpu, pid=9)
         reason = b._regression_worker_failed(data, max_iqr=0.1, max_load=16, gpu=1)
         self.assertIn("IQR/median 0.200", reason)
         self.assertIn("load 17.0", reason)
-        self.assertIn("another process", reason)
+        self.assertIn("GPU 40% busy at start", reason)
+        self.assertIn("another process holds 2048 MiB", reason)
         timing["2000"]["iqr_over_median"] = 0.01
+        # An idle context of a process computing on another GPU is recorded, not re-run.
+        idle = dict(data, load_end=2.0, gpu_start=dict(utilization=0.0, compute_apps=[[6, 258.0], [9, 4000.0]]))
+        self.assertIsNone(b._regression_worker_failed(idle, max_iqr=0.1, max_load=16, gpu=1))
         self.assertIsNone(b._regression_worker_failed(dict(data, load_end=2.0), max_iqr=0.1, max_load=16, gpu=None))
         self.assertIsNone(
             b._regression_worker_failed(dict(status="not_applicable"), max_iqr=0.1, max_load=16, gpu=None)
@@ -486,9 +491,12 @@ class RegressionMeasurementTest(unittest.TestCase):
         with patch.object(b.subprocess, "run", side_effect=OSError("no nvidia-smi")):
             self.assertIn("error", b._gpu_status(0))
         out = subprocess.CompletedProcess([], 0, stdout="7, 300\n")
-        apps = subprocess.CompletedProcess([], 0, stdout="12\n13\n")
+        apps = subprocess.CompletedProcess([], 0, stdout="12, 258\n13, 40\n\n")
         with patch.object(b.subprocess, "run", side_effect=[out, apps]):
-            self.assertEqual(b._gpu_status(1), dict(utilization=7.0, memory_mib=300.0, compute_pids=[12, 13]))
+            self.assertEqual(
+                b._gpu_status(1),
+                dict(utilization=7.0, memory_mib=300.0, compute_pids=[12, 13], compute_apps=[[12, 258.0], [13, 40.0]]),
+            )
         with patch("builtins.open", side_effect=OSError("no /proc")):
             self.assertEqual(b._cpu_ticks(), {})
 

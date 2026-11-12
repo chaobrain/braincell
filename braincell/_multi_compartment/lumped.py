@@ -103,6 +103,7 @@ from braincell.mech import (
     get_registry,
 )
 from braincell.quad import get_integrator, integrator_info, list_integrators
+from braincell.quad._util import population_slot_layout
 from braincell.quad.protocol import IndependentIntegration, state_grouping
 
 if TYPE_CHECKING:
@@ -357,6 +358,22 @@ class LumpedRuntime(SingleCompartment):
         """Voltage of each row of one synapse layout: its member's ``V``."""
         V = self.V.value if V is None else V
         return layout.gather_points(u.math.broadcast_to(V[..., None], u.math.shape(V) + (self._n_point,)))
+
+    def _diffeq_block_layout(self, diffeq_states, merging):
+        """The block solvers' layout: each synapse row in a column of its member's block (CELL-31c).
+
+        ``V`` and the gates are one column each per member (``'stack'``); a
+        synapse state holds one row per synapse across the population, and
+        row ``r`` goes to slot ``s`` of member ``o`` (``layout.population_slots``),
+        in ``k`` columns per member. Returns ``None``, the merged default,
+        when no synapse state is in ``diffeq_states``.
+        """
+        return population_slot_layout(
+            diffeq_states,
+            merging,
+            self.varshape,
+            ((node, layout.population_slots) for layout, node in self._synapses()),
+        )
 
     def _synapse_density(self, V):
         from braincell._multi_compartment.currents import synapse_current

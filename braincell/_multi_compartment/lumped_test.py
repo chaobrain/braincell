@@ -15,8 +15,13 @@
 
 """Lumped (point) Cells: ``Cell.point`` and ``cv_policy=Lumped()``."""
 
+import functools
 import gc
+import json
+import os
 import re
+import subprocess
+import sys
 import unittest
 import warnings
 from unittest import mock
@@ -30,7 +35,8 @@ import numpy as np
 
 import braincell as bc
 from braincell._multi_compartment import cell as cell_module, lumped
-from braincell.filter import AllRegion, RootLocation
+from braincell.filter import AllRegion, RootLocation, at
+from braincell.quad._util import split_diffeq_states
 
 LENGTH = 20.0 * u.um
 RADIUS = 10.0 * u.um
@@ -1672,6 +1678,213 @@ class ValueInputStepTest(unittest.TestCase):
         cell.add_current_input("pulse", _PULSE)
         cell.run(dt=DT, duration=4 * DT)
         self.assertIn("pulse", cell.current_inputs)
+
+
+_EXP2SYN = dict(tau1=0.5 * u.ms, tau2=5.0 * u.ms, e=0.0 * u.mV)
+_BLOCK_SOLVER_NAMES = ("exp_euler", "crank_nicolson", "backward_euler")
+
+
+def _lumped_synapse_cell(solver, model, *, lumped_cell=True):
+    """The CELL-31c models.
+
+    - ``"P"``: two 20 um x r 10 um members (``IL`` 0.1 mS/cm^2 at -70 mV), an
+      Exp2Syn on both and an ExpSyn on member 0 only: two synapse rows in
+      member 0, one in member 1. ``lumped_cell=False`` builds the one-CV
+      cable twin.
+    - ``"G"``: one 20 um x r 0.5 um member, ``GabaA_JE2011`` writing
+      ``Cldif_JE2011`` (the ion-current snapshot path).
+    """
+    if model == "G":
+        cell = bc.Cell.point(1, length=20.0 * u.um, radius=0.5 * u.um, V_init=-70.0 * u.mV, solver=solver)
+        cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=0.0274578 * u.mS / u.cm**2, E=-70.0 * u.mV))
+        cell.paint(AllRegion(), bc.mech.Ion("Cldif_JE2011", name="cl"))
+        cell.place(at("soma", 0.5), bc.mech.Synapse("GabaA_JE2011", name="s"))
+        return cell
+    if lumped_cell:
+        cell = bc.Cell.point(2, length=LENGTH, radius=RADIUS, solver=solver)
+    else:
+        morphology = bc.Morphology.from_soma(length=LENGTH, radius=RADIUS)
+        cell = bc.Cell(morphology, pop_size=2, cv_policy=bc.CVPerBranch(), solver=solver)
+    cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV))
+    cell.place(at("soma", 0.5), bc.mech.Synapse("Exp2Syn", name="a", **_EXP2SYN))
+    cell[0:1].place(at("soma", 0.5), bc.mech.Synapse("ExpSyn", name="b", tau=2.0 * u.ms, e=0.0 * u.mV))
+    return cell
+
+
+def _lumped_synapse_network(solver, model, **kwargs):
+    """A model of :func:`_lumped_synapse_cell` driven by NetStims (events at 0.1, 0.4, 0.7 and 0.25, 0.45, 0.65 ms)."""
+    cell = _lumped_synapse_cell(solver, model, **kwargs)
+    net = bc.Network(name=f"cell31c_{model.lower()}")
+    stim = net.add_population("stim", bc.NetStim(size=1, start=0.1 * u.ms, interval=0.3 * u.ms, number=3))
+    post = net.add_population("post", cell)
+    if model == "G":
+        net.connect("s", source=stim, synapse=post.synapses["s"], weight=0.0005 * u.uS)
+        return net, cell
+    stim2 = net.add_population("stim2", bc.NetStim(size=1, start=0.25 * u.ms, interval=0.2 * u.ms, number=3))
+    net.connect("a", source=stim, synapse=post.synapses["a"], weight=0.01 * u.uS)
+    net.connect("b", source=stim2, synapse=post.synapses["b"], weight=0.02 * u.uS)
+    return net, cell
+
+
+def _network_values(cell):
+    states = {
+        ".".join(map(str, path)).removeprefix("_lumped_runtime."): np.asarray(u.get_mantissa(st.value)).ravel()
+        for path, st in brainstate.graph.states(cell).items()
+        if isinstance(st, bc.quad.DiffEqState) and path[-1] != "V"
+    }
+    return np.asarray(cell.V.value.to_decimal(u.mV), dtype=np.float64).ravel(), states
+
+
+@functools.lru_cache(maxsize=None)
+def _lumped_synapse_run(model, solver, dt_ms, lumped_cell=True):
+    """``(V per member, other DiffEqStates)`` at 1 ms; call under float64."""
+    net, cell = _lumped_synapse_network(solver, model, lumped_cell=lumped_cell)
+    net.init_state()
+    net.run(dt=dt_ms * u.ms, duration=1.0 * u.ms)
+    return _network_values(cell)
+
+
+def _lumped_gaba_report() -> dict:
+    """CELL-31c on G; run in a float64 subprocess by :func:`_lumped_gaba_numbers`.
+
+    ``{"<solver>/<dt>": (max |V - reference| in mV, max |Ci - reference| in mM)}``
+    against rk4 at dt = 0.00025 ms.
+    """
+    with brainstate.environ.context(precision=64):
+        ref_V, ref_states = _lumped_synapse_run("G", "rk4", 0.00025)
+        report = {}
+        for name in _BLOCK_SOLVER_NAMES:
+            for dt_ms in (0.005, 0.001):
+                V, states = _lumped_synapse_run("G", name, dt_ms)
+                ci = "ion_channels.cl.Ci"
+                report[f"{name}/{dt_ms}"] = (
+                    float(np.max(np.abs(V - ref_V))),
+                    float(np.max(np.abs(states[ci] - ref_states[ci]))),
+                )
+    return report
+
+
+@functools.cache
+def _lumped_gaba_numbers() -> dict:
+    # In a subprocess: a Cldif_JE2011 Cell run at one precision makes the next
+    # one at the other fail in one process (see the kinetic-twin test above).
+    code = (
+        "import json; from braincell._multi_compartment.lumped_test import _lumped_gaba_report; "
+        "print(json.dumps(_lumped_gaba_report()))"
+    )
+    env = dict(os.environ, JAX_ENABLE_X64="1", JAX_PLATFORMS="cpu")
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
+    if result.returncode != 0:
+        raise AssertionError(result.stderr)
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+class LumpedBlockSolverPointSynapseTest(unittest.TestCase):
+    """CELL-31c: the block solvers advance point synapses on a lumped Cell, each row in its member's block."""
+
+    #: Per solver: the bound on |V - reference| at dt 0.005 and 0.001 ms (mV),
+    #: about 1.5 times the measured worst member, and the window of their ratio.
+    BOUNDS = {
+        "exp_euler": (6e-4, 2.5e-5, (20.0, 30.0)),
+        "crank_nicolson": (6e-4, 2.4e-5, (20.0, 30.0)),
+        "backward_euler": (1.6e-1, 3.2e-2, (4.0, 6.0)),
+    }
+
+    def test_block_solvers_keep_their_order_with_point_synapses(self):
+        # Measured (member 0; member 1) at dt 0.005 -> 0.001 ms against rk4 at
+        # 0.001 ms: exp_euler 4.32e-5 -> 1.71e-6; 4.14e-4 -> 1.65e-5.
+        # crank_nicolson 3.91e-4 -> 1.56e-5; 3.62e-4 -> 1.45e-5.
+        # backward_euler 1.06e-1 -> 2.12e-2; 1.84e-2 -> 3.86e-3. They used to
+        # raise ValueError at init_state.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            reference = _lumped_synapse_run("P", "rk4", 0.001)[0]
+            for name, (coarse, fine, (low, high)) in self.BOUNDS.items():
+                with self.subTest(solver=name):
+                    error = {dt: np.abs(_lumped_synapse_run("P", name, dt)[0] - reference) for dt in (0.005, 0.001)}
+                    self.assertLessEqual(float(error[0.005].max()), coarse)
+                    self.assertLessEqual(float(error[0.001].max()), fine)
+                    ratio = error[0.005] / error[0.001]
+                    self.assertTrue(np.all((low <= ratio) & (ratio <= high)), error)
+
+    def test_gaba_writing_a_chloride_pool_converges(self):
+        # Measured V: exp_euler 2.62e-5 -> 1.15e-6, crank_nicolson 2.06e-5 ->
+        # 7.25e-7, backward_euler 6.42e-4 -> 1.39e-4 mV; Ci at most 3.86e-5 ->
+        # 6.75e-6 mM (backward_euler).
+        bounds = {
+            "exp_euler": (4e-5, 1.8e-6),
+            "crank_nicolson": (3.1e-5, 1.1e-6),
+            "backward_euler": (9.6e-4, 2.1e-4),
+        }
+        report = _lumped_gaba_numbers()
+        for name, (coarse, fine) in bounds.items():
+            with self.subTest(solver=name):
+                for dt, bound, ci_bound in ((0.005, coarse, 6e-5), (0.001, fine, 1e-5)):
+                    gap_V, gap_ci = report[f"{name}/{dt}"]
+                    self.assertLessEqual(gap_V, bound)
+                    self.assertLessEqual(gap_ci, ci_bound)
+
+    def test_matches_the_one_cv_cable_cell(self):
+        # The same model as a one-CV cable Cell (CELL-31b): measured 6.5e-16 relative.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for name in _BLOCK_SOLVER_NAMES:
+                with self.subTest(solver=name):
+                    point = _lumped_synapse_run("P", name, 0.005)[0]
+                    cable = _lumped_synapse_run("P", name, 0.005, lumped_cell=False)[0]
+                    np.testing.assert_allclose(point, cable, rtol=1e-10, atol=0)
+
+    def test_segments_reset_state_and_batch_repeat_one_run(self):
+        def batched_V(name, batch_size):
+            # A Network has no batch axis (CELL-15): the Cell alone, B = 0.01 uS and A = 0.
+            cell = _lumped_synapse_cell(name, "P")
+            cell.init_state(batch_size=batch_size)
+            for _, node in cell._lumped_runtime._synapses():
+                if hasattr(node, "B"):
+                    node.A.value = u.math.zeros_like(node.A.value)
+                    node.B.value = u.math.zeros_like(node.B.value) + 0.01 * u.uS
+            cell.run(dt=0.005 * u.ms, duration=1.0 * u.ms)
+            return np.asarray(cell.V.value.to_decimal(u.mV), dtype=np.float64).reshape(batch_size or 1, -1)
+
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for name in _BLOCK_SOLVER_NAMES:
+                with self.subTest(solver=name):
+                    once = _lumped_synapse_run("P", name, 0.005)[0]
+                    net, cell = _lumped_synapse_network(name, "P")
+                    net.init_state()
+                    for _ in range(10):
+                        net.run(dt=0.005 * u.ms, duration=0.1 * u.ms)
+                    np.testing.assert_allclose(_network_values(cell)[0], once, rtol=1e-12, atol=0)
+                    net.reset_state()
+                    net.run(dt=0.005 * u.ms, duration=1.0 * u.ms)
+                    np.testing.assert_allclose(_network_values(cell)[0], once, rtol=1e-12, atol=0)
+                    alone = batched_V(name, None)
+                    self.assertGreater(float(alone[0, 0]), -69.0)  # the conductance moved V
+                    for member in batched_V(name, 2):
+                        np.testing.assert_allclose(member, alone[0], rtol=1e-12, atol=0)
+
+    def test_cells_without_synapses_keep_the_merged_layout(self):
+        # No synapse state: the hook returns None and the step merges as
+        # before; the SingleCompartment equivalence tests above hold unchanged.
+        returned = []
+        declare = lumped.LumpedRuntime._diffeq_block_layout
+
+        def spy(self, diffeq_states, merging):
+            layout = declare(self, diffeq_states, merging)
+            returned.append(layout)
+            return layout
+
+        with mock.patch.object(lumped.LumpedRuntime, "_diffeq_block_layout", spy):
+            for name in _BLOCK_SOLVER_NAMES:
+                cell = _point_cell(hh=True, solver=name)
+                cell.init_state()
+                cell.run(dt=DT, duration=2 * DT)
+        self.assertGreaterEqual(len(returned), 3)
+        self.assertTrue(all(layout is None for layout in returned))
+        cell = _lumped_synapse_cell("exp_euler", "P")
+        cell.init_state()
+        diffeq = split_diffeq_states(cell._lumped_runtime)[1]
+        layout = cell._lumped_runtime._diffeq_block_layout(diffeq, "stack")
+        self.assertEqual(layout.pop_shape, (2,))
+        self.assertEqual(len(layout.slots), 3)  # Exp2Syn A, B and ExpSyn g
 
 
 if __name__ == "__main__":

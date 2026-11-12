@@ -80,11 +80,11 @@
 
 ### New Features
 
-- **The block solvers advance point synapses on a cable `Cell`** (CELL-31b).
-  `exp_euler`, `backward_euler` and `crank_nicolson` used to reject a cable
-  `Cell` with a point synapse at `init_state`: a synapse state holds one row
-  per synapse across the population and has no CV axis, so it could not be
-  merged with `V`. Each row now goes into a slot of its own cell's block,
+- **The block solvers advance point synapses on cable and lumped `Cell`s**
+  (CELL-31b, CELL-31c). `exp_euler`, `backward_euler` and `crank_nicolson`
+  used to reject a `Cell` with a point synapse at `init_state`: a synapse
+  state holds one row per synapse across the population and has no CV axis,
+  so it could not be merged with `V`. Each row now goes into a slot of its own cell's block,
   next to that cell's `V`, so every cell stays one block and the solvers keep
   their order. Cells may carry different numbers of synapses; unused slots
   stay zero. On the CELL-19 soma with an `Exp2Syn` driven by a `NetStim`
@@ -102,7 +102,11 @@
     about 7 times and `crank_nicolson` about 12 times. For cells with many
     synapses, use `staggered`, `ind_exp_euler` or an explicit Runge-Kutta
     solver.
-  - A lumped cell still rejects these three solvers with point synapses.
+  - On a lumped `Cell` (`Cell.point`, `cv_policy=Lumped()`) each member is
+    one block of `V`, its gates and its synapses, with the same orders. The
+    results equal the one-CV cable `Cell` to 1e-15 relative. This makes
+    `exp_euler`, which the stiff-gate warning recommends, usable in a
+    `Network`, where point neurons carry synapses.
   - Models without point synapses are unchanged.
 - **`braincell.morph` exports its classes** (MORPH-4a). `Branch`, `Morphology`
   and the six branch types (`Soma`, `Dendrite`, `Axon`, `BasalDendrite`,
@@ -1158,8 +1162,8 @@
   a point synapse they now raise `ValueError` at `init_state` naming the solver
   and the synapse class, where `Network.run` raised `TypeError: Cannot
   concatenate arrays with different numbers of dimensions` or `ValueError:
-  Cannot stack arrays ...`; CELL-31b (New Features) lifts this on a cable
-  Cell. A user callable still owns the whole step.
+  Cannot stack arrays ...`; CELL-31b and CELL-31c (New Features) lift this.
+  A user callable still owns the whole step.
 - A kinetic ion (e.g. `CdpStC_MA2020_GoC`) now runs on a lumped Cell under its
   default `"ralston2"` and every other explicit solver, and a Markov channel on
   a `SingleCompartment` under its default (CELL-19); both raised `ValueError:

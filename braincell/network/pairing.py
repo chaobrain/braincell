@@ -28,7 +28,7 @@ import numpy as np
 
 from braincell._multi_compartment.synapses import SynapseView
 from braincell.network.event import EventSourceView
-from braincell.morph._spatial import MorphologySpatialGeometry, interpolate_branch
+from braincell.morph._spatial import MorphologySpatialGeometry
 
 Score = Callable[["PairingContext"], object]
 Degree = int | np.ndarray | Callable[["PairingContext", brainstate.random.RandomState], object]
@@ -335,14 +335,12 @@ def _synapse_geometry(view: SynapseView):
         branch_view = morpho.branch(index=branch_id)
         names[rows] = str(branch_view.name)
         types[rows] = str(branch_view.type)
-        radius_value, point_value = interpolate_branch(morpho, branch_id, x)
-        radius[rows] = np.asarray(radius_value.to_decimal(u.um), dtype=float)
-        root_distance[rows] = np.asarray(geometry.path_distance_to_root(branch_id, x).to_decimal(u.um), dtype=float)
-        soma_distance[rows] = np.asarray(geometry.path_distance_from_soma(branch_id, x).to_decimal(u.um), dtype=float)
+        radius[rows], point_value = geometry.interpolate_um(branch_id, x)
+        root_distance[rows], soma_distance[rows] = geometry.path_distances_um(branch_id, x)
         if point_value is None:
             has_positions = False
         else:
-            positions[rows] = np.asarray(point_value.to_decimal(u.um), dtype=float)
+            positions[rows] = point_value
     local_position = None
     if has_positions:
         # An empty view had no point to stack: a flat empty array, as before.

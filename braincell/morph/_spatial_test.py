@@ -69,12 +69,20 @@ class MorphologySpatialGeometryTest(unittest.TestCase):
 
     def test_a_copy_reads_its_own_geometry(self) -> None:
         import copy
+        import pickle
 
         morpho = Morphology.from_root(_branch(20.0), name="trunk")
         morpho.trunk.attach(_branch(30.0), name="child", parent_x=1.0)
         original = MorphologySpatialGeometry.of(morpho)
-        for duplicate in (copy.deepcopy(morpho), morpho.clone()):
-            with self.subTest(type(duplicate).__name__):
+        original.interpolate_um(1, 0.5)
+        copies = {
+            "deepcopy": copy.deepcopy(morpho),
+            "clone": morpho.clone(),
+            "copy": copy.copy(morpho),
+            "pickle": pickle.loads(pickle.dumps(morpho)),
+        }
+        for name, duplicate in copies.items():
+            with self.subTest(name):
                 geometry = MorphologySpatialGeometry.of(duplicate)
                 self.assertIsNot(geometry, original)
                 self.assertIs(geometry.morpho, duplicate)

@@ -31,7 +31,7 @@ the distance regions of :mod:`braincell.filter`, and
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import heapq
 
 import brainunit as u
@@ -61,6 +61,8 @@ class MorphologySpatialGeometry:
     reference_branch_ids: frozenset[int]
     root_bases_um: tuple[np.ndarray, ...]
     soma_bases_um: tuple[np.ndarray, ...]
+    #: Each branch's decoded segments, filled as :meth:`interpolate_um` reads them.
+    branch_segments: dict[int, "_BranchGeometryUm"] = field(default_factory=dict, compare=False, repr=False)
 
     @classmethod
     def build(cls, morpho: Morphology) -> "MorphologySpatialGeometry":
@@ -124,13 +126,15 @@ class MorphologySpatialGeometry:
 
         The geometry is kept on ``morpho`` with the revision it was built
         at, as ``Morphology.to_vis_data`` keeps its snapshot; any edit
-        advances the revision, so the next call builds again (CELL-18c).
+        drops it and advances the revision, so the next call builds again
+        (CELL-18c). A shallow copy shares the attribute but not the tree,
+        so it builds its own.
         """
-        cached = morpho.__dict__.get("_spatial_geometry_cache")
+        cached = morpho._spatial_geometry_cache
         if cached is not None and cached[0] == morpho.revision and cached[1].morpho is morpho:
             return cached[1]
         geometry = cls.build(morpho)
-        morpho.__dict__["_spatial_geometry_cache"] = (morpho.revision, geometry)
+        morpho._spatial_geometry_cache = (morpho.revision, geometry)
         return geometry
 
     def path_distance_to_root(self, branch_id: int, branch_x: object) -> u.Quantity:
@@ -139,12 +143,26 @@ class MorphologySpatialGeometry:
 
     def path_distance_from_soma(self, branch_id: int, branch_x: object) -> u.Quantity:
         """Return tree distance from the soma/root reference region."""
+        return u.Quantity(self._soma_distance(branch_id, branch_x), u.um)
+
+    def path_distances_um(self, branch_id: int, branch_x: object) -> tuple[np.ndarray, np.ndarray]:
+        """:meth:`path_distance_to_root` and :meth:`path_distance_from_soma` in micrometres."""
+        return self._distance(branch_id, branch_x, self.root_bases_um), self._soma_distance(branch_id, branch_x)
+
+    def interpolate_um(self, branch_id: int, branch_x: object) -> tuple[np.ndarray, np.ndarray | None]:
+        """:func:`interpolate_branch` in micrometres, decoding each branch once."""
+        branch_id = int(branch_id)
+        segments = self.branch_segments.get(branch_id)
+        if segments is None:
+            segments = _BranchGeometryUm(self.morpho.branch(index=branch_id).branch)
+            self.branch_segments[branch_id] = segments
+        return segments.sample(branch_x)
+
+    def _soma_distance(self, branch_id: int, branch_x: object) -> np.ndarray:
         values = np.asarray(branch_x, dtype=float)
         if int(branch_id) in self.reference_branch_ids:
-            result = np.zeros_like(values)
-        else:
-            result = self._distance(branch_id, values, self.soma_bases_um)
-        return u.Quantity(result, u.um)
+            return np.zeros_like(values)
+        return self._distance(branch_id, values, self.soma_bases_um)
 
     def _distance(self, branch_id: int, branch_x: object, bases_um: tuple[np.ndarray, ...]) -> np.ndarray:
         branch_id = int(branch_id)
@@ -194,24 +212,8 @@ def _distances_from(adjacency: dict[_Node, list[tuple[_Node, float]]], starts: t
 
 def interpolate_branch(morpho: Morphology, branch_id: int, branch_x: object) -> tuple[u.Quantity, u.Quantity | None]:
     """Interpolate radius and optional 3-D position at continuous sites."""
-    branch = morpho.branch(index=int(branch_id)).branch
-    values = np.asarray(branch_x, dtype=float)
-    geometry = _BranchGeometryUm(branch)
-
-    radii = np.empty(values.shape, dtype=float)
-    flat_radii = radii.reshape(-1)
-    sites = values.reshape(-1).tolist()
-
-    if geometry.p0 is None:
-        for index, x in enumerate(sites):
-            flat_radii[index] = geometry.at(x)[0]
-        return u.Quantity(radii, u.um), None
-
-    positions = np.empty(values.shape + (3,), dtype=float)
-    flat_positions = positions.reshape(-1, 3)
-    for index, x in enumerate(sites):
-        flat_radii[index], flat_positions[index] = geometry.at(x)
-    return u.Quantity(radii, u.um), u.Quantity(positions, u.um)
+    radii, points = _BranchGeometryUm(morpho.branch(index=int(branch_id)).branch).sample(branch_x)
+    return u.Quantity(radii, u.um), None if points is None else u.Quantity(points, u.um)
 
 
 class _BranchGeometryUm:
@@ -220,10 +222,10 @@ class _BranchGeometryUm:
     :func:`interpolate_branch` evaluates many sites on one branch, and none
     of the five ``to_decimal`` conversions below depend on the site. Decoding
     them once per branch rather than once per site is the reason this class
-    exists; ``at`` holds the per-site arithmetic that genuinely varies.
+    exists; :meth:`sample` holds the per-site arithmetic that genuinely varies.
     """
 
-    __slots__ = ("lengths", "r0", "r1", "p0", "p1", "total")
+    __slots__ = ("lengths", "r0", "r1", "p0", "p1", "total", "start", "end", "has_length", "long_index", "long_end")
 
     def __init__(self, branch) -> None:
         self.lengths = np.asarray(branch.lengths.to_decimal(u.um), dtype=float)
@@ -237,30 +239,71 @@ class _BranchGeometryUm:
         self.total = float(np.sum(self.lengths))
         if self.total <= 0.0:
             raise ValueError("Cannot interpolate a zero-length branch.")
+        # Where each segment starts and ends as a fraction of the branch:
+        # ``cumsum`` adds the lengths in the order a walk along them does.
+        self.has_length = ~(self.lengths <= 0.0)
+        cursor = np.cumsum(np.where(self.has_length, self.lengths, 0.0))
+        self.start = np.concatenate(([0.0], cursor[:-1])) / self.total
+        self.end = cursor / self.total
+        self.long_index = np.flatnonzero(self.has_length)
+        # The ends of segments with a length never decrease, up to a NaN.
+        self.long_end = self.end[self.long_index]
 
-    def at(self, x: float) -> tuple[float, np.ndarray | None]:
-        """Return the radius, and the 3-D point when available, at site ``x``."""
-        lengths = self.lengths
-        r0, r1, p0, p1 = self.r0, self.r1, self.p0, self.p1
-        total = self.total
+    def sample(self, branch_x: object) -> tuple[np.ndarray, np.ndarray | None]:
+        """Return the radius, and the 3-D point when available, at each site.
 
-        cursor = 0.0
-        last_positive = 0
-        for index, segment_length in enumerate(lengths.tolist()):
-            if segment_length <= 0.0:
-                if np.isclose(x, cursor / total):
-                    point = None if p0 is None or p1 is None else 0.5 * (p0[index] + p1[index])
-                    return 0.5 * (r0[index] + r1[index]), point
-                continue
-            start = cursor / total
-            cursor += segment_length
-            end = cursor / total
-            last_positive = index
-            if x < end or (x == 1.0 and end == 1.0):
-                fraction = (x - start) / (end - start)
-                point = None if p0 is None or p1 is None else p0[index] + fraction * (p1[index] - p0[index])
-                return r0[index] + fraction * (r1[index] - r0[index]), point
-        # ``total > 0`` was enforced in __init__, so at least one segment had a
-        # positive length and ``last_positive`` names a real segment here.
-        point = None if p1 is None else p1[last_positive]
-        return r1[last_positive], point
+        A site lies in the first segment, walking from ``x=0``, that is
+        zero-length and ``isclose`` to it, or that has a length and ends
+        past it (``x=1`` also in one ending at exactly 1); a zero-length
+        segment gives its midpoint, and a site in no segment gets the distal
+        end. All sites are placed at once (CELL-18c): ``cumsum`` adds the
+        lengths in the order a walk does, so every boundary, and so every
+        value, is the one the walk gives.
+        """
+        values = np.asarray(branch_x, dtype=float)
+        sites = values.reshape(-1)
+        start, end, has_length, long_index, long_end = (
+            self.start,
+            self.end,
+            self.has_length,
+            self.long_index,
+            self.long_end,
+        )
+        n_segments = self.lengths.size
+
+        segment = np.full(sites.shape, n_segments)
+        if long_index.size:
+            at_one = sites == 1.0
+            found = np.where(
+                at_one,
+                np.searchsorted(long_end, sites, side="left"),
+                np.searchsorted(long_end, sites, side="right"),
+            )
+            candidate = long_index[np.minimum(found, long_index.size - 1)]
+            inside = (found < long_index.size) & (
+                (sites < end[candidate]) | (at_one & (end[candidate] == 1.0))
+            )
+            segment = np.where(inside, candidate, segment)
+        for index in np.flatnonzero(~has_length)[::-1].tolist():
+            segment = np.where((index < segment) & np.isclose(sites, start[index]), index, segment)
+
+        last_long = int(long_index[-1]) if long_index.size else 0
+        beyond = segment == n_segments
+        segment = np.where(beyond, last_long, segment)
+        midpoint = ~beyond & ~has_length[segment]
+        along = ~beyond & has_length[segment]
+        fraction = (sites[along] - start[segment[along]]) / (end[segment[along]] - start[segment[along]])
+
+        radii = np.empty(sites.shape, dtype=float)
+        radii[beyond] = self.r1[last_long]
+        radii[midpoint] = 0.5 * (self.r0[segment[midpoint]] + self.r1[segment[midpoint]])
+        r0 = self.r0[segment[along]]
+        radii[along] = r0 + fraction * (self.r1[segment[along]] - r0)
+        if self.p0 is None or self.p1 is None:
+            return radii.reshape(values.shape), None
+        points = np.empty(sites.shape + (3,), dtype=float)
+        points[beyond] = self.p1[last_long]
+        points[midpoint] = 0.5 * (self.p0[segment[midpoint]] + self.p1[segment[midpoint]])
+        p0 = self.p0[segment[along]]
+        points[along] = p0 + fraction[:, None] * (self.p1[segment[along]] - p0)
+        return radii.reshape(values.shape), points.reshape(values.shape + (3,))

@@ -24,7 +24,6 @@ base classes can depend on them without reaching into this package.
 from abc import ABC
 import contextlib
 from dataclasses import dataclass, field
-import functools
 import hashlib
 from typing import Any
 
@@ -320,26 +319,57 @@ class NetStim(EventSource):
         Fraction of each interval drawn from an exponential distribution.
         Zero is periodic and one is Poisson-like.
     seed : int or None, optional
-        Source-local seed. ``None`` uses the reproducible standalone root 0.
+        Seed of the noise. ``None`` draws one integer from the BrainState
+        default random stream when the source is built, so an enclosing
+        ``brainstate.random.seed_context(s)`` (or an earlier
+        ``brainstate.random.seed(s)``) controls the noise. Only a source
+        with nonzero ``noise`` draws; a periodic one leaves the default
+        stream alone. Registered in a ``Network``, a source without a seed
+        uses a stream derived from the Network's root and its population
+        name instead, but the draw made when it was built has still
+        advanced the default stream. Inside ``brainstate.transform.jit``,
+        ``for_loop`` or another transformation the default stream is
+        traced, and a noisy source without a seed raises ``TypeError``:
+        build it outside, or pass an integer.
     name : str or None, optional
         Optional display name.
 
     Notes
     -----
+    Every source has its own noise stream: draw ``j`` of source ``i``
+    depends only on the seed, ``i`` and ``j``. A source's events therefore
+    do not depend on how many other sources there are or on their
+    parameters, a larger ``number`` keeps the earlier events, and the
+    events are the same at every float precision. The schedule is a
+    constant: every batch member of a ``Cell`` receives the same events.
+
     A schedule with at most ``2**20`` entries (``size * max(number)``) is
     generated in full at construction. A larger one is generated on demand:
     ``Cell.run`` and ``Network.run`` generate events only as far as the end
     of the run, so their memory does not grow with ``number``; a later run
     extends the schedule, at least doubling its width so that a compiled
-    run is rarely rebuilt. The events are the same, bit for bit, as those of
-    the full schedule, including the noisy ones of a given ``seed``: a
-    shorter schedule is a prefix of the longer one. Entries that do not
+    run is rarely rebuilt. A shorter schedule is a prefix of the longer
+    one, so the events are those of the full schedule. Entries that do not
     know when the run ends generate all ``number`` events, as for a small
     schedule: :attr:`event_times`, :attr:`events`, :meth:`event_count`
     outside a run, ``Cell.run`` traced under ``jax.jit`` or ``jax.grad``,
-    and ``Network.prepare_run`` / ``Network.update``. A noisy schedule also
-    draws all its random numbers when JAX does not use its default
-    partitionable ``threefry2x32`` generator.
+    and ``Network.prepare_run`` / ``Network.update``.
+
+    Examples
+    --------
+    >>> import brainstate
+    >>> import brainunit as u
+    >>> import braincell
+    >>> with brainstate.random.seed_context(42):
+    ...     first = braincell.NetStim(size=2, number=3, interval=5.0 * u.ms, noise=1.0)
+    >>> with brainstate.random.seed_context(42):
+    ...     again = braincell.NetStim(size=2, number=3, interval=5.0 * u.ms, noise=1.0)
+    >>> bool(u.math.allclose(first.event_times, again.event_times))
+    True
+    >>> longer = braincell.NetStim(size=3, number=5, interval=5.0 * u.ms, noise=1.0, seed=7)
+    >>> shorter = braincell.NetStim(size=2, number=3, interval=5.0 * u.ms, noise=1.0, seed=7)
+    >>> bool(u.math.allclose(longer.event_times[:2, :3], shorter.event_times))
+    True
     """
 
     size: int = 1
@@ -352,12 +382,10 @@ class NetStim(EventSource):
     _event_times_ms: np.ndarray = field(init=False, repr=False, compare=False)
     _event_mask: np.ndarray = field(init=False, repr=False, compare=False)
     _network_binding: tuple[int, str] | None = field(init=False, default=None, repr=False, compare=False)
-    # Generation state: the effective seed, whether ``_event_times_ms`` holds
-    # every event, and the draw dtype: the precision in force when the seed
-    # was set, which a full schedule built then would have used.
+    # Generation state: the effective seed and whether ``_event_times_ms``
+    # holds every event.
     _schedule_seed: int = field(init=False, default=0, repr=False, compare=False)
     _schedule_complete: bool = field(init=False, default=True, repr=False, compare=False)
-    _schedule_dtype: Any = field(init=False, default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if isinstance(self.size, bool) or not isinstance(self.size, (int, np.integer)):
@@ -390,7 +418,16 @@ class NetStim(EventSource):
         object.__setattr__(self, "number", number)
         object.__setattr__(self, "interval", interval)
         object.__setattr__(self, "noise", noise)
-        self._reset_schedule(0 if self.seed is None else int(self.seed))
+        if self.seed is not None:
+            seed = int(self.seed)
+        elif np.any(noise > 0.0):
+            from braincell._random import draw_seed
+
+            seed = draw_seed("NetStim(seed=None) with noise")
+        else:
+            # A periodic schedule draws nothing; leave the default stream alone.
+            seed = 0
+        self._reset_schedule(seed)
 
     @property
     def instance_name(self) -> str:
@@ -477,7 +514,6 @@ class NetStim(EventSource):
         """Set the effective seed; generate a small schedule in full now."""
         max_events = int(np.max(self.number, initial=0))
         object.__setattr__(self, "_schedule_seed", int(seed))
-        object.__setattr__(self, "_schedule_dtype", np.dtype(brainstate.environ.dftype()))
         if self.size * max_events <= _EAGER_SCHEDULE_ENTRIES:
             event_times, event_mask = _build_event_schedule(
                 start_ms=np.asarray(self.start.to_decimal(u.ms), dtype=np.float64),
@@ -520,7 +556,6 @@ class NetStim(EventSource):
                 noise=self.noise,
                 seed=self._schedule_seed,
                 width=width,
-                dtype=self._schedule_dtype,
             )
             object.__setattr__(self, "_event_times_ms", event_times)
             object.__setattr__(self, "_event_mask", event_mask)
@@ -1126,14 +1161,12 @@ def _broadcast_vector(value: np.ndarray, *, size: int, name: str) -> np.ndarray:
     raise ValueError(f"{name} must be scalar or have shape {(size,)!r}, got {value.shape!r}.")
 
 
-def _build_event_schedule(*, start_ms, number, interval_ms, noise, seed, width=None, dtype=None):
+def _build_event_schedule(*, start_ms, number, interval_ms, noise, seed, width=None):
     """Return the first ``width`` events of every source (all when ``None``).
 
-    The full schedule draws one ``(size, max(number))`` exponential matrix
-    from ``brainstate.random.RandomState(seed)``. A narrower one draws the
-    same values for its columns only (:func:`_exponential_columns`), and the
-    times are a running sum along each row, so it is a prefix of the full
-    one, bit for bit.
+    Each noisy source draws its own exponentials (:func:`_source_exponentials`),
+    and the times are a running sum along each row, so a narrower schedule is
+    a prefix of a wider one and a source's events do not depend on the others.
     """
     max_events = int(np.max(number, initial=0))
     columns = max_events if width is None else int(width)
@@ -1141,17 +1174,10 @@ def _build_event_schedule(*, start_ms, number, interval_ms, noise, seed, width=N
     if columns == 0:
         return np.empty((len(number), 0), dtype=np.float64), mask
 
-    if width is None:
-        rng = brainstate.random.RandomState(seed)
-        exponential = np.asarray(
-            rng.exponential(scale=1.0, size=(len(number), max_events)),
-            dtype=np.float64,
-        )
-    elif not np.any(noise > 0.0):
-        # Every draw is multiplied by a zero noise; skip it.
-        exponential = np.zeros((len(number), columns), dtype=np.float64)
-    else:
-        exponential = _exponential_columns(seed, shape=(len(number), max_events), columns=columns, dtype=dtype)
+    exponential = np.zeros((len(number), columns), dtype=np.float64)
+    noisy = np.flatnonzero(noise > 0.0)
+    if noisy.size:
+        exponential[noisy] = _source_exponentials(seed, noisy, columns)
     first_wait = noise * interval_ms * exponential[:, 0]
     if columns == 1:
         offsets = first_wait[:, None]
@@ -1185,81 +1211,36 @@ def _estimated_width(source: NetStim, until_ms: float) -> int:
     return int(np.max(np.minimum(estimate, source.number), initial=0))
 
 
-def _exponential_columns(seed: int, *, shape: tuple[int, int], columns: int, dtype) -> np.ndarray:
-    """Columns ``[0, columns)`` of a ``shape`` exponential draw, without the rest.
+def _source_exponentials(seed: int, sources: np.ndarray, columns: int) -> np.ndarray:
+    """Standard exponential draws ``0 .. columns - 1`` of each source in ``sources``.
 
-    Equals ``brainstate.random.RandomState(seed).exponential(scale=1.0,
-    size=shape, dtype=dtype)[:, :columns]``. JAX's partitionable
-    ``threefry2x32`` generator hashes each element's row-major index, so the
-    needed columns are drawn from their own indices and transformed as
-    ``jax.random.exponential`` does. When JAX uses another generator, or the
-    transform no longer matches (checked once per configuration), the full
-    matrix is drawn and sliced.
+    Draw ``j`` of source ``i`` is a function of ``(seed, i, j)`` only: its 64
+    random bits are the key data of ``fold_in(fold_in(key(seed), i), j)``
+    with the ``threefry2x32`` generator, the top 53 of them give a uniform
+    ``u`` in ``[0, 1)``, and the draw is ``-log1p(-u)`` in float64. It does
+    not depend on the other sources, on ``number``, on how many columns are
+    drawn, on the float precision or on JAX's generator settings.
     """
-    dtype = np.dtype(dtype)
-    rows, total = shape
     with jax.ensure_compile_time_eval():
-        # ``RandomState(seed).exponential`` draws from its first split key.
-        key = jax.random.split(jax.random.key(seed))[1]
-        if not _counter_draws_supported(dtype.name):
-            full = jax.random.exponential(key, shape=shape, dtype=dtype)
-            return np.asarray(full[:, :columns] * np.asarray(1.0, dtype=dtype), dtype=np.float64)
-        flat = np.arange(rows, dtype=np.uint64)[:, None] * np.uint64(total) + np.arange(columns, dtype=np.uint64)
-        return _counter_exponential(key, flat, dtype)
+        root = jax.random.key_data(jax.random.key(seed, impl="threefry2x32"))
+        data = _source_bits(root, np.asarray(sources, dtype=np.uint32), np.arange(columns, dtype=np.uint32))
+    data = np.asarray(data)
+    bits = (data[..., 0].astype(np.uint64) << np.uint64(32)) | data[..., 1]
+    draws = (bits >> np.uint64(11)).astype(np.float64)
+    del bits
+    draws *= -(2.0**-53)
+    np.log1p(draws, out=draws)
+    return np.negative(draws, out=draws)
 
 
-def _counter_exponential(key, flat: np.ndarray, dtype: np.dtype) -> np.ndarray:
-    """Standard exponentials at row-major indices ``flat`` of a threefry draw."""
-    from jax.extend.random import threefry2x32_p
-
-    jnp = jax.numpy
-    k1, k2 = jax.random.key_data(key)
-    # The partitionable hash takes the high and low words of the index.
-    hi = jnp.asarray((flat >> np.uint64(32)).astype(np.uint32))
-    lo = jnp.asarray((flat & np.uint64(0xFFFF_FFFF)).astype(np.uint32))
-    bits1, bits2 = threefry2x32_p.bind(k1, k2, hi, lo)
-    finfo = np.finfo(dtype)
-    if finfo.bits == 64:
-        uint = np.uint64
-        bits = (bits1.astype(uint) << uint(32)) | bits2.astype(uint)
-    else:
-        uint = np.uint32
-        bits = bits1 ^ bits2
-    # As ``jax.random.uniform``: random mantissa bits under the exponent of
-    # 1.0, minus 1.0; then ``jax.random.exponential``: ``-log1p(-u)``.
-    float_bits = (bits >> uint(finfo.bits - finfo.nmant)) | jnp.asarray(np.array(1.0, dtype).view(uint))
-    uniform = jnp.maximum(jax.lax.bitcast_convert_type(float_bits, dtype) - jnp.asarray(1.0, dtype), 0.0)
-    exponential = jax.lax.neg(jax.lax.log1p(jax.lax.neg(uniform)))
-    return np.asarray(exponential, dtype=np.float64)
-
-
-def _counter_draws_supported(dtype_name: str) -> bool:
-    """Whether :func:`_counter_exponential` reproduces JAX's draw here."""
-    return _counter_draws_check(
-        dtype_name,
-        str(jax.config.jax_default_prng_impl),
-        bool(jax.config.jax_threefry_partitionable),
-        bool(jax.config.jax_enable_x64),
+@jax.jit
+def _source_bits(root, sources, columns):
+    """Key data of ``fold_in(fold_in(root, source), column)`` for every source and column."""
+    key = jax.random.wrap_key_data(root, impl="threefry2x32")
+    per_source = jax.vmap(lambda source: jax.random.fold_in(key, source))(sources)
+    return jax.random.key_data(
+        jax.vmap(lambda row: jax.vmap(lambda column: jax.random.fold_in(row, column))(columns))(per_source)
     )
-
-
-@functools.lru_cache(maxsize=None)
-def _counter_draws_check(dtype_name: str, prng_impl: str, partitionable: bool, x64: bool) -> bool:
-    dtype = np.dtype(dtype_name)
-    if prng_impl != "threefry2x32" or not partitionable or np.finfo(dtype).bits not in (32, 64):
-        return False
-    if np.finfo(dtype).bits == 64 and not x64:
-        return False
-    shape = (3, 7)
-    with jax.ensure_compile_time_eval():
-        key = jax.random.split(jax.random.key(1))[1]
-        expected = np.asarray(jax.random.exponential(key, shape=shape, dtype=dtype), dtype=np.float64)
-        flat = np.arange(21, dtype=np.uint64).reshape(shape)
-        try:
-            actual = _counter_exponential(key, flat, dtype)
-        except Exception:  # pragma: no cover - a JAX that changed the primitive
-            return False
-    return bool(np.array_equal(actual, expected))
 
 
 def _prepare_netstim_schedules(sources, *, until_ms: float | None) -> tuple:

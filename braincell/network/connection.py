@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 import warnings
 
@@ -831,7 +832,12 @@ def connect(
     pairing : PairingSpec, optional
         Endpoint sampling declaration returned by a helper in
         ``braincell.network.connection``. When omitted, endpoints use the existing
-        equal-size or singleton broadcasting rule.
+        equal-size or singleton broadcasting rule. A rule without its own
+        ``seed`` draws one integer from the BrainState default random
+        stream here and samples exactly as if it had been given that seed,
+        so an enclosing ``brainstate.random.seed_context(s)`` (or an earlier
+        ``brainstate.random.seed(s)``) controls the rows. ``Network.connect``
+        derives the seed from the Network's root instead.
     weight : Quantity or array-like, optional
         Scalar event payload, scalar or one value per resulting routing row.
     delay : Quantity, optional
@@ -844,6 +850,11 @@ def connect(
 
     Raises
     ------
+    TypeError
+        If ``pairing`` has no seed and the call runs inside
+        ``brainstate.transform.jit``, ``for_loop`` or another
+        transformation, where the default stream is traced. Call
+        ``connect`` outside the transformation.
     RuntimeError
         At the destination Cell's ``init_state`` (or ``Network.init_state``,
         before any Cell initializes), if the grid was rebuilt after this call
@@ -867,7 +878,7 @@ def connect(
         pairing=pairing,
         weight=weight,
         delay=delay,
-        pairing_seed_root=0,
+        pairing_seed_root=None,
         pairing_seed_path=(),
     )
 
@@ -893,6 +904,17 @@ def _connect_with_pairing_seed(
     if pairing is None:
         source_index, synapse_id, target_index = _align_endpoints(source_view, synapse)
     else:
+        if pairing_seed_root is None:
+            # A direct ``connect``: a rule without its own seed draws one from the default stream.
+            if pairing.seed is None:
+                from braincell._random import draw_seed
+
+                seed = draw_seed(
+                    "braincell.connect with a pairing rule without a seed",
+                    remedy="Call connect outside the transformation.",
+                )
+                pairing = dataclasses.replace(pairing, seed=seed)
+            pairing_seed_root = 0
         pairs = materialize_pairing(
             pairing,
             source_view,

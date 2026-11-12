@@ -33,7 +33,9 @@ from braincell import (
     Network,
     connect,
 )
+from braincell._random_test import default_key_data, drawn_seeds
 from braincell.filter import AllRegion, Terminals, at
+from braincell.network import connection as rules
 from braincell.morph._testing import make_tree_s
 
 
@@ -953,3 +955,69 @@ class ConnectionStoreColumnsTest(unittest.TestCase):
         cell, target, calls = self._recorded_cell()
         self._assert_columns(cell, calls, set())
         self.assertEqual(len(cell.connections), 0)
+
+
+def _sampled_rows(pairing) -> np.ndarray:
+    """Rows of a direct ``connect`` from six periodic sources to four lumped members, one ExpSyn each."""
+    cell = Cell.point(4, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV)
+    cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="syn", tau=2.0 * u.ms, e=0.0 * u.mV))
+    rows = connect("drive", source=NetStim(size=6, number=1), synapse=cell.synapses["syn"], pairing=pairing)
+    return np.stack([np.asarray(rows.source_index), np.asarray(rows.target_index)])
+
+
+_RULES = {
+    "independent(5)": lambda **seed: rules.independent(5, **seed),
+    "source_first(5)": lambda **seed: rules.source_first(5, **seed),
+    "synapse_first(5)": lambda **seed: rules.synapse_first(5, **seed),
+    "by_source(2)": lambda **seed: rules.by_source(2, **seed),
+    "by_synapse(2)": lambda **seed: rules.by_synapse(2, **seed),
+    "match_degrees(2, 3)": lambda **seed: rules.match_degrees(2, 3, **seed),
+}
+
+
+class DirectConnectSeedTest(unittest.TestCase):
+    """CELL-11b: a rule without a seed in a direct ``connect`` draws one from the BrainState default stream."""
+
+    def test_a_seedless_rule_draws_the_seed_it_then_uses(self) -> None:
+        # Acceptance 6. Before CELL-11b every seedless rule used seed 613549620.
+        seed = drawn_seeds(42, 1)[0]
+        for name, rule in _RULES.items():
+            with self.subTest(rule=name):
+                with brainstate.random.seed_context(42):
+                    drawn = _sampled_rows(rule())
+                np.testing.assert_array_equal(drawn, _sampled_rows(rule(seed=seed)))
+                with brainstate.random.seed_context(43):
+                    self.assertFalse(np.array_equal(_sampled_rows(rule()), drawn))
+
+    def test_only_a_seedless_rule_advances_the_default_stream(self) -> None:
+        for name, pairing, advances in (
+            ("independent(5)", rules.independent(5), True),
+            ("independent(5, seed=8)", rules.independent(5, seed=8), False),
+            ("no pairing", None, False),
+        ):
+            with self.subTest(pairing=name):
+                cell = Cell.point(6, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV)
+                cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="syn"))
+                stim = NetStim(size=6, number=1)
+                with brainstate.random.seed_context(5):
+                    before = default_key_data()
+                    connect("drive", source=stim, synapse=cell.synapses["syn"], pairing=pairing)
+                    self.assertEqual(not np.array_equal(default_key_data(), before), advances)
+
+    def test_a_seedless_rule_cannot_draw_under_a_transformation(self) -> None:
+        # Acceptance 7. Before CELL-11b the same call failed later, when the
+        # rows were sampled (TracerArrayConversionError), as a seeded rule still does.
+        cell = Cell.point(4, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV)
+        cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="syn"))
+        stim = NetStim(size=6, number=1)
+
+        def sampled(pairing):
+            return lambda: len(connect("drive", source=stim, synapse=cell.synapses["syn"], pairing=pairing))
+
+        brainstate.random.seed(1)
+        before = default_key_data()
+        with self.assertRaisesRegex(TypeError, "connect.*traced"):
+            brainstate.transform.jit(sampled(rules.independent(4)))()
+        np.testing.assert_array_equal(default_key_data(), before)
+        with self.assertRaises(jax.errors.TracerArrayConversionError):
+            brainstate.transform.jit(sampled(rules.independent(4, seed=1)))()

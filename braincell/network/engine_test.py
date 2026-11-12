@@ -663,6 +663,40 @@ def _two_stim_network(order) -> dict:
     return {name: _event_times(stim) for name, stim in made.items()}
 
 
+def _point_cell(pop_size=4, name="post"):
+    """A lumped soma (20 um x 10 um, leak at -65 mV) with one ExpSyn."""
+    cell = braincell.Cell.point(pop_size, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, name=name)
+    cell.paint(AllRegion(), braincell.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="syn", tau=2.0 * u.ms, e=0.0 * u.mV))
+    cell.loc(at("soma", 0.5)).record("v", braincell.observe.state("V"))
+    return cell
+
+
+def _direct_rows(pairing) -> np.ndarray:
+    """Rows of a direct ``braincell.connect`` from six periodic sources to four lumped members."""
+    cell = _point_cell()
+    rows = braincell.connect(
+        "drive",
+        source=braincell.NetStim(size=6, number=1),
+        synapse=cell.synapses["syn"],
+        pairing=pairing,
+        weight=0.001 * u.uS,
+    )
+    return np.stack([np.asarray(rows.source_index), np.asarray(rows.target_index)])
+
+
+def _default_roots() -> dict:
+    """Everything CELL-11b gives a drawn root when no seed is written."""
+    net = Network("demo")
+    registered = net.add_population("stim", braincell.NetStim(size=2, number=3, noise=1.0))
+    return {
+        "Network() root": np.asarray(net.seed),
+        "Network() NetStim": _event_times(registered),
+        "standalone NetStim": _event_times(braincell.NetStim(size=2, number=3, noise=1.0)),
+        "direct connect": _direct_rows(independent(5)),
+    }
+
+
 def _explicit_seed_draws() -> dict:
     """Explicit seeds and independent generators: local streams that no context controls."""
     soma = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
@@ -675,6 +709,7 @@ def _explicit_seed_draws() -> dict:
             braincell.filter.sample(AllRegion(), number=4, seed=3).evaluate(morpho).points, dtype=float
         ),
         "RandomSamples(seed=123)": np.asarray(RandomSamples(AllRegion(), 4, 123).evaluate(morpho).points, dtype=float),
+        "independent(5, seed=8)": _direct_rows(independent(5, seed=8)),
         "RandomState(5)": np.asarray(brainstate.random.RandomState(5).normal(size=3)),
         "jax.random.key(3)": np.asarray(jax.random.normal(jax.random.key(3), (3,))),
         "default_rng(1)": np.random.default_rng(1).random(3),
@@ -791,6 +826,108 @@ class NetworkContextSeedTest(unittest.TestCase):
         for key, value in one.items():
             with self.subTest(stream=key):
                 np.testing.assert_array_equal(two[key], value)
+
+
+class NetworkDefaultSeedTest(unittest.TestCase):
+    """CELL-11b: without a seed the roots come from the BrainState default stream."""
+
+    def test_a_network_without_a_seed_draws_its_root(self) -> None:
+        # Acceptance 6. Before CELL-11b ``Network()`` had the root 0.
+        for seed in (0, 42):
+            with self.subTest(seed=seed), brainstate.random.seed_context(seed):
+                self.assertEqual(Network().seed, drawn_seeds(seed, 1)[0])
+
+    def test_one_context_controls_every_default_root(self) -> None:
+        # Before CELL-11b all four were the same under seed_context(1) and (2).
+        with brainstate.random.seed_context(1):
+            first = _default_roots()
+        with brainstate.random.seed_context(1):
+            again = _default_roots()
+        with brainstate.random.seed_context(2):
+            other = _default_roots()
+        for name, value in first.items():
+            with self.subTest(stream=name):
+                np.testing.assert_array_equal(again[name], value)
+                self.assertFalse(np.array_equal(other[name], value))
+
+    def test_an_explicit_network_seed_derives_the_new_noise_stream(self) -> None:
+        stim = Network(seed=7).add_population("stim", braincell.NetStim(size=2, number=3, noise=1.0))
+        # Before CELL-11b: [6.56192421913147, 15.912121534347534, 47.53369450569153].
+        np.testing.assert_allclose(
+            _event_times(stim)[0], [8.318834060570685, 8.727936488554263, 12.538289521217408], rtol=1e-12
+        )
+
+    def test_only_a_network_without_a_seed_advances_the_default_stream(self) -> None:
+        for name, build, advances in (
+            ("Network()", Network, True),
+            ("Network(seed=7)", lambda: Network(seed=7), False),
+        ):
+            with self.subTest(network=name), brainstate.random.seed_context(5):
+                before = default_key_data()
+                build()
+                self.assertEqual(not np.array_equal(default_key_data(), before), advances)
+
+    def test_outside_a_context_the_global_stream_gives_the_root(self) -> None:
+        brainstate.random.seed(4)
+        outside = (Network().seed, _event_times(braincell.NetStim(size=2, number=3, noise=1.0)))
+        with brainstate.random.seed_context(4):
+            inside = (Network().seed, _event_times(braincell.NetStim(size=2, number=3, noise=1.0)))
+        self.assertEqual(outside[0], inside[0])
+        np.testing.assert_allclose(outside[1], inside[1], rtol=1e-12)
+
+    def test_a_network_without_a_seed_cannot_be_built_under_a_transformation(self) -> None:
+        # Acceptance 7. Before CELL-11b it was built with the root 0.
+        brainstate.random.seed(1)
+        before = default_key_data()
+        with self.assertRaisesRegex(TypeError, r"Network\(seed=None\).*traced"):
+            brainstate.transform.jit(lambda: Network().seed)()
+        np.testing.assert_array_equal(default_key_data(), before)
+        self.assertEqual(int(brainstate.transform.jit(lambda: Network(seed=3).seed)()), 3)
+
+    def test_split_runs_and_reset_replay_the_noise(self) -> None:
+        # Acceptance 5: 40 events are generated in full, 10**9 on demand.
+        def network(number):
+            with brainstate.random.seed_context(3):
+                net = Network("split")
+                stim = net.add_population(
+                    "stim", braincell.NetStim(size=2, number=number, interval=0.5 * u.ms, noise=1.0)
+                )
+                post = net.add_population("post", _point_cell(pop_size=2))
+                net.connect("drive", source=stim, synapse=post.synapses["syn"], weight=0.01 * u.uS)
+            return net
+
+        def voltage(result):
+            return np.asarray(result.samples["post"]["v"].values.to_decimal(u.mV))
+
+        for number in (40, 10**9):
+            with self.subTest(number=number):
+                net = network(number)
+                whole = net.run(dt=DT, duration=10.0 * u.ms)
+                self.assertEqual(len(whole.events["stim"]["spike"].time), 46)
+                split_net = network(number)
+                parts = [split_net.run(dt=DT, duration=d * u.ms) for d in (2.5, 0.025, 4.475, 3.0)]
+                np.testing.assert_allclose(
+                    np.concatenate([voltage(part) for part in parts]), voltage(whole), rtol=1e-12
+                )
+                net.reset_state()
+                again = net.run(dt=DT, duration=10.0 * u.ms)
+                np.testing.assert_allclose(voltage(again), voltage(whole), rtol=1e-12)
+                np.testing.assert_allclose(
+                    again.events["stim"]["spike"].time.to_decimal(u.ms),
+                    whole.events["stim"]["spike"].time.to_decimal(u.ms),
+                    rtol=1e-12,
+                )
+
+    def test_batch_members_receive_the_same_events(self) -> None:
+        cell = _point_cell(pop_size=2)
+        stim = braincell.NetStim(size=2, number=20, interval=0.5 * u.ms, noise=1.0, seed=4)
+        braincell.connect("drive", source=stim, synapse=cell.synapses["syn"], weight=0.01 * u.uS)
+        cell.init_state(batch_size=3)
+        v = np.asarray(cell.run(dt=DT, duration=5.0 * u.ms).samples["v"].values.to_decimal(u.mV))
+        self.assertEqual(v.shape, (200, 3, 2))
+        self.assertGreater(float(v.max()), -60.0)
+        np.testing.assert_allclose(v[:, 1], v[:, 0], rtol=1e-12)
+        np.testing.assert_allclose(v[:, 2], v[:, 0], rtol=1e-12)
 
 
 if __name__ == "__main__":

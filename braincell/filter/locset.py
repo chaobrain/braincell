@@ -799,7 +799,7 @@ class RandomSamples(LocsetExpr):
 
     def __post_init__(self) -> None:
         if self.seed is None:
-            object.__setattr__(self, "seed", draw_seed("RandomSamples"))
+            object.__setattr__(self, "seed", draw_seed("RandomSamples(seed=None)"))
 
     def _evaluate(
         self,
@@ -850,7 +850,7 @@ class SampleLocations(LocsetExpr):
 
     def __post_init__(self) -> None:
         if self.seed is None:
-            object.__setattr__(self, "seed", draw_seed("sample"))
+            object.__setattr__(self, "seed", draw_seed("sample(seed=None)"))
 
     def _evaluate(
         self,

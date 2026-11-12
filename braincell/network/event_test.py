@@ -32,13 +32,11 @@ from braincell.network.event import (
     _SCHEDULE_HORIZON_KEY,
     EventSourceView,
     VoltageCrossingSource,
-    _build_event_schedule,
-    _counter_draws_check,
-    _counter_draws_supported,
     _resolve_cell_location_cv,
     _round_half_up_steps,
 )
 from braincell.filter import RootLocation, at
+from braincell._random_test import default_key_data, drawn_seeds
 from braincell.morph._testing import make_tree_u
 
 
@@ -54,6 +52,27 @@ def _two_cv_population(size=2):
         V_init=-65.0 * u.mV,
         V_th=-20.0 * u.mV,
     )
+
+
+def _definition_draw(seed: int, source: int, column: int) -> float:
+    """Draw ``column`` of ``source`` by the definition of the NetStim noise stream (CELL-11b), one element at a time."""
+    key = jax.random.fold_in(jax.random.fold_in(jax.random.key(seed, impl="threefry2x32"), source), column)
+    high, low = (int(word) for word in np.asarray(jax.random.key_data(key)))
+    uniform = (((high << 32) | low) >> 11) * 2.0**-53
+    return float(-np.log1p(-uniform))
+
+
+def _times(source) -> np.ndarray:
+    return np.asarray(source.event_times.to_decimal(u.ms))
+
+
+#: The event times of ``NetStim(size=2, start=[1, 2] ms, number=3, interval=[3, 5] ms, noise=[1, 0.25], seed=11)``.
+_FORMULA_EVENTS_MS = np.asarray(
+    [
+        [17.691200921786546, 19.996961869727215, 22.878349547471345],
+        [2.0861805660256603, 6.476189290384145, 11.361936217420482],
+    ]
+)
 
 
 class NetStimTest(unittest.TestCase):
@@ -93,6 +112,7 @@ class NetStimTest(unittest.TestCase):
         self.assertFalse(np.allclose(first.event_times.to_decimal(u.ms), other.event_times.to_decimal(u.ms)))
 
     def test_noisy_schedule_matches_neuron_first_event_and_interval_formula(self) -> None:
+        # CELL-11b acceptance 1: draw j of source i is a function of (seed, i, j) only.
         seed = 11
         start_ms = np.asarray([1.0, 2.0])
         interval_ms = np.asarray([3.0, 5.0])
@@ -106,8 +126,15 @@ class NetStimTest(unittest.TestCase):
             seed=seed,
         )
 
-        rng = brainstate.random.RandomState(seed)
-        exponential = np.asarray(rng.exponential(scale=1.0, size=(2, 3)), dtype=np.float64)
+        exponential = np.asarray([[_definition_draw(seed, i, j) for j in range(3)] for i in range(2)])
+        np.testing.assert_allclose(
+            exponential,
+            [
+                [5.563733640595515, 0.7685869826468897, 0.9604625592480438],
+                [0.06894445282052826, 0.5120069794867872, 0.9085975416290698],
+            ],
+            rtol=1e-12,
+        )
         first = start_ms + noise * interval_ms * exponential[:, 0]
         gaps = (1.0 - noise[:, None]) * interval_ms[:, None] + noise[:, None] * interval_ms[:, None] * exponential[
             :, 1:
@@ -117,7 +144,53 @@ class NetStimTest(unittest.TestCase):
             axis=1,
         )
 
-        np.testing.assert_allclose(source.event_times.to_decimal(u.ms), expected)
+        np.testing.assert_allclose(_times(source), expected, rtol=1e-12)
+        # Before CELL-11b: [[3.8273154497146606, 3.8274499208055204, 5.919950428637094],
+        # [2.848641097545624, 7.851643532514572, 11.910894017666578]].
+        np.testing.assert_allclose(_times(source), _FORMULA_EVENTS_MS, rtol=1e-12)
+
+    def test_each_source_has_its_own_stream(self) -> None:
+        # Acceptance 2. Before CELL-11b one (size, max(number)) draw fed every
+        # source, so a longer source 0 moved source 1 by up to 16.21 ms.
+        base = dict(size=2, number=4, interval=5.0 * u.ms, noise=1.0, seed=3)
+        reference = _times(NetStim(**base))[1]
+        np.testing.assert_allclose(
+            reference, [2.57321927476678, 5.188461452910328, 6.7670104637006245, 8.431462481683619], rtol=1e-12
+        )
+        variants = {
+            "size=5": dict(base, size=5),
+            "number=9": dict(base, number=np.asarray([9, 4])),
+            "noise=0": dict(base, noise=np.asarray([0.0, 1.0])),
+            "start=7 ms": dict(base, start=np.asarray([7.0, 0.0]) * u.ms),
+            "interval=2 ms": dict(base, interval=np.asarray([2.0, 5.0]) * u.ms),
+        }
+        for name, kwargs in variants.items():
+            with self.subTest(variant=name):
+                np.testing.assert_allclose(_times(NetStim(**kwargs))[1][:4], reference, rtol=1e-12)
+
+    def test_a_longer_train_keeps_the_earlier_events(self) -> None:
+        # Acceptance 3: before CELL-11b number 4 -> 50 moved source 1's first events.
+        short = _times(NetStim(size=2, number=4, interval=5.0 * u.ms, noise=1.0, seed=3))
+        long = _times(NetStim(size=2, number=50, interval=5.0 * u.ms, noise=1.0, seed=3))
+        np.testing.assert_allclose(long[:, :4], short, rtol=1e-12)
+
+    def test_the_stream_does_not_depend_on_precision_or_generator_settings(self) -> None:
+        # Acceptance 4. Before CELL-11b the draws took the float precision's
+        # dtype (events moved by up to 4.897 ms) and needed the partitionable
+        # threefry generator to be generated on demand.
+        def events():
+            return _times(NetStim(size=2, number=4, interval=5.0 * u.ms, noise=1.0, seed=3))
+
+        reference = events()
+        for precision in (32, 64):
+            with self.subTest(precision=precision), brainstate.environ.context(precision=precision):
+                np.testing.assert_allclose(events(), reference, rtol=1e-12)
+        previous = jax.config.jax_threefry_partitionable
+        jax.config.update("jax_threefry_partitionable", not previous)
+        try:
+            np.testing.assert_allclose(events(), reference, rtol=1e-12)
+        finally:
+            jax.config.update("jax_threefry_partitionable", previous)
 
     def test_single_noisy_event_is_randomized_but_deterministic_one_is_not(self) -> None:
         noisy = NetStim(start=1.0 * u.ms, number=1, interval=3.0 * u.ms, noise=1.0, seed=11)
@@ -269,40 +342,30 @@ class NetStimLargeNumberTest(unittest.TestCase):
         np.testing.assert_array_equal(source._event_times_ms[0], np.arange(16) * 25.0)
 
     def test_noisy_events_are_a_prefix_of_the_full_schedule(self) -> None:
-        # One source: the full draw of a (1, n) matrix is the same for every n.
+        # One source: the first 8 events of an unlimited train.
         small = NetStim(number=8, interval=25.0 * u.ms, noise=0.5, seed=5)
         large = NetStim(number=10**9, interval=25.0 * u.ms, noise=0.5, seed=5)
         table = large._event_table(until_ms=400.0)
-        np.testing.assert_array_equal(table.time.to_decimal(u.ms)[:8], small.event_times.to_decimal(u.ms)[0])
+        np.testing.assert_allclose(table.time.to_decimal(u.ms)[:8], _times(small)[0], rtol=1e-12)
 
-        # Several sources: rows after the first depend on max(number), so
-        # compare against the full draw of the same shape.
+        # Several sources (CELL-11b acceptance 3): the events generated up to
+        # 200 ms are the full schedule of that width.
         kwargs = dict(
             size=3,
             start=np.asarray([0.0, 5.0, 10.0]) * u.ms,
-            number=np.asarray([400_000, 350_000, 3]),
             interval=np.asarray([25.0, 10.0, 5.0]) * u.ms,
             noise=np.asarray([0.0, 0.5, 1.0]),
             seed=11,
         )
-        for precision in (32, 64):
-            with self.subTest(precision=precision), brainstate.environ.context(precision=precision):
-                self.assertTrue(_counter_draws_supported(np.dtype(brainstate.environ.dftype()).name))
-                source = NetStim(**kwargs)
-                self.assertFalse(source._schedule_complete)
-                source._ensure_schedule(until_ms=200.0)
-                width = source._event_times_ms.shape[1]
-                self.assertLess(width, 100)
-                full_times, full_mask = _build_event_schedule(
-                    start_ms=np.asarray([0.0, 5.0, 10.0]),
-                    number=source.number,
-                    interval_ms=np.asarray([25.0, 10.0, 5.0]),
-                    noise=source.noise,
-                    seed=11,
-                )
-                np.testing.assert_array_equal(source._event_times_ms, full_times[:, :width])
-                np.testing.assert_array_equal(source._event_mask, full_mask[:, :width])
-                self.assertTrue(np.all(source._event_times_ms[:2, -1] > 200.0))
+        source = NetStim(number=np.asarray([400_000, 350_000, 10**9]), **kwargs)
+        self.assertFalse(source._schedule_complete)
+        source._ensure_schedule(until_ms=200.0)
+        width = source._event_times_ms.shape[1]
+        self.assertLess(width, 100)
+        full = NetStim(number=width, **kwargs)
+        np.testing.assert_allclose(source._event_times_ms, full._event_times_ms, rtol=1e-12)
+        np.testing.assert_array_equal(source._event_mask, full._event_mask)
+        self.assertTrue(np.all(source._event_times_ms[:, -1] > 200.0))
 
     def test_entries_without_a_run_end_generate_every_event(self) -> None:
         def lazy():
@@ -339,26 +402,6 @@ class NetStimLargeNumberTest(unittest.TestCase):
         np.testing.assert_array_equal(second.events["stim"]["spike"].time.to_decimal(u.ms), 200.0 + np.arange(4) * 25.0)
         self.assertFalse(stim.model._schedule_complete)
 
-    def test_noisy_draws_fall_back_to_the_full_matrix_without_partitionable_threefry(self) -> None:
-        previous = jax.config.jax_threefry_partitionable
-        jax.config.update("jax_threefry_partitionable", False)
-        try:
-            self.assertFalse(_counter_draws_supported("float32"))
-            self.assertFalse(_counter_draws_check("float64", "threefry2x32", True, False))
-            source = NetStim(size=2, number=600_000, interval=1.0 * u.ms, noise=1.0, seed=2)
-            source._ensure_schedule(until_ms=20.0)
-            width = source._event_times_ms.shape[1]
-            full_times, _ = _build_event_schedule(
-                start_ms=np.zeros(2),
-                number=source.number,
-                interval_ms=np.ones(2),
-                noise=source.noise,
-                seed=2,
-            )
-            np.testing.assert_array_equal(source._event_times_ms, full_times[:, :width])
-        finally:
-            jax.config.update("jax_threefry_partitionable", previous)
-
     def test_network_seed_binding_restarts_a_lazy_schedule(self) -> None:
         source = NetStim(number=10**9, interval=25.0 * u.ms, noise=1.0)
         source._ensure_schedule(until_ms=100.0)
@@ -371,6 +414,57 @@ class NetStimLargeNumberTest(unittest.TestCase):
             source._event_table(until_ms=1000.0).time.to_decimal(u.ms)[:8],
             reference.event_times.to_decimal(u.ms)[0],
         )
+
+
+class NetStimDefaultSeedTest(unittest.TestCase):
+    """CELL-11b: a noisy NetStim without a seed draws it from the BrainState default stream."""
+
+    def test_a_seedless_noisy_source_draws_its_seed_when_built(self) -> None:
+        # Acceptance 6. Before CELL-11b it used the root 0 in every context.
+        with brainstate.random.seed_context(42):
+            drawn = NetStim(size=2, number=3, noise=1.0)
+        expected = NetStim(size=2, number=3, noise=1.0, seed=drawn_seeds(42, 1)[0])
+        np.testing.assert_allclose(_times(drawn), _times(expected), rtol=1e-12)
+        np.testing.assert_allclose(
+            _times(drawn)[0], [18.175300151525736, 33.58823782228345, 34.59078348544616], rtol=1e-12
+        )
+        self.assertIsNone(drawn.seed)
+
+        def built_in(seed):
+            with brainstate.random.seed_context(seed):
+                return _times(NetStim(size=2, number=3, noise=1.0))
+
+        np.testing.assert_allclose(built_in(1), built_in(1), rtol=1e-12)
+        self.assertFalse(np.allclose(built_in(1), built_in(2)))
+
+    def test_only_a_seedless_noisy_source_advances_the_default_stream(self) -> None:
+        cases = {
+            "NetStim(noise=1)": (lambda: NetStim(size=2, number=3, noise=1.0), True),
+            "NetStim(noise=[0, 0.5])": (lambda: NetStim(size=2, number=3, noise=[0.0, 0.5]), True),
+            "NetStim(noise=0)": (lambda: NetStim(size=2, number=3), False),
+            "NetStim(noise=1, seed=3)": (lambda: NetStim(size=2, number=3, noise=1.0, seed=3), False),
+        }
+        for name, (build, advances) in cases.items():
+            with self.subTest(source=name), brainstate.random.seed_context(5):
+                before = default_key_data()
+                build()
+                self.assertEqual(not np.array_equal(default_key_data(), before), advances)
+
+    def test_a_seedless_noisy_source_cannot_be_built_under_a_transformation(self) -> None:
+        # Acceptance 7. Before CELL-11b it was built with the root 0.
+        def in_loop(fn):
+            return lambda: brainstate.transform.for_loop(lambda i: fn(), np.arange(2))
+
+        for name, transform in (("jit", brainstate.transform.jit), ("for_loop", in_loop)):
+            with self.subTest(transform=name):
+                brainstate.random.seed(1)
+                before = default_key_data()
+                with self.assertRaisesRegex(TypeError, r"NetStim\(seed=None\).*traced"):
+                    transform(lambda: NetStim(size=2, number=3, noise=1.0).size)()
+                np.testing.assert_array_equal(default_key_data(), before)
+        # The suggested fix, an integer seed, and a periodic source build inside jit.
+        self.assertEqual(int(brainstate.transform.jit(lambda: NetStim(size=2, number=3, noise=1.0, seed=3).size)()), 2)
+        self.assertEqual(int(brainstate.transform.jit(lambda: NetStim(size=2, number=3).size)()), 2)
 
 
 def _reference_netstim_count(source, source_index, *, t, delay, dt):

@@ -124,6 +124,38 @@
   `observe.state("V")` (or `cell.record(name, "V")`) and any check of
   `row.field == "v"` with `"V"`; recording names are labels and need no
   change. The legacy `StateProbe(field="v")` is unchanged.
+- **Without a seed, the random roots come from the BrainState random context,
+  and NetStim noise has a new stream** (CELL-11b). There is no deprecation
+  period; this change is an exception for 0.3 that the project lead
+  approved.
+  - `Network()` now means `Network(seed=None)`: it draws its root from the
+    BrainState default random stream when built, instead of using 0. A
+    `NetStim` with nonzero `noise` and no `seed` draws its seed when built,
+    instead of using 0; a periodic one draws nothing. A pairing rule without a
+    seed in a direct `braincell.connect` draws a seed when called and samples
+    as if it had been given that seed. One `brainstate.random.seed_context(s)`
+    (or an earlier `brainstate.random.seed(s)`) therefore controls all of
+    them; outside any context each process gets different results, because
+    BrainState seeds its default stream randomly at import.
+  - The NetStim noise changes once, for every seed, explicit ones included.
+    Each source now has its own stream: draw `j` of source `i` depends only on
+    the seed, `i` and `j`, so a source's events no longer change with the
+    other sources' `number` (before, a longer source 0 moved source 1's events
+    by up to 16 ms), a larger `number` keeps the earlier events, and the
+    events are the same at float32 and float64 precision (before they
+    differed by up to 4.9 ms).
+  - For reproducible results, wrap the experiment in
+    `brainstate.random.seed_context(s)` or pass explicit seeds.
+    `Network(seed=0)` gives the pairing rows that `Network()` gave before, and
+    a seedless rule in a direct `connect` drew the rows of `seed=613549620`.
+    The old noisy event times cannot be generated any more; to keep them,
+    save `stim.event_times` with braincell 0.2 and replay them with
+    `EventSequence.from_times`.
+  - Building `Network()` or a noisy `NetStim` without a seed inside
+    `brainstate.transform.jit`, `for_loop` or another transformation now
+    raises `TypeError`; pass an integer seed. A seedless rule in a direct
+    `connect` under a transformation raises `TypeError` at the call; it
+    failed there before as well, when sampling.
 
 ### New Features
 
@@ -667,9 +699,8 @@
   expression gives the same locations on every evaluation. Building them
   inside `brainstate.transform.jit` or `for_loop` raises `TypeError`; build
   outside or pass an integer. `seed` is now optional for `sample` and
-  `RandomSamples` (default `None`). Defaults and explicit seeds are
-  unchanged: `Network()` keeps the root 0, and every explicit seed gives the
-  same results as before.
+  `RandomSamples` (default `None`). CELL-11b then made `None` the default of
+  `Network` too (see Breaking Changes).
 
 - **`RunResult.spikes`, `Cell.record(name, "V")`, and results as JAX
   pytrees** (CELL-26). A standalone `Cell.run` now returns the Cell's
@@ -1348,10 +1379,11 @@
   1.9 GB at `number=10**7` and tens of GB at `10**9`. A schedule above
   `2**20` entries is now generated on demand: `Cell.run` and `Network.run`
   generate events only as far as the end of the run, and a later run extends
-  them. The same run at `number=10**9` peaks at 0.85 GB, as at `number=8`. The
-  events are unchanged bit for bit, noisy ones included (the random numbers
-  of the full draw are reproduced for the columns needed), and smaller
-  schedules are generated as before. `NetStim.event_times`, `NetStim.events`,
+  them. The same run at `number=10**9` peaks at 0.85 GB, as at `number=8`.
+  The events are those of the full schedule (since CELL-11b each source draws
+  its own noise stream, so a shorter schedule is a prefix of a longer one),
+  and smaller schedules are generated in full at construction.
+  `NetStim.event_times`, `NetStim.events`,
   `event_count` outside a run, `Cell.run` under `jax.jit` and
   `Network.prepare_run` still generate every event.
 

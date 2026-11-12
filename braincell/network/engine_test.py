@@ -1137,7 +1137,6 @@ class NetworkDefaultSeedTest(unittest.TestCase):
         np.testing.assert_allclose(v[:, 2], v[:, 0], rtol=1e-12)
 
 
-
 class NetworkAxialOperatorTest(unittest.TestCase):
     """CELL-50: the network run loop builds each Cell's axial operator once, before its steps."""
 

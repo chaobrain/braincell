@@ -928,7 +928,6 @@ def _state(model):
     return np.asarray(model.V.value.to_decimal(u.mV))
 
 
-
 #: The solvers whose compiled run steps a cable through the axial operator.
 AXIAL_SOLVERS = ("staggered", "rk4", "ralston2", "exp_euler")
 

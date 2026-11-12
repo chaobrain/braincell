@@ -1855,6 +1855,22 @@
   after `run()` had initialized the Cell, which raised "This discrete View is
   stale"; it now selects the rows again. The notebook stores its outputs.
 
+- The README's multi-compartment example, the Regions & Locsets, Mechanisms,
+  Discretization and Units concept pages, and the units table of the
+  developer conventions use unit names that `brainunit` has: `u.siemens`,
+  `u.volt`, `u.amp`, `u.farad`, `u.meter`, `u.second`, `u.molar`,
+  `u.psiemens` and `u.celsius2kelvin(...)`. They wrote `u.S`, `u.V`, `u.A`,
+  `u.F`, `u.m`, `u.s`, `u.M`, `u.pS` and `u.celsius`, which raise
+  `AttributeError`, so the README example failed at its first `paint`. The
+  code fragments of the Mechanisms and Regions & Locsets pages build the
+  `cell` they decorate instead of using an undefined one, and the
+  Discretization page passes `DLambda` its required `d_lambda` (0.1). The
+  Mechanisms tutorial (`docs/tutorials/mech.ipynb`) indexes the clamp
+  currents of `evaluate_point_clamps`, whose shape is `pop_size +
+  (n_point,)`, by population member and point; it raised `TypeError: Only
+  scalar arrays can be converted to Python scalars`. The tutorial stores its
+  outputs, which are unchanged.
+
 ### Deprecations
 
 - **Constructing an invalid mechanism declaration** (MECH-26).

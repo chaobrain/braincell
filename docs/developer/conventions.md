@@ -15,15 +15,17 @@ Every physical quantity carries an explicit [`brainunit`](https://github.com/cha
 
 | Category | Quantity | Units |
 | --- | --- | --- |
-| Electrical | Voltage | `u.V`, `u.mV` |
-| Electrical | Current | `u.A`, `u.mA`, `u.uA`, `u.nA`, `u.pA` |
-| Electrical | Conductance | `u.S`, `u.mS`, `u.uS`, `u.nS`, `u.pS` |
+| Electrical | Voltage | `u.volt`, `u.mV` |
+| Electrical | Current | `u.amp`, `u.mA`, `u.uA`, `u.nA`, `u.pA` |
+| Electrical | Conductance | `u.siemens`, `u.mS`, `u.uS`, `u.nS`, `u.psiemens` |
 | Electrical | Resistance | `u.ohm`, `u.kohm`, `u.Mohm` |
-| Electrical | Capacitance | `u.F`, `u.uF`, `u.nF`, `u.pF` |
-| Space and time | Length | `u.m`, `u.cm`, `u.mm`, `u.um` |
-| Space and time | Time | `u.s`, `u.ms` |
-| Substance and temperature | Molar concentration | `u.M`, `u.mM` |
-| Substance and temperature | Temperature | `u.kelvin`, `u.celsius` |
+| Electrical | Capacitance | `u.farad`, `u.uF`, `u.nF`, `u.pF` |
+| Space and time | Length | `u.meter`, `u.cm`, `u.mm`, `u.um` |
+| Space and time | Time | `u.second`, `u.ms` |
+| Substance and temperature | Molar concentration | `u.molar`, `u.mM` |
+| Substance and temperature | Temperature | `u.kelvin`; `u.celsius2kelvin(...)` converts from °C |
+
+The base units are spelled out (`u.volt`, `u.siemens`, `u.second`); `brainunit` has no one-letter `u.V`, `u.S` or `u.s`.
 
 ```python
 import numpy as np
@@ -34,13 +36,13 @@ v_rest = -65.0 * u.mV                               # scalar
 branch_lengths = np.array([10.5, 20.0, 15.3]) * u.um  # array
 xyz = jnp.zeros((10, 3)) * u.um
 
-v_total = -60.0 * u.mV + 0.01 * u.V                 # -50 mV: units align on addition
+v_total = -60.0 * u.mV + 0.01 * u.volt              # -50 mV: units align on addition
 area = 2 * np.pi * (1.0 * u.um) * (10.0 * u.um)     # um**2
 cm = 1.0 * u.uF / u.cm**2                           # a density
 current = (50 * u.nS / u.cm**2) * (-65 * u.mV)      # the current dimension is derived
 ```
 
-To leave the unit system, use `u.get_unit(a)` and `u.get_mantissa(a)`, `a.to_decimal(u.V)` (a raw float in the target unit), `a / u.mV` (divide the unit out), or `a.to(u.V)` (convert and keep the unit).
+To leave the unit system, use `u.get_unit(a)` and `u.get_mantissa(a)`, `a.to_decimal(u.volt)` (a raw float in the target unit), `a / u.mV` (divide the unit out), or `a.to(u.volt)` (convert and keep the unit).
 
 ## Random numbers
 

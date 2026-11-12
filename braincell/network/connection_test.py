@@ -688,3 +688,173 @@ class ConnectionFollowsItsSynapseTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _reference_connect_names(view):
+    return tuple(dict.fromkeys(str(view._store.call(value).name) for value in view.connect_id.tolist()))
+
+
+def _reference_by_connect_name(view, name):
+    names = np.asarray([view._store.call(value).name for value in view.connect_id.tolist()], dtype=object)
+    return ConnectionView(view._store, view._active_ids[names == name])
+
+
+def _reference_view_repr(view):
+    # ``ConnectionView.__repr__`` before CELL-18d: one scan of every row per connect name.
+    from braincell._multi_compartment.synapses import _cell_label
+    from braincell.network.connection import _CONNECT_CALL_WARNING_THRESHOLD as limit
+
+    names = _reference_connect_names(view)
+    lines = [
+        f"ConnectionView(cell={_cell_label(view.cell, view.synapse.population_index)}, "
+        f"rows={len(view)}, connects={len(names)})"
+    ]
+    for name in names[:limit]:
+        selected = _reference_by_connect_name(view, name)
+        call = selected._require_single_call("format connection")
+        lines.append(
+            f"  {name}: {call.source.source_type}({call.source.source_name}) -> "
+            f"{call.synapse_type}({call.synapse_name}), rows={len(selected)}"
+        )
+    if len(names) > limit:
+        lines.append(f"  ... +{len(names) - limit} more")
+    return "\n".join(lines)
+
+
+def _reference_describe(network, target, name):
+    view = _reference_by_connect_name(network.populations[target].connections, name)
+    call = view._require_single_call("format connection")
+    source_name = call.source.source_name
+    if not source_name:
+        owner = call.source if call.source.is_scheduled else call.source.execution_owner
+        source_name = next(
+            (population.name for population in network.populations.values() if population.model is owner),
+            call.source.source_type,
+        )
+    return f"{name}: {call.source.source_type}({source_name}) -> {call.synapse_type}({call.synapse_name}), rows={len(view)}"
+
+
+def _reference_targets(network):
+    return tuple(
+        name
+        for name, population in network.populations.items()
+        if population.kind == "cell" and len(population.connections) > 0
+    )
+
+
+def _reference_network_connections_repr(network):
+    targets = _reference_targets(network)
+    views = {target: network.populations[target].connections for target in targets}
+    lines = [
+        f"NetworkConnections(targets={len(targets)}, "
+        f"connections={sum(len(_reference_connect_names(view)) for view in views.values())}, "
+        f"rows={sum(len(view) for view in views.values())})"
+    ]
+    for target, view in views.items():
+        names = _reference_connect_names(view)
+        lines.append(f"  {target}: connections={len(names)}, rows={len(view)}")
+        lines.extend(f"    {_reference_describe(network, target, name)}" for name in names)
+    return "\n".join(lines)
+
+
+def _reference_network_str(network):
+    targets = _reference_targets(network)
+    views = {target: network.populations[target].connections for target in targets}
+    lines = [
+        f"Network(name={network.name!r}, populations={len(network.populations)}, "
+        f"connections={sum(len(_reference_connect_names(view)) for view in views.values())}, "
+        f"rows={sum(len(view) for view in views.values())})",
+        "  populations:",
+    ]
+    for name, population in network.populations.items():
+        initialized = bool(getattr(population.model, "_initialized", False))
+        lines.append(
+            f"    {name}: size={population.size}, kind={population.kind}, "
+            f"model={type(population.model).__name__}, initialized={initialized}"
+        )
+    if not network.populations:
+        lines.append("    <none>")
+    lines.append("  connections:")
+    for target, view in views.items():
+        names = _reference_connect_names(view)
+        lines.append(f"    {target}: connections={len(names)}, rows={len(view)}")
+        lines.extend(f"      {_reference_describe(network, target, name)}" for name in names)
+    if not views:
+        lines.append("    <none>")
+    return "\n".join(lines)
+
+
+class ConnectionSummaryTest(unittest.TestCase):
+    """CELL-18d: summaries read every row once, and say what they said before."""
+
+    def _network(self):
+        from braincell.network._testing import make_recording_post_cell, make_threshold_cell
+
+        network = Network("summary")
+        live = network.add_population("pre", make_threshold_cell(3))
+        unnamed = network.add_population("stim", NetStim(size=3))
+        named = network.add_population("drive", NetStim(size=3, name="named_drive"))
+        sequence = network.add_population(
+            "seq",
+            EventSequence(size=2, events=EventTable(source_index=[0, 1], time=[1.0, 2.0] * u.ms)),
+        )
+        post = network.add_population("post", make_recording_post_cell(4))
+        other = network.add_population("other", make_recording_post_cell(2))
+        network.add_population("idle", make_recording_post_cell(1))
+        spikes, synapses = live.event_outputs["spike"], post.synapses["exp"]
+        network.connect("live", source=spikes[[0, 1, 2, 0]], synapse=synapses)
+        network.connect("unnamed", source=unnamed.event_outputs["spike"][0], synapse=synapses[[1, 3]])
+        network.connect("named", source=named.event_outputs["spike"][[2, 1]], synapse=other.synapses["exp"])
+        network.connect("sequence", source=sequence.event_outputs["event"][[1, 0, 1]], synapse=synapses[[0, 2, 3]])
+        network.connect("gone", source=unnamed.event_outputs["spike"][[0, 1]], synapse=synapses[[0, 1]])
+        network.connect("partly", source=spikes[[2, 1, 0]], synapse=synapses[[3, 2, 1]])
+        network.connect("late", source=named.event_outputs["spike"][1], synapse=synapses[2])
+        post.connections["gone"].remove()
+        post.connections["partly"][[1]].remove()
+        return network
+
+    def _assert_view(self, view) -> None:
+        self.assertEqual(repr(view), _reference_view_repr(view))
+        self.assertEqual(view.connect_names, _reference_connect_names(view))
+        np.testing.assert_array_equal(
+            view.connect_name,
+            np.asarray([view._store.call(value).name for value in view.connect_id.tolist()], dtype=object),
+        )
+        self.assertEqual(view.connect_name.dtype, np.dtype(object))
+        for name in view.connect_names:
+            np.testing.assert_array_equal(view.by_connect_name(name).id, _reference_by_connect_name(view, name).id)
+
+    def test_summaries_match_one_scan_per_connect_name(self) -> None:
+        network = self._network()
+        post = network.populations["post"].connections
+        views = {
+            "all rows": post,
+            "reordered, repeated rows": post[[7, 0, 9, 0, 3, 7]],
+            "one call": post["sequence"],
+            "no rows": post[np.asarray([], dtype=np.int64)],
+            "another target": network.populations["other"].connections,
+            "a target with none": network.populations["idle"].connections,
+        }
+        for name, view in views.items():
+            with self.subTest(name):
+                self._assert_view(view)
+        self.assertEqual(repr(network.connections), _reference_network_connections_repr(network))
+        self.assertEqual(str(network), _reference_network_str(network))
+        self.assertEqual(network.connections.n_connections, 6)
+        for target in _reference_targets(network):
+            for name in _reference_connect_names(network.populations[target].connections):
+                self.assertEqual(network.connections.describe(target, name), _reference_describe(network, target, name))
+
+    def test_an_empty_network_summarises_nothing(self) -> None:
+        network = Network("empty")
+        self.assertEqual(repr(network.connections), _reference_network_connections_repr(network))
+        self.assertEqual(str(network), _reference_network_str(network))
+
+    def test_a_view_of_more_connects_than_it_lists_matches(self) -> None:
+        cell, exp = _population(2)
+        target = cell.synapses[exp]
+        with self.assertWarnsRegex(RuntimeWarning, "batched connect"):
+            for index in range(258):
+                connect(f"input_{index}", source=NetStim(size=2), synapse=target[[index % 2]])
+        self._assert_view(cell.connections)
+        self._assert_view(cell.connections[::-3])

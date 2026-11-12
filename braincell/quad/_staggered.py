@@ -543,6 +543,7 @@ def _build_dhs_numeric_state(
     DHSNumericState
         Numeric buffers ready for forward elimination and back-substitution.
     """
+    solve_shape = point_V_n.shape[:-1]
     point_V_n, linear, rate = [x.reshape((-1, point_V_n.shape[-1])) for x in (point_V_n, linear, rate)]
     batch_size = point_V_n.shape[0]
     n_point = static_source.n_point
@@ -560,6 +561,13 @@ def _build_dhs_numeric_state(
     diag_base = static_cache.diag_ms_inv.astype(numeric_dtype) * dt_ms
     lower_base = static_cache.lowers_ms_inv.astype(numeric_dtype) * dt_ms
     upper_base = static_cache.uppers_ms_inv.astype(numeric_dtype) * dt_ms
+    if diag_base.ndim > 1:
+        # Population-specific coefficients have shape ``pop_size + (n_point,)``;
+        # a batch axis in front of V repeats them, so that each flattened solve
+        # row gets the coefficients of its own population member.
+        diag_base, lower_base, upper_base = [
+            u.math.broadcast_to(x, solve_shape + (n_point,)) for x in (diag_base, lower_base, upper_base)
+        ]
     diags = u.math.broadcast_to(_with_sentinel(diag_base, 1.0).reshape((-1, n_point + 1)), (batch_size, n_point + 1))
     diags = diags.at[:, :n_point].add(-dt_ms * linear_ms_inv)
     diags = diags.at[:, static_source.dynamic_rows_np].add(

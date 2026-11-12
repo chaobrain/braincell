@@ -288,6 +288,29 @@ class DeliveryOrderTest(unittest.TestCase):
                 ]
                 self._assert_same_delivery(blocks, (always,))
 
+    def test_a_route_spans_blocks_that_reach_different_synapses(self) -> None:
+        from braincell.network.delivery import delivery_blocks
+
+        rng = np.random.default_rng(7)
+        first, second = _StepSource(np.ones((1, 4))), _StepSource(np.ones((1, 4)))
+        cases = {
+            "different synapses": ([[0, 1], [2, 3], [4]], [first] * 3, [u.uS] * 3, [5]),
+            "a synapse reached twice": ([[0, 1], [2, 3], [1, 5]], [first] * 3, [u.uS] * 3, [4, 2]),
+            "another source between": ([[0], [1], [2]], [first, second, first], [u.uS] * 3, [1, 1, 1]),
+            "another unit": ([[0], [1]], [first, first], [u.uS, u.nS], [1, 1]),
+        }
+        for name, (targets, sources, units, contacts) in cases.items():
+            with self.subTest(name):
+                blocks = tuple(
+                    self._block(source, "post", 0, np.zeros(len(target)), target, 1, self._weights(rng, len(target), unit))
+                    for target, source, unit in zip(targets, sources, units)
+                )
+                routes = delivery_blocks(blocks, group_by_delay=False)
+                self.assertEqual([len(route.pre_index) for route in routes], contacts)
+                np.testing.assert_array_equal(
+                    np.concatenate([route.flat_target_index for route in routes]), np.concatenate(targets)
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

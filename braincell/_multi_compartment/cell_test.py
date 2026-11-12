@@ -1352,6 +1352,172 @@ class RefusedAddReductionKeepsTheCellTest(unittest.TestCase):
         self.assertFalse(view.is_selected)
 
 
+def _attribute_fingerprint(value, depth=0):
+    """Scalars and arrays by value, containers to depth 3, any other object by its identity."""
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return ("scalar", value)
+    if isinstance(value, np.ndarray):
+        return ("ndarray", value.shape, str(value.dtype), value.tobytes())
+    if depth < 3 and isinstance(value, (list, tuple)):
+        return (type(value).__name__, tuple(_attribute_fingerprint(item, depth + 1) for item in value))
+    if depth < 3 and isinstance(value, dict):
+        return ("dict", tuple((repr(key), _attribute_fingerprint(item, depth + 1)) for key, item in value.items()))
+    return ("object", type(value).__name__, id(value))
+
+
+def _attributes(cell: Cell) -> dict:
+    """Fingerprint of every attribute of ``cell``, caches included."""
+    return {name: _attribute_fingerprint(value) for name, value in vars(cell).items()}
+
+
+class RefusedInitStateKeepsTheCellTest(unittest.TestCase):
+    """CELL-61: an init_state() that raises leaves every attribute of the Cell as it was.
+
+    The runtime is built step by step, and some steps refuse the declaration
+    after earlier ones have set attributes. The lumped path set its spike
+    threshold, sizes and initial voltage before refusing a Synapse on a
+    multi-dimensional pop_size, so ``V_th = ...`` then failed where a new Cell
+    takes it; other refusals left ``_runtime``, the batch size or the
+    connection weights on both paths.
+    """
+
+    @staticmethod
+    def _cell(kind: str, pop_size) -> Cell:
+        if kind == "lumped":
+            return Cell.point(pop_size, length=20.0 * u.um, radius=0.25 * u.um, V_init=-70.0 * u.mV)
+        branch = Branch.from_lengths(lengths=[20.0] * u.um, radii=[0.5, 0.5] * u.um, type="soma")
+        return Cell(Morphology.from_root(branch), cv_policy=CVPerBranch(1), pop_size=pop_size, V_init=-70.0 * u.mV)
+
+    def _synapse_on_two_axes(self, kind: str) -> Cell:
+        cell = self._cell(kind, (2, 3))
+        cell.place(RootLocation(0.5), mech.Synapse("ExpSyn", name="syn"))
+        return cell
+
+    def _chloride_synapse(self, kind: str, *, connected: bool = False) -> Cell:
+        # GabaA_JE2011 writes its current into Cldif_JE2011, which integrates
+        # its total current: init_state needs the snapshot, so it refuses
+        # cache_ion_total_current=False after the runtime is built.
+        cell = self._cell(kind, 1)
+        cell.paint(AllRegion(), mech.Channel("IL", g_max=0.0274578 * u.mS / u.cm**2, E=-70.0 * u.mV))
+        cell.paint(AllRegion(), mech.Ion("Cldif_JE2011", name="cl"))
+        cell.place(RootLocation(0.5), mech.Synapse("GabaA_JE2011", name="s"))
+        cell.cache_ion_total_current = False
+        if connected:
+            stim = NetStim(size=1, start=0.1 * u.ms, interval=0.3 * u.ms, number=3)
+            connect("drive", source=stim, synapse=cell.synapses["s"], weight=0.0005 * u.uS)
+        return cell
+
+    def _stiff_gate(self) -> Cell:
+        # Cav1p2_MA2020_GoC's m gate is too fast for the default explicit solver (CELL-29).
+        cell = self._cell("lumped", 1)
+        cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+        cell.paint(AllRegion(), mech.Ion("CalciumFixed", name="ca"))
+        cell.paint(AllRegion(), mech.Channel("Cav1p2_MA2020_GoC", ion_name="ca"))
+        return cell
+
+    def _refusals(self):
+        two_axes = r"Synapse views currently require scalar or one-dimensional pop_size; got \(2, 3\)"
+        snapshot = r"GabaA_JE2011.*cache_ion_total_current=True"
+        for kind in ("lumped", "cable"):
+            yield kind, "Synapse on (2, 3)", lambda kind=kind: self._synapse_on_two_axes(kind), {}, ValueError, two_axes
+            yield (
+                kind,
+                "Synapse on (2, 3), batch_size=2",
+                lambda kind=kind: self._synapse_on_two_axes(kind),
+                {"batch_size": 2},
+                ValueError,
+                two_axes,
+            )
+            yield kind, "ion-current snapshot", lambda kind=kind: self._chloride_synapse(kind), {}, ValueError, snapshot
+            yield (
+                kind,
+                "ion-current snapshot, connected",
+                lambda kind=kind: self._chloride_synapse(kind, connected=True),
+                {},
+                ValueError,
+                snapshot,
+            )
+        yield (
+            "lumped",
+            "stiff gate warning as an error",
+            self._stiff_gate,
+            {},
+            UserWarning,
+            "stiff for an explicit solver",
+        )
+
+    def test_every_refusal_leaves_every_attribute(self):
+        for kind, label, make, kwargs, error, message in self._refusals():
+            with self.subTest(kind=kind, refusal=label):
+                cell = make()
+                before = _attributes(cell)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", UserWarning)
+                    with self.assertRaises(error) as caught:
+                        cell.init_state(**kwargs)
+                self.assertEqual([name for name in before if _attributes(cell).get(name) != before[name]], [])
+                self.assertEqual(_attributes(cell), before)
+                self.assertFalse(cell._initialized)
+                self.assertRegex(str(caught.exception), message)
+                # The same call is refused the same way.
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", UserWarning)
+                    with self.assertRaises(error) as again:
+                        cell.init_state(**kwargs)
+                self.assertEqual(str(again.exception), str(caught.exception))
+                self.assertEqual(_attributes(cell), before)
+
+    def test_a_refused_lumped_cell_takes_what_a_new_one_takes(self):
+        cell, fresh = self._synapse_on_two_axes("lumped"), self._synapse_on_two_axes("lumped")
+        with self.assertRaises(ValueError):
+            cell.init_state()
+        self.assertIsNone(cell._V_th_parameter)
+        self.assertEqual(cell._in_size, fresh._in_size)
+        cell.V_th = -10.0 * u.mV
+        fresh.V_th = -10.0 * u.mV
+        self.assertEqual(u.get_magnitude(cell.V_th), u.get_magnitude(fresh.V_th))
+
+    def test_a_corrected_cell_initializes_and_runs_as_a_new_one(self):
+        for kind in ("lumped", "cable"):
+            with self.subTest(kind=kind):
+                cell, fresh = self._chloride_synapse(kind), self._chloride_synapse(kind)
+                with self.assertRaises(ValueError):
+                    cell.init_state()
+                for target in (cell, fresh):
+                    target.cache_ion_total_current = True
+                    target.init_state()
+                    target.run(dt=0.025 * u.ms, duration=0.25 * u.ms)
+                np.testing.assert_array_equal(u.get_magnitude(cell.V.value), u.get_magnitude(fresh.V.value))
+
+    def test_a_warning_refused_as_an_error_then_initializes(self):
+        cell, fresh = self._stiff_gate(), self._stiff_gate()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            with self.assertRaises(UserWarning):
+                cell.init_state()
+        for target in (cell, fresh):
+            with warnings.catch_warnings(record=True):
+                warnings.simplefilter("always")
+                target.init_state()
+        np.testing.assert_array_equal(u.get_magnitude(cell.V.value), u.get_magnitude(fresh.V.value))
+
+    def test_a_cell_refused_inside_a_network_keeps_its_attributes(self):
+        # Network.init_state resolves the declarations of every Cell first,
+        # then initializes them; the refused Cell is left as it was.
+        cell = self._chloride_synapse("lumped")
+        net = braincell.Network("refused", seed=1)
+        post = net.add_population("post", cell)
+        stim = net.add_population("stim", NetStim(size=1, start=0.1 * u.ms, interval=0.3 * u.ms, number=3))
+        net.connect("drive", source=stim, synapse=post.synapses["s"], weight=0.0005 * u.uS)
+        cell._resolve_declarations()
+        before = _attributes(cell)
+        with self.assertRaises(ValueError) as caught:
+            net.init_state()
+        self.assertEqual(_attributes(cell), before)
+        self.assertFalse(net._initialized)
+        self.assertRegex(str(caught.exception), "cache_ion_total_current=True")
+
+
 class TestCellLifecycle(unittest.TestCase):
     def test_declaration_phase_flag(self):
         cell = _cell_with_recording()

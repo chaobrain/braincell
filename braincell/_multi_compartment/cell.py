@@ -2755,8 +2755,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         The Cell then runs on a read-only snapshot of the morphology it was
         declared with (:attr:`morpho`), on the grid already built from it.
         Later edits of the declaration tree apply at the next :meth:`reset`
-        and ``init_state()``. If initialization fails, :attr:`morpho` is
-        the declaration tree again.
+        and ``init_state()``. If initialization raises (a warning raised as
+        an error included), the Cell is left as it was before the call:
+        every attribute is restored, :attr:`morpho` is the declaration tree
+        again, and a corrected declaration initializes as on a new Cell.
 
         Raises
         ------
@@ -2788,17 +2790,25 @@ class Cell(_CellFacade, HHTypedNeuron):
         # policy or create a second grid generation.
         self._resolve_declarations()
         self._check_connection_rules(batch_size)
-        declaration_key = self._discretization_cache_key
-        self._take_morphology_snapshot()
+        # The runtime is built step by step, and some steps refuse the
+        # declaration after earlier ones have assigned attributes; a refused
+        # call puts every attribute back (CELL-61).
+        attributes = dict(vars(self))
         try:
+            self._take_morphology_snapshot()
             self._init_runtime(batch_size)
             self._connection_rules = self.connections._init_rules()
         except BaseException:
-            self._morpho = self._declaration_morpho
-            self._discretization_cache_key = declaration_key
-            self._snapshot_source_revision = self._snapshot_reindex_revision = None
-            self._snapshot_warned_revision = None
+            self._restore_attributes(attributes)
             raise
+
+    def _restore_attributes(self, attributes: dict) -> None:
+        """Make this Cell's attributes exactly ``attributes`` (a copy of ``vars(self)``)."""
+        current = vars(self)
+        for name in tuple(current):
+            if name not in attributes:
+                del current[name]
+        current.update(attributes)
 
     def _check_connection_rules(self, batch_size) -> None:
         """Reject a plasticity rule where its boundary does not run yet (CELL-12a)."""

@@ -1620,6 +1620,17 @@
 
 ### Documentation
 
+- The NEURON comparison of heterogeneous `NetStim` sources
+  (`validation/neuron/synapse/netstim_heterogeneous_compare.ipynb`) runs to
+  the end and passes its 1e-5 mV tolerance (CELL-41). It set the `ExpSyn`
+  parameters before `init_state()` and read a connection view made stale by
+  initialization; it now initializes the network first and selects both views
+  again. The remaining 0.165 mV gap came from NEURON's built-in `hh`, which
+  interpolates its rates in a table on a 1 mV grid while BrainCell evaluates
+  them exactly; the NEURON side now sets `h.usetable_hh = 0`, as the channel
+  comparisons do, and the largest difference is 2.8e-7 mV. Both sides deliver
+  every event at the same step. The notebook stores its outputs.
+
 - `pip install braincell[doc]` installs `numba`. brainevent needs it to run
   `brainstate.nn.EventFixedProb` on CPU, so without it the brainpy network
   notebooks (the tutorials' Overview and the E–I network example) fail on

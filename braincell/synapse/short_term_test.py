@@ -260,6 +260,12 @@ class RecoveryTest(unittest.TestCase):
                 np.testing.assert_allclose(v, -65.0, rtol=0.0, atol=1e-9)
 
 
+def _stdp(**kwargs):
+    params = dict(A_plus=0.01 * u.uS, A_minus=0.0105 * u.uS, tau_plus=20.0 * u.ms, tau_minus=20.0 * u.ms)
+    params.update(kwargs)
+    return braincell.mech.ConnectionRule("PairSTDP", **params)
+
+
 class DeliveryPathTest(unittest.TestCase):
     """Acceptance 3: every delivery path passes the count."""
 
@@ -276,6 +282,21 @@ class DeliveryPathTest(unittest.TestCase):
                 with self.subTest(delay_ms=delay_ms, backend=backend):
                     net = _network(_live_pre([0.6]), _toy_cell(), synapse_index=[0, 0], delay=delay_ms * u.ms)
                     self._check(*_run_network(net, 1.0, event_backend=backend))
+
+    @_float64
+    def test_rule_rows_on_live_and_scheduled_sources(self) -> None:
+        # A rule that keeps the weight: its rows deliver through the rule boundary (live, k >= 1;
+        # scheduled) or the zero-delay block, and every one of them counts.
+        rule = _stdp(A_plus=0.0 * u.uS, A_minus=0.0 * u.uS)
+        cases = {
+            "live": (lambda: _live_pre([0.6]), [0.0, 0.2]),
+            "live, both delayed": (lambda: _live_pre([0.6]), [0.2, 0.3]),
+            "scheduled": (lambda: _seq([0.5], [0.5]), [0.1, 0.1]),
+        }
+        for label, (source, delay_ms) in cases.items():
+            with self.subTest(label):
+                net = _network(source(), _toy_cell(), synapse_index=[0, 0], delay=delay_ms * u.ms, rule=rule)
+                self._check(*_run_network(net, 1.0))
 
     @_float64
     def test_scheduled_rows(self) -> None:
@@ -321,12 +342,6 @@ class DeliveryPathTest(unittest.TestCase):
         node = next(node for layout, node in runtime.iter_synapse_layouts())
         np.testing.assert_allclose(node.g.value.to_decimal(u.uS), [DG_TWO], rtol=RTOL)
         np.testing.assert_allclose(node.x.value, [0.25], rtol=RTOL)
-
-
-def _stdp():
-    return braincell.mech.ConnectionRule(
-        "PairSTDP", A_plus=0.01 * u.uS, A_minus=0.0105 * u.uS, tau_plus=20.0 * u.ms, tau_minus=20.0 * u.ms
-    )
 
 
 class PlasticityRuleTest(unittest.TestCase):

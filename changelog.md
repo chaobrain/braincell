@@ -668,6 +668,14 @@
   `warnings.filterwarnings("ignore", message=".* is deprecated since
   braincell", category=DeprecationWarning)`.
 
+- **Many small `connect` calls no longer copy every routing column**
+  (CELL-18e). Each `connect` appended its rows by re-concatenating the
+  Cell's eight routing columns, so `n` calls cost O(n x rows). Each call's
+  columns are now kept aside and concatenated once, at the first read.
+  16,000 rows in 1,600 calls: the store's part took 205 ms and now 125 ms
+  (the rest is the per-call record), the whole loop 479 ms and now 398 ms.
+  The columns are the same, bit for bit.
+
 - **A lumped Cell warns at `init_state` when its explicit solver meets a
   stiff HH gate** (CELL-29). An explicit Runge-Kutta solver (the default
   `ralston2` included) integrates the gates with `V`, and is stable on a

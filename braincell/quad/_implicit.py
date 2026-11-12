@@ -57,10 +57,10 @@ def _newton_trapezoid(
         g(y) = y - y_0 - \tfrac{\Delta t}{2}
                \bigl(f(t, y_0) + f(t + \Delta t, y)\bigr) = 0,
 
-    updating :math:`y \leftarrow y - J^{-1} g(y)`. The states are stacked
-    along the last axis (``[..., n_state]``), so :math:`J` is one
-    ``n_state x n_state`` block per neuron (reverse-mode AD over the last
-    axis), never a dense matrix over the whole population.
+    updating :math:`y \leftarrow y - J^{-1} g(y)`. ``y0`` has shape
+    ``(..., M)``: :math:`J` is one ``M x M`` block per leading index
+    (reverse-mode AD over the last axis), never a dense matrix over the
+    whole population.
 
     Iteration stops when :math:`\max |\Delta y| / (1 + |y|) \le
     \varepsilon^{3/4}` (:math:`\varepsilon` is the machine epsilon of the
@@ -140,9 +140,13 @@ def crank_nicolson_step(target: DiffEqModule, *args, t: T = None, dt: DT = None)
         g(y) = y - y_n - \frac{\Delta t}{2}
                \bigl(f(t_n, y_n) + f(t_{n+1}, y)\bigr) = 0
 
-    by Newton iteration. The states of ``target`` are stacked along the last
-    axis, so each Newton iteration builds one ``n_state x n_state`` Jacobian
-    per neuron and solves the neurons' systems in a batch. Iteration stops
+    by Newton iteration. The states of ``target`` are merged along the last
+    axis as it declares in ``diffeq_state_merging``: ``'stack'`` (the
+    default, e.g. :class:`braincell.SingleCompartment`) gives one
+    ``n_state x n_state`` Jacobian per neuron, ``'concat'``
+    (:class:`braincell.Cell`) one per cell over all of its compartments,
+    axial coupling included. Each Newton iteration solves these systems in
+    a batch. Iteration stops
     when :math:`\max |\Delta y| / (1 + |y|) \le \varepsilon^{3/4}`
     (:math:`\varepsilon` is the machine epsilon of the state dtype) or after
     20 iterations.
@@ -171,6 +175,11 @@ def crank_nicolson_step(target: DiffEqModule, *args, t: T = None, dt: DT = None)
     None
         ``target``'s differential states are updated in place.
 
+    Raises
+    ------
+    TypeError
+        If ``target`` is not a :class:`DiffEqModule`.
+
     See Also
     --------
     backward_euler_step : Single-Jacobian linearized backward Euler
@@ -196,5 +205,7 @@ def crank_nicolson_step(target: DiffEqModule, *args, t: T = None, dt: DT = None)
         >>> with brainstate.environ.context(t=0. * u.ms, dt=0.025 * u.ms):
         ...     crank_nicolson_step(my_neuron)  # doctest: +SKIP
     """
+    if not isinstance(target, DiffEqModule):
+        raise TypeError(f"The target should be a {DiffEqModule.__name__}. But got {type(target)} instead.")
     t, dt = environ_time(target, t, dt)
-    apply_standard_solver_step(_newton_trapezoid, target, t, dt, *args, merging='stack')
+    apply_standard_solver_step(_newton_trapezoid, target, t, dt, *args, merging=target.diffeq_state_merging)

@@ -2148,6 +2148,54 @@ def _run_to_1ms(cell, dt_ms):
     return _diffeq_values(cell)
 
 
+def _two_cv_soma(solver):
+    """CELL-31a A1: the CELL-19 soma in 2 CVs, a 0.05 nA clamp at x = 0.25 (linear, stiff axial coupling)."""
+    cell = Cell(_soma_tree(), cv_policy=CVPerBranch(2), solver=solver, V_init=-65.0 * u.mV)
+    cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    cell.place(at("soma", 0.25), CurrentClamp(delay=0.0 * u.ms, durations=100.0 * u.ms, amplitudes=0.05 * u.nA))
+    return cell
+
+
+def _dendrite_600um(solver, n_cv, *, hh):
+    """A 600 um x 0.5 um dendrite with a midpoint clamp: CELL-31a A2 (``hh``) or CELL-2a M1."""
+    branch = Branch.from_lengths(lengths=[600.0] * u.um, radii=[0.5, 0.5] * u.um, type="dendrite")
+    cell = Cell(Morphology.from_root(branch, name="d"), cv_policy=CVPerBranch(n_cv), solver=solver, V_init=-65.0 * u.mV)
+    cable = mech.CableProperty(
+        resting_potential=-65.0 * u.mV,
+        membrane_capacitance=1.0 * u.uF / u.cm**2,
+        axial_resistivity=100.0 * u.ohm * u.cm,
+    )
+    if not hh:
+        cell.paint(AllRegion(), cable, mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+        amplitude = 0.05 * u.nA
+    else:
+        cell.paint(
+            AllRegion(),
+            cable,
+            mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-54.4 * u.mV),
+            mech.Ion("SodiumFixed", name="na", E=50.0 * u.mV),
+            mech.Ion("PotassiumFixed", name="k", E=-77.0 * u.mV),
+        )
+        cell.paint(
+            AllRegion(),
+            mech.Channel("Na_HH1952", g_max=120.0 * u.mS / u.cm**2, ion_name="na"),
+            mech.Channel("K_HH1952", g_max=36.0 * u.mS / u.cm**2, ion_name="k"),
+        )
+        amplitude = 0.02 * u.nA
+    cell.place(at("d", 0.5), CurrentClamp(delay=0.0 * u.ms, durations=100.0 * u.ms, amplitudes=amplitude))
+    return cell
+
+
+def _final_V(cell, dt_ms, duration_ms):
+    cell.init_state()
+    cell.run(dt=dt_ms * u.ms, duration=duration_ms * u.ms)
+    return np.asarray(cell.V.value.to_decimal(u.mV), dtype=np.float64).ravel()
+
+
+#: The merging the implicit block solvers used before CELL-31a, whatever the host declared.
+_PER_CV_MERGING = mock.patch.object(Cell, "diffeq_state_merging", "stack")
+
+
 class CellGenericSolverTest(unittest.TestCase):
     """CELL-19: every registered solver name runs on a cable Cell or is rejected at init_state."""
 
@@ -2234,6 +2282,75 @@ class CellGenericSolverTest(unittest.TestCase):
         cell.run(dt=0.025 * u.ms, duration=0.1 * u.ms)
         after = _diffeq_values(cell)[1]
         self.assertTrue(any(not np.array_equal(before[k], after[k]) for k in before))
+
+    def test_implicit_block_solvers_couple_the_cvs_of_a_cell(self):
+        # CELL-31a A1. backward_euler and crank_nicolson merged a cable Cell per
+        # CV ('stack'): the Jacobian kept only column sums of the axial terms
+        # and V reached 1e92 mV or NaN without an error. The model is linear,
+        # so exp_euler is exact; the bounds are about 1.5 times the measured
+        # errors (backward_euler 4.49e-3, 9.00e-4; crank_nicolson 2.12e-4, 7.5e-8).
+        bounds = {
+            0.025: {"backward_euler": 6.7e-3, "crank_nicolson": 3.2e-4},
+            0.005: {"backward_euler": 1.35e-3, "crank_nicolson": 1.2e-7},
+        }
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for dt, per_solver in bounds.items():
+                exact = _final_V(_two_cv_soma("exp_euler"), dt, 1.0)
+                # rk4 at dt = 1e-5 ms.
+                np.testing.assert_allclose(exact, [-61.213203287434446, -61.213999054192236], rtol=0, atol=1e-9)
+                for name, bound in per_solver.items():
+                    with self.subTest(solver=name, dt=dt):
+                        V = _final_V(_two_cv_soma(name), dt, 1.0)
+                        self.assertTrue(np.all(np.isfinite(V)), V)
+                        self.assertLessEqual(float(np.max(np.abs(V - exact))), bound)
+
+    def test_implicit_block_solvers_stay_finite_on_a_30_cv_hh_dendrite(self):
+        # CELL-31a A2: NaN at dt = 0.025 ms when merged per CV. Reference: the
+        # Richardson limit of staggered (dt 0.0005, 0.00025 ms); measured
+        # backward_euler 1.23e-2 mV, crank_nicolson 2.06e-5 mV.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            coarse = _final_V(_dendrite_600um("staggered", 30, hh=True), 0.0005, 5.0)
+            fine = _final_V(_dendrite_600um("staggered", 30, hh=True), 0.00025, 5.0)
+            limit = 2.0 * fine - coarse
+            for name, bound in (("backward_euler", 1.85e-2), ("crank_nicolson", 3.1e-5)):
+                with self.subTest(solver=name):
+                    V = _final_V(_dendrite_600um(name, 30, hh=True), 0.025, 5.0)
+                    self.assertTrue(np.all(np.isfinite(V)), V)
+                    self.assertLessEqual(float(np.max(np.abs(V - limit))), bound)
+
+    def test_per_cell_blocks_change_a_non_stiff_cable_cell_within_truncation_error(self):
+        # CELL-2a M1 (3 CVs). Measured change from per-CV blocks: backward_euler
+        # 6.5e-5 mV at dt = 0.025 ms against its own error of 1.0e-2 mV;
+        # crank_nicolson 1.6e-12 mV (the Newton fixed point does not depend on
+        # the Jacobian). exp_euler is exact on this linear model.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            error = {}
+            for dt in (0.025, 0.005):
+                exact = _final_V(_dendrite_600um("exp_euler", 3, hh=False), dt, 5.0)
+                for name, bound in (("backward_euler", 1e-4), ("crank_nicolson", 1e-10)):
+                    with self.subTest(solver=name, dt=dt):
+                        V = _final_V(_dendrite_600um(name, 3, hh=False), dt, 5.0)
+                        with _PER_CV_MERGING:
+                            before = _final_V(_dendrite_600um(name, 3, hh=False), dt, 5.0)
+                        self.assertLessEqual(float(np.max(np.abs(V - before))), bound)
+                        error[name, dt] = float(np.max(np.abs(V - exact)))
+            ratio = error["backward_euler", 0.025] / error["backward_euler", 0.005]
+            self.assertTrue(4.0 <= ratio <= 6.0, error)
+
+    def test_one_cv_cells_are_unchanged_by_per_cell_blocks(self):
+        # A one-CV cell is one block either way.
+        names = ("exp_euler", "backward_euler", "crank_nicolson")
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for mechanism in ("none", "markov", "kinetic_child"):
+                for name in names:
+                    with self.subTest(mechanism=mechanism, solver=name):
+                        V, states = _run_to_1ms(_mechanism_cell(name, mechanism), 0.025)
+                        with _PER_CV_MERGING:
+                            ref_V, ref_states = _run_to_1ms(_mechanism_cell(name, mechanism), 0.025)
+                        np.testing.assert_allclose(V, ref_V, rtol=1e-12, atol=0)
+                        self.assertEqual(set(states), set(ref_states))
+                        for key in states:
+                            np.testing.assert_allclose(states[key], ref_states[key], rtol=1e-12, atol=1e-300)
 
     def test_block_solvers_reject_point_synapses_at_init_state(self):
         for name in ("exp_euler", "backward_euler", "crank_nicolson"):

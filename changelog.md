@@ -713,6 +713,28 @@
 
 ### Bug Fixes
 
+- `backward_euler` and `crank_nicolson` now solve a cable `Cell` as one block
+  per cell, as `exp_euler` does (CELL-31a). Both steps used to merge the states
+  with `'stack'` whatever the host declared, so a `Cell` with more than one CV
+  got one block per CV. The Jacobian then lost the axial coupling between CVs,
+  and on stiff discretizations `run` returned non-finite voltages without an
+  error. Both now read `diffeq_state_merging` (`'concat'` on `Cell`; `'stack'`
+  on `SingleCompartment`, lumped cells and plain `DiffEqModule`s, which are
+  unchanged). Measured in float64:
+  - A 20 µm soma in 2 CVs with a 0.05 nA clamp, 1 ms: `backward_euler` was
+    2.5e92 mV off at dt = 0.025 ms and NaN at 0.005 ms, and is now 4.5e-3 and
+    9.0e-4 mV off. `crank_nicolson` was NaN at both and is now 2.1e-4 and
+    7.5e-8 mV off.
+  - A 600 µm HH dendrite in 30 CVs at dt = 0.025 ms: both were NaN, now
+    1.2e-2 mV (`backward_euler`) and 2.1e-5 mV (`crank_nicolson`) off.
+  - A non-stiff 3-CV passive dendrite: `backward_euler` moves by 6.5e-5 mV
+    against its own error of 1.0e-2 mV, and `crank_nicolson` by 1.6e-12 mV.
+    One-CV cells are unchanged.
+
+  A block now spans all CVs of a cell, so the cost per step grows as the cube
+  of `n_cv` times the states per CV. Large cells should use `staggered`.
+  Both steps also raise `TypeError` for a target that is not a `DiffEqModule`
+  before reading its layout.
 - The ASC reader no longer drops a tree that has no `(Axon)`, `(Dendrite)` or
   `(Apical)` marker, and finds the soma contour by name as NEURON does
   (MORPH-5c). A top-level block that starts with `(` and holds points is a

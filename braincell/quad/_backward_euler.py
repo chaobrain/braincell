@@ -115,8 +115,13 @@ def backward_euler_step(target: DiffEqModule, *args, excluded_paths=()):
     Parameters
     ----------
     target : DiffEqModule
-        The module whose differential states are to be advanced. Must be
-        an :class:`HHTypedNeuron` (single compartment or multi-compartment).
+        The module whose differential states are to be advanced. Its
+        :class:`DiffEqState` leaves are merged as it declares in
+        ``diffeq_state_merging``: ``'stack'`` (the default, e.g.
+        :class:`braincell.SingleCompartment`) gives one
+        ``n_state x n_state`` system per neuron, ``'concat'``
+        (:class:`braincell.Cell`) one system per cell over all of its
+        compartments, axial coupling included.
     *args
         Extra positional arguments forwarded to ``target``'s
         :meth:`pre_integral`, :meth:`compute_derivative`, and
@@ -130,8 +135,7 @@ def backward_euler_step(target: DiffEqModule, *args, excluded_paths=()):
     Raises
     ------
     TypeError
-        Raised inside :func:`apply_standard_solver_step` if *target* is
-        not a :class:`DiffEqModule`.
+        If *target* is not a :class:`DiffEqModule`.
 
     See Also
     --------
@@ -141,8 +145,10 @@ def backward_euler_step(target: DiffEqModule, *args, excluded_paths=()):
     Notes
     -----
     The current time and step size are read from the active
-    :mod:`brainstate.environ` context. State leaves are stacked along the
-    last axis (``merging='stack'``) before the linear solve.
+    :mod:`brainstate.environ` context. State leaves are merged along the
+    last axis as ``target.diffeq_state_merging`` declares before the
+    linear solve; the cost per step is :math:`O(M^3)` in the block size
+    :math:`M`.
 
     Examples
     --------
@@ -156,6 +162,8 @@ def backward_euler_step(target: DiffEqModule, *args, excluded_paths=()):
         ...     backward_euler_step(my_neuron, input_current)  # doctest: +SKIP
     """
 
+    if not isinstance(target, DiffEqModule):
+        raise TypeError(f"The target should be a {DiffEqModule.__name__}. But got {type(target)} instead.")
     t, dt = environ_time(target)
     apply_standard_solver_step(
         _backward_euler,
@@ -163,6 +171,6 @@ def backward_euler_step(target: DiffEqModule, *args, excluded_paths=()):
         t,
         dt,
         *args,
-        merging='stack',  # [n_neuron, n_state]
+        merging=target.diffeq_state_merging,
         excluded_paths=excluded_paths,
     )

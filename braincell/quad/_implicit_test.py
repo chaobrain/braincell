@@ -42,7 +42,7 @@ from braincell.quad import (
     list_integrators,
     module_step_from_ode,
 )
-from braincell.quad._testing import HH, LinearDecay, integrate
+from braincell.quad._testing import HH, CoupledCompartments, LinearDecay, integrate
 from braincell.quad.protocol import DiffEqModule, DiffEqSingleState
 
 #: One trapezoidal step of dx/dt = -x**3 / (tau mV**2), x0 = 1 mV,
@@ -170,6 +170,34 @@ class CrankNicolsonAccuracyTest(unittest.TestCase):
             self.assertTrue(np.all(np.isfinite(np.asarray(v.to_decimal(u.mV)))))
         # Same order of magnitude as the single-linear-solve backward Euler.
         self.assertLess(timings['crank_nicolson'], 30 * timings['backward_euler'] + 0.5, timings)
+
+
+class CrankNicolsonHostMergingTest(unittest.TestCase):
+    """CELL-31a: the Newton system is one block per cell on a ``'concat'`` host."""
+
+    def test_concat_host_reaches_the_coupled_trapezoid_solution(self):
+        # Linear system: (I - dt A / 2) x_1 = (I + dt A / 2) x_0. Merged with
+        # 'stack' the Newton matrix lacked the stiff coupling and the iteration
+        # did not converge at this dt.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            m = CoupledCompartments()
+            x0 = np.asarray(m.x.value.to_decimal(u.mV))
+            with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+                crank_nicolson_step(m)
+            x1 = np.asarray(m.x.value.to_decimal(u.mV))
+            A = np.asarray(m.jacobian())
+        half = 0.05 * A
+        expected = np.linalg.solve(np.eye(2) - half, (np.eye(2) + half) @ x0.T).T
+        np.testing.assert_allclose(x1, expected, rtol=0, atol=1e-12)
+
+    def test_rejects_non_diffeq_module(self):
+        # Checked before the host's merging is read: TypeError, not AttributeError.
+        class Plain(brainstate.nn.Module):
+            pass
+
+        with self.assertRaisesRegex(TypeError, "DiffEqModule"):
+            with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
+                crank_nicolson_step(Plain())
 
 
 class CrankNicolsonRegistrationTest(unittest.TestCase):

@@ -19,11 +19,14 @@ The leading underscore keeps pytest from collecting this file as a test
 module, matching the convention used by ``braincell/io/_testing.py`` and
 ``braincell/morph/_testing.py``.
 
-Two fixtures live here:
+Three fixtures live here:
 
 - :class:`LinearDecay` — a scalar linear ODE with a known closed-form
   solution, used wherever a solver has to be checked against an exact
   answer without dragging in the full Hodgkin-Huxley stack.
+- :class:`CoupledCompartments` — two leaky compartments per cell joined by
+  a conductance, laid out like a cable ``Cell`` (``'concat'``), for checking
+  that a block solver couples the compartments of one cell.
 - :class:`HH` plus :func:`integrate` and :func:`compare` — a one-compartment
   Hodgkin-Huxley model and the convergence harness built on it.
 """
@@ -38,6 +41,7 @@ from braincell.quad.protocol import DiffEqModule, DiffEqSingleState
 __all__ = [
     'FLOAT_DTYPE',
     'LinearDecay',
+    'CoupledCompartments',
     'drive',
     'HH',
     'integrate',
@@ -84,6 +88,47 @@ class LinearDecay(brainstate.nn.Module, DiffEqModule):
 
     def compute_derivative(self, *args, **kwargs):
         self.x.derivative = -self.x.value / self.tau
+
+
+class CoupledCompartments(brainstate.nn.Module, DiffEqModule):
+    """Two leaky compartments per cell joined by a conductance.
+
+    ``dx_0/dt = (x_1 - x_0) / tau_c - x_0 / tau`` and the same with the
+    indices swapped; ``x`` has shape ``(n_cell, 2)`` and starts at
+    ``[1, 0]`` mV in every cell. Like a cable ``Cell`` the module declares
+    ``diffeq_state_merging = 'concat'``, so a block solver sees one 2 x 2
+    system per cell with the coupling in it. A small ``tau_c`` makes the
+    coupling stiff, as the axial current between short compartments is.
+
+    Parameters
+    ----------
+    n_cell : int, optional
+        Number of cells. Default 2.
+    tau_ms : float, optional
+        Leak time constant in milliseconds. Default 10.0.
+    tau_c_ms : float, optional
+        Coupling time constant in milliseconds. Default 0.01.
+    """
+
+    diffeq_state_merging = 'concat'
+
+    def __init__(self, n_cell: int = 2, tau_ms: float = 10.0, tau_c_ms: float = 0.01):
+        super().__init__()
+        self.tau = tau_ms * u.ms
+        self.tau_c = tau_c_ms * u.ms
+        # The active precision, so a test can build it in float64.
+        x0 = jnp.tile(jnp.asarray([1.0, 0.0], dtype=brainstate.environ.dftype()), (n_cell, 1))
+        self.x = DiffEqSingleState(x0 * u.mV)
+
+    def compute_derivative(self, *args, **kwargs):
+        x = self.x.value
+        self.x.derivative = (x[..., ::-1] - x) / self.tau_c - x / self.tau
+
+    def jacobian(self):
+        """The 2 x 2 system matrix of one cell, in 1/ms."""
+        a = 1.0 / self.tau_c.to_decimal(u.ms)
+        b = 1.0 / self.tau.to_decimal(u.ms)
+        return jnp.asarray([[-a - b, a], [a, -a - b]], dtype=self.x.value.dtype)
 
 
 def drive(method, dt_ms: float = 0.1, n_steps: int = 100, x0: float = 1.0, tau_ms: float = 10.0):

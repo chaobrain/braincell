@@ -123,7 +123,7 @@ def _reference_at(geometry: _BranchGeometryUm, x: float):
     last_positive = 0
     for index, segment_length in enumerate(lengths.tolist()):
         if segment_length <= 0.0:
-            if np.isclose(x, cursor / total):
+            if abs(x - cursor / total) <= 1e-8:
                 point = None if p0 is None or p1 is None else 0.5 * (p0[index] + p1[index])
                 return 0.5 * (r0[index] + r1[index]), point
             continue
@@ -161,10 +161,19 @@ class InterpolateBranchTest(unittest.TestCase):
 
     @staticmethod
     def _sites(lengths) -> np.ndarray:
-        # Every segment end, each nudged by a few ulp, isclose's reach, and a spread of sites.
+        # Every segment end, each nudged by a few ulp, the 1e-8 window's reach,
+        # the old relative window's (5e-6 at x = 0.5), and a spread of sites.
         cursor = np.cumsum(np.asarray(lengths, dtype=float))
         ends = np.concatenate([[0.0], cursor / float(np.sum(lengths)), [1.0]])
-        nudged = [np.nextafter(ends, 2.0), np.nextafter(ends, -1.0), ends + 1e-8, ends - 1e-8, ends + 2e-8]
+        nudged = [
+            np.nextafter(ends, 2.0),
+            np.nextafter(ends, -1.0),
+            ends + 1e-8,
+            ends - 1e-8,
+            ends + 2e-8,
+            ends + 5e-6,
+            ends - 5e-6,
+        ]
         return np.clip(np.concatenate([ends, *nudged, np.linspace(0.0, 1.0, 37)]), 0.0, 1.0)
 
     def test_sites_match_one_walk_per_site(self) -> None:
@@ -194,6 +203,22 @@ class InterpolateBranchTest(unittest.TestCase):
                     self._assert_same_sites(branch, sites)
                     self._assert_same_sites(branch, sites[: sites.size // 2 * 2].reshape(-1, 2)[:, ::-1])
                     self._assert_same_sites(branch, sites[:0])
+
+    def test_a_site_past_a_jump_reads_the_segment_it_is_on(self) -> None:
+        # 10 um at radius 1, a jump to 3, 10 um at radius 3. A site before the
+        # jump is on the first segment; one within 1e-8 past it reads the
+        # jump's mean. On main a site up to 1e-5 * x past it (np.isclose's
+        # rtol) also did: 2.0 um at x = 0.5 + 5e-6 instead of 3.0.
+        branch = Branch.from_lengths(
+            lengths=[10.0, 10.0] * u.um,
+            radii_proximal=[1.0, 3.0] * u.um,
+            radii_distal=[1.0, 3.0] * u.um,
+            type="dendrite",
+        )
+        self.assertEqual(branch.n_segments, 3)
+        xs = np.asarray([0.5 - 5e-6, 0.5 - 2e-8, 0.5 - 9e-9, 0.5, 0.5 + 9e-9, 0.5 + 2e-8, 0.5 + 5e-6, 0.9 + 9e-6])
+        radius, _ = interpolate_branch(Morphology.from_root(branch, name="trunk"), 0, xs)
+        np.testing.assert_array_equal(radius.to_decimal(u.um), [1.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 3.0])
 
     def test_reconstructed_branches_match_one_walk_per_site(self) -> None:
         from braincell.io._testing import FIXTURE_DIR

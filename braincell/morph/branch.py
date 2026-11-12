@@ -22,7 +22,7 @@ from typing import ClassVar
 import brainunit as u
 import numpy as np
 
-from braincell._misc import normalize_param
+from braincell._misc import _check_bounds, normalize_param
 
 _ALLOWED_BRANCH_TYPES = {
     "soma",
@@ -161,9 +161,10 @@ class Branch:
     TypeError
         If any geometric input is a bare number without ``brainunit`` units.
     ValueError
-        If *lengths* is empty, total length is zero, array shapes are
-        inconsistent, *type* is not in the allowed set, or point-derived
-        lengths do not match *lengths*.
+        If *lengths* is empty, a length, radius or point is not finite
+        (NaN or inf), total length is zero or overflows to inf, array
+        shapes are inconsistent, *type* is not in the allowed set, or
+        point-derived lengths do not match *lengths*.
 
     See Also
     --------
@@ -228,14 +229,25 @@ class Branch:
     _BRANCH_TYPE: ClassVar[str | None] = None
 
     def __post_init__(self) -> None:
-        for name, kwargs in [
-            ("lengths", {"unit": u.um, "shape": (None,), "bounds": {"ge": 0 * u.um}}),
-            ("radii_proximal", {"unit": u.um, "shape": (None,), "bounds": {"gt": 0 * u.um}}),
-            ("radii_distal", {"unit": u.um, "shape": (None,), "bounds": {"gt": 0 * u.um}}),
-            ("points_proximal", {"unit": u.um, "shape": (None, 3), "allow_none": True}),
-            ("points_distal", {"unit": u.um, "shape": (None, 3), "allow_none": True}),
+        for name, kwargs, bounds in [
+            ("lengths", {"shape": (None,)}, {"ge": 0 * u.um}),
+            ("radii_proximal", {"shape": (None,)}, {"gt": 0 * u.um}),
+            ("radii_distal", {"shape": (None,)}, {"gt": 0 * u.um}),
+            ("points_proximal", {"shape": (None, 3), "allow_none": True}, None),
+            ("points_distal", {"shape": (None, 3), "allow_none": True}, None),
         ]:
-            object.__setattr__(self, name, normalize_param(getattr(self, name), name=name, **kwargs))
+            value = normalize_param(getattr(self, name), name=name, unit=u.um, **kwargs)
+            if value is not None:
+                # Finiteness first, so that a NaN is reported as such rather
+                # than as a failed bound.
+                um = np.asarray(value.mantissa, dtype=float)
+                bad = np.flatnonzero(~np.isfinite(um))
+                if bad.size:
+                    index = tuple(int(i) for i in np.unravel_index(int(bad[0]), um.shape))
+                    where = index[0] if um.ndim == 1 else index
+                    raise ValueError(f"{name} must be finite; entry {where} is {um[index]} um.")
+                _check_bounds(um, name=name, unit=u.um, bounds=bounds)
+            object.__setattr__(self, name, value)
 
         expected_type = type(self)._BRANCH_TYPE
         if expected_type is not None and self.type != expected_type:
@@ -248,11 +260,15 @@ class Branch:
         if self.lengths.shape[0] == 0:
             raise ValueError("Branch must contain at least one segment.")
         lengths_um = np.asarray(self.lengths.to_decimal(u.um), dtype=float)
-        if float(np.sum(lengths_um)) <= 0.0:
+        with np.errstate(over="ignore"):
+            total_um = float(np.sum(lengths_um))
+        if total_um <= 0.0:
             raise ValueError(
                 "Branch total length must be > 0. "
                 "All segment lengths are zero; at least one segment must have a positive length."
             )
+        if not np.isfinite(total_um):
+            raise ValueError("Branch total length must be finite; the segment lengths sum to inf um.")
         if (self.points_proximal is None) != (self.points_distal is None):
             raise ValueError("points_proximal and points_distal must both be provided or both be None.")
 

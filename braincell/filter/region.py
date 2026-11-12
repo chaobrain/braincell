@@ -722,8 +722,10 @@ class SubtreeRegion(RegionExpr):
 
     In a :class:`~braincell.Cell` declaration, refer to the root by name. An
     index names whatever branch holds that index when the expression is
-    evaluated, so after a ``remove`` it can silently select another branch;
-    a name raises ``KeyError`` once its branch is gone.
+    evaluated: evaluated on a morphology after ``Morphology.remove`` or
+    ``Morphology.reattach``, it selects another branch. A Cell declaration
+    holding an index raises ``ValueError`` at its next rebuild after such an
+    edit, and one holding a name raises ``KeyError`` once its branch is gone.
 
     Examples
     --------

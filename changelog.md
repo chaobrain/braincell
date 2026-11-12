@@ -583,6 +583,16 @@
 
 ### Changes & Improvements
 
+- **Geometry-scored pairing builds the geometry once per morphology edit**
+  (CELL-18c). A `connect` whose pairing score reads a synapse's radius,
+  tree distances or 3-D position rebuilt the morphology's spatial geometry
+  and then walked each synapse's branch segment by segment. The geometry is
+  now kept on the `Morphology` until its next edit (`Morphology.revision`),
+  each branch is decoded once, and all of a branch's sites are placed at
+  once. On a CA1 reconstruction with 2,000 synapses, the geometry columns
+  took 349 ms per `connect` and now take 76 ms, and 100 such connects took
+  33.5 s and now 5.6 s. Every value is the same as before, bit for bit.
+
 - **A scheduled source costs a lookup per step, not a pass over its
   schedule** (CELL-18a). `NetStim.event_count` and
   `EventSequence.event_count`, which `Cell.run` and `Network.run` call on

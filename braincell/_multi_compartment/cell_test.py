@@ -1307,6 +1307,51 @@ class FailedPlaceKeepsTheDeclarationTest(unittest.TestCase):
                 self.assertEqual(cell.place_rules, rules)
 
 
+class RefusedAddReductionKeepsTheCellTest(unittest.TestCase):
+    """add_reduction() refused on a multi-dimensional pop_size registers nothing.
+
+    The model used to be stored before the one-axis check raised: use_model()
+    then selected it, init_state() failed inside the model, and a second
+    add_reduction() under the same name reported a duplicate.
+    """
+
+    refused = r"add_reduction\(\) requires a one-dimensional pop_size; got \(2, 3\)"
+
+    @staticmethod
+    def _grid(kind: str) -> Cell:
+        if kind == "lumped":
+            return Cell.point((2, 3), V_init=-65.0 * u.mV)
+        return Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=(2, 3), V_init=-65.0 * u.mV)
+
+    def test_the_cell_is_left_as_it_was_at_every_later_step(self):
+        for kind in ("lumped", "cable"):
+            with self.subTest(kind=kind):
+                cell, fresh = self._grid(kind), self._grid(kind)
+                with self.assertRaisesRegex(ValueError, self.refused):
+                    cell.add_reduction("acc", braincell.reduction.EventAccumulatorReduction())
+                self.assertEqual(cell._reduction_models, {})
+                with self.assertRaises(KeyError) as unknown:
+                    fresh.use_model("acc")
+                with self.assertRaises(KeyError) as selected:
+                    cell.use_model("acc")
+                self.assertEqual(str(selected.exception), str(unknown.exception))
+                # The same call is refused the same way, not as a duplicate.
+                with self.assertRaisesRegex(ValueError, self.refused):
+                    cell.add_reduction("acc", braincell.reduction.EventAccumulatorReduction())
+                self.assertEqual(cell._reduction_models, {})
+                cell.init_state()
+                fresh.init_state()
+                self.assertEqual(cell.V.value.shape, fresh.V.value.shape)
+                np.testing.assert_array_equal(u.get_magnitude(cell.V.value), u.get_magnitude(fresh.V.value))
+                np.testing.assert_array_equal(u.get_magnitude(cell.V.value), np.full(cell.V.value.shape, -65.0))
+
+    def test_a_one_dimensional_cell_still_registers(self):
+        cell = Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=6)
+        view = cell.add_reduction("acc", braincell.reduction.EventAccumulatorReduction())
+        self.assertEqual(tuple(cell._reduction_models), ("acc",))
+        self.assertFalse(view.is_selected)
+
+
 class TestCellLifecycle(unittest.TestCase):
     def test_declaration_phase_flag(self):
         cell = _cell_with_recording()

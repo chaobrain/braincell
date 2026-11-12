@@ -88,17 +88,18 @@ class RegionExpr(ABC):
     def __or__(self, other: "RegionExpr") -> "RegionExpr":
         if not isinstance(other, RegionExpr):
             return NotImplemented
-        return RegionSetOp("union", (self, other))
+        return RegionSetOp("union", _operands_of(self, "union") + _operands_of(other, "union"))
 
     def __and__(self, other: "RegionExpr") -> "RegionExpr":
         if not isinstance(other, RegionExpr):
             return NotImplemented
-        return RegionSetOp("intersection", (self, other))
+        return RegionSetOp("intersection", _operands_of(self, "intersection") + _operands_of(other, "intersection"))
 
     def __sub__(self, other: "RegionExpr") -> "RegionExpr":
         if not isinstance(other, RegionExpr):
             return NotImplemented
-        return RegionSetOp("difference", (self, other))
+        # a - (b - c) keeps c, so only the left operand splices.
+        return RegionSetOp("difference", _operands_of(self, "difference") + (other,))
 
     def complement(self) -> "RegionExpr":
         return RegionSetOp("complement", (self,))
@@ -783,7 +784,16 @@ class SubtreeRegion(RegionExpr):
 
 @dataclass(frozen=True)
 class RegionSetOp(RegionExpr):
-    """Composite selector produced by set algebra on region expressions."""
+    """Composite selector produced by set algebra on region expressions.
+
+    Notes
+    -----
+    The operands are combined from left to right. The ``|``, ``&`` and ``-``
+    operators extend a node of the same operation instead of nesting it, so
+    ``a | b | c`` is one union of three operands however many are chained;
+    only the right operand of ``-`` stays nested, since ``a - (b - c)``
+    differs from ``(a - b) - c``.
+    """
 
     op: str
     operands: tuple[RegionExpr, ...]
@@ -824,6 +834,22 @@ class RegionSetOp(RegionExpr):
             else:
                 current = helper.difference_region_intervals(current, other)
         return RegionMask(current)
+
+
+def _operands_of(expr: RegionExpr, op: str) -> tuple[RegionExpr, ...]:
+    """Return ``expr``'s operands if it is a well-formed ``op`` node, else ``(expr,)``.
+
+    The set operators splice a same-operation operand rather than nest it.
+    :meth:`RegionSetOp._evaluate` folds its operands left to right, so
+    ``(a - b) - c`` selects what ``RegionSetOp("difference", (a, b, c))``
+    does, and union and intersection are associative. A region built one
+    operand at a time in a loop is therefore one level deep: hashing,
+    comparing, printing and evaluating recurse once per level, and a few
+    hundred levels exceeded Python's recursion limit.
+    """
+    if isinstance(expr, RegionSetOp) and expr.op == op and len(expr.operands) >= 2:
+        return tuple(expr.operands)
+    return (expr,)
 
 
 def branch_in(property: str, values: object) -> BranchInFilter:

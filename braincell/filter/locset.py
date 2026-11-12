@@ -459,22 +459,23 @@ class LocsetExpr(ABC):
     def __add__(self, other: "LocsetExpr") -> "LocsetExpr":
         if not isinstance(other, LocsetExpr):
             return NotImplemented
-        return LocsetConcatOp((self, other))
+        return LocsetConcatOp(_operands_of(self, "concat") + _operands_of(other, "concat"))
 
     def __or__(self, other: "LocsetExpr") -> "LocsetExpr":
         if not isinstance(other, LocsetExpr):
             return NotImplemented
-        return LocsetSetOp("union", (self, other))
+        return LocsetSetOp("union", _operands_of(self, "union") + _operands_of(other, "union"))
 
     def __and__(self, other: "LocsetExpr") -> "LocsetExpr":
         if not isinstance(other, LocsetExpr):
             return NotImplemented
-        return LocsetSetOp("intersection", (self, other))
+        return LocsetSetOp("intersection", _operands_of(self, "intersection") + _operands_of(other, "intersection"))
 
     def __sub__(self, other: "LocsetExpr") -> "LocsetExpr":
         if not isinstance(other, LocsetExpr):
             return NotImplemented
-        return LocsetSetOp("difference", (self, other))
+        # a - (b - c) keeps c, so only the left operand splices.
+        return LocsetSetOp("difference", _operands_of(self, "difference") + (other,))
 
     def unique(self) -> "LocsetExpr":
         """Return an expression that deduplicates locations after evaluation."""
@@ -1046,7 +1047,9 @@ class LocsetConcatOp(LocsetExpr):
     Parameters
     ----------
     operands : tuple of LocsetExpr
-        Expressions evaluated and concatenated from left to right.
+        Expressions evaluated and concatenated from left to right. ``+``
+        extends a concatenation instead of nesting it, so ``a + b + c`` is
+        one node of three operands.
     """
 
     operands: tuple[LocsetExpr, ...]
@@ -1070,6 +1073,17 @@ class LocsetConcatOp(LocsetExpr):
 
 @dataclass(frozen=True)
 class LocsetSetOp(LocsetExpr):
+    """Composite selector produced by set algebra on locset expressions.
+
+    Notes
+    -----
+    The operands are combined from left to right. The ``|``, ``&`` and ``-``
+    operators extend a node of the same operation instead of nesting it, so
+    ``a | b | c`` is one union of three operands however many are chained;
+    only the right operand of ``-`` stays nested, since ``a - (b - c)``
+    differs from ``(a - b) - c``.
+    """
+
     op: str
     operands: tuple[LocsetExpr, ...]
 
@@ -1096,6 +1110,25 @@ class LocsetSetOp(LocsetExpr):
             else:
                 current = helper.difference_locset_points(current, other)
         return LocsetMask(points=current, display_names=_display_names_for_points(morpho, current))
+
+
+def _operands_of(expr: LocsetExpr, op: str) -> tuple[LocsetExpr, ...]:
+    """Return ``expr``'s operands if it is a well-formed ``op`` node, else ``(expr,)``.
+
+    ``op`` is ``"concat"`` for :class:`LocsetConcatOp`. As in the region
+    operators, splicing keeps a locset built one operand at a time in a loop
+    one level deep: concatenation, union and intersection are associative,
+    and :meth:`LocsetSetOp._evaluate` folds a difference left to right.
+    Nesting recursed once per level and exceeded Python's recursion limit
+    after a few hundred.
+    """
+    if op == "concat":
+        same = isinstance(expr, LocsetConcatOp)
+    else:
+        same = isinstance(expr, LocsetSetOp) and expr.op == op
+    if same and len(expr.operands) >= 2:
+        return tuple(expr.operands)
+    return (expr,)
 
 
 @dataclass(frozen=True)

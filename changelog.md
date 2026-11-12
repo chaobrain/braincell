@@ -1309,6 +1309,22 @@
   before. A detector connected to a Cell, by an expression or a mask, is now
   checked at `init_state` before the Cell initializes (`Network.init_state`:
   before any Cell initializes), not at its first `cv_id` read after it.
+- A region or locset built one operand at a time in a loop, such as
+  `expr = expr | branch_in("name", name)` over the branch names of a
+  reconstruction, no longer raises `RecursionError`. Each `|`, `&`, `-` or
+  `+` nested the expression one level deeper, and hashing, comparing or
+  evaluating it recursed once per level. `Cell.paint`, which evaluates
+  through a selection cache, failed at 198 operands, `evaluate` without a
+  cache at 332 and `hash` at 999 (Python's default recursion limit, main
+  `81cdff5`). The DCN and GrC whole-cell templates of the NEURON comparisons
+  failed to build: DCN's distal dendrite is a union of 401 branch names. The
+  operators now extend an operand of the same operation instead of nesting
+  it, so `a | b | c` is one `RegionSetOp("union", (a, b, c))` of three
+  operands, as is `a | (b | c)`; the same holds for `&` and for `+` on
+  locsets. Only the right operand of `-` stays nested, since `a - (b - c)`
+  differs from `(a - b) - c`. The selected intervals and points are
+  unchanged. A malformed node with fewer than two operands is not spliced
+  and still raises at evaluation.
 
 - Editing a Cell's morphology after `init_state()` no longer makes `run` and
   `reset()` fail (MORPH-14). Before, attaching a branch to the tree a Cell

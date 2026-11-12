@@ -13,16 +13,18 @@
 # limitations under the License.
 # ==============================================================================
 
+import gc
 import unittest
 
+import brainstate
 import brainunit as u
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 import braincell
-from braincell._multi_compartment.selection_test import _cell
-from braincell.filter import BranchSlice, at, branch_in
+from braincell._multi_compartment.selection_test import _GRID_SELECTIONS, _cell
+from braincell.filter import BranchSlice, RootLocation, at, branch_in
 from braincell.morph._testing import make_tree_s, make_tree_t, make_tree_u
 from braincell.network.recording import EventSeries, SampleBlock
 
@@ -581,6 +583,307 @@ class ResultPytreeTest(unittest.TestCase):
         cell.record("w", "V")
         other = cell.run(dt=0.05 * u.ms, duration=0.5 * u.ms).samples["w"]
         self.assertNotEqual(jax.tree.structure(self._block()), jax.tree.structure(other))
+
+
+# CELL-47: a population with several axes. Configuration L is a lumped HH
+# cell, C a 3-CV HH soma cable; both get one clamp per member at the root
+# midpoint (CV 0 of L, CV 1 of C). The twin is the same Cell with pop_size
+# (6,) and the amplitudes flattened in C order.
+_GRID_AMPLITUDES = {
+    "lumped": np.asarray([[0.0, 0.05, 0.1], [0.1, 0.0, 0.05]]),
+    "cable": np.asarray([[0.0, 0.15, 0.3], [0.3, 0.0, 0.15]]),
+}
+_GRID_N_CV = {"lumped": 1, "cable": 3}
+_GRID_MID_CV = {"lumped": 0, "cable": 1}
+_GRID_DT = 0.025 * u.ms
+_SOMA_AREA_CM2 = 2.0 * np.pi * 10e-4 * 60e-4
+
+_GRID_OBSERVABLES = {
+    "V": lambda: "V",
+    "na_p": lambda: braincell.observe.channel(name="Na_HH1952").state("p"),
+    "k_p": lambda: braincell.observe.channel(type="K_HH1952").state("p"),
+    "na_i": lambda: braincell.observe.channel(name="Na_HH1952").current(),
+    "channel_i": lambda: braincell.observe.channel().current(reduce="none"),
+    "ion_i": lambda: braincell.observe.ion(species="na").current(),
+    "ion_E": lambda: braincell.observe.ion(species="na").state("E"),
+    "membrane_i": lambda: braincell.observe.membrane_current(),
+    "clamp_i": lambda: braincell.observe.clamp_current(),
+    "clamp_each": lambda: braincell.observe.clamp_current(reduce="none"),
+}
+
+
+def _hh_population(kind: str, pop_size, amplitudes) -> braincell.Cell:
+    if kind == "lumped":
+        cell = braincell.Cell.point(pop_size, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, solver="rk4")
+    else:
+        soma = braincell.Branch.from_lengths(lengths=[60.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        cell = braincell.Cell(
+            braincell.Morphology.from_root(soma),
+            cv_policy=braincell.CVPerBranch(3),
+            pop_size=pop_size,
+            V_init=-65.0 * u.mV,
+        )
+    cell.paint(
+        braincell.mech.Ion("SodiumFixed", E=50.0 * u.mV),
+        braincell.mech.Ion("PotassiumFixed", E=-77.0 * u.mV),
+        braincell.mech.Channel("Na_HH1952", g_max=120.0 * u.mS / u.cm**2),
+        braincell.mech.Channel("K_HH1952", g_max=36.0 * u.mS / u.cm**2),
+        braincell.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+    )
+    cell.place(
+        RootLocation(0.5),
+        braincell.mech.CurrentClamp(delay=1.0 * u.ms, durations=18.0 * u.ms, amplitudes=np.asarray(amplitudes) * u.nA),
+    )
+    return cell
+
+
+def _bias(kind: str, current):
+    """An input of ``current`` nA per member: a lumped Cell takes nA, a cable one a density on every point."""
+    if kind == "lumped":
+        return lambda V: u.Quantity(current, u.nA)
+    density = np.asarray(current) / _SOMA_AREA_CM2 * 1e-3
+    return lambda V: u.Quantity(np.broadcast_to(density[..., None], density.shape + (V.shape[-1],)), u.uA / u.cm**2)
+
+
+def _values(block) -> np.ndarray:
+    values = block.values
+    return np.asarray(values.mantissa if isinstance(values, u.Quantity) else values)
+
+
+def _row_keys(block) -> list[tuple]:
+    return [(row.population_index, row.cv_id, row.mechanism_name, row.clamp_id) for row in block.schema.rows]
+
+
+def _assert_twin(test, got, expected) -> None:
+    scale = float(np.max(np.abs(expected))) if expected.size else 0.0
+    np.testing.assert_allclose(got, expected, rtol=1e-12, atol=1e-12 * scale)
+
+
+class MultiDimensionalPopulationTest(unittest.TestCase):
+    """CELL-47: recording a Cell whose pop_size has several axes."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        # One 20 ms run of each configuration and its twin, kept as NumPy
+        # arrays: no float64 program outlives this method (see conftest).
+        cls.runs = {}
+        with brainstate.environ.context(precision=64):
+            for kind in ("lumped", "cable"):
+                for pop_size in ((2, 3), (6,)):
+                    cell = _hh_population(kind, pop_size, _GRID_AMPLITUDES[kind].reshape(pop_size))
+                    for name, observable in _GRID_OBSERVABLES.items():
+                        cell.record(name, observable())
+                    part = cell[:, 1:] if pop_size == (2, 3) else cell[[1, 2, 4, 5]]
+                    part.record("part_p", _GRID_OBSERVABLES["na_p"]())
+                    part.record("part_membrane_i", _GRID_OBSERVABLES["membrane_i"]())
+                    part.clamps.record("part_clamps")
+                    if pop_size == (2, 3):
+                        for index, (select, _, _) in enumerate(_GRID_SELECTIONS.values()):
+                            select(cell).record(f"selection_{index}", "V")
+                    result = cell.run(dt=_GRID_DT, duration=20.0 * u.ms)
+                    cls.runs[kind, pop_size] = {
+                        "values": {name: _values(block) for name, block in result.samples.items()},
+                        "rows": {name: _row_keys(block) for name, block in result.samples.items()},
+                        "spike_step": np.rint(np.asarray(result.spikes.time.to_decimal(u.ms)) / 0.025).astype(int),
+                        "spike_source": np.asarray(result.spikes.source_id),
+                        "spike_cv": np.asarray(result.spikes.metadata["cv_id"]),
+                    }
+                    del cell, result
+        gc.collect()
+
+    def setUp(self) -> None:
+        self.enterContext(brainstate.environ.context(precision=64))
+
+    def test_every_observable_matches_the_one_dimensional_twin(self) -> None:
+        for kind in ("lumped", "cable"):
+            grid, twin = self.runs[kind, (2, 3)], self.runs[kind, (6,)]
+            for name in tuple(_GRID_OBSERVABLES) + ("part_p", "part_membrane_i", "part_clamps"):
+                with self.subTest(kind=kind, recording=name):
+                    self.assertEqual(grid["rows"][name], twin["rows"][name])
+                    self.assertGreater(len(grid["rows"][name]), 0)
+                    _assert_twin(self, grid["values"][name], twin["values"][name])
+
+    def test_rows_are_members_in_c_order_then_cvs(self) -> None:
+        for kind in ("lumped", "cable"):
+            n_cv = _GRID_N_CV[kind]
+            with self.subTest(kind=kind):
+                rows = [(population, cv) for population, cv, _, _ in self.runs[kind, (2, 3)]["rows"]["V"]]
+                self.assertEqual(rows, [(member, cv) for member in range(6) for cv in range(n_cv)])
+                self.assertEqual(self.runs[kind, (2, 3)]["values"]["V"].shape, (800, 6 * n_cv))
+
+    def test_spikes_cross_the_threshold_in_the_rows_of_their_members(self) -> None:
+        for kind in ("lumped", "cable"):
+            run, n_cv = self.runs[kind, (2, 3)], _GRID_N_CV[kind]
+            V = run["values"]["V"]
+            with self.subTest(kind=kind):
+                self.assertEqual(np.bincount(run["spike_source"], minlength=6).tolist(), [0, 1, 2, 2, 0, 1])
+                self.assertTrue(np.all(run["spike_cv"] == _GRID_MID_CV[kind]))
+                columns = np.arange(6) * n_cv + _GRID_MID_CV[kind]
+                for step, member in zip(run["spike_step"], run["spike_source"]):
+                    self.assertLess(V[step, columns[member]], 0.0)
+                    self.assertGreaterEqual(V[step + 1, columns[member]], 0.0)
+                crossings = np.count_nonzero((V[:-1, columns] < 0.0) & (V[1:, columns] >= 0.0))
+                self.assertEqual(crossings, len(run["spike_source"]))
+
+    def test_member_selections_record_columns_of_the_whole_cell(self) -> None:
+        for kind in ("lumped", "cable"):
+            run, n_cv = self.runs[kind, (2, 3)], _GRID_N_CV[kind]
+            whole = run["values"]["V"]
+            for index, (label, (_, members, _)) in enumerate(_GRID_SELECTIONS.items()):
+                with self.subTest(kind=kind, selection=label):
+                    if "loc" in label:
+                        columns = [member * n_cv + _GRID_MID_CV[kind] for member in members]
+                    else:
+                        columns = [member * n_cv + cv for member in members for cv in range(n_cv)]
+                    rows = [(population, cv) for population, cv, _, _ in run["rows"][f"selection_{index}"]]
+                    self.assertEqual([population * n_cv + cv for population, cv in rows], columns)
+                    np.testing.assert_array_equal(run["values"][f"selection_{index}"], whole[:, columns])
+
+    def test_a_third_axis_matches_its_twin(self) -> None:
+        amplitudes = np.linspace(0.0, 0.1, 8)
+        grid = _hh_population("lumped", (2, 2, 2), amplitudes.reshape(2, 2, 2))
+        twin = _hh_population("lumped", (8,), amplitudes)
+        grid.record("V", "V")
+        grid[1, :, 0].record("part", "V")
+        twin.record("V", "V")
+        on_grid = grid.run(dt=_GRID_DT, duration=20.0 * u.ms)
+        on_twin = twin.run(dt=_GRID_DT, duration=20.0 * u.ms)
+        _assert_twin(self, _values(on_grid.samples["V"]), _values(on_twin.samples["V"]))
+        np.testing.assert_array_equal(_values(on_grid.samples["part"]), _values(on_grid.samples["V"])[:, [4, 6]])
+        np.testing.assert_array_equal(on_grid.spikes.source_id, on_twin.spikes.source_id)
+
+    def test_the_batch_axis_comes_before_the_rows(self) -> None:
+        for kind in ("lumped", "cable"):
+            n_cv, extra = _GRID_N_CV[kind], np.zeros((2, 2, 3))
+            extra[1] = _GRID_AMPLITUDES[kind][::-1]
+            results = {}
+            for pop_size in ((2, 3), (6,)):
+                cell = _hh_population(kind, pop_size, _GRID_AMPLITUDES[kind].reshape(pop_size))
+                cell.add_current_input("bias", _bias(kind, extra.reshape((2,) + pop_size)))
+                cell.record("V", "V")
+                cell.record("na_p", _GRID_OBSERVABLES["na_p"]())
+                cell.init_state(batch_size=2)
+                results[pop_size] = cell.run(dt=_GRID_DT, duration=20.0 * u.ms)
+            grid, twin = results[(2, 3)], results[(6,)]
+            with self.subTest(kind=kind):
+                for name in ("V", "na_p"):
+                    self.assertEqual(grid.samples[name].values.shape, (800, 2, 6 * n_cv))
+                    _assert_twin(self, _values(grid.samples[name]), _values(twin.samples[name]))
+                spikes = grid.spikes
+                self.assertEqual(
+                    np.bincount(spikes.source_id, minlength=12).tolist(), [0, 1, 2, 2, 0, 1, 2, 1, 2, 2, 1, 2]
+                )
+                np.testing.assert_array_equal(
+                    spikes.metadata["batch_index"] * 6 + spikes.metadata["population_index"], np.arange(12)
+                )
+                V = _values(grid.samples["V"])
+                steps = np.rint(np.asarray(spikes.time.to_decimal(u.ms)) / 0.025).astype(int)
+                for step, source in zip(steps, spikes.source_id):
+                    batch, member = divmod(int(source), 6)
+                    column = member * n_cv + _GRID_MID_CV[kind]
+                    self.assertLess(V[step, batch, column], 0.0)
+                    self.assertGreaterEqual(V[step + 1, batch, column], 0.0)
+
+    def test_segments_and_reset_state_give_the_same_rows(self) -> None:
+        for kind in ("lumped", "cable"):
+            cell = _hh_population(kind, (2, 3), _GRID_AMPLITUDES[kind])
+            cell.record("V", "V")
+            cell[:, 1].record("column", "V")
+            whole = cell.run(dt=_GRID_DT, duration=20.0 * u.ms)
+            cell.reset_state()
+            joined = braincell.RunResult.concat(
+                [cell.run(dt=_GRID_DT, duration=duration * u.ms) for duration in (7.0, 13.0)]
+            )
+            cell.reset_state()
+            again = cell.run(dt=_GRID_DT, duration=20.0 * u.ms)
+            with self.subTest(kind=kind):
+                for name in ("V", "column"):
+                    _assert_twin(self, _values(joined.samples[name]), _values(whole.samples[name]))
+                    _assert_twin(self, _values(again.samples[name]), _values(whole.samples[name]))
+                n_cv = _GRID_N_CV[kind]
+                columns = [member * n_cv + cv for member in (1, 4) for cv in range(n_cv)]
+                np.testing.assert_array_equal(_values(whole.samples["column"]), _values(whole.samples["V"])[:, columns])
+
+    def test_float32_long_run_equals_its_segments(self) -> None:
+        # 32000 steps in float32 (L77): segments and one run give the same rows.
+        with brainstate.environ.context(precision=32):
+            cell = _hh_population("lumped", (2, 3), _GRID_AMPLITUDES["lumped"])
+            cell.record("V", "V")
+            cell[:, 1].record("column", "V")
+            whole = cell.run(dt=_GRID_DT, duration=800.0 * u.ms)
+            cell.reset_state()
+            joined = braincell.RunResult.concat(
+                [cell.run(dt=_GRID_DT, duration=duration * u.ms) for duration in (300.0, 500.0)]
+            )
+            V, joined_V = _values(whole.samples["V"]), _values(joined.samples["V"])
+            self.assertEqual((V.shape, V.dtype), ((32000, 6), np.float32))
+            np.testing.assert_allclose(joined_V, V, rtol=0.0, atol=1e-6 * float(np.max(np.abs(V))))
+            np.testing.assert_array_equal(_values(whole.samples["column"]), V[:, [1, 4]])
+            del cell, whole, joined
+        gc.collect()
+
+    def test_a_new_grid_selects_the_declared_members_again(self) -> None:
+        cell = _hh_population("cable", (2, 3), _GRID_AMPLITUDES["cable"])
+        cell.record("V", "V")
+        cell[1, 0:2].loc(RootLocation(0.5)).record("selected", "V")
+        cell[:, 2].soma.record("column", "V")
+        cell.cv_policy = braincell.CVPerBranch(5)
+        result = cell.run(dt=_GRID_DT, duration=2.0 * u.ms)
+        members = {
+            name: [(row[0], row[1]) for row in _row_keys(result.samples[name])] for name in ("selected", "column")
+        }
+        self.assertEqual(members["selected"], [(3, 2), (4, 2)])
+        self.assertEqual(members["column"], [(member, cv) for member in (2, 5) for cv in range(5)])
+        whole = _values(result.samples["V"])
+        np.testing.assert_array_equal(_values(result.samples["selected"]), whole[:, [3 * 5 + 2, 4 * 5 + 2]])
+
+    def test_empty_selections_and_absent_synapses_record_no_rows(self) -> None:
+        cell = _hh_population("lumped", (2, 3), _GRID_AMPLITUDES["lumped"])
+        cell[2:].record("none", "V")
+        cell[:, 3:].record("no_column", "V")
+        cell.record("synapses", braincell.observe.synapse().state("g"))
+        result = cell.run(dt=_GRID_DT, duration=0.1 * u.ms)
+        for name in ("none", "no_column", "synapses"):
+            with self.subTest(recording=name):
+                self.assertEqual(result.samples[name].values.shape, (4, 0))
+
+
+class BatchChannelStateTest(unittest.TestCase):
+    """CELL-47: with a batch axis, a channel-state row holds its own member in every batch element.
+
+    On main ``b43893a`` a lumped Cell of 3 members with batch 2 recorded
+    ``(200, 3, 2, 3)``, and a cable Cell raised ``ValueError`` at its first
+    run: the member was taken from the leading (batch) axis.
+    """
+
+    def setUp(self) -> None:
+        self.enterContext(brainstate.environ.context(precision=64))
+
+    def test_each_batch_element_matches_its_own_run(self) -> None:
+        for kind in ("lumped", "cable"):
+            for n in (3, 2):
+                amplitudes = np.linspace(0.0, 0.1 if kind == "lumped" else 0.3, n)
+                extra = np.stack([np.zeros(n), amplitudes[::-1]])
+                references, last = [], []
+                for element in range(2):
+                    cell = _hh_population(kind, (n,), amplitudes)
+                    cell.add_current_input("bias", _bias(kind, extra[element]))
+                    cell.record("na_p", _GRID_OBSERVABLES["na_p"]())
+                    references.append(_values(cell.run(dt=_GRID_DT, duration=5.0 * u.ms).samples["na_p"]))
+                    last.append(np.asarray(cell[[0, n - 1]].channels.by_name("Na_HH1952").get("p")))
+                cell = _hh_population(kind, (n,), amplitudes)
+                cell.add_current_input("bias", _bias(kind, extra))
+                cell.record("na_p", _GRID_OBSERVABLES["na_p"]())
+                cell.init_state(batch_size=2)
+                got = _values(cell.run(dt=_GRID_DT, duration=5.0 * u.ms).samples["na_p"])
+                read = np.asarray(cell[[0, n - 1]].channels.by_name("Na_HH1952").get("p"))
+                with self.subTest(kind=kind, members=n):
+                    self.assertEqual(got.shape, (200, 2, n * _GRID_N_CV[kind]))
+                    self.assertEqual(read.shape, (2 * _GRID_N_CV[kind], 2))
+                    self.assertGreater(float(np.max(np.abs(references[0] - references[1]))), 0.5)
+                    for element in range(2):
+                        np.testing.assert_allclose(got[:, element], references[element], rtol=1e-12, atol=0.0)
+                        np.testing.assert_allclose(read[:, element], last[element], rtol=1e-12, atol=0.0)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+import inspect
 import re
 import unittest
 
@@ -21,6 +22,7 @@ import numpy as np
 
 import braincell
 from braincell.filter import AllRegion, BranchSlice, LocsetBatch, LocsetMask, RootLocation, at, branch_in
+from braincell.reduction.toy import EventAccumulatorReduction
 
 
 def _cell(population_size=3):
@@ -233,6 +235,245 @@ class ViewDeclarationVerbTest(unittest.TestCase):
                     use(cell)
                 self.assertEqual(len(cell.paint_rules), 1)
                 self.assertEqual(cell.place_rules, ())
+
+
+def _grid(kind="lumped", pop_size=(2, 3)):
+    """A Cell whose population has several axes: lumped, or a 3-CV soma cable."""
+    if kind == "lumped":
+        cell = braincell.Cell.point(pop_size, V_init=-65.0 * u.mV)
+    else:
+        soma = braincell.Branch.from_lengths(lengths=[60.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+        cell = braincell.Cell(
+            braincell.Morphology.from_root(soma), cv_policy=braincell.CVPerBranch(3), pop_size=pop_size
+        )
+    cell.paint(
+        braincell.mech.Ion("SodiumFixed", E=50.0 * u.mV),
+        braincell.mech.Channel("Na_HH1952", g_max=120.0 * u.mS / u.cm**2),
+    )
+    cell.place(RootLocation(0.5), _clamp())
+    return cell
+
+
+#: Member selections of a (2, 3) population: the flat C-order members and the view shape (CELL-47).
+_GRID_SELECTIONS = {
+    "cell[1, 2]": (lambda cell: cell[1, 2], (5,), (1,)),
+    "cell[0]": (lambda cell: cell[0], (0, 1, 2), (3,)),
+    "cell[:, 1]": (lambda cell: cell[:, 1], (1, 4), (2,)),
+    "cell[1, 0:2]": (lambda cell: cell[1, 0:2], (3, 4), (2,)),
+    "cell[:, ::-2]": (lambda cell: cell[:, ::-2], (2, 0, 5, 3), (2, 2)),
+    "cell[-1, -1]": (lambda cell: cell[-1, -1], (5,), (1,)),
+    "cell[:, 1:][1, 0]": (lambda cell: cell[:, 1:][1, 0], (4,), (1,)),
+    "cell[1][[2, 0]]": (lambda cell: cell[1][[2, 0]], (5, 3), (2,)),
+    # A one-axis selection keeps the one-dimensional rules: a tuple lists members.
+    "cell[1][2, 0]": (lambda cell: cell[1][2, 0], (5, 3), (2,)),
+    "cell.loc(RootLocation(0.5))[1]": (lambda cell: cell.loc(RootLocation(0.5))[1], (3, 4, 5), (3,)),
+    "cell[np.int64(1), np.int32(2)]": (lambda cell: cell[np.int64(1), np.int32(2)], (5,), (1,)),
+    "cell[2:]": (lambda cell: cell[2:], (), (0, 3)),
+}
+
+#: CellView properties that need a one-dimensional pop_size (CELL-47): they read or write state.
+_ONE_AXIS_PROPERTIES = frozenset(
+    {
+        "V",
+        "spike",
+        "V_init",
+        "V_th",
+        "channels",
+        "ions",
+        "geometry",
+        "length",
+        "Ra",
+        "cm",
+        "radius_mid",
+        "radius_scale",
+        "diam_arc_mean",
+        "outputs",
+        "reductions",
+    }
+)
+
+#: CellView properties that behave on a multi-dimensional population as on a one-dimensional one.
+_ANY_AXES_PROPERTIES = frozenset(
+    {
+        "apical_dendrite",
+        "axon",
+        "basal_dendrite",
+        "branch",
+        "cell",
+        "clamps",
+        "connections",
+        "current_time",
+        "cv",
+        "cv_contexts",
+        "cv_midpoints",
+        "cv_policy",
+        "cv_tree",
+        "cvs",
+        "dendrite",
+        "event_outputs",
+        "indices",
+        "layouts",
+        "locations",
+        "membrane_linearizer",
+        "morpho",
+        "n_compartment",
+        "n_cv",
+        "n_point",
+        "name",
+        "node_tree",
+        "paint_rules",
+        "place_rules",
+        "point_placements",
+        "pop_size",
+        "population_indices",
+        "root",
+        "shape",
+        "size",
+        "soma",
+        "solver",
+        "solver_name",
+        "spatial_pairs",
+        "spk_fun",
+        "subsolver",
+        "subsolver_name",
+        "substeps",
+        "synapses",
+        "varshape",
+        "voltage_shape",
+    }
+)
+
+
+class GridSelectionTest(unittest.TestCase):
+    """CELL-47: selecting members of a population with several axes."""
+
+    def test_integers_and_slices_select_members_in_c_order(self) -> None:
+        for kind in ("lumped", "cable"):
+            cell = _grid(kind)
+            for label, (select, members, shape) in _GRID_SELECTIONS.items():
+                with self.subTest(kind=kind, selection=label):
+                    view = select(cell)
+                    self.assertEqual(view.population_indices, members)
+                    self.assertEqual(view.shape, shape)
+                    self.assertEqual(len(view), len(members))
+                    self.assertEqual(view.pop_size, shape)
+            self.assertEqual(cell.soma.shape, (2, 3))
+
+    def test_a_third_axis_follows_the_same_rules(self) -> None:
+        cell = _grid("lumped", (2, 2, 2))
+        self.assertEqual(cell[1, :, 0].population_indices, (4, 6))
+        self.assertEqual(cell[1, :, 0].shape, (2,))
+        self.assertEqual(cell[1].shape, (2, 2))
+        self.assertEqual(cell[1][1, 0].population_indices, (6,))
+
+    def test_spatial_selections_keep_the_member_shape(self) -> None:
+        cell = _grid("cable")
+        self.assertEqual(cell.soma[1, 2].spatial_pairs.tolist(), cell[1, 2].soma.spatial_pairs.tolist())
+        self.assertEqual(cell.soma[1, 2].spatial_pairs.tolist(), [[5, 0], [5, 1], [5, 2]])
+        self.assertEqual(cell.cv[1].shape, (2, 3))
+        self.assertEqual(cell.cv[1][:, 2].spatial_pairs.tolist(), [[2, 1], [5, 1]])
+
+    def test_positional_members_are_flat(self) -> None:
+        view = braincell.CellView(_grid("lumped"), (3, 4))
+        self.assertEqual(view.population_indices, (3, 4))
+        self.assertEqual(view.shape, (2,))
+
+    def test_invalid_selections_raise_where_they_are_made(self) -> None:
+        cases = {
+            IndexError: (
+                lambda cell: cell[2, 0],
+                lambda cell: cell[0, 3],
+                lambda cell: cell[-3, 0],
+                lambda cell: cell[0, 1, 0],
+                lambda cell: cell[0][3],
+                lambda cell: cell.soma[2, 0],
+            ),
+            TypeError: (
+                lambda cell: cell[[0, 1]],
+                lambda cell: cell[np.array([0, 1])],
+                lambda cell: cell[np.ones((2, 3), dtype=bool)],
+                lambda cell: cell[True],
+                lambda cell: cell[0, np.True_],
+                lambda cell: cell[0.0],
+                lambda cell: cell[..., 1],
+                lambda cell: cell[None],
+            ),
+        }
+        cell = _grid("lumped")
+        for error, selections in cases.items():
+            for index, select in enumerate(selections):
+                with self.subTest(error=error.__name__, case=index):
+                    with self.assertRaises(error) as caught:
+                        select(cell)
+                    if error is TypeError:
+                        self.assertIn("one integer or slice per axis", str(caught.exception))
+                        self.assertIn("cell[0][[0, 2]]", str(caught.exception))
+                    self.assertEqual(dict(cell.recordings), {})
+
+    def test_views_of_a_grid_select_and_record_only(self) -> None:
+        # Every public CellView property is classified; a new one fails here
+        # until it is put in one of the two sets.
+        properties = {
+            name
+            for name, member in inspect.getmembers(braincell.CellView, lambda item: isinstance(item, property))
+            if not name.startswith("_")
+        }
+        self.assertEqual(properties, _ONE_AXIS_PROPERTIES | _ANY_AXES_PROPERTIES)
+        self.assertFalse(_ONE_AXIS_PROPERTIES & _ANY_AXES_PROPERTIES)
+        for kind in ("lumped", "cable"):
+            grid, line = _grid(kind), _grid(kind, (6,))
+            grid.init_state()
+            line.init_state()
+            for label, on_grid, on_line in (
+                ("cell[1, 2]", grid[1, 2], line[5]),
+                ("cell[:, 1:]", grid[:, 1:], line[[1, 2, 4, 5]]),
+            ):
+                for name in sorted(properties):
+                    with self.subTest(kind=kind, view=label, property=name):
+                        if name in _ONE_AXIS_PROPERTIES:
+                            with self.assertRaisesRegex(
+                                ValueError, "requires a one-dimensional pop_size; got \\(2, 3\\)"
+                            ):
+                                getattr(on_grid, name)
+                            continue
+                        try:
+                            getattr(on_line, name)
+                        except Exception as error:
+                            with self.assertRaises(type(error)):
+                                getattr(on_grid, name)
+                        else:
+                            getattr(on_grid, name)
+
+    def test_grid_views_reject_writes_and_state_reads(self) -> None:
+        cell = _grid("cable")
+        cell.init_state()
+        uses = {
+            "set": lambda: cell[1, 2].set(V_init=-60.0 * u.mV),
+            "paint": lambda: cell[0].paint(_leak()),
+            "place": lambda: cell[0].loc(RootLocation(0.5)).place(_clamp()),
+            "get_ion": lambda: cell[1, 2].get_ion("na"),
+            "get_runtime_node": lambda: cell[1, 2].get_runtime_node(0),
+            "root channels": lambda: cell.channels,
+            "root ions": lambda: cell.ions,
+            "root geometry": lambda: cell.geometry,
+            "root outputs": lambda: cell.outputs,
+        }
+        for label, use in uses.items():
+            with self.subTest(use=label):
+                with self.assertRaisesRegex(ValueError, "one-dimensional pop_size"):
+                    use()
+
+    def test_model_outputs_need_one_axis(self) -> None:
+        cell = _grid("lumped")
+        for target in (cell, cell[0]):
+            with self.subTest(target=target):
+                with self.assertRaisesRegex(
+                    ValueError, r"observe.output\(\.\.\.\) requires a one-dimensional pop_size"
+                ):
+                    target.record("out", braincell.observe.output("spike"))
+                self.assertEqual(dict(cell.recordings), {})
+        with self.assertRaisesRegex(ValueError, "one-dimensional pop_size"):
+            cell.add_reduction("toy", EventAccumulatorReduction())
 
 
 if __name__ == "__main__":

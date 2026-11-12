@@ -196,9 +196,12 @@
   `Cell.record`.
   A recording samples at the start of each step (row `k` is the state at
   `result.time[k]`, row 0 the initialized state), while a probe sampled at the
-  end of it: a recording's row `k + 1` is the probe's row `k`. Recordings need
-  a one-dimensional `pop_size`, and `observe.ion` selects ions painted with
-  `mech.Ion(...)`, not the default ones.
+  end of it: a recording's row `k + 1` is the probe's row `k`. On a
+  multi-dimensional `pop_size` a probe's trace had shape
+  `(n_steps, *pop_size)`; a recording has one row per member in C order, so
+  `values[k + 1].reshape(pop_size)` is the probe's row `k` (CELL-47).
+  `observe.ion` selects ions painted with `mech.Ion(...)`, not the default
+  ones.
 
   | Old | New |
   |---|---|
@@ -821,6 +824,33 @@
   `jax.block_until_ready(result)` waits for their arrays and a jitted
   function can return a result.
 
+- **Recording a Cell with a multi-dimensional `pop_size`** (CELL-47). On a
+  `pop_size` such as `(2, 3)`, `Cell.record` and a view's `record` take the
+  observables they take on one axis, and `cell[...]` selects members as
+  NumPy basic indexing does: one integer or slice per axis (`cell[1, 2]`,
+  `cell[:, 1]`, `cell[0]`, `cell[:, ::-2]`), the members in C order, and
+  `CellView.shape` the shape that indexing gives. Once a selection has one
+  axis left, the one-dimensional rules apply again: `cell[0][[2, 0]]` lists
+  members. A recording has rows member by member in C order, then CV within
+  each member: `RecordingRow.population_index` is the flat member index that
+  a spike's `source_id` uses, `values.reshape(n_samples, *pop_size, -1)`
+  restores the grid of a whole-Cell recording, and a batch axis comes before
+  the rows, `(n_samples, batch, n_rows)`. For a lumped and a 3-CV HH Cell of
+  shape `(2, 3)`, each recording (`V`, channel and ion states and currents,
+  membrane and clamp currents) equals the one of the same Cell with
+  `pop_size=(6,)` row for row, to 1e-12 relative, with and without a batch
+  axis; so does a `(2, 2, 2)` Cell against `(8,)`. The probes removed in
+  API-15 sampled the `(2, 3)` Cells after each step; row `k + 1` of the
+  recording, reshaped to `(2, 3)`, equals the probe's row `k` to 3.1e-16
+  relative (probes at `2637991`, the commit before API-15). An index outside
+  its axis, or more indices than axes, raises `IndexError`; a list, an
+  array, a boolean, `...` or `None` in a multi-axis selection raises
+  `TypeError`, both where the selection is made. Views of a
+  multi-dimensional Cell only select and record: `V`, `spike`, `V_init`,
+  `V_th`, `set`, `paint` and `place` on a view, `channels`, `ions`,
+  `geometry` and its fields, `outputs`, `reductions`, `get_ion` and
+  `get_runtime_node` raise `ValueError` there, as on every view before, and
+  so does recording `observe.output(...)`.
 - **`Network.run(..., scheduled_delivery="direct" | "padded")`** and the
   same argument of `Network.prepare_run` (CELL-9). The default, `None`,
   keeps the existing path: every step counts each scheduled row's arrivals.
@@ -1900,6 +1930,18 @@
   still rounded in the run precision. The experimental
   `braincell.experimental.scheduled_events.prepare_events` and
   `ScheduledDeliveryCell` round the same way.
+- With a batch axis, a recording of a channel or ion state
+  (`observe.channel(...).state(...)`, `observe.ion(...).state(...)`) and a
+  density view's `get` (`cell[[0, 2]].channels.by_name("Na").get("m")`) take
+  each member from the population axis instead of the batch axis (CELL-47).
+  On main `b43893a`, with batch 2, a lumped HH Cell of 3 members recorded
+  a channel state of shape `(n_samples, 3, 2, 3)` instead of
+  `(n_samples, 2, 3)`, and `get` returned `(n_rows, 2, 3)` instead of
+  `(n_rows, 2)`; a 3-CV cable Cell of 2 or 3 members raised `ValueError`
+  ("Incompatible types for broadcasting") at its first run. The recording
+  now has shape `(n_samples, batch, n_rows)` and `get` `(n_rows, batch)`,
+  and each batch element equals a run of that element alone, to 1e-12
+  relative. Runs without a batch axis are unchanged.
 
 ### Documentation
 

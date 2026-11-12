@@ -3570,7 +3570,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._raise_if_not_initialized("compute_axial_derivative()")
         V_mv = u.Quantity(u.math.asarray(V.to_decimal(u.mV)), u.mV)
         axial_operator = self._get_axial_operator()
-        return -u.math.matmul(axial_operator, V_mv[..., None])[..., 0]
+        # Every row of A sums to zero, so -A V = -A (V - V_0), V_0 the first
+        # CV's voltage. The shifted form is exactly zero at a uniform voltage,
+        # where -A V left eps * |A_ii| * |V| per row (CELL-42), and costs the
+        # same matrix product; the per-edge sum of a_ik (V_k - V_i) that DHS
+        # evaluates needs gathers, which are slower per step on CPU.
+        return -u.math.matmul(axial_operator, (V_mv - V_mv[..., :1])[..., None])[..., 0]
 
     def compute_voltage_derivative(self, V):
         return self._voltage_derivative_and_point_voltage(V)[0]

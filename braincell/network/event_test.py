@@ -31,6 +31,7 @@ import numpy as np
 import braincell as bc
 from braincell import Branch, CVPerBranch, Cell, EventSequence, EventTable, Morphology, NetStim
 from braincell.network.event import (
+    _ARRIVAL_ORIGIN_KEY,
     _MAX_STEP,
     _SCHEDULE_HORIZON_KEY,
     EventSourceView,
@@ -38,6 +39,7 @@ from braincell.network.event import (
     _ArrivalPlan,
     _resolve_cell_location_cv,
     _round_half_up_steps,
+    arrival_origin,
     boundary_step,
     round_half_up_steps_host,
 )
@@ -984,6 +986,39 @@ class ArrivalStepPrecisionTest(unittest.TestCase):
         # has one: the step comes from the loop, not from t.
         with boundary_step(t_loop, 8):
             np.testing.assert_array_equal(sequence.event_count(rows, t=t_loop, delay=0.0 * u.ms, dt=dt), [0])
+
+    def test_arrivals_count_from_an_arrival_origin(self):
+        # CELL-48: steps of 0.05 ms from 0.075 ms, whose boundary a run loop
+        # numbers 2. An arrival at 0.3 ms is (0.3 - 0.075) / 0.05 = 4.5 steps
+        # after it, a tie, so it is due at boundary 2 + 5 = 7 (0.325 ms); one
+        # at 0.5125 ms, 8.75 steps after, at 2 + 9 = 11 (0.525 ms). From time
+        # 0 they were due at 6 and 10 (0.3 / 0.05, 0.5125 / 0.05 = 10.25).
+        # The plan, a t the caller chose and a traced delay agree.
+        sequence = EventSequence.from_times([np.asarray([0.3, 0.5125]) * u.ms])
+        rows = np.asarray([0])
+        dt = 0.05 * u.ms
+        expected = {6: 0, 7: 1, 10: 0, 11: 1, 12: 0}
+
+        @jax.jit
+        def traced(delay_ms, t_ms, step):
+            t = t_ms * u.ms
+            with boundary_step(t, step):
+                return sequence.event_count(rows, t=t, delay=delay_ms * u.ms, dt=dt)
+
+        with arrival_origin(0.075, 2):
+            for step, count in expected.items():
+                t = (0.075 + (step - 2) * 0.05) * u.ms
+                with self.subTest(step=step):
+                    with boundary_step(t, step):
+                        np.testing.assert_array_equal(sequence.event_count(rows, t=t, delay=0.0 * u.ms, dt=dt), [count])
+                    np.testing.assert_array_equal(sequence.event_count(rows, t=t, delay=0.0 * u.ms, dt=dt), [count])
+                    np.testing.assert_array_equal(traced(np.zeros(1), t.to_decimal(u.ms), step), [count])
+        # Outside the context, and with an origin of None, steps count from time 0.
+        t = 0.3 * u.ms
+        for context in (contextlib.nullcontext(), arrival_origin(None, 2)):
+            with context, boundary_step(t, 6):
+                self.assertIsNone(brainstate.environ.get(_ARRIVAL_ORIGIN_KEY, None))
+                np.testing.assert_array_equal(sequence.event_count(rows, t=t, delay=0.0 * u.ms, dt=dt), [1])
 
     def test_a_subclass_with_the_old_signature_works_in_a_network(self):
         # The public signature is unchanged: a subclass that overrides

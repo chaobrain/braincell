@@ -2001,6 +2001,18 @@
   now has shape `(n_samples, batch, n_rows)` and `get` `(n_rows, batch)`,
   and each batch element equals a run of that element alone, to 1e-12
   relative. Runs without a batch axis are unchanged.
+- After `Cell.run` changes `dt` to a step the time reached is not a
+  multiple of, each scheduled event acts on the new step nearest it instead
+  of up to a step early (CELL-48). The arrival steps counted from time 0 on
+  the new grid while the steps counted from the time reached: after 3 steps
+  of 0.025 ms, steps of 0.05 ms start at 0.075 ms, and an `EventSequence`
+  event at 0.3 ms acted on the step at 0.275 ms, one at 0.5125 ms on the
+  step at 0.475 ms (main `cfbdd6c`). The arrival steps now count from the
+  time reached, at float64 in float32 runs too, so these act at 0.325 and
+  0.525 ms in both precisions (0.3 ms is a half-step tie, which goes to the
+  later step). Runs that keep `dt`, and runs whose new `dt` the time
+  reached is a multiple of, are unchanged bit for bit. A traced run (inside
+  `jax.jit`) still counts its arrivals from time 0.
 
 ### Documentation
 

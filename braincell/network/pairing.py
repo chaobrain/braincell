@@ -763,11 +763,11 @@ def _conditional_sample(
                 _derived_seed(seed, fixed_side, int(endpoint_id)),
             )
         )
-    offsets = np.zeros(len(unique), dtype=np.int64)
+    # Each fixed endpoint's rows take its partners in draw order. Its draws
+    # come end to end in ``unique`` order, which is the order of the rows
+    # sorted stably by endpoint, so one scatter places them all (CELL-18f).
     result = np.empty(len(fixed), dtype=np.int64)
-    for row, unique_index in enumerate(inverse.tolist()):
-        result[row] = sampled_by_fixed[unique_index][offsets[unique_index]]
-        offsets[unique_index] += 1
+    result[np.argsort(inverse.reshape(-1), kind="stable")] = np.concatenate(sampled_by_fixed)
     return result
 
 

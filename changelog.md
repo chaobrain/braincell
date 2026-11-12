@@ -635,6 +635,17 @@
   do next. A misspelt name at `place` time gets the same message. Attaching a
   new branch named `dend` makes the expression follow it.
 
+- **Connections that share a delay queue share one route** (CELL-18b).
+  On the default scatter backend, each `connect` call into a synapse
+  layout ran its own gather and scatter every step. Consecutive calls
+  into one layout that read the same event source, carry weights of one
+  unit and dtype, and reach different synapses now run as one route.
+  `Network.run` with 6,400 rows split into 64 connects took 177 us per
+  step on GPU and now takes 93 us (one connect: 65 us); on CPU it took
+  173 us and now 113 us on a busy machine, and is unchanged within noise
+  on a quiet one. Each synapse still receives the same additions in the
+  same order, so trajectories are the same, bit for bit.
+
 - **Deprecation warnings name their releases and point at the calling line**
   (API-7). Each braincell deprecation now reads `<name> is deprecated since
   braincell <since> and will be removed in braincell <removed_in>. Use

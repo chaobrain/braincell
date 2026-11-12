@@ -726,7 +726,9 @@ class SynapseView(DiscreteView):
         KeyError
             If a field is unknown or is a dynamic state.
         ValueError
-            If a value has an incompatible shape or unit.
+            If a value has an incompatible shape or unit, or fails the
+            synapse type's check (a non-positive time constant, ``tau1 >=
+            tau2``); the message names the synapse, and no value changes.
         """
         self._cell._raise_if_not_initialized(
             "SynapseView.set()", hint="Before init_state(), give the values in the place() declaration."

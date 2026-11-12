@@ -179,15 +179,21 @@ def delivery_blocks(
     delivery = []
     for block in blocks:
         delay_steps = np.asarray(block.delay_steps, dtype=np.int32)
-        for delay_step in sorted(set(delay_steps.tolist())):
-            contact_indices = np.nonzero(delay_steps == int(delay_step))[0]
+        if delay_steps.size == 0:
+            continue
+        # One stable sort lists each delay's contacts in their original order,
+        # as a scan per delay did; that scan cost O(contacts x delays) (CELL-18g).
+        order = np.argsort(delay_steps, kind="stable")
+        delays, starts = np.unique(delay_steps[order], return_index=True)
+        weight = block.weight
+        for delay_step, contact_indices in zip(delays.tolist(), np.split(order, starts[1:])):
             delivery.append(
                 DeliveryBlock(
                     source=block,
                     delay_steps=int(delay_step),
                     pre_index=block.pre_index[contact_indices],
                     flat_target_index=block.synapse_index[contact_indices].astype(np.int32, copy=False),
-                    weight=slice_weight(block.weight, contact_indices),
+                    weight=slice_weight(weight, contact_indices),
                     weight_indices=contact_indices,
                 )
             )

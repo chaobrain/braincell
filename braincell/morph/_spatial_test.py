@@ -54,6 +54,32 @@ class MorphologySpatialGeometryTest(unittest.TestCase):
         self.assertAlmostEqual(geometry.path_distance_from_soma(2, 0.75).to_decimal(u.um), 10.0)
         self.assertAlmostEqual(geometry.path_distance_from_soma(2, 0.0).to_decimal(u.um), 40.0)
 
+    def test_of_builds_once_per_revision(self) -> None:
+        morpho = Morphology.from_root(_branch(20.0), name="trunk")
+        first = MorphologySpatialGeometry.of(morpho)
+        self.assertIs(MorphologySpatialGeometry.of(morpho), first)
+
+        morpho.trunk.attach(_branch(30.0), name="child", parent_x=1.0)
+        edited = MorphologySpatialGeometry.of(morpho)
+        self.assertIsNot(edited, first)
+        self.assertIs(MorphologySpatialGeometry.of(morpho), edited)
+        self.assertAlmostEqual(edited.path_distance_to_root(1, 0.5).to_decimal(u.um), 35.0)
+        self.assertEqual(edited.branch_lengths_um.tolist(), MorphologySpatialGeometry.build(morpho).branch_lengths_um.tolist())
+
+    def test_a_copy_reads_its_own_geometry(self) -> None:
+        import copy
+
+        morpho = Morphology.from_root(_branch(20.0), name="trunk")
+        morpho.trunk.attach(_branch(30.0), name="child", parent_x=1.0)
+        original = MorphologySpatialGeometry.of(morpho)
+        for duplicate in (copy.deepcopy(morpho), morpho.clone()):
+            with self.subTest(type(duplicate).__name__):
+                geometry = MorphologySpatialGeometry.of(duplicate)
+                self.assertIsNot(geometry, original)
+                self.assertIs(geometry.morpho, duplicate)
+                self.assertAlmostEqual(geometry.path_distance_to_root(1, 0.5).to_decimal(u.um), 35.0)
+        self.assertIs(MorphologySpatialGeometry.of(morpho), original)
+
     def test_distance_is_shortest_path_even_when_soma_is_below_root(self) -> None:
         morpho = Morphology.from_root(_branch(20.0), name="trunk")
         morpho.trunk.attach(_branch(10.0, "soma"), name="soma", parent_x=1.0)

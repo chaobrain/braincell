@@ -476,6 +476,24 @@ class SynapseGeometryTest(unittest.TestCase):
                     self._assert_same_columns(view)
                     self._assert_same_columns(view[np.arange(len(view))[::-3]])
 
+    def test_geometry_scored_connects_build_the_geometry_once(self) -> None:
+        from unittest import mock
+
+        from braincell.morph._spatial import MorphologySpatialGeometry
+
+        cell, syn = _geometry_cell(points=True)
+        source = NetStim(size=4, start=1.0 * u.ms)
+
+        def nearer_soma(ctx):
+            return 1.0 / (1.0 + ctx.synapse.path_distance_from_soma.to_decimal(u.um))
+
+        build = MorphologySpatialGeometry.build
+        with mock.patch.object(MorphologySpatialGeometry, "build", side_effect=build) as counted:
+            for index in range(3):
+                pairing = braincell.network.connection.independent(5, synapse_score=nearer_soma, seed=index)
+                connect(f"c{index}", source=source, synapse=cell.synapses[syn], pairing=pairing)
+        self.assertEqual(counted.call_count, 1)
+
     def test_an_empty_view_has_empty_columns(self) -> None:
         cell, syn = _geometry_cell(points=True)
         self._assert_same_columns(cell.synapses[syn][np.zeros(0, dtype=np.int64)])

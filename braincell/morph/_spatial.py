@@ -118,6 +118,21 @@ class MorphologySpatialGeometry:
             soma_bases_um=_bases_per_branch(branch_nodes, soma_distance),
         )
 
+    @classmethod
+    def of(cls, morpho: Morphology) -> "MorphologySpatialGeometry":
+        """Return :meth:`build` of ``morpho``, built once per :attr:`~Morphology.revision`.
+
+        The geometry is kept on ``morpho`` with the revision it was built
+        at, as ``Morphology.to_vis_data`` keeps its snapshot; any edit
+        advances the revision, so the next call builds again (CELL-18c).
+        """
+        cached = morpho.__dict__.get("_spatial_geometry_cache")
+        if cached is not None and cached[0] == morpho.revision and cached[1].morpho is morpho:
+            return cached[1]
+        geometry = cls.build(morpho)
+        morpho.__dict__["_spatial_geometry_cache"] = (morpho.revision, geometry)
+        return geometry
+
     def path_distance_to_root(self, branch_id: int, branch_x: object) -> u.Quantity:
         """Return tree distance from root-branch ``x=0``."""
         return u.Quantity(self._distance(branch_id, branch_x, self.root_bases_um), u.um)

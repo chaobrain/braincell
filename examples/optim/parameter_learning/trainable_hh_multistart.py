@@ -107,7 +107,7 @@ def build_hh_cell(population_size: int, conductance_scales=TARGET_SCALES) -> bra
             amplitudes=0.05 * u.nA,
         ),
     )
-    cell.soma.record("v", braincell.observe.state("v"))
+    cell.soma.record("v", braincell.observe.state("V"))
     return cell
 
 

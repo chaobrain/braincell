@@ -808,7 +808,7 @@ class TrainableManagerTest(unittest.TestCase):
             ),
             braincell.mech.Channel("IL", name="leak", E=-70.0 * u.mV),
         )
-        cell.soma.record("v", braincell.observe.state("v"), period=0.02 * u.ms)
+        cell.soma.record("v", braincell.observe.state("V"), period=0.02 * u.ms)
         cell.init_state()
         cell.channels["leak"].trainable(g_max=braincell.trainable.scale(name="theta"))
         cell.reset_state()
@@ -836,7 +836,7 @@ class TrainableManagerTest(unittest.TestCase):
 
     def test_differentiable_recording_rejects_variable_length_schedule(self) -> None:
         cell = _leak_cell(pop_size=(1,))
-        cell.soma.record("v", braincell.observe.state("v"), period=0.02 * u.ms)
+        cell.soma.record("v", braincell.observe.state("V"), period=0.02 * u.ms)
         cell.init_state()
         cell.channels["leak"].trainable(g_max=braincell.trainable.scale(name="theta"))
         cell.reset_state()
@@ -853,7 +853,7 @@ class TrainableManagerTest(unittest.TestCase):
         cell = _leak_cell(pop_size=(1,))
         cell.soma.record(
             "v",
-            braincell.observe.state("v"),
+            braincell.observe.state("V"),
             period=0.02 * u.ms,
             start=0.01 * u.ms,
         )

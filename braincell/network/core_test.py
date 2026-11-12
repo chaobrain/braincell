@@ -17,6 +17,7 @@ import unittest
 from types import MappingProxyType
 
 import brainunit as u
+import jax
 import numpy as np
 
 import braincell
@@ -207,7 +208,7 @@ class PopulationTest(unittest.TestCase):
         cell = _cell(2)
         cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="ampa"))
         braincell.connect("drive", source=source, synapse=cell.synapses["ampa"], weight=0.1 * u.uS)
-        cell[0].soma.record("v", braincell.observe.state("v"), period=0.1 * u.ms)
+        cell[0].soma.record("v", braincell.observe.state("V"), period=0.1 * u.ms)
         network.add_population("post", cell)
 
         result = network.run(dt=0.05 * u.ms, duration=0.2 * u.ms)
@@ -218,7 +219,7 @@ class PopulationTest(unittest.TestCase):
 
     def test_network_result_concat_matches_split_recording(self) -> None:
         cell = _cell(1)
-        cell.soma.record("v", braincell.observe.state("v"))
+        cell.soma.record("v", braincell.observe.state("V"))
         network = braincell.network.Network()
         network.add_population("cell", cell)
         parts = (
@@ -465,6 +466,43 @@ class PopulationRuntimeTest(unittest.TestCase):
     def test_population_forwards_cell_event_outputs(self) -> None:
         population = Population("pre", make_threshold_cell(3))
         self.assertIs(population.event_outputs["spike"].owner, population.cell.event_outputs["spike"].owner)
+
+
+class NetworkResultPytreeTest(unittest.TestCase):
+    """CELL-26: a NetworkResult is a JAX pytree that keeps its mapping order."""
+
+    def _run(self, network):
+        return network.run(dt=0.05 * u.ms, duration=0.2 * u.ms)
+
+    def _network(self):
+        cell = _cell(1)
+        cell.soma.record("w", braincell.observe.state("V"))
+        cell.soma.record("a", "V")
+        network = braincell.network.Network(seed=3)
+        network.add_population("stim", braincell.NetStim(size=2, start=[0.05, 0.15] * u.ms, number=1))
+        network.add_population("cell", cell)
+        return network
+
+    def test_leaves_rebuild_the_result_in_key_order(self) -> None:
+        network = self._network()
+        result = self._run(network)
+        self.assertEqual(tuple(result.samples["cell"]), ("w", "a"))
+        leaves, treedef = jax.tree.flatten(result)
+        self.assertTrue(any(leaf is result.events["stim"]["spike"].source_id for leaf in leaves))
+        rebuilt = jax.tree.unflatten(treedef, leaves)
+
+        self.assertIsInstance(rebuilt, braincell.network.NetworkResult)
+        self.assertIsInstance(rebuilt.samples, MappingProxyType)
+        self.assertIsInstance(rebuilt.samples["cell"], MappingProxyType)
+        self.assertEqual(tuple(rebuilt.samples), tuple(result.samples))
+        self.assertEqual(tuple(rebuilt.samples["cell"]), ("w", "a"))
+        self.assertEqual(tuple(rebuilt.events), tuple(result.events))
+        np.testing.assert_array_equal(rebuilt.events["stim"]["spike"].source_id, [0, 1])
+        self.assertIs(jax.block_until_ready(result), result)
+
+        joined = braincell.network.NetworkResult.concat((rebuilt, self._run(network)))
+        np.testing.assert_allclose(joined.time.to_decimal(u.ms), [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35])
+        self.assertEqual(joined.samples["cell"]["a"].values.shape, (8, 1))
 
 
 if __name__ == "__main__":

@@ -106,7 +106,7 @@ cell.paint(bc.mech.Channel("IL", g_max=0.0274578 * u.mS / u.cm**2, E=-70.0 * u.m
 cell.paint(bc.mech.Ion("Cldif_JE2011", name="cl"))
 cell.paint(bc.mech.Channel("Cl_Leak", g_max=0.1 * u.mS / u.cm**2))
 cell.place(RootLocation(0.5), bc.mech.CurrentClamp(delay=5.0 * u.ms, durations=500.0 * u.ms, amplitudes=0.003 * u.nA))
-cell.record("v", bc.observe.state("v"))
+cell.record("v", bc.observe.state("V"))
 cell.record("ci", bc.observe.ion(name="cl").state("Ci"))
 result = cell.run(dt=0.025 * u.ms, duration=600.0 * u.ms)
 print(json.dumps([np.asarray(result.samples["v"].values.to_decimal(u.mV))[:, 0].tolist(),

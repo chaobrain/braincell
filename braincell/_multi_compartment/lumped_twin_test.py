@@ -139,7 +139,7 @@ class LumpedViewTwinTest(LumpedTwinTestCase):
             out = {}
             for kind in KINDS:
                 cell = _hh(kind, clamp=_clamp())
-                cell.record("v", bc.observe.state("v"))
+                cell.record("v", bc.observe.state("V"))
                 cell.init_state()
                 before = cell.channels["na"].g_max
                 cell.channels["na"].set(g_max=np.asarray([100.0, 110.0, 120.0]) * u.mS / u.cm**2)
@@ -194,7 +194,7 @@ class LumpedViewTwinTest(LumpedTwinTestCase):
             out = {}
             for kind in KINDS:
                 cell = _hh(kind, clamp=_clamp())
-                cell.record("v", bc.observe.state("v"))
+                cell.record("v", bc.observe.state("V"))
                 cell.init_state()
                 reads = [cell.geometry.get(field) for field in fields]
                 cell.geometry.set(cm=np.asarray([0.8, 1.0, 1.2]) * u.uF / u.cm**2)
@@ -207,7 +207,7 @@ class LumpedViewTwinTest(LumpedTwinTestCase):
             for kind, mode in (("lumped", "set"), ("lumped", "declared"), ("cable", "declared")):
                 length = (18.0 if mode == "declared" else 20.0) * u.um
                 cell = _hh(kind, 1, clamp=_clamp(amplitudes=0.1 * u.nA), length=length)
-                cell.record("v", bc.observe.state("v"))
+                cell.record("v", bc.observe.state("V"))
                 cell.init_state()
                 if mode == "set":
                     cell.geometry.set(length=18.0 * u.um)
@@ -220,8 +220,8 @@ class LumpedViewTwinTest(LumpedTwinTestCase):
             out = {}
             for kind in KINDS:
                 cell = _hh(kind, clamp=_clamp())
-                cell.record("v", bc.observe.state("v"))
-                cell[1].record("v1", bc.observe.state("v"))
+                cell.record("v", bc.observe.state("V"))
+                cell[1].record("v1", bc.observe.state("V"))
                 cell.init_state()
                 reads = {
                     "cell[1].V": cell[1].V,
@@ -334,7 +334,7 @@ class LumpedTrainableTwinTest(LumpedTwinTestCase):
 
 #: Every observable a Cell records, on the post population of the Network below.
 OBSERVABLES = {
-    "v": lambda: bc.observe.state("v"),
+    "v": lambda: bc.observe.state("V"),
     "na_p": lambda: bc.observe.channel(name="na").state("p"),
     "na_I": lambda: bc.observe.channel(name="na").current(),
     "channel_I_sum": lambda: bc.observe.channel().current(reduce="sum"),
@@ -361,7 +361,7 @@ class LumpedNetworkTwinTest(LumpedTwinTestCase):
         for kind in KINDS:
             pre_cell = _hh(kind, clamp=_clamp(delay=2.0, duration=6.0))
             post_cell = _hh(kind, synapse=True, clamp=_clamp(delay=1.0, duration=2.0, amplitudes=0.01 * u.nA))
-            pre_cell.record("v", bc.observe.state("v"))
+            pre_cell.record("v", bc.observe.state("V"))
             for name, make in OBSERVABLES.items():
                 post_cell.record(name, make())
             network = bc.Network(f"twin_{kind}")
@@ -420,7 +420,7 @@ class LumpedNetworkTwinTest(LumpedTwinTestCase):
                 network = bc.Network(f"mixed_{kind}")
                 pre = network.add_population("pre", _hh(kind, clamp=_clamp(delay=2.0, duration=6.0)))
                 post_cell = _hh("cable" if kind == "lumped" else "lumped", synapse=True)
-                post_cell.record("v", bc.observe.state("v"))
+                post_cell.record("v", bc.observe.state("V"))
                 post = network.add_population("post", post_cell)
                 network.connect(
                     "drive", source=pre.event_outputs["spike"], synapse=post.synapses["ampa"], weight=0.03 * u.uS
@@ -440,7 +440,7 @@ class LumpedNetworkTwinTest(LumpedTwinTestCase):
                     cell[1:].place(synapse)
                 else:
                     cell[1:].place(RootLocation(0.5), synapse)
-                cell.record("v", bc.observe.state("v"))
+                cell.record("v", bc.observe.state("V"))
                 cell.record("g", bc.observe.synapse(name="ampa").state("g"))
                 events = bc.EventTable(source_index=np.asarray([0, 1]), time=np.asarray([1.0, 2.0]) * u.ms)
                 network = bc.Network(f"subset_{kind}")
@@ -493,7 +493,7 @@ def _gaba_cell(kind, ion, solver):
     else:
         cell.paint(bc.mech.Ion(ion, name="cl"))
     cell.place(RootLocation(0.5), bc.mech.Synapse("GabaA_JE2011", name="s"))
-    cell.record("v", bc.observe.state("v"))
+    cell.record("v", bc.observe.state("V"))
     cell.record("i", bc.observe.synapse(name="s").current())
     cell.record("ci", bc.observe.ion(name="cl").state("Ci"))
     network = bc.Network("gaba")
@@ -584,7 +584,7 @@ class LumpedSynapseTwinTest(LumpedTwinTestCase):
                 for start in (0.0, 1.0):
                     for steps in ((200,), (40,) * 5):
                         cell = _hh(kind, 1, synapse=True)
-                        cell.record("v", bc.observe.state("v"))
+                        cell.record("v", bc.observe.state("V"))
                         cell.record("g", bc.observe.synapse(name="ampa").state("g"))
                         drive(cell, start)
                         cell.init_state()

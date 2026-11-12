@@ -74,7 +74,7 @@ def HTC(size, solver: str = 'ind_exp_euler'):
 
 cell = HTC(10)
 cell.place(mech.CurrentClamp(delay=10. * u.ms, durations=100. * u.ms, amplitudes=0.01 * u.nA))
-cell.record('v', braincell.observe.state('v'))
+cell.record('v', braincell.observe.state('V'))
 result = cell.run(dt=0.025 * u.ms, duration=200. * u.ms)
 result.samples['v'].values.shape  # (8000, 10)
 ```

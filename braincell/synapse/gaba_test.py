@@ -60,7 +60,7 @@ def _cell(*placements, ion="ChlorideInitNernst", n_cv=1, length=20.0, **cell_kw)
         cell.paint(bc.mech.Ion(ion, name="cl"))
     for x, synapse in placements:
         cell.place(RootLocation(x), synapse)
-    cell.record("v", bc.observe.state("v"))
+    cell.record("v", bc.observe.state("V"))
     return cell
 
 

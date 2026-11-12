@@ -15,6 +15,8 @@
 
 
 import os
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Any, Callable, TYPE_CHECKING
 
 import brainstate
@@ -341,6 +343,99 @@ def same_time_quantity(left, right) -> bool:
             atol=1e-9,
         )
     )
+
+
+class _Static:
+    """Hashable pytree aux data for the static part of a result object.
+
+    A recording schema holds Quantities and event metadata holds arrays,
+    neither of which hashes, so equality is by value: a mapping compares its
+    keys and, with ``np.array_equal``, its values; anything else compares
+    with ``==``. Equal values hash alike: the hash reads a mapping's keys,
+    or an unhashable value's type only.
+    """
+
+    __slots__ = ("value",)
+
+    def __init__(self, value) -> None:
+        self.value = value
+
+    def __hash__(self) -> int:
+        if isinstance(self.value, Mapping):
+            return hash(tuple(self.value))
+        try:
+            return hash(self.value)
+        except TypeError:
+            return hash(type(self.value))
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, _Static):
+            return NotImplemented
+        left, right = self.value, other.value
+        if isinstance(left, Mapping) and isinstance(right, Mapping):
+            return tuple(left) == tuple(right) and all(
+                np.array_equal(np.asarray(left[key]), np.asarray(right[key])) for key in left
+            )
+        return type(left) is type(right) and bool(left == right)
+
+
+def _split_mapping(value):
+    """``(keys, leaves)`` of a (nested) mapping, in insertion order; ``(None, value)`` otherwise."""
+    if not isinstance(value, Mapping):
+        return None, value
+    keys, leaves = [], []
+    for key, item in value.items():
+        item_keys, item_leaves = _split_mapping(item)
+        keys.append((key, item_keys))
+        leaves.append(item_leaves)
+    return tuple(keys), tuple(leaves)
+
+
+def _join_mapping(keys, leaves):
+    if keys is None:
+        return leaves
+    return MappingProxyType({key: _join_mapping(item_keys, item) for (key, item_keys), item in zip(keys, leaves)})
+
+
+def register_result_pytree(cls, children: tuple[str, ...], static: tuple[str, ...] = ()) -> None:
+    """Register a frozen result dataclass as a JAX pytree.
+
+    ``jax.block_until_ready(result)`` then waits for the arrays a result
+    holds, and a jitted function can return one. Shared by ``RunResult``,
+    ``NetworkResult``, ``SampleBlock`` and ``EventSeries``.
+
+    Parameters
+    ----------
+    cls : type
+        Frozen dataclass whose mapping fields are read-only.
+    children : tuple of str
+        Fields holding arrays, nested pytrees or (nested) mappings of them.
+        A mapping keeps its keys, in order, in the tree structure; JAX's own
+        dict handling would sort them.
+    static : tuple of str
+        Fields kept out of the leaves, compared by value.
+
+    Notes
+    -----
+    Unflattening bypasses ``__post_init__``: tree utilities rebuild results
+    from arbitrary leaves (tracers, shapes, ``None``), which its checks and
+    read-only copies do not apply to. Mappings are rebuilt read-only.
+    """
+
+    def flatten(result):
+        keys, leaves = zip(*(_split_mapping(getattr(result, name)) for name in children))
+        return leaves, (keys, tuple(_Static(getattr(result, name)) for name in static))
+
+    def unflatten(aux, leaves):
+        keys, statics = aux
+        result = object.__new__(cls)
+        for name, item_keys, item in zip(children, keys, leaves):
+            object.__setattr__(result, name, _join_mapping(item_keys, item))
+        for name, item in zip(static, statics):
+            object.__setattr__(result, name, item.value)
+        return result
+
+    jax.tree_util.register_pytree_node(cls, flatten, unflatten)
 
 
 def cast_like(value, like):

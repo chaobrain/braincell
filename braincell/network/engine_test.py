@@ -616,7 +616,7 @@ def _soma_dend_cell(name, *, random):
     cell = braincell.Cell(morpho, pop_size=3, cv_policy=braincell.CVPerBranch(4), V_init=v_init, name=name)
     cell.paint(AllRegion(), braincell.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
     cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="ampa", tau=2.0 * u.ms, e=0.0 * u.mV))
-    cell.loc(at("soma", 0.5)).record("v", braincell.observe.state("v"))
+    cell.loc(at("soma", 0.5)).record("v", braincell.observe.state("V"))
     if not random:
         cell.place(
             at("soma", 0.5),

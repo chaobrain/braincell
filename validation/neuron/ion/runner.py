@@ -495,7 +495,7 @@ def run_braincell(case: PoolCase, voltages_mV=None, *, pool_solver=None) -> dict
         mechanism = {"ion": bc.mech.Ion, "channel": bc.mech.Channel}[kind]
         params = _with_temperature(registry.get(kind, name), {p.braincell: p.quantity() for p in params}, sim["temperature_celsius"])
         cell.paint(AllRegion(), mechanism(name, name=f"extra{index}", **params))
-    cell.record("v", bc.observe.state("v"))
+    cell.record("v", bc.observe.state("V"))
     cell.record("cai", bc.observe.ion(name=case.ion).state("Ci"))
     for _, name in case.states:
         cell.record(f"pool:{name}", bc.observe.ion(name=case.ion).state(name))

@@ -95,7 +95,7 @@ class CommandAndReplayTableTest(unittest.TestCase):
         cell = braincell.Cell(
             braincell.Morphology.from_soma(), pop_size=3, V_init=-65.0 * u.mV, solver=_clamp.voltage_replay_solver(table_)
         )
-        cell.record("v", braincell.observe.state("v"))
+        cell.record("v", braincell.observe.state("V"))
         result = cell.run(dt=0.025 * u.ms, duration=20 * 0.025 * u.ms)
         recorded = np.asarray(result.samples["v"].values.to_decimal(u.mV)).reshape(20, 3)
         np.testing.assert_array_equal(recorded, table_[:-1])

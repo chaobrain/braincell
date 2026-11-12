@@ -248,7 +248,7 @@ def _x64_one_step_cell_report() -> dict:
             cell.record("nai", bc.observe.ion(name="na").state("Ci"))
             cell.record("ki", bc.observe.ion(name="k").state("Ci"))
             cell.record("pump", bc.observe.channel(name="pump").current())
-        cell.record("v", bc.observe.state("v"))
+        cell.record("v", bc.observe.state("V"))
         result = cell.run(dt=0.025 * u.ms, duration=0.05 * u.ms)
         report = [None, None] if lumped else []
         for key, unit in recorded:

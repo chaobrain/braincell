@@ -35,12 +35,13 @@ from braincell._misc import (
     concat_values as _concat_values,
     is_traced_value,
     normalize_loop_outputs as _normalize_loop_outputs,
+    register_result_pytree,
     scalar_decimal as _scalar_decimal,
     same_time_quantity as _same_time_quantity,
     validate_time_quantity,
 )
 from braincell._multi_compartment import probes
-from braincell.network.recording import SampleBlock, concat_sample_blocks
+from braincell.network.recording import EventSeries, SampleBlock, concat_sample_blocks
 
 if TYPE_CHECKING:
     from braincell._multi_compartment.cell import Cell
@@ -56,8 +57,56 @@ class RunResult:
     ----------
     time : brainunit.Quantity
         ``(n_steps,)`` time array spanning ``[start_t, start_t + duration)``.
-    traces : dict[str, Any]
-        Probe-name → trace array mapping; one entry per placed probe.
+    traces : Mapping[str, Any]
+        Probe-name → trace array mapping; one entry per placed probe, plus
+        the values of every :meth:`Cell.record` recording.
+    samples : Mapping[str, SampleBlock]
+        Recording-name → regular samples of each :meth:`Cell.record`
+        recording.
+    start_time, stop_time, dt : brainunit.Quantity or None
+        Segment bounds ``[start_time, stop_time)`` and the fixed step.
+    spikes : EventSeries or None
+        Spikes of the Cell's ``"spike"`` port in the segment, in the format
+        of ``NetworkResult.events[population]["spike"]`` for the same Cell
+        in a Network (whose metadata also holds ``"population"``). ``None``
+        when the run is traced (``jax.jit``, ``jax.grad``): the number of
+        events depends on the data.
+
+    Notes
+    -----
+    The ``"spike"`` port is ``cell.spike`` at the CV holding the root
+    branch midpoint (the one CV of a lumped Cell, or a reduction model's
+    event). A step from ``t_k`` to ``t_k + dt`` gives an event at ``t_k``
+    when ``V(t_k) < V_th <= V(t_k + dt)`` for the default ``spk_fun``;
+    voltage staying above ``V_th`` gives no further event. ``count`` is 1
+    per crossing (a reduction model's event value). Rows are sorted by
+    time, then ``source_id``.
+
+    ``source_id`` indexes the rows of ``(batch,) + pop_size`` flattened in C
+    order: without a batch axis and with a one-dimensional ``pop_size`` it is
+    the population member. ``metadata["cv_id"]`` gives each row's CV; with a
+    batch axis, ``metadata["batch_index"]`` and
+    ``metadata["population_index"]`` give its batch element and member.
+
+    A result is a JAX pytree, so ``jax.block_until_ready(result)`` waits for
+    its arrays and a jitted function can return it.
+
+    Examples
+    --------
+    >>> import brainunit as u
+    >>> import braincell
+    >>> from braincell.filter import RootLocation
+    >>> mech = braincell.mech
+    >>> cell = braincell.Cell.point(1, V_init=-65.0 * u.mV)
+    >>> cell = cell.paint(mech.Ion("SodiumFixed", E=50.0 * u.mV), mech.Ion("PotassiumFixed", E=-77.0 * u.mV))
+    >>> cell = cell.paint(mech.Channel("Na_HH1952", g_max=120.0 * u.mS / u.cm**2))
+    >>> cell = cell.paint(mech.Channel("K_HH1952", g_max=36.0 * u.mS / u.cm**2))
+    >>> cell = cell.paint(mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV))
+    >>> clamp = mech.CurrentClamp(delay=1.0 * u.ms, durations=2.0 * u.ms, amplitudes=0.1 * u.nA)
+    >>> cell = cell.place(RootLocation(0.5), clamp)
+    >>> spikes = cell.run(dt=0.025 * u.ms, duration=10.0 * u.ms).spikes
+    >>> spikes.source_id.tolist(), spikes.metadata["port"]
+    ([0], 'spike')
     """
 
     time: object
@@ -66,6 +115,7 @@ class RunResult:
     start_time: object | None = None
     stop_time: object | None = None
     dt: object | None = None
+    spikes: EventSeries | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "traces", MappingProxyType(dict(self.traces)))
@@ -83,7 +133,8 @@ class RunResult:
         Returns
         -------
         RunResult
-            Concatenated immutable result.
+            Concatenated immutable result. Its ``spikes`` joins those of the
+            parts, or is ``None`` if any part has none.
         """
         parts = tuple(parts)
         if not parts:
@@ -117,7 +168,23 @@ class RunResult:
             start_time=first.start_time,
             stop_time=parts[-1].stop_time,
             dt=first.dt,
+            spikes=_concat_spikes(tuple(part.spikes for part in parts)),
         )
+
+
+register_result_pytree(RunResult, ("time", "traces", "samples", "start_time", "stop_time", "dt", "spikes"))
+
+
+def _concat_spikes(series) -> EventSeries | None:
+    """Join the spikes of contiguous segments; ``None`` if any segment has none."""
+    if any(item is None for item in series):
+        return None
+    return EventSeries(
+        time=_concat_values(tuple(item.time for item in series)),
+        source_id=np.concatenate(tuple(item.source_id for item in series)),
+        count=np.concatenate(tuple(item.count for item in series)),
+        metadata=series[0].metadata,
+    )
 
 
 def run(rcell: "Cell", *, dt, duration) -> RunResult:
@@ -128,8 +195,11 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     Each call dispatches one cached, jitted program: the step loop, the
     segment start / stop times and the selection of fixed-schedule samples
     all run inside it. Python work per call is limited to argument checks,
-    the cache lookup and wrapping the outputs, so short repeated runs are not
-    dominated by eager array operations.
+    the cache lookup, turning the step-by-step spike bits into sparse rows
+    (one host pass over ``n_steps * n_rows / 8`` bytes) and wrapping the
+    outputs, so short repeated runs are not dominated by eager array
+    operations. A traced run (inside ``jax.jit`` or ``jax.grad``) cannot
+    build sparse rows and uses a loop without the spike output.
     """
     from braincell.network.event import _prepare_netstim_schedules, _schedule_horizon
 
@@ -143,7 +213,8 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     # leaves the end unknown, so such a run generates every event.
     start = rcell.current_time
     until_ms = None
-    if not is_traced_value(start):
+    with_spikes = not is_traced_value(start)
+    if with_spikes:
         until_ms = _scalar_decimal(start, u.ms) + (n_steps + 1) * _scalar_decimal(dt, u.ms)
     schedule_key = _prepare_netstim_schedules(
         (view.source for view in rcell.connections._call_views(scheduled=True)),
@@ -159,6 +230,7 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
         compiled_recordings=compiled_recordings,
         ordered_probe_names=ordered_probe_names,
         schedule_key=schedule_key,
+        with_spikes=with_spikes,
     )
 
     # Value inputs are arguments of the compiled loop, which applies them to
@@ -167,7 +239,7 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     values = rcell._take_value_inputs()
     try:
         with brainstate.environ.context(dt=dt), _schedule_horizon(until_ms):
-            times, start_time, stop_time, recorded, probe_values = plan.loop(values)
+            times, start_time, stop_time, recorded, probe_values, spike_rows = plan.loop(values)
     except BaseException:
         rcell._restore_value_inputs(values)
         raise
@@ -212,7 +284,69 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
         start_time=start_time,
         stop_time=stop_time,
         dt=dt,
+        spikes=None if traced or plan.spike_port is None else plan.spike_port.series(rcell, times, spike_rows),
     )
+
+
+@dataclass(frozen=True)
+class _SpikePort:
+    """How one run loop reads the Cell's ``"spike"`` port, and its sparse rows.
+
+    The port is the one ``cell.event_outputs["spike"]`` publishes to a
+    Network: ``cell.spike`` at the CV holding the root branch midpoint, the
+    one CV of a lumped Cell, or a reduction model's event. Detailed and
+    lumped spikes are 0 or 1 (the Heaviside forward of ``spk_fun``), so each
+    step packs them eight rows to a byte; a reduction model's event is kept
+    as it is, since it may count several events in one step.
+    """
+
+    cv_id: int
+    packed: bool
+
+    @classmethod
+    def of(cls, rcell: "Cell") -> "_SpikePort":
+        return cls(
+            cv_id=int(rcell._get_spike_event_source().cv_id),
+            packed=not rcell._uses_reduction,
+        )
+
+    def read(self, rcell: "Cell"):
+        """This step's port values, inside the loop."""
+        spike = rcell.spike.value
+        if not self.packed:
+            return spike
+        if not rcell._is_lumped:
+            spike = spike[..., self.cv_id]
+        return jnp.packbits(spike.reshape(-1) != 0)
+
+    def series(self, rcell: "Cell", times, rows) -> EventSeries:
+        """Sparse rows in the format of ``NetworkResult.events[population]["spike"]``."""
+        rows = np.asarray(rows)
+        if rcell._uses_reduction:
+            values = rows.reshape(rows.shape[0], -1)
+            step, source_id = np.nonzero(values)
+            count = values[step, source_id]
+            n_rows = values.shape[1]
+        else:
+            shape = rcell.spike.value.shape
+            n_rows = int(np.prod(shape if rcell._is_lumped else shape[:-1], dtype=np.int64))
+            # Only the nonzero bytes are expanded to their eight rows.
+            step, byte = np.nonzero(rows)
+            hit, bit = np.nonzero(np.unpackbits(rows[step, byte][:, None], axis=1))
+            step, source_id = step[hit], byte[hit] * 8 + bit
+            count = np.ones(source_id.shape, dtype=np.int64)
+        metadata = {"port": "spike", "cv_id": np.full(n_rows, self.cv_id, dtype=np.int64)}
+        batch_size = rcell._runtime_batch_size
+        if batch_size is not None:
+            metadata["batch_index"], metadata["population_index"] = np.divmod(
+                np.arange(n_rows, dtype=np.int64), n_rows // batch_size
+            )
+        return EventSeries(
+            time=u.Quantity(np.asarray(u.get_mantissa(times))[step], u.get_unit(times)),
+            source_id=source_id,
+            count=count,
+            metadata=metadata,
+        )
 
 
 @dataclass(frozen=True)
@@ -223,6 +357,7 @@ class _RunPlan:
     fixed_schedules: tuple[bool, ...]
     schedule_issues: tuple[str, ...]
     unaligned_names: str
+    spike_port: _SpikePort | None = None
 
 
 def _cached_run_plan(
@@ -233,6 +368,7 @@ def _cached_run_plan(
     compiled_recordings: tuple,
     ordered_probe_names: tuple[str, ...],
     schedule_key: tuple = (),
+    with_spikes: bool = True,
 ) -> _RunPlan:
     """Return the persistent plan for one run shape.
 
@@ -244,7 +380,8 @@ def _cached_run_plan(
     timestep, step count, and probe layout. The schedule checks depend on
     the same key, so they are computed once here as well. ``schedule_key``
     names the NetStim events the loop bakes in, so a run that needed more
-    of them compiles a new loop.
+    of them compiles a new loop. ``with_spikes`` selects the loop that
+    also outputs the spike port; a traced run uses the one without.
     """
     cache = rcell._run_loop_cache
     key = (
@@ -254,6 +391,7 @@ def _cached_run_plan(
         tuple(ordered_probe_names),
         int(brainstate.environ.get_precision()),
         schedule_key,
+        bool(with_spikes),
     )
     cached = cache.get(key)
     if cached is None:
@@ -263,6 +401,7 @@ def _cached_run_plan(
         unaligned = tuple(
             compiled for compiled in compiled_recordings if n_steps % _recording_steps(compiled.schema.period, dt) != 0
         )
+        spike_port = _SpikePort.of(rcell) if with_spikes else None
         cached = _RunPlan(
             loop=_make_run_loop(
                 rcell,
@@ -271,10 +410,12 @@ def _cached_run_plan(
                 compiled_recordings=compiled_recordings,
                 fixed_schedules=fixed_schedules,
                 ordered_probe_names=ordered_probe_names,
+                spike_port=spike_port,
             ),
             fixed_schedules=fixed_schedules,
             schedule_issues=_differentiable_schedule_issues(compiled_recordings, dt=dt, n_steps=n_steps),
             unaligned_names=", ".join(repr(compiled.spec.name) for compiled in unaligned),
+            spike_port=spike_port,
         )
         cache[key] = cached
     return cached
@@ -288,12 +429,15 @@ def _make_run_loop(
     compiled_recordings: tuple,
     fixed_schedules: tuple[bool, ...],
     ordered_probe_names: tuple[str, ...],
+    spike_port: _SpikePort | None = None,
 ):
     """Create the jitted stateful run loop for a fixed observer layout.
 
     The loop takes the value inputs (``Cell._take_value_inputs``), which act
     on its first step, and returns
-    ``(times, start_time, stop_time, recorded, probes)``.
+    ``(times, start_time, stop_time, recorded, probes, spike_rows)``;
+    ``spike_rows`` stacks ``spike_port.read`` over the steps, or is ``None``
+    without a port.
     ``recorded`` holds one ``(values, first_time)`` pair per recording: the
     selected samples for a fixed-shape schedule, or every step's values and
     ``None`` for a variable-length one (selected eagerly by the caller).
@@ -335,7 +479,11 @@ def _make_run_loop(
                     # contract during the transition to layout-free recordings.
                     with jax.named_scope("braincell:cell_run:sample_legacy_probes"):
                         probe_snapshot = rcell.sample_probes()
-                return recording_snapshot + tuple(probe_snapshot[name] for name in ordered_probe_names)
+                    spikes = ()
+                    if spike_port is not None:
+                        with jax.named_scope("braincell:cell_run:sample_spikes"):
+                            spikes = (spike_port.read(rcell),)
+                return recording_snapshot + tuple(probe_snapshot[name] for name in ordered_probe_names) + spikes
 
             if any(values):
 
@@ -352,10 +500,14 @@ def _make_run_loop(
 
         values = _normalize_loop_outputs(
             traces_over_time,
-            count=n_recordings + len(ordered_probe_names),
+            count=n_recordings + len(ordered_probe_names) + (spike_port is not None),
             prefix="Cell.run(...)",
             noun="trace arrays",
         )
+        spike_rows = None
+        if spike_port is not None:
+            spike_rows = values[-1]
+            values = values[:-1]
         recorded = []
         for index, fixed in enumerate(fixed_schedules):
             if fixed:
@@ -363,7 +515,7 @@ def _make_run_loop(
                 recorded.append((values[index][indices], times[indices[0]]))
             else:
                 recorded.append((values[index], None))
-        return times, start_t, stop_t, tuple(recorded), tuple(values[n_recordings:])
+        return times, start_t, stop_t, tuple(recorded), tuple(values[n_recordings:]), spike_rows
 
     return brainstate.transform.jit(_run_loop)
 

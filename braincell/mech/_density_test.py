@@ -325,7 +325,7 @@ class DensityUnregisteredClassTest(unittest.TestCase):
                 for channel in (_UnregisteredLeak, "IL"):
                     cell = make()
                     cell.paint(AllRegion(), Channel(channel, **params))
-                    cell.record("v", braincell.observe.state("v"))
+                    cell.record("v", braincell.observe.state("V"))
                     cell.init_state()
                     result = cell.run(dt=0.025 * u.ms, duration=2.0 * u.ms)
                     traces.append(result.samples["v"].values.to_decimal(u.mV))

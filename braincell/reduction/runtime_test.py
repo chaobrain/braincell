@@ -114,7 +114,7 @@ class ReductionRuntimeTest(unittest.TestCase):
 
     def test_output_recording_is_post_update_and_detailed_recording_is_omitted(self) -> None:
         cell = _cell(2)
-        cell.soma.record("old_v", braincell.observe.state("v"))
+        cell.soma.record("old_v", braincell.observe.state("V"))
         cell[1].record("reduced", braincell.observe.output("value"))
         cell.add_reduction("tick", _TickReduction(features=2))
         cell.use_model("tick")

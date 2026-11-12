@@ -98,6 +98,7 @@ from braincell.network.event import EventOutputCollection, _CellSpikeSource
 from braincell.network.recording import (
     RecordingSpec,
     _ClampCurrentObservable,
+    as_observable,
     compile_recording,
     recording_is_active,
 )
@@ -338,8 +339,9 @@ class _CellFacade:
         ----------
         name : str
             Cell-local recording name.
-        observable : object
-            Descriptor created by :mod:`braincell.observe`.
+        observable : object or str
+            Descriptor created by :mod:`braincell.observe`, or ``"V"`` for
+            ``braincell.observe.state("V")``, the membrane voltage.
         period, frequency : Quantity, optional
             Mutually exclusive regular sampling interval declarations.
         start : Quantity, optional
@@ -348,7 +350,17 @@ class _CellFacade:
         Returns
         -------
         RecordingSpec
-            Frozen declaration owned by the root Cell.
+            Frozen declaration owned by the root Cell; its ``observable`` is
+            the ``observe.*`` declaration, also for ``"V"``.
+
+        Raises
+        ------
+        KeyError
+            If ``observable`` is a string other than ``"V"``; ``"v"`` was
+            removed in 0.3.
+        TypeError
+            If ``observable`` is neither a string nor an ``observe.*``
+            declaration.
 
         Notes
         -----
@@ -363,12 +375,23 @@ class _CellFacade:
         region or location that names a branch by index (``cell.branch[1]``,
         ``cell.on(BranchSlice(1, 0.0, 1.0))``) is not followed through a
         removal or a move of a branch: ``init_state`` raises ``ValueError``.
+
+        Examples
+        --------
+        >>> import brainunit as u
+        >>> import braincell
+        >>> cell = braincell.Cell.point(2, V_init=-65.0 * u.mV)
+        >>> spec = cell.record("V", "V")
+        >>> spec.observable == braincell.observe.state("V")
+        True
+        >>> cell.run(dt=0.025 * u.ms, duration=1.0 * u.ms).samples["V"].values.shape
+        (40, 2)
         """
         return self._view_root._add_recording(
             RecordingSpec(
                 name=name,
                 scope=self._scope,
-                observable=observable,
+                observable=as_observable(observable),
                 period=period,
                 frequency=frequency,
                 start=start,

@@ -629,7 +629,7 @@ class DhsEndpointSynapseNeuronReferenceTest(unittest.TestCase):
             synapse=cell.synapses[synapse],
             weight=0.01 * u.uS,
         )
-        cell.soma.record("v", observe.state("v"))
+        cell.soma.record("v", observe.state("V"))
 
         result = cell.run(dt=0.025 * u.ms, duration=5.0 * u.ms)
         trace = np.asarray(result.samples["v"].values.to_decimal(u.mV), dtype=float)[:, 0]

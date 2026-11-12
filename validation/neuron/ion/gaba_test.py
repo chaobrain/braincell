@@ -70,7 +70,7 @@ cell.paint(bc.mech.CableProperty(resting_potential=-70.0 * u.mV, membrane_capaci
 cell.paint(bc.mech.Channel("IL", g_max=0.0274578 * u.mS / u.cm**2, E=-70.0 * u.mV))
 cell.paint(bc.mech.Ion("Cldif_JE2011", name="cl"))
 cell.place(RootLocation(0.5), bc.mech.Synapse("GabaA_JE2011", name="gaba"))
-cell.record("v", bc.observe.state("v"))
+cell.record("v", bc.observe.state("V"))
 cell.record("ci", bc.observe.ion(name="cl").state("Ci"))
 net = bc.Network("je2011")
 stim = net.add_population("stim", bc.NetStim(size=1, start=5.0 * u.ms, number=100, interval=25.0 * u.ms))

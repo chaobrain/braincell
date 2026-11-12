@@ -231,8 +231,8 @@ def _run_dendritic_protocol(amplitude):
             amplitudes=amplitude,
         ),
     )
-    cell.soma.record("soma_v", braincell.observe.state("v"))
-    cell.basal_dendrite.record("dendrite_v", braincell.observe.state("v"))
+    cell.soma.record("soma_v", braincell.observe.state("V"))
+    cell.basal_dendrite.record("dendrite_v", braincell.observe.state("V"))
     cell.init_state()
     result = cell.run(dt=0.025 * u.ms, duration=10.0 * u.ms)
     soma_mv = result.samples["soma_v"].values.to_decimal(u.mV)[:, 0]

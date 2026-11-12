@@ -1854,6 +1854,26 @@
   and it is 2 mM after `finitialize` in all 130 segments of the stellate
   cell. `validation/neuron/_mechanisms_test.py` checks that no vendored MOD
   file re-declares an ion variable as a constant.
+- A float32 run delivers each `NetStim` and `EventSequence` event at the
+  step a float64 run does (CELL-46). The arrival step `(time + delay) / dt`
+  was rounded in the run precision, so float32 put some events a step late:
+  with 100 noisy `NetStim` sources at a 2 ms mean interval and delays of
+  0 to 1 ms, 415 of the 49970 arrivals in 1 s at `dt = 0.025 ms`, in
+  `Network.run`, `update()` loops and `Cell.run` alike; 146 of 20342 arrivals
+  in 1 s and 16146 of 200079 in 10 s of a 10 ms train (main `3e59b9f`).
+  With the step count set past 2¹⁷, 40 to 120 of 260 events fell a step
+  off, and at 2²⁵ + 3 steps, where a float32 `t / dt` cannot tell
+  neighbouring steps apart, 260 events were delivered 1046 times. The
+  arrival steps are now rounded at float64 on the host from the declared
+  event times and delays, and the run loops compare them with their integer
+  step count. float64 results are unchanged bit for bit. In a float32
+  network of 20 HH cables with 1000 noisy sources, 4 of 8892 arrivals in
+  100 ms move a step earlier, to their float64 step, and V changes by up to
+  0.32 mV. A `delay` or `dt` that is traced (an argument of a `jax.jit`
+  function) and a `t` the caller sets, as in a `Cell.update()` loop, are
+  still rounded in the run precision. The experimental
+  `braincell.experimental.scheduled_events.prepare_events` and
+  `ScheduledDeliveryCell` round the same way.
 
 ### Documentation
 

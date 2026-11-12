@@ -49,10 +49,11 @@ Check new warnings using the source filenames and line numbers in the log. If th
 Internal references in Markdown, RST, and notebooks use the same document names. When converting formats, preserve the document name and remove the old file to avoid duplicate names.
 A successful website build does not establish that notebook code has run.
 
-Regenerating notebooks containing interactive PyVista plots also requires these dependencies for HTML export:
+Regenerating notebooks containing interactive PyVista plots needs `trame-pyvista` for the HTML export (pyvista 0.49 and later export through it). The `doc` extra installs it; for an interactive session add JupyterLab and ipywidgets:
 
 ```bash
-python -m pip install ipywidgets trame trame-vtk trame-vuetify "jupyterlab>=3"
+python -m pip install -e ".[doc]"
+python -m pip install ipywidgets "jupyterlab>=3"
 ```
 
 Use `vis3d(notebook=True, jupyter_backend="html")` and save the executed outputs so the published page includes the exported interactive HTML.

@@ -82,6 +82,9 @@ optional-dependencies.doc = [
   "sphinx-math-dollar",
   "sphinx-remove-toctrees",
   "sphinx-thebe",
+  # pyvista 0.49 and later export `vis3d(notebook=True, jupyter_backend="html")`
+  # through it; the morphology tutorials need it to execute.
+  "trame-pyvista",
 ]
 # NeuroMorpho.Org client in braincell.io.neuromorpho
 optional-dependencies.io = [ "requests" ]

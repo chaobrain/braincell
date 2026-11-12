@@ -928,6 +928,13 @@
   Ralston's second-order method; use braincell.quad.ralston2_step (same
   numbers), or heun2_step for Heun's method."
 
+- The concept page "Ions & Channels" (`docs/concepts/ions_channels.ipynb`)
+  runs: its cells used an undefined `size` and passed `...` to
+  `CalciumDetailed`. The `doc` extra installs `trame-pyvista`, which pyvista
+  0.49 and later need to export `vis3d(notebook=True, jupyter_backend="html")`,
+  so the morphology tutorials execute from a `.[doc]` install. The markdown of
+  `examples/reduction/reduction.ipynb` and five code comments of
+  `docs/tutorials/single_cell_frontend.ipynb` are in English.
 - A delta input registered with `Cell.add_delta_input`, the entry of
   brainpy's `DeltaProj`, now moves V on a lumped cell (`Cell.point(...)`,
   `cv_policy=Lumped()`) under every solver, and on a cable cell under

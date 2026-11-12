@@ -28,7 +28,7 @@ import numpy as np
 
 from braincell._multi_compartment.synapses import SynapseView
 from braincell.network.event import EventSourceView
-from braincell.morph._spatial import MorphologySpatialGeometry, interpolate_branch
+from braincell.morph._spatial import MorphologySpatialGeometry
 
 Score = Callable[["PairingContext"], object]
 Degree = int | np.ndarray | Callable[["PairingContext", brainstate.random.RandomState], object]
@@ -310,37 +310,47 @@ class _SynapseData:
 
 
 def _synapse_geometry(view: SynapseView):
+    """Branch name and type, radius, tree distances and 3-D point of each synapse.
+
+    The morphology's geometry is built once per revision, and each branch
+    is read once for all of its synapses (CELL-18c); every value is the
+    one a separate lookup per synapse gives.
+    """
     morpho = view.cell.morpho
-    geometry = MorphologySpatialGeometry.build(morpho)
-    names = []
-    types = []
-    radius = []
-    root_distance = []
-    soma_distance = []
-    positions = []
+    geometry = MorphologySpatialGeometry.of(morpho)
+    branch_ids = np.asarray(view.branch_id, dtype=np.int64)
+    branch_x = np.asarray(view.branch_x, dtype=float)
+    count = branch_ids.size
+    names = np.empty(count, dtype=object)
+    types = np.empty(count, dtype=object)
+    radius = np.empty(count, dtype=float)
+    root_distance = np.empty(count, dtype=float)
+    soma_distance = np.empty(count, dtype=float)
+    positions = np.empty((count, 3), dtype=float)
     has_positions = True
-    for branch_id, x in zip(view.branch_id.tolist(), view.branch_x.tolist()):
-        branch_view = morpho.branch(index=int(branch_id))
-        names.append(str(branch_view.name))
-        types.append(str(branch_view.type))
-        radius_value, point_value = interpolate_branch(morpho, int(branch_id), float(x))
-        radius.append(float(radius_value.to_decimal(u.um)))
-        root_distance.append(float(geometry.path_distance_to_root(int(branch_id), float(x)).to_decimal(u.um)))
-        soma_distance.append(float(geometry.path_distance_from_soma(int(branch_id), float(x)).to_decimal(u.um)))
+    order = np.argsort(branch_ids, kind="stable")
+    branches, starts = np.unique(branch_ids[order], return_index=True)
+    for branch_id, rows in zip(branches.tolist(), np.split(order, starts[1:])):
+        x = branch_x[rows]
+        branch_view = morpho.branch(index=branch_id)
+        names[rows] = str(branch_view.name)
+        types[rows] = str(branch_view.type)
+        radius[rows], point_value = geometry.interpolate_um(branch_id, x)
+        root_distance[rows], soma_distance[rows] = geometry.path_distances_um(branch_id, x)
         if point_value is None:
             has_positions = False
-            positions.append(None)
         else:
-            positions.append(np.asarray(point_value.to_decimal(u.um), dtype=float))
+            positions[rows] = point_value
     local_position = None
     if has_positions:
-        local_position = u.Quantity(np.asarray(positions, dtype=float), u.um)
+        # An empty view had no point to stack: a flat empty array, as before.
+        local_position = u.Quantity(positions if count else np.asarray([], dtype=float), u.um)
     return (
-        np.asarray(names, dtype=object),
-        np.asarray(types, dtype=object),
-        u.Quantity(np.asarray(radius), u.um),
-        u.Quantity(np.asarray(root_distance), u.um),
-        u.Quantity(np.asarray(soma_distance), u.um),
+        names,
+        types,
+        u.Quantity(radius, u.um),
+        u.Quantity(root_distance, u.um),
+        u.Quantity(soma_distance, u.um),
         local_position,
     )
 

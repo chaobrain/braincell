@@ -14,6 +14,7 @@
 # ==============================================================================
 
 import unittest
+import warnings
 
 import brainunit as u
 import numpy as np
@@ -379,6 +380,123 @@ class NetworkConnectionSamplingTest(unittest.TestCase):
                 synapse=spec,
                 pairing=braincell.network.connection.independent(2),
             )
+
+
+def _reference_synapse_geometry(view):
+    """``_synapse_geometry`` as written before CELL-18c: one geometry build and one pass per row."""
+    from braincell.morph._spatial import MorphologySpatialGeometry, interpolate_branch
+
+    morpho = view.cell.morpho
+    geometry = MorphologySpatialGeometry.build(morpho)
+    names, types, radius, root_distance, soma_distance, positions = [], [], [], [], [], []
+    has_positions = True
+    for branch_id, x in zip(view.branch_id.tolist(), view.branch_x.tolist()):
+        branch_view = morpho.branch(index=int(branch_id))
+        names.append(str(branch_view.name))
+        types.append(str(branch_view.type))
+        radius_value, point_value = interpolate_branch(morpho, int(branch_id), float(x))
+        radius.append(float(radius_value.to_decimal(u.um)))
+        root_distance.append(float(geometry.path_distance_to_root(int(branch_id), float(x)).to_decimal(u.um)))
+        soma_distance.append(float(geometry.path_distance_from_soma(int(branch_id), float(x)).to_decimal(u.um)))
+        if point_value is None:
+            has_positions = False
+            positions.append(None)
+        else:
+            positions.append(np.asarray(point_value.to_decimal(u.um), dtype=float))
+    local_position = None
+    if has_positions:
+        local_position = u.Quantity(np.asarray(positions, dtype=float), u.um)
+    return (
+        np.asarray(names, dtype=object),
+        np.asarray(types, dtype=object),
+        u.Quantity(np.asarray(radius), u.um),
+        u.Quantity(np.asarray(root_distance), u.um),
+        u.Quantity(np.asarray(soma_distance), u.um),
+        local_position,
+    )
+
+
+def _geometry_cell(*, points: bool, soma: bool = True):
+    """Soma (or a dendrite root), two tapering dendrites and an axon, sites on every branch."""
+    from braincell.filter import AllRegion, sample
+
+    def branch(lengths, radii, kind, start=None):
+        lengths = np.asarray(lengths)
+        if not points:
+            return Branch.from_lengths(lengths=lengths * u.um, radii=np.asarray(radii) * u.um, type=kind)
+        steps = np.cumsum(np.concatenate([[0.0], lengths]))
+        xyz = np.stack([steps, 0.3 * steps, np.zeros_like(steps)], axis=1) + (start if start is not None else 0.0)
+        with warnings.catch_warnings():
+            # The zero-length middle segment of "dend" is deliberate.
+            warnings.filterwarnings("ignore", "from_points.. produced 1 zero-length", UserWarning)
+            return Branch.from_points(points=xyz * u.um, radii=np.asarray(radii) * u.um, type=kind)
+
+    tree = Morphology.from_root(
+        branch([20.0], [10.0, 10.0], "soma" if soma else "basal_dendrite"), name="soma" if soma else "trunk"
+    )
+    root = tree.root
+    root.attach(branch([30.0, 0.0, 45.0], [2.0, 1.5, 1.5, 0.75], "basal_dendrite"), name="dend", parent_x=1.0)
+    root.attach(branch([60.0], [1.0, 0.5], "apical_dendrite"), name="apical", parent_x=0.5 if soma else 1.0)
+    tree.branch(name="dend").attach(branch([25.0, 25.0], [0.6, 0.5, 0.4], "basal_dendrite"), name="tip")
+    root.attach(branch([80.0], [0.5, 0.5], "axon"), name="axon", parent_x=0.0)
+    cell = Cell(tree, cv_policy=CVPerBranch())
+    syn = braincell.mech.Synapse("ExpSyn", name="syn", tau=2.0 * u.ms, e=0.0 * u.mV)
+    cell.place(sample(AllRegion(), number=40, seed=18), syn)
+    cell.place(at("soma" if soma else "trunk", 0.0) | at("tip", 1.0) | at("dend", 0.4) | at("dend", 0.4), syn)
+    return cell, syn
+
+
+class SynapseGeometryTest(unittest.TestCase):
+    """CELL-18c: the geometry columns of a pairing context, value for value."""
+
+    def _assert_same_columns(self, view) -> None:
+        from braincell.network.pairing import _synapse_geometry
+
+        actual, expected = _synapse_geometry(view), _reference_synapse_geometry(view)
+        self.assertEqual(len(actual), len(expected))
+        for name, got, want in zip(("name", "type", "radius", "root", "soma", "position"), actual, expected):
+            with self.subTest(column=name):
+                if want is None:
+                    self.assertIsNone(got)
+                    continue
+                if isinstance(want, u.Quantity):
+                    self.assertEqual(u.get_unit(got), u.get_unit(want))
+                    got, want = got.mantissa, want.mantissa
+                self.assertEqual(np.asarray(got).dtype, np.asarray(want).dtype)
+                self.assertEqual(np.shape(got), np.shape(want))
+                np.testing.assert_array_equal(np.asarray(got), np.asarray(want))
+
+    def test_columns_match_one_pass_per_row(self) -> None:
+        for points in (True, False):
+            for soma in (True, False):
+                with self.subTest(points=points, soma=soma):
+                    cell, syn = _geometry_cell(points=points, soma=soma)
+                    view = cell.synapses[syn]
+                    self.assertGreater(len(np.unique(view.branch_id)), 3)
+                    self._assert_same_columns(view)
+                    self._assert_same_columns(view[np.arange(len(view))[::-3]])
+
+    def test_geometry_scored_connects_build_the_geometry_once(self) -> None:
+        from unittest import mock
+
+        from braincell.morph._spatial import MorphologySpatialGeometry
+
+        cell, syn = _geometry_cell(points=True)
+        source = NetStim(size=4, start=1.0 * u.ms)
+
+        def nearer_soma(ctx):
+            return 1.0 / (1.0 + ctx.synapse.path_distance_from_soma.to_decimal(u.um))
+
+        build = MorphologySpatialGeometry.build
+        with mock.patch.object(MorphologySpatialGeometry, "build", side_effect=build) as counted:
+            for index in range(3):
+                pairing = braincell.network.connection.independent(5, synapse_score=nearer_soma, seed=index)
+                connect(f"c{index}", source=source, synapse=cell.synapses[syn], pairing=pairing)
+        self.assertEqual(counted.call_count, 1)
+
+    def test_an_empty_view_has_empty_columns(self) -> None:
+        cell, syn = _geometry_cell(points=True)
+        self._assert_same_columns(cell.synapses[syn][np.zeros(0, dtype=np.int64)])
 
 
 if __name__ == "__main__":

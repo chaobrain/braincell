@@ -624,6 +624,16 @@
   comparison, frustum values at 1%, failed surface or volume on 4 of the 9
   candidate neurons that the cylinder formulas match (up to 4.9% and 6.0%).
 
+- **Geometry-scored pairing builds the geometry once per morphology edit**
+  (CELL-18c). A `connect` whose pairing score reads a synapse's radius,
+  tree distances or 3-D position rebuilt the morphology's spatial geometry
+  and then walked each synapse's branch segment by segment. The geometry is
+  now kept on the `Morphology` until its next edit (`Morphology.revision`),
+  each branch is decoded once, and all of a branch's sites are placed at
+  once. On a CA1 reconstruction with 2,000 synapses, the geometry columns
+  took 367 ms per `connect` and now take 34 ms, and 100 such connects took
+  30.0 s and now 5.3 s. Every value is the same as before, bit for bit.
+
 - **A Cell declaration whose branch name is gone says which declaration it
   is** (MORPH-2b). A location expression names its branch, such as
   `at("dend", 0.5)` given to `Cell.place` or to `VoltageCrossingSource`, and

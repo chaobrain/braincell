@@ -314,6 +314,10 @@ class Morphology:
     _edit_reindex: bool = False
     #: Revision of the last edit that moved an existing node's default index.
     _reindex_revision: int = 0
+    #: ``(revision, MorphologySpatialGeometry)`` of the last
+    #: ``MorphologySpatialGeometry.of`` call; class-level so that a tree
+    #: unpickled from an older release reads as uncached.
+    _spatial_geometry_cache: tuple[int, object] | None = None
 
     def __init__(self, *, root_name: str | None, root_branch: Branch) -> None:
         self._nodes: dict[int, MorphoBranch] = {}
@@ -2976,8 +2980,8 @@ class Morphology:
         ``Morphology`` is mutable, so a stale entry here is a correctness
         bug rather than a missed optimization. The caches cover node order
         and indices, the view tuples, the point-geometry flag, the
-        concatenated segment and point arrays, and the ``to_vis_data``
-        snapshot; every one of them can depend on any node's name, type,
+        concatenated segment and point arrays, the ``to_vis_data``
+        snapshot and the spatial geometry; every one of them can depend on any node's name, type,
         parent or geometry, so all are dropped together.
 
         Only :meth:`_edit` (once, at its outermost exit) and ``__init__``
@@ -2992,6 +2996,7 @@ class Morphology:
         self._all_segment_arrays_cache = None
         self._all_points_cache = None
         self._vis_data_cache = None
+        self._spatial_geometry_cache = None
         self._revision += 1
 
     def _require_editable(self) -> None:

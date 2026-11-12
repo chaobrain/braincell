@@ -825,6 +825,42 @@ class RegionSetOp(RegionExpr):
 
 
 def branch_in(property: str, values: object) -> BranchInFilter:
+    """Select whole branches whose ``property`` takes one of ``values``.
+
+    Parameters
+    ----------
+    property : str
+        Branch property to compare, read from each :class:`~braincell.morph.MorphoBranch`:
+        e.g. ``"type"``, ``"name"`` or ``"parent_id"`` (the parent's branch
+        index, ``-1`` at the root), or a metric such as ``"length"``. An
+        unknown property raises ``ValueError`` at evaluation.
+    values : object or iterable of object
+        One value, or several; a string counts as one value. Quantities
+        compare in a common unit.
+
+    Returns
+    -------
+    BranchInFilter
+        A region expression that selects each matching branch from ``x = 0``
+        to ``x = 1``.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell import Branch, Morphology
+        >>> tree = Morphology.from_root(
+        ...     Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma"), name="soma"
+        ... )
+        >>> tree.soma.dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="dendrite")
+        >>> tree.soma.axon = Branch.from_lengths(lengths=[300.0] * u.um, radii=[0.5, 0.5] * u.um, type="axon")
+        >>> from braincell.filter import branch_in
+        >>> tree.select(branch_in("type", ("dendrite", "axon"))).intervals
+        ((1, 0.0, 1.0), (2, 0.0, 1.0))
+        >>> tree.select(branch_in("name", "dend")).intervals
+        ((1, 0.0, 1.0),)
+    """
     return BranchInFilter(property=property, values=values)
 
 
@@ -834,4 +870,44 @@ def branch_range(
     *,
     closed: ClosedSide = "neither",
 ) -> BranchRangeFilter:
+    """Select whole branches whose numeric ``property`` lies within ``bounds``.
+
+    Parameters
+    ----------
+    property : str
+        Branch property to compare, as in :func:`branch_in`; usually a metric
+        such as ``"length"``, ``"mean_radius"``, ``"area"`` or ``"volume"``.
+    bounds : tuple or Quantity
+        ``(low, high)``, either of which may be ``None`` for no bound on that
+        side, or a quantity vector of two values. Anything else raises
+        ``TypeError`` at evaluation.
+    closed : {"neither", "left", "right", "both"}, default "neither"
+        Which ends of the range are included. Another value raises
+        ``ValueError`` at evaluation.
+
+    Returns
+    -------
+    BranchRangeFilter
+        A region expression that selects each matching branch from ``x = 0``
+        to ``x = 1``.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell import Branch, Morphology
+        >>> tree = Morphology.from_root(
+        ...     Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma"), name="soma"
+        ... )
+        >>> tree.soma.dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="dendrite")
+        >>> tree.soma.axon = Branch.from_lengths(lengths=[300.0] * u.um, radii=[0.5, 0.5] * u.um, type="axon")
+        >>> from braincell.filter import branch_range
+        >>> tree.select(branch_range("length", (50 * u.um, None))).intervals
+        ((1, 0.0, 1.0), (2, 0.0, 1.0))
+        >>> tree.select(branch_range("length", (100 * u.um, 300 * u.um))).intervals
+        ()
+        >>> tree.select(branch_range("length", (100 * u.um, 300 * u.um), closed="both")).intervals
+        ((1, 0.0, 1.0), (2, 0.0, 1.0))
+    """
     return BranchRangeFilter(property=property, bounds=bounds, closed=closed)

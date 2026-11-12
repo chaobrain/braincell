@@ -1372,6 +1372,18 @@
   multistart parameter-learning example test no longer holds leftover
   merge-conflict markers. A test in `braincell/__init___test.py` scans that
   material and fails on a new import of an internal path.
+- The API reference documents every public export (API-2a). New pages cover
+  `braincell.network`, `braincell.reduction` and `braincell.trainable`; the
+  top-level page adds the cell views, `Synapse`, `CVPerBranchList`,
+  `PointPlacement` and the version constants; `braincell.filter` adds
+  sampling, `braincell.io` adds `DEFAULT_USER_CACHE_DIR`, and
+  `braincell.mech` adds event inputs, the registry and the parameter and
+  state specs. 64 public objects had no entry before. `LocsetExpr`, `at`,
+  `branch_in` and `branch_range` have docstrings, and the alias
+  `filter.BranchPoints` is described on the `ForkPoints` entry instead of a
+  page of its own. A test in `braincell/__init___test.py` fails when a
+  public object has no entry, two entries or no docstring of its own, or when
+  an entry names an internal object or nothing.
 
 - The example scripts `examples/single_compartment/SC01` and `SC03`–`SC07`
   build point neurons with `braincell.Cell.point(...)` and `paint`

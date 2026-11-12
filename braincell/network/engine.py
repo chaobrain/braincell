@@ -228,7 +228,7 @@ class Network:
             Connection name, unique within the target Cell.
         source : Population, EventSource, or EventSourceView
             Registered event source or a selected source view.
-        synapse : SynapseView or Synapse
+        synapse : SynapseView or braincell.mech.Synapse
             Existing logical synapses, or one declaration to place before
             connecting.
         target : Population or CellView, optional

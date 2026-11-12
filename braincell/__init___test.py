@@ -26,13 +26,16 @@ is deleted is an ``AttributeError`` at import time.
 
 import gc
 import importlib
+import inspect
 import os
 import pathlib
 import pickle
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
+from unittest import mock
 
 import brainstate
 import jax
@@ -40,7 +43,14 @@ import jax.numpy as jnp
 import numpy as np
 
 import braincell
-from braincell._testing import ReExportTests, UserMaterialImportTests
+from braincell._testing import (
+    ReExportTests,
+    UserMaterialImportTests,
+    api_reference_entries,
+    api_reference_gaps,
+    own_docstring,
+    public_paths,
+)
 
 #: Stable domain packages must be reachable from a bare ``import braincell``
 #: and advertised in its ``__all__``.
@@ -198,6 +208,53 @@ def _leave_a_dead_jaxpr_holding(constant) -> None:
     cycle = [jax.make_jaxpr(lambda x: constant * x)(jnp.ones(2))]
     cycle.append(cycle)
     gc.collect()
+
+
+#: The API reference sources, beside the package in a checkout.
+_API_REFERENCE = pathlib.Path(braincell.__file__).resolve().parents[1] / "docs" / "apis"
+
+
+def _without_own_docstring(public: dict) -> list[str]:
+    """Return the first public path of each class or callable that has no docstring of its own."""
+    seen, undocumented = set(), []
+    for path, obj in public.items():
+        if id(obj) in seen or isinstance(obj, types.ModuleType) or not (inspect.isclass(obj) or callable(obj)):
+            continue
+        seen.add(id(obj))
+        if own_docstring(obj) is None:
+            undocumented.append(path)
+    return undocumented
+
+
+class ApiReferenceCoverageTest(unittest.TestCase):
+    """Every public object has exactly one API reference entry, and a docstring of its own (API-2a).
+
+    The API reference (``docs/apis``) is where a public object's contract is
+    written. An object exported under two paths still gets one entry, and the
+    page text names the other path. Two entries for one class under its own
+    name fail ``sphinx -W`` (both register the same canonical name); an alias
+    such as ``filter.BranchPoints`` would get a second page silently.
+    """
+
+    def setUp(self) -> None:
+        if not _API_REFERENCE.is_dir():
+            self.skipTest("no docs/apis beside the package")
+
+    def test_every_public_object_has_exactly_one_entry(self) -> None:
+        missing, duplicated, not_public, unresolved = api_reference_gaps(
+            api_reference_entries(_API_REFERENCE), public_paths()
+        )
+        self.assertEqual(missing, [], "add an entry for each to a page in docs/apis")
+        self.assertEqual(duplicated, [], "one object, one entry: keep one and mention the other path in the text")
+        self.assertEqual(not_public, [], "these entries document objects outside every public __all__")
+        self.assertEqual(unresolved, [], "these entries name nothing")
+
+    def test_every_public_class_and_callable_has_its_own_docstring(self) -> None:
+        self.assertEqual(_without_own_docstring(public_paths()), [])
+
+    def test_a_class_without_a_docstring_is_reported(self) -> None:
+        with mock.patch.object(braincell.filter.LocsetExpr, "__doc__", None):
+            self.assertEqual(_without_own_docstring(public_paths()), ["braincell.filter.LocsetExpr"])
 
 
 class PrecisionSwitchIsolationTest(unittest.TestCase):

@@ -47,7 +47,6 @@ Locsets
     RootLocation
     Terminals
     ForkPoints
-    BranchPoints
     UniformSamples
     StepSamples
     RandomSamples
@@ -56,6 +55,33 @@ Locsets
     LocsetConcatOp
     LocsetSetOp
     LocsetUniqueOp
+
+``BranchPoints`` is an alias of :class:`ForkPoints`, kept for compatibility:
+``braincell.filter.BranchPoints is braincell.filter.ForkPoints``.
+
+
+Sampling and Batches
+--------------------
+
+:func:`sample` builds a lazy :class:`SampleLocations` expression that draws
+random locations continuously over a region; a sampling-density callable
+receives a :class:`SamplingContext`. A :class:`LocsetBatch` holds several
+resolved locsets, aligned.
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+    LocsetBatch
+    SampleLocations
+    SamplingContext
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+
+    sample
 
 
 Helpers

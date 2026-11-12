@@ -208,6 +208,9 @@ The docs are layered by what you are trying to do:
    apis/braincell.mech.rst
    apis/filter.rst
    apis/io.rst
+   apis/network.rst
+   apis/reduction.rst
+   apis/trainable.rst
    apis/integration.rst
    apis/vis.rst
 

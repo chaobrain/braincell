@@ -426,6 +426,35 @@ class LocsetMask:
 
 
 class LocsetExpr(ABC):
+    """Base class of locset expressions: lazy, ordered selections of points on a morphology.
+
+    An expression names points without a morphology at hand. :meth:`evaluate`
+    (or ``Morphology.select``) resolves it against one and returns a
+    :class:`LocsetMask` of ``(branch_id, branch_x)`` rows.
+
+    Expressions combine with ``+``, which concatenates and keeps duplicates and
+    order, and with the set operations ``|`` (union), ``&`` (intersection) and
+    ``-`` (difference). :meth:`unique` drops duplicates after evaluation.
+    Subclasses implement ``_evaluate``.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell import Branch, Morphology
+        >>> tree = Morphology.from_root(
+        ...     Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma"), name="soma"
+        ... )
+        >>> tree.soma.dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="dendrite")
+        >>> tree.soma.axon = Branch.from_lengths(lengths=[300.0] * u.um, radii=[0.5, 0.5] * u.um, type="axon")
+        >>> from braincell.filter import Terminals, at
+        >>> (at("dend", 1.0) + Terminals()).evaluate(tree).branch_id
+        array([1, 1, 2])
+        >>> (at("dend", 1.0) + Terminals()).unique().evaluate(tree).branch_id
+        array([1, 2])
+    """
+
     def __add__(self, other: "LocsetExpr") -> "LocsetExpr":
         if not isinstance(other, LocsetExpr):
             return NotImplemented
@@ -518,6 +547,39 @@ class AtLocation(LocsetExpr):
 
 
 def at(branch: int | str, x: float) -> AtLocation:
+    """Select one location: the point at fraction ``x`` along one branch.
+
+    Parameters
+    ----------
+    branch : int or str
+        Branch index or branch name. It is looked up when the expression is
+        evaluated: an unknown name raises ``KeyError`` and an index out of
+        range raises ``IndexError``.
+    x : float
+        Position along the branch, from 0 (proximal end) to 1 (distal end).
+        A value outside ``[0, 1]`` raises ``ValueError`` at evaluation.
+
+    Returns
+    -------
+    AtLocation
+        A locset expression that selects one point.
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell import Branch, Morphology
+        >>> tree = Morphology.from_root(
+        ...     Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma"), name="soma"
+        ... )
+        >>> tree.soma.dend = Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="dendrite")
+        >>> tree.soma.axon = Branch.from_lengths(lengths=[300.0] * u.um, radii=[0.5, 0.5] * u.um, type="axon")
+        >>> from braincell.filter import at
+        >>> points = tree.select(at("dend", 0.5))
+        >>> points.branch_id, points.branch_x
+        (array([1]), array([0.5]))
+    """
     return AtLocation(branch=branch, x=x)
 
 

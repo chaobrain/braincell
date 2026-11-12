@@ -73,7 +73,15 @@ class CalciumCatalogueTest(CatalogueAssertions, unittest.TestCase):
         self.assertEqual(configured | uncovered, FAMILY)
         self.assertEqual(
             uncovered,
-            {"AHP_De1994", "CaHT_HM1992", "CaHT_Re1993", "CaL_IS2008", "CaN_IS2008", "CaT_HM1992", "CaT_HP1992"},
+            {
+                "AHP_De1994",
+                "CaHT_Re1993",
+                "CaL_IS2008",
+                "CaN_IS2008",
+                "CaT_HM1992",
+                "CaT_HM1992_Shifted25",
+                "CaT_HP1992",
+            },
         )
 
     def test_every_configuration_stays_within_its_limits(self):

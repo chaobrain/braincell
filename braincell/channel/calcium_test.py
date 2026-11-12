@@ -16,6 +16,7 @@
 
 
 import contextlib
+import inspect
 import math
 import unittest
 from unittest import mock
@@ -37,7 +38,7 @@ from braincell.channel.calcium import (
     CaHVA_MA2020_GrC,
     Ca_ZH2019_IO,
     Ca_ZH2019_IO_Frozen,
-    CaHT_HM1992,
+    CaT_HM1992_Shifted25,
     CaHT_Re1993,
     CaL_IS2008,
     CaN_IS2008,
@@ -224,8 +225,65 @@ class CaT_HP1992Test(_P2QHHMixin, unittest.TestCase):
     CLS = CaT_HP1992
 
 
-class CaHT_HM1992Test(_P2QHHMixin, unittest.TestCase):
-    CLS = CaHT_HM1992
+class CaT_HM1992_Shifted25Test(_P2QHHMixin, unittest.TestCase):
+    CLS = CaT_HM1992_Shifted25
+
+    def test_is_cat_hm1992_with_gates_shifted_by_25_mv(self) -> None:
+        """MECH-42: the renamed class is ``CaT_HM1992`` at ``V_sh = +25 mV``, element for element.
+
+        Before braincell 0.3 the class was ``CaHT_HM1992``; the rename kept
+        every rate function and default, so the gates, their derivatives and
+        the current agree exactly in float64, not merely within a tolerance.
+        """
+        with brainstate.environ.context(precision=64):
+            V = voltage(np.linspace(-120.0, 60.0, 37))
+            ca = ca_info(37)
+            shifted = CaT_HM1992_Shifted25(37)
+            reference = CaT_HM1992(37, V_sh=25.0 * u.mV)
+            for ch in (shifted, reference):
+                ch.init_state(V, ca)
+                ch.reset_state(V, ca)
+                ch.compute_derivative(V, ca)
+            self.assertEqual(shifted.p.value.dtype, jnp.float64)
+            for rate in ("f_p_inf", "f_p_tau", "f_q_inf", "f_q_tau"):
+                np.testing.assert_array_equal(getattr(shifted, rate)(V, ca), getattr(reference, rate)(V, ca), rate)
+            for name in ("p", "q"):
+                np.testing.assert_array_equal(getattr(shifted, name).value, getattr(reference, name).value, name)
+                np.testing.assert_array_equal(
+                    u.get_magnitude(getattr(shifted, name).derivative),
+                    u.get_magnitude(getattr(reference, name).derivative),
+                    name,
+                )
+            np.testing.assert_array_equal(
+                shifted.current(V, ca).to_decimal(DENSITY_UNIT),
+                reference.current(V, ca).to_decimal(DENSITY_UNIT),
+            )
+
+    def test_defaults_other_than_v_sh_are_cat_hm1992s(self) -> None:
+        # ``__init__`` is wrapped by the unit check; read the signature it wraps.
+        shifted = inspect.signature(inspect.unwrap(CaT_HM1992_Shifted25.__init__)).parameters
+        reference = inspect.signature(inspect.unwrap(CaT_HM1992.__init__)).parameters
+        self.assertEqual(list(shifted), list(reference))
+        differing = [name for name in shifted if not _same_default(shifted[name].default, reference[name].default)]
+        self.assertEqual(differing, ["V_sh"])
+        self.assertTrue(u.math.allclose(shifted["V_sh"].default, 25.0 * u.mV))
+
+    def test_registered_under_the_new_name_only(self) -> None:
+        registry = get_registry()
+        self.assertIs(registry.get("channel", "CaT_HM1992_Shifted25"), CaT_HM1992_Shifted25)
+        self.assertEqual(registry.key_for("channel", CaT_HM1992_Shifted25), "CaT_HM1992_Shifted25")
+        self.assertFalse(registry.contains("channel", "CaHT_HM1992"))
+        with self.assertRaises(KeyError) as caught:
+            registry.get("channel", "CaHT_HM1992")
+        message = caught.exception.args[0]
+        self.assertIn("'CaT_HM1992_Shifted25'", message)
+        self.assertIn("braincell 0.3", message)
+
+
+def _same_default(a, b) -> bool:
+    if isinstance(a, u.Quantity) or isinstance(b, u.Quantity):
+        return bool(u.math.allclose(a, b)) if u.get_unit(a) == u.get_unit(b) else False
+    return a == b
 
 
 class CaHT_Re1993Test(_P2QHHMixin, unittest.TestCase):

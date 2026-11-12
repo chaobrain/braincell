@@ -514,14 +514,26 @@ def _check_category(category: str) -> None:
         raise ValueError(f"category must be one of {sorted(_VALID_CATEGORIES)!r}, got {category!r}.")
 
 
+#: ``(category, old name) -> (new name, release)`` for mechanisms that a release
+#: renamed without keeping an alias (MECH-42), so that a lookup of the old name
+#: says what it became instead of guessing.
+_RENAMED = {
+    ("channel", "CaHT_HM1992"): ("CaT_HM1992_Shifted25", "0.3"),
+}
+
+
 def _missing_mechanism_message(
     registry: MechanismRegistry,
     category: str,
     name: str,
 ) -> str:
+    base = f"No {category!r} mechanism registered as {name!r}."
+    renamed = _RENAMED.get((category, name))
+    if renamed is not None:
+        new_name, release = renamed
+        return f"{base} braincell {release} renamed it to {new_name!r} and kept no alias."
     candidates = registry.names(category, include_aliases=True)
     suggestions = difflib.get_close_matches(name, candidates, n=3)
-    base = f"No {category!r} mechanism registered as {name!r}."
     if suggestions:
         base += f" Did you mean {suggestions!r}?"
     elif candidates:

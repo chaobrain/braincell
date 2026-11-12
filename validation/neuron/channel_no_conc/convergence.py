@@ -220,7 +220,6 @@ CLASSES = (
     ClassEntry("Cl_Leak", None, False),  # stateless
     # calcium.py and potassium_calcium.py (Ci = the placeholder ion's, 36 degC).
     ClassEntry("AHP_De1994", -2, False),  # 0.09 /ms, p gate at -100 mV
-    ClassEntry("CaHT_HM1992", 0, False),  # 6.83 /ms, p gate at +60 mV
     ClassEntry("CaHT_Re1993", 1, False),  # 14.1 /ms, p gate at +60 mV
     ClassEntry("CaHVA_MA2020_GoC", 1, False),  # 78.4 /ms, s gate at +60 mV
     ClassEntry("CaHVA_MA2020_GrC", 1, False),  # 78.4 /ms, s gate at +60 mV
@@ -230,6 +229,7 @@ CLASSES = (
     ClassEntry("CaL_SU2015_DCN", 0, False),  # 4.78 /ms, m gate at +60 mV
     ClassEntry("CaN_IS2008", -1, False),  # 0.625 /ms, p gate at +60 mV
     ClassEntry("CaT_HM1992", 0, False),  # 7.32 /ms, p gate at +60 mV
+    ClassEntry("CaT_HM1992_Shifted25", 0, False),  # 6.83 /ms, p gate at +60 mV
     ClassEntry("CaT_HP1992", 0, False),  # 2.3 /ms, p gate at +60 mV
     ClassEntry("Ca_ZH2019_IO", -2, False),  # 0.025 /ms, h gate at +60 mV
     ClassEntry("Ca_ZH2019_IO_Frozen", -2, False),  # 0.025 /ms, h gate at +60 mV
@@ -356,8 +356,9 @@ CALCIUM_FAMILY_CONFIGS = (
 )
 """The configurations of the classes in ``calcium.py`` and ``potassium_calcium.py``."""
 CALCIUM_FAMILY_CLASSES = (
-    "AHP_De1994", "CaHT_HM1992", "CaHT_Re1993", "CaHVA_MA2020_GoC", "CaHVA_MA2020_GrC", "CaHVA_SU2015_DCN",
-    "CaLVA_SU2015_DCN", "CaL_IS2008", "CaL_SU2015_DCN", "CaN_IS2008", "CaT_HM1992", "CaT_HP1992",
+    "AHP_De1994", "CaHT_Re1993", "CaHVA_MA2020_GoC", "CaHVA_MA2020_GrC", "CaHVA_SU2015_DCN",
+    "CaLVA_SU2015_DCN", "CaL_IS2008", "CaL_SU2015_DCN", "CaN_IS2008", "CaT_HM1992", "CaT_HM1992_Shifted25",
+    "CaT_HP1992",
     "Ca_ZH2019_IO", "Ca_ZH2019_IO_Frozen", "Cav1p2_MA2020_GoC", "Cav1p2_MA2025_BC", "Cav1p3_MA2020_GoC",
     "Cav1p3_MA2025_BC", "Cav2p1_MA2024_PC", "Cav2p1_MA2024_PC_Frozen", "Cav2p1_MA2025_BC",
     "Cav2p1_MA2025_BC_Frozen", "Cav2p1_RI2021_SC", "Cav2p1_RI2021_SC_Frozen", "Cav2p3_MA2020_GoC",

@@ -144,6 +144,21 @@ class MechanismRegistryBasicsTest(MechanismRegistryIsolationMixin, unittest.Test
         self.assertIn("INa_HH1951", str(ctx.exception))
         self.assertIn("Did you mean", str(ctx.exception))
 
+    def test_unknown_get_of_a_renamed_name_gives_the_new_name(self) -> None:
+        # MECH-42: a name a release renamed without an alias says what it became,
+        # whatever the registry holds; the same name in another category does not.
+        reg = self.make_registry()
+        with self.assertRaises(KeyError) as ctx:
+            reg.get("channel", "CaHT_HM1992")
+        self.assertEqual(
+            ctx.exception.args[0],
+            "No 'channel' mechanism registered as 'CaHT_HM1992'. "
+            "braincell 0.3 renamed it to 'CaT_HM1992_Shifted25' and kept no alias.",
+        )
+        with self.assertRaises(KeyError) as ctx:
+            reg.get("ion", "CaHT_HM1992")
+        self.assertNotIn("renamed", ctx.exception.args[0])
+
 
 class MechanismRegistryAliasTest(MechanismRegistryIsolationMixin, unittest.TestCase):
     def test_alias_resolves_to_same_class(self) -> None:

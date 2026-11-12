@@ -15,6 +15,7 @@
 # ==============================================================================
 
 
+from braincell._deprecation import removed_attributes as _removed_attributes
 from braincell.channel._base import (
     Gate,
     Transition,
@@ -31,8 +32,8 @@ from braincell.channel._base import __all__ as _base_all
 from braincell.channel.calcium import (
     CaN_IS2008,
     CaT_HM1992,
+    CaT_HM1992_Shifted25,
     CaT_HP1992,
-    CaHT_HM1992,
     CaHT_Re1993,
     CaL_IS2008,
     CaHVA_SU2015_DCN,
@@ -174,3 +175,15 @@ __all__ = sorted(
     + _potassium_sodium_all
     + _sodium_all
 )
+
+#: Names that braincell 0.3 renamed without an alias (MECH-42), with what to
+#: use instead; raised as ``AttributeError`` (``ImportError`` on a
+#: ``from braincell.channel import ...`` line).
+_REMOVED_ATTRIBUTES = {
+    "CaHT_HM1992": (
+        "braincell.channel.CaHT_HM1992 was renamed in braincell 0.3. Use "
+        "braincell.channel.CaT_HM1992_Shifted25 (mech.Channel('CaT_HM1992_Shifted25', ...)), the same channel "
+        "under a name that says what it is: the T current of CaT_HM1992 with its gates shifted by +25 mV."
+    ),
+}
+__getattr__ = _removed_attributes(__name__, _REMOVED_ATTRIBUTES)

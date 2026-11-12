@@ -151,6 +151,28 @@ def test_pre_normalization_names_raise_attribute_error(name):
         getattr(channel, name)
 
 
+class RenamedChannelTest(unittest.TestCase):
+    """MECH-42: braincell 0.3 renamed ``CaHT_HM1992`` to ``CaT_HM1992_Shifted25``, keeping no alias."""
+
+    def test_access_names_the_new_name_and_the_release(self):
+        with self.assertRaises(AttributeError) as caught:
+            channel.CaHT_HM1992
+        message = str(caught.exception)
+        self.assertTrue(message.startswith("braincell.channel.CaHT_HM1992 was renamed in braincell 0.3."), message)
+        self.assertIn("braincell.channel.CaT_HM1992_Shifted25", message)
+        self.assertIn("mech.Channel('CaT_HM1992_Shifted25'", message)
+        self.assertFalse(hasattr(channel, "CaHT_HM1992"))
+        self.assertNotIn("CaHT_HM1992", channel.__all__)
+
+    def test_from_import_raises_import_error_with_the_message(self):
+        with self.assertRaisesRegex(ImportError, r"^braincell\.channel\.CaHT_HM1992 was renamed in braincell 0\.3\."):
+            from braincell.channel import CaHT_HM1992  # noqa: F401
+
+    def test_other_missing_names_keep_the_generic_message(self):
+        with self.assertRaisesRegex(AttributeError, "module 'braincell.channel' has no attribute 'NoSuchChannel'"):
+            channel.NoSuchChannel
+
+
 class ChannelRegistryKeyTest(unittest.TestCase):
     """Guard the ``@register_channel("Name")`` argument against drift.
 

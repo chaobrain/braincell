@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 import braincell
 
 cat = braincell.channel.CaT_HP1992(1)
-caht = braincell.channel.CaHT_HM1992(1)
+caht = braincell.channel.CaT_HM1992_Shifted25(1)
 
 vs = u.math.arange(-100 * u.mV, 0 * u.mV, 0.1 * u.mV)
 

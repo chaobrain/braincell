@@ -36,8 +36,11 @@ from braincell._misc import (
 )
 from braincell._multi_compartment.run import (
     _arrival_origin,
+    _dt_change_handover,
     _duration_steps,
     _float64_clock,
+    _keep_started_clock,
+    _kept_handover,
     _recording_time_mask,
     axial_operator_before_steps,
     check_step_limit,
@@ -89,6 +92,26 @@ class _CachedRunLoop:
 
     runner: object
     delivery_state: object
+
+
+@dataclass(frozen=True)
+class _Join:
+    """What the Cells of a run take over from the runs before it (CELL-57).
+
+    ``prepared`` names the Cells whose boundary at the start is prepared, by
+    a run on their own: it is theirs, and the Network's first step does not
+    prepare it again. ``handovers`` holds ``(name, ArrivalHandover)`` for
+    the Cells that ran at another ``dt`` before, whose arrival steps keep
+    what those runs took. Both are empty for Cells that only the Network
+    ran.
+    """
+
+    prepared: tuple[str, ...] = ()
+    handovers: tuple = ()
+
+    @property
+    def key(self) -> tuple:
+        return () if not (self.prepared or self.handovers) else (self.prepared, self.handovers)
 
 
 class Network:
@@ -200,8 +223,8 @@ class Network:
         """
         self._network_run_loop_cache.clear()
         if self._prepared_run is not None:
-            setup, cached, dt = self._prepared_run
-            self._prepared_run = (setup, _CachedRunLoop(runner=None, delivery_state=cached.delivery_state), dt)
+            setup, cached, dt, join = self._prepared_run
+            self._prepared_run = (setup, _CachedRunLoop(runner=None, delivery_state=cached.delivery_state), dt, join)
 
     def _mark_topology_changed(self) -> None:
         self._topology_version += 1
@@ -483,9 +506,19 @@ class Network:
             # update() counts steps on the clocks prepare_run() set, without
             # resetting them itself (a compiled loop would rewrite a constant
             # on every step): set them again, at t = 0.
-            dt = self._prepared_run[2]
+            setup, cached, dt, join = self._prepared_run
             for population in self._cell_populations().values():
                 population.cell._set_clock(0.0 * u.ms, 0, dt)
+            if join.key:
+                # From t = 0 no earlier run took any event or prepared a
+                # boundary: update() builds its loop, and the plan, again
+                # without them (CELL-57).
+                cached = _CachedRunLoop(runner=None, delivery_state=cached.delivery_state)
+                self._prepared_run = (setup, cached, dt, _Join())
+                if self._prepared_plans is not None:
+                    self._prepared_plans, _ = self._scheduled_arrays(
+                        self._runtime_config[-1], dt=dt, window=None, first_config=False
+                    )
         for state in self._delivery_state_cache.values():
             _reset_delivery_state(state)
         self._source_step = 0
@@ -567,6 +600,23 @@ class Network:
         :meth:`update`. Each time is one rounding of a product, in the run
         precision, so a run split into segments, or into ``update()``
         calls, steps at the same times as one run, however long it is.
+
+        **Cells that ran on their own** (CELL-57). A ``Cell.run`` ends by
+        preparing the boundary at the time it reached, with the scheduled
+        events within half of its step. A Network the Cell then joins, at a
+        time on its ``dt`` grid, leaves that boundary as it is: its first
+        step does not prepare it again, so each event, and each plasticity
+        rule update, happens once. When the Cell ran at another ``dt``, the
+        Network's steps also skip the events that boundary took and deliver
+        the others no earlier than their second step: within half of the
+        Cell's step of the join an event can act a step later or earlier
+        than in a Network run from ``t = 0``. A Network step consumes its
+        boundary within the step, so a Cell that later runs on its own at
+        another ``dt`` skips what the Network delivered in the same way. The
+        first run after a join is compiled with its first step apart;
+        :meth:`prepare_run` after one compiles an ``update()`` that tests, on
+        every step, whether such a Cell's boundary is prepared.
+        :meth:`reset_state` forgets the join.
 
         **Scheduled delivery** (``scheduled_delivery``, CELL-9). The
         arrivals of the run's steps ``[n, n + steps)`` are planned on the
@@ -661,7 +711,7 @@ class Network:
         )
         ordered_population_names = setup.ordered_population_names
         n_steps = _duration_steps(duration, dt)
-        start_ms = self._start_clocks(ordered_population_names, dt=dt, n_steps=n_steps, prefix="Network.run(...)")
+        start_ms, join = self._start_clocks(ordered_population_names, dt=dt, n_steps=n_steps, prefix="Network.run(...)")
         n_recording = setup.n_recording
         n_event = setup.n_event
         # NetStim events up to one step past the end cover every arrival the
@@ -673,7 +723,11 @@ class Network:
             # The plans of the window [step, step + n_steps), before the loop (CELL-9).
             start_step = self._grid_start_step(ordered_population_names, dt)
             plans, schedule_key = self._scheduled_arrays(
-                scheduled_delivery, dt=dt, window=(start_step, n_steps), first_config=first_config
+                scheduled_delivery,
+                dt=dt,
+                window=(start_step, n_steps),
+                first_config=first_config,
+                handovers=join.handovers,
             )
         cached_loop = self._network_run_loop(
             setup=setup,
@@ -682,6 +736,7 @@ class Network:
             n_steps=n_steps,
             schedule_key=schedule_key,
             scheduled_delivery=scheduled_delivery,
+            join=join,
         )
         values = self._take_value_inputs(ordered_population_names)
         try:
@@ -862,13 +917,15 @@ class Network:
         )
         # update() runs for an unknown number of steps: each eager call checks
         # the step limit, and every event is generated.
-        self._start_clocks(setup.ordered_population_names, dt=dt, n_steps=0, prefix="Network.prepare_run(...)")
+        _, join = self._start_clocks(
+            setup.ordered_population_names, dt=dt, n_steps=0, prefix="Network.prepare_run(...)"
+        )
         schedule_key = self._prepare_netstim_schedules(until_ms=None)
         plans = None
         if scheduled_delivery is not None:
             # One plan of every event, for every update() (CELL-9).
             plans, schedule_key = self._scheduled_arrays(
-                scheduled_delivery, dt=dt, window=None, first_config=first_config
+                scheduled_delivery, dt=dt, window=None, first_config=first_config, handovers=join.handovers
             )
         cached = self._network_run_loop(
             setup=setup,
@@ -877,9 +934,11 @@ class Network:
             n_steps=1,
             schedule_key=schedule_key,
             scheduled_delivery=scheduled_delivery,
+            join=join,
+            update=True,
         )
         self.trainables.materialize()
-        self._prepared_run = (setup, cached, dt)
+        self._prepared_run = (setup, cached, dt, join)
         self._prepared_plans = plans
         return self
 
@@ -913,9 +972,10 @@ class Network:
         """
         if self._prepared_run is None:
             raise RuntimeError("Call Network.prepare_run() before update().")
-        setup, cached, dt = self._prepared_run
+        setup, cached, dt, join = self._prepared_run
         if cached.runner is None:
-            # A Cell registered an input since the loop was traced.
+            # A Cell registered an input since the loop was traced, or
+            # reset_state() dropped the hand-overs it was traced with.
             cached = _CachedRunLoop(
                 runner=self._make_network_run_loop(
                     setup=setup,
@@ -923,10 +983,12 @@ class Network:
                     n_steps=1,
                     delivery_state=cached.delivery_state,
                     scheduled_delivery=self._runtime_config[-1],
+                    join=join,
+                    update=True,
                 ),
                 delivery_state=cached.delivery_state,
             )
-            self._prepared_run = (setup, cached, dt)
+            self._prepared_run = (setup, cached, dt, join)
         step = self.populations[setup.ordered_population_names[0]].cell._clock_step.value
         if not is_traced_value(step):
             # Inside a compiled loop the count is a tracer: checking it would
@@ -1070,6 +1132,8 @@ class Network:
         n_steps: int,
         schedule_key: tuple = (),
         scheduled_delivery: str | None = None,
+        join: _Join = _Join(),
+        update: bool = False,
     ) -> _CachedRunLoop:
         key = (
             setup_key,
@@ -1079,6 +1143,8 @@ class Network:
         )
         if scheduled_delivery is not None:
             key = key + (scheduled_delivery,)
+        if join.key:
+            key = key + (join.key, update)
         cached = self._network_run_loop_cache.get(key)
         if cached is None:
             delivery_state = self._delivery_state_cache.get(setup_key)
@@ -1096,6 +1162,8 @@ class Network:
                     n_steps=n_steps,
                     delivery_state=delivery_state,
                     scheduled_delivery=scheduled_delivery,
+                    join=join,
+                    update=update,
                 ),
                 delivery_state=delivery_state,
             )
@@ -1119,6 +1187,8 @@ class Network:
         n_steps: int,
         delivery_state,
         scheduled_delivery: str | None = None,
+        join: _Join = _Join(),
+        update: bool = False,
     ):
         """Create a persistent jitted scan of ``n_steps`` steps for one network run shape.
 
@@ -1130,14 +1200,46 @@ class Network:
         With ``scheduled_delivery`` the loop also takes the plans' arrays
         (:meth:`_scheduled_arrays`), so a window of the same length reuses
         it (CELL-9).
+
+        ``join`` (:class:`_Join`) holds what the Cells take over from their
+        runs before (CELL-57): the arrival steps of each Cell keep its
+        hand-over, and the first step does not prepare the boundaries that
+        are already prepared. A run's loop takes that step before its scan;
+        the loop of ``update()`` (``update``), which runs one step per call,
+        prepares those Cells' boundaries only while they are not prepared.
         """
-        from braincell.network.event import boundary_step, grid_step
+        from braincell.network.event import boundary_step, grid_step, handed_over
 
         delivery_blocks = setup.delivery_blocks
         ordered_population_names = setup.ordered_population_names
         compiled_recordings = setup.compiled_recordings
         event_sources = setup.event_sources
         cells = tuple(self.populations[name].cell for name in ordered_population_names)
+        handovers = dict(join.handovers)
+        prepared = frozenset(join.prepared)
+        first_apart = bool(prepared) and not update
+
+        def _prepare_inputs(t, s, first: bool) -> None:
+            for name in ordered_population_names:
+                cell = self.populations[name].cell
+                with handed_over(handovers.get(name)):
+                    if name not in prepared:
+                        cell._prepare_next_synapse_inputs()
+                    elif not first_apart:
+                        cell._prepare_first_synapse_inputs(t=t, step=s)
+                    elif not first:
+                        cell._prepare_next_synapse_inputs()
+
+        def _scan(step, *over):
+            if not first_apart:
+                return brainstate.transform.for_loop(step, *over)
+            # The first step, which leaves the prepared boundaries to the
+            # runs that prepared them, before the scan of the others.
+            first = step(*(item[0] for item in over), first=True)
+            if n_steps == 1:
+                return jax.tree.map(lambda value: value[None], first)
+            rest = brainstate.transform.for_loop(step, *(item[1:] for item in over))
+            return jax.tree.map(lambda head, tail: jnp.concatenate([head[None], tail]), first, rest)
 
         def _run_loop(values):
             origin = cells[0]._clock_origin.value
@@ -1148,7 +1250,7 @@ class Network:
             grid = grid_step(origin, step, dt) + jnp.arange(n_steps, dtype=jnp.int32)
             with brainstate.environ.context(dt=dt):
 
-                def _step(t, s):
+                def _step(t, s, first=False):
                     with brainstate.environ.context(t=t), boundary_step(t, s):
                         with jax.named_scope("braincell:network_run:prepare_clamps"):
                             for name in ordered_population_names:
@@ -1165,8 +1267,7 @@ class Network:
                         with jax.named_scope("braincell:network_run:write_arrivals"):
                             write_arrivals(delivery_state, populations=self.populations)
                         with jax.named_scope("braincell:network_run:prepare_inputs"):
-                            for name in ordered_population_names:
-                                self.populations[name].cell._prepare_next_synapse_inputs()
+                            _prepare_inputs(t, s, first)
                         with jax.named_scope("braincell:network_run:begin_cells"):
                             for name in ordered_population_names:
                                 self.populations[name].cell._begin_step()
@@ -1200,19 +1301,17 @@ class Network:
 
                 if values:
 
-                    def _step_with_values(index, t, s):
+                    def _step_with_values(index, t, s, first=False):
                         # The value inputs act on the first step only.
                         with contextlib.ExitStack() as stack:
                             for name, taken in values.items():
                                 cell = self.populations[name].cell
                                 stack.enter_context(cell._value_input_step(taken, first=index == 0))
-                            return _step(t, s)
+                            return _step(t, s, first)
 
-                    samples_over_time = brainstate.transform.for_loop(
-                        _step_with_values, jnp.arange(times.shape[0]), times, grid
-                    )
+                    samples_over_time = _scan(_step_with_values, jnp.arange(times.shape[0]), times, grid)
                 else:
-                    samples_over_time = brainstate.transform.for_loop(_step, times, grid)
+                    samples_over_time = _scan(_step, times, grid)
 
             end_step = (step + n_steps).astype(jnp.int32)
             for cell in cells:
@@ -1230,12 +1329,13 @@ class Network:
 
         return brainstate.transform.jit(_scheduled_run_loop)
 
-    def _scheduled_arrays(self, method: str, *, dt, window, first_config: bool) -> tuple:
+    def _scheduled_arrays(self, method: str, *, dt, window, first_config: bool, handovers: tuple = ()) -> tuple:
         """Return the plans' arrays of ``window`` (``None``: every event) and the loop's schedule token.
 
-        A plan that cannot be built (``PaddingLimitError``) leaves the
-        runtime configuration as this call found it, so a first run can
-        switch to another method.
+        ``handovers`` holds ``(population, ArrivalHandover)`` of the Cells
+        that ran at another ``dt`` before (CELL-57). A plan that cannot be
+        built (``PaddingLimitError``) leaves the runtime configuration as
+        this call found it, so a first run can switch to another method.
         """
         from braincell.network.event import _host_ms
 
@@ -1244,6 +1344,7 @@ class Network:
             if plans is None or plans.method != method:
                 plans = ScheduledPlans.build(method, self.populations, float(_host_ms(dt)))
                 self._scheduled_plans = plans
+            plans.handovers = dict(handovers)
             arrays = plans.everything() if window is None else plans.window(*window)
         except BaseException:
             if first_config:
@@ -1307,8 +1408,8 @@ class Network:
             "adding it."
         )
 
-    def _start_clocks(self, names: tuple[str, ...], *, dt, n_steps: int, prefix: str) -> float:
-        """Give the Cells named ``names`` one clock counting steps of ``dt``; return its time in ms.
+    def _start_clocks(self, names: tuple[str, ...], *, dt, n_steps: int, prefix: str) -> tuple[float, _Join]:
+        """Give the Cells named ``names`` one clock counting steps of ``dt``; return its time in ms and the join.
 
         The Cells must be at the same ``current_time``. They take the clock
         of the first, counting from its time if it last ran at another
@@ -1317,6 +1418,12 @@ class Network:
         any clock, when ``n_steps`` more steps would pass the step limit.
         The usual call, on clocks already shared and counting ``dt``, only
         reads them on the host.
+
+        The :class:`_Join` names the Cells whose boundary at the start a run
+        on their own prepared, and holds the hand-over of each Cell that
+        ran at another ``dt`` (CELL-57). A Cell whose clock changes ``dt``
+        here keeps its float64 time, ``dt`` and hand-over beside the new
+        clock, as ``Cell.run`` does, for a later run on its own.
         """
         cells = [self.populations[name].cell for name in names]
         clocks = [cell._clock_host() for cell in cells]
@@ -1325,15 +1432,32 @@ class Network:
             raise ValueError("Network populations must have the same current_time.")
         origin_ms, step, counts_dt = host_clock_start(clocks[0], dt)
         check_step_limit(step, n_steps, dt=dt, prefix=prefix)
+        flags = [bool(np.asarray(cell._next_synapse_inputs_prepared.value)) for cell in cells]
         if not counts_dt:
+            handovers = [
+                _dt_change_handover(cell, clock, dt, prepared=flag) for cell, clock, flag in zip(cells, clocks, flags)
+            ]
+            reached = [
+                origin64 + step64 * dt64
+                for origin64, step64, dt64 in (_float64_clock(cell, clock) for cell, clock in zip(cells, clocks))
+            ]
             origin, step_value = cells[0]._clock_start(dt)
             for cell in cells:
                 cell._set_clock(origin, step_value, dt)
-        elif any(clock != clocks[0] for clock in clocks[1:]):
-            first = cells[0]
-            for cell in cells[1:]:
-                cell._set_clock(first._clock_origin.value, first._clock_step.value, first._clock_dt.value)
-        return origin_ms + step * scalar_decimal(dt, u.ms)
+            dt_ms = scalar_decimal(dt, u.ms)
+            for cell, time_ms, handover in zip(cells, reached, handovers):
+                _keep_started_clock(cell, time_ms, dt_ms, handover)
+        else:
+            handovers = [_kept_handover(cell, clock) for cell, clock in zip(cells, clocks)]
+            if any(clock != clocks[0] for clock in clocks[1:]):
+                first = cells[0]
+                for cell in cells[1:]:
+                    cell._set_clock(first._clock_origin.value, first._clock_step.value, first._clock_dt.value)
+        join = _Join(
+            prepared=tuple(name for name, flag in zip(names, flags) if flag),
+            handovers=tuple((name, handover) for name, handover in zip(names, handovers) if handover is not None),
+        )
+        return origin_ms + step * scalar_decimal(dt, u.ms), join
 
     def _cell_populations(self) -> dict[str, Population]:
         return {name: population for name, population in self.populations.items() if population.kind == "cell"}

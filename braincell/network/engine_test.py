@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+import gc
 import re
 import unittest
 import warnings
@@ -31,6 +32,8 @@ from braincell._multi_compartment.run_test import (
     DT,
     WEIGHT,
     _float64,
+    _rule_cell,
+    _rule_updates,
     assert_same_trajectory,
     axial_builds,
     hh_y_cable,
@@ -679,6 +682,264 @@ class NetworkOffGridStartTest(unittest.TestCase):
             network.run(dt=2 * _NET_DT, duration=2 * _NET_DT)
         with self.assertRaisesRegex(RuntimeError, "configuration is fixed"):
             network.prepare_run(dt=2 * _NET_DT)
+
+
+#: CELL-57: events in the half steps of 0.025 and 0.05 ms on both sides of 0.25 ms (L94).
+_NEAR_EVENTS = (0.2255, 0.2385, 0.245, 0.25, 0.255, 0.2615, 0.27, 0.3)
+
+
+def _counting_cell(source):
+    """``(cell, (source,))``: a passive 1-CV cell at rest whose ExpSyn (tau 1e9 ms, e = rest) gains 1 uS per arrival."""
+    branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+    cell = braincell.Cell(
+        braincell.Morphology.from_root(branch), cv_policy=braincell.CVPerBranch(1), V_init=-65.0 * u.mV
+    )
+    cell.paint(AllRegion(), braincell.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    cell.place(at(0, 0.5), braincell.mech.Synapse("ExpSyn", name="s", tau=1e9 * u.ms, e=-65.0 * u.mV))
+    cell.record("g", braincell.observe.synapse(name="s").state("g"))
+    braincell.connect("c", source=source, synapse=cell.synapses["s"], weight=1.0 * u.uS)
+    return cell, (source,)
+
+
+def _sequence(times=_NEAR_EVENTS):
+    return braincell.EventSequence.from_times([np.asarray(times) * u.ms])
+
+
+def _join_network(cell, sources):
+    network = Network("join")
+    network.add_population("post", cell)
+    for index, source in enumerate(sources):
+        network.add_population(f"source{index}", source)
+    return network
+
+
+def _now_ms(cell) -> float:
+    return round(float(np.asarray(cell.current_time.to_decimal(u.ms), dtype=np.float64)), 6)
+
+
+def _network_steps(network, cell, driver, dt_ms, n_steps, rises, *, prepare=True):
+    """Drive ``network`` ``n_steps`` steps of ``dt_ms``, adding each step's rise of g to ``rises`` (boundary -> count).
+
+    ``"run"``, ``"direct"`` and ``"padded"`` call ``Network.run`` once per
+    step; ``"update"`` calls ``update()`` (``"direct update"`` with a
+    ``"direct"`` plan) after ``prepare_run`` (unless not ``prepare``), and
+    ``"loop"`` runs the ``update()`` calls in one compiled loop; ``"one
+    run"`` is one ``Network.run``, read from its recording. g is read from
+    the synapse after every step (L93).
+    """
+    dt = dt_ms * u.ms
+    if prepare and driver in ("update", "loop", "direct update"):
+        network.prepare_run(dt=dt, scheduled_delivery="direct" if driver == "direct update" else None)
+    previous = _synapse_g(cell)
+    if driver == "loop":
+        start = _now_ms(cell)
+        _, _, g = _update_loop(network, cell, n_steps)
+        steps = [round(start + k * dt_ms, 6) for k in range(n_steps)]
+        values = np.asarray(g, dtype=np.float64)
+    elif driver == "one run":
+        result = network.run(dt=dt, duration=n_steps * dt)
+        steps = np.round(np.asarray(result.time.to_decimal(u.ms), dtype=np.float64), 6).tolist()
+        sampled = np.asarray(result.samples["post"]["g"].values.to_decimal(u.uS), dtype=np.float64).reshape(-1)
+        # The sample at t_k precedes the arrivals of boundary t_k.
+        values = np.append(sampled[1:], _synapse_g(cell))
+    else:
+        steps, values = [], []
+        options = {"scheduled_delivery": driver} if driver in ("direct", "padded") else {}
+        for _ in range(n_steps):
+            steps.append(_now_ms(cell))
+            if driver in ("update", "direct update"):
+                network.update()
+            else:
+                network.run(dt=dt, duration=dt, **options)
+            values.append(_synapse_g(cell))
+    for step, value in zip(steps, values):
+        if value - previous > 0.5:
+            rises[step] = rises.get(step, 0) + int(np.rint(value - previous))
+        previous = value
+    return rises
+
+
+def _cell_steps(cell, dt_ms, n_steps, rises):
+    """``Cell.run`` ``n_steps`` steps of ``dt_ms``, one per call, adding each step's rise of g to ``rises``."""
+    previous = _synapse_g(cell)
+    for _ in range(n_steps):
+        step = _now_ms(cell)
+        cell.run(dt=dt_ms * u.ms, duration=dt_ms * u.ms)
+        value = _synapse_g(cell)
+        if value - previous > 0.5:
+            rises[step] = rises.get(step, 0) + int(np.rint(value - previous))
+        previous = value
+    return rises
+
+
+class NetworkHandOverTest(unittest.TestCase):
+    """CELL-57: a Cell that ran alone joins a Network, or leaves one, and each event arrives once.
+
+    The boundary at the time a run on its own reached is prepared by that run,
+    with its window at its dt, and stays its own: the Network's first step does
+    not prepare it again. At another dt the Network's steps skip the events
+    that run took and deliver the others no earlier than its next boundary
+    (decision 1). A Network step consumes its boundary within the step, so a
+    Cell run after it starts at its own first boundary, skipping what the
+    Network took. The expected boundaries are worked out by hand in each test.
+    """
+
+    #: Cell.run 10 x 0.025 ms (it prepares 0.25 ms with [0.2375, 0.2625)), then
+    #: the Network: at 0.025 ms the rest are on their steps (0.27 at 0.275 ms);
+    #: at 0.05 ms 0.27 ms (5.4 steps, the prepared 0.25 ms) acts at 0.3 ms.
+    #: main delivered 0.25 ms's window again: {0.225: 1, 0.25: 10, 0.275: 1,
+    #: 0.3: 1} and {0.225: 1, 0.25: 12, 0.3: 1} (7 at 0.05 ms), 13 and 14 of 8.
+    JOINS = {
+        0.025: (10, {0.225: 1, 0.25: 5, 0.275: 1, 0.3: 1}),
+        0.05: (5, {0.225: 1, 0.25: 5, 0.3: 2}),
+    }
+
+    @staticmethod
+    def _precision(precision):
+        return _float64() if precision == 64 else brainstate.environ.context(precision=32)
+
+    def test_a_cell_that_ran_alone_joins_and_each_event_arrives_once(self):
+        for precision in (32, 64):
+            for net_dt, (n_steps, expected) in self.JOINS.items():
+                for driver in ("run", "one run", "update", "loop", "direct", "padded"):
+                    with self.subTest(precision=precision, dt=net_dt, driver=driver), self._precision(precision):
+                        cell, sources = _counting_cell(_sequence())
+                        cell.init_state()
+                        rises = _cell_steps(cell, 0.025, 10, {})
+                        network = _join_network(cell, sources)
+                        _network_steps(network, cell, driver, net_dt, n_steps, rises)
+                        self.assertEqual(rises, expected)
+                        self.assertEqual(round(_synapse_g(cell)), len(_NEAR_EVENTS))
+
+    def test_a_netstim_planned_across_a_join_arrives_once(self):
+        # NetStim at 0.2255 + 0.013 k ms (k < 6): alone, 0.2255 ms acts at
+        # 0.225 ms, 0.2385 and 0.2515 ms at 0.25 ms. At 0.025 ms 0.2645 and
+        # 0.2775 ms are 10.58 and 11.1 steps (0.275 ms), 0.2905 ms 11.62 (0.3
+        # ms); at 0.05 ms all three act at 0.3 ms (5.29, 5.55, 5.81 steps).
+        expected = {0.025: {0.225: 1, 0.25: 2, 0.275: 2, 0.3: 1}, 0.05: {0.225: 1, 0.25: 2, 0.3: 3}}
+        for precision in (32, 64):
+            for net_dt, rises_expected in expected.items():
+                for driver in ("run", "direct", "padded", "update"):
+                    with self.subTest(precision=precision, dt=net_dt, driver=driver), self._precision(precision):
+                        stim = braincell.NetStim(size=1, start=0.2255 * u.ms, interval=0.013 * u.ms, number=6)
+                        cell, sources = _counting_cell(stim)
+                        cell.init_state()
+                        rises = _cell_steps(cell, 0.025, 10, {})
+                        network = _join_network(cell, sources)
+                        _network_steps(network, cell, driver, net_dt, self.JOINS[net_dt][0], rises)
+                        self.assertEqual(rises, rises_expected)
+
+    def test_a_rule_updates_once_per_boundary_across_a_join(self):
+        # The Network's first step leaves the rule's boundary at 0.25 ms to the
+        # run that prepared it: the rule updates once there (main twice).
+        for precision in (32, 64):
+            for net_dt, (n_steps, expected) in self.JOINS.items():
+                with (
+                    self.subTest(precision=precision, dt=net_dt),
+                    self._precision(precision),
+                    _rule_updates() as updates,
+                ):
+                    cell, sources = _rule_cell(_NEAR_EVENTS)
+                    cell.run(dt=DT, duration=10 * DT)
+                    network = _join_network(cell, sources)
+                    network.run(dt=net_dt * u.ms, duration=n_steps * net_dt * u.ms)
+                    jax.effects_barrier()
+                    alone = [round(k * 0.025, 6) for k in range(11)]
+                    joined = [round(0.25 + k * net_dt, 6) for k in range(1, n_steps)]
+                    self.assertEqual([round(t, 6) for t, _, _ in updates], alone + joined)
+                    self.assertEqual({round(t, 6): int(n) for t, n, _ in updates if n}, expected)
+                    self.assertEqual({round(t, 6): int(n) for t, _, n in updates if n}, expected)
+
+    def test_a_joined_cell_with_its_own_live_row_keeps_its_prepared_boundary(self):
+        # The Cell's own spike port feeds its synapse with a 1 ms delay: in the
+        # Network that row has a delay queue, whose write of the first step's
+        # (empty) arrivals replaced the boundary the run alone prepared. main:
+        # 8 of 8 at 0.025 ms (the second preparation stood in for it) and 9 of
+        # 8 at 0.05 ms; without the merge, 3 of 8. The Cell never spikes, so g
+        # counts the scheduled events, and an ExpSynSTD beside it their number.
+        for precision in (32, 64):
+            for net_dt, (n_steps, expected) in self.JOINS.items():
+                with self.subTest(precision=precision, dt=net_dt), self._precision(precision):
+                    cell, sources = _counting_cell(_sequence())
+                    cell.place(
+                        at(0, 0.5),
+                        braincell.mech.Synapse("ExpSynSTD", name="d", tau=1e9 * u.ms, U=0.5, tau_rec=1e9 * u.ms),
+                    )
+                    braincell.connect("d", source=sources[0], synapse=cell.synapses["d"], weight=1.0 * u.uS)
+                    for name in ("s", "d"):
+                        braincell.connect(
+                            f"self {name}",
+                            source=cell.event_outputs["spike"],
+                            synapse=cell.synapses[name],
+                            weight=1.0 * u.uS,
+                            delay=1.0 * u.ms,
+                        )
+                    cell.init_state()
+                    rises = _cell_steps(cell, 0.025, 10, {})
+                    network = _join_network(cell, sources)
+                    _network_steps(network, cell, "run", net_dt, n_steps, rises)
+                    self.assertEqual(rises, expected)
+                    (depressing,) = cell.runtime_objects(braincell.synapse.ExpSynSTD).values()
+                    x = float(np.asarray(u.get_mantissa(depressing.x.value), dtype=np.float64).reshape(-1)[0])
+                    self.assertAlmostEqual(-np.log2(x), len(_NEAR_EVENTS), places=4)
+
+    def test_a_cell_that_leaves_a_network_runs_on_and_each_event_arrives_once(self):
+        # The Network's last step consumed its boundary, so the Cell alone
+        # prepares 0.25 ms itself, without the events the Network took.
+        # 0.2375 ms is a tie, 9.5 steps of 0.025 ms: step 10, which the Network
+        # did not reach. main: 10 x 0.025 then 0.05 delivered 0.2255 ms again
+        # at 0.25 ms (10 of 9); 5 x 0.05 then 0.025 lost it (8 of 9).
+        expected = {
+            (0.025, 0.025): {0.225: 1, 0.25: 6, 0.275: 1, 0.3: 1},
+            (0.025, 0.05): {0.225: 1, 0.25: 7, 0.3: 1},
+            (0.05, 0.025): {0.25: 7, 0.275: 1, 0.3: 1},
+            (0.05, 0.05): {0.25: 8, 0.3: 1},
+        }
+        times = sorted(_NEAR_EVENTS + (0.2375,))
+        for precision in (32, 64):
+            for (net_dt, cell_dt), rises_expected in expected.items():
+                for driver in ("run", "direct"):
+                    with (
+                        self.subTest(precision=precision, network=net_dt, cell=cell_dt, driver=driver),
+                        self._precision(precision),
+                    ):
+                        cell, sources = _counting_cell(_sequence(times))
+                        network = _join_network(cell, sources)
+                        network.init_state()
+                        rises = _network_steps(network, cell, driver, net_dt, round(0.25 / net_dt), {})
+                        del network
+                        gc.collect()
+                        _cell_steps(cell, cell_dt, 4, rises)
+                        self.assertEqual(rises, rises_expected)
+
+    def test_reset_state_after_a_join_counts_from_time_zero(self):
+        # From t = 0 at 0.05 ms the events count from time 0 again: 0.2255 to
+        # 0.27 ms are 4.51 to 5.4 steps (0.25 ms), 0.3 ms 6.
+        for driver in ("update", "direct update", "run", "direct"):
+            with self.subTest(driver=driver):
+                cell, sources = _counting_cell(_sequence())
+                cell.init_state()
+                _cell_steps(cell, 0.025, 10, {})
+                network = _join_network(cell, sources)
+                _network_steps(network, cell, driver, 0.05, 3, {})
+                network.reset_state()
+                rises = _network_steps(network, cell, driver, 0.05, 8, {}, prepare=False)
+                self.assertEqual(rises, {0.25: 7, 0.3: 1})
+
+    def test_a_network_of_fresh_cells_compiles_the_loop_it_did(self):
+        # Nothing to take over: one loop, keyed as before; after a join, the
+        # first run has its own loop and the next ones share one.
+        cell, sources = _counting_cell(_sequence())
+        network = _join_network(cell, sources)
+        for _ in range(3):
+            network.run(dt=_NET_DT, duration=2 * _NET_DT)
+        self.assertEqual([len(key) for key in network._network_run_loop_cache], [4])
+        cell, sources = _counting_cell(_sequence())
+        cell.run(dt=DT, duration=10 * DT)
+        network = _join_network(cell, sources)
+        for _ in range(3):
+            network.run(dt=_NET_DT, duration=2 * _NET_DT)
+        self.assertEqual(len(network._network_run_loop_cache), 2)
 
 
 def _resting_one_cv_cell(kind, solver, pop_size=2):

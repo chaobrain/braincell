@@ -348,6 +348,10 @@ class _SpikePort:
             return spike
         if not rcell._is_lumped:
             spike = spike[..., self.cv_id]
+        # Pack the stored spike. Left to itself, XLA recomputes it from the
+        # voltages before and after the step inside the packing kernel, which
+        # keeps a copy of the old voltage alive on every step (CELL-39).
+        spike = jax.lax.optimization_barrier(spike)
         return jnp.packbits(spike.reshape(-1) != 0)
 
     def series(self, rcell: "Cell", times, rows) -> EventSeries:
@@ -361,8 +365,10 @@ class _SpikePort:
         else:
             shape = rcell.spike.value.shape
             n_rows = int(np.prod(shape if rcell._is_lumped else shape[:-1], dtype=np.int64))
-            # Only the nonzero bytes are expanded to their eight rows.
-            step, byte = np.nonzero(rows)
+            # Only the nonzero bytes are expanded to their eight rows. NumPy
+            # finds the nonzero entries of a flat boolean array several times
+            # faster than those of a 2-D byte array (CELL-39).
+            step, byte = np.divmod(np.flatnonzero(rows != 0), rows.shape[1])
             hit, bit = np.nonzero(np.unpackbits(rows[step, byte][:, None], axis=1))
             step, source_id = step[hit], byte[hit] * 8 + bit
             count = np.ones(source_id.shape, dtype=np.int64)
@@ -509,16 +515,36 @@ def _make_run_loop(
                             spikes = (spike_port.read(rcell),)
                 return recording_snapshot + spikes
 
+            prepared = rcell._next_synapse_inputs_prepared
+            previous_V = getattr(rcell, "_event_previous_V", None)
+
+            def _carried_step(index, t):
+                # Two states are rewritten by every step before anything reads
+                # them, so the loop need not carry them from step to step; on
+                # GPU each carried rewrite costs a device copy per step
+                # (CELL-39). The prepared-boundary flag ends every step as it
+                # began, true: ``_prepare_first_synapse_inputs`` set it and
+                # each step prepares the boundary after it. The voltage before
+                # the step (read by VoltageCrossingSource within the step)
+                # leaves the loop from its last step only.
+                flag = prepared.value
+                previous = None if previous_V is None else previous_V.value
+                outputs = _step(t)
+                prepared.value = flag
+                if previous_V is not None:
+                    previous_V.value = u.math.where(index == n_steps - 1, previous_V.value, previous)
+                return outputs
+
             if any(values):
 
                 def _step_with_values(index, t):
                     # The value inputs act on the first step only.
                     with rcell._value_input_step(values, first=index == 0):
-                        return _step(t)
+                        return _carried_step(index, t)
 
                 traces_over_time = brainstate.transform.for_loop(_step_with_values, jnp.arange(n_steps), times)
             else:
-                traces_over_time = brainstate.transform.for_loop(_step, times)
+                traces_over_time = brainstate.transform.for_loop(_carried_step, jnp.arange(n_steps), times)
             stop_t = origin + (step + n_steps) * dt
             rcell._set_clock(origin, step + n_steps, dt)
 

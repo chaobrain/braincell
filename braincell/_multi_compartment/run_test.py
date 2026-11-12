@@ -16,6 +16,7 @@
 """Tests for :mod:`braincell._multi_compartment.run`: helpers and split runs."""
 
 import contextlib
+import re
 import unittest
 import warnings
 
@@ -573,6 +574,23 @@ class RunSpikesTest(unittest.TestCase):
                     self.assertLessEqual(len(crossed), 3)
                 self.assertGreater(len(result.spikes.source_id), 0)
 
+    def test_members_beyond_the_first_byte_report_their_own_crossings(self):
+        # Each step packs eight members to a byte; 20 members span three bytes.
+        drive = np.linspace(0.0, 0.2, 20) * u.nA
+        cell = _hh_cell("lumped", n=20, amplitudes=None)
+        cell.add_current_input("drive", lambda V: drive)
+        cell.loc(RootLocation(0.5)).record("v", "V")
+        result = cell.run(dt=DT, duration=self.DURATION)
+        v = np.asarray(result.samples["v"].values.to_decimal(u.mV))
+        crossed = (v[:-1] < 0.0) & (v[1:] >= 0.0)
+        rows = [row.population_index for row in result.samples["v"].schema.rows]
+        step, column = np.nonzero(crossed)
+        order = np.lexsort((np.asarray(rows)[column], step))
+        spikes = result.spikes
+        np.testing.assert_array_equal(spikes.source_id, np.asarray(rows)[column][order])
+        np.testing.assert_allclose(_ms(spikes), np.asarray(result.time.to_decimal(u.ms))[step[order]], rtol=1e-12)
+        self.assertGreater(len(set(spikes.source_id.tolist()) & set(range(16, 20))), 0)
+
     def test_a_lower_threshold_fires_earlier(self):
         at_zero = _hh_cell("lumped").run(dt=DT, duration=self.DURATION).spikes
         at_minus_20 = _hh_cell("lumped", V_th=-20.0 * u.mV).run(dt=DT, duration=self.DURATION).spikes
@@ -728,6 +746,100 @@ class RunResultPytreeTest(unittest.TestCase):
         self.assertIsInstance(result, RunResult)
         self.assertEqual(result.samples["v"].values.shape, (40, 3))
         self.assertIsNone(result.spikes)
+
+
+def _indent(line):
+    return len(line) - len(line.lstrip())
+
+
+def _step_loop_rewrites(cell):
+    """Carries that ``cell``'s cached Cell.run loop sets to a constant or to another carry's input on every step.
+
+    Reads the lowered StableHLO of the loop: in the body of its outer
+    ``stablehlo.while``, a returned value that is neither the carry itself
+    nor computed by a non-constant op of the body is a value every step
+    writes over the carry; on GPU each such carry costs a copy per step
+    (CELL-39). Returns ``(position, value)`` pairs.
+    """
+    (plan,) = cell._run_loop_cache.values()
+    with brainstate.environ.context(dt=DT):
+        lines = plan.loop.lower(cell._take_value_inputs()).as_text().splitlines()
+    start = max(
+        (index for index, line in enumerate(lines) if "stablehlo.while(" in line),
+        key=lambda index: lines[index].count("%iterArg"),
+    )
+    indent = _indent(lines[start])
+    carries = re.findall(r"(%iterArg\w*) = ", lines[start])
+    body = next(i for i in range(start, len(lines)) if lines[i].strip() == "} do {" and _indent(lines[i]) == indent)
+    computed = set()
+    for line in lines[body + 1 :]:
+        if _indent(line) != indent + 2:
+            continue
+        op = line.strip()
+        if op.startswith("stablehlo.return "):
+            returned = [value.strip() for value in op[len("stablehlo.return ") :].split(" : ")[0].split(",")]
+            break
+        match = re.match(r"(%\w+)(?::\d+)? = (\S+)", op)
+        if match and match.group(2) != "stablehlo.constant":
+            computed.add(match.group(1))
+    return [
+        (position, value)
+        for position, value in enumerate(returned)
+        if value != carries[position] and value.split("#")[0] not in computed
+    ]
+
+
+class RunLoopCarryTest(unittest.TestCase):
+    """CELL-39: the run loop carries no state that every step rewrites before reading it."""
+
+    def _detector_cell(self):
+        """``_hh_cell("lumped")`` whose -20 mV detector drives its own ExpSyn (weight 1e-6 uS, tau 1e6 ms)."""
+        cell = _hh_cell("lumped")
+        cell.place(RootLocation(0.5), mech.Synapse("ExpSyn", name="self", tau=1e6 * u.ms, e=-65.0 * u.mV))
+        detector = braincell.VoltageCrossingSource(cell, threshold=-20.0 * u.mV)
+        braincell.connect("self", source=detector, synapse=cell.synapses["self"], weight=1e-6 * u.uS)
+        cell.record("V", "V")
+        cell.record("g", braincell.observe.synapse(name="self").state("g"))
+        return cell
+
+    def test_no_carry_is_rewritten_by_every_step(self):
+        cells = {"lumped": _hh_cell("lumped"), "cable": _hh_cell("cable"), "reduced": _reduced_cell()}
+        cells["detector"] = self._detector_cell()
+        for name, cell in cells.items():
+            with self.subTest(cell=name):
+                cell.init_state()
+                cell.run(dt=DT, duration=4 * DT)
+                self.assertEqual(_step_loop_rewrites(cell), [])
+        with self.subTest(cell="lumped with a value input"):
+            # A value input is an argument of the loop, which then wraps each step to apply it on the first.
+            cell = cells["lumped"]
+            cell.add_current_input("pulse", 0.1 * u.nA)
+            self.assertEqual(_step_loop_rewrites(cell), [])
+
+    def test_a_detector_reads_the_voltage_before_each_step(self):
+        with _float64():
+            cell = self._detector_cell()
+            cell.init_state()
+            result = cell.run(dt=DT, duration=20.0 * u.ms)
+        V = np.asarray(result.samples["V"].values.to_decimal(u.mV))
+        g = np.asarray(result.samples["g"].values.to_decimal(u.uS))
+        # A crossing in the step from t_k is delivered at t_k + dt: g jumps between samples k and k + 1.
+        crossings = (V[:-1] < -20.0) & (V[1:] >= -20.0)
+        np.testing.assert_array_equal(np.diff(g, axis=0) > 0.0, crossings)
+        np.testing.assert_array_equal(crossings.sum(axis=0), [0, 1, 2])
+
+    def test_the_voltage_before_the_last_step_outlives_the_run(self):
+        for kind in ("lumped", "cable"):
+            with self.subTest(kind=kind), _float64():
+                cell = _hh_cell(kind)
+                cell.record("V", "V")
+                cell.init_state()
+                result = cell.run(dt=DT, duration=5.0 * u.ms)
+                last = result.samples["V"].values[-1]
+                np.testing.assert_array_equal(
+                    np.asarray(cell._event_previous_V.value.to_decimal(u.mV)).reshape(-1),
+                    np.asarray(last.to_decimal(u.mV)).reshape(-1),
+                )
 
 
 def _synapse(cell):

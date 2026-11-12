@@ -919,6 +919,12 @@
   100 distinct per-source degrees the first call, which compiles, took
   13 s and now 0.9 s.
 
+- The examples under `examples/` are in English: the comments, markdown,
+  printed strings and plot labels of ten notebooks, the parameter-fitting
+  README and its report template (`reporting.py`), and the NMODL notes in
+  `examples/convert_mod/nmodl/`, where `docs/nmodl_mental_model_zh.md` is now
+  `docs/nmodl_mental_model.md`. The code is unchanged. The notebooks were
+  re-executed on main `13c2b1b`.
 - **Breaking:** braincell now requires `jax>=0.11` (it was `>=0.9`), in
   the base requirement and in the `cpu`, `cuda12`, `cuda13` and `tpu`
   extras. Users on JAX 0.9 or 0.10 must upgrade JAX before upgrading

@@ -45,7 +45,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import brainstate
-from braincell import mech
+from braincell import mech, observe
 from braincell.filter import at
 
 from validation.neuron.cell.pc_ma2024.debug.pc_parameters import (
@@ -221,8 +221,11 @@ def run_case(case_name: str, toggles: PCToggles, order: str, *, dt_ms: float, du
         )
         braincell_pc.cell.init_state()
         braincell_pc.cell.reset_state()
-        braincell_init = sample_braincell_init(braincell_pc)
-        bc_run = braincell_pc.cell.run(dt=dt_ms * u.ms, duration=duration_ms * u.ms)
+        # A recording samples before each step: row 0 is the initialized
+        # state, and one extra step makes rows 1.. the states after each of
+        # NEURON's steps, t = dt .. duration.
+        bc_run = braincell_pc.cell.run(dt=dt_ms * u.ms, duration=(duration_ms + dt_ms) * u.ms)
+        braincell_init = sample_braincell_init(bc_run)
 
         nrn_v = neuron_pc.collect_voltage_results(nrn_voltage_probes)
         bc_v = braincell_pc.collect_voltage_results(bc_voltage_probes, bc_run)
@@ -253,33 +256,24 @@ def run_case(case_name: str, toggles: PCToggles, order: str, *, dt_ms: float, du
 def attach_soma_diagnostics(neuron_pc: NeuronPC, braincell_pc: BrainCellPC, toggles: PCToggles) -> dict[str, Any]:
     handles: dict[str, Any] = {}
     nrn_seg = neuron_pc.root_soma(0.5)
+    soma = braincell_pc.cell.loc(at("soma", 0.5))
     if toggles.cdp or any((toggles.cav21, toggles.cav31, toggles.cav32, toggles.cav33, toggles.kca2p2, toggles.kca3p1)):
         if hasattr(nrn_seg, "_ref_cai"):
             handles["cai_neuron"] = h.Vector().record(nrn_seg._ref_cai)
-            braincell_pc.cell.place(at("soma", 0.5), mech.MechanismProbe(mechanism="ca", field="Ci", name="soma_ca_Ci"))
+            soma.record("soma_ca_Ci", observe.ion(name="ca").state("Ci"))
             handles["cai_braincell_trace"] = "soma_ca_Ci"
         if hasattr(nrn_seg, "_ref_eca"):
             handles["eca_neuron"] = h.Vector().record(nrn_seg._ref_eca)
-            braincell_pc.cell.place(at("soma", 0.5), mech.MechanismProbe(mechanism="ca", field="E", name="soma_ca_E"))
+            soma.record("soma_ca_E", observe.ion(name="ca").state("E"))
             handles["eca_braincell_trace"] = "soma_ca_E"
     if toggles.kca2p2:
         mech_nrn = nrn_seg.Kca2p2_MA24_PC
         handles["kca2p2_current_neuron"] = h.Vector().record(mech_nrn._ref_ik)
-        braincell_pc.cell.place(
-            at("soma", 0.5),
-            mech.CurrentProbe(ion="k", mechanism="Kca2p2_MA2024_PC", name="soma_kca2p2_current"),
-        )
+        soma.record("soma_kca2p2_current", observe.channel(name="Kca2p2_MA2024_PC").current())
         handles["kca2p2_current_braincell_trace"] = "soma_kca2p2_current"
         for neuron_field, braincell_field in (("c2", "C2"), ("c3", "C3"), ("c4", "C4"), ("o1", "O1"), ("o2", "O2")):
             handles[f"kca2p2_{braincell_field}_neuron"] = h.Vector().record(getattr(mech_nrn, f"_ref_{neuron_field}"))
-            braincell_pc.cell.place(
-                at("soma", 0.5),
-                mech.MechanismProbe(
-                    mechanism="Kca2p2_MA2024_PC",
-                    field=braincell_field,
-                    name=f"soma_kca2p2_{braincell_field}",
-                ),
-            )
+            soma.record(f"soma_kca2p2_{braincell_field}", observe.channel(name="Kca2p2_MA2024_PC").state(braincell_field))
             handles[f"kca2p2_{braincell_field}_braincell_trace"] = f"soma_kca2p2_{braincell_field}"
     return handles
 
@@ -298,11 +292,11 @@ def sample_neuron_soma(neuron_pc: NeuronPC, toggles: PCToggles) -> dict[str, flo
     return out
 
 
-def sample_braincell_init(braincell_pc: BrainCellPC) -> dict[str, float | None]:
-    samples = braincell_pc.cell.sample_probes()
+def sample_braincell_init(bc_run: Any) -> dict[str, float | None]:
+    """Return every recording's initialized state: row 0, sampled before the first step."""
     out: dict[str, float | None] = {}
-    for name, value in samples.items():
-        out[name] = quantity_scalar(value)
+    for name, values in bc_run.traces.items():
+        out[name] = quantity_scalar(values[0])
     return out
 
 
@@ -387,7 +381,8 @@ def diagnostic_metrics(handles: dict[str, Any], bc_run: Any, *, dt_ms: float, du
         if trace_key not in handles:
             continue
         neuron_values = trim_neuron_trace(neuron_vec, reference_time_ms)
-        braincell_values = trace_to_numpy(bc_run.traces[handles[trace_key]], key=prefix)
+        # Row 0 is the initialized state; rows 1.. are the states after each step.
+        braincell_values = trace_to_numpy(bc_run.traces[handles[trace_key]][1:], key=prefix)
         n = min(neuron_values.shape[0], braincell_values.shape[0])
         if n == 0:
             continue

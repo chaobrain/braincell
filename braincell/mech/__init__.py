@@ -27,9 +27,7 @@ The :mod:`braincell.mech` package is purely declarative: it describes
   argument.
 - **Point mechanisms** — attached to a single location. See
   :class:`Point` and its concrete subclasses :class:`CurrentClamp`,
-  :class:`SineClamp`, :class:`FunctionClamp`, :class:`StateProbe`,
-  :class:`MechanismProbe`, :class:`CurrentProbe`, :class:`ProbeMechanism`, and
-  :class:`Synapse`. :class:`Junction` is the gap-junction point
+  :class:`SineClamp`, :class:`FunctionClamp` and :class:`Synapse`. :class:`Junction` is the gap-junction point
   declaration and lives in :mod:`braincell.mech._junction`.
 
 Passive cable properties are recorded via :class:`CableProperty`.
@@ -60,6 +58,7 @@ braincell.ion : Concrete ion-species implementations.
 braincell.synapse : Concrete synapse implementations.
 """
 
+from braincell._deprecation import removed_attributes as _removed_attributes
 from braincell.mech._base import Mechanism
 from braincell.mech._cable import CableProperty
 from braincell.mech._context import CVContext
@@ -69,14 +68,10 @@ from braincell.mech._junction import Junction
 from braincell.mech._params import Params
 from braincell.mech._synapse_schema import ParameterSpec, StateSpec, positive
 from braincell.mech._point import (
-    CurrentProbe,
     CurrentClamp,
     FunctionClamp,
-    MechanismProbe,
     Point,
-    ProbeMechanism,
     SineClamp,
-    StateProbe,
     Synapse,
 )
 from braincell.mech._registry import (
@@ -113,15 +108,11 @@ __all__ = [
     "StateSpec",
     "positive",
     # Point mechanisms
-    "CurrentProbe",
     "CurrentClamp",
     "FunctionClamp",
     "Junction",
-    "MechanismProbe",
     "Point",
-    "ProbeMechanism",
     "SineClamp",
-    "StateProbe",
     "Synapse",
     # Registry
     "MechanismEntry",
@@ -131,3 +122,40 @@ __all__ = [
     "register_ion",
     "register_synapse",
 ]
+
+
+def _removed_probe(name: str, example: str) -> str:
+    return (
+        f"braincell.mech.{name} was removed in braincell 0.3. Declare a recording on the Cell instead of placing "
+        f"a probe: {example}; Cell.run returns it in RunResult.samples (or traces) under that name."
+    )
+
+
+#: The legacy probe declarations braincell 0.3 removed without a deprecation
+#: period (API-15), with what to write instead; raised as ``AttributeError``
+#: (``ImportError`` on a ``from braincell.mech import ...`` line).
+__getattr__ = _removed_attributes(
+    __name__,
+    {
+        "StateProbe": _removed_probe(
+            "StateProbe", 'cell.loc(locset).record("V", braincell.observe.state("V")) for StateProbe()'
+        ),
+        "MechanismProbe": _removed_probe(
+            "MechanismProbe",
+            'cell.loc(locset).record("m", braincell.observe.channel(name="Na").state("m")) for '
+            'MechanismProbe(mechanism="Na", field="m"); observe.ion(name=...) and observe.synapse(name=...) '
+            "select ions and synapses",
+        ),
+        "CurrentProbe": _removed_probe(
+            "CurrentProbe",
+            'cell.loc(locset).record("i", braincell.observe.channel(name="Na").current()) for '
+            'CurrentProbe(mechanism="Na"), and braincell.observe.ion(name="na").current() for CurrentProbe(ion="na") '
+            "on an ion painted with braincell.mech.Ion(..., name=\"na\")",
+        ),
+        "ProbeMechanism": (
+            "braincell.mech.ProbeMechanism was removed in braincell 0.3; no run ever sampled it. Declare a "
+            'recording on the Cell instead: cell.loc(locset).record("V", braincell.observe.state("V")) records the '
+            "membrane voltage, and observe.channel/ion/synapse(name=...).state(field) a mechanism state."
+        ),
+    },
+)

@@ -72,7 +72,7 @@ class BuildMechanismObjectTableTest(unittest.TestCase):
             BranchSlice(branch_index=0, prox=0.0, dist=1.0),
             braincell.mech.Channel("IL", g_max=4.0 * (u.mS / u.cm**2), E=-68.0 * u.mV),
         )
-        cell.place(RootLocation(0.5), braincell.mech.StateProbe(field="v", name="V_root"))
+        cell.place(RootLocation(0.5), braincell.mech.Synapse("ExpSyn", name="syn_root"))
         cell.init_state()
         return cell
 
@@ -90,7 +90,7 @@ class BuildMechanismObjectTableTest(unittest.TestCase):
     def test_it_covers_both_a_density_and_a_point_mechanism(self) -> None:
         table = self._cell_with_both_kinds().mech_table()
         self.assertIn(("IL", "IL"), table.row_keys)
-        self.assertIn(("StateProbe", "V_root"), table.row_keys)
+        self.assertIn(("ExpSyn", "syn_root"), table.row_keys)
 
     def test_every_populated_entry_names_its_own_row_and_column(self) -> None:
         table = self._cell_with_both_kinds().mech_table()

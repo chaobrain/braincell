@@ -98,7 +98,7 @@ def run_case(case: MultiCompartmentCableCase) -> dict[str, Any]:
 
     return {
         "time_ms": time_ms,
-        # Braincell returns one post-update sample per driven step. NEURON
+        # The braincell runner returns V after each step, from t=dt. NEURON
         # record vectors include the initial state at t=0, so drop it.
         "voltage_mV": voltage_mV,
         "compartment_labels": compartment_labels,

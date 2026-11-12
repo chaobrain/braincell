@@ -30,10 +30,21 @@ from braincell import (
 )
 from braincell.filter import BranchSlice, RootLocation, at
 from braincell._compute._testing import _build_tree
+from braincell.network.recording import _sample_synapse_current
+
+
+def _initial_samples(cell) -> dict:
+    """Return each recording's sample of the state ``init_state`` left.
+
+    A recording samples before each step, so the one sample of a one-step
+    run is the initialized state.
+    """
+    traces = cell.run(dt=0.05 * u.ms, duration=0.05 * u.ms).traces
+    return {name: values[0, 0] for name, values in traces.items()}
 
 
 class CellRuntimeStateTest(unittest.TestCase):
-    """Runtime state construction, mutation, and probe sampling."""
+    """Runtime state construction, mutation, and recorded reads."""
 
     def test_synapse_mechanism_builds_sparse_runtime_node_and_event_buffer(self) -> None:
         cell = Cell(_build_tree())
@@ -146,7 +157,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             tuple(item.to_decimal(u.ms) for item in rcell.get_point_state(1)[layout.id]["durations"]), (1.5, 2.5)
         )
 
-    def test_sample_probe_reads_voltage_and_channel_gate_state(self) -> None:
+    def test_recording_reads_voltage_and_channel_gate_state(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
@@ -157,27 +168,26 @@ class CellRuntimeStateTest(unittest.TestCase):
                 temp=u.celsius2kelvin(36.0),
             ),
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.StateProbe(),
-            braincell.mech.MechanismProbe(mechanism="Na_HH1952", field="p"),
-        )
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("v", braincell.observe.state("V"))
+        soma.record("p", braincell.observe.channel(name="Na_HH1952").state("p"))
         cell.init_state()
         rcell = cell
 
-        samples = rcell.sample_probes()
         channel_layout = next(
             layout
             for layout in rcell.layouts
             if isinstance(rcell.runtime.get_layout_mechanism(layout.id), braincell.mech.Channel)
         )
         node = rcell.get_runtime_node(channel_layout.id)
+        expected_v = rcell.V.value[..., 0]
+        expected_p = node.p.value[..., 1]
+        samples = _initial_samples(rcell)
 
-        self.assertEqual(samples["soma(0.5)_v"], rcell.V.value[..., 0])
-        self.assertEqual(samples["soma(0.5)_Na_HH1952_p"], node.p.value[..., 1])
-        self.assertEqual(rcell.sample_probe("soma(0.5)_Na_HH1952_p"), node.p.value[..., 1])
+        self.assertEqual(samples["v"], expected_v)
+        self.assertEqual(samples["p"], expected_p)
 
-    def test_sample_probe_reads_mechanism_and_total_ion_current(self) -> None:
+    def test_recording_reads_mechanism_and_total_ion_current(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
@@ -187,25 +197,25 @@ class CellRuntimeStateTest(unittest.TestCase):
                 v12=25.0 * u.mV,
                 q=9.0 * u.mV,
             ),
+            # observe.ion selects painted ions only, not the default ones.
+            braincell.mech.Ion("PotassiumFixed", name="k"),
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.CurrentProbe(ion="k", mechanism="K_Kv_test"),
-            braincell.mech.CurrentProbe(ion="k"),
-        )
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("K_Kv_test_current", braincell.observe.channel(name="K_Kv_test").current())
+        soma.record("k_current", braincell.observe.ion(name="k").current())
         cell.init_state()
         rcell = cell
 
-        samples = rcell.sample_probes()
         ion = rcell.get_ion("k")
         node = ion.channels["K_Kv_test"]
         expected_mechanism = node.current(rcell.V.value, ion.pack_info())[..., 0]
         expected_total = ion.current(rcell.V.value, include_external=False)[..., 0]
+        samples = _initial_samples(rcell)
 
-        self.assertEqual(samples["soma(0.5)_K_Kv_test_current"], expected_mechanism)
-        self.assertEqual(samples["soma(0.5)_k_current"], expected_total)
+        self.assertEqual(samples["K_Kv_test_current"], expected_mechanism)
+        self.assertEqual(samples["k_current"], expected_total)
 
-    def test_sample_probe_reads_pure_channel_current_without_ion_selector(self) -> None:
+    def test_recording_reads_pure_channel_current_without_ion_selector(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
@@ -215,14 +225,10 @@ class CellRuntimeStateTest(unittest.TestCase):
                 E=-68.0 * u.mV,
             ),
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.CurrentProbe(mechanism="IL"),
-        )
+        cell.loc(at("soma", 0.5)).record("IL_current", braincell.observe.channel(name="IL").current())
         cell.init_state()
         rcell = cell
 
-        samples = rcell.sample_probes()
         channel_layout = next(
             layout
             for layout in rcell.layouts
@@ -230,10 +236,11 @@ class CellRuntimeStateTest(unittest.TestCase):
         )
         node = rcell.get_runtime_node(channel_layout.id)
         expected_current = node.current(rcell.V.value)[..., 0]
+        samples = _initial_samples(rcell)
 
-        self.assertEqual(samples["soma(0.5)_IL_current"], expected_current)
+        self.assertEqual(samples["IL_current"], expected_current)
 
-    def test_sample_probe_reads_plain_field_and_rejects_unknown_mechanism(self) -> None:
+    def test_recording_reads_a_parameter_field(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
@@ -244,42 +251,12 @@ class CellRuntimeStateTest(unittest.TestCase):
                 temp=u.celsius2kelvin(36.0),
             ),
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.MechanismProbe(mechanism="Na_HH1952", field="g_max"),
-            braincell.mech.MechanismProbe(mechanism="missing", field="p"),
-        )
+        cell.loc(at("soma", 0.5)).record("g_max", braincell.observe.channel(name="Na_HH1952").state("g_max"))
         cell.init_state()
         rcell = cell
 
-        self.assertEqual(
-            rcell.sample_probe("soma(0.5)_Na_HH1952_g_max"),
-            rcell.get_ion("na").channels["Na_HH1952"].g_max[..., 1],
-        )
-        with self.assertRaises(KeyError):
-            rcell.sample_probe("soma(0.5)_missing_p")
-
-    def test_sample_probes_requires_unique_names(self) -> None:
-        cell = Cell(_build_tree())
-        cell.paint(
-            BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
-            braincell.mech.Channel(
-                "Na_HH1952",
-                g_max=12.0 * (u.mS / u.cm**2),
-                V_sh=-50.0 * u.mV,
-                temp=u.celsius2kelvin(36.0),
-            ),
-        )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.StateProbe(name="dup"),
-            braincell.mech.MechanismProbe(name="dup", mechanism="Na_HH1952", field="p"),
-        )
-        cell.init_state()
-        rcell = cell
-
-        with self.assertRaises(ValueError):
-            rcell.sample_probes()
+        expected = rcell.get_ion("na").channels["Na_HH1952"].g_max[..., 1]
+        self.assertEqual(_initial_samples(rcell)["g_max"], expected)
 
 
 class CellLifecycleInlineTest(unittest.TestCase):
@@ -326,7 +303,7 @@ class PopulationResponseHeterogeneityTest(unittest.TestCase):
             solver="staggered",
             V_init=-60.0 * u.mV,
         )
-        cell.place(at("soma", 0.5), braincell.mech.StateProbe(name="v", field="v"))
+        cell.loc(at("soma", 0.5)).record("v", braincell.observe.state("V"))
         cell.place(
             at("soma", 0.5),
             CurrentClamp(delay=0.1 * u.ms, durations=0.8 * u.ms, amplitudes=u.Quantity(jnp.asarray([0.0, 0.2]), u.nA)),
@@ -346,14 +323,14 @@ class PopulationResponseHeterogeneityTest(unittest.TestCase):
             V_init=-60.0 * u.mV,
         )
         amp = u.Quantity(jnp.asarray([[0.00, 0.03], [0.06, 0.12]]), u.nA)
-        cell.place(at("soma", 0.5), braincell.mech.StateProbe(name="v", field="v"))
         cell.place(
             at("soma", 0.5),
             CurrentClamp(delay=0.1 * u.ms, durations=0.8 * u.ms, amplitudes=amp),
         )
         result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
-        trace = result.traces["v"]
-        self.assertEqual(trace.shape, (20, 2, 2))
+        # Recordings need a one-dimensional pop_size: check the steps and the
+        # population shape of the state the run advanced.
+        self.assertEqual((len(result.time),) + tuple(cell.V.value.shape[:2]), (20, 2, 2))
 
     def test_population_cells_can_have_different_current_clamp_delays(self) -> None:
         cell = Cell(_build_tree(), pop_size=(2,))
@@ -476,8 +453,6 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             solver="staggered",
             V_init=-60.0 * u.mV,
         )
-        cell.place(at("soma", 0.5), braincell.mech.MechanismProbe(name="g", mechanism="exp_syn", field="g"))
-        cell.place(at("soma", 0.5), braincell.mech.CurrentProbe(name="i_syn", mechanism="exp_syn"))
         cell.place(
             at("soma", 0.5),
             braincell.mech.Synapse(
@@ -500,7 +475,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         with brainstate.environ.context(t=0.05 * u.ms, dt=0.05 * u.ms):
             cell.update()
         g_after_decay = float(node.g.value[0].to_decimal(u.uS))
-        current = float(cell.sample_probe("i_syn").to_decimal(u.nA)[0])
+        current = float(_sample_synapse_current(cell, cell.synapses["exp_syn"]).to_decimal(u.nA)[0])
 
         self.assertAlmostEqual(g_after_event, float(np.exp(-0.05 / 2.0)))
         self.assertAlmostEqual(g_after_decay, float(np.exp(-0.1 / 2.0)))
@@ -512,9 +487,6 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             solver="staggered",
             V_init=-60.0 * u.mV,
         )
-        cell.place(at("soma", 0.5), braincell.mech.MechanismProbe(name="A", mechanism="exp2_syn", field="A"))
-        cell.place(at("soma", 0.5), braincell.mech.MechanismProbe(name="B", mechanism="exp2_syn", field="B"))
-        cell.place(at("soma", 0.5), braincell.mech.CurrentProbe(name="i_syn", mechanism="exp2_syn"))
         cell.place(
             at("soma", 0.5),
             braincell.mech.Synapse(
@@ -537,7 +509,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         A = float(node.A.value[0].to_decimal(u.uS))
         B = float(node.B.value[0].to_decimal(u.uS))
         g_after_event = float(node.g[0].to_decimal(u.uS))
-        current = float(cell.sample_probe("i_syn").to_decimal(u.nA)[0])
+        current = float(_sample_synapse_current(cell, cell.synapses["exp2_syn"]).to_decimal(u.nA)[0])
 
         self.assertGreater(A, 0.0)
         self.assertGreater(B, 0.0)
@@ -548,7 +520,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             cell.update()
 
         g_after_decay = float(node.g[0].to_decimal(u.uS))
-        current = float(cell.sample_probe("i_syn").to_decimal(u.nA)[0])
+        current = float(_sample_synapse_current(cell, cell.synapses["exp2_syn"]).to_decimal(u.nA)[0])
 
         self.assertGreater(g_after_decay, 0.0)
         self.assertNotEqual(current, 0.0)
@@ -559,9 +531,10 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             solver="staggered",
             V_init=-65.0 * u.mV,
         )
-        cell.place(at("soma", 0.5), braincell.mech.StateProbe(name="v", field="v"))
-        cell.place(at("soma", 0.5), braincell.mech.MechanismProbe(name="g", mechanism="exp_syn", field="g"))
-        cell.place(at("soma", 0.5), braincell.mech.CurrentProbe(name="i_syn", mechanism="exp_syn"))
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("v", braincell.observe.state("V"))
+        soma.record("g", braincell.observe.synapse(name="exp_syn").state("g"))
+        soma.record("i_syn", braincell.observe.synapse(name="exp_syn").current())
         exp = braincell.mech.Synapse("ExpSyn", tau=2.0 * u.ms, e=0.0 * u.mV, name="exp_syn")
         cell.place(at("soma", 0.5), exp)
         braincell.connect(
@@ -574,7 +547,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         self.assertGreater(float(np.max(result.traces["g"].to_decimal(u.uS))), 0.0)
         self.assertGreater(float(np.max(np.abs(result.traces["i_syn"].to_decimal(u.nA)))), 0.0)
 
-    def test_synapse_input_preparation_sums_manual_netstim_and_bound_drive(self) -> None:
+    def test_synapse_input_preparation_sums_the_buffer_and_every_connection(self) -> None:
         cell = Cell(
             _build_tree(),
             solver="staggered",
@@ -588,8 +561,13 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             synapse=cell.synapses[exp],
             weight=2.0 * u.uS,
         )
-        with self.assertWarns(DeprecationWarning):
-            cell.bind_synapse_input("exp_syn", source=lambda: np.asarray([3.0]), weight=0.5 * u.uS)
+        # A second connection carries what a bound input (3.0 x 0.5 uS) did until API-15.
+        braincell.connect(
+            "second_to_exp",
+            source=braincell.NetStim(name="second", start=1.0 * u.ms, number=1, interval=10.0 * u.ms),
+            synapse=cell.synapses[exp],
+            weight=1.5 * u.uS,
+        )
         cell.init_state()
         runtime = cell.runtime
         layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:ExpSyn")

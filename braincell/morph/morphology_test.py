@@ -2254,8 +2254,8 @@ class MorphoTransformConsumerTest(unittest.TestCase):
         centre = np.array([120.0, 40.0, 0.0])
 
         def draw(tree: Morphology, at: np.ndarray) -> tuple:
-            gaussian = density.spatial_gaussian(at * u.um, 20 * u.um)
-            return tree.select(sample(AllRegion(), number=5, seed=7, density=gaussian)).points
+            bell = density.spatial_gaussian(at * u.um, 20 * u.um)
+            return tree.select(sample(AllRegion(), number=5, seed=7, density=bell)).points
 
         tree = make_tree_w()
         before = draw(tree, centre)

@@ -83,4 +83,4 @@ BrainCell 和 NEURON 都复用同一套 `dend_region_name()` / `axon_region_name
 
 ## Notebook entry
 
-`run.ipynb` 使用正式 `SC` builders，同时设置 soma current clamp 和 soma voltage probe。时间轴对齐沿用 cell 总 README 中的约定：NEURON 记录包含 `t=0`，BrainCell `StateProbe` 第一个样本对齐到 `t=dt`。
+`run.ipynb` 使用正式 `SC` builders，同时设置 soma current clamp 和 soma voltage recording。时间轴对齐沿用 cell 总 README 中的约定：NEURON 记录包含 `t=0`；BrainCell recording 在每步之前采样，Cell 多运行一步并去掉第一行（初始状态），第一个样本对齐到 `t=dt`。

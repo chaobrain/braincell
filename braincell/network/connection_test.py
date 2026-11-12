@@ -282,11 +282,8 @@ class ConnectionTest(unittest.TestCase):
         pre = _hh_population("pre", with_clamp=True)
         post = _hh_population("post")
         exp = braincell.mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV)
-        post.place(
-            at("soma", 0.5),
-            exp,
-            braincell.mech.MechanismProbe(name="g", mechanism="exp", field="g"),
-        )
+        post.place(at("soma", 0.5), exp)
+        post.loc(at("soma", 0.5)).record("g", braincell.observe.synapse(name="exp").state("g"))
         connect("pre_spike", source=pre.event_outputs["spike"], synapse=post.synapses[exp], weight=0.1 * u.uS)
         network = Network(name="live_direct_connection")
         network.add_population("pre", pre)
@@ -300,7 +297,9 @@ class ConnectionTest(unittest.TestCase):
 
         self.assertEqual(len(spike_rows), 1)
         self.assertGreater(len(conductance_rows), 0)
-        self.assertEqual(int(conductance_rows[0]), int(spike_rows[0]))
+        # A recording samples before each step: the event delivered on the
+        # step that starts at the spike row first shows one sample later.
+        self.assertEqual(int(conductance_rows[0]) - 1, int(spike_rows[0]))
 
     def test_network_rejects_live_source_outside_execution_scope(self) -> None:
         pre, _ = _population(1)
@@ -319,10 +318,7 @@ class ConnectionTest(unittest.TestCase):
             pre.V_th = 0.0 * u.mV
             pre.solver = _step_up_solver
             post, exp = _population(1)
-            post.place(
-                at("soma", 0.5),
-                braincell.mech.MechanismProbe(name="g", mechanism="exp", field="g"),
-            )
+            post.loc(at("soma", 0.5)).record("g", braincell.observe.synapse(name="exp").state("g"))
             connect(
                 "live_delay",
                 source=pre.event_outputs["spike"],
@@ -348,7 +344,9 @@ class ConnectionTest(unittest.TestCase):
 
         np.testing.assert_allclose(split_g, continuous.traces["post"]["g"].to_decimal(u.uS), rtol=1e-6)
         first_nonzero = int(np.flatnonzero(np.asarray(continuous.traces["post"]["g"].to_decimal(u.uS)))[0])
-        self.assertAlmostEqual(float(continuous.time[first_nonzero].to_decimal(u.ms)), 0.3)
+        # A recording samples before each step: the event delivered on the
+        # step that starts at 0.3 ms first shows one sample later.
+        self.assertAlmostEqual(float(continuous.time[first_nonzero - 1].to_decimal(u.ms)), 0.3)
 
     def test_live_source_delay_history_supports_zero_and_multiple_steps(self) -> None:
         pre, _ = _population(1)
@@ -436,10 +434,7 @@ class ConnectionTest(unittest.TestCase):
 
     def test_target_owned_contacts_run_inside_network_population(self) -> None:
         cell, exp = _population(3)
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.MechanismProbe(name="g", mechanism="exp", field="g"),
-        )
+        cell.loc(at("soma", 0.5)).record("g", braincell.observe.synapse(name="exp").state("g"))
         source = NetStim(size=3, start=0.5 * u.ms, interval=10.0 * u.ms)
         connect(
             "network_input",
@@ -457,10 +452,7 @@ class ConnectionTest(unittest.TestCase):
 
     def test_non_grid_event_and_delay_arrive_on_nearest_step_across_runs(self) -> None:
         cell, exp = _population(1)
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.MechanismProbe(name="g", mechanism="exp", field="g"),
-        )
+        cell.loc(at("soma", 0.5)).record("g", braincell.observe.synapse(name="exp").state("g"))
         connect(
             "nongrid",
             source=NetStim(start=1.03 * u.ms, interval=10.0 * u.ms),
@@ -476,7 +468,9 @@ class ConnectionTest(unittest.TestCase):
 
         np.testing.assert_allclose(first_g, 0.0)
         first_nonzero = int(np.flatnonzero(second_g > 0.0)[0])
-        self.assertAlmostEqual(float(second.time[first_nonzero].to_decimal(u.ms)), 1.15)
+        # A recording samples before each step: the event delivered on the
+        # step that starts at 1.15 ms first shows one sample later.
+        self.assertAlmostEqual(float(second.time[first_nonzero - 1].to_decimal(u.ms)), 1.15)
 
     def test_non_grid_event_uses_nearest_not_ceil_step(self) -> None:
         source = NetStim(start=1.021 * u.ms, interval=10.0 * u.ms)

@@ -26,10 +26,6 @@ Concrete point mechanisms defined here:
 - :class:`CurrentClamp` — piecewise-constant current injection.
 - :class:`SineClamp` — sinusoidal current injection.
 - :class:`FunctionClamp` — arbitrary ``t → I`` callable.
-- :class:`StateProbe` — probe for cell-owned state such as ``v``.
-- :class:`MechanismProbe` — probe for runtime state on a named mechanism.
-- :class:`CurrentProbe` — probe for mechanism or total ion current.
-- :class:`ProbeMechanism` — legacy recorder for a named variable.
 - :class:`Synapse` — registry-keyed synapse declaration.
 
 The :class:`~braincell.mech.Junction` gap-junction declaration also
@@ -43,7 +39,6 @@ from typing import Any, Callable, ClassVar, Mapping
 import brainunit as u
 import numpy as np
 
-from braincell._deprecation import Deprecation
 from braincell.mech._base import Mechanism
 from braincell.mech._density import _resolve_class_name
 from braincell.mech._params import Params, quantity_hashable
@@ -54,10 +49,6 @@ __all__ = [
     "Point",
     "CurrentClamp",
     "FunctionClamp",
-    "StateProbe",
-    "MechanismProbe",
-    "CurrentProbe",
-    "ProbeMechanism",
     "SineClamp",
     "Synapse",
 ]
@@ -230,135 +221,6 @@ class FunctionClamp(Point):
 # ---------------------------------------------------------------------------
 # Point spike sources, observers & synapses
 # ---------------------------------------------------------------------------
-
-
-#: Release that removes the four legacy probe classes (provisional).
-_PROBES_REMOVED_IN = "0.4"
-
-
-def _probe_deprecation(name: str) -> Deprecation:
-    return Deprecation(
-        f"braincell.mech.{name}",
-        since="0.3",
-        removed_in=_PROBES_REMOVED_IN,
-        replacement="Cell.record(..., braincell.observe.*)",
-    )
-
-
-@dataclass(frozen=True)
-class _LegacyProbe(Point):
-    """Shared preamble for the deprecated probe declarations.
-
-    The four probe classes each opened ``__post_init__`` with the same
-    deprecation warning -- passing their own class name as a string
-    literal, which a rename would silently desync -- followed by the same
-    optional-``name`` check. Both now happen once, here, and each
-    subclass implements only :meth:`_validate` for its own fields. The
-    warning goes to the constructing line; braincell rebuilding a probe
-    (``dataclasses.replace``) does not warn again.
-    """
-
-    _DEPRECATION: ClassVar[Deprecation]
-
-    def __post_init__(self) -> None:
-        self._DEPRECATION.warn()
-        require_str(getattr(self, "name", None), type(self).__name__, "name", optional=True)
-        self._validate()
-
-    def _validate(self) -> None:
-        """Validate subclass-specific fields. Overridden as needed."""
-
-
-@dataclass(frozen=True)
-class StateProbe(_LegacyProbe):
-    """Probe for cell-owned state at one placed location.
-
-    .. deprecated:: 0.3
-       Record the membrane potential with
-       ``Cell.record(..., braincell.observe.state("V"))``; ``StateProbe`` is
-       removed in braincell 0.4.
-    """
-
-    _DEPRECATION: ClassVar[Deprecation] = _probe_deprecation("StateProbe")
-
-    name: str | None = None
-    field: str = "v"
-
-    def _validate(self) -> None:
-        require_str(self.field, "StateProbe", "field")
-        if self.field != "v":
-            raise ValueError(f"Unsupported StateProbe field {self.field!r}; only 'v' is supported.")
-
-
-@dataclass(frozen=True)
-class MechanismProbe(_LegacyProbe):
-    """Probe for runtime state on a named mechanism.
-
-    .. deprecated:: 0.3
-       Record with ``Cell.record(..., braincell.observe.*)``; ``MechanismProbe`` is
-       removed in braincell 0.4.
-    """
-
-    _DEPRECATION: ClassVar[Deprecation] = _probe_deprecation("MechanismProbe")
-
-    mechanism: str
-    field: str
-    name: str | None = None
-
-    def _validate(self) -> None:
-        require_str(self.mechanism, "MechanismProbe", "mechanism")
-        require_str(self.field, "MechanismProbe", "field")
-
-
-@dataclass(frozen=True)
-class CurrentProbe(_LegacyProbe):
-    """Probe for current at a placed location.
-
-    .. deprecated:: 0.3
-       Record with ``Cell.record(..., braincell.observe.*)``; ``CurrentProbe`` is
-       removed in braincell 0.4.
-    """
-
-    _DEPRECATION: ClassVar[Deprecation] = _probe_deprecation("CurrentProbe")
-
-    ion: str | None = None
-    mechanism: str | None = None
-    name: str | None = None
-
-    def _validate(self) -> None:
-        require_str(self.ion, "CurrentProbe", "ion", optional=True)
-        require_str(self.mechanism, "CurrentProbe", "mechanism", optional=True)
-        if self.ion is None and self.mechanism is None:
-            raise ValueError("CurrentProbe requires at least one of 'ion' or 'mechanism'.")
-
-
-@dataclass(frozen=True)
-class ProbeMechanism(_LegacyProbe):
-    """Observer that records a named variable at a point location.
-
-    .. deprecated:: 0.3
-       Record with ``Cell.record(..., braincell.observe.*)``; ``ProbeMechanism`` is
-       removed in braincell 0.4.
-
-    Parameters
-    ----------
-    variable : str
-        Name of the variable to record (e.g. ``"v"``, ``"ina"``).
-    target : str or None
-        Optional sub-target label (e.g. the owning mechanism's
-        instance name) used to disambiguate probes of the same
-        variable on different mechanisms.
-    """
-
-    _DEPRECATION: ClassVar[Deprecation] = _probe_deprecation("ProbeMechanism")
-
-    variable: str
-    target: str | None = None
-
-    def _validate(self) -> None:
-        require_str(self.variable, "ProbeMechanism", "variable")
-        if self.target is not None and not isinstance(self.target, str):
-            raise TypeError(f"ProbeMechanism.target must be str or None, got {type(self.target).__name__!r}.")
 
 
 class Synapse(Point):

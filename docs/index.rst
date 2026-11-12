@@ -102,7 +102,8 @@ Feature highlights
      - :mod:`braincell.quad`: a registry of solvers selectable by name.
    * - **Declarative mechanisms**
      - :mod:`braincell.mech`: ``Channel``, ``Ion``, ``CableProperty``,
-       ``CurrentClamp``, ``Synapse``, and probe specifications.
+       ``CurrentClamp``, and ``Synapse``; recordings are declared with
+       ``Cell.record`` and ``braincell.observe``.
 
 
 A first taste

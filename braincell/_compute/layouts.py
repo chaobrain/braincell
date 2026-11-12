@@ -54,16 +54,12 @@ import numpy as np
 from braincell._discretization.base import NodeTree
 from braincell.mech import (
     CVContext,
-    CurrentProbe,
     CurrentClamp,
     Density,
     FunctionClamp,
     Junction,
-    MechanismProbe,
     Point,
-    ProbeMechanism,
     SineClamp,
-    StateProbe,
     Synapse as SynapsePlacement,
 )
 from braincell._compute.parameters import RuntimeParameterState, density_parameter_names, density_parameter_value
@@ -352,23 +348,13 @@ def mechanism_kind(mechanism: object) -> str:
 
     For :class:`Density` mechanisms the tag is
     ``"{category}:{class_name}"``. :class:`Point` mechanisms use their
-    class ``__name__`` (``CurrentClamp``, ``SineClamp``,
-    ``StateProbe`` / ``MechanismProbe`` / ``CurrentProbe`` / ``ProbeMechanism`` appending
-    their selector fields for debuggability.
+    class ``__name__`` (``CurrentClamp``, ``SineClamp``, ...); a synapse
+    placement is tagged ``"synapse:{synapse_type}"``.
     """
     if isinstance(mechanism, Density):
         return f"{mechanism.category}:{mechanism.class_name}"
     if isinstance(mechanism, SynapsePlacement):
         return f"synapse:{mechanism.synapse_type}"
-    if isinstance(mechanism, StateProbe):
-        return f"state_probe:{mechanism.field}:{mechanism.name}"
-    if isinstance(mechanism, MechanismProbe):
-        return f"mechanism_probe:{mechanism.mechanism}:{mechanism.field}:{mechanism.name}"
-    if isinstance(mechanism, CurrentProbe):
-        target = mechanism.mechanism if mechanism.mechanism is not None else mechanism.ion
-        return f"current_probe:{target}:{mechanism.name}"
-    if isinstance(mechanism, ProbeMechanism):
-        return f"probe:{mechanism.variable}:{mechanism.target}"
     if isinstance(mechanism, Point):
         return type(mechanism).__name__
     return type(mechanism).__name__
@@ -479,8 +465,7 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
     For :class:`Density` this is the declared ``params`` keys. Synapses are
     materialized through their runtime schema before this helper is reached.
     For junctions it is the parameter keys, none for an empty
-    ``Junction()``. For clamps it is the concrete dataclass field names. The v1 probe
-    declarations do not allocate their own state buffers.
+    ``Junction()``. For clamps it is the concrete dataclass field names.
     """
     if isinstance(mechanism, Density):
         return density_parameter_names(mechanism)
@@ -494,10 +479,6 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
         return ("amplitude", "frequency", "phase", "offset", "delay", "duration")
     if isinstance(mechanism, FunctionClamp):
         return ("fn",)
-    if isinstance(mechanism, (StateProbe, MechanismProbe, CurrentProbe)):
-        return ()
-    if isinstance(mechanism, ProbeMechanism):
-        return (mechanism.variable,)
     if is_dataclass(mechanism):
         return tuple(field.name for field in fields(mechanism))
     return ("value",)

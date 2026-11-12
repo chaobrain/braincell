@@ -128,7 +128,7 @@ def _run_worker(model: str, protocol: Protocol, directory: Path) -> None:
 
         assembly = spec.create("braincell", params, protocol).build()
         cell = assembly.cell
-        cell.place(at("soma", 0.5), mech.StateProbe(name="v_soma"))
+        cell.loc(at("soma", 0.5)).record("v_soma", braincell.observe.state("V"))
         cell.place(
             at("soma", 0.5),
             mech.CurrentClamp(
@@ -139,9 +139,12 @@ def _run_worker(model: str, protocol: Protocol, directory: Path) -> None:
         )
         cell.init_state()
         cell.reset_state()
-        result = cell.run(dt=protocol.dt_ms * u.ms, duration=protocol.duration_ms * u.ms)
-        values = np.asarray(result.traces["v_soma"].to_decimal(u.mV), dtype=float).reshape(-1)
-        # StateProbe samples after each update; RunResult.time labels step starts.
+        # A recording samples before each step: row k is V at k dt, row 0 the
+        # initialized state. One extra step and dropping row 0 give V after
+        # each step, t = dt .. duration, the samples NEURON records after t=0.
+        dt = protocol.dt_ms * u.ms
+        result = cell.run(dt=dt, duration=protocol.duration_ms * u.ms + dt)
+        values = np.asarray(result.traces["v_soma"].to_decimal(u.mV), dtype=float).reshape(-1)[1:]
         times = (np.arange(values.size, dtype=float) + 1.0) * protocol.dt_ms
         braincell_trace = Trace(times, values)
         metadata = {

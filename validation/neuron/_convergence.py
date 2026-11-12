@@ -194,8 +194,11 @@ def simulate(
         else mock.patch.object(cell_module, "ind_exp_euler_step", get_integrator(gate_solver))
     )
     n_steps = table.shape[0] - 1
+    # A recording samples before each step, so row k is the state at t_k.
+    # One step past the table (where the replay holds its last voltage, and
+    # which is never sampled) makes the last row t_{n_steps}.
     with patch:
-        result = cell.run(dt=dt_ms * u.ms, duration=n_steps * dt_ms * u.ms)
+        result = cell.run(dt=dt_ms * u.ms, duration=(n_steps + 1) * dt_ms * u.ms)
     jax.block_until_ready(jax.tree.leaves(result.traces))
 
     every = round(SAMPLE_MS / dt_ms)
@@ -205,9 +208,9 @@ def simulate(
 
     def sampled(trace):
         values = trace.to_decimal(u.mA / u.cm**2) if isinstance(trace, u.Quantity) and not trace.is_unitless else u.get_magnitude(trace)
-        values = np.asarray(values, dtype=float).reshape(n_steps, -1)
-        # Trace row k is the state after step k, at t_{k+1}.
-        return values[every - 1 :: every]
+        values = np.asarray(values, dtype=float).reshape(n_steps + 1, -1)
+        # Row k is the state at t_k: every SAMPLE_MS from t = SAMPLE_MS.
+        return values[every::every]
 
     return {
         "current": sampled(result.traces[f"soma(0.5)_{name}_current"]),

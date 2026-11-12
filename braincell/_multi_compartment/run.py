@@ -40,7 +40,6 @@ from braincell._misc import (
     same_time_quantity as _same_time_quantity,
     validate_time_quantity,
 )
-from braincell._multi_compartment import probes
 from braincell.network.recording import EventSeries, SampleBlock, concat_sample_blocks
 
 if TYPE_CHECKING:
@@ -58,8 +57,8 @@ class RunResult:
     time : brainunit.Quantity
         ``(n_steps,)`` time array spanning ``[start_t, start_t + duration)``.
     traces : Mapping[str, Any]
-        Probe-name → trace array mapping; one entry per placed probe, plus
-        the values of every :meth:`Cell.record` recording.
+        Recording-name → values of every :meth:`Cell.record` recording, the
+        ``values`` of the matching ``samples`` block.
     samples : Mapping[str, SampleBlock]
         Recording-name → regular samples of each :meth:`Cell.record`
         recording.
@@ -222,13 +221,11 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     )
 
     compiled_recordings = rcell._compiled_recordings(dt)
-    ordered_probe_names = () if rcell._uses_reduction else tuple(sorted(probes.probe_names(rcell)))
     plan = _cached_run_plan(
         rcell,
         dt=dt,
         n_steps=n_steps,
         compiled_recordings=compiled_recordings,
-        ordered_probe_names=ordered_probe_names,
         schedule_key=schedule_key,
         with_spikes=with_spikes,
     )
@@ -239,7 +236,7 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     values = rcell._take_value_inputs()
     try:
         with brainstate.environ.context(dt=dt), _schedule_horizon(until_ms):
-            times, start_time, stop_time, recorded, probe_values, spike_rows = plan.loop(values)
+            times, start_time, stop_time, recorded, spike_rows = plan.loop(values)
     except BaseException:
         rcell._restore_value_inputs(values)
         raise
@@ -275,8 +272,7 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
             segment_stop=stop_time,
             first_time=first_time,
         )
-    traces = dict(zip(ordered_probe_names, probe_values))
-    traces.update({name: block.values for name, block in samples.items()})
+    traces = {name: block.values for name, block in samples.items()}
     return RunResult(
         time=times,
         traces=traces,
@@ -366,7 +362,6 @@ def _cached_run_plan(
     dt,
     n_steps: int,
     compiled_recordings: tuple,
-    ordered_probe_names: tuple[str, ...],
     schedule_key: tuple = (),
     with_spikes: bool = True,
 ) -> _RunPlan:
@@ -377,7 +372,7 @@ def _cached_run_plan(
     ``brainstate.transform.for_loop`` builds a fresh ``scan`` when called
     from a new Python closure. Caching the enclosing jitted function avoids
     paying XLA compile time on repeated ``Cell.run`` calls with the same
-    timestep, step count, and probe layout. The schedule checks depend on
+    timestep, step count, and recording layout. The schedule checks depend on
     the same key, so they are computed once here as well. ``schedule_key``
     names the NetStim events the loop bakes in, so a run that needed more
     of them compiles a new loop. ``with_spikes`` selects the loop that
@@ -388,7 +383,6 @@ def _cached_run_plan(
         _time_quantity_cache_value(dt),
         int(n_steps),
         tuple((item.spec.name, item.schema.size) for item in compiled_recordings),
-        tuple(ordered_probe_names),
         int(brainstate.environ.get_precision()),
         schedule_key,
         bool(with_spikes),
@@ -409,7 +403,6 @@ def _cached_run_plan(
                 n_steps=n_steps,
                 compiled_recordings=compiled_recordings,
                 fixed_schedules=fixed_schedules,
-                ordered_probe_names=ordered_probe_names,
                 spike_port=spike_port,
             ),
             fixed_schedules=fixed_schedules,
@@ -428,14 +421,13 @@ def _make_run_loop(
     n_steps: int,
     compiled_recordings: tuple,
     fixed_schedules: tuple[bool, ...],
-    ordered_probe_names: tuple[str, ...],
     spike_port: _SpikePort | None = None,
 ):
     """Create the jitted stateful run loop for a fixed observer layout.
 
     The loop takes the value inputs (``Cell._take_value_inputs``), which act
     on its first step, and returns
-    ``(times, start_time, stop_time, recorded, probes, spike_rows)``;
+    ``(times, start_time, stop_time, recorded, spike_rows)``;
     ``spike_rows`` stacks ``spike_port.read`` over the steps, or is ``None``
     without a port.
     ``recorded`` holds one ``(values, first_time)`` pair per recording: the
@@ -475,15 +467,11 @@ def _make_run_loop(
                             pre_recording_snapshot[index] if item.phase == "pre" else item.sample()
                             for index, item in enumerate(compiled_recordings)
                         )
-                    # Placed Probe objects keep their legacy post-step sampling
-                    # contract during the transition to layout-free recordings.
-                    with jax.named_scope("braincell:cell_run:sample_legacy_probes"):
-                        probe_snapshot = rcell.sample_probes()
                     spikes = ()
                     if spike_port is not None:
                         with jax.named_scope("braincell:cell_run:sample_spikes"):
                             spikes = (spike_port.read(rcell),)
-                return recording_snapshot + tuple(probe_snapshot[name] for name in ordered_probe_names) + spikes
+                return recording_snapshot + spikes
 
             if any(values):
 
@@ -500,7 +488,7 @@ def _make_run_loop(
 
         values = _normalize_loop_outputs(
             traces_over_time,
-            count=n_recordings + len(ordered_probe_names) + (spike_port is not None),
+            count=n_recordings + (spike_port is not None),
             prefix="Cell.run(...)",
             noun="trace arrays",
         )
@@ -515,7 +503,7 @@ def _make_run_loop(
                 recorded.append((values[index][indices], times[indices[0]]))
             else:
                 recorded.append((values[index], None))
-        return times, start_t, stop_t, tuple(recorded), tuple(values[n_recordings:]), spike_rows
+        return times, start_t, stop_t, tuple(recorded), spike_rows
 
     return brainstate.transform.jit(_run_loop)
 

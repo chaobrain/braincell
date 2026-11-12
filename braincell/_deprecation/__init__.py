@@ -29,7 +29,8 @@ Run ``python -m braincell._deprecation MAJOR.MINOR`` before a release to list
 the deprecations due by that release.
 
 A name that a release removed is not a deprecation: :func:`removed_attributes`
-serves a module ``__getattr__`` whose error names the replacement.
+serves a module ``__getattr__`` whose error names the replacement, and
+:func:`removed_member` does the same for a method of a class.
 """
 
 from __future__ import annotations
@@ -53,6 +54,7 @@ __all__ = [
     "main",
     "registered",
     "removed_attributes",
+    "removed_member",
     "user_frame",
     "warn_at_user_frame",
 ]
@@ -205,7 +207,7 @@ class Deprecation:
     ----------
     name : str
         What the user wrote, as they would search for it, e.g.
-        ``"braincell.mech.StateProbe"`` or ``"Network(seed=...)"``. The
+        ``"braincell.Cell.old_method()"`` or ``"Network(seed=...)"``. The
         changelog's Deprecations entry quotes it verbatim.
     since : str
         The ``"MAJOR.MINOR"`` release whose changelog first announces the
@@ -424,6 +426,47 @@ def removed_attributes(module: str, attributes: Mapping[str, str]) -> Callable[[
         raise AttributeError(message)
 
     return __getattr__
+
+
+class _RemovedMember:
+    """Class attribute whose every access raises ``AttributeError`` with a message."""
+
+    __slots__ = ("message",)
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+
+    def __get__(self, instance: Any, owner: type | None = None) -> Any:
+        raise AttributeError(self.message)
+
+    def __set__(self, instance: Any, value: Any) -> None:
+        raise AttributeError(self.message)
+
+    def __delete__(self, instance: Any) -> None:
+        raise AttributeError(self.message)
+
+
+def removed_member(message: str) -> Any:
+    """Return a class attribute for a method that a release removed.
+
+    ``obj.name`` and ``Class.name`` raise ``AttributeError`` with ``message``,
+    so ``hasattr`` is ``False``; assigning or deleting the name on an instance
+    raises the same error. Like :func:`removed_attributes`, it is not a
+    deprecation and is not registered.
+
+    Parameters
+    ----------
+    message : str
+        Names the release that removed the member and what to use instead.
+
+    Returns
+    -------
+    object
+        Assign it to the name in the class body: ``old_method = removed_member("...")``.
+    """
+    if not (isinstance(message, str) and message):
+        raise TypeError(f"expected a non-empty message; got {message!r}.")
+    return _RemovedMember(message)
 
 
 def registered() -> tuple[Deprecation, ...]:

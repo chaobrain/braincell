@@ -34,17 +34,10 @@ import brainstate
 
 import braincell
 from braincell import _deprecation as dep
-from braincell._deprecation import _PACKAGE_DIR, Deprecation, deprecated_attributes, removed_attributes
+from braincell._deprecation import _PACKAGE_DIR, Deprecation, deprecated_attributes, removed_attributes, removed_member
 
 #: The deprecations that must be registered once every module is imported.
 _KNOWN = (
-    "braincell.mech.StateProbe",
-    "braincell.mech.MechanismProbe",
-    "braincell.mech.CurrentProbe",
-    "braincell.mech.ProbeMechanism",
-    "braincell.Cell.bind_synapse_input()",
-    "braincell.filter.density.exponential()",
-    "braincell.filter.density.gaussian()",
     "Constructing an invalid mechanism declaration",
     "Directly constructing a Channel or Ion with wrongly united parameters",
 )
@@ -446,6 +439,46 @@ class RemovedAttributesTest(unittest.TestCase):
         for message in ("", None, 3):
             with self.subTest(message=message), self.assertRaisesRegex(TypeError, "expected a non-empty message"):
                 removed_attributes("_removed_package", {"Old": message})
+
+
+class RemovedMemberTest(unittest.TestCase):
+    """A removed method raises ``AttributeError`` with its message, on the class and on instances."""
+
+    _MESSAGE = "Owner.old() was removed in braincell 0.3. Use Owner.new()."
+
+    def _owner(self):
+        class Owner:
+            old = removed_member(self._MESSAGE)
+
+            def new(self):
+                return "new"
+
+        return Owner
+
+    def test_access_raises_attribute_error_with_the_message(self) -> None:
+        owner = self._owner()
+        for target in (owner, owner()):
+            with self.subTest(target=target):
+                with self.assertRaises(AttributeError) as caught:
+                    target.old
+                self.assertEqual(str(caught.exception), self._MESSAGE)
+                self.assertFalse(hasattr(target, "old"))
+                self.assertIsNone(getattr(target, "old", None))
+
+    def test_assignment_and_deletion_on_an_instance_raise_too(self) -> None:
+        instance = self._owner()()
+        with self.assertRaisesRegex(AttributeError, "^Owner\\.old\\(\\) was removed"):
+            instance.old = 1
+        with self.assertRaisesRegex(AttributeError, "^Owner\\.old\\(\\) was removed"):
+            del instance.old
+
+    def test_other_members_are_unaffected(self) -> None:
+        self.assertEqual(self._owner()().new(), "new")
+
+    def test_a_message_is_required(self) -> None:
+        for message in ("", None, 3):
+            with self.subTest(message=message), self.assertRaisesRegex(TypeError, "expected a non-empty message"):
+                removed_member(message)
 
 
 class ExpiryTest(unittest.TestCase):

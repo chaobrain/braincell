@@ -296,12 +296,10 @@ class RuntimeIonTest(unittest.TestCase):
                 perm=7.5e-6 * (u.cm / u.second),
             ),
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.MechanismProbe(mechanism="ca_cdp", field="Ci"),
-            braincell.mech.MechanismProbe(mechanism="CaHVA_SU2015_DCN", field="m"),
-            braincell.mech.CurrentProbe(ion="ca_cdp", mechanism="CaHVA_SU2015_DCN"),
-        )
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("soma(0.5)_ca_cdp_Ci", braincell.observe.ion(name="ca_cdp").state("Ci"))
+        soma.record("soma(0.5)_CaHVA_SU2015_DCN_m", braincell.observe.channel(name="CaHVA_SU2015_DCN").state("m"))
+        soma.record("soma(0.5)_CaHVA_SU2015_DCN_current", braincell.observe.channel(name="CaHVA_SU2015_DCN").current())
 
         result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
         self.assertIn("soma(0.5)_ca_cdp_Ci", result.traces)
@@ -353,13 +351,11 @@ class RuntimeIonTest(unittest.TestCase):
                 perm=1.0 * (u.cm / u.second),
             ),
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.MechanismProbe(mechanism="ca_lva", field="Ci"),
-            braincell.mech.MechanismProbe(mechanism="CaLVA_SU2015_DCN", field="m"),
-            braincell.mech.MechanismProbe(mechanism="CaLVA_SU2015_DCN", field="h"),
-            braincell.mech.CurrentProbe(ion="ca_lva", mechanism="CaLVA_SU2015_DCN"),
-        )
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("soma(0.5)_ca_lva_Ci", braincell.observe.ion(name="ca_lva").state("Ci"))
+        soma.record("soma(0.5)_CaLVA_SU2015_DCN_m", braincell.observe.channel(name="CaLVA_SU2015_DCN").state("m"))
+        soma.record("soma(0.5)_CaLVA_SU2015_DCN_h", braincell.observe.channel(name="CaLVA_SU2015_DCN").state("h"))
+        soma.record("soma(0.5)_CaLVA_SU2015_DCN_current", braincell.observe.channel(name="CaLVA_SU2015_DCN").current())
 
         result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
         self.assertIn("soma(0.5)_ca_lva_Ci", result.traces)
@@ -380,12 +376,10 @@ class RuntimeIonTest(unittest.TestCase):
                 Btot=1.0 * u.mM,
             ),
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.MechanismProbe(mechanism="ca_toy", field="Ci"),
-            braincell.mech.MechanismProbe(mechanism="ca_toy", field="BC"),
-            braincell.mech.MechanismProbe(mechanism="ca_toy", field="B"),
-        )
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("soma(0.5)_ca_toy_Ci", braincell.observe.ion(name="ca_toy").state("Ci"))
+        soma.record("soma(0.5)_ca_toy_BC", braincell.observe.ion(name="ca_toy").state("BC"))
+        soma.record("soma(0.5)_ca_toy_B", braincell.observe.ion(name="ca_toy").state("B"))
 
         result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
         self.assertIn("soma(0.5)_ca_toy_Ci", result.traces)
@@ -436,12 +430,10 @@ class RuntimeIonTest(unittest.TestCase):
                     ci_source=ci_source,
                 ),
             )
-            cell.place(
-                at("soma", 0.5),
-                braincell.mech.MechanismProbe(mechanism="ca_toy_src", field="Ci"),
-                braincell.mech.MechanismProbe(mechanism="ca_toy_src", field="BC"),
-                braincell.mech.MechanismProbe(mechanism="ca_toy_src", field="B"),
-            )
+            soma = cell.loc(at("soma", 0.5))
+            soma.record("soma(0.5)_ca_toy_src_Ci", braincell.observe.ion(name="ca_toy_src").state("Ci"))
+            soma.record("soma(0.5)_ca_toy_src_BC", braincell.observe.ion(name="ca_toy_src").state("BC"))
+            soma.record("soma(0.5)_ca_toy_src_B", braincell.observe.ion(name="ca_toy_src").state("B"))
             return cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
 
         baseline = _run(0.0 * u.mM / u.ms)
@@ -485,11 +477,14 @@ class RuntimeIonTest(unittest.TestCase):
             cell.place(
                 at("soma", 0.5),
                 braincell.mech.CurrentClamp(delay=0.1 * u.ms, durations=0.8 * u.ms, amplitudes=0.05 * u.nA),
-                braincell.mech.MechanismProbe(mechanism="ca_toy_ica", field="Ci"),
-                braincell.mech.MechanismProbe(mechanism="ca_toy_ica", field="BC"),
-                braincell.mech.MechanismProbe(mechanism="ca_toy_ica", field="B"),
-                braincell.mech.MechanismProbe(mechanism="CaHVA_SU2015_DCN", field="m"),
-                braincell.mech.CurrentProbe(ion="ca_toy_ica", mechanism="CaHVA_SU2015_DCN"),
+            )
+            soma = cell.loc(at("soma", 0.5))
+            soma.record("soma(0.5)_ca_toy_ica_Ci", braincell.observe.ion(name="ca_toy_ica").state("Ci"))
+            soma.record("soma(0.5)_ca_toy_ica_BC", braincell.observe.ion(name="ca_toy_ica").state("BC"))
+            soma.record("soma(0.5)_ca_toy_ica_B", braincell.observe.ion(name="ca_toy_ica").state("B"))
+            soma.record("soma(0.5)_CaHVA_SU2015_DCN_m", braincell.observe.channel(name="CaHVA_SU2015_DCN").state("m"))
+            soma.record(
+                "soma(0.5)_CaHVA_SU2015_DCN_current", braincell.observe.channel(name="CaHVA_SU2015_DCN").current()
             )
             return cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
 
@@ -534,12 +529,13 @@ class RuntimeIonTest(unittest.TestCase):
         cell.place(
             at("soma", 0.5),
             braincell.mech.CurrentClamp(delay=0.1 * u.ms, durations=0.8 * u.ms, amplitudes=0.05 * u.nA),
-            braincell.mech.MechanismProbe(mechanism="ca_toy_factor", field="Ci"),
-            braincell.mech.MechanismProbe(mechanism="ca_toy_factor", field="PumpBound"),
-            braincell.mech.MechanismProbe(mechanism="ca_toy_factor", field="PumpFree"),
-            braincell.mech.MechanismProbe(mechanism="CaHVA_SU2015_DCN", field="m"),
-            braincell.mech.CurrentProbe(ion="ca_toy_factor", mechanism="CaHVA_SU2015_DCN"),
         )
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("soma(0.5)_ca_toy_factor_Ci", braincell.observe.ion(name="ca_toy_factor").state("Ci"))
+        soma.record("soma(0.5)_ca_toy_factor_PumpBound", braincell.observe.ion(name="ca_toy_factor").state("PumpBound"))
+        soma.record("soma(0.5)_ca_toy_factor_PumpFree", braincell.observe.ion(name="ca_toy_factor").state("PumpFree"))
+        soma.record("soma(0.5)_CaHVA_SU2015_DCN_m", braincell.observe.channel(name="CaHVA_SU2015_DCN").state("m"))
+        soma.record("soma(0.5)_CaHVA_SU2015_DCN_current", braincell.observe.channel(name="CaHVA_SU2015_DCN").current())
 
         result = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms)
         self.assertIn("soma(0.5)_ca_toy_factor_Ci", result.traces)
@@ -568,12 +564,12 @@ class RuntimeIonTest(unittest.TestCase):
                 PumpTot=1.0 * u.mM * u.um,
             ),
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.MechanismProbe(mechanism="ca_diam_factor", field="Ci"),
-            braincell.mech.MechanismProbe(mechanism="ca_diam_factor", field="PumpBound"),
-            braincell.mech.MechanismProbe(mechanism="ca_diam_factor", field="PumpFree"),
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("soma(0.5)_ca_diam_factor_Ci", braincell.observe.ion(name="ca_diam_factor").state("Ci"))
+        soma.record(
+            "soma(0.5)_ca_diam_factor_PumpBound", braincell.observe.ion(name="ca_diam_factor").state("PumpBound")
         )
+        soma.record("soma(0.5)_ca_diam_factor_PumpFree", braincell.observe.ion(name="ca_diam_factor").state("PumpFree"))
 
         cell.init_state()
         rcell = cell
@@ -626,25 +622,23 @@ class RuntimeIonTest(unittest.TestCase):
                 name="ca_stc",
             ),
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="Ci"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="pump"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="pumpca"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM0"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM1C"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM2C"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM1N2C"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM1N"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM2N"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM2N1C"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM1C1N"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM4"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="vrat"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="parea"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="dsq"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="dsqvol"),
-        )
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("soma(0.5)_ca_stc_Ci", braincell.observe.ion(name="ca_stc").state("Ci"))
+        soma.record("soma(0.5)_ca_stc_pump", braincell.observe.ion(name="ca_stc").state("pump"))
+        soma.record("soma(0.5)_ca_stc_pumpca", braincell.observe.ion(name="ca_stc").state("pumpca"))
+        soma.record("soma(0.5)_ca_stc_CAM0", braincell.observe.ion(name="ca_stc").state("CAM0"))
+        soma.record("soma(0.5)_ca_stc_CAM1C", braincell.observe.ion(name="ca_stc").state("CAM1C"))
+        soma.record("soma(0.5)_ca_stc_CAM2C", braincell.observe.ion(name="ca_stc").state("CAM2C"))
+        soma.record("soma(0.5)_ca_stc_CAM1N2C", braincell.observe.ion(name="ca_stc").state("CAM1N2C"))
+        soma.record("soma(0.5)_ca_stc_CAM1N", braincell.observe.ion(name="ca_stc").state("CAM1N"))
+        soma.record("soma(0.5)_ca_stc_CAM2N", braincell.observe.ion(name="ca_stc").state("CAM2N"))
+        soma.record("soma(0.5)_ca_stc_CAM2N1C", braincell.observe.ion(name="ca_stc").state("CAM2N1C"))
+        soma.record("soma(0.5)_ca_stc_CAM1C1N", braincell.observe.ion(name="ca_stc").state("CAM1C1N"))
+        soma.record("soma(0.5)_ca_stc_CAM4", braincell.observe.ion(name="ca_stc").state("CAM4"))
+        soma.record("soma(0.5)_ca_stc_vrat", braincell.observe.ion(name="ca_stc").state("vrat"))
+        soma.record("soma(0.5)_ca_stc_parea", braincell.observe.ion(name="ca_stc").state("parea"))
+        soma.record("soma(0.5)_ca_stc_dsq", braincell.observe.ion(name="ca_stc").state("dsq"))
+        soma.record("soma(0.5)_ca_stc_dsqvol", braincell.observe.ion(name="ca_stc").state("dsqvol"))
 
         cell.init_state()
         rcell = cell
@@ -710,7 +704,11 @@ class RuntimeIonTest(unittest.TestCase):
         # details; the contract here is qualitative dynamics plus conservation.
         self.assertAlmostEqual(float(tracked["pump"][-1, 0]), float(tracked["pump"][0, 0]), delta=1e-15)
         self.assertLessEqual(abs(float(tracked["pumpca"][-1, 0])), 1e-12)
-        self.assertGreater(float(tracked["Ci"][-1, 0]), float(tracked["Ci"][0, 0]))
+        # Row 0 is the initialized state (a recording samples before each
+        # step). Calmodulin binds calcium within the first step, so Ci rises
+        # from the state after that step (row 1), the first sample of the
+        # probe trace this test read before braincell 0.3.
+        self.assertGreater(float(tracked["Ci"][-1, 0]), float(tracked["Ci"][1, 0]))
         self.assertLess(float(tracked["CAM0"][-1, 0]), float(tracked["CAM0"][0, 0]))
         self.assertGreater(float(tracked["CAM1C"][-1, 0]), float(tracked["CAM1C"][0, 0]))
         self.assertGreater(float(tracked["CAM1N"][-1, 0]), float(tracked["CAM1N"][0, 0]))
@@ -739,22 +737,25 @@ class RuntimeIonTest(unittest.TestCase):
         cell.place(
             at("soma", 0.5),
             braincell.mech.CurrentClamp(delay=5.0 * u.ms, durations=20.0 * u.ms, amplitudes=0.005 * u.nA),
-            braincell.mech.StateProbe(),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="Ci"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="pump"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="pumpca"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM0"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM1C"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM2C"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM1N"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM2N"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="vrat"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="parea"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="dsq"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="dsqvol"),
-            braincell.mech.MechanismProbe(mechanism="Cav3p1_MA2020_GoC", field="p"),
-            braincell.mech.MechanismProbe(mechanism="Cav3p1_MA2020_GoC", field="q"),
-            braincell.mech.CurrentProbe(ion="ca_stc", mechanism="Cav3p1_MA2020_GoC"),
+        )
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("soma(0.5)_v", braincell.observe.state("V"))
+        soma.record("soma(0.5)_ca_stc_Ci", braincell.observe.ion(name="ca_stc").state("Ci"))
+        soma.record("soma(0.5)_ca_stc_pump", braincell.observe.ion(name="ca_stc").state("pump"))
+        soma.record("soma(0.5)_ca_stc_pumpca", braincell.observe.ion(name="ca_stc").state("pumpca"))
+        soma.record("soma(0.5)_ca_stc_CAM0", braincell.observe.ion(name="ca_stc").state("CAM0"))
+        soma.record("soma(0.5)_ca_stc_CAM1C", braincell.observe.ion(name="ca_stc").state("CAM1C"))
+        soma.record("soma(0.5)_ca_stc_CAM2C", braincell.observe.ion(name="ca_stc").state("CAM2C"))
+        soma.record("soma(0.5)_ca_stc_CAM1N", braincell.observe.ion(name="ca_stc").state("CAM1N"))
+        soma.record("soma(0.5)_ca_stc_CAM2N", braincell.observe.ion(name="ca_stc").state("CAM2N"))
+        soma.record("soma(0.5)_ca_stc_vrat", braincell.observe.ion(name="ca_stc").state("vrat"))
+        soma.record("soma(0.5)_ca_stc_parea", braincell.observe.ion(name="ca_stc").state("parea"))
+        soma.record("soma(0.5)_ca_stc_dsq", braincell.observe.ion(name="ca_stc").state("dsq"))
+        soma.record("soma(0.5)_ca_stc_dsqvol", braincell.observe.ion(name="ca_stc").state("dsqvol"))
+        soma.record("soma(0.5)_Cav3p1_MA2020_GoC_p", braincell.observe.channel(name="Cav3p1_MA2020_GoC").state("p"))
+        soma.record("soma(0.5)_Cav3p1_MA2020_GoC_q", braincell.observe.channel(name="Cav3p1_MA2020_GoC").state("q"))
+        soma.record(
+            "soma(0.5)_Cav3p1_MA2020_GoC_current", braincell.observe.channel(name="Cav3p1_MA2020_GoC").current()
         )
 
         cell.init_state()
@@ -835,22 +836,23 @@ class RuntimeIonTest(unittest.TestCase):
         cell.place(
             at("soma", 0.5),
             braincell.mech.CurrentClamp(delay=5.0 * u.ms, durations=20.0 * u.ms, amplitudes=0.005 * u.nA),
-            braincell.mech.StateProbe(),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="Ci"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="pump"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="pumpca"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM0"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM1C"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM2C"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM1N"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="CAM2N"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="vrat"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="parea"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="dsq"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc", field="dsqvol"),
-            braincell.mech.MechanismProbe(mechanism="Cav2p1_RI2021_SC", field="m"),
-            braincell.mech.CurrentProbe(ion="ca_stc", mechanism="Cav2p1_RI2021_SC"),
         )
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("soma(0.5)_v", braincell.observe.state("V"))
+        soma.record("soma(0.5)_ca_stc_Ci", braincell.observe.ion(name="ca_stc").state("Ci"))
+        soma.record("soma(0.5)_ca_stc_pump", braincell.observe.ion(name="ca_stc").state("pump"))
+        soma.record("soma(0.5)_ca_stc_pumpca", braincell.observe.ion(name="ca_stc").state("pumpca"))
+        soma.record("soma(0.5)_ca_stc_CAM0", braincell.observe.ion(name="ca_stc").state("CAM0"))
+        soma.record("soma(0.5)_ca_stc_CAM1C", braincell.observe.ion(name="ca_stc").state("CAM1C"))
+        soma.record("soma(0.5)_ca_stc_CAM2C", braincell.observe.ion(name="ca_stc").state("CAM2C"))
+        soma.record("soma(0.5)_ca_stc_CAM1N", braincell.observe.ion(name="ca_stc").state("CAM1N"))
+        soma.record("soma(0.5)_ca_stc_CAM2N", braincell.observe.ion(name="ca_stc").state("CAM2N"))
+        soma.record("soma(0.5)_ca_stc_vrat", braincell.observe.ion(name="ca_stc").state("vrat"))
+        soma.record("soma(0.5)_ca_stc_parea", braincell.observe.ion(name="ca_stc").state("parea"))
+        soma.record("soma(0.5)_ca_stc_dsq", braincell.observe.ion(name="ca_stc").state("dsq"))
+        soma.record("soma(0.5)_ca_stc_dsqvol", braincell.observe.ion(name="ca_stc").state("dsqvol"))
+        soma.record("soma(0.5)_Cav2p1_RI2021_SC_m", braincell.observe.channel(name="Cav2p1_RI2021_SC").state("m"))
+        soma.record("soma(0.5)_Cav2p1_RI2021_SC_current", braincell.observe.channel(name="Cav2p1_RI2021_SC").current())
 
         cell.init_state()
         cell.reset_state()
@@ -914,22 +916,20 @@ class RuntimeIonTest(unittest.TestCase):
                 name="ca_stc_camonly",
             ),
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="Ci"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM0"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM1C"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM2C"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM1N2C"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM1N"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM2N"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM2N1C"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM1C1N"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="CAM4"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="vrat"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="dsq"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_camonly", field="dsqvol"),
-        )
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("soma(0.5)_ca_stc_camonly_Ci", braincell.observe.ion(name="ca_stc_camonly").state("Ci"))
+        soma.record("soma(0.5)_ca_stc_camonly_CAM0", braincell.observe.ion(name="ca_stc_camonly").state("CAM0"))
+        soma.record("soma(0.5)_ca_stc_camonly_CAM1C", braincell.observe.ion(name="ca_stc_camonly").state("CAM1C"))
+        soma.record("soma(0.5)_ca_stc_camonly_CAM2C", braincell.observe.ion(name="ca_stc_camonly").state("CAM2C"))
+        soma.record("soma(0.5)_ca_stc_camonly_CAM1N2C", braincell.observe.ion(name="ca_stc_camonly").state("CAM1N2C"))
+        soma.record("soma(0.5)_ca_stc_camonly_CAM1N", braincell.observe.ion(name="ca_stc_camonly").state("CAM1N"))
+        soma.record("soma(0.5)_ca_stc_camonly_CAM2N", braincell.observe.ion(name="ca_stc_camonly").state("CAM2N"))
+        soma.record("soma(0.5)_ca_stc_camonly_CAM2N1C", braincell.observe.ion(name="ca_stc_camonly").state("CAM2N1C"))
+        soma.record("soma(0.5)_ca_stc_camonly_CAM1C1N", braincell.observe.ion(name="ca_stc_camonly").state("CAM1C1N"))
+        soma.record("soma(0.5)_ca_stc_camonly_CAM4", braincell.observe.ion(name="ca_stc_camonly").state("CAM4"))
+        soma.record("soma(0.5)_ca_stc_camonly_vrat", braincell.observe.ion(name="ca_stc_camonly").state("vrat"))
+        soma.record("soma(0.5)_ca_stc_camonly_dsq", braincell.observe.ion(name="ca_stc_camonly").state("dsq"))
+        soma.record("soma(0.5)_ca_stc_camonly_dsqvol", braincell.observe.ion(name="ca_stc_camonly").state("dsqvol"))
 
         cell.init_state()
         rcell = cell
@@ -981,28 +981,26 @@ class RuntimeIonTest(unittest.TestCase):
                 name="ca_stc_nocam",
             ),
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="Ci"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="mg"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="Buff1"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="Buff1_ca"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="Buff2"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="Buff2_ca"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="BTC"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="BTC_ca"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="DMNPE"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="DMNPE_ca"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="PV"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="PV_ca"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="PV_mg"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="pump"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="pumpca"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="vrat"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="parea"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="dsq"),
-            braincell.mech.MechanismProbe(mechanism="ca_stc_nocam", field="dsqvol"),
-        )
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("soma(0.5)_ca_stc_nocam_Ci", braincell.observe.ion(name="ca_stc_nocam").state("Ci"))
+        soma.record("soma(0.5)_ca_stc_nocam_mg", braincell.observe.ion(name="ca_stc_nocam").state("mg"))
+        soma.record("soma(0.5)_ca_stc_nocam_Buff1", braincell.observe.ion(name="ca_stc_nocam").state("Buff1"))
+        soma.record("soma(0.5)_ca_stc_nocam_Buff1_ca", braincell.observe.ion(name="ca_stc_nocam").state("Buff1_ca"))
+        soma.record("soma(0.5)_ca_stc_nocam_Buff2", braincell.observe.ion(name="ca_stc_nocam").state("Buff2"))
+        soma.record("soma(0.5)_ca_stc_nocam_Buff2_ca", braincell.observe.ion(name="ca_stc_nocam").state("Buff2_ca"))
+        soma.record("soma(0.5)_ca_stc_nocam_BTC", braincell.observe.ion(name="ca_stc_nocam").state("BTC"))
+        soma.record("soma(0.5)_ca_stc_nocam_BTC_ca", braincell.observe.ion(name="ca_stc_nocam").state("BTC_ca"))
+        soma.record("soma(0.5)_ca_stc_nocam_DMNPE", braincell.observe.ion(name="ca_stc_nocam").state("DMNPE"))
+        soma.record("soma(0.5)_ca_stc_nocam_DMNPE_ca", braincell.observe.ion(name="ca_stc_nocam").state("DMNPE_ca"))
+        soma.record("soma(0.5)_ca_stc_nocam_PV", braincell.observe.ion(name="ca_stc_nocam").state("PV"))
+        soma.record("soma(0.5)_ca_stc_nocam_PV_ca", braincell.observe.ion(name="ca_stc_nocam").state("PV_ca"))
+        soma.record("soma(0.5)_ca_stc_nocam_PV_mg", braincell.observe.ion(name="ca_stc_nocam").state("PV_mg"))
+        soma.record("soma(0.5)_ca_stc_nocam_pump", braincell.observe.ion(name="ca_stc_nocam").state("pump"))
+        soma.record("soma(0.5)_ca_stc_nocam_pumpca", braincell.observe.ion(name="ca_stc_nocam").state("pumpca"))
+        soma.record("soma(0.5)_ca_stc_nocam_vrat", braincell.observe.ion(name="ca_stc_nocam").state("vrat"))
+        soma.record("soma(0.5)_ca_stc_nocam_parea", braincell.observe.ion(name="ca_stc_nocam").state("parea"))
+        soma.record("soma(0.5)_ca_stc_nocam_dsq", braincell.observe.ion(name="ca_stc_nocam").state("dsq"))
+        soma.record("soma(0.5)_ca_stc_nocam_dsqvol", braincell.observe.ion(name="ca_stc_nocam").state("dsqvol"))
 
         cell.init_state()
         rcell = cell
@@ -1075,32 +1073,30 @@ class RuntimeIonTest(unittest.TestCase):
                 name="ca_cam",
             ),
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="Ci"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="pump"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="pumpca"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="CB"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="CB_f_ca"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="CB_ca_s"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="CB_ca_ca"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="PV"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="PV_ca"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="PV_mg"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="CAM0"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="CAM1C"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="CAM2C"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="CAM1N2C"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="CAM1N"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="CAM2N"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="CAM2N1C"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="CAM1C1N"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="CAM4"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="vrat"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="parea"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="dsq"),
-            braincell.mech.MechanismProbe(mechanism="ca_cam", field="dsqvol"),
-        )
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("soma(0.5)_ca_cam_Ci", braincell.observe.ion(name="ca_cam").state("Ci"))
+        soma.record("soma(0.5)_ca_cam_pump", braincell.observe.ion(name="ca_cam").state("pump"))
+        soma.record("soma(0.5)_ca_cam_pumpca", braincell.observe.ion(name="ca_cam").state("pumpca"))
+        soma.record("soma(0.5)_ca_cam_CB", braincell.observe.ion(name="ca_cam").state("CB"))
+        soma.record("soma(0.5)_ca_cam_CB_f_ca", braincell.observe.ion(name="ca_cam").state("CB_f_ca"))
+        soma.record("soma(0.5)_ca_cam_CB_ca_s", braincell.observe.ion(name="ca_cam").state("CB_ca_s"))
+        soma.record("soma(0.5)_ca_cam_CB_ca_ca", braincell.observe.ion(name="ca_cam").state("CB_ca_ca"))
+        soma.record("soma(0.5)_ca_cam_PV", braincell.observe.ion(name="ca_cam").state("PV"))
+        soma.record("soma(0.5)_ca_cam_PV_ca", braincell.observe.ion(name="ca_cam").state("PV_ca"))
+        soma.record("soma(0.5)_ca_cam_PV_mg", braincell.observe.ion(name="ca_cam").state("PV_mg"))
+        soma.record("soma(0.5)_ca_cam_CAM0", braincell.observe.ion(name="ca_cam").state("CAM0"))
+        soma.record("soma(0.5)_ca_cam_CAM1C", braincell.observe.ion(name="ca_cam").state("CAM1C"))
+        soma.record("soma(0.5)_ca_cam_CAM2C", braincell.observe.ion(name="ca_cam").state("CAM2C"))
+        soma.record("soma(0.5)_ca_cam_CAM1N2C", braincell.observe.ion(name="ca_cam").state("CAM1N2C"))
+        soma.record("soma(0.5)_ca_cam_CAM1N", braincell.observe.ion(name="ca_cam").state("CAM1N"))
+        soma.record("soma(0.5)_ca_cam_CAM2N", braincell.observe.ion(name="ca_cam").state("CAM2N"))
+        soma.record("soma(0.5)_ca_cam_CAM2N1C", braincell.observe.ion(name="ca_cam").state("CAM2N1C"))
+        soma.record("soma(0.5)_ca_cam_CAM1C1N", braincell.observe.ion(name="ca_cam").state("CAM1C1N"))
+        soma.record("soma(0.5)_ca_cam_CAM4", braincell.observe.ion(name="ca_cam").state("CAM4"))
+        soma.record("soma(0.5)_ca_cam_vrat", braincell.observe.ion(name="ca_cam").state("vrat"))
+        soma.record("soma(0.5)_ca_cam_parea", braincell.observe.ion(name="ca_cam").state("parea"))
+        soma.record("soma(0.5)_ca_cam_dsq", braincell.observe.ion(name="ca_cam").state("dsq"))
+        soma.record("soma(0.5)_ca_cam_dsqvol", braincell.observe.ion(name="ca_cam").state("dsqvol"))
 
         cell.init_state()
         rcell = cell

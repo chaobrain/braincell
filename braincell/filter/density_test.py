@@ -15,17 +15,14 @@
 
 """Tests for :mod:`braincell.filter.density`.
 
-The three factories' *sampling* behaviour — that a density actually bends
-the draw distribution — is exercised end-to-end in ``_sampling_test.py``,
+The factory's *sampling* behaviour -- that a density actually bends the
+draw distribution -- is exercised end-to-end in ``_sampling_test.py``,
 which owns the inverse-CDF machinery. What lives here is the module's own
-surface: argument validation, the deprecation contract on the two legacy
-field helpers, and the log-density evaluation each frozen density performs.
+surface: argument validation, the log-density evaluation of the frozen
+density, and the tombstones of the two field helpers braincell 0.3 removed.
 """
 
-import re
-import sys
 import unittest
-import warnings
 from types import SimpleNamespace
 
 import brainunit as u
@@ -34,99 +31,46 @@ import numpy as np
 from braincell.filter import density
 
 
-def _quiet(factory, *args, **kwargs):
-    """Call a deprecated factory without the warning failing the test."""
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        return factory(*args, **kwargs)
+class RemovedHelpersTest(unittest.TestCase):
+    """API-15: ``exponential`` and ``gaussian`` were removed in braincell 0.3 in favour of ``metric``."""
 
+    def test_access_names_the_release_and_the_replacement(self) -> None:
+        for name in ("exponential", "gaussian"):
+            with self.subTest(name=name):
+                with self.assertRaises(AttributeError) as caught:
+                    getattr(density, name)
+                message = str(caught.exception)
+                self.assertTrue(
+                    message.startswith(f"braincell.filter.density.{name}() was removed in braincell 0.3."), message
+                )
+                self.assertIn("braincell.filter.metric", message)
+                self.assertIn("metric.branch_x(context)", message)
+                self.assertFalse(hasattr(density, name))
+                self.assertNotIn(name, density.__all__)
 
-class DeprecationContractTest(unittest.TestCase):
-    """``exponential`` and ``gaussian`` are deprecated in favour of ``metric``."""
+    def test_from_import_raises_import_error_with_the_message(self) -> None:
+        with self.assertRaisesRegex(
+            ImportError, r"^braincell\.filter\.density\.exponential\(\) was removed in braincell 0\.3\."
+        ):
+            from braincell.filter.density import exponential  # noqa: F401
+        with self.assertRaisesRegex(
+            ImportError, r"^braincell\.filter\.density\.gaussian\(\) was removed in braincell 0\.3\."
+        ):
+            from braincell.filter.density import gaussian  # noqa: F401
 
-    def test_legacy_field_helpers_emit_deprecation_warning(self) -> None:
-        with self.assertWarnsRegex(DeprecationWarning, "filter.metric"):
-            density.exponential("branch_x", 0.2)
-        with self.assertWarnsRegex(DeprecationWarning, "filter.metric"):
-            density.gaussian("branch_x", 0.5, 0.2)
+    def test_other_missing_names_keep_the_generic_message(self) -> None:
+        with self.assertRaisesRegex(AttributeError, "module 'braincell.filter.density' has no attribute 'cauchy'"):
+            density.cauchy
 
-    def _expect(self, name: str):
-        removed_in = re.escape(density._REMOVED_IN)
-        return self.assertWarnsRegex(
-            DeprecationWarning,
-            rf"^braincell\.filter\.density\.{name}\(\) is deprecated since braincell 0\.3 and will be removed in "
-            rf"braincell {removed_in}\. Use a callable built from braincell\.filter\.metric instead\.$",
-        )
+    def test_the_suggested_replacements_are_densities(self) -> None:
+        # The two forms the messages suggest run as written on a sampling context.
+        from braincell.filter import metric
 
-    def test_exponential_warns_at_the_calling_line(self) -> None:
-        # API-7: the warning names the removal release and the replacement, at the calling line.
-        with self._expect("exponential") as caught:
-            line, built = sys._getframe().f_lineno, density.exponential("branch_x", 0.2, "decreasing")
-        self.assertEqual((caught.filename, caught.lineno), (__file__, line))
-        self.assertEqual(built, density._ExponentialDensity("branch_x", 0.2, -1.0))
-
-    def test_gaussian_warns_at_the_calling_line(self) -> None:
-        with self._expect("gaussian") as caught:
-            line, built = sys._getframe().f_lineno, density.gaussian("branch_x", 0.5, 0.2)
-        self.assertEqual((caught.filename, caught.lineno), (__file__, line))
-        self.assertEqual(built, density._GaussianDensity("branch_x", 0.5, 0.2))
-
-    def test_spatial_gaussian_is_not_deprecated(self) -> None:
-        # It has no field-name indirection to replace, so it is the one
-        # factory metric.py does not supersede.
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", DeprecationWarning)
-            density.spatial_gaussian(center=[0.0, 0.0, 0.0] * u.um, sigma=10.0 * u.um)
-
-
-class ExponentialValidationTest(unittest.TestCase):
-    def test_field_must_be_a_non_empty_string(self) -> None:
-        for bad in ("", 0, None):
-            with self.subTest(field=bad):
-                with self.assertRaisesRegex(TypeError, "field must be a non-empty string"):
-                    _quiet(density.exponential, bad, 0.2)
-
-    def test_scale_must_be_positive(self) -> None:
-        for bad in (0.0, -1.0):
-            with self.subTest(scale=bad):
-                with self.assertRaises(ValueError):
-                    _quiet(density.exponential, "branch_x", bad)
-
-    def test_direction_must_be_a_known_word(self) -> None:
-        with self.assertRaisesRegex(ValueError, "increasing.*decreasing"):
-            _quiet(density.exponential, "branch_x", 0.2, "sideways")
-
-    def test_direction_sets_the_sign_of_the_exponent(self) -> None:
-        rising = _quiet(density.exponential, "branch_x", 0.5, "increasing")
-        falling = _quiet(density.exponential, "branch_x", 0.5, "decreasing")
-        near = SimpleNamespace(branch_x=0.1)
-        far = SimpleNamespace(branch_x=0.9)
-
-        self.assertGreater(float(rising(far)), float(rising(near)))
-        self.assertLess(float(falling(far)), float(falling(near)))
-
-
-class GaussianValidationTest(unittest.TestCase):
-    def test_field_must_be_a_non_empty_string(self) -> None:
-        with self.assertRaisesRegex(TypeError, "field must be a non-empty string"):
-            _quiet(density.gaussian, "", 0.5, 0.2)
-
-    def test_sigma_must_be_positive(self) -> None:
-        with self.assertRaises(ValueError):
-            _quiet(density.gaussian, "branch_x", 0.5, 0.0)
-
-    def test_density_peaks_at_the_center(self) -> None:
-        bell = _quiet(density.gaussian, "branch_x", 0.5, 0.1)
-        at_center = float(bell(SimpleNamespace(branch_x=0.5)))
-        off_center = float(bell(SimpleNamespace(branch_x=0.9)))
-
-        self.assertGreater(at_center, off_center)
-        self.assertTrue(np.isfinite(at_center))
-
-    def test_a_missing_field_names_the_field_it_wanted(self) -> None:
-        bell = _quiet(density.gaussian, "branch_x", 0.5, 0.1)
-        with self.assertRaisesRegex(ValueError, "no density field 'branch_x'"):
-            bell(SimpleNamespace())
+        context = SimpleNamespace(branch_x=np.asarray([0.25, 0.5]))
+        rising = np.exp(metric.branch_x(context) / 0.2)
+        bell = np.exp(-0.5 * ((metric.branch_x(context) - 0.5) / 0.1) ** 2)
+        np.testing.assert_allclose(rising, np.exp([1.25, 2.5]), rtol=1e-12)
+        np.testing.assert_allclose(bell, [np.exp(-3.125), 1.0], rtol=1e-12)
 
 
 class SpatialGaussianValidationTest(unittest.TestCase):
@@ -154,27 +98,18 @@ class SpatialGaussianValidationTest(unittest.TestCase):
 
 
 class DensityValueTest(unittest.TestCase):
-    """Every factory returns a non-negative, finite, dimensionless callable."""
+    """The factory returns a non-negative, finite, dimensionless callable."""
 
-    def test_all_three_return_non_negative_finite_values(self) -> None:
-        cases = (
-            (_quiet(density.exponential, "branch_x", 0.5), SimpleNamespace(branch_x=0.3)),
-            (_quiet(density.gaussian, "branch_x", 0.5, 0.2), SimpleNamespace(branch_x=0.3)),
-            (
-                density.spatial_gaussian(center=[0.0, 0.0, 0.0] * u.um, sigma=10.0 * u.um),
-                SimpleNamespace(position=[1.0, 2.0, 3.0] * u.um),
-            ),
-        )
-        for fn, context in cases:
-            with self.subTest(density=type(fn).__name__):
-                value = np.asarray(fn(context), dtype=float)
-                self.assertTrue(np.all(np.isfinite(value)))
-                self.assertTrue(np.all(value >= 0.0))
+    def test_returns_non_negative_finite_values(self) -> None:
+        fn = density.spatial_gaussian(center=[0.0, 0.0, 0.0] * u.um, sigma=10.0 * u.um)
+        value = np.asarray(fn(SimpleNamespace(position=[1.0, 2.0, 3.0] * u.um)), dtype=float)
+        self.assertTrue(np.all(np.isfinite(value)))
+        self.assertTrue(np.all(value >= 0.0))
 
     def test_densities_are_frozen(self) -> None:
-        bell = _quiet(density.gaussian, "branch_x", 0.5, 0.2)
+        bell = density.spatial_gaussian(center=[0.0, 0.0, 0.0] * u.um, sigma=10.0 * u.um)
         with self.assertRaises(Exception):
-            bell.field = "radius"
+            bell.sigma = 1.0 * u.um
 
 
 if __name__ == "__main__":

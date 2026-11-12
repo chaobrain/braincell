@@ -25,7 +25,6 @@ integrate the same equations (float64, ``rk4``).
 import contextlib
 import gc
 import unittest
-import warnings
 
 import brainstate
 import brainunit as u
@@ -508,7 +507,7 @@ def _gaba_cell(kind, ion, solver):
 
 
 class LumpedSynapseTwinTest(LumpedTwinTestCase):
-    """A synapse that reads and writes chloride, deprecated probes and the solver rule."""
+    """A synapse that reads and writes chloride, and the solver rule."""
 
     def test_chloride_synapse(self) -> None:
         for ion in ("ChlorideInitNernst", "Cldif_JE2011"):
@@ -529,38 +528,6 @@ class LumpedSynapseTwinTest(LumpedTwinTestCase):
                     for key in ("v", "i"):
                         change = float(np.max(np.abs(cable[key] - cable[key][0])))
                         self.assertTwin(lumped[key], cable[key], 1e-2 * change, msg=key)
-
-    def test_deprecated_probes(self) -> None:
-        with _float64(), warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            traces = {}
-            for kind in KINDS:
-                cell = _hh(
-                    kind,
-                    2,
-                    synapse=True,
-                    clamp=_clamp(delay=0.5, duration=3.0, amplitudes=np.asarray([0.1, 0.12]) * u.nA),
-                )
-                cell.place(RootLocation(0.5), bc.mech.StateProbe(name="pv"))
-                cell.place(RootLocation(0.5), bc.mech.MechanismProbe(mechanism="na", field="p", name="pp"))
-                cell.place(RootLocation(0.5), bc.mech.CurrentProbe(mechanism="na", name="pi"))
-                cell.place(RootLocation(0.5), bc.mech.CurrentProbe(ion="SodiumFixed", name="pion"))
-                cell.place(RootLocation(0.5), bc.mech.MechanismProbe(mechanism="ampa", field="g", name="psyn"))
-                cell.place(RootLocation(0.5), bc.mech.Junction(params={"g": 1.0}))
-                cell.init_state()
-                trace = []
-                with brainstate.environ.context(dt=DT):
-                    for t in u.math.arange(0.0 * u.ms, 2.0 * u.ms, DT):
-                        with brainstate.environ.context(t=t):
-                            cell.update()
-                        trace.append({k: np.asarray(u.get_mantissa(v)) for k, v in cell.sample_probes().items()})
-                traces[kind] = trace
-        self.assertEqual(sorted(traces["lumped"][0]), ["pi", "pion", "pp", "psyn", "pv"])
-        for name in traces["cable"][0]:
-            lumped = np.stack([row[name] for row in traces["lumped"]])
-            cable = np.stack([row[name] for row in traces["cable"]]).reshape(lumped.shape)
-            scale = max(1.0, float(np.max(np.abs(cable))))
-            self.assertLessEqual(float(np.max(np.abs(lumped - cable))) / scale, 1e-10, name)
 
     def test_split_run_delivers_a_boundary_event_once(self) -> None:
         # CELL-34 on a lumped Cell: a run split at the event time matches one

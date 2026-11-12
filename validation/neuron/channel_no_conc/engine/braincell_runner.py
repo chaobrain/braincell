@@ -62,15 +62,21 @@ def build_cell(
     subsolver: str | None = None,
     substeps: int | None = None,
 ):
-    """Build and initialize the single-soma Cell of ``case``, with its probes.
+    """Build and initialize the single-soma Cell of ``case``, with its recordings.
 
     ``pop_size``, ``subsolver`` and ``substeps`` are passed to
     :class:`braincell.Cell`; the convergence checks use them to replay
     several voltage commands at once and to choose the Markov subsolver.
+
+    The soma records the voltage (``"soma(0.5)_v"``), each gate
+    (``"soma(0.5)_<class>_<gate>"``), the channel current
+    (``"soma(0.5)_<class>_current"``) and, for a calcium current, the ion's
+    ``Ci``, ``Co`` and ``E`` (``"soma(0.5)_<ion>_<field>"``). A recording
+    samples before each step; :func:`run_case` aligns the rows with NEURON.
     """
     import braincell
     from braincell.filter import AllRegion, at
-    from braincell.mech import CableProperty, Channel, CurrentProbe, Ion, MechanismProbe, StateProbe, get_registry
+    from braincell.mech import CableProperty, Channel, Ion, get_registry
     from braincell.morph.branch import Branch
     from braincell.morph.morphology import Morphology
 
@@ -124,6 +130,10 @@ def build_cell(
                 case=case,
             ),
         )
+    elif mapping_spec.current_source.ion_name == "ca":
+        # observe.ion(...) records painted ions only: paint the default fixed
+        # calcium ion explicitly, so that its Ci, Co and E are recorded.
+        cell.paint(region, Ion("CalciumFixed", name="ca"))
     channel_binding_kwargs = _braincell_channel_binding_kwargs(mapping_spec)
     cell.paint(region, Channel(mapping_spec.braincell.class_name, **channel_binding_kwargs, **channel_kwargs))
 
@@ -139,29 +149,21 @@ def build_cell(
 
     probe_loc = at("soma", 0.5)
     cell.place(probe_loc, build_braincell_stimulus(case.stimulus))
-    cell.place(probe_loc, StateProbe())
-    gate_probes = [
-        MechanismProbe(mechanism=mapping_spec.braincell.class_name, field=gate_name)
-        for gate_name in mapping_spec.braincell.gate_names
-    ]
-    if gate_probes:  # a leak has no gates
-        cell.place(probe_loc, *gate_probes)
+    soma = cell.loc(probe_loc)
+    class_name = mapping_spec.braincell.class_name
+    channel = braincell.observe.channel(name=class_name)
+    soma.record("soma(0.5)_v", braincell.observe.state("V"))
+    for gate_name in mapping_spec.braincell.gate_names:  # a leak has no gates
+        soma.record(f"soma(0.5)_{class_name}_{gate_name}", channel.state(gate_name))
     ion_probe_fields = _resolve_ion_probe_fields(mapping_spec)
     if len(ion_probe_fields) > 0:
         ion_name = mapping_spec.current_source.ion_name
         if ion_name is None:
             raise ValueError("ion probe fields require mapping.current to resolve to an ion.")
-        cell.place(
-            probe_loc,
-            *(
-                MechanismProbe(mechanism=ion_name, field=field)
-                for field in ion_probe_fields
-            ),
-        )
-    cell.place(
-        probe_loc,
-        _build_current_probe(mapping_spec),
-    )
+        ion = braincell.observe.ion(name=ion_name)
+        for field in ion_probe_fields:
+            soma.record(f"soma(0.5)_{ion_name}_{field}", ion.state(field))
+    soma.record(_resolve_current_probe_name(mapping_spec), channel.current())
 
     cell.init_state()
     if case.ion_state is not None:
@@ -179,42 +181,39 @@ def run_case(case: ChannelNoConcCase, *, solver: str | None = None) -> dict[str,
     cell = build_cell(case, solver=solver)
     mapping_spec = case.mapping_spec
     dt = float(case.simulation.dt_ms) * u.ms
+    # A recording samples before each step: row k is the state at k dt, row 0
+    # the initialized state. One extra step and dropping row 0 give the
+    # states after each of the case's steps, t = dt .. duration, NEURON's
+    # post-step samples. The extra step itself is never sampled (a voltage
+    # replay table of N + 1 rows holds its last voltage there).
     result = cell.run(
         dt=dt,
-        duration=float(case.simulation.duration_ms) * u.ms,
+        duration=float(case.simulation.duration_ms) * u.ms + dt,
     )
+    traces = {name: values[1:] for name, values in result.traces.items()}
 
     current_probe_name = _resolve_current_probe_name(mapping_spec)
     return {
-        # Cell.run() samples after each integration step while exposing the
-        # pre-step time grid. Shift by one dt so the exported traces align
-        # with NEURON's post-step samples.
-        "time_ms": ensure_1d((result.time + dt).to_decimal(u.ms), name="braincell.time_ms"),
-        "voltage_mV": ensure_1d(result.traces["soma(0.5)_v"].to_decimal(u.mV), name="braincell.voltage_mV"),
+        "time_ms": ensure_1d((result.time[:-1] + dt).to_decimal(u.ms), name="braincell.time_ms"),
+        "voltage_mV": ensure_1d(traces["soma(0.5)_v"].to_decimal(u.mV), name="braincell.voltage_mV"),
         "current": {
             "ix": ensure_1d(
-                result.traces[current_probe_name].to_decimal(u.mA / (u.cm ** 2)),
+                traces[current_probe_name].to_decimal(u.mA / (u.cm ** 2)),
                 name="braincell.current.ix",
             ),
         },
         "ion_state": _collect_braincell_ion_state_traces(
-            result=result,
+            recorded=traces,
             mapping_spec=mapping_spec,
         ),
         "gates": {
             gate_name: ensure_1d(
-                np.asarray(result.traces[f"soma(0.5)_{mapping_spec.braincell.class_name}_{gate_name}"]),
+                np.asarray(traces[f"soma(0.5)_{mapping_spec.braincell.class_name}_{gate_name}"]),
                 name=f"braincell.gates.{gate_name}",
             )
             for gate_name in mapping_spec.braincell.gate_names
         },
     }
-
-
-def _build_current_probe(mapping_spec: MappingSpec):
-    from braincell.mech import CurrentProbe
-
-    return CurrentProbe(mechanism=mapping_spec.braincell.class_name)
 
 
 def _needs_kv1p5_grc_auxiliary_ions(mapping_spec: MappingSpec) -> bool:
@@ -275,7 +274,7 @@ def _resolve_ion_probe_fields(mapping_spec: MappingSpec) -> tuple[str, ...]:
     return ("Ci", "Co", "E")
 
 
-def _collect_braincell_ion_state_traces(*, result, mapping_spec: MappingSpec) -> dict[str, np.ndarray]:
+def _collect_braincell_ion_state_traces(*, recorded, mapping_spec: MappingSpec) -> dict[str, np.ndarray]:
     ion_name = mapping_spec.current_source.ion_name
     if ion_name not in {"ca", "cal"}:
         return {}
@@ -288,9 +287,9 @@ def _collect_braincell_ion_state_traces(*, result, mapping_spec: MappingSpec) ->
     traces: dict[str, np.ndarray] = {}
     for field_name, (unit, name) in field_units.items():
         trace_name = prefix + field_name
-        if trace_name not in result.traces:
+        if trace_name not in recorded:
             continue
-        values = result.traces[trace_name]
+        values = recorded[trace_name]
         traces[{
             "Ci": "ci_mM",
             "Co": "co_mM",

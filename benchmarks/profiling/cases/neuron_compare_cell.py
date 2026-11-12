@@ -198,6 +198,7 @@ class NeuronCompareCellWorkload:
         self.cell = None
         self._u = None
         self._mech = None
+        self._observe = None
         self._at = None
         self._params_mod = None
         self._params = None
@@ -221,12 +222,13 @@ class NeuronCompareCellWorkload:
     def import_case(self) -> None:
         import brainstate
         import brainunit as u
-        from braincell import mech
+        from braincell import mech, observe
         from braincell.filter import at
 
         brainstate.environ.set(precision=self.precision)
         self._u = u
         self._mech = mech
+        self._observe = observe
         self._at = at
         self._params_mod = import_module(self.spec.params_module)
 
@@ -272,7 +274,7 @@ class NeuronCompareCellWorkload:
         u = self._u
         mech = self._mech
         at = self._at
-        self.cell.place(at("soma", 0.5), mech.StateProbe(name="v_soma"))
+        self.cell.loc(at("soma", 0.5)).record("v_soma", self._observe.state("V"))
         self.cell.place(
             at("soma", 0.5),
             mech.CurrentClamp(
@@ -332,7 +334,7 @@ class NeuronCompareCellWorkload:
             raise RuntimeError("build() must be called before this phase.")
 
     def _require_imports(self) -> None:
-        if self._u is None or self._mech is None or self._at is None or self._params_mod is None:
+        if any(value is None for value in (self._u, self._mech, self._observe, self._at, self._params_mod)):
             raise RuntimeError("import_case() must be called before this phase.")
 
 

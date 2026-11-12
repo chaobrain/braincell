@@ -33,7 +33,7 @@ The lifecycle has two phases:
 2. **INITIALIZED**. After :meth:`init_state`, structure is frozen, existing
    numerical parameters can be updated through Views, and
    the runtime surface (:meth:`run`, :meth:`update`,
-   :meth:`sample_probe`, inspection, ...) becomes available. Call
+   :meth:`mech_table`, inspection, ...) becomes available. Call
    :meth:`reset` to drop the runtime and re-enter DECLARING.
 
 ``run(dt=, duration=)`` auto-calls :meth:`init_state` on first use for
@@ -59,7 +59,7 @@ from brainstate.mixin import ParamDescriber
 from braincell._base_channel import Channel, IonChannel, Synapse as RuntimeSynapse
 from braincell._base_ion import Ion, MixIons
 from braincell._base_neuron import HHTypedNeuron, _zero_spike_like
-from braincell._deprecation import Deprecation
+from braincell._deprecation import removed_member
 from braincell._misc import (
     is_traced_value,
     scalar_decimal,
@@ -111,7 +111,7 @@ from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad._util import population_slot_layout
 from braincell.quad.protocol import DiffEqGroupState, IndependentIntegration, state_grouping
 from braincell.mech import CableProperty, CVContext, Density, Point, Synapse as SynapsePlacement
-from braincell._multi_compartment import boundary, currents, field_resolution, probes, run as run_module
+from braincell._multi_compartment import boundary, currents, field_resolution, run as run_module
 from braincell._compute import bridge
 from braincell._multi_compartment.synapses import SynapseView, _SynapseStore, raise_on_name_type_conflict
 from braincell._multi_compartment.clamps import ClampView, _ClampStore
@@ -131,14 +131,6 @@ from braincell._multi_compartment.lumped import (
 from braincell.morph.morphology import Morphology as _Morphology
 
 __all__ = ["Cell", "CellView"]
-
-#: ``Cell.bind_synapse_input`` is deprecated; ``removed_in`` is provisional.
-_BIND_SYNAPSE_INPUT = Deprecation(
-    "braincell.Cell.bind_synapse_input()",
-    since="0.3",
-    removed_in="0.4",
-    replacement="an EventSource with braincell.connect()",
-)
 
 
 @dataclass(frozen=True)
@@ -1278,7 +1270,6 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._synapse_store_cache: _SynapseStore | None = None
         self._clamp_store_cache: _ClampStore | None = None
         self._spike_event_source_cache: _CellSpikeSource | None = None
-        self._synapse_input_bindings: dict[str, list[tuple[object, object, object]]] = {}
         self._synapse_origins: dict[int, SynapsePlacement] = {}
         self._connection_store_cache = None
         self._connection_weight_declarations = ()
@@ -1966,32 +1957,13 @@ class Cell(_CellFacade, HHTypedNeuron):
                     "Omit the locset or use RootLocation(0.5) / cell.cv_midpoints."
                 )
 
-    def bind_synapse_input(self, synapse: str, source, *, weight=1.0, transform=None) -> "Cell":
-        """Deprecated compatibility adapter for per-boundary event payloads.
-
-        .. deprecated:: 0.3
-           Create an ``EventSource`` and connect it with
-           ``braincell.connect()``; this method is removed in braincell 0.4.
-
-        Parameters
-        ----------
-        synapse : str
-            Synapse instance name, matching ``braincell.mech.Synapse(name=...)``
-            or its default instance name.
-        source : array-like or callable
-            Presynaptic drive source. Callables are evaluated every step; this
-            supports bindings such as ``lambda: pre_cell.spike.value``.
-        weight : array-like, optional
-            Multiplicative weight applied to ``source``.
-        transform : callable, optional
-            Optional mapping called as ``transform(source_value)`` before
-            weighting, useful when the source shape does not directly broadcast
-            to the target synapse shape.
-        """
-        _BIND_SYNAPSE_INPUT.warn()
-        key = str(synapse)
-        self._synapse_input_bindings.setdefault(key, []).append((source, weight, transform))
-        return self
+    #: Removed in braincell 0.3 without a deprecation period (API-15).
+    bind_synapse_input = removed_member(
+        "braincell.Cell.bind_synapse_input() was removed in braincell 0.3. Deliver events through a connection: "
+        "braincell.connect(name, source=<an EventSource such as braincell.NetStim(...), "
+        "braincell.EventSequence.from_times(...) or another Cell's spikes>, synapse=cell.synapses[<synapse name>], "
+        "weight=...)."
+    )
 
     # ------------------------------------------------------------------
     # Static discretization (valid in both phases)
@@ -4342,12 +4314,11 @@ class Cell(_CellFacade, HHTypedNeuron):
         active solver schedule.
 
         For each runtime synapse layout, the total discrete drive is assembled
-        from three sources:
+        from two sources:
 
         1. The private per-layout event buffer, where network delivery writes
            delayed events.
         2. Direct Connection arrivals evaluated at the current simulation time.
-        3. User-bound inputs registered with ``bind_synapse_input``.
 
         The accumulated payload is consumed at the next event boundary.
         """
@@ -4365,10 +4336,6 @@ class Cell(_CellFacade, HHTypedNeuron):
                 scheduled_only=True,
             )
             total_drive = total_drive + _coerce_drive_like(contact_drive, total_drive)
-            total_drive = total_drive + self._evaluate_bound_synapse_inputs(
-                layout,
-                total_drive,
-            )
             self._set_event_buffer(layout.id, total_drive)
 
     def _evaluate_contact_inputs(self, layout, *, t, template, scheduled_only=True):
@@ -4476,35 +4443,6 @@ class Cell(_CellFacade, HHTypedNeuron):
             current = self._reduction_input_runtime.get_event_buffer(layout_id)
             arrival = current + _coerce_drive_like(arrival, current)
         self._set_event_buffer(layout_id, arrival)
-
-    def _evaluate_bound_synapse_inputs(self, layout, template):
-        drive = u.math.zeros_like(template)
-        if layout.synapse_index is None:
-            return drive
-        layout_ids = np.asarray(layout.synapse_index, dtype=np.int64)
-        for instance_name, bindings in self._synapse_input_bindings.items():
-            target = self.synapses[instance_name]
-            if len(target) == 0:
-                continue
-            selected_ids = target.id[np.isin(target.id, layout_ids)]
-            if selected_ids.size == 0:
-                continue
-            rows = self._get_synapse_store().runtime_rows(selected_ids)
-            selected_template = template[..., rows]
-            for source, weight, transform in bindings:
-                value = source() if callable(source) else source
-                if transform is not None:
-                    value = transform(value)
-                try:
-                    contribution = _coerce_drive_like(value * weight, selected_template)
-                    drive = _scatter_drive_rows(drive, rows, contribution)
-                except ValueError as exc:
-                    raise ValueError(
-                        f"Bound synapse input for {instance_name!r} cannot broadcast "
-                        f"from shape {getattr(value, 'shape', None)!r} to "
-                        f"{getattr(selected_template, 'shape', None)!r}."
-                    ) from exc
-        return drive
 
     def _update_runtime_synapses(self, point_V):
         """Advance runtime synapse dynamics.
@@ -4677,16 +4615,24 @@ class Cell(_CellFacade, HHTypedNeuron):
     # Probes + mech_table (runtime-only)
 
     def sample_probe(self, name: str):
+        """Raise ``KeyError``: braincell 0.3 removed the probe declarations (API-15).
+
+        No probe can be placed any more, so no name resolves; declare a
+        recording with :meth:`record` instead.
+        """
         self._raise_if_not_initialized("sample_probe()")
-        if self._uses_reduction:
-            raise KeyError(f"Detailed probe {name!r} is inactive while a reduction model is selected.")
-        return probes.sample_probe(self, name)
+        raise KeyError(
+            f"No probe is registered with name {name!r}: braincell 0.3 removed the probe declarations. "
+            "Declare a recording with Cell.record(...) instead."
+        )
 
     def sample_probes(self) -> dict[str, object]:
+        """Return ``{}``: braincell 0.3 removed the probe declarations (API-15).
+
+        Declare recordings with :meth:`record`; :meth:`run` returns them.
+        """
         self._raise_if_not_initialized("sample_probes()")
-        if self._uses_reduction:
-            return {}
-        return probes.sample_probes(self)
+        return {}
 
     def mech_table(self) -> MechanismObjectTable:
         """Return the point-domain mechanism table for this cell.
@@ -4710,7 +4656,7 @@ class Cell(_CellFacade, HHTypedNeuron):
     # Run (auto-inits from DECLARING)
 
     def run(self, *, dt, duration):
-        """Run the cell for ``duration`` at ``dt`` and return probe traces.
+        """Run the cell for ``duration`` at ``dt`` and return its recordings.
 
         If :meth:`init_state` has not been called yet, ``run`` calls it
         automatically. Once initialized the cell will *not* be
@@ -4969,20 +4915,6 @@ def _coerce_drive_like(value, template):
     if isinstance(template, u.Quantity) and not isinstance(value, u.Quantity):
         return value * template.unit
     return value
-
-
-def _scatter_drive_rows(target, rows, contribution):
-    """Add selected event-drive rows without changing the target unit."""
-    rows = np.asarray(rows, dtype=np.int32)
-    if isinstance(target, u.Quantity):
-        if not isinstance(contribution, u.Quantity):
-            raise TypeError("Synapse drive contribution requires a quantity.")
-        mantissa = jnp.asarray(target.to_decimal(target.unit))
-        values = jnp.asarray(contribution.to_decimal(target.unit))
-        return u.Quantity(mantissa.at[..., rows].add(values), target.unit)
-    if isinstance(contribution, u.Quantity):
-        raise TypeError("Dimensionless synapse drive cannot consume a quantity contribution.")
-    return jnp.asarray(target).at[..., rows].add(jnp.asarray(contribution))
 
 
 def _resolve_solver(solver):

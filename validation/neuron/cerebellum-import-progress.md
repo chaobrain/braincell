@@ -51,9 +51,9 @@ expression. These are specific compatibility paths, not proof that the full mode
 - Channel implementations and adjacent tests under [channel](../../braincell/channel), including
   sodium, potassium, calcium, potassium_calcium, and hyperpolarization_activated modules.
 
-The earlier record also described MechanismProbe support for plain-value fields and listed the old
-probes implementation/tests. That is historical context, not a current API entry point; use the current
-recording API of ``Network`` for supported observation interfaces.
+The earlier record also described probe support for plain-value mechanism fields and listed the old
+probes implementation/tests. The probe classes were removed in API-15; use ``Cell.record`` and
+``braincell.observe`` (and ``Network`` recordings) for supported observation interfaces.
 
 ## Validation limits
 

@@ -277,14 +277,18 @@ class SynapseViewTest(unittest.TestCase):
 
         self.assertEqual(cell.synapses[exp].population_index.tolist(), [1])
 
-    def test_bound_input_targets_one_name_inside_shared_type_runtime(self):
+    def test_connection_targets_one_name_inside_shared_type_runtime(self):
         cell = _population()
         pf = braincell.mech.Synapse("ExpSyn", name="pf", tau=1.0 * u.ms, e=0.0 * u.mV)
         aa = braincell.mech.Synapse("ExpSyn", name="aa", tau=2.0 * u.ms, e=0.0 * u.mV)
         cell.place(at("soma", 0.3), pf)
         cell.place(at("soma", 0.7), aa)
-        with self.assertWarns(DeprecationWarning):
-            cell.bind_synapse_input("pf", np.asarray([1.0, 2.0]), weight=0.1 * u.uS)
+        braincell.connect(
+            "drive",
+            source=braincell.NetStim(start=0.0 * u.ms, number=1),
+            synapse=cell.synapses["pf"],
+            weight=np.asarray([1.0, 2.0]) * 0.1 * u.uS,
+        )
         cell.init_state()
 
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.05 * u.ms):

@@ -163,12 +163,10 @@ class DensityInversionTest(unittest.TestCase):
         expected = np.log1p(self.uniforms * np.expm1(5.0)) / 5.0
         np.testing.assert_allclose(actual, expected, atol=2e-9, rtol=0.0)
 
-    def test_gaussian_helper_matches_truncated_gaussian_inverse(self) -> None:
+    def test_gaussian_density_matches_truncated_gaussian_inverse(self) -> None:
         center = 0.4
         sigma = 0.15
-        with self.assertWarns(DeprecationWarning):
-            preference = density.gaussian("branch_x", center, sigma)
-        actual = self._x(preference)
+        actual = self._x(lambda context: np.exp(-0.5 * ((metric.branch_x(context) - center) / sigma) ** 2))
         low = ndtr((0.0 - center) / sigma)
         high = ndtr((1.0 - center) / sigma)
         expected = center + sigma * ndtri(low + self.uniforms * (high - low))
@@ -192,9 +190,7 @@ class DensityInversionTest(unittest.TestCase):
         np.testing.assert_allclose(first, second, atol=3e-9, rtol=0.0)
 
     def test_narrow_gaussian_remains_finite(self) -> None:
-        with self.assertWarns(DeprecationWarning):
-            preference = density.gaussian("branch_x", 0.5, 0.001)
-        actual = self._x(preference)
+        actual = self._x(lambda context: np.exp(-0.5 * ((metric.branch_x(context) - 0.5) / 0.001) ** 2))
         self.assertTrue(np.all(np.isfinite(actual)))
         self.assertLess(np.max(np.abs(actual - 0.5)), 0.01)
 

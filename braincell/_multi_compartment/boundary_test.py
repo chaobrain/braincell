@@ -38,7 +38,6 @@ solves; ``VdepExpSyn`` (below) makes the decay voltage dependent to show it.
 import contextlib
 import types
 import unittest
-import warnings
 from unittest import mock
 
 import brainstate
@@ -762,25 +761,15 @@ class SynapseLayoutFilterTest(_Float64Case):
         np.testing.assert_allclose(_run(cell, 0.025)[:, 0, :], reference, rtol=0, atol=1e-12)
 
 
-def _state_probe():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        return mech.StateProbe(field="v")
+class BoundaryPointVoltageTest(_Float64Case):
+    """Point mechanisms at a boundary read the solved boundary voltage under every solver."""
 
-
-class StateProbeTest(_Float64Case):
-    """The deprecated StateProbe reads the solved boundary voltage under every solver."""
-
-    def test_state_probe_at_a_boundary(self):
+    def test_point_voltage_at_a_clamped_boundary(self):
         for solver in ("rk4", "staggered"):
             with self.subTest(solver=solver):
                 cell = _build("M1", "clamp", solver)
                 _run(cell, 0.025, segments=(1.0,))
                 point = cell._point_voltage_for_mechanisms()
-                sampled = braincell._multi_compartment.probes._sample_state_probe_point(
-                    cell, cell.runtime, declaration=_state_probe(), point_id=0
-                )
-                self.assertEqual(float(np.ravel(sampled.to_decimal(u.mV))[0]), float(point[0, 0].to_decimal(u.mV)))
                 # The clamp current enters CV 0 through the half-CV conductance: V_b > V_0.
                 self.assertGreater(float(point[0, 0].to_decimal(u.mV)), float(cell.V.value[0, 0].to_decimal(u.mV)))
 

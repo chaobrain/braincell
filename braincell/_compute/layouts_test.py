@@ -59,7 +59,7 @@ def _clamp_areas(areas_cm2, *, n_point: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 class RuntimeLayoutTest(unittest.TestCase):
-    """Layout construction, clamp evaluation, and probe layout allocation."""
+    """Layout construction and clamp evaluation."""
 
     def test_density_mechanism_builds_dense_layout_with_global_shape(self) -> None:
         cell = Cell(_build_tree())
@@ -384,32 +384,6 @@ class RuntimeLayoutTest(unittest.TestCase):
 
         self.assertAlmostEqual(per_point[0], 0.2, places=6)
         self.assertAlmostEqual(per_point[1], 0.0, places=6)
-
-    def test_probe_layouts_are_sparse_and_allocate_no_state_buffers(self) -> None:
-        cell = Cell(_build_tree())
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.StateProbe(),
-            braincell.mech.MechanismProbe(mechanism="Na_HH1952", field="p"),
-            braincell.mech.CurrentProbe(ion="na", mechanism="Na_HH1952"),
-        )
-
-        cell.init_state()
-        rcell = cell
-
-        self.assertEqual(len(rcell.layouts), 3)
-        self.assertTrue(all(layout.layout == "sparse" for layout in rcell.layouts))
-        self.assertTrue(all(layout.target == "point" for layout in rcell.layouts))
-        resolved_names = []
-        for layout in rcell.layouts:
-            self.assertEqual(layout.point_index.tolist(), [1])
-            self.assertEqual(rcell.get_point_state(1)[layout.id], {})
-            declaration = rcell.runtime.get_layout_mechanism(layout.id)
-            resolved_names.append(declaration.name)
-        self.assertEqual(
-            sorted(resolved_names),
-            ["soma(0.5)_Na_HH1952_current", "soma(0.5)_Na_HH1952_p", "soma(0.5)_v"],
-        )
 
 
 class EvaluatePointClampsJitTest(unittest.TestCase):

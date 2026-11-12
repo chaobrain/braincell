@@ -148,7 +148,7 @@
   There is no alias. Migrate by replacing `observe.state("v")` with
   `observe.state("V")` (or `cell.record(name, "V")`) and any check of
   `row.field == "v"` with `"V"`; recording names are labels and need no
-  change. The legacy `StateProbe(field="v")` is unchanged.
+  change.
 - **Without a seed, the random roots come from the BrainState random context,
   and NetStim noise has a new stream** (CELL-11b). There is no deprecation
   period; this change is an exception for 0.3 that the project lead
@@ -181,6 +181,33 @@
     raises `TypeError`; pass an integer seed. A seedless rule in a direct
     `connect` under a transformation raises `TypeError` at the call; it
     failed there before as well, when sampling.
+- **The legacy probes, `Cell.bind_synapse_input` and
+  `filter.density.exponential`/`gaussian` are removed** (API-15).
+  `braincell.mech.StateProbe`, `MechanismProbe`, `CurrentProbe` and
+  `ProbeMechanism`, `braincell.Cell.bind_synapse_input()` and
+  `braincell.filter.density.exponential()` and `gaussian()` were deprecated
+  (API-7) and are removed in 0.3 instead of 0.4; the project lead approved the
+  earlier removal. Each name raises `AttributeError` (`ImportError` on a
+  `from ... import` line) that names the replacement, and they are gone from
+  `__all__` and the API reference. `Cell.sample_probes()` now returns `{}` and
+  `Cell.sample_probe(name)` raises `KeyError`, since no probe can be placed.
+  A recording samples at the start of each step (row `k` is the state at
+  `result.time[k]`, row 0 the initialized state), while a probe sampled at the
+  end of it: a recording's row `k + 1` is the probe's row `k`. Recordings need
+  a one-dimensional `pop_size`, and `observe.ion` selects ions painted with
+  `mech.Ion(...)`, not the default ones.
+
+  | Old | New |
+  |---|---|
+  | `cell.place(locset, mech.StateProbe(name="v"))` | `cell.loc(locset).record("v", braincell.observe.state("V"))` |
+  | `mech.MechanismProbe(mechanism="Na", field="m")` | `braincell.observe.channel(name="Na").state("m")`; `observe.ion(name=...)` for an ion, `observe.synapse(name=...)` for a synapse |
+  | `mech.CurrentProbe(mechanism="Na")` | `braincell.observe.channel(name="Na").current()`, or `observe.synapse(name=...).current()` |
+  | `mech.CurrentProbe(ion="na")` | `braincell.observe.ion(name="na").current()` on an ion painted with `mech.Ion(..., name="na")` |
+  | `mech.ProbeMechanism(...)` | a recording; no run ever sampled a `ProbeMechanism` |
+  | `cell.sample_probe(name)`, `cell.sample_probes()` | `cell.run(...).traces[name]` of a recording |
+  | `cell.bind_synapse_input("syn", source, weight=w)` | `braincell.connect(name, source=<an EventSource: braincell.NetStim(...), braincell.EventSequence.from_times(...) or a Cell's spikes>, synapse=cell.synapses["syn"], weight=w)` |
+  | `density.exponential("branch_x", 0.2)` | `lambda context: np.exp(metric.branch_x(context) / 0.2)` (`direction="decreasing"` negates the exponent) |
+  | `density.gaussian("branch_x", 0.5, 0.1)` | `lambda context: np.exp(-0.5 * ((metric.branch_x(context) - 0.5) / 0.1) ** 2)` |
 
 ### New Features
 
@@ -1768,22 +1795,6 @@
     NEURON's from t = 0. The voltage error stays at 0.0022 mV (MAE).
 
 ### Deprecations
-
-- **`braincell.mech.StateProbe`, `braincell.mech.MechanismProbe`,
-  `braincell.mech.CurrentProbe` and `braincell.mech.ProbeMechanism`** (API-7)
-  are deprecated since 0.3; removal planned for 0.4. Use
-  `Cell.record(..., braincell.observe.*)`, e.g.
-  `cell.record("v", braincell.observe.state("V"))` for a `StateProbe`. They
-  have warned since 0.2.0 without naming a release; the warning now does.
-- **`braincell.Cell.bind_synapse_input()`** (API-7) is deprecated since 0.3;
-  removal planned for 0.4. Use an `EventSource` with `braincell.connect()`.
-  It has warned since 0.2.0 without naming a release; the warning now does.
-- **`braincell.filter.density.exponential()` and
-  `braincell.filter.density.gaussian()`** (API-7) are deprecated since 0.3;
-  removal planned for 0.4. Use a callable built from `braincell.filter.metric`:
-  `density.exponential("branch_x", 0.2)` is
-  `lambda context: np.exp(metric.branch_x(context) / 0.2)`. They have warned
-  since 0.2.0 without naming a release; the warning now does.
 
 - **Constructing an invalid mechanism declaration** (MECH-26).
   `bc.mech.Channel`, `bc.mech.Ion` and `bc.mech.Synapse` now check literal

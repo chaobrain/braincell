@@ -17,9 +17,8 @@
 
 This is the CV-space ↔ point-space conversion layer for
 :class:`~braincell._compute.state.CellRuntimeState`: the CV/point
-scatter-gather primitives that :mod:`braincell._compute.state`,
-:mod:`braincell._multi_compartment.currents`, and
-:mod:`braincell._multi_compartment.probes` all build on.
+scatter-gather primitives that :mod:`braincell._compute.state` and
+:mod:`braincell._multi_compartment.currents` build on.
 """
 
 from __future__ import annotations

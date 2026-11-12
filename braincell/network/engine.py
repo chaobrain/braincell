@@ -1296,10 +1296,7 @@ class Network:
         if first is None or not getattr(first[1].cell, "_initialized", False):
             return
         name, cell = first[0], first[1].cell
-        clock = cell._clock_host()
-        if clock is None:
-            return
-        origin_ms, step, _ = host_clock_start(_float64_clock(cell, clock), dt)
+        origin_ms, step, _ = host_clock_start(_float64_clock(cell, cell._clock_host()), dt)
         if _arrival_origin(origin_ms, dt) is None:
             return
         raise ValueError(

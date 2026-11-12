@@ -242,7 +242,7 @@ class _LivePlan:
 class RuleBinding:
     """The rule of one ``connect`` call: declaration, runtime rule, signals, and runtime state."""
 
-    __slots__ = ("declaration", "rule", "post", "states", "runtime", "plan", "_live")
+    __slots__ = ("declaration", "rule", "post", "states", "runtime", "plan", "_live", "before")
 
     def __init__(self, declaration, rule, post) -> None:
         self.declaration = declaration
@@ -252,14 +252,20 @@ class RuleBinding:
 
     # -- lifecycle --------------------------------------------------------
 
-    def init(self, cell, call, store) -> dict:
-        """Allocate the state at ``init_state``; return what the Cell keeps for its state tree."""
+    def init(self, cell, call, store, *, recorded=()) -> dict:
+        """Allocate the state at ``init_state``; return what the Cell keeps for its state tree.
+
+        ``recorded`` names the states a recording reads by ``Cell.run``: the
+        binding keeps a copy of each as it was before the latest boundary's
+        update.
+        """
         self.plan = _RowPlan(cell, call, store, self.post)
         self.states = {}
         for name, value in self._initial_state(call.weight).items():
             self.states[name] = brainstate.ShortTermState(value)
         self.runtime = {}
-        return {"state": self.states, "runtime": self.runtime}
+        self.before = {name: brainstate.ShortTermState(self.states[name].value) for name in recorded}
+        return {"state": self.states, "runtime": self.runtime, "before": self.before}
 
     def reset(self, weight) -> None:
         """Return the state to its initial values for ``weight`` (``reset_state``)."""
@@ -267,6 +273,8 @@ class RuleBinding:
             return
         for name, value in self._initial_state(weight).items():
             self.states[name].value = value
+            if name in self.before:
+                self.before[name].value = value
         if "history" in self.runtime:
             self.runtime["history"].value = jnp.zeros_like(self.runtime["history"].value)
             self.runtime["cursor"].value = jnp.asarray(0, dtype=jnp.int32)
@@ -277,6 +285,7 @@ class RuleBinding:
         self.runtime = None
         self.plan = None
         self._live = None
+        self.before = {}
 
     def _initial_state(self, weight) -> dict:
         weight = u.Quantity(jnp.asarray(u.get_mantissa(weight)), u.get_unit(weight))
@@ -304,6 +313,23 @@ class RuleBinding:
                 f"Connection rule {self.declaration.rule_type!r} has no state {name!r}; "
                 f"its states are {tuple(self.states)!r}."
             ) from None
+
+    def initial_state(self, weight) -> dict:
+        """The rule's initial state for ``weight``, as ``init_state`` sets it."""
+        return self._initial_state(weight)
+
+    def value_before_boundary(self, name: str, prepared):
+        """The state ``name`` before the update at the current boundary.
+
+        ``prepared`` tells whether the Cell has prepared that boundary, and
+        so run the rule over it; the copy kept for a recording is then the
+        state before, and the state itself otherwise.
+        """
+        current = self.value(name)
+        before = self.before.get(name)
+        if before is None:
+            return current
+        return u.math.where(prepared, before.value, current)
 
     def prepare_network(self, call, *, dt, delay_quantization: str) -> None:
         """Quantize a live call's delays and allocate its count history (Network run setup)."""
@@ -373,6 +399,8 @@ class RuleBinding:
         if plan.active is not None:
             pre = pre * jnp.asarray(plan.active, dtype=dtype)
         state = {name: item.value for name, item in self.states.items()}
+        for name, item in self.before.items():
+            item.value = state[name]
         if deliver is None or deliver.any():
             payload = pre if deliver is None or deliver.all() else pre * jnp.asarray(deliver, dtype=dtype)
             runtime = cell._event_runtime()

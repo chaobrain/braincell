@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+import gc
 import unittest
 
 import brainunit as u
@@ -1026,3 +1027,144 @@ class DirectConnectSeedTest(unittest.TestCase):
         np.testing.assert_array_equal(default_key_data(), before)
         with self.assertRaises(jax.errors.TracerArrayConversionError):
             brainstate.transform.jit(sampled(rules.independent(4, seed=1)))()
+
+
+# ---------------------------------------------------------------------------
+# ConnectionView.record rejections (CELL-12c): each names its stage and type,
+# and a rejection at record leaves the Cell's recordings unchanged.
+
+
+def _rule(**kwargs):
+    params = dict(A_plus=0.01 * u.uS, A_minus=0.0105 * u.uS, tau_plus=20.0 * u.ms, tau_minus=20.0 * u.ms)
+    params.update(kwargs)
+    return braincell.mech.ConnectionRule("PairSTDP", **params)
+
+
+def _rule_cell(n_sites=1):
+    cell = Cell.point(1, V_init=-65.0 * u.mV)
+    for _ in range(n_sites):
+        cell.place(braincell.mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms))
+    return cell
+
+
+def _times(*times_ms):
+    return EventSequence.from_times(tuple(np.asarray(row, dtype=float) * u.ms for row in times_ms))
+
+
+class _MillisecondTrace(braincell.ConnectionRule):
+    """A rule whose ``x_pre`` is in ms, so it cannot share a recording with PairSTDP's unitless trace."""
+
+    def init_state(self, weight):
+        return {"w": weight, "x_pre": np.zeros(self.size) * u.ms}
+
+    def update(self, state, *, pre, dt):
+        return dict(state)
+
+
+class RecordRuleStateRejectionTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.cell = _rule_cell()
+        self.ruled = connect(
+            "c", source=_times([0.0]), synapse=self.cell.synapses["s"], weight=0.05 * u.uS, plasticity=_rule()
+        )
+        self.plain = connect("p", source=_times([1.0]), synapse=self.cell.synapses["s"], weight=0.05 * u.uS)
+
+    def _assert_rejected_at_record(self, error, pattern, record):
+        before = dict(self.cell.recordings)
+        with self.assertRaisesRegex(error, pattern):
+            record()
+        self.assertEqual(dict(self.cell.recordings), before)
+
+    def test_a_row_without_a_rule_raises_type_error(self) -> None:
+        self._assert_rejected_at_record(TypeError, "'p' has no plasticity rule", lambda: self.plain.record("w", "w"))
+        self._assert_rejected_at_record(
+            TypeError, "'p' has no plasticity rule", lambda: self.cell.connections.record("w", "w")
+        )
+
+    def test_an_unknown_state_raises_key_error_listing_the_states(self) -> None:
+        self._assert_rejected_at_record(
+            KeyError, r"no state 'z'; its states are \('w', 'x_pre', 'y_post'\)", lambda: self.ruled.record("z", "z")
+        )
+
+    def test_states_of_different_dimensions_raise_type_error(self) -> None:
+        cell = _rule_cell(n_sites=2)
+        connect("a", source=_times([0.0]), synapse=cell.synapses["s"][0], weight=0.05 * u.uS, plasticity=_rule())
+        connect(
+            "b",
+            source=_times([0.0]),
+            synapse=cell.synapses["s"][1],
+            weight=0.05 * u.uS,
+            plasticity=braincell.mech.ConnectionRule(_MillisecondTrace),
+        )
+        with self.assertRaisesRegex(TypeError, "record them separately"):
+            cell.connections.record("x", "x_pre")
+        self.assertEqual(dict(cell.recordings), {})
+        cell.connections.record("w", "w")
+        samples = cell.run(dt=0.1 * u.ms, duration=1.0 * u.ms).samples
+        self.assertEqual(samples["w"].values.shape, (10, 2))
+        self.assertEqual([row.mechanism_type for row in samples["w"].schema.rows], ["PairSTDP", "_MillisecondTrace"])
+
+    def test_an_empty_view_raises_value_error(self) -> None:
+        self._assert_rejected_at_record(ValueError, "empty ConnectionView", lambda: self.ruled[0:0].record("w", "w"))
+
+    def test_a_state_that_is_not_a_name_raises_value_error(self) -> None:
+        for state in (1, ""):
+            self._assert_rejected_at_record(ValueError, "rule state", lambda: self.ruled.record("w", state))
+
+    def test_a_used_name_and_a_bad_period_raise_value_error(self) -> None:
+        self.ruled.record("w", "w")
+        self._assert_rejected_at_record(ValueError, "already", lambda: self.ruled.record("w", "x_pre"))
+        self._assert_rejected_at_record(ValueError, "period", lambda: self.ruled.record("p", "w", period=-1.0 * u.ms))
+
+    def test_after_init_state_raises_runtime_error_until_reset(self) -> None:
+        self.cell.init_state()
+        # The view selected before init_state is stale; select it again.
+        self._assert_rejected_at_record(
+            RuntimeError,
+            r"after init_state\(\); call reset\(\) first",
+            lambda: self.cell.connections["c"].record("w", "w"),
+        )
+        self.cell.reset()
+        self.cell.connections["c"].record("w", "w")
+        self.assertEqual(self.cell.run(dt=0.1 * u.ms, duration=1.0 * u.ms).samples["w"].values.shape, (10, 1))
+
+    def test_cell_record_rejects_the_rule_observable(self) -> None:
+        observable = self.ruled.record("w", "w").observable
+        other = _rule_cell()
+        with self.assertRaises(TypeError):
+            other.record("w", observable)
+        self.assertEqual(dict(other.recordings), {})
+
+    def test_cell_run_on_a_cell_its_gone_network_initialized_raises_runtime_error(self) -> None:
+        cell = _rule_cell()
+        net = Network("gone")
+        source = net.add_population("pre", _times([0.0]))
+        net.add_population("post", cell)
+        net.connect("c", source=source, synapse=cell.synapses["s"], weight=0.05 * u.uS, plasticity=_rule())
+        cell.connections["c"].record("w", "w")
+        net.run(dt=0.1 * u.ms, duration=1.0 * u.ms)
+        del net, source
+        gc.collect()
+        self.assertIsNone(cell.network_owner)
+        # The Network's Cell keeps no copy of the state before each update.
+        with self.assertRaisesRegex(
+            RuntimeError, r"a Network initialized this Cell. Call reset\(\) and init_state\(\)"
+        ):
+            cell.run(dt=0.1 * u.ms, duration=1.0 * u.ms)
+        cell.reset()
+        cell.init_state()
+        w = cell.run(dt=0.1 * u.ms, duration=1.0 * u.ms).samples["w"].values
+        np.testing.assert_allclose(w.to_decimal(u.uS), np.full((10, 1), 0.05), rtol=1e-6)
+
+    def test_batches_and_live_rows_on_cell_run_are_still_rejected(self) -> None:
+        self.ruled.record("w", "w")
+        with self.assertRaisesRegex(NotImplementedError, "batch"):
+            self.cell.init_state(batch_size=2)
+        cell = _rule_cell()
+        pre = _rule_cell()
+        connect(
+            "c", source=pre.event_outputs["spike"], synapse=cell.synapses["s"], weight=0.05 * u.uS, plasticity=_rule()
+        )
+        cell.connections["c"].record("w", "w")
+        with self.assertRaisesRegex(NotImplementedError, "Network"):
+            cell.run(dt=0.1 * u.ms, duration=1.0 * u.ms)

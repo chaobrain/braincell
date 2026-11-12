@@ -26,7 +26,7 @@ import braincell
 from braincell._multi_compartment.selection_test import _GRID_SELECTIONS, _cell
 from braincell.filter import BranchSlice, RootLocation, at, branch_in
 from braincell.morph._testing import make_tree_s, make_tree_t, make_tree_u
-from braincell.network.recording import EventSeries, SampleBlock
+from braincell.network.recording import EventSeries, RecordingRow, SampleBlock
 
 
 class RecordingTest(unittest.TestCase):
@@ -583,6 +583,32 @@ class ResultPytreeTest(unittest.TestCase):
         cell.record("w", "V")
         other = cell.run(dt=0.05 * u.ms, duration=0.5 * u.ms).samples["w"]
         self.assertNotEqual(jax.tree.structure(self._block()), jax.tree.structure(other))
+
+    def test_connection_rows_are_static_and_other_rows_leave_them_none(self) -> None:
+        # CELL-12c: a rule-state row carries its connection row and source;
+        # the two fields default to None, so other rows are unchanged.
+        def samples(weight):
+            cell = braincell.Cell.point(1, V_init=-65.0 * u.mV)
+            cell.place(braincell.mech.Synapse("ExpSyn", name="s"))
+            rule = braincell.mech.ConnectionRule(
+                "PairSTDP", A_plus=0.01 * u.uS, A_minus=0.0105 * u.uS, tau_plus=20.0 * u.ms, tau_minus=20.0 * u.ms
+            )
+            source = braincell.EventSequence.from_times(([0.1] * u.ms,))
+            view = braincell.connect("c", source=source, synapse=cell.synapses["s"], weight=weight, plasticity=rule)
+            view.record("w", "w")
+            cell.record("V", "V")
+            return cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms).samples
+
+        first, second = samples(0.05 * u.uS), samples(0.06 * u.uS)
+        self.assertEqual(jax.tree.structure(first["w"]), jax.tree.structure(second["w"]))
+        leaves, treedef = jax.tree.flatten(first["w"])
+        self.assertIs(jax.tree.unflatten(treedef, leaves).schema, first["w"].schema)
+        (row,) = first["w"].schema.rows
+        self.assertEqual((row.connection_id, row.source_index, row.mechanism_category), (0, 0, "connection_rule"))
+        (voltage_row,) = first["V"].schema.rows
+        self.assertEqual((voltage_row.connection_id, voltage_row.source_index), (None, None))
+        default = RecordingRow(population_index=0, cv_id=0, point_id=None, branch_id=0, field="V", unit=u.mV)
+        self.assertEqual((default.connection_id, default.source_index), (None, None))
 
 
 # CELL-47: a population with several axes. Configuration L is a lumped HH

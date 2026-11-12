@@ -716,29 +716,211 @@ class ConnectionView(DiscreteView):
         [0.05] uS
         """
         self.cell._raise_if_not_initialized("ConnectionView.rule_state()")
-        ids = self._active_ids
-        if ids.size == 0:
+        if self._active_ids.size == 0:
             raise ValueError("Cannot read rule state on an empty ConnectionView.")
+        groups = self._rule_groups()
+        return _join_rule_pieces(
+            [(positions, call.plasticity.value(name), offsets) for call, positions, offsets in groups],
+            len(self),
+        )
+
+    def _rule_groups(self):
+        """``(call, positions, offsets)`` per rule call: the view positions of its rows and their slots in its state.
+
+        Raises
+        ------
+        TypeError
+            If a row comes from a ``connect`` call without a rule.
+        """
+        ids = self._active_ids
         connect_id = self._store.connect_id[self._store.rows(ids)]
-        pieces = []
+        groups = []
         for call_id in dict.fromkeys(connect_id.tolist()):
             call = self._store.call(int(call_id))
             if call.plasticity is None:
                 raise TypeError(f"Connection {call.name!r} has no plasticity rule, so it has no rule state.")
-            value = call.plasticity.value(name)
-            mask = connect_id == call_id
-            offsets = ids[mask] - int(call.row_ids[0])
-            if not (offsets.size == value.shape[0] and np.array_equal(offsets, np.arange(offsets.size))):
-                value = value[offsets]
-            pieces.append((mask, value))
-        if len(pieces) == 1:
-            return pieces[0][1]
-        unit = u.get_unit(pieces[0][1])
-        mantissas = [jnp.asarray(u.Quantity(value).to_decimal(unit)) for _, value in pieces]
-        out = jnp.zeros((ids.size,), dtype=jnp.result_type(*mantissas))
-        for (mask, _), mantissa in zip(pieces, mantissas):
-            out = out.at[np.flatnonzero(mask)].set(mantissa)
-        return out if unit.is_unitless else u.Quantity(out, unit)
+            positions = np.flatnonzero(connect_id == call_id)
+            groups.append((call, positions, ids[positions] - int(call.row_ids[0])))
+        return groups
+
+    def _with_ids(self, ids) -> "ConnectionView":
+        """The rows ``ids`` that are still connected, in the given order."""
+        return ConnectionView(self._store, np.asarray(ids, dtype=np.int64))
+
+    def _rule_type_names(self) -> list[str]:
+        """The registered name of each row's rule."""
+        names = {}
+        for call, positions, _ in self._rule_groups():
+            rule_type = call.plasticity.declaration.rule_type
+            name = rule_type if isinstance(rule_type, str) else getattr(rule_type, "__name__", repr(rule_type))
+            names.update(dict.fromkeys(positions.tolist(), name))
+        return [names[index] for index in range(len(names))]
+
+    def _rule_state_sampler(self, name: str):
+        """A recording sampler of the rule state ``name`` of these rows, before each boundary's update.
+
+        A Cell prepares a boundary's inputs, and so runs its rules, either
+        before a step samples its recordings (``Cell.run`` prepares the next
+        boundary at the end of each step) or after (``Network`` prepares it
+        within the step). The sampler reads the state the rule's update got
+        at the boundary of the step: the copy a Cell outside a Network keeps
+        for a recorded state while that boundary is prepared, and the state
+        itself otherwise.
+
+        Raises
+        ------
+        RuntimeError
+            When sampled on a Cell outside a Network that a Network
+            initialized: it has no copy.
+        """
+        groups = self._rule_groups() if len(self) else []
+        cell = self.cell
+        size = len(self)
+
+        def sample():
+            if not groups:
+                return jnp.zeros((0,), dtype=brainstate.environ.dftype())
+            if cell.network_owner is None and any(name not in call.plasticity.before for call, _, _ in groups):
+                raise RuntimeError(
+                    f"Cell.run cannot record rule state {name!r}: a Network initialized this Cell. Call reset() "
+                    "and init_state() first."
+                )
+            prepared = cell._next_synapse_inputs_prepared.value
+            return _join_rule_pieces(
+                [
+                    (positions, call.plasticity.value_before_boundary(name, prepared), offsets)
+                    for call, positions, offsets in groups
+                ],
+                size,
+            )
+
+        return sample
+
+    def record(self, name: str, state: str, *, period=None, frequency=None, start=0.0 * u.ms):
+        """Record one plasticity-rule state of these rows, as ``Cell.record`` records a state.
+
+        Parameters
+        ----------
+        name : str
+            Recording name, unique in the target Cell.
+        state : str
+            A state of the rows' rule: ``"w"``, the dynamic weight, for every
+            rule; ``PairSTDP`` also has ``"x_pre"`` and ``"y_post"``.
+        period, frequency : Quantity, optional
+            Mutually exclusive sampling interval; every ``dt`` when both are
+            omitted.
+        start : Quantity, optional
+            Start of the sampling schedule.
+
+        Returns
+        -------
+        RecordingSpec
+            The declaration, owned by the target Cell.
+
+        Notes
+        -----
+        The samples have one column per row of this view still connected
+        at the first run, in view order: column ``j`` is the row whose
+        value ``rule_state(state)[j]`` reads. Sample ``k`` is the state
+        just before the update at the boundary ``time[k]``, the ``state``
+        the rule's ``update`` receives there, and sample 0 of the first run
+        is the initial state. For ``"w"`` it is the weight that the events
+        arriving at ``time[k]`` are delivered with. A trace is the value the
+        rule keeps: ``PairSTDP`` decays its traces at the start of each
+        update, so ``"x_pre"`` at ``time[k]`` is the trace just after the
+        boundary before, and ``exp(-dt / tau_plus)`` times it is the trace
+        just before ``time[k]``.
+
+        A ``Network`` and a standalone ``Cell.run`` record the same samples,
+        but ``rule_state`` reads the state itself, which the two update at
+        different points of a step. In a ``Network``, ``rule_state`` read
+        before the ``k``-th ``update()`` (from 0) is sample ``k``. A
+        standalone Cell updates the next boundary at the end of each step:
+        ``rule_state`` read after its ``j``-th ``update()`` is sample
+        ``j + 2``, and after a ``run`` of ``n`` steps it is the sample a
+        longer run takes at step ``n + 1``. For this, a Cell outside a
+        Network keeps a copy of each recorded state from before the latest
+        update, one more state in its state tree.
+
+        Each row of the schema (``samples[name].schema.rows``) gives its
+        synapse's site and ``synapse_id``, ``mechanism_category``
+        ``"connection_rule"``, the rule as ``mechanism_type``, the connect
+        name as ``mechanism_name``, and the row's ``connection_id`` (its
+        ``id``) and ``source_index``.
+
+        Raises
+        ------
+        RuntimeError
+            After the target Cell's ``init_state()``; and at ``Cell.run``, on
+            a Cell that a Network initialized, once that Network is gone:
+            call ``reset()`` and ``init_state()`` first.
+        TypeError
+            If a row comes from a ``connect`` call without a rule, or the
+            rows' ``state`` differs in dimension between their calls.
+        KeyError
+            If the rule has no state ``state``.
+        ValueError
+            On an empty view, a ``state`` that is not a non-empty string, a
+            ``name`` the Cell already records, or an invalid schedule.
+
+        Examples
+        --------
+        >>> import brainunit as u
+        >>> import braincell
+        >>> cell = braincell.Cell.point(1, V_init=-65.0 * u.mV)
+        >>> cell = cell.place(braincell.mech.Synapse("ExpSyn", name="s"))
+        >>> rule = braincell.mech.ConnectionRule(
+        ...     "PairSTDP",
+        ...     A_plus=0.01 * u.uS,
+        ...     A_minus=0.0105 * u.uS,
+        ...     tau_plus=20.0 * u.ms,
+        ...     tau_minus=20.0 * u.ms,
+        ...     signals={"post": braincell.EventSequence.from_times(([0.3] * u.ms,))},
+        ... )
+        >>> source = braincell.EventSequence.from_times(([0.1] * u.ms,))
+        >>> view = braincell.connect("c", source=source, synapse=cell.synapses["s"], weight=0.05 * u.uS, plasticity=rule)
+        >>> _ = view.record("w", "w")
+        >>> result = cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
+        >>> print(result.samples["w"].values[:, 0])
+        [0.05      0.05      0.05      0.05      0.0599005] uS
+
+        The pre event arrives at 0.1 ms and the post event at 0.3 ms; the
+        sample at 0.4 ms is the first after the boundary at 0.3 ms, so it
+        holds ``0.05 + 0.01 * exp(-0.2 / 20)`` uS.
+        """
+        from braincell.network.recording import RecordingSpec, _RuleStateObservable
+
+        cell = self.cell
+        cell._raise_if_initialized("add a recording")
+        _require_name(state, "rule state")
+        if len(self) == 0:
+            raise ValueError("Cannot record rule state on an empty ConnectionView.")
+        first = None
+        for call, _, _ in self._rule_groups():
+            initial = call.plasticity.initial_state(call.weight)
+            if state not in initial:
+                raise KeyError(
+                    f"Connection rule {call.plasticity.declaration.rule_type!r} of connection {call.name!r} has no "
+                    f"state {state!r}; its states are {tuple(initial)!r}."
+                )
+            unit = u.get_unit(initial[state])
+            if first is None:
+                first = (call.name, unit)
+            elif unit.dim != first[1].dim:
+                raise TypeError(
+                    f"Rule state {state!r} is in {unit} on connection {call.name!r} and in {first[1]} on "
+                    f"{first[0]!r}; one recording takes rows of one dimension: record them separately."
+                )
+        return cell._add_recording(
+            RecordingSpec(
+                name=name,
+                scope=cell._root_scope(),
+                observable=_RuleStateObservable(tuple(int(item) for item in self._active_ids.tolist()), state),
+                period=period,
+                frequency=frequency,
+                start=start,
+            )
+        )
 
     def event_count(self, *, t, dt):
         """Return one arrival count per row for a single connect call."""
@@ -768,10 +950,28 @@ class ConnectionView(DiscreteView):
             ``{connect name: states}`` for the Cell to keep, so that its state
             tree holds them; ``None`` without a rule.
         """
+        # Only Cell.run samples a step after running the rules at its boundary
+        # (it prepares the next boundary at the end of a step), so only a Cell
+        # outside a Network keeps the state before each update.
+        recorded = self._recorded_rule_states() if self.cell.network_owner is None else {}
         rules = {}
         for call in self._store.rule_calls():
-            rules[call.name] = call.plasticity.init(self.cell, call, self._store)
+            rules[call.name] = call.plasticity.init(self.cell, call, self._store, recorded=recorded.get(call.id, ()))
         return rules or None
+
+    def _recorded_rule_states(self) -> dict[int, tuple[str, ...]]:
+        """``{connect id: state names}`` that the Cell's recordings record (``ConnectionView.record``)."""
+        from braincell.network.recording import _RuleStateObservable
+
+        recorded: dict[int, dict[str, None]] = {}
+        for spec in self.cell._recording_specs.values():
+            observable = spec.observable
+            if not isinstance(observable, _RuleStateObservable):
+                continue
+            ids = self._store.active_ids(observable.row_ids)
+            for call_id in np.unique(self._store.connect_id[self._store.rows(ids)]).tolist():
+                recorded.setdefault(int(call_id), {})[observable.field] = None
+        return {call_id: tuple(names) for call_id, names in recorded.items()}
 
     def _prepare_rules(self, dt, *, delay_quantization: str) -> None:
         """Prepare the live plasticity rows for a Network run setup."""
@@ -1234,6 +1434,23 @@ def _set_quantity_or_array(destination, rows, values):
     result = np.array(destination, copy=True)
     result[rows] = np.asarray(values)
     return result
+
+
+def _join_rule_pieces(pieces, size: int):
+    """One value per view row from ``(positions, call state, offsets)`` per rule call, in the first call's unit."""
+    selected = []
+    for positions, value, offsets in pieces:
+        if not (offsets.size == value.shape[0] and np.array_equal(offsets, np.arange(offsets.size))):
+            value = value[offsets]
+        selected.append((positions, value))
+    if len(selected) == 1:
+        return selected[0][1]
+    unit = u.get_unit(selected[0][1])
+    mantissas = [jnp.asarray(u.Quantity(value).to_decimal(unit)) for _, value in selected]
+    out = jnp.zeros((size,), dtype=jnp.result_type(*mantissas))
+    for (positions, _), mantissa in zip(selected, mantissas):
+        out = out.at[positions].set(mantissa)
+    return out if unit.is_unitless else u.Quantity(out, unit)
 
 
 def _stack_values(values):

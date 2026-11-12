@@ -263,6 +263,13 @@ class ConnectionTest(unittest.TestCase):
             [-0.1, -0.2, -0.3, -0.4, -0.5, -0.6],
         )
 
+    def test_multi_call_weight_gathers_each_call_once_in_view_order(self) -> None:
+        cell, exp = _population(4)
+        connect("a", source=NetStim(size=2), synapse=cell.synapses[exp][0:2], weight=[0.1, 0.2] * u.uS)
+        connect("b", source=NetStim(size=2), synapse=cell.synapses[exp][2:4], weight=[30.0, 40.0] * u.nS)
+        np.testing.assert_allclose(cell.connections[[3, 0, 2]].weight.to_decimal(u.uS), [0.04, 0.1, 0.03], rtol=1e-6)
+        np.testing.assert_allclose(cell.connections[[1]].weight.to_decimal(u.uS), [0.2], rtol=1e-6)
+
     def test_event_sequence_drives_connection_runtime(self) -> None:
         cell, exp = _population(2)
         sequence = EventSequence(

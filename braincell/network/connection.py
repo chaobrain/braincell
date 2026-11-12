@@ -333,19 +333,32 @@ class _ConnectionStore:
         ids = self.active_ids(ids)
         if ids.size == 0:
             raise ValueError("Cannot access weight on an empty ConnectionView.")
-        calls = [self.call(int(value)) for value in self.connect_id[self.rows(ids)].tolist()]
-        if calls[0].weight is None:
-            if any(call.weight is not None for call in calls):
+        connect_id = self.connect_id[self.rows(ids)]
+        call_ids = list(dict.fromkeys(connect_id.tolist()))
+        calls = [self.call(int(call_id)) for call_id in call_ids]
+        trigger = [call.weight is None for call in calls]
+        if any(trigger):
+            if not all(trigger):
                 raise TypeError("ConnectionView mixes trigger-only and scalar-weight rows.")
             return None
-        if any(call.weight is None for call in calls):
-            raise TypeError("ConnectionView mixes trigger-only and scalar-weight rows.")
         # ``add`` builds ``row_ids`` as one ``np.arange``, so a row's slot
         # in its call's weight vector is its offset from that call's first
-        # row. Searching for it cost O(rows) per row.
-        return _stack_values(
-            [call.weight[int(row_id) - int(call.row_ids[0])] for row_id, call in zip(ids.tolist(), calls)]
-        )
+        # row. Searching for it cost O(rows) per row. One gather per call:
+        # stacking one scalar per row built an XLA op with an operand per
+        # row, whose compile took 33 s at 1e4 rows and 245 s at 3e4 (CELL-12a).
+        first = calls[0].weight
+        unit = first.unit if isinstance(first, u.Quantity) else None
+        positions, pieces = [], []
+        for call_id, call in zip(call_ids, calls):
+            position = np.flatnonzero(connect_id == call_id)
+            value = call.weight[ids[position] - int(call.row_ids[0])]
+            positions.append(position)
+            pieces.append(jnp.asarray(value.to_decimal(unit)) if unit is not None else jnp.asarray(value))
+        if len(pieces) == 1:
+            mantissa = pieces[0]
+        else:
+            mantissa = jnp.concatenate(pieces)[np.argsort(np.concatenate(positions), kind="stable")]
+        return mantissa if unit is None else u.Quantity(mantissa, unit)
 
     def set_weight(self, ids, values) -> None:
         ids = self.active_ids(ids)

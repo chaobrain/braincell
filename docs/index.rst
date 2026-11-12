@@ -210,7 +210,7 @@ The docs are layered by what you are trying to do:
    apis/filter.rst
    apis/io.rst
    apis/network.rst
-   apis/plasticity.rst
+   apis/braincell.plasticity.rst
    apis/reduction.rst
    apis/trainable.rst
    apis/integration.rst

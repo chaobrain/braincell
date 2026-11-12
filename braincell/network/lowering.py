@@ -91,9 +91,10 @@ def lower_direct_connections(
             )
             pre_index = connection.source_index.astype(np.int32)
             post_index = connection.synapse.population_index.astype(np.int32)
-            weight = connection.weight
             weight_getter = lambda connection=connection: connection.weight  # noqa: E731
-            if call.plasticity is not None:
+            if call.plasticity is None:
+                weight = connection.weight
+            else:
                 # A plasticity rule delivers its delayed rows itself, at its
                 # boundary (CELL-12a); the zero-delay rows stay on the
                 # immediate path and read the rule's dynamic weight.

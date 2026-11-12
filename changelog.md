@@ -1474,6 +1474,17 @@
   it) failed at construction because it assigned to the read-only `area`
   property; the factor is now `area_factor`.
 
+- Two examples carried a parameter off by orders of magnitude. The COBA HH
+  network (`examples/single_compartment/SC03_COBA_HH_2007_braincell.py` and
+  the E-I network notebooks of the overview tutorial and the examples gallery)
+  used a leak conductance of 5 nS/cm², 10⁴ times smaller than the 5e-5 S/cm²
+  of Brette et al. (2007, benchmark 3) and Brian2's `COBAHH.py`; seeded, the
+  network now fires 14592 spikes in 100 ms instead of 15627. The thalamus
+  model `SC06` coupled HTC cells through a 10 µS gap junction, 1000 times the
+  10 nS (100 MΩ) of Li et al. (2017), so HTC and RTC cells reached NaN
+  voltages within the first millisecond of every state; all four states now
+  run 3 s without a NaN. `SC06` also drops the population size it passed to
+  `STD.desc`, which `align_pre` now supplies.
 - An integer-valued `V_init` or `V_th` (e.g. `V_init=-65 * u.mV`, also as the
   result of a callable `V_init`) made `Cell.run` fail with a confusing
   "scan body function carry input and carry output must have equal types"

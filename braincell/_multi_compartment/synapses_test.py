@@ -383,6 +383,7 @@ def _declare_every_parameter_form(n):
     member = np.arange(n)
     tau_a = (1.0 + 0.001 * member).reshape(n, 1)
     tau_c = 2.0 + 0.001 * member
+    tau_d = (2500.1 + 0.37 * member).reshape(n, 1)
     tau_rec = 500.0 + member[:, None] + 100.0 * np.arange(2)[None, :]
     counts = 1 + member % 2
     tau1 = 0.5 + 1e-4 * np.arange(int(counts.sum()))
@@ -391,6 +392,8 @@ def _declare_every_parameter_form(n):
     cell.place(Terminals(), Synapse("ExpSyn", name="a", tau=tau_a * u.ms))
     cell.place(at("soma", 0.5), Synapse("ExpSyn", name="b", tau=1500.0 * u.us, e=-0.005 * u.volt))
     cell.place(at("dend", 0.5), Synapse("ExpSyn", name="c", tau=tau_c * u.ms, e=np.asarray([-7.0]) * u.mV))
+    # An array in another unit than the column's (ms, from "a").
+    cell.place(at("axon", 0.5), Synapse("ExpSyn", name="d", tau=tau_d * u.us))
     cell.place(
         Terminals(),
         Synapse("ExpSynSTD", name="std", tau=2.0 * u.ms, U=np.asarray([0.25, 0.75]), tau_rec=tau_rec * u.ms),
@@ -403,6 +406,7 @@ def _declare_every_parameter_form(n):
         "a": {"tau": lambda m, k, i: u.Quantity(tau_a[m, 0], u.ms)},
         "b": {"tau": lambda m, k, i: 1500.0 * u.us, "e": lambda m, k, i: -0.005 * u.volt},
         "c": {"tau": lambda m, k, i: u.Quantity(tau_c[m], u.ms), "e": lambda m, k, i: u.Quantity(-7.0, u.mV)},
+        "d": {"tau": lambda m, k, i: u.Quantity(tau_d[m, 0], u.us)},
         "std": {
             "tau": lambda m, k, i: 2.0 * u.ms,
             "U": lambda m, k, i: np.float64([0.25, 0.75][k]),
@@ -532,10 +536,10 @@ class SynapseStoreBuildTest(unittest.TestCase):
     def test_store_matches_row_by_row_construction_for_10_members(self):
         store, columns = self._check_store_matches_reference(10)
         # The forms the declarations exercise, read back in members 0 and 1.
-        np.testing.assert_array_equal(
-            columns["ExpSyn"]["tau"].mantissa[:8], [1.0, 1.0, 1.5, 2.0, 1.001, 1.001, 1.5, 2.001]
-        )
-        np.testing.assert_array_equal(columns["ExpSyn"]["e"].mantissa[:4], [0.0, 0.0, -5.0, -7.0])
+        tau = columns["ExpSyn"]["tau"].mantissa
+        np.testing.assert_array_equal(tau[[0, 1, 2, 3, 5, 6, 7, 8]], [1.0, 1.0, 1.5, 2.0, 1.001, 1.001, 1.5, 2.001])
+        np.testing.assert_allclose(tau[[4, 9]], [2.5001, 2.50047], rtol=1e-15)
+        np.testing.assert_array_equal(columns["ExpSyn"]["e"].mantissa[:5], [0.0, 0.0, -5.0, -7.0, 0.0])
         np.testing.assert_array_equal(columns["ExpSynSTD"]["U"][:6], [0.25, 0.75, 1.0, 0.25, 0.75, 1.0])
         self.assertEqual(columns["Exp2Syn"]["tau2"].mantissa.dtype, np.int64)
         np.testing.assert_array_equal(store.repeat_index[store.name == "x"][:3], [0, 0, 1])

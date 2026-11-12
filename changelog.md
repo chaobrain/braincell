@@ -583,6 +583,16 @@
 
 ### Changes & Improvements
 
+- **Connections that share a delay queue share one route** (CELL-18b).
+  On the default scatter backend, each `connect` call into a synapse
+  layout ran its own gather and scatter every step. Consecutive calls
+  into one layout that read the same event source, carry weights of one
+  unit and dtype, and reach different synapses now run as one route.
+  `Network.run` on GPU with 6,400 rows split into 64 connects took 177 us
+  per step and now 93 us (one connect: 65 us); on CPU the cost per connect
+  was already small and is unchanged. Each synapse still receives the same
+  additions in the same order, so trajectories are the same, bit for bit.
+
 - **A scheduled source costs a lookup per step, not a pass over its
   schedule** (CELL-18a). `NetStim.event_count` and
   `EventSequence.event_count`, which `Cell.run` and `Network.run` call on

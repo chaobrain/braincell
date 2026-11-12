@@ -16,8 +16,10 @@
 """Simulation time loop and trace helpers for :meth:`Cell.run`.
 
 Propagates ``t`` through :mod:`brainstate.environ` inside the
-``for_loop`` scan instead of mutating ``Cell._current_time``
-per step; the final post-loop time is pinned once after the scan.
+``for_loop`` scan instead of mutating the Cell's clock per step. The
+step times are ``origin + (step + k)·dt`` from the clock's integer step
+count, so a run split into segments steps at the same times as one run;
+the clock advances once after the scan.
 """
 
 import warnings
@@ -46,6 +48,21 @@ if TYPE_CHECKING:
     from braincell._multi_compartment.cell import Cell
 
 __all__ = ["RunResult", "run"]
+
+#: The most steps a clock counts: its step count is an int32 (CELL-45).
+MAX_STEPS = 2**31 - 1
+
+
+def check_step_limit(step: int, n_steps: int, *, dt, prefix: str) -> None:
+    """Raise ``ValueError`` if ``n_steps`` more steps would take the step count past :data:`MAX_STEPS`."""
+    if int(step) + int(n_steps) <= MAX_STEPS:
+        return
+    hours = MAX_STEPS * _scalar_decimal(dt, u.ms) / 3.6e6
+    raise ValueError(
+        f"{prefix} would take the step count to {int(step) + int(n_steps)}, past its limit of "
+        f"2**31 - 1 = {MAX_STEPS} steps ({hours:.3g} h at dt={dt!r}); call reset_state() to start "
+        "again from t = 0."
+    )
 
 
 @dataclass(frozen=True)
@@ -214,6 +231,8 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     until_ms = None
     with_spikes = not is_traced_value(start)
     if with_spikes:
+        _, step = rcell._clock_start(dt)
+        check_step_limit(step, n_steps, dt=dt, prefix="Cell.run(...)")
         until_ms = _scalar_decimal(start, u.ms) + (n_steps + 1) * _scalar_decimal(dt, u.ms)
     schedule_key = _prepare_netstim_schedules(
         (view.source for view in rcell.connections._call_views(scheduled=True)),
@@ -439,8 +458,9 @@ def _make_run_loop(
 
     def _run_loop(values):
         with brainstate.environ.context(dt=dt):
-            start_t = rcell.current_time
-            times = start_t + u.math.arange(n_steps) * brainstate.environ.get_dt()
+            origin, step = rcell._clock_start(dt)
+            start_t = origin + step * dt
+            times = origin + (step + jnp.arange(n_steps, dtype=jnp.int32)) * dt
             rcell._prepare_first_synapse_inputs(t=start_t)
 
             def _step(t):
@@ -483,8 +503,8 @@ def _make_run_loop(
                 traces_over_time = brainstate.transform.for_loop(_step_with_values, jnp.arange(n_steps), times)
             else:
                 traces_over_time = brainstate.transform.for_loop(_step, times)
-            stop_t = start_t + n_steps * brainstate.environ.get_dt()
-            rcell._set_current_time(stop_t)
+            stop_t = origin + (step + n_steps) * dt
+            rcell._set_clock(origin, step + n_steps, dt)
 
         values = _normalize_loop_outputs(
             traces_over_time,
@@ -499,7 +519,9 @@ def _make_run_loop(
         recorded = []
         for index, fixed in enumerate(fixed_schedules):
             if fixed:
-                indices = _fixed_recording_indices(start_t, dt=dt, period_steps=period_steps[index], n_steps=n_steps)
+                indices = _fixed_recording_indices(
+                    origin, step, dt=dt, period_steps=period_steps[index], n_steps=n_steps
+                )
                 recorded.append((values[index][indices], times[indices[0]]))
             else:
                 recorded.append((values[index], None))
@@ -560,8 +582,14 @@ def _differentiable_schedule_issues(compiled_recordings, *, dt, n_steps: int) ->
     return tuple(issues)
 
 
-def _fixed_recording_indices(start_time, *, dt, period_steps: int, n_steps: int):
+def _fixed_recording_indices(origin, step, *, dt, period_steps: int, n_steps: int):
+    """Indices of the steps on the recording grid ``0, period, 2·period, …`` (in steps from ``t = 0``).
+
+    The run starts ``step`` steps after the clock's ``origin``, which is 0
+    unless ``dt`` changed: the step count places the run on the grid
+    exactly, however long the run has been (CELL-45).
+    """
     dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
-    start_step = jnp.rint(start_time.to_decimal(u.ms) / dt_ms).astype(jnp.int32)
+    start_step = step + jnp.rint(origin.to_decimal(u.ms) / dt_ms).astype(jnp.int32)
     offset = jnp.mod(-start_step, period_steps)
     return offset + jnp.arange(n_steps // period_steps, dtype=jnp.int32) * period_steps

@@ -238,6 +238,91 @@ class SplitCellRunTest(unittest.TestCase):
         np.testing.assert_allclose(node.g.value.to_decimal(u.uS), reference.g.value.to_decimal(u.uS), rtol=1e-12)
 
 
+class CellRunClockTest(unittest.TestCase):
+    """CELL-45: ``Cell.run`` steps at ``origin + step·dt`` of an integer step count, not at an accumulated time."""
+
+    N = 32010
+
+    @staticmethod
+    def _cell():
+        """``make_event_cell`` with one CV, driven at 100, 409.6 and 800 ms (steps 4000, 16384, 32000)."""
+        cell, synapse = make_event_cell("staggered", cv_per_branch=1)
+        source = braincell.EventSequence.from_times([np.asarray([4000, 16384, 32000]) * DT])
+        braincell.connect("drive", source=source, synapse=synapse, weight=WEIGHT)
+        return cell
+
+    def test_split_runs_step_at_the_times_of_one_run(self):
+        # main: float32 800-step segments put 6338 of the 32010 steps at
+        # other times than one run (float64: 10841).
+        for precision, float_type, rtol in ((32, np.float32, 1e-6), (64, np.float64, 1e-12)):
+            context = _float64() if precision == 64 else brainstate.environ.context(precision=32)
+            with self.subTest(precision=precision), context:
+                whole = self._cell().run(dt=DT, duration=self.N * DT)
+                cell = self._cell()
+                steps = (800,) * (self.N // 800) + (self.N % 800,)
+                split = RunResult.concat(tuple(cell.run(dt=DT, duration=n * DT) for n in steps))
+                expected = np.arange(self.N).astype(float_type) * float_type(0.025)
+                np.testing.assert_array_equal(whole.time.to_decimal(u.ms), expected)
+                np.testing.assert_array_equal(split.time.to_decimal(u.ms), expected)
+                np.testing.assert_array_equal(
+                    cell.current_time.to_decimal(u.ms), float_type(self.N) * float_type(0.025)
+                )
+                for name, actual, expected in zip(("g", "V"), traces(split.samples), traces(whole.samples)):
+                    np.testing.assert_allclose(actual, expected, rtol=rtol, atol=0.0, err_msg=name)
+
+    def test_a_change_of_dt_counts_on_from_the_time_reached(self):
+        cell = self._cell()
+        cell.run(dt=DT, duration=10 * DT)
+        result = cell.run(dt=2 * DT, duration=20 * DT)
+        np.testing.assert_allclose(result.time.to_decimal(u.ms), 0.25 + 0.05 * np.arange(10), rtol=1e-6)
+        np.testing.assert_allclose(cell.current_time.to_decimal(u.ms), 0.75, rtol=1e-6)
+        np.testing.assert_array_equal(cell._clock_step.value, 10)
+        # A compiled function holds the choice in its trace: called again
+        # after a run at another dt, it still counts from the time reached.
+        traced = []
+
+        def run():
+            traced.append(True)
+            return cell.run(dt=DT, duration=4 * DT).time
+
+        jitted = brainstate.transform.jit(run)
+        np.testing.assert_allclose(jitted().to_decimal(u.ms), 0.75 + 0.025 * np.arange(4), rtol=1e-6)
+        cell.run(dt=2 * DT, duration=4 * DT)
+        np.testing.assert_allclose(jitted().to_decimal(u.ms), 0.95 + 0.025 * np.arange(4), rtol=1e-6)
+        self.assertEqual(len(traced), 1)
+        np.testing.assert_allclose(cell.current_time.to_decimal(u.ms), 1.05, rtol=1e-6)
+        cell.reset_state()
+        np.testing.assert_array_equal(cell.current_time.to_decimal(u.ms), 0.0)
+        np.testing.assert_array_equal(cell.run(dt=DT, duration=2 * DT).time.to_decimal(u.ms), [0.0, np.float32(0.025)])
+
+    def test_the_step_count_stops_at_its_int32_limit(self):
+        cell = self._cell()
+        cell.run(dt=DT, duration=DT)
+        cell._clock_step.value = np.int32(2**31 - 10)
+        with self.assertRaisesRegex(ValueError, r"Cell\.run.*2147483647 steps"):
+            cell.run(dt=DT, duration=20 * DT)
+        np.testing.assert_array_equal(cell._clock_step.value, 2**31 - 10)
+        # A run at another dt counts from step 0.
+        cell.run(dt=2 * DT, duration=40 * DT)
+        np.testing.assert_array_equal(cell._clock_step.value, 20)
+
+    def test_segments_reuse_the_compiled_loop(self):
+        cell = self._cell()
+        cell.init_state()
+        calls = [0]
+        begin_step = cell._begin_step
+
+        def counting(*args, **kwargs):
+            calls[0] += 1
+            return begin_step(*args, **kwargs)
+
+        cell._begin_step = counting
+        for _ in range(3):
+            cell.run(dt=DT, duration=20 * DT)
+        self.assertEqual(calls[0], 1)
+        self.assertEqual(len(cell._run_loop_cache), 1)
+
+
 class UpdateLoopTest(unittest.TestCase):
     """CELL-35: an ``update()`` loop matches ``run``, events on the first step included.
 

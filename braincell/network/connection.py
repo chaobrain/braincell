@@ -744,7 +744,11 @@ class NetworkConnections:
             view = self[target]
             calls = view._call_groups()
             summaries.append(
-                (target, sum(ids.size for _, ids in calls), tuple(self._describe(call, ids.size) for call, ids in calls))
+                (
+                    target,
+                    sum(ids.size for _, ids in calls),
+                    tuple(self._describe(call, ids.size) for call, ids in calls),
+                )
             )
         return tuple(summaries)
 

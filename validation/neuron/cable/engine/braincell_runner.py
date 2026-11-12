@@ -29,7 +29,6 @@ try:
     import braincell
     from braincell import CableProperty, Cell, CVPerBranch, Morphology
     from braincell.filter import AllRegion, at
-    from braincell.mech import StateProbe
 
     from .case_schema import MultiCompartmentCableCase
     from .morphology_io import load_braincell_morphology
@@ -45,7 +44,6 @@ except ImportError:  # pragma: no cover
     import braincell  # type: ignore
     from braincell import CableProperty, Cell, CVPerBranch, Morphology  # type: ignore
     from braincell.filter import AllRegion, at  # type: ignore
-    from braincell.mech import StateProbe  # type: ignore
 
     from case_schema import MultiCompartmentCableCase  # type: ignore
     from morphology_io import load_braincell_morphology  # type: ignore
@@ -73,15 +71,17 @@ def run_case(case: MultiCompartmentCableCase) -> dict[str, Any]:
         midpoint_x = 0.5 * (float(cv.prox) + float(cv.dist))
         probe_name = f"cv_{int(cv.id)}_v"
         probe_names.append(probe_name)
-        cell.place(at(int(cv.branch_id), midpoint_x), StateProbe(name=probe_name))
+        cell.loc(at(int(cv.branch_id), midpoint_x)).record(probe_name, braincell.observe.state("V"))
     cell.init_state()
-    result = cell.run(
-        dt=float(case.simulation.dt_ms) * u.ms,
-        duration=float(case.simulation.duration_ms) * u.ms,
-    )
-    times_ms = np.asarray(result.time.to_decimal(u.ms), dtype=float).reshape(-1)
+    # A recording samples before each step: row k is V(k dt), row 0 the
+    # initialized state. One extra step and dropping row 0 give V after each
+    # of the case's steps, V(dt) .. V(duration), the samples NEURON records
+    # after t=0. time_ms labels each row by the start of that step.
+    dt = float(case.simulation.dt_ms) * u.ms
+    result = cell.run(dt=dt, duration=float(case.simulation.duration_ms) * u.ms + dt)
+    times_ms = np.asarray(result.time.to_decimal(u.ms), dtype=float).reshape(-1)[:-1]
     voltage_columns = [
-        np.asarray(result.traces[probe_name].to_decimal(u.mV), dtype=float).reshape(-1)
+        np.asarray(result.traces[probe_name].to_decimal(u.mV), dtype=float).reshape(-1)[1:]
         for probe_name in probe_names
     ]
     voltage_mV = np.stack(voltage_columns, axis=1)

@@ -106,7 +106,7 @@ def build_cell(
         mech.Channel("IL", name="leak", g_max=0.3 * (u.mS / u.cm**2), E=-54.3 * u.mV),
     )
     for branch in PROBE_BRANCHES:
-        cell.place(at(branch, PROBE_X), mech.StateProbe(name=f"v_b{branch}"))
+        cell.loc(at(branch, PROBE_X)).record(f"v_b{branch}", braincell.observe.state("V"))
     if amplitudes_na is None:
         amplitudes_na = current_amplitudes(batch_size)
     amplitudes = u.Quantity(jnp.asarray(amplitudes_na), u.nA)
@@ -191,7 +191,16 @@ def run_backend(
     if host_result is None:
         host_result = jax.device_get(result)
 
-    host_traces = [np.asarray(host_result.traces[f"v_b{branch}"].to_decimal(u.mV)) for branch in PROBE_BRANCHES]
+    # A recording samples before each step, so its row 0 is V at t=0. NEURON and
+    # Jaxley report V after each of the N_STEPS steps: drop row 0 and append the
+    # final state of the same run, so the timed run keeps N_STEPS steps.
+    final_v = np.asarray(jax.device_get(cell.V.value).to_decimal(u.mV))
+    host_traces = []
+    for branch in PROBE_BRANCHES:
+        name = f"v_b{branch}"
+        cv_id = host_result.samples[name].schema.rows[0].cv_id
+        recorded = np.asarray(host_result.traces[name].to_decimal(u.mV))
+        host_traces.append(np.concatenate([recorded[1:], final_v[np.newaxis, :, cv_id]], axis=0))
     traces = np.stack([trace[:, 0] for trace in host_traces])
     all_finite = all(bool(np.isfinite(trace).all()) for trace in host_traces)
     trace_output_bytes = sum(trace.nbytes for trace in host_traces)

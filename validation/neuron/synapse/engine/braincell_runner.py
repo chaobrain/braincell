@@ -119,19 +119,22 @@ def run_braincell_synapse_case(
             weight=1.0,
         ),
     )
-    cell.place(at("soma", 0.5), mech.StateProbe(name="v", field="v"))
-    cell.place(at("soma", 0.5), mech.CurrentProbe(name="i_syn", mechanism=synapse_name))
     if synapse_type == "ExpSyn":
-        cell.place(at("soma", 0.5), mech.MechanismProbe(name="g", mechanism=synapse_name, field="g"))
+        synapse_fields = ("g",)
     elif synapse_type == "Exp2Syn":
-        cell.place(at("soma", 0.5), mech.MechanismProbe(name="A", mechanism=synapse_name, field="A"))
-        cell.place(at("soma", 0.5), mech.MechanismProbe(name="B", mechanism=synapse_name, field="B"))
+        synapse_fields = ("A", "B")
     else:
         raise ValueError(f"Unsupported synapse_type {synapse_type!r}.")
     cell.place(
         at("soma", 0.5),
         mech.Synapse(synapse_type, name=synapse_name, **synapse_params),
     )
+    soma = cell.loc(at("soma", 0.5))
+    synapse = braincell.observe.synapse(name=synapse_name)
+    soma.record("v", braincell.observe.state("V"))
+    soma.record("i_syn", synapse.current())
+    for field in synapse_fields:
+        soma.record(field, synapse.state(field))
     cell.init_state()
 
     dt = dt_ms * u.ms
@@ -149,11 +152,18 @@ def run_braincell_synapse_case(
         duration=duration_ms * u.ms,
     )
 
-    time_ms = np.asarray(result.time.to_decimal(u.ms), dtype=float)[:-1]
-    voltage_mV = np.asarray(result.traces["v"].to_decimal(u.mV), dtype=float)[:-1]
-    current_nA = np.asarray(result.traces["i_syn"].to_decimal(u.nA), dtype=float)[:-1]
+    # A recording samples before each step: row k is the state at t = k dt,
+    # row 0 the initialized state. Rows 1 .. n_steps - 1 are the states at
+    # t = dt .. duration - dt, the sample times of the NEURON trace.
+    def series(name, unit):
+        return np.asarray(result.traces[name].to_decimal(unit), dtype=float)[1:]
+
+    time_ms = np.asarray(result.time.to_decimal(u.ms), dtype=float)[1:]
+    voltage_mV = series("v", u.mV)
+    current_nA = series("i_syn", u.nA)
+    # pre_spike[i] is 1 when a NetStim event falls at time_ms[i].
     pre_spike = np.asarray(
-        [1.0 if step in spike_steps else 0.0 for step in range(n_steps - 1)],
+        [1.0 if step in spike_steps else 0.0 for step in range(1, n_steps)],
         dtype=float,
     )
 
@@ -164,9 +174,9 @@ def run_braincell_synapse_case(
         "current_nA": current_nA,
     }
     if synapse_type == "ExpSyn":
-        data["g_uS"] = np.asarray(result.traces["g"].to_decimal(u.uS), dtype=float)[:-1]
+        data["g_uS"] = series("g", u.uS)
     if synapse_type == "Exp2Syn":
-        data["A_uS"] = np.asarray(result.traces["A"].to_decimal(u.uS), dtype=float)[:-1]
-        data["B_uS"] = np.asarray(result.traces["B"].to_decimal(u.uS), dtype=float)[:-1]
+        data["A_uS"] = series("A", u.uS)
+        data["B_uS"] = series("B", u.uS)
         data["g_uS"] = data["B_uS"] - data["A_uS"]
     return data

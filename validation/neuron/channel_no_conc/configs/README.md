@@ -246,7 +246,7 @@ HCN 的 `E_mV` 就应该写在这里：
 这表示：
 
 - NEURON 侧比较 `_ref_ik`
-- braincell 侧统一比较这个 mechanism 的 current probe
+- braincell 侧统一比较这个 mechanism 的 current recording（`observe.channel(...).current()`）
 
 常见值：
 
@@ -897,7 +897,7 @@ GoC 其余机制不在这个目录的原因：
 
 - `mapping.current` 写 `icall`
 - BrainCell 实现用 `HHTypedNeuron` + 显式 `E = 139 mV`
-- compare 走 mechanism current probe，不绑定标准 `ca` ion
+- compare 走 mechanism current recording，不绑定标准 `ca` ion
 
 DCN 其余机制不在这个目录的原因：
 
@@ -942,7 +942,7 @@ SC 其余机制不在这个目录的原因：
 
 - `mapping.current` 写 `icall`
 - BrainCell 实现用 `HHTypedNeuron` + 显式 `E = 139 mV`
-- compare 走 mechanism current probe，不绑定标准 `ca` ion
+- compare 走 mechanism current recording，不绑定标准 `ca` ion
 
 DCN 其余机制不在这个目录的原因：
 

@@ -23,7 +23,7 @@ from typing import Any
 import brainunit as u
 import numpy as np
 import pandas as pd
-from braincell import Cell, Morphology, mech
+from braincell import Cell, Morphology, mech, observe
 from braincell._discretization.policy import MaxCVLen
 from braincell.filter import AllRegion, at, branch_in, branch_range
 
@@ -113,7 +113,7 @@ class PC:
         soma_probe_name = None
         if soma:
             soma_probe_name = "v_soma"
-            self.cell.place(at("soma", 0.5), mech.StateProbe(name=soma_probe_name))
+            self.cell.loc(at("soma", 0.5)).record(soma_probe_name, observe.state("V"))
         compartment_probe_names: list[str] = []
         if all_compartments:
             local_index_by_branch: dict[int, int] = defaultdict(int)
@@ -127,7 +127,7 @@ class PC:
                 local_index_by_branch[branch_id] += 1
                 probe_name = f"cv_{int(cv.id)}_v"
                 midpoint_x = 0.5 * (float(cv.prox) + float(cv.dist))
-                self.cell.place(at(branch_id, midpoint_x), mech.StateProbe(name=probe_name))
+                self.cell.loc(at(branch_id, midpoint_x)).record(probe_name, observe.state("V"))
                 compartment_probe_names.append(probe_name)
                 rows.append(
                     {
@@ -153,15 +153,22 @@ class PC:
         }
 
     def collect_voltage_results(self, probes: dict[str, Any], run_result: Any) -> dict[str, Any]:
+        """Return the voltage recorded by ``attach_voltage_probes`` after each step, in mV.
+
+        A recording samples before each step, so its row 0 is the initialized
+        state; it is dropped. Run the Cell one step longer than NEURON
+        (``duration + dt``) so that the rows match NEURON's samples after
+        ``t = 0``, at ``t = dt .. duration``.
+        """
         bundle = probes["bundle"]
         soma_voltage = None
         if bundle.soma_probe_name is not None:
-            soma_voltage = np.asarray(run_result.traces[bundle.soma_probe_name].to_decimal(u.mV), dtype=float).reshape(-1)
+            soma_voltage = np.asarray(run_result.traces[bundle.soma_probe_name].to_decimal(u.mV), dtype=float).reshape(-1)[1:]
         compartment_voltage = None
         if bundle.compartment_probe_names:
             compartment_voltage = np.column_stack(
                 [
-                    np.asarray(run_result.traces[name].to_decimal(u.mV), dtype=float).reshape(-1)
+                    np.asarray(run_result.traces[name].to_decimal(u.mV), dtype=float).reshape(-1)[1:]
                     for name in bundle.compartment_probe_names
                 ]
             )

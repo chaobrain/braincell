@@ -239,7 +239,7 @@ class CerebellarProbabilityNetworkWorkload:
 def _build_population(spec: CellSpec, *, size: int, incoming_configs):
     import brainunit as u
     import numpy as np
-    from braincell import mech
+    from braincell import mech, observe
     from braincell.filter import at
 
     cls = _load_attr(spec.class_path)
@@ -260,7 +260,7 @@ def _build_population(spec: CellSpec, *, size: int, incoming_configs):
     assembly = cls(morph_path, **kwargs).build() if morph_path is not None else cls(**kwargs).build()
     cell = assembly.cell
     cell.V_th = 0.0 * u.mV
-    cell.place(at("soma", 0.5), mech.StateProbe(name="v", field="v"))
+    cell.loc(at("soma", 0.5)).record("v", observe.state("V"))
 
     drive = _drive_protocol(spec.name, size)
     if drive is not None:

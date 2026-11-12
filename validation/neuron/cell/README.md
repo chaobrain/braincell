@@ -96,9 +96,11 @@ python -m validation.neuron.cell.run --load /path/to/saved/run --threshold-mv 0
 ```
 
 Analysis matches recorded sample times with an absolute roundoff tolerance of
-`1e-8 ms`. NEURON includes `t=0`; BrainCell StateProbe records after each step,
-starting at `dt`. Only the extra NEURON initial point is removed. A different time
-grid raises an error; voltage samples are neither interpolated nor silently truncated.
+`1e-8 ms`. Both sides are compared at `t = dt, 2 dt, ..., duration`. NEURON includes
+`t=0`, and that initial point is removed. A BrainCell recording samples before each
+step, so the Cell runs one step past the duration and drops its first row, the
+initialized state. A different time grid raises an error; voltage samples are neither
+interpolated nor silently truncated.
 
 Voltage metrics are RMSE, MAE and maximum absolute error. The signed difference is
 BrainCell minus NEURON. Spike detection uses upward threshold crossings and linear

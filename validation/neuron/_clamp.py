@@ -23,7 +23,8 @@ equations under the same voltage.
 Time convention, the same on both sides: step ``n`` takes the voltage from
 ``V_n`` to ``V_{n+1}`` and then advances the mechanism states with
 ``V_{n+1}``. NEURON's currents are re-evaluated with ``fcurrent()`` after
-each step, so they are ``I(V_{n+1}, s_{n+1})``, like BrainCell's probes.
+each step, so they are ``I(V_{n+1}, s_{n+1})``, like BrainCell's recording at
+``t_{n+1}``.
 """
 
 from collections.abc import Callable, Mapping, Sequence

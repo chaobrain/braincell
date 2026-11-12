@@ -223,6 +223,23 @@ class GeometryViewTest(unittest.TestCase):
         selected.length.set(60.0 * u.um)
         np.testing.assert_allclose(selected.length.get().to_decimal(u.um), 60.0)
 
+    def test_cell_views_read_and_write_geometry(self):
+        cell = _cell(pop_size=(3,), n_cv=2)
+        with self.assertRaisesRegex(RuntimeError, "init_state"):
+            _ = cell[1].geometry
+        cell.init_state()
+        cell[1].geometry.set(length=30.0 * u.um)
+        cell[2].length.set(10.0 * u.um)
+        np.testing.assert_allclose(cell.geometry.length.get().to_decimal(u.um), [20, 20, 30, 30, 10, 10])
+        np.testing.assert_allclose(cell[1:].geometry.get("length").to_decimal(u.um), [30, 30, 10, 10])
+        np.testing.assert_allclose(cell.soma.Ra.get().to_decimal(u.ohm * u.cm), np.full(6, 100.0))
+        for name in ("radius_scale", "cm", "radius_mid", "diam_arc_mean"):
+            self.assertEqual(tuple(getattr(cell[0], name).get().shape), (2,), name)
+        point = Cell.point(3, length=20.0 * u.um, radius=5.0 * u.um)
+        point.init_state()
+        point[1].geometry.set(length=30.0 * u.um)
+        np.testing.assert_allclose(point.geometry.length.get().to_decimal(u.um), [20, 30, 20])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -65,7 +65,9 @@ class MorphologySpatialGeometryTest(unittest.TestCase):
         self.assertIsNot(edited, first)
         self.assertIs(MorphologySpatialGeometry.of(morpho), edited)
         self.assertAlmostEqual(edited.path_distance_to_root(1, 0.5).to_decimal(u.um), 35.0)
-        self.assertEqual(edited.branch_lengths_um.tolist(), MorphologySpatialGeometry.build(morpho).branch_lengths_um.tolist())
+        self.assertEqual(
+            edited.branch_lengths_um.tolist(), MorphologySpatialGeometry.build(morpho).branch_lengths_um.tolist()
+        )
 
     def test_a_copy_reads_its_own_geometry(self) -> None:
         import copy

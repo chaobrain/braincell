@@ -280,9 +280,7 @@ class _BranchGeometryUm:
                 np.searchsorted(long_end, sites, side="right"),
             )
             candidate = long_index[np.minimum(found, long_index.size - 1)]
-            inside = (found < long_index.size) & (
-                (sites < end[candidate]) | (at_one & (end[candidate] == 1.0))
-            )
+            inside = (found < long_index.size) & ((sites < end[candidate]) | (at_one & (end[candidate] == 1.0)))
             segment = np.where(inside, candidate, segment)
         for index in np.flatnonzero(~has_length)[::-1].tolist():
             segment = np.where((index < segment) & np.isclose(sites, start[index]), index, segment)

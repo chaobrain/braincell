@@ -477,6 +477,31 @@ class InputValidationTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing required parameter 'tau2'"):
             _KERNEL().init_state(context)
 
+    def test_kernel_rejects_exp2syn_tau1_not_below_tau2_as_a_cell_does(self) -> None:
+        # tau1 == tau2 used to divide by zero in the area. A real Cell refuses
+        # both orders at init_state; the model gives the same message.
+        def cell_error(tau1, tau2):
+            cell = braincell.Cell.point(1)
+            cell.place(braincell.mech.Synapse("Exp2Syn", name="syn", tau1=tau1, tau2=tau2))
+            with self.assertRaises(ValueError) as caught:
+                cell.init_state()
+            return str(caught.exception)
+
+        owner = _Owner((1,))
+        exp2 = _schema(synapse_type="Exp2Syn", synapse_id=[0], synapse_index=[0], population_index=[0])
+        cases = {
+            "equal": (2.0 * u.ms, 2.0 * u.ms),
+            "equal in mixed units": (2.0 * u.ms, 2000.0 * u.us),
+            "reversed": (5.0 * u.ms, 2.0 * u.ms),
+        }
+        for label, (tau1, tau2) in cases.items():
+            with self.subTest(label):
+                self.assertIn("Exp2Syn requires tau1 < tau2.", cell_error(tau1, tau2))
+                context = _context(owner, exp2, synapses=(_synapse(0, 0, "Exp2Syn", tau1=tau1, tau2=tau2),))
+                with self.assertRaises(ValueError) as caught:
+                    _KERNEL().init_state(context)
+                self.assertEqual(str(caught.exception), "Exp2Syn requires tau1 < tau2.")
+
     def test_multi_dimensional_pop_size_is_not_supported(self) -> None:
         owner = _Owner((2, 3))
         context = _context(owner)

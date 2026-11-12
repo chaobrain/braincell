@@ -1340,6 +1340,13 @@
   names it twice. It now reads: "braincell.quad.rk2_step was removed; it was
   Ralston's second-order method; use braincell.quad.ralston2_step (same
   numbers), or heun2_step for Heun's method."
+- `SynapticKernelAccumulatorReduction` raises `ValueError("Exp2Syn requires
+  tau1 < tau2.")` when it reads an `Exp2Syn` whose `tau1` is not below
+  `tau2`, the rule and message a Cell applies to the same synapse at
+  `init_state`. In a context built by hand, `tau1 == tau2` raised
+  `ZeroDivisionError` from the kernel area, and `tau1 > tau2` gave the area
+  of the kernel with the two swapped. A Cell rejects both before the model
+  runs, so Cells are unchanged.
 
 - The concept page "Ions & Channels" (`docs/concepts/ions_channels.ipynb`)
   runs: its cells used an undefined `size` and passed `...` to

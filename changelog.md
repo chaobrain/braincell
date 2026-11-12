@@ -795,6 +795,18 @@
   `Nav_MA2020_GrC` 14 % and `NaFHF_MA2020_GrC` 20 % on `backward_euler`,
   2-5 % with four substeps, exact on `exp_euler`.
 
+- **Conditional pairing draws all endpoints' partners in a few compiled
+  calls** (CELL-18h). `source_first`, `synapse_first`, `by_source` and
+  `by_synapse` drew each fixed endpoint's partners with its own
+  `RandomState`, one JAX call per endpoint. Each endpoint now gets the key
+  its `RandomState` would use and draws through the same
+  `jax.random.choice`, vmapped over endpoints, so every endpoint draws
+  exactly what it drew before: seeded results do not change.
+  `by_source(5)` from 800 sources onto 1,600 synapses took 0.36 s per
+  `connect` and now 6 ms; from 100,000 sources, 52 s and now 0.54 s. With
+  100 distinct per-source degrees the first call, which compiles, took
+  13 s and now 0.9 s.
+
 - **Breaking:** braincell now requires `jax>=0.11` (it was `>=0.9`), in
   the base requirement and in the `cpu`, `cuda12`, `cuda13` and `tpu`
   extras. Users on JAX 0.9 or 0.10 must upgrade JAX before upgrading

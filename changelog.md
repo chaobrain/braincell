@@ -928,6 +928,10 @@
   Every Python runs against the latest JAX; JAX 0.11.0 (the floor) is
   tested on 3.12 only. A `lint` step fails when the classifiers differ from the Python
   versions CI tests.
+- The internal clamp routing table no longer keeps a copy of the clamped CV
+  areas (`ClampRoutingTable.midpoint_area`). Nothing read it, and it went
+  stale after `geometry.set`. A current clamp on a CV midpoint still divides
+  by the current CV area at each step.
 
 ### Bug Fixes
 

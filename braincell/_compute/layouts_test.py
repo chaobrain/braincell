@@ -16,7 +16,7 @@
 """Tests for :mod:`braincell._compute.layouts`."""
 
 import unittest
-from dataclasses import dataclass as _dataclass
+from dataclasses import dataclass as _dataclass, fields
 
 import brainunit as u
 import jax
@@ -567,8 +567,14 @@ class TestBuildClampRoutingTable(unittest.TestCase):
         )
         self.assertIsInstance(table, ClampRoutingTable)
         np.testing.assert_array_equal(table.midpoint_ids, np.asarray([1], dtype=np.int32))
-        np.testing.assert_allclose(table.midpoint_area, np.asarray([2e-6]))
         np.testing.assert_array_equal(table.boundary_ids, np.asarray([], dtype=np.int32))
+
+    def test_the_routing_table_holds_point_ids_only(self):
+        # A midpoint clamp divides by the runtime's current CV areas at each
+        # step; an area copied into the table would go stale after
+        # geometry.set (lumped_twin_test pins a clamped cell after
+        # geometry.set against the same cell declared at that length).
+        self.assertEqual([field.name for field in fields(ClampRoutingTable)], ["midpoint_ids", "boundary_ids"])
 
     def test_each_clamp_kind_is_recognized(self):
         self.assertEqual(CLAMP_KINDS, frozenset({"CurrentClamp", "SineClamp", "FunctionClamp"}))
@@ -626,7 +632,6 @@ class TestBuildClampRoutingTable(unittest.TestCase):
         )
         self.assertIsInstance(table, ClampRoutingTable)
         np.testing.assert_array_equal(table.midpoint_ids, np.asarray([], dtype=np.int32))
-        np.testing.assert_array_equal(table.midpoint_area, np.asarray([], dtype=float))
         np.testing.assert_array_equal(table.boundary_ids, np.asarray([2], dtype=np.int32))
 
     def test_mixed_midpoint_and_endpoint_clamps_route_separately(self):
@@ -649,7 +654,6 @@ class TestBuildClampRoutingTable(unittest.TestCase):
             midpoint_ids=midpoints,
         )
         np.testing.assert_array_equal(table.midpoint_ids, np.asarray([0, 1], dtype=np.int32))
-        np.testing.assert_allclose(table.midpoint_area, np.asarray([1e-6, 2e-6]))
         np.testing.assert_array_equal(table.boundary_ids, np.asarray([3, 4], dtype=np.int32))
 
     def test_non_clamp_point_layout_ignored(self):

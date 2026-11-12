@@ -100,12 +100,13 @@ class CellRuntimeStateTest(unittest.TestCase):
         self.assertEqual(len(second), 1)
 
     def test_clamp_routing_area_matches_the_cv_that_owns_each_midpoint(self) -> None:
-        """The routing table reads the runtime point-area vector, not ``cv.area``.
+        """The runtime point-area vector gives each CV midpoint the area of its CV.
 
-        ``build_clamp_routing_table`` no longer walks the CV sequence; it slices
-        the ``point_area`` vector the runtime already built from each node's
-        first role. That is only correct because a CV midpoint reports its own
-        CV as ``roles[0]``, which this pins against a real discretization.
+        ``build_clamp_routing_table`` checks the clamped midpoint areas in the
+        ``point_area`` vector the runtime built from each node's first role,
+        not in ``cv.area``. That is only correct because a CV midpoint reports
+        its own CV as ``roles[0]``, which this pins against a real
+        discretization.
         """
         cell = Cell(_build_tree(), cv_policy=CVPerBranch(cv_per_branch=3))
         cell.place(
@@ -122,13 +123,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             ),
             rtol=0.0,
         )
-        table = cell.runtime.clamp_routing_table
-        clamped_cv = int(np.flatnonzero(midpoint_ids == table.midpoint_ids[0])[0])
-        np.testing.assert_allclose(
-            table.midpoint_area,
-            [float(np.asarray(cell.cvs[clamped_cv].area.to_decimal(u.cm**2)))],
-            rtol=0.0,
-        )
+        self.assertEqual(len(cell.runtime.clamp_routing_table.midpoint_ids), 1)
 
     def test_state_mutation_updates_buffer_without_rebuild(self) -> None:
         cell = Cell(_build_tree())

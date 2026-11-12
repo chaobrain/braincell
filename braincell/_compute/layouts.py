@@ -234,22 +234,21 @@ class ClampRoutingTable:
 
     Point clamps can land either on CV midpoint nodes or on boundary nodes.
     Midpoint clamps have a membrane area and are converted from total current
-    to current density before entering the membrane equation. Boundary clamps
-    do not have membrane area and are consumed as total point currents by the
-    node-tree voltage solver.
+    to current density before entering the membrane equation; each step
+    divides by the runtime's current CV areas, which follow ``geometry.set``,
+    so the table holds no area of its own. Boundary clamps do not have
+    membrane area and are consumed as total point currents by the node-tree
+    voltage solver.
 
     Attributes
     ----------
     midpoint_ids : np.ndarray
         Sorted unique midpoint point ids that carry clamp layouts.
-    midpoint_area : object
-        Membrane area in ``cm^2`` for ``midpoint_ids``.
     boundary_ids : np.ndarray
         Sorted unique non-midpoint point ids that carry clamp layouts.
     """
 
     midpoint_ids: np.ndarray
-    midpoint_area: object
     boundary_ids: np.ndarray
 
 
@@ -317,7 +316,6 @@ def build_clamp_routing_table(
     )
     return ClampRoutingTable(
         midpoint_ids=ids,
-        midpoint_area=u.math.asarray(area),
         boundary_ids=boundary_ids,
     )
 

@@ -204,7 +204,7 @@ class LumpedViewTwinTest(LumpedTwinTestCase):
             self.assertTwin(out["lumped"][1], out["cable"][1], 1e-9)
 
             traces = {}
-            for kind, mode in (("lumped", "set"), ("lumped", "declared"), ("cable", "declared")):
+            for kind, mode in (("lumped", "set"), ("lumped", "declared"), ("cable", "set"), ("cable", "declared")):
                 length = (18.0 if mode == "declared" else 20.0) * u.um
                 cell = _hh(kind, 1, clamp=_clamp(amplitudes=0.1 * u.nA), length=length)
                 cell.record("v", bc.observe.state("V"))
@@ -214,6 +214,8 @@ class LumpedViewTwinTest(LumpedTwinTestCase):
                 traces[kind, mode] = _mv(cell.run(dt=DT, duration=10.0 * u.ms).samples["v"]).reshape(-1)
             self.assertTwin(traces["lumped", "set"], traces["lumped", "declared"], 1e-9)
             self.assertTwin(traces["lumped", "set"], traces["cable", "declared"], 1e-9)
+            # The one CV of the cable passes no axial current at any length.
+            self.assertTwin(traces["cable", "set"], traces["cable", "declared"], 1e-12)
 
     def test_cell_views(self) -> None:
         with _float64():

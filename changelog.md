@@ -1034,6 +1034,22 @@
   now reads to the same geometry as `SC.asc`. The 13 shipped ASC files that
   read before give bit-identical geometry and the same report.
 
+- `cell[i].geometry`, `cell.soma.geometry` and the geometry fields of every
+  `Cell` view (`cell[i].length`, `.Ra`, `.cm`, `.radius_scale`, `.radius_mid`,
+  `.diam_arc_mean`) failed with `AttributeError: 'CellView' object has no
+  attribute '_raise_if_not_initialized'`. They now read and write the selected
+  members and CVs, on cable and lumped Cells.
+
+- The axial operator of a cable `Cell`, which every solver except
+  `"staggered"` and `"dhs_voltage"` applies, eliminates the CV boundary
+  points; that left a rounding residual of order eps × |diagonal| in each row
+  sum, so a uniform voltage drove a small axial current. A one-CV cable whose
+  length was set with `geometry.set` after `init_state` drifted 1.5e-12 mV per
+  step and over 10 ms differed from the same cable declared at that length by
+  3.9e-9 mV (now at most 2e-12 mV, 7e-15 mV under `rk4`). Each diagonal entry
+  is now minus the sum of the off-diagonals of its row, so a one-CV cable
+  passes no axial current; the results of multi-CV cables change at rounding
+  level.
 - With `ion_channel_update_order="integration"`, the `"staggered"` solver
   now advances the dependent channels under a kinetic ion (CELL-32). The
   ion's own update integrates its species only, and the dependent-node pass

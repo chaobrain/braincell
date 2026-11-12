@@ -288,7 +288,7 @@ class _CellFacade:
     @property
     def geometry(self) -> GeometryView:
         """Return fixed-grid runtime geometry parameters for this scope."""
-        self._raise_if_not_initialized("geometry; call init_state() first")
+        self._view_root._raise_if_not_initialized("geometry; call init_state() first")
         return GeometryView(self._view_root, self._scope)
 
     # CV selections expose geometry fields directly.  ``geometry`` remains a
@@ -296,32 +296,32 @@ class _CellFacade:
     # view at the same level as ``channels`` and ``synapses``.
     @property
     def length(self):
-        self._raise_if_not_initialized("length; call init_state() first")
+        self._view_root._raise_if_not_initialized("length; call init_state() first")
         return self.geometry.length
 
     @property
     def radius_scale(self):
-        self._raise_if_not_initialized("radius_scale; call init_state() first")
+        self._view_root._raise_if_not_initialized("radius_scale; call init_state() first")
         return self.geometry.radius_scale
 
     @property
     def Ra(self):
-        self._raise_if_not_initialized("Ra; call init_state() first")
+        self._view_root._raise_if_not_initialized("Ra; call init_state() first")
         return self.geometry.Ra
 
     @property
     def cm(self):
-        self._raise_if_not_initialized("cm; call init_state() first")
+        self._view_root._raise_if_not_initialized("cm; call init_state() first")
         return self.geometry.cm
 
     @property
     def radius_mid(self):
-        self._raise_if_not_initialized("radius_mid; call init_state() first")
+        self._view_root._raise_if_not_initialized("radius_mid; call init_state() first")
         return self.geometry.radius_mid
 
     @property
     def diam_arc_mean(self):
-        self._raise_if_not_initialized("diam_arc_mean; call init_state() first")
+        self._view_root._raise_if_not_initialized("diam_arc_mean; call init_state() first")
         return self.geometry.diam_arc_mean
 
     def record(

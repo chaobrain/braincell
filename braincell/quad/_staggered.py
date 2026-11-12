@@ -466,7 +466,14 @@ def build_cv_axial_operator(target, *, node_tree, scheduling):
         algebraic_dynamic = axial_matrix[..., algebraic_rows[:, None], dynamic_rows]
         algebraic_algebraic = axial_matrix[..., algebraic_rows[:, None], algebraic_rows]
         reduced = dynamic_dynamic - dynamic_algebraic @ jnp.linalg.solve(algebraic_algebraic, algebraic_dynamic)
-    return reduced
+    # A sealed cable passes no axial current at uniform voltage: every row of
+    # the operator sums to zero. The elimination above leaves a rounding
+    # residual of order eps * |diagonal| in each row sum, which multiplies |V|
+    # (a one-CV cable drifted 1.5e-12 mV per step at -65 mV). Take each
+    # diagonal entry from the off-diagonals of its row.
+    eye = jnp.eye(reduced.shape[-1], dtype=bool)
+    off_diagonal = jnp.where(eye, jnp.zeros_like(reduced), reduced)
+    return jnp.where(eye, -jnp.sum(off_diagonal, axis=-1, keepdims=True), off_diagonal)
 
 
 def _get_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSource:

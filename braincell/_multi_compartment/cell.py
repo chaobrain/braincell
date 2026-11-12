@@ -2453,6 +2453,8 @@ class Cell(_CellFacade, HHTypedNeuron):
     def add_reduction(self, name: str, model):
         """Register one interchangeable reduced model under a Cell-local name."""
         self._raise_if_initialized("add a reduction model")
+        # Before anything is stored: a refused call must leave the Cell as it was.
+        self._require_one_dimensional("add_reduction()")
         if not isinstance(name, str) or not name:
             raise ValueError("Reduction model name must be a non-empty string.")
         if name == "detailed":

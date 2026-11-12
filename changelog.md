@@ -1994,6 +1994,13 @@
   later step). Runs that keep `dt`, and runs whose new `dt` the time
   reached is a multiple of, are unchanged bit for bit. A traced run (inside
   `jax.jit`) still counts its arrivals from time 0.
+- `Cell.add_reduction` on a multi-dimensional `pop_size`, as in
+  `Cell.point((2, 3))`, raises before it registers the model, so the Cell
+  is left as it was. It used to store the model and then raise `ValueError`:
+  `use_model(name)` then selected it, `init_state()` raised
+  `NotImplementedError` from the model, and a second `add_reduction` with
+  the same name reported a duplicate. The `ValueError` now names
+  `add_reduction()`; one-dimensional and scalar populations are unchanged.
 
 ### Documentation
 

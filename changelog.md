@@ -214,6 +214,24 @@
   | `cell.bind_synapse_input("syn", source, weight=w)` | `braincell.connect(name, source=<an EventSource: braincell.NetStim(...), braincell.EventSequence.from_times(...) or a Cell's spikes>, synapse=cell.synapses["syn"], weight=w)` |
   | `density.exponential("branch_x", 0.2)` | `lambda context: np.exp(metric.branch_x(context) / 0.2)` (`direction="decreasing"` negates the exponent) |
   | `density.gaussian("branch_x", 0.5, 0.1)` | `lambda context: np.exp(-0.5 * ((metric.branch_x(context) - 0.5) / 0.1) ** 2)` |
+- **A Cell that ran on its own to a time off a Network's `dt` grid cannot
+  start the Network** (CELL-58). A Network steps at multiples of `dt`, and its
+  recordings and scheduled events assume that grid. A Cell that ran alone for
+  3 steps of 0.025 ms stands at 0.075 ms, 1.5 steps of 0.05 ms; a Network at
+  `dt = 0.05 ms` with it as a member ran without error but recorded nothing
+  (0 of 22 samples for a recording taken every step) and delivered each
+  `EventSequence` or `NetStim` event on the grid from `t = 0` instead of the
+  steps it ran on: the 0.3 ms event acted at 0.275 ms, half a step early (main
+  `e43d794`, float32 and float64, `Network.run`, `prepare_run` with
+  `update()`, and `scheduled_delivery="direct"` alike). `Network.run` and
+  `Network.prepare_run` now raise `ValueError` ("... cannot start population
+  'post' at t = 0.075 ms, which is not a multiple of dt = 0.05 ms ...") before
+  anything changes. A time on the grid, to within the run precision, joins as
+  before (10 steps of 0.025 ms, then `dt = 0.05 ms`), with bitwise the same
+  results. There is no deprecation period (0.3 allows breaking changes
+  without one, a project-lead decision): the rejected runs never gave correct
+  results. Call `Network.reset_state()` to start from `t = 0`, or run the
+  Cell on its own to a multiple of the Network's `dt` before adding it.
 
 ### New Features
 

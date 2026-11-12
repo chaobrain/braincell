@@ -49,7 +49,8 @@ def HH(in_size):
         mech.Channel('Na_TM1991', g_max=100. * u.mS / u.cm ** 2, V_sh=-63. * u.mV),
         mech.Ion('PotassiumFixed', E=-90 * u.mV),
         mech.Channel('K_TM1991', g_max=30. * u.mS / u.cm ** 2, V_sh=-63. * u.mV),
-        mech.Channel('IL', E=-60. * u.mV, g_max=5. * u.nS / u.cm ** 2),
+        # gl = 5e-5 S/cm^2 (Brette et al. 2007, benchmark 3; Brian2's examples/COBAHH.py)
+        mech.Channel('IL', E=-60. * u.mV, g_max=0.05 * u.mS / u.cm ** 2),
     )
     return cell
 

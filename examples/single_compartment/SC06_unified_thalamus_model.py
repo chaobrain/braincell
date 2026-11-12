@@ -39,11 +39,8 @@ brainstate.environ.set(dt=0.1 * u.ms)
 
 
 # Conductances and currents below are totals; each cell divides the currents
-# it receives by its membrane area.
-#
-# Short-term depression and receptors take the population size explicitly:
-# ``align_pre`` would size a descriptor by ``varshape``, which for a Cell has
-# a trailing compartment axis.
+# it receives by its membrane area. ``align_pre`` sizes a short-term depression
+# descriptor by the population of the presynaptic cell.
 
 
 def receptor(model, size, alpha, beta):
@@ -167,15 +164,17 @@ class Thalamus(brainstate.nn.Module):
             post=self.RE,
         )
 
-        # HTC cells were connected with gap junctions
+        # HTC cells were connected with gap junctions. The paper's gap junction
+        # resistances: 100 MOhm between HTC cells (10 nS), 300 MOhm between HTC
+        # and RTC cells and between RE cells (1/300 uS).
         self.gj_HTC = brainpy.state.SymmetryGapJunction(
-            self.HTC, 'V', conn=ProbDist(dist=2., prob=0.3), weight=10. * u.uS
+            self.HTC, 'V', conn=ProbDist(dist=2., prob=0.3), weight=10. * u.nS
         )
 
         # HTC provides feedforward excitation to INs
         self.HTC2IN_ampa = brainpy.state.CurrentProj(
             self.HTC.align_pre(
-                brainpy.state.STD.desc(self.HTC.pop_size, tau=700 * u.ms, U=0.07)
+                brainpy.state.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
                 receptor(brainpy.state.AMPA, self.HTC.pop_size, alpha=0.94 / (u.ms * u.mM), beta=0.18 / u.ms)
             ).prefetch('g'),
@@ -185,7 +184,7 @@ class Thalamus(brainstate.nn.Module):
         )
         self.HTC2IN_nmda = brainpy.state.CurrentProj(
             self.HTC.align_pre(
-                brainpy.state.STD.desc(self.HTC.pop_size, tau=700 * u.ms, U=0.07),
+                brainpy.state.STD.desc(tau=700 * u.ms, U=0.07),
             ).align_pre(
                 receptor(brainpy.state.AMPA, self.HTC.pop_size, alpha=1.0 / (u.ms * u.mM), beta=0.0067 / u.ms)
             ).prefetch('g'),
@@ -197,7 +196,7 @@ class Thalamus(brainstate.nn.Module):
         # INs delivered feedforward inhibition to RTC cells
         self.IN2RTC = brainpy.state.CurrentProj(
             self.IN.align_pre(
-                brainpy.state.STD.desc(self.IN.pop_size, tau=700 * u.ms, U=0.07)
+                brainpy.state.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
                 receptor(brainpy.state.GABAa, self.IN.pop_size, alpha=10.5 / (u.ms * u.mM), beta=0.166 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
@@ -215,7 +214,7 @@ class Thalamus(brainstate.nn.Module):
         # receiving GABAergic feedback inhibition from the RE population
         self.HTC2RE_ampa = brainpy.state.CurrentProj(
             self.HTC.align_pre(
-                brainpy.state.STD.desc(self.HTC.pop_size, tau=700 * u.ms, U=0.07)
+                brainpy.state.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
                 receptor(brainpy.state.AMPA, self.HTC.pop_size, alpha=0.94 / (u.ms * u.mM), beta=0.18 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
@@ -225,7 +224,7 @@ class Thalamus(brainstate.nn.Module):
         )
         self.RTC2RE_ampa = brainpy.state.CurrentProj(
             self.RTC.align_pre(
-                brainpy.state.STD.desc(self.RTC.pop_size, tau=700 * u.ms, U=0.07)
+                brainpy.state.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
                 receptor(brainpy.state.AMPA, self.RTC.pop_size, alpha=0.94 / (u.ms * u.mM), beta=0.18 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
@@ -235,7 +234,7 @@ class Thalamus(brainstate.nn.Module):
         )
         self.HTC2RE_nmda = brainpy.state.CurrentProj(
             self.HTC.align_pre(
-                brainpy.state.STD.desc(self.HTC.pop_size, tau=700 * u.ms, U=0.07)
+                brainpy.state.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
                 receptor(brainpy.state.AMPA, self.HTC.pop_size, alpha=1. / (u.ms * u.mM), beta=0.0067 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
@@ -245,7 +244,7 @@ class Thalamus(brainstate.nn.Module):
         )
         self.RTC2RE_nmda = brainpy.state.CurrentProj(
             self.RTC.align_pre(
-                brainpy.state.STD.desc(self.RTC.pop_size, tau=700 * u.ms, U=0.07)
+                brainpy.state.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
                 receptor(brainpy.state.AMPA, self.RTC.pop_size, alpha=1. / (u.ms * u.mM), beta=0.0067 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
@@ -255,7 +254,7 @@ class Thalamus(brainstate.nn.Module):
         )
         self.RE2HTC = brainpy.state.CurrentProj(
             self.RE.align_pre(
-                brainpy.state.STD.desc(self.RE.pop_size, tau=700 * u.ms, U=0.07)
+                brainpy.state.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
                 receptor(brainpy.state.GABAa, self.RE.pop_size, alpha=10.5 / (u.ms * u.mM), beta=0.166 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
@@ -265,7 +264,7 @@ class Thalamus(brainstate.nn.Module):
         )
         self.RE2RTC = brainpy.state.CurrentProj(
             self.RE.align_pre(
-                brainpy.state.STD.desc(self.RE.pop_size, tau=700 * u.ms, U=0.07)
+                brainpy.state.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
                 receptor(brainpy.state.GABAa, self.RE.pop_size, alpha=10.5 / (u.ms * u.mM), beta=0.166 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
@@ -280,7 +279,7 @@ class Thalamus(brainstate.nn.Module):
         )
         self.RE2RE = brainpy.state.CurrentProj(
             self.RE.align_pre(
-                brainpy.state.STD.desc(self.RE.pop_size, tau=700 * u.ms, U=0.07)
+                brainpy.state.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
                 receptor(brainpy.state.GABAa, self.RE.pop_size, alpha=10.5 / (u.ms * u.mM), beta=0.166 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),
@@ -293,7 +292,7 @@ class Thalamus(brainstate.nn.Module):
         # probability (0.05) was used for the RE->IN synapses according to experimental data
         self.RE2IN = brainpy.state.CurrentProj(
             self.RE.align_pre(
-                brainpy.state.STD.desc(self.RE.pop_size, tau=700 * u.ms, U=0.07)
+                brainpy.state.STD.desc(tau=700 * u.ms, U=0.07)
             ).align_pre(
                 receptor(brainpy.state.GABAa, self.RE.pop_size, alpha=10.5 / (u.ms * u.mM), beta=0.166 / u.ms)
             ).prefetch_delay('g', 2 * u.ms),

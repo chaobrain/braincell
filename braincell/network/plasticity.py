@@ -31,7 +31,8 @@ consume its events. Every read at a boundary sees the state before it:
   steps arrives at ``t_{m + max(k, 1)}``.
 - A row with a scheduled source, or a live source and ``k >= 1``, delivers
   ``n * w(t_n-)`` here, not through the Network's weighted delay ring: a
-  live row keeps a count history of its source instead. A live row with
+  live call keeps a history of its sources' spike counts instead, one
+  column per distinct source (fan-out rows share it). A live row with
   ``k = 0`` keeps the Network's immediate path, at the end of the detection
   step, which reads the dynamic weight; the rule has not run for that
   boundary yet, so it reads ``w(t_n-)`` too.
@@ -52,7 +53,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._base_rule import ConnectionRule as RuntimeRule
-from braincell._misc import scalar_decimal
 from braincell._multi_compartment.synapses import SynapseView
 from braincell.mech import ConnectionRule, get_registry
 from braincell.network.event import EventSource, EventSourceView
@@ -67,10 +67,6 @@ __all__ = [
 #: Signals the runtime provides to a rule besides ``pre``, with whether a
 #: missing binding has a default (``post``: the target Cell's spikes).
 _PROVIDED_SIGNALS = {"post": True}
-
-#: The count history of a live rule call: one column per row (``"row"``) or
-#: per distinct source of the call (``"source"``). The arrivals are the same.
-_HISTORY_LAYOUT = "row"
 
 
 def bind_rule(declaration, *, cell, weight, n_rows: int) -> "RuleBinding":
@@ -208,10 +204,44 @@ class _RowPlan:
         self.post_index = None if post is None else np.asarray(post.source_id, dtype=np.int64)[member]
 
 
+class _LivePlan:
+    """Quantized delays and count-history layout of a live rule call, built at the Network run setup.
+
+    A spike detected in step ``m`` is the source's current count at the
+    boundary ``t_{m+1}``; with ``k`` delay steps it arrives at
+    ``t_{m+max(k,1)}``, so a row reads the count written ``max(k-1, 0)``
+    boundaries ago. The history keeps one column per distinct source: at
+    ``1e5`` rows from ``1e3`` sources a step costs as much as without a rule,
+    where one column per row cost 2.8 times as much (CELL-12a).
+    """
+
+    __slots__ = ("lag", "uniform_lag", "depth", "columns", "slot", "deliver")
+
+    def __init__(self, steps, plan) -> None:
+        lag = np.maximum(steps - 1, 0).astype(np.int32)
+        if plan.active is not None:
+            lag = np.where(plan.active, lag, 0).astype(np.int32)
+        columns, slot = np.unique(plan.source_index, return_inverse=True)
+        slot = slot.reshape(-1).astype(np.int32)
+        self.lag = lag
+        self.uniform_lag = int(lag[0]) if lag.size and bool(np.all(lag == lag[0])) else None
+        self.depth = int(lag.max(initial=0)) + 1
+        self.columns = columns
+        # Rows that each read a source of their own, in source order, need no gather.
+        self.slot = None if np.array_equal(slot, np.arange(columns.size)) else slot
+        # Zero-delay rows stay on the Network's immediate path (lowering).
+        deliver = steps >= 1
+        self.deliver = deliver if plan.active is None else deliver & plan.active
+
+    def per_row(self, counts):
+        """Spread per-source ``counts`` to the rows."""
+        return counts if self.slot is None else counts[jnp.asarray(self.slot)]
+
+
 class RuleBinding:
     """The rule of one ``connect`` call: declaration, runtime rule, signals, and runtime state."""
 
-    __slots__ = ("declaration", "rule", "post", "states", "runtime", "plan", "steps", "_live")
+    __slots__ = ("declaration", "rule", "post", "states", "runtime", "plan", "_live")
 
     def __init__(self, declaration, rule, post) -> None:
         self.declaration = declaration
@@ -245,7 +275,6 @@ class RuleBinding:
         self.states = None
         self.runtime = None
         self.plan = None
-        self.steps = None
         self._live = None
 
     def _initial_state(self, weight) -> dict:
@@ -276,72 +305,47 @@ class RuleBinding:
             ) from None
 
     def prepare_network(self, call, *, dt, delay_quantization: str) -> None:
-        """Quantize a live call's delays and allocate its count history, once per run configuration."""
-        if self.states is None or call.source.is_scheduled:
-            return
-        dt_ms = scalar_decimal(dt, u.ms)
-        key = (dt_ms, delay_quantization)
-        if self._live is not None:
-            previous_dt, previous_quantization = self._live[0]
-            if not (np.isclose(previous_dt, dt_ms) and previous_quantization == delay_quantization):
-                raise ValueError(
-                    "A live Connection with a plasticity rule cannot change dt or the delay quantization while "
-                    "retaining delayed events; call the target Cell's reset() and init_state() first."
-                )
+        """Quantize a live call's delays and allocate its count history (Network run setup)."""
+        if self.states is None or call.source.is_scheduled or self._live is not None:
+            # A Network fixes dt and the delay quantization at its first run.
             return
         plan = self.plan
         steps = _expand_delay_steps(plan.delay, dt=dt, n_contact=plan.n_rows, quantization=delay_quantization)
-        lag = np.maximum(steps - 1, 0).astype(np.int32)
-        if plan.active is not None:
-            lag = np.where(plan.active, lag, 0).astype(np.int32)
-        depth = int(lag.max(initial=0)) + 1
-        columns = plan.source_index
-        slot = None
-        if _HISTORY_LAYOUT == "source":
-            columns, slot = np.unique(plan.source_index, return_inverse=True)
-            slot = slot.reshape(-1).astype(np.int32)
-        if depth > 1:
+        self._live = _LivePlan(steps, plan)
+        if self._live.depth > 1:
             self.runtime["history"] = brainstate.ShortTermState(
-                jnp.zeros((depth, columns.size), dtype=brainstate.environ.dftype())
+                jnp.zeros((self._live.depth, self._live.columns.size), dtype=brainstate.environ.dftype())
             )
             self.runtime["cursor"] = brainstate.ShortTermState(jnp.asarray(0, dtype=jnp.int32))
-        uniform = bool(np.all(lag == lag[0])) if lag.size else True
-        self.steps = steps
-        deliver = steps >= 1
-        if plan.active is not None:
-            deliver &= plan.active
-        self._live = (key, lag, int(lag[0]) if uniform and lag.size else None, columns, slot, deliver)
 
     # -- the boundary -----------------------------------------------------
 
     def _live_arrivals(self, source):
-        """Arrivals of a live call at this boundary, from the count history (Network only)."""
-        if self._live is None:
+        """Arrivals of a live call at this boundary, from its sources' count history (Network only)."""
+        live = self._live
+        if live is None:
             raise NotImplementedError(
                 f"Connection rule {self.declaration.rule_type!r} on a live source runs only in a braincell.Network: "
                 "a standalone Cell delivers live events on another schedule. Add the Cells to a Network and "
                 "run that, or connect a scheduled source (EventSequence, NetStim)."
             )
-        _, lag, uniform, columns, slot, _ = self._live
-        dtype = brainstate.environ.dftype()
-        current = jnp.asarray(source.current_event_count(columns), dtype=dtype)
+        current = jnp.asarray(source.current_event_count(live.columns), dtype=brainstate.environ.dftype())
         if "history" not in self.runtime:
-            return current if slot is None else current[jnp.asarray(slot)]
+            return live.per_row(current)
         history_state = self.runtime["history"]
         cursor_state = self.runtime["cursor"]
-        history = history_state.value
-        depth = history.shape[0]
         cursor = cursor_state.value
-        history = jax.lax.dynamic_update_index_in_dim(history, current, cursor, axis=0)
-        if uniform is not None:
-            arrivals = jax.lax.dynamic_index_in_dim(history, (cursor - uniform) % depth, axis=0, keepdims=False)
-            if slot is not None:
-                arrivals = arrivals[jnp.asarray(slot)]
+        history = jax.lax.dynamic_update_index_in_dim(history_state.value, current, cursor, axis=0)
+        if live.uniform_lag is not None:
+            arrivals = jax.lax.dynamic_index_in_dim(
+                history, (cursor - live.uniform_lag) % live.depth, axis=0, keepdims=False
+            )
+            arrivals = live.per_row(arrivals)
         else:
-            column = jnp.arange(columns.size, dtype=jnp.int32) if slot is None else jnp.asarray(slot)
-            arrivals = history[(cursor - jnp.asarray(lag)) % depth, column]
+            column = jnp.arange(live.columns.size, dtype=jnp.int32) if live.slot is None else jnp.asarray(live.slot)
+            arrivals = history[(cursor - jnp.asarray(live.lag)) % live.depth, column]
         history_state.value = history
-        cursor_state.value = (cursor + 1) % depth
+        cursor_state.value = (cursor + 1) % live.depth
         return arrivals
 
     def _post_counts(self, *, t, dt):
@@ -364,7 +368,7 @@ class RuleBinding:
             deliver = plan.active
         else:
             pre = self._live_arrivals(call.source)
-            deliver = self._live[5]
+            deliver = self._live.deliver
         if plan.active is not None:
             pre = pre * jnp.asarray(plan.active, dtype=dtype)
         state = {name: item.value for name, item in self.states.items()}
@@ -378,6 +382,8 @@ class RuleBinding:
         signals = {}
         if self.post is not None:
             signals["post"] = self._post_counts(t=t, dt=dt)
+            if plan.active is not None:
+                signals["post"] = signals["post"] * jnp.asarray(plan.active, dtype=dtype)
         new = self.rule.update(state, pre=pre, dt=dt, **signals)
         if set(new) != set(state):
             raise TypeError(
@@ -397,9 +403,7 @@ class RuleBinding:
 
 def advance_rules(cell, *, t) -> None:
     """Run every plasticity rule of ``cell`` at the boundary ``t`` (its input preparation)."""
-    dt = brainstate.environ.get("dt", None)
-    if dt is None:
-        raise ValueError("Connection plasticity rules require brainstate.environ['dt'].")
+    dt = brainstate.environ.get_dt()
     for call in cell._get_connection_store()._calls:
         binding = call.plasticity
         if binding is not None and binding.states is not None:

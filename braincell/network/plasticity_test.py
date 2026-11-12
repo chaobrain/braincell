@@ -247,6 +247,65 @@ class DelayTest(unittest.TestCase):
                 np.testing.assert_allclose(g[[22, 23, 24, 25]], [0.0, 0.05, 0.05, 0.1], rtol=RTOL)
 
 
+class FanOutTest(unittest.TestCase):
+    """Rows of one live call that share a source read its count history at their own delays."""
+
+    @_float64
+    def test_fan_out_rows_with_their_own_delays(self) -> None:
+        # One source crossing in step 20 reaches four synapses; every row
+        # pairs with the teaching post event at 10 ms from its own arrival.
+        # The zero-delay row stays on the Network's immediate path, whose
+        # brainevent operator reads the dynamic weight too.
+        cases = {
+            ("heterogeneous", "scatter"): ([0.0, 0.1, 0.3, 0.5], [2.1, 2.1, 2.3, 2.5], [21, 22, 24, 26]),
+            ("heterogeneous", "brainevent"): ([0.0, 0.1, 0.3, 0.5], [2.1, 2.1, 2.3, 2.5], [21, 22, 24, 26]),
+            ("uniform", "scatter"): ([0.3] * 4, [2.3] * 4, [24] * 4),
+        }
+        for (label, backend), (delay_ms, arrival_ms, first) in cases.items():
+            with self.subTest(label=label, backend=backend):
+                firsts = []
+                for rule in (_stdp(A_minus=0.0 * u.uS, signals={"post": _seq([10.0])}), None):
+                    cell = _toy_cell(n_sites=4)
+                    net = _network(_live_pre([2.1]), cell, delay=delay_ms * u.ms, rule=rule)
+                    g = _g(net.run(dt=DT, duration=12.0 * u.ms, event_backend=backend))
+                    firsts.append([int(np.flatnonzero(g[:, site] > 0)[0]) for site in range(4)])
+                    np.testing.assert_allclose(g[-1], [0.05] * 4, rtol=RTOL)
+                    if rule is not None:
+                        expected = A_PLUS * np.exp(-(10.0 - np.asarray(arrival_ms)) / TAU)
+                        np.testing.assert_allclose(_w(cell) - 0.05, expected, rtol=RTOL)
+                self.assertEqual(firsts, [first, first])
+
+    @_float64
+    def test_a_zero_delay_live_row_delivers_its_current_weight(self) -> None:
+        # Spikes in steps 20 and 80 arrive at 2.1 and 8.1 ms; the post event
+        # at 5 ms potentiates the row in between, so the second delivery
+        # carries the new weight on either immediate-path backend.
+        dw = A_PLUS * np.exp(-2.9 / TAU)
+        for backend in ("scatter", "brainevent"):
+            with self.subTest(backend=backend):
+                cell = _toy_cell()
+                rule = _stdp(A_minus=0.0 * u.uS, signals={"post": _seq([5.0])})
+                net = _network(_live_pre([2.1, 8.1]), cell, rule=rule)
+                g = _g(net.run(dt=DT, duration=9.0 * u.ms, event_backend=backend))[:, 0]
+                np.testing.assert_allclose(g[[21, 80, 81]], [0.05, 0.05, 0.1 + dw], rtol=RTOL)
+                np.testing.assert_allclose(_w(cell) - 0.05, [dw], rtol=RTOL)
+
+    @_float64
+    def test_a_removed_row_neither_delivers_nor_learns(self) -> None:
+        cell = _toy_cell(n_sites=3)
+        net = _network(
+            _live_pre([2.1]),
+            cell,
+            delay=[0.3, 0.5, 0.3] * u.ms,
+            rule=_stdp(A_minus=0.0 * u.uS, signals={"post": _seq([10.0])}),
+        )
+        cell.connections["c"][1].remove()
+        g = _g(net.run(dt=DT, duration=12.0 * u.ms))
+        np.testing.assert_allclose(g[-1], [0.05, 0.0, 0.05], rtol=RTOL)
+        np.testing.assert_array_equal(cell.connections["c"].id, [0, 2])
+        np.testing.assert_allclose(_w(cell) - 0.05, [A_PLUS * np.exp(-7.7 / TAU)] * 2, rtol=RTOL)
+
+
 class OrderTest(unittest.TestCase):
     """Acceptance 3: a boundary delivers with the weight before its own update."""
 
@@ -658,6 +717,14 @@ class CounterExampleTest(unittest.TestCase):
         self._connect(cell, _stdp(), source=cell.event_outputs["spike"], weight=W0)
         with self.assertRaisesRegex(NotImplementedError, "Network"):
             cell.run(dt=DT, duration=1.0 * u.ms)
+
+    def test_standalone_update_rejects_live_rule_rows_at_its_first_boundary(self) -> None:
+        cell = _toy_cell(post_ms=[1.0])
+        self._connect(cell, _stdp(), source=cell.event_outputs["spike"], weight=W0)
+        cell.init_state()
+        with brainstate.environ.context(dt=DT, t=0.0 * u.ms):
+            with self.assertRaisesRegex(NotImplementedError, "Network"):
+                cell.update()
 
     def test_a_declaration_must_be_a_connection_rule(self) -> None:
         with self.assertRaisesRegex(TypeError, "ConnectionRule"):

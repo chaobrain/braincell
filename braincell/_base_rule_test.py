@@ -69,6 +69,84 @@ class ConnectionRuleBaseTest(unittest.TestCase):
         np.testing.assert_allclose(cell.connections["c"].rule_state("w").to_decimal(u.uS), [0.012], rtol=1e-6)
 
 
+def _point_cell():
+    cell = braincell.Cell.point(1, V_init=-65.0 * u.mV)
+    cell.place(braincell.mech.Synapse("ExpSyn", name="s"))
+    return cell
+
+
+def _connect(cell, declaration, **kwargs):
+    source = braincell.EventSequence.from_times(([0.2, 0.5] * u.ms,))
+    return braincell.connect(
+        "c", source=source, synapse=cell.synapses["s"], weight=0.01 * u.uS, plasticity=declaration, **kwargs
+    )
+
+
+class _NoWeight(ConnectionRule):
+    def init_state(self, weight):
+        return {"trace": np.zeros(self.size)}
+
+    def update(self, state, *, pre, dt):
+        return state
+
+
+class _ExtraState(ConnectionRule):
+    def update(self, state, *, pre, dt):
+        return {"w": state["w"], "trace": pre}
+
+
+class _Voltage(ConnectionRule):
+    signals = ("voltage",)
+
+
+class RuleContractTest(unittest.TestCase):
+    """A custom rule must keep to the runtime contract; the framework says which part it broke."""
+
+    def setUp(self) -> None:
+        self._entries = dict(_REGISTRY._entries)
+        self._aliases = dict(_REGISTRY._aliases)
+
+    def tearDown(self) -> None:
+        _REGISTRY._entries = self._entries
+        _REGISTRY._aliases = self._aliases
+
+    def test_init_state_must_return_the_weight(self) -> None:
+        cell = _point_cell()
+        _connect(cell, RuleDeclaration(_NoWeight))
+        with self.assertRaisesRegex(TypeError, "dynamic weight as 'w'"):
+            cell.init_state()
+
+    def test_update_must_return_the_same_states(self) -> None:
+        cell = _point_cell()
+        _connect(cell, RuleDeclaration(_ExtraState))
+        with self.assertRaisesRegex(TypeError, "must return \\('w',\\)"):
+            cell.run(dt=0.1 * u.ms, duration=1.0 * u.ms)
+
+    def test_a_signal_braincell_does_not_provide_is_rejected_at_connect(self) -> None:
+        with self.assertRaisesRegex(TypeError, "does not provide yet"):
+            _connect(_point_cell(), RuleDeclaration(_Voltage))
+
+    def test_a_registered_class_must_subclass_the_runtime_base(self) -> None:
+        @braincell.mech.register_connection_rule("__plain_rule__")
+        class _Plain:
+            pass
+
+        with self.assertRaisesRegex(TypeError, "not a braincell.ConnectionRule"):
+            _connect(_point_cell(), RuleDeclaration("__plain_rule__"))
+
+    def test_a_post_binding_must_be_an_event_source(self) -> None:
+        declaration = RuleDeclaration(
+            "PairSTDP",
+            A_plus=0.01 * u.uS,
+            A_minus=0.01 * u.uS,
+            tau_plus=20.0 * u.ms,
+            tau_minus=20.0 * u.ms,
+            signals={"post": [1.0]},
+        )
+        with self.assertRaisesRegex(TypeError, "EventSource or EventSourceView"):
+            _connect(_point_cell(), declaration)
+
+
 class RowParameterTest(unittest.TestCase):
     def test_converts_scalars_and_row_vectors(self) -> None:
         value = row_parameter(10.0 * u.nS, unit=u.uS, size=2, name="A", rule="R")

@@ -800,6 +800,12 @@
 
 ### Changes & Improvements
 
+- **`ConnectionView.weight` reads each `connect` call with one gather**
+  (CELL-12a). It stacked one value per row, which compiled an XLA operation
+  with one operand per row. `Cell.run` and `Network.run` read it when they
+  set up a run, so on CPU a connection of 1e4 rows spent 33 s there and one
+  of 3e4 rows 245 s; reading 3e4 rows now takes 0.02 s. The values are
+  bitwise unchanged.
 - **A scheduled source costs a lookup per step, not a pass over its
   schedule** (CELL-18a). `NetStim.event_count` and
   `EventSequence.event_count`, which `Cell.run` and `Network.run` call on

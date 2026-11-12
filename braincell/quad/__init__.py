@@ -64,6 +64,7 @@ from braincell.quad._explicit import (
     ssprk3_step,
 )
 from braincell.quad._staggered import dhs_voltage_step, staggered_step
+from braincell._deprecation import removed_attributes as _removed_attributes
 
 # Grouped by method family rather than sorted: the Runge-Kutta block is in
 # order of accuracy, which alphabetical order would scramble.
@@ -107,7 +108,8 @@ __all__ = [
     'state_grouping',
 ]
 
-#: Removed names and their replacements, raised as ``AttributeError``.
+#: Removed names and their replacements, raised as ``AttributeError``
+#: (``ImportError`` on a ``from braincell.quad import ...`` line).
 _REMOVED_ATTRIBUTES = {
     'rk2_step': (
         "it was Ralston's second-order method; use "
@@ -130,8 +132,7 @@ _REMOVED_ATTRIBUTES = {
     ),
 }
 
-
-def __getattr__(name):
-    if name in _REMOVED_ATTRIBUTES:
-        raise AttributeError(f'braincell.quad.{name} was removed; {_REMOVED_ATTRIBUTES[name]}')
-    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
+__getattr__ = _removed_attributes(
+    __name__,
+    {name: f'braincell.quad.{name} was removed; {hint}' for name, hint in _REMOVED_ATTRIBUTES.items()},
+)

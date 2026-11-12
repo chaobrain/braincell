@@ -13,7 +13,21 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Shared continuous spatial geometry for morphology-backed contexts."""
+"""Shared continuous spatial geometry for morphology-backed contexts.
+
+This module is ``morph``'s shared implementation for three packages:
+``braincell._discretization`` (CV contexts), ``braincell.filter`` (sampling
+contexts and ``TreeDistanceRegion``) and ``braincell.network`` (synapse
+pairing contexts). It is not public API: its fields and signatures may change
+without a deprecation, as long as those importers change with them.
+
+Users get the same quantities from public objects: the
+``path_distance_to_root``, ``path_distance_from_soma`` and ``radius`` fields of
+:class:`braincell.filter.SamplingContext`, the matching fields of
+:class:`braincell.mech.CVContext`, the metrics in :mod:`braincell.filter.metric`,
+the distance regions of :mod:`braincell.filter`, and
+:attr:`braincell.Morphology.max_path_distance`.
+"""
 
 from __future__ import annotations
 

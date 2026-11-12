@@ -43,9 +43,12 @@ than bisecting a traceback that does not mention their edit.
 import ast
 import pathlib
 import unittest
+from unittest import mock
 
+import braincell
 import braincell.morph
 from braincell._testing import ReExportTests
+from braincell.morph.branch import _BRANCH_TYPE_TO_CLASS
 
 _MORPH_DIR = pathlib.Path(braincell.morph.__file__).parent
 
@@ -63,6 +66,20 @@ _EXPECTED_LOAD_TIME_IMPORTS = {
     "branch": {"braincell._misc"},
     "morphology": {"braincell._misc", "braincell.morph.branch"},
 }
+
+
+#: Top-level names whose classes ``morph`` defines. ``braincell.morph``
+#: exports each of them too, as the same object (MORPH-4a).
+_TOP_LEVEL_NAMES = (
+    "ApicalDendrite",
+    "Axon",
+    "BasalDendrite",
+    "Branch",
+    "CustomBranch",
+    "Dendrite",
+    "Morphology",
+    "Soma",
+)
 
 
 def _module_files():
@@ -171,6 +188,54 @@ class LoadTimeImportsTest(unittest.TestCase):
 
     def test_load_time_imports_match_the_declared_set(self) -> None:
         self.assertEqual(_load_time_graph(), _EXPECTED_LOAD_TIME_IMPORTS)
+
+
+def _top_level_mismatches() -> list[str]:
+    """Return one line per way ``braincell.morph`` fails to export its own classes."""
+    problems = []
+    for name in _TOP_LEVEL_NAMES:
+        if name not in braincell.morph.__all__:
+            problems.append(f"{name}: missing from braincell.morph.__all__")
+        elif getattr(braincell.morph, name) is not getattr(braincell, name):
+            problems.append(f"{name}: braincell.morph.{name} is not braincell.{name}")
+    exported = [getattr(braincell.morph, name) for name in braincell.morph.__all__]
+    for branch_type in sorted(_BRANCH_TYPE_TO_CLASS):
+        cls = braincell.morph.branch_class_for_type(branch_type)
+        if not any(cls is obj for obj in exported):
+            problems.append(
+                f"branch_class_for_type({branch_type!r}) returns {cls.__name__}, which braincell.morph does not export"
+            )
+    return problems
+
+
+class MorphTopLevelIdentityTest(unittest.TestCase):
+    """``braincell.morph`` exports the classes it defines, as the objects the root exports.
+
+    A reader looking for ``Morphology`` in its own package finds it there,
+    and every class ``branch_class_for_type`` returns is in the same
+    namespace. The root keeps its copies: both paths name one object.
+    """
+
+    def test_package_exports_its_classes_as_the_top_level_objects(self) -> None:
+        self.assertEqual(_top_level_mismatches(), [])
+
+    def test_a_different_object_under_the_same_name_is_reported(self) -> None:
+        with mock.patch.object(braincell.morph, "Morphology", type("Morphology", (), {})):
+            self.assertEqual(
+                _top_level_mismatches(),
+                ["Morphology: braincell.morph.Morphology is not braincell.Morphology"],
+            )
+
+    def test_a_name_dropped_from_all_is_reported_with_the_branch_type_that_returns_it(self) -> None:
+        trimmed = [name for name in braincell.morph.__all__ if name != "Soma"]
+        with mock.patch.object(braincell.morph, "__all__", trimmed):
+            self.assertEqual(
+                _top_level_mismatches(),
+                [
+                    "Soma: missing from braincell.morph.__all__",
+                    "branch_class_for_type('soma') returns Soma, which braincell.morph does not export",
+                ],
+            )
 
 
 if __name__ == "__main__":

@@ -129,7 +129,7 @@ class Branch:
     ``TypeError``; every value must carry explicit units.
 
     Branches are **frozen dataclasses**: once constructed their geometry
-    cannot be changed.  Use :class:`~braincell.morph.Morphology` to compose
+    cannot be changed.  Use :class:`~braincell.Morphology` to compose
     branches into a mutable morphology tree.
 
     Parameters

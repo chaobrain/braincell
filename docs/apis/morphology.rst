@@ -9,6 +9,13 @@
 `braincell.morph` provides diverse tools for morphology processing, enabling the representation
 and manipulation of neuronal structures.
 
+:class:`~braincell.Morphology`, :class:`~braincell.Branch` and the six branch types
+(:class:`~braincell.Soma`, :class:`~braincell.Dendrite`, :class:`~braincell.Axon`,
+:class:`~braincell.BasalDendrite`, :class:`~braincell.ApicalDendrite`,
+:class:`~braincell.CustomBranch`) can also be imported from ``braincell.morph``;
+``braincell.morph.Morphology is braincell.Morphology``. They are documented on the
+:doc:`braincell` page.
+
 
 
 Morphology Representation

@@ -19,7 +19,6 @@ import warnings
 import brainunit as u
 import numpy as np
 
-from braincell import Branch, CVPerBranch, Cell, Morphology
 from braincell.filter import RootLocation
 import braincell.mech as mech_package
 from braincell.mech import (
@@ -274,7 +273,7 @@ class SynapseClassArgumentTest(unittest.TestCase):
 
     def test_unregistered_class_runs_on_a_cell(self) -> None:
         import braincell
-        from braincell.filter import AllRegion, RootLocation
+        from braincell.filter import AllRegion
 
         class SlowExpSyn(braincell.synapse.ExpSyn):
             pass
@@ -303,7 +302,7 @@ class SynapseDeclarationWarningTest(unittest.TestCase):
 
     def test_invalid_literals_warn_at_this_line_and_still_raise_at_init_state(self) -> None:
         import braincell
-        from braincell.filter import AllRegion, RootLocation
+        from braincell.filter import AllRegion
 
         cases = (
             (lambda: Synapse("ExpSyn", name="fast", tau=5.0), TypeError, ("Synapse 'fast' (ExpSyn)", "'tau'", "ms")),
@@ -336,7 +335,6 @@ class SynapseDeclarationWarningTest(unittest.TestCase):
                     cell.init_state()
 
     def test_valid_and_unresolvable_declarations_do_not_warn(self) -> None:
-        import warnings
 
         import braincell
 

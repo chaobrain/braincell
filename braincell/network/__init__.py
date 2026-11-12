@@ -26,8 +26,7 @@ present in :data:`sys.modules` but only partially executed.
 Importing :mod:`.connection`, :mod:`.engine`, and :mod:`.pairing` here is
 still safe, because none of them import a *name* from that partially
 executed package root -- they import its submodules
-(:mod:`~braincell._multi_compartment.probes`,
-:mod:`~braincell._multi_compartment.run`,
+(:mod:`~braincell._multi_compartment.run`,
 :mod:`~braincell._multi_compartment.synapses`), which Python resolves
 against a partial parent without complaint.
 

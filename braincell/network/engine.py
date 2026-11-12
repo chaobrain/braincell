@@ -28,7 +28,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell._misc import freeze_array, normalize_loop_outputs, scalar_decimal, validate_time_quantity
-from braincell._multi_compartment import probes as _probes
 from braincell._multi_compartment.run import _duration_steps, _recording_time_mask
 from braincell._multi_compartment.synapses import SynapseView
 from braincell.network.connection import NetworkConnections, PairingSpec, _UNSET, _connect_with_pairing_seed
@@ -58,10 +57,8 @@ class _RunSetup:
     delivery_blocks: tuple[DeliveryBlock, ...]
     delivery_ops: tuple
     ordered_population_names: tuple[str, ...]
-    probe_names: dict[str, tuple[str, ...]]
     compiled_recordings: dict[str, tuple]
     event_sources: dict[str, tuple]
-    n_trace: int
     n_recording: int
     n_event: int
 
@@ -508,8 +505,6 @@ class Network:
         start_t = self._common_start_time(ordered_population_names)
         n_steps = _duration_steps(duration, dt)
         relative_times = u.math.arange(n_steps) * dt
-        probe_names = setup.probe_names
-        n_trace = setup.n_trace
         n_recording = setup.n_recording
         n_event = setup.n_event
         # NetStim events up to one step past the end cover every arrival the
@@ -532,13 +527,12 @@ class Network:
 
         samples_tuple = normalize_loop_outputs(
             samples_over_time,
-            count=n_recording + n_trace + n_event,
+            count=n_recording + n_event,
             prefix="Network.run(...)",
             noun="scan outputs",
         )
         recording_values = samples_tuple[:n_recording]
-        trace_values = samples_tuple[n_recording : n_recording + n_trace]
-        event_values = samples_tuple[n_recording + n_trace :]
+        event_values = samples_tuple[n_recording:]
 
         samples = {}
         recording_index = 0
@@ -558,14 +552,10 @@ class Network:
                     segment_stop=stop_t,
                     first_time=first_time,
                 )
-        traces = {}
-        index = 0
-        for name in ordered_population_names:
-            traces[name] = {}
-            for probe_name in probe_names[name]:
-                traces[name][probe_name] = trace_values[index]
-                index += 1
-            traces[name].update({recording_name: block.values for recording_name, block in samples[name].items()})
+        traces = {
+            name: {recording_name: block.values for recording_name, block in samples[name].items()}
+            for name in ordered_population_names
+        }
         events = self._result_events(
             times=times,
             start_t=start_t,
@@ -765,13 +755,6 @@ class Network:
             else (None,) * len(delivery_blocks)
         )
         ordered_population_names = tuple(self._cell_populations())
-        # Read the probe keys without evaluating the probes: sample_probes()
-        # runs real gathers outside jit just to discard everything but the
-        # names. probe_names() reads the same ordering off the layouts.
-        probe_names = {
-            name: (() if population.cell._uses_reduction else tuple(sorted(_probes.probe_names(population.cell))))
-            for name, population in self._cell_populations().items()
-        }
         compiled_recordings = {
             name: population.cell._compiled_recordings(dt) for name, population in self._cell_populations().items()
         }
@@ -782,10 +765,8 @@ class Network:
             delivery_blocks=delivery_blocks,
             delivery_ops=delivery_ops,
             ordered_population_names=ordered_population_names,
-            probe_names=probe_names,
             compiled_recordings=compiled_recordings,
             event_sources=event_sources,
-            n_trace=sum(len(names) for names in probe_names.values()),
             n_recording=sum(len(items) for items in compiled_recordings.values()),
             n_event=sum(len(items) for items in event_sources.values()),
         )
@@ -859,7 +840,6 @@ class Network:
         """Create a persistent jitted scan for one network run shape."""
         delivery_blocks = setup.delivery_blocks
         ordered_population_names = setup.ordered_population_names
-        probe_names = setup.probe_names
         compiled_recordings = setup.compiled_recordings
         event_sources = setup.event_sources
 
@@ -900,10 +880,6 @@ class Network:
                                 delivery_state,
                                 populations=self.populations,
                             )
-                        with jax.named_scope("braincell:network_run:sample_probes"):
-                            snapshots = {
-                                name: self.populations[name].cell.sample_probes() for name in ordered_population_names
-                            }
                         with jax.named_scope("braincell:network_run:sample_outputs"):
                             recording_snapshots = tuple(
                                 pre_recording_snapshots[index] if compiled.phase == "pre" else compiled.sample()
@@ -919,13 +895,7 @@ class Network:
                             enqueue_future_events(delivery_blocks, delivery_state)
                         with jax.named_scope("braincell:network_run:advance_delivery"):
                             advance_delivery_state(delivery_state)
-                        with jax.named_scope("braincell:network_run:pack_traces"):
-                            traces = tuple(
-                                snapshots[name][probe_name]
-                                for name in ordered_population_names
-                                for probe_name in probe_names[name]
-                            )
-                        return recording_snapshots + traces + events
+                        return recording_snapshots + events
 
                 if values:
 

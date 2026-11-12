@@ -33,7 +33,7 @@ The lifecycle has two phases:
 2. **INITIALIZED**. After :meth:`init_state`, structure is frozen, existing
    numerical parameters can be updated through Views, and
    the runtime surface (:meth:`run`, :meth:`update`,
-   :meth:`sample_probe`, inspection, ...) becomes available. Call
+   :meth:`mech_table`, inspection, ...) becomes available. Call
    :meth:`reset` to drop the runtime and re-enter DECLARING.
 
 ``run(dt=, duration=)`` auto-calls :meth:`init_state` on first use for
@@ -111,7 +111,7 @@ from braincell.quad._staggered import build_cv_axial_operator
 from braincell.quad._util import population_slot_layout
 from braincell.quad.protocol import DiffEqGroupState, IndependentIntegration, state_grouping
 from braincell.mech import CableProperty, CVContext, Density, Point, Synapse as SynapsePlacement
-from braincell._multi_compartment import boundary, currents, field_resolution, probes, run as run_module
+from braincell._multi_compartment import boundary, currents, field_resolution, run as run_module
 from braincell._compute import bridge
 from braincell._multi_compartment.synapses import SynapseView, _SynapseStore, raise_on_name_type_conflict
 from braincell._multi_compartment.clamps import ClampView, _ClampStore
@@ -131,6 +131,7 @@ from braincell._multi_compartment.lumped import (
 from braincell.morph.morphology import Morphology as _Morphology
 
 __all__ = ["Cell", "CellView"]
+
 
 @dataclass(frozen=True)
 class AxialOperatorCache:
@@ -4614,16 +4615,24 @@ class Cell(_CellFacade, HHTypedNeuron):
     # Probes + mech_table (runtime-only)
 
     def sample_probe(self, name: str):
+        """Raise ``KeyError``: braincell 0.3 removed the probe declarations (API-15).
+
+        No probe can be placed any more, so no name resolves; declare a
+        recording with :meth:`record` instead.
+        """
         self._raise_if_not_initialized("sample_probe()")
-        if self._uses_reduction:
-            raise KeyError(f"Detailed probe {name!r} is inactive while a reduction model is selected.")
-        return probes.sample_probe(self, name)
+        raise KeyError(
+            f"No probe is registered with name {name!r}: braincell 0.3 removed the probe declarations. "
+            "Declare a recording with Cell.record(...) instead."
+        )
 
     def sample_probes(self) -> dict[str, object]:
+        """Return ``{}``: braincell 0.3 removed the probe declarations (API-15).
+
+        Declare recordings with :meth:`record`; :meth:`run` returns them.
+        """
         self._raise_if_not_initialized("sample_probes()")
-        if self._uses_reduction:
-            return {}
-        return probes.sample_probes(self)
+        return {}
 
     def mech_table(self) -> MechanismObjectTable:
         """Return the point-domain mechanism table for this cell.
@@ -4647,7 +4656,7 @@ class Cell(_CellFacade, HHTypedNeuron):
     # Run (auto-inits from DECLARING)
 
     def run(self, *, dt, duration):
-        """Run the cell for ``duration`` at ``dt`` and return probe traces.
+        """Run the cell for ``duration`` at ``dt`` and return its recordings.
 
         If :meth:`init_state` has not been called yet, ``run`` calls it
         automatically. Once initialized the cell will *not* be

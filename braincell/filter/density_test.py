@@ -49,9 +49,13 @@ class RemovedHelpersTest(unittest.TestCase):
                 self.assertNotIn(name, density.__all__)
 
     def test_from_import_raises_import_error_with_the_message(self) -> None:
-        with self.assertRaisesRegex(ImportError, r"^braincell\.filter\.density\.exponential\(\) was removed in braincell 0\.3\."):
+        with self.assertRaisesRegex(
+            ImportError, r"^braincell\.filter\.density\.exponential\(\) was removed in braincell 0\.3\."
+        ):
             from braincell.filter.density import exponential  # noqa: F401
-        with self.assertRaisesRegex(ImportError, r"^braincell\.filter\.density\.gaussian\(\) was removed in braincell 0\.3\."):
+        with self.assertRaisesRegex(
+            ImportError, r"^braincell\.filter\.density\.gaussian\(\) was removed in braincell 0\.3\."
+        ):
             from braincell.filter.density import gaussian  # noqa: F401
 
     def test_other_missing_names_keep_the_generic_message(self) -> None:

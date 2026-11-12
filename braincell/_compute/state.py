@@ -19,7 +19,7 @@ This module owns :class:`CellRuntimeState`, the object a ``Cell`` compiles
 itself into once and then delegates to for the rest of its life. It is the top
 of the ``_compute`` layer stack: it consumes the vocabularies defined by its
 siblings and is consumed in turn by ``Cell`` and the multi-compartment
-current/probe code.
+current and recording code.
 
 - :meth:`CellRuntimeState.from_cell` — the lowering entry point. It groups a
   cell's density and point mechanisms by signature into

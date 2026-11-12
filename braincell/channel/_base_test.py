@@ -1573,7 +1573,7 @@ class GateResetShapeTest(unittest.TestCase):
     def test_cell_runs_with_calcium_only_gate_and_unpainted_calcium(self) -> None:
         import braincell
         from braincell.filter import AllRegion, at
-        from braincell.mech import CableProperty, Channel, StateProbe
+        from braincell.mech import CableProperty, Channel
         from braincell.morph.branch import Branch
         from braincell.morph.morphology import Morphology
 
@@ -1594,11 +1594,11 @@ class GateResetShapeTest(unittest.TestCase):
                     ),
                 )
                 cell.paint(AllRegion(), Channel(name))
-                cell.place(at("soma", 0.5), StateProbe())
+                cell.loc(at("soma", 0.5)).record("v", braincell.observe.state("V"))
                 cell.init_state()
                 cell.reset_state()
                 result = cell.run(dt=0.025 * u.ms, duration=0.1 * u.ms)
-                trace = result.traces["soma(0.5)_v"].to_decimal(u.mV)
+                trace = result.traces["v"].to_decimal(u.mV)
                 self.assertEqual(trace.shape[0], 4)
                 self.assertTrue(bool(jnp.all(jnp.isfinite(trace))))
 

@@ -149,7 +149,8 @@ __getattr__ = _removed_attributes(
         "CurrentProbe": _removed_probe(
             "CurrentProbe",
             'cell.loc(locset).record("i", braincell.observe.channel(name="Na").current()) for '
-            'CurrentProbe(mechanism="Na"), and braincell.observe.ion(name="na").current() for CurrentProbe(ion="na")',
+            'CurrentProbe(mechanism="Na"), and braincell.observe.ion(name="na").current() for CurrentProbe(ion="na") '
+            "on an ion painted with braincell.mech.Ion(..., name=\"na\")",
         ),
         "ProbeMechanism": (
             "braincell.mech.ProbeMechanism was removed in braincell 0.3; no run ever sampled it. Declare a "

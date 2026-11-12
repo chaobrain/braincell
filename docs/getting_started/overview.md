@@ -60,13 +60,14 @@ this pipeline makes the rest of the docs click into place:
 1. **Morphology** — the geometry (branches, radii, connectivity), loaded from a
    file or built programmatically. See {doc}`../concepts/morphology`.
 2. **Declaration** — you create a {class}`~braincell.Cell` and *paint* density
-   mechanisms (channels, ions, cable properties) onto **regions** and *place*
-   point mechanisms (clamps, synapses, probes) at **locations**. See
+   mechanisms (channels, ions, cable properties) onto **regions**, *place*
+   point mechanisms (clamps, synapses) at **locations**, and *record* what to
+   read out (`cell.record(...)` with `braincell.observe`). See
    {doc}`../concepts/mechanisms` and {doc}`../concepts/regions_locsets`.
 3. **Discretization** — the continuous cable is divided into **control volumes**
    (CVs) by a {class}`~braincell.CVPolicy`. See {doc}`../concepts/discretization`.
 4. **Integration** — a solver from {mod}`braincell.quad` advances the system in
-   time, producing a `RunResult` of probe traces. See
+   time, producing a `RunResult` of recorded traces. See
    {doc}`../concepts/integration`.
 
 A point neuron skips the morphology and discretization stages: the cell *is*

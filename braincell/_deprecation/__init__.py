@@ -207,7 +207,7 @@ class Deprecation:
     ----------
     name : str
         What the user wrote, as they would search for it, e.g.
-        ``"braincell.mech.StateProbe"`` or ``"Network(seed=...)"``. The
+        ``"braincell.Cell.old_method()"`` or ``"Network(seed=...)"``. The
         changelog's Deprecations entry quotes it verbatim.
     since : str
         The ``"MAJOR.MINOR"`` release whose changelog first announces the

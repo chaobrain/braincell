@@ -321,7 +321,7 @@ class RuntimeBindingTest(unittest.TestCase):
             atol=1e-12,
         )
 
-    def test_mixed_ion_channel_probe_uses_bound_ions_and_owner_total_current(self) -> None:
+    def test_mixed_ion_channel_recording_uses_bound_ions_and_owner_total_current(self) -> None:
         cell = Cell(_build_tree())
         cell.paint(
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
@@ -333,15 +333,12 @@ class RuntimeBindingTest(unittest.TestCase):
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel("Kca3p1_MA2020_GoC", ion_names={"ca": "ca_hva"}),
         )
-        cell.place(
-            at("soma", 0.5),
-            braincell.mech.CurrentProbe(mechanism="Kca3p1_MA2020_GoC"),
-            braincell.mech.CurrentProbe(ion="k_main"),
-        )
+        soma = cell.loc(at("soma", 0.5))
+        soma.record("Kca3p1_current", braincell.observe.channel(name="Kca3p1_MA2020_GoC").current())
+        soma.record("k_main_current", braincell.observe.ion(name="k_main").current())
         cell.init_state()
         rcell = cell
 
-        samples = rcell.sample_probes()
         runtime = rcell.runtime
         layout = next(layout for layout in rcell.layouts if layout.kind == "channel:Kca3p1_MA2020_GoC")
         node = rcell.get_runtime_node(layout.id)
@@ -352,10 +349,13 @@ class RuntimeBindingTest(unittest.TestCase):
             rcell.get_ion("ca_hva").pack_info(),
         )[..., 0]
         expected_total = rcell.get_ion("k_main").current(cv_V, include_external=False)[..., 0]
+        # One step: a recording samples before each step, so its one sample
+        # is the initialized state the expected currents were computed from.
+        traces = rcell.run(dt=0.05 * u.ms, duration=0.05 * u.ms).traces
 
         self.assertEqual(runtime.bound_ion_keys[layout.id], ("k_main", "ca_hva"))
-        self.assertEqual(samples["soma(0.5)_Kca3p1_MA2020_GoC_current"], expected_mechanism)
-        self.assertEqual(samples["soma(0.5)_k_main_current"], expected_total)
+        self.assertEqual(traces["Kca3p1_current"][0, 0], expected_mechanism)
+        self.assertEqual(traces["k_main_current"][0, 0], expected_total)
 
     def test_component_wrappers_forward_ind_update_to_the_wrapped_channel(self) -> None:
         # ``_base_ion`` calls ``node.ind_update(V, *infos)`` on every child.
@@ -454,9 +454,9 @@ class RuntimeBindingTest(unittest.TestCase):
             BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0),
             braincell.mech.Channel("Kca3p1_MA2020_GoC", ion_names={"ca": "ca_hva"}),
         )
-        cell.place(at("soma", 0.5), braincell.mech.MechanismProbe(mechanism="Kca3p1_MA2020_GoC", field="p"))
+        cell.loc(at("soma", 0.5)).record("Kca3p1_p", braincell.observe.channel(name="Kca3p1_MA2020_GoC").state("p"))
         result = cell.run(dt=0.05 * u.ms, duration=0.1 * u.ms)
-        self.assertIn("soma(0.5)_Kca3p1_MA2020_GoC_p", result.traces)
+        self.assertIn("Kca3p1_p", result.traces)
 
     def test_channel_spec_ina_hh1952_builds_runtime_node_and_binds_to_na(self) -> None:
         cell = Cell(_build_tree())

@@ -292,7 +292,8 @@ class NetworkResult:
     time : brainunit.Quantity
         Step times spanning ``[start_t, start_t + duration)``.
     traces : dict
-        ``population_name -> {probe_name: trace}`` mapping.
+        ``population_name -> {recording_name: values}`` mapping, the
+        ``values`` of the matching ``samples`` blocks.
     samples : dict
         ``population_name -> {recording_name: SampleBlock}`` mapping. This
         is what :meth:`braincell.network.Network.run` populates for every

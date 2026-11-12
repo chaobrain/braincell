@@ -45,7 +45,6 @@ from braincell._discretization.mechanism import (
     _apply_density,
     _apply_place,
     _coverage_fraction,
-    _resolve_point_name,
     build_cv_mechanisms,
     caller_origin,
     default_paint_rules,
@@ -57,7 +56,7 @@ from braincell._discretization.mechanism import (
 )
 from braincell.filter import AllRegion, AtLocation, BranchSlice
 from braincell.filter.locset import LocsetBatch
-from braincell.mech import CableProperty, Channel, CurrentClamp, Ion, StateProbe
+from braincell.mech import CableProperty, Channel, CurrentClamp, Ion
 from braincell.morph.morphology import Morphology
 
 
@@ -412,42 +411,13 @@ class ApplyDensityTest(unittest.TestCase):
         self.assertEqual(stored.params["g_max"], 0.2 * (u.mS / u.cm**2))
 
 
-class ResolvePointNameTest(unittest.TestCase):
-    def test_state_probe_auto_name(self) -> None:
-        probe = StateProbe(field="v")
-        named = _resolve_point_name(probe, display_name="loc_0")
-        self.assertEqual(named.name, "loc_0_v")
-
-    def test_state_probe_keeps_explicit_name(self) -> None:
-        probe = StateProbe(field="v", name="my_probe")
-        named = _resolve_point_name(probe, display_name="loc_0")
-        self.assertEqual(named.name, "my_probe")
-
-    def test_clamp_untouched_when_no_auto_name(self) -> None:
-        clamp = CurrentClamp(durations=10 * u.ms, amplitudes=0.1 * u.nA)
-        named = _resolve_point_name(clamp, display_name="loc_0")
-        self.assertIs(named, clamp)
-
-
 class ApplyPlaceTest(unittest.TestCase):
-    def test_auto_generated_duplicate_gets_stable_placement_suffix(self) -> None:
-        seen: set[str] = set()
+    def test_duplicate_placements_allowed(self) -> None:
         bucket = _MechBucket(cable=DEFAULT_CABLE, density_by_key={}, points=[])
-        probe = StateProbe(field="v")
-        _apply_place(bucket, probe, display_name="loc_0", placement_id=0, seen_names=seen)
-        _apply_place(bucket, probe, display_name="loc_0", placement_id=1, seen_names=seen)
-        self.assertEqual(
-            [item.name for item in bucket.points],
-            ["loc_0_v", "loc_0_v__placement_1"],
-        )
-
-    def test_user_named_duplicate_allowed(self) -> None:
-        seen: set[str] = set()
-        bucket = _MechBucket(cable=DEFAULT_CABLE, density_by_key={}, points=[])
-        a = StateProbe(field="v", name="dup")
-        b = StateProbe(field="v", name="dup")
-        _apply_place(bucket, a, display_name="loc_0", seen_names=seen)
-        _apply_place(bucket, b, display_name="loc_1", seen_names=seen)
+        a = CurrentClamp(durations=10 * u.ms, amplitudes=0.1 * u.nA)
+        b = CurrentClamp(durations=10 * u.ms, amplitudes=0.1 * u.nA)
+        _apply_place(bucket, a, display_name="loc_0")
+        _apply_place(bucket, b, display_name="loc_1")
         self.assertEqual(len(bucket.points), 2)
 
 

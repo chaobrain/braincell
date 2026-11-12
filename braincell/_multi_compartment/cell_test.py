@@ -19,7 +19,6 @@ import dataclasses
 import functools
 import json
 import os
-import re
 import subprocess
 import sys
 import unittest
@@ -69,7 +68,6 @@ from braincell.filter import (
     branch_in,
     branch_range,
 )
-from braincell.mech import StateProbe
 from braincell.quad._util import split_diffeq_states
 from braincell.morph._testing import (
     EDIT_CASES,
@@ -98,9 +96,9 @@ def _simple_cell() -> Cell:
     return Cell(_soma_tree(), cv_policy=CVPerBranch())
 
 
-def _cell_with_probe() -> Cell:
+def _cell_with_recording() -> Cell:
     cell = _simple_cell()
-    cell.place(RootLocation(0.0), StateProbe(field="v", name="V_root"))
+    cell.loc(RootLocation(0.0)).record("V_root", braincell.observe.state("V"))
     return cell
 
 
@@ -1311,11 +1309,11 @@ class FailedPlaceKeepsTheDeclarationTest(unittest.TestCase):
 
 class TestCellLifecycle(unittest.TestCase):
     def test_declaration_phase_flag(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         self.assertFalse(cell._initialized)
 
     def test_init_state_flips_flag_and_populates_runtime(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         cell.init_state()
         self.assertTrue(cell._initialized)
         self.assertIsNotNone(cell._runtime)
@@ -1327,25 +1325,25 @@ class TestCellLifecycle(unittest.TestCase):
         self.assertTrue(hasattr(cell, "spike"))
 
     def test_init_state_twice_raises(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         cell.init_state()
         with self.assertRaisesRegex(RuntimeError, r"init_state\(\)"):
             cell.init_state()
 
     def test_paint_after_init_raises(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         cell.init_state()
         with self.assertRaisesRegex(RuntimeError, r"reset\(\)"):
             cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70 * u.mV))
 
     def test_place_after_init_raises(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         cell.init_state()
         with self.assertRaisesRegex(RuntimeError, r"reset\(\)"):
-            cell.place(RootLocation(0.5), StateProbe(field="v", name="V_mid"))
+            cell.place(RootLocation(0.5), mech.CurrentClamp(durations=1.0 * u.ms, amplitudes=0.1 * u.nA))
 
     def test_config_setters_after_init_raise(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         cell.init_state()
         for name, value in (
             ("V_th", -60 * u.mV),
@@ -1358,12 +1356,12 @@ class TestCellLifecycle(unittest.TestCase):
                     setattr(cell, name, value)
 
     def test_reset_from_declaring_raises(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         with self.assertRaisesRegex(RuntimeError, r"reset\(\)"):
             cell.reset()
 
     def test_reset_round_trip(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         cell.init_state()
         cell.reset()
         self.assertFalse(cell._initialized)
@@ -1378,7 +1376,7 @@ class TestCellLifecycle(unittest.TestCase):
         self.assertTrue(cell._initialized)
 
     def test_reset_restores_scalar_V_th(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         original_V_th = cell.V_th
         cell.init_state()
         # After init V_th has been vectorised by install_cell_runtime.
@@ -1388,7 +1386,7 @@ class TestCellLifecycle(unittest.TestCase):
         self.assertEqual(cell.V_th, original_V_th)
 
     def test_runtime_method_requires_init(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         for method_name in ("sample_probes", "mech_table"):
             with self.subTest(method=method_name):
                 with self.assertRaisesRegex(RuntimeError, r"init_state\(\)"):
@@ -1399,13 +1397,13 @@ class TestCellLifecycle(unittest.TestCase):
                     getattr(cell, property_name)
 
     def test_static_topology_is_available_before_init(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         self.assertGreater(len(cell.cvs), 0)
         self.assertGreater(len(cell.cv_tree.cvs), 0)
         self.assertGreater(len(cell.node_tree.nodes), 0)
 
     def test_runtime_views_bind_static_objects_after_init(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         cell.init_state()
         runtime_cv = cell.runtime_cvs[0]
         runtime_node = cell.runtime_nodes[0]
@@ -1415,19 +1413,19 @@ class TestCellLifecycle(unittest.TestCase):
         self.assertIn("na", runtime_node.ions)
 
     def test_nodes_query_api_is_restored_after_init(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         cell.init_state()
         nodes = cell.nodes(IonChannel, allowed_hierarchy=(1, 1))
         self.assertGreater(len(nodes), 0)
 
     def test_run_auto_inits_from_declaring(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         result = cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
         self.assertTrue(cell._initialized)
         self.assertIn("V_root", result.traces)
 
     def test_run_does_not_reinit(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         cell.init_state()
         first_runtime = cell._runtime
         cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
@@ -1485,7 +1483,7 @@ class TestCellLifecycle(unittest.TestCase):
         )
 
     def test_run_loop_cache_reuses_matching_shape(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         cell.init_state()
         cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
         self.assertEqual(len(cell._run_loop_cache), 1)
@@ -1498,7 +1496,7 @@ class TestCellLifecycle(unittest.TestCase):
         self.assertIs(next(iter(cell._run_loop_cache.values())), first_runner)
 
     def test_run_loop_cache_separates_step_count(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         cell.init_state()
         cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
         cell.reset_state()
@@ -1506,7 +1504,7 @@ class TestCellLifecycle(unittest.TestCase):
         self.assertEqual(len(cell._run_loop_cache), 2)
 
     def test_reset_clears_run_loop_cache(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         cell.init_state()
         cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
         self.assertEqual(len(cell._run_loop_cache), 1)
@@ -1536,7 +1534,7 @@ class TestCellLifecycle(unittest.TestCase):
             self.assertIsNot(cache32, cache64)
 
     def test_staggered_run_does_not_build_dense_axial_operator(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         cell.init_state()
 
         cell.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
@@ -1561,7 +1559,7 @@ class TestCellLifecycle(unittest.TestCase):
         )
 
     def test_run_supports_scalar_v_init(self):
-        cell = _cell_with_probe()
+        cell = _cell_with_recording()
         cell.V_init = -60.0 * u.mV
         result = cell.run(dt=0.1 * u.ms, duration=0.5 * u.ms)
         self.assertIn("V_root", result.traces)
@@ -1591,6 +1589,15 @@ class TestCellLifecycle(unittest.TestCase):
                 self.assertTrue(message.startswith("braincell.Cell.bind_synapse_input() was removed in braincell 0.3."))
                 self.assertIn("braincell.connect(", message)
                 self.assertFalse(hasattr(target, "bind_synapse_input"))
+
+    def test_probe_sampling_finds_no_probe(self):
+        # API-15: no probe can be placed any more, so nothing is sampled and
+        # no name resolves; the KeyError points to Cell.record.
+        cell = _cell_with_recording()
+        cell.init_state()
+        self.assertEqual(cell.sample_probes(), {})
+        with self.assertRaisesRegex(KeyError, r"No probe is registered with name 'V_root'.*Cell\.record"):
+            cell.sample_probe("V_root")
 
 
 class CellMembraneLinearizerTest(unittest.TestCase):

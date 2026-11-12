@@ -52,6 +52,7 @@ _DIMENSIONLESS = {
     "Nannuli",
     "valence",
     "P",  # GabaA_JE2011: bicarbonate share of the conductance
+    "U",  # ExpSynSTD: fraction of the resource one event releases
 }
 
 # Bare-number defaults of physical quantities whose unit is only documented.

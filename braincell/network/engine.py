@@ -75,13 +75,57 @@ class _CachedRunLoop:
 
 
 class Network:
-    """Named population network using existing ``Cell`` runtimes."""
+    """Named population network using existing ``Cell`` runtimes.
 
-    def __init__(self, name: str | None = None, *, seed: int = 0) -> None:
+    Parameters
+    ----------
+    name : str, optional
+        Non-empty network name.
+    seed : int or None, optional
+        Root of the network's derived random streams. A registered
+        ``NetStim`` without its own ``seed`` and a ``connect`` pairing rule
+        without its own ``seed`` derive their streams from this root and
+        their population and connection names, so registration order does
+        not matter. Default ``0``.
+
+        ``None`` draws the root once, here, from the BrainState default
+        random stream: an enclosing ``brainstate.random.seed_context(s)`` (or
+        an earlier ``brainstate.random.seed(s)``) then controls these streams
+        together with initializers and callbacks, and each such ``Network``
+        advances the default stream by one draw. The drawn root is stored in
+        ``seed``; ``Network(seed=net.seed)`` reproduces the derived
+        streams. Inside ``brainstate.transform.jit``, ``for_loop`` or another
+        transformation the default stream is traced and ``None`` raises
+        ``TypeError``; build the network outside it or pass an integer.
+
+    Attributes
+    ----------
+    name : str or None
+        The network name.
+    seed : int
+        The root, as given or as drawn for ``seed=None``.
+
+    Examples
+    --------
+    >>> import brainstate
+    >>> import braincell
+    >>> with brainstate.random.seed_context(42):
+    ...     first = braincell.Network("demo", seed=None)
+    >>> with brainstate.random.seed_context(42):
+    ...     again = braincell.Network("demo", seed=None)
+    >>> first.seed == again.seed
+    True
+    """
+
+    def __init__(self, name: str | None = None, *, seed: int | None = 0) -> None:
         if name is not None and (not isinstance(name, str) or not name):
             raise ValueError("Network name must be a non-empty string or None.")
+        if seed is None:
+            from braincell._random import draw_seed
+
+            seed = draw_seed("Network")
         if isinstance(seed, bool) or not isinstance(seed, (int, np.integer)):
-            raise TypeError("Network seed must be an integer.")
+            raise TypeError("Network seed must be an integer or None.")
         self.name = name
         self.seed = int(seed)
         self.populations: dict[str, Population] = {}

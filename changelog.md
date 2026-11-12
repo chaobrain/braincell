@@ -609,6 +609,21 @@
   painted. A Canavier soma with the pump matches NEURON (`nadifl.mod`,
   `pump.mod` and `leak.mod`, ModelDB 6763).
 
+- **`Network(seed=None)`, and `filter.sample` and `filter.RandomSamples`
+  without a seed, take their seed from the BrainState random context**
+  (CELL-11a). Each draws one integer from the BrainState default random
+  stream when it is built, so one `brainstate.random.seed_context(s)` (or
+  `brainstate.random.seed(s)`) now controls the NetStim noise and the
+  pairing a Network derives from its root, the sampled locations, the
+  initial values and the callbacks together. The drawn integer is stored in
+  `.seed`; passing it back as an explicit seed reproduces the streams, and an
+  expression gives the same locations on every evaluation. Building them
+  inside `brainstate.transform.jit` or `for_loop` raises `TypeError`; build
+  outside or pass an integer. `seed` is now optional for `sample` and
+  `RandomSamples` (default `None`). Defaults and explicit seeds are
+  unchanged: `Network()` keeps the root 0, and every explicit seed gives the
+  same results as before.
+
 ### Changes & Improvements
 
 - **A scheduled source costs a lookup per step, not a pass over its

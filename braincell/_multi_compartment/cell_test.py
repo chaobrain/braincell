@@ -1437,7 +1437,14 @@ class RefusedInitStateKeepsTheCellTest(unittest.TestCase):
                 ValueError,
                 snapshot,
             )
-        yield "lumped", "stiff gate warning as an error", self._stiff_gate, {}, UserWarning, "stiff for an explicit solver"
+        yield (
+            "lumped",
+            "stiff gate warning as an error",
+            self._stiff_gate,
+            {},
+            UserWarning,
+            "stiff for an explicit solver",
+        )
 
     def test_every_refusal_leaves_every_attribute(self):
         for kind, label, make, kwargs, error, message in self._refusals():

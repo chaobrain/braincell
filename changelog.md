@@ -1118,6 +1118,20 @@
   each, the build takes 1.4 s, down from 149 s. The table's rows,
   order, values, units and dtypes are unchanged, and an invalid value
   still names the first failing synapse and its `place` call.
+- **A compiled run builds the axial operator once, before its steps**
+  (CELL-50). `Cell.run` and `Network.run` trace the geometry, and each step
+  built the cable's axial operator from it again: the DHS coefficients once
+  a step (`"staggered"`, `"dhs_voltage"`), and the CV operator with the dense
+  solve of its Schur complement at every stage of the other solvers (four
+  times a step for `rk4`, twice for `ralston2`). The run now builds the
+  operator its solver reads once, before the loop, from the same traced
+  geometry; the steps read it, and gradients reach the geometry through it.
+  Outputs are bitwise unchanged (CA1 and a 3-branch cable, every solver).
+  On GPU (RTX 3090, float64, main `445d169`) a step costs: CA1 `rk4`
+  8346 -> 122 us, `ralston2` 8308 -> 78 us, `"staggered"` 633 -> 580 us; a
+  1000-member 3-branch cable 0.44-0.94 of main. On CPU, XLA had already
+  moved the solve out of the loop, and a step costs the same. A loop of
+  `update()` calls written by the caller still builds it at every step.
 
 ### Bug Fixes
 

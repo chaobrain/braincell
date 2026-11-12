@@ -147,6 +147,25 @@ class RemovedNamesTest(unittest.TestCase):
         with self.assertRaisesRegex(AttributeError, "no attribute"):
             quad.not_a_name
 
+    def test_removed_names_keep_their_hint_on_a_from_import(self):
+        # Python turns the AttributeError of a module __getattr__ into a bare
+        # "cannot import name" on a from-import; the tombstone raises an
+        # ImportError carrying the same message instead.
+        for name in quad._REMOVED_ATTRIBUTES:
+            with self.subTest(name=name):
+                with self.assertRaises(AttributeError) as attribute:
+                    getattr(quad, name)
+                with self.assertRaises(ImportError) as from_import:
+                    exec(f"from braincell.quad import {name}", {})
+                self.assertEqual(str(from_import.exception), str(attribute.exception))
+                self.assertTrue(str(from_import.exception).startswith(f"braincell.quad.{name} was removed; "))
+                self.assertEqual(from_import.exception.name, "braincell.quad")
+        self.assertFalse(hasattr(quad, "rk2_step"))
+        with self.assertRaisesRegex(ImportError, "ralston2_step"):
+            from braincell.quad import rk2_step  # noqa: F401
+        with self.assertRaisesRegex(ImportError, "cannot import name 'not_a_name'"):
+            from braincell.quad import not_a_name  # noqa: F401
+
     def test_unknown_name(self):
         with self.assertRaisesRegex(ValueError, "Did you mean 'euler'"):
             get_integrator("eler")

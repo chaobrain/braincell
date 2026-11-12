@@ -673,7 +673,9 @@ class SynapseView(DiscreteView):
         ValueError
             If a value has an incompatible shape or unit.
         """
-        self._cell._raise_if_not_initialized("SynapseView.set(); use place() declarations before init_state()")
+        self._cell._raise_if_not_initialized(
+            "SynapseView.set()", hint="Before init_state(), give the values in the place() declaration."
+        )
         synapse_type = self._require_homogeneous_type()
         from braincell.trainable._targets import require_unbound
 

@@ -180,7 +180,7 @@ class TrainableManager(brainstate.nn.Module):
     def register(self, view, fields: dict[str, ParameterSource]) -> None:
         """Validate and atomically register trainable fields for one density View."""
         cell = self._cell()
-        cell._raise_if_not_initialized("trainable(); provide declaration values and call init_state() first")
+        cell._raise_if_not_initialized("trainable()")
         if self._sealed:
             raise RuntimeError(
                 "Trainable registration is frozen by a gradient engine; rebuild the training setup after reset()."

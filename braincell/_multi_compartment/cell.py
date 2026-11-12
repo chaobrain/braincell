@@ -288,7 +288,7 @@ class _CellFacade:
     @property
     def geometry(self) -> GeometryView:
         """Return fixed-grid runtime geometry parameters for this scope."""
-        self._view_root._raise_if_not_initialized("geometry; call init_state() first")
+        self._view_root._raise_if_not_initialized("geometry")
         return GeometryView(self._view_root, self._scope)
 
     # CV selections expose geometry fields directly.  ``geometry`` remains a
@@ -296,32 +296,32 @@ class _CellFacade:
     # view at the same level as ``channels`` and ``synapses``.
     @property
     def length(self):
-        self._view_root._raise_if_not_initialized("length; call init_state() first")
+        self._view_root._raise_if_not_initialized("length")
         return self.geometry.length
 
     @property
     def radius_scale(self):
-        self._view_root._raise_if_not_initialized("radius_scale; call init_state() first")
+        self._view_root._raise_if_not_initialized("radius_scale")
         return self.geometry.radius_scale
 
     @property
     def Ra(self):
-        self._view_root._raise_if_not_initialized("Ra; call init_state() first")
+        self._view_root._raise_if_not_initialized("Ra")
         return self.geometry.Ra
 
     @property
     def cm(self):
-        self._view_root._raise_if_not_initialized("cm; call init_state() first")
+        self._view_root._raise_if_not_initialized("cm")
         return self.geometry.cm
 
     @property
     def radius_mid(self):
-        self._view_root._raise_if_not_initialized("radius_mid; call init_state() first")
+        self._view_root._raise_if_not_initialized("radius_mid")
         return self.geometry.radius_mid
 
     @property
     def diam_arc_mean(self):
-        self._view_root._raise_if_not_initialized("diam_arc_mean; call init_state() first")
+        self._view_root._raise_if_not_initialized("diam_arc_mean")
         return self.geometry.diam_arc_mean
 
     def record(
@@ -1019,7 +1019,7 @@ class CVCollectionView(tuple):
         return result
 
     def _geometry(self):
-        self._cell._raise_if_not_initialized("CV geometry; call init_state() before reading runtime geometry")
+        self._cell._raise_if_not_initialized("CV geometry")
         scope = self._scope
         if scope is None:
             scope = self._cell._root_scope().select_cv_ids(tuple(cv.id for cv in self))
@@ -1320,9 +1320,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         if self._initialized:
             raise RuntimeError(f"Cannot {action} after init_state(); call reset() first.")
 
-    def _raise_if_not_initialized(self, action: str) -> None:
+    def _raise_if_not_initialized(self, action: str, *, hint: str | None = None) -> None:
         if not self._initialized:
-            raise RuntimeError(f"{action} requires init_state() first.")
+            message = f"{action} requires init_state() first."
+            raise RuntimeError(message if hint is None else f"{message} {hint}")
 
     @property
     def network_owner(self):
@@ -1685,7 +1686,9 @@ class Cell(_CellFacade, HHTypedNeuron):
             raise
 
     def _set_runtime_voltage_parameters(self, scope, parameters) -> None:
-        self._raise_if_not_initialized("CellView.set(); use Cell constructor parameters before init_state()")
+        self._raise_if_not_initialized(
+            "CellView.set()", hint="Before init_state(), assign Cell.V_init and Cell.V_th instead."
+        )
         unknown = set(parameters) - {"V_init", "V_th"}
         if unknown:
             raise KeyError(f"CellView.set() does not support parameters {sorted(unknown)!r}.")

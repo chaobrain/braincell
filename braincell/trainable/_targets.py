@@ -127,7 +127,7 @@ def register_detector(view, fields):
     if set(fields).difference({"threshold"}):
         raise KeyError("Only the detector threshold is trainable.")
     cell = source.execution_owner
-    cell._raise_if_not_initialized("trainable(); call init_state() first")
+    cell._raise_if_not_initialized("trainable()")
     ids = view.source_id
     own_threshold = isinstance(source, VoltageCrossingSource) and not source._uses_cell_threshold
     if isinstance(source, VoltageCrossingSource):

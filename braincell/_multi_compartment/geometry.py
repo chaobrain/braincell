@@ -137,7 +137,9 @@ class GeometryView(DiscreteView):
         ]
 
     def set(self, **fields):
-        self._cell._raise_if_not_initialized("GeometryView.set(); use morphology declarations before init_state()")
+        self._cell._raise_if_not_initialized(
+            "GeometryView.set()", hint="Before init_state(), declare the geometry in the morphology."
+        )
         self._check_view()
         pending = {}
         for field, value in fields.items():

@@ -113,6 +113,43 @@ class LifecycleTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             cell.paint(AllRegion(), bc.mech.Channel("IL", name="extra"))
 
+    def test_runtime_access_before_init_state_names_what_needs_it(self):
+        cell = make_cell(pop_size=2)
+        cell.paint(AllRegion(), bc.mech.Ion("PotassiumFixed", name="k"))
+        cell.place(at(0, 0.5), bc.mech.Synapse("ExpSyn", name="syn"))
+        threshold = bc.trainable.parameter(-20 * u.mV, name="threshold")
+        accesses = {
+            "geometry": (lambda: cell.geometry, lambda: cell[0].geometry),
+            "length": (lambda: cell.length,),
+            "radius_scale": (lambda: cell.radius_scale,),
+            "Ra": (lambda: cell[1].Ra,),
+            "cm": (lambda: cell.cm,),
+            "radius_mid": (lambda: cell.radius_mid,),
+            "diam_arc_mean": (lambda: cell.diam_arc_mean,),
+            "CV geometry": (lambda: cell.cvs.length, lambda: cell.cvs[0:1].area),
+            "CellView.set()": (lambda: cell[0].set(V_init=-60 * u.mV),),
+            "ChannelView.set()": (lambda: cell.channels["leak"].set(g_max=0.2 * u.mS / u.cm**2),),
+            "IonView.set()": (lambda: cell.ions["k"].set(E=-80 * u.mV),),
+            "SynapseView.set()": (lambda: cell.synapses["syn"].set(tau=3 * u.ms),),
+            "trainable()": (
+                lambda: cell.channels["leak"].trainable(g_max=bc.trainable.parameter()),
+                lambda: cell.event_outputs["spike"].trainable(threshold=threshold),
+            ),
+        }
+        paint = " Before init_state(), give the values in the paint() declaration."
+        hints = {
+            "CellView.set()": " Before init_state(), assign Cell.V_init and Cell.V_th instead.",
+            "ChannelView.set()": paint,
+            "IonView.set()": paint,
+            "SynapseView.set()": " Before init_state(), give the values in the place() declaration.",
+        }
+        for name, reads in accesses.items():
+            for index, read in enumerate(reads):
+                with self.subTest(name=name, index=index):
+                    with self.assertRaises(RuntimeError) as caught:
+                        read()
+                    self.assertEqual(str(caught.exception), f"{name} requires init_state() first.{hints.get(name, '')}")
+
     def test_connection_and_detector_restore_declarations_after_reset(self):
         cell = make_cell()
         cell.place(at(0, 0.5), bc.mech.Synapse("ExpSyn", name="syn"))

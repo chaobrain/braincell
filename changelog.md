@@ -1617,6 +1617,20 @@
   `docs/apis/braincell.synapse.rst`, the two GitHub issue templates,
   `.github/dependabot.yml` and four files under `examples/convert_mod/nmodl/`.
   They are stored with LF; their content is unchanged.
+- `from braincell.quad import rk2_step`, or a from-import of any other name
+  that `braincell.quad` removed, raised a bare "cannot import name 'rk2_step'
+  from 'braincell.quad'". It now raises an `ImportError` with the same
+  replacement hint as `braincell.quad.rk2_step`: the package uses the
+  `removed_attributes` tombstones of CELL-28.
+- Reading or writing runtime values before `init_state` gave a garbled
+  message that said "first" twice: "geometry; call init_state() first
+  requires init_state() first." now reads "geometry requires init_state()
+  first.". The same fix covers `length`, `radius_scale`, `Ra`, `cm`,
+  `radius_mid`, `diam_arc_mean`, CV geometry and `trainable()`, and the
+  `set()` of `CellView`, `ChannelView`, `IonView`, `SynapseView` and
+  `GeometryView`, whose hint now follows as its own sentence, for example
+  "CellView.set() requires init_state() first. Before init_state(), assign
+  Cell.V_init and Cell.V_th instead.".
 
 ### Documentation
 

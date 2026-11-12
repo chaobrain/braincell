@@ -137,7 +137,9 @@ class _DensityView(DiscreteView):
 
     def set(self, **fields):
         """Set shape-preserving fields for the selected logical owner rows."""
-        self._cell._raise_if_not_initialized("View.set(); use paint() declarations before init_state()")
+        self._cell._raise_if_not_initialized(
+            f"{type(self).__name__}.set()", hint="Before init_state(), give the values in the paint() declaration."
+        )
         self._require_one_owner("set fields")
         if not fields:
             return self

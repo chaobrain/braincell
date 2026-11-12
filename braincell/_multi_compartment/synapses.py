@@ -97,7 +97,6 @@ class _SynapseStore:
         self.cell = cell
         self.serial = next(_STORE_SERIALS)
         self._id_order = None
-        rows = []
         synapse_placements = tuple(
             placement for placement in cell.point_placements if isinstance(placement.mechanism, Synapse)
         )
@@ -111,62 +110,85 @@ class _SynapseStore:
         # location it is. ``sites`` lists each rule-mechanism's locations.
         repeats: dict[tuple, int] = {}
         placement_repeat = []
+        placement_owner = []
         sites: dict[tuple[int, int], list] = {}
         for placement in synapse_placements:
-            mechanism = placement.mechanism
             rule_key = (placement._rule_index, placement._mechanism_index)
             member = -1 if placement.population_index is None else int(placement.population_index)
             site = (member, placement.branch_name, float(placement.branch_x))
             placement_repeat.append(repeats.get(rule_key + site, 0))
             repeats[rule_key + site] = placement_repeat[-1] + 1
             sites.setdefault(rule_key, []).append(site)
-            owners = (
-                range(population_size) if placement.population_index is None else (int(placement.population_index),)
-            )
-            for owner in owners:
-                rows.append((int(owner), int(placement.id), placement, mechanism))
+            placement_owner.append(member)
         self.sites = {key: tuple(sorted(value)) for key, value in sites.items()}
 
+        # One row per (owner, placement): a placement without a population
+        # index has a row in every member. Rows are built and ordered as
+        # arrays over placements (CELL-38): Python work per row made this
+        # build the main cost of ``init_state`` for large populations.
+        owner = np.asarray(placement_owner, dtype=np.int64)
+        broadcast = np.flatnonzero(owner < 0)
+        single = np.flatnonzero(owner >= 0)
+        placement_of_row = np.concatenate([np.tile(broadcast, population_size), single])
+        owner_of_row = np.concatenate(
+            [np.repeat(np.arange(population_size, dtype=np.int64), broadcast.size), owner[single]]
+        )
+        placement_ids = np.asarray([placement.id for placement in synapse_placements], dtype=np.int64)
         # Public logical order is stable and cell-major, independently of how
         # broadcast placements happen to be represented by discretization.
-        rows.sort(key=lambda item: (item[0], item[1]))
-        self.population_index = np.asarray([row[0] for row in rows], dtype=np.int64)
-        self.placement_id = np.asarray([row[1] for row in rows], dtype=np.int64)
+        order = np.lexsort((placement_ids[placement_of_row], owner_of_row))
+        # Each placement's first row, so per-placement facts can be visited
+        # in the order of the rows they stand for.
+        first_row = np.full(len(synapse_placements), order.size, dtype=np.int64)
+        np.minimum.at(first_row, placement_of_row[order], np.arange(order.size, dtype=np.int64))
+        placement_of_row = placement_of_row[order]
+        self.population_index = owner_of_row[order]
+        self.placement_id = placement_ids[placement_of_row]
         self.id = self.placement_id * int(population_size) + self.population_index
-        self.point_id = np.asarray([row[2].point_id for row in rows], dtype=np.int64)
-        self.cv_id = np.asarray([row[2].cv_id for row in rows], dtype=np.int64)
-        self.branch_id = np.asarray([row[2].branch_id for row in rows], dtype=np.int64)
-        self.branch_x = np.asarray([row[2].branch_x for row in rows], dtype=float)
-        # Per placement, then per row: ``point_placements`` is in id order.
-        placement_of_row = np.searchsorted(
-            np.asarray([placement.id for placement in synapse_placements], dtype=np.int64), self.placement_id
-        )
-        self.branch_name_code = np.asarray(
+
+        def per_row(values, dtype):
+            return np.asarray(values, dtype=dtype)[placement_of_row]
+
+        self.point_id = per_row([p.point_id for p in synapse_placements], np.int64)
+        self.cv_id = per_row([p.cv_id for p in synapse_placements], np.int64)
+        self.branch_id = per_row([p.branch_id for p in synapse_placements], np.int64)
+        self.branch_x = per_row([p.branch_x for p in synapse_placements], float)
+        self.branch_name_code = per_row(
             [_BRANCH_NAME_CODES.setdefault(p.branch_name, len(_BRANCH_NAME_CODES)) for p in synapse_placements],
-            dtype=np.int64,
-        )[placement_of_row]
-        self.rule_index = np.asarray([p._rule_index for p in synapse_placements], dtype=np.int64)[placement_of_row]
-        self.mechanism_index = np.asarray([p._mechanism_index for p in synapse_placements], dtype=np.int64)[
-            placement_of_row
-        ]
-        self.repeat_index = np.asarray(placement_repeat, dtype=np.int64)[placement_of_row]
-        self.mechanism = tuple(row[3] for row in rows)
+            np.int64,
+        )
+        self.rule_index = per_row([p._rule_index for p in synapse_placements], np.int64)
+        self.mechanism_index = per_row([p._mechanism_index for p in synapse_placements], np.int64)
+        self.repeat_index = per_row(placement_repeat, np.int64)
+        mechanisms = [p.mechanism for p in synapse_placements]
         origins = getattr(cell, "_synapse_origins", {})
-        self.declaration = tuple(origins.get(id(item), item) for item in self.mechanism)
-        self.name = np.asarray([item.instance_name for item in self.mechanism], dtype=object)
-        self.synapse_type = np.asarray([item.synapse_type for item in self.mechanism], dtype=object)
-        self._row_by_id = {int(logical_id): row for row, logical_id in enumerate(self.id.tolist())}
+        self.mechanism = _take_objects(mechanisms, placement_of_row)
+        self.declaration = _take_objects([origins.get(id(item), item) for item in mechanisms], placement_of_row)
+        self.name = per_row([item.instance_name for item in mechanisms], object)
+        self.synapse_type = per_row([item.synapse_type for item in mechanisms], object)
+        self._row_by_id = dict(zip(self.id.tolist(), range(self.id.size)))
         self.parameter_columns: dict[str, dict[str, object]] = {}
         self._type_rows: dict[str, np.ndarray] = {}
         self._type_local_by_id: dict[int, int] = {}
         self._layout_by_type: dict[str, int] = {}
         self._runtime_row_by_id: dict[int, int] = {}
         self._mechanism_layouts: dict[int, _MechanismRowLayout] = {}
-        self._validate_name_types()
-        self._build_parameter_columns()
-
-    def _validate_name_types(self) -> None:
-        raise_on_name_type_conflict(zip(self.name.tolist(), self.synapse_type.tolist()))
+        # Placements with rows, in the order of their first rows. A check
+        # that stops at the first failing row stops at the first row of a
+        # placement or declaration, since its other rows repeat that row.
+        by_first_row = np.argsort(first_row, kind="stable")
+        in_row_order = by_first_row[first_row[by_first_row] < order.size].tolist()
+        raise_on_name_type_conflict(
+            (mechanisms[item].instance_name, mechanisms[item].synapse_type) for item in in_row_order
+        )
+        # The distinct declarations (by identity) in that order, and the
+        # number of each row's.
+        declarations: dict[int, Synapse] = {}
+        for item in in_row_order:
+            declarations.setdefault(id(mechanisms[item]), mechanisms[item])
+        code_by_id = {key: code for code, key in enumerate(declarations)}
+        declaration_of_placement = np.asarray([code_by_id.get(id(item), -1) for item in mechanisms], dtype=np.int64)
+        self._build_parameter_columns(tuple(declarations.values()), declaration_of_placement[placement_of_row])
 
     def _error_contexts(self) -> dict[int, tuple[str, str | None]]:
         """Map each declaration (by identity) to its error owner and ``place`` source."""
@@ -179,43 +201,91 @@ class _SynapseStore:
                     contexts[id(mechanism)] = (owner, f"placed on {rule.locset!r}{at}.")
         return contexts
 
-    def _build_parameter_columns(self) -> None:
-        contexts = self._error_contexts()
-        for raw_type in dict.fromkeys(self.synapse_type.tolist()):
-            synapse_type = str(raw_type)
+    def _build_parameter_columns(self, declarations: tuple[Synapse, ...], declaration_of_row: np.ndarray) -> None:
+        """Stack every parameter of each synapse type into one column.
+
+        ``declarations`` are the distinct declarations behind the rows, in
+        the order of their first rows, and ``declaration_of_row`` numbers
+        each row's. Each declaration's value is resolved and checked once
+        for all of its rows (CELL-38). A column whose fast build fails is
+        rebuilt one row at a time, which raises the error of the first
+        failing row with the declaration's name and ``place`` source.
+        """
+        for synapse_type in dict.fromkeys(str(item.synapse_type) for item in declarations):
             runtime_cls = get_registry().get("synapse", synapse_type)
             schema = runtime_cls.parameter_info()
-            rows = np.flatnonzero(self.synapse_type == synapse_type).astype(np.int64)
-            self._type_rows[synapse_type] = rows
-            for local_row, store_row in enumerate(rows.tolist()):
-                self._type_local_by_id[int(self.id[store_row])] = int(local_row)
-                unknown = set(self.mechanism[store_row].params).difference(schema)
+            codes = np.asarray(
+                [code for code, item in enumerate(declarations) if str(item.synapse_type) == synapse_type],
+                dtype=np.int64,
+            )
+            for code in codes.tolist():
+                unknown = set(declarations[code].params).difference(schema)
                 if unknown:
                     raise TypeError(f"Synapse type {synapse_type!r} has no parameters {tuple(sorted(unknown))!r}.")
+            in_type = np.zeros(len(declarations), dtype=bool)
+            in_type[codes] = True
+            rows = np.flatnonzero(in_type[declaration_of_row]).astype(np.int64)
+            self._type_rows[synapse_type] = rows
+            self._type_local_by_id.update(zip(self.id[rows].tolist(), range(rows.size)))
+            # The type's rows grouped by declaration, in row order within each
+            # group. Rows are cell-major, so a group's members come in runs:
+            # number each run within its group (``owner``) and each row
+            # within its run (``local``), as ``_MechanismRowLayout`` does.
+            local_code = declaration_of_row[rows]
+            by_code = np.argsort(local_code, kind="stable")
+            sorted_code = local_code[by_code]
+            members = self.population_index[rows[by_code]]
+            index = np.arange(rows.size)
+            group_start = np.r_[True, sorted_code[1:] != sorted_code[:-1]]
+            run_start = group_start | np.r_[True, members[1:] != members[:-1]]
+            run = np.cumsum(run_start) - 1
+            owner = run - run[np.maximum.accumulate(np.where(group_start, index, 0))]
+            local = index - np.maximum.accumulate(np.where(run_start, index, 0))
+            bounds = zip(
+                np.searchsorted(sorted_code, codes, side="left").tolist(),
+                np.searchsorted(sorted_code, codes, side="right").tolist(),
+            )
+            groups = [
+                (declarations[code], by_code[low:high], owner[low:high], local[low:high])
+                for code, (low, high) in zip(codes.tolist(), bounds)
+            ]
             columns = {}
             for parameter, spec in schema.items():
-                values = []
-                for store_row in rows.tolist():
-                    logical_id = int(self.id[store_row])
-                    mechanism = self.mechanism[store_row]
-                    if parameter in mechanism.params:
-                        value = _select_declared_parameter_value(
-                            mechanism.params[parameter],
-                            logical_id=logical_id,
-                            store=self,
-                            mechanism=mechanism,
-                        )
-                    else:
-                        value = spec.default
-                    owner, source = contexts.get(id(mechanism), (None, None))
-                    spec.validate(value, parameter, owner=owner, source=source)
-                    values.append(value)
-                columns[parameter] = _stack_synapse_values(values, parameter=parameter)
+                try:
+                    columns[parameter] = _column_by_declaration(parameter, spec, groups, rows.size)
+                except Exception:
+                    columns[parameter] = self._column_by_row(parameter, spec, rows)
             try:
                 runtime_cls.validate_parameter_values(columns)
             except ValueError as exc:
-                raise self._name_the_invalid_declaration(runtime_cls, columns, rows, contexts, exc) from None
+                raise self._name_the_invalid_declaration(
+                    runtime_cls, columns, rows, self._error_contexts(), exc
+                ) from None
             self.parameter_columns[synapse_type] = columns
+
+    def _column_by_row(self, parameter: str, spec, rows: np.ndarray):
+        """Build one column a row at a time, raising at the first failing row.
+
+        This is the reference for :func:`_column_by_declaration`, used only
+        when that fails: its errors name the synapse and where it was placed.
+        """
+        contexts = self._error_contexts()
+        values = []
+        for store_row in rows.tolist():
+            mechanism = self.mechanism[store_row]
+            if parameter in mechanism.params:
+                value = _select_declared_parameter_value(
+                    mechanism.params[parameter],
+                    logical_id=int(self.id[store_row]),
+                    store=self,
+                    mechanism=mechanism,
+                )
+            else:
+                value = spec.default
+            owner, source = contexts.get(id(mechanism), (None, None))
+            spec.validate(value, parameter, owner=owner, source=source)
+            values.append(value)
+        return _stack_synapse_values(values, parameter=parameter)
 
     def _name_the_invalid_declaration(self, runtime_cls, columns, rows, contexts, error: ValueError) -> ValueError:
         """Return ``error`` naming a declaration whose own rows fail the type's check.
@@ -985,6 +1055,114 @@ def _select_declared_parameter_value(value, *, logical_id: int, store: _SynapseS
     else:
         raise ValueError(f"Synapse parameter shape {shape!r} cannot broadcast to {layout.size!r} logical instances.")
     return u.Quantity(selected, value.unit) if isinstance(value, u.Quantity) else selected
+
+
+def _select_declared_rows(array: np.ndarray, owner: np.ndarray, local: np.ndarray) -> np.ndarray:
+    """Pick the entry of an array-valued declared parameter for each of its rows.
+
+    ``owner`` numbers the member of each of the declaration's rows among its
+    members, from 0 and in row order; ``local`` numbers the row among that
+    member's rows. This is :func:`_select_declared_parameter_value` for all
+    rows of the declaration at once.
+    """
+    size = owner.size
+    owner_count = int(owner[-1]) + 1
+    counts = np.bincount(owner, minlength=owner_count)
+    common_length = int(counts[0]) if np.all(counts == counts[0]) else None
+    if array.size == 1:
+        return np.repeat(array.reshape(-1)[:1], size)
+    if common_length is not None and array.shape == (common_length,):
+        return array[local]
+    if array.shape == (owner_count, 1):
+        return array[owner, 0]
+    if common_length is not None and array.shape == (owner_count, common_length):
+        return array[owner, local]
+    if array.shape == (size,):
+        return array
+    raise ValueError(f"Synapse parameter shape {array.shape!r} cannot broadcast to {size!r} logical instances.")
+
+
+def _column_by_declaration(parameter: str, spec, groups, size: int):
+    """Build one parameter column of a synapse type from its declarations.
+
+    Parameters
+    ----------
+    parameter : str
+        Parameter name.
+    spec : ParameterSpec
+        The type's declaration of ``parameter``.
+    groups : list of tuple
+        ``(declaration, positions, owner, local)`` for each declaration of the
+        type, in the order of their first rows: ``positions`` index the
+        type's rows, ``owner`` and ``local`` are as in
+        :func:`_select_declared_rows`.
+    size : int
+        Number of rows of the type.
+
+    Returns
+    -------
+    array-like
+        The column the row-by-row build stacks: equal values, dtype, unit and
+        order.
+
+    Raises
+    ------
+    Exception
+        Whatever a value fails on; the caller then rebuilds the column one
+        row at a time to raise the first failing row's error with its context.
+
+    Notes
+    -----
+    A scalar or default value is one object shared by all rows that use it,
+    so checking it once checks all of them. Array values are checked as the
+    column of their rows, one check per unit and dtype, as ``SynapseView.set``
+    and the runtime constructors check columns. The column takes the unit of
+    the first row and the dtype ``numpy.asarray`` gives the per-row values.
+    """
+    first = None
+    shared: dict[int, list] = {}
+    batches: dict[tuple, list] = {}
+    for declaration, positions, owner, local in groups:
+        value = declaration.params[parameter] if parameter in declaration.params else spec.default
+        if first is None:
+            first = value
+        if getattr(value, "shape", ()) in ((), None):
+            shared.setdefault(id(value), [value, []])[1].append(positions)
+            continue
+        unit = value.unit if isinstance(value, u.Quantity) else None
+        selected = _select_declared_rows(np.asarray(value if unit is None else value.to_decimal(unit)), owner, local)
+        batch = batches.setdefault((id(unit), selected.dtype), [unit, [], []])
+        batch[1].append(selected)
+        batch[2].append(positions)
+    pieces = []
+    for value, positions in shared.values():
+        spec.validate(value, parameter)
+        pieces.append((value, np.concatenate(positions), ()))
+    for unit, arrays, positions in batches.values():
+        array = np.concatenate(arrays)
+        value = array if unit is None else u.Quantity(array, unit)
+        spec.validate(value, parameter)
+        pieces.append((value, np.concatenate(positions), array.shape))
+    if isinstance(first, u.Quantity):
+        decimals = [np.asarray(value.to_decimal(first.unit)) for value, _, _ in pieces]
+    elif any(isinstance(value, u.Quantity) for value, _, _ in pieces):
+        raise TypeError(f"Synapse parameter {parameter!r} mixes dimensioned and dimensionless values.")
+    else:
+        decimals = [np.asarray(value) for value, _, _ in pieces]
+    column = np.empty(size, dtype=np.result_type(*(decimal.dtype for decimal in decimals)))
+    for decimal, (_, positions, shape) in zip(decimals, pieces):
+        if decimal.shape != shape:
+            raise ValueError(f"Synapse parameter {parameter!r} must resolve to one scalar per logical instance.")
+        column[positions] = decimal
+    return u.Quantity(column, first.unit) if isinstance(first, u.Quantity) else column
+
+
+def _take_objects(items, rows: np.ndarray) -> tuple:
+    """Return ``tuple(items[row] for row in rows)`` without a Python loop over ``rows``."""
+    objects = np.empty(len(items), dtype=object)
+    for index, item in enumerate(items):
+        objects[index] = item
+    return tuple(objects[rows].tolist())
 
 
 #: How a type's ``validate_parameter_values`` names a parameter when it does

@@ -14,6 +14,9 @@
 # ==============================================================================
 
 import unittest
+import warnings
+from collections import Counter
+from unittest import mock
 
 import brainunit as u
 import brainstate
@@ -21,8 +24,10 @@ import numpy as np
 
 import braincell
 from braincell import Branch, Cell, CVPerBranch, Morphology, NetStim, SynapseView, connect
+from braincell._multi_compartment.synapses import _BRANCH_NAME_CODES, _SynapseStore
 from braincell.filter import at
-from braincell.filter import LocsetMask
+from braincell.filter import LocsetMask, Terminals
+from braincell.morph._testing import make_tree_s
 
 
 @braincell.mech.register_synapse("_SynapseViewTrainableExpSyn")
@@ -365,6 +370,299 @@ class SynapseViewTest(unittest.TestCase):
         self.assertIs(node.tau, parameter)
         self.assertIsInstance(node.tau, brainstate.nn.Param)
         np.testing.assert_allclose(node.tau.value().to_decimal(u.ms), [2.0, 3.0])
+
+
+def _declare_every_parameter_form(n):
+    """Tree S with ``n`` members and one synapse declaration per parameter form.
+
+    Returns the cell and, per declaration name, the declared value of each
+    parameter as a function of ``(member, k, i)``: ``k`` numbers that
+    declaration's synapses within the member, ``i`` across all members in
+    row order. A parameter left out takes the type's default.
+    """
+    cell = Cell(make_tree_s(), pop_size=(n,))
+    member = np.arange(n)
+    tau_a = (1.0 + 0.001 * member).reshape(n, 1)
+    tau_c = 2.0 + 0.001 * member
+    tau_d = (2500.1 + 0.37 * member).reshape(n, 1)
+    tau_rec = 500.0 + member[:, None] + 100.0 * np.arange(2)[None, :]
+    counts = 1 + member % 2
+    tau1 = 0.5 + 1e-4 * np.arange(int(counts.sum()))
+    Synapse = braincell.mech.Synapse
+    # Terminals() is the dend and axon ends: two synapses per member.
+    cell.place(Terminals(), Synapse("ExpSyn", name="a", tau=tau_a * u.ms))
+    cell.place(at("soma", 0.5), Synapse("ExpSyn", name="b", tau=1500.0 * u.us, e=-0.005 * u.volt))
+    cell.place(at("dend", 0.5), Synapse("ExpSyn", name="c", tau=tau_c * u.ms, e=np.asarray([-7.0]) * u.mV))
+    # An array in another unit than the column's (ms, from "a").
+    cell.place(at("axon", 0.5), Synapse("ExpSyn", name="d", tau=tau_d * u.us))
+    cell.place(
+        Terminals(),
+        Synapse("ExpSynSTD", name="std", tau=2.0 * u.ms, U=np.asarray([0.25, 0.75]), tau_rec=tau_rec * u.ms),
+    )
+    cell.place(at("soma", 0.25), Synapse("ExpSynSTD", name="std1", tau=3.0 * u.ms, U=1))
+    # One or two synapses per member at the same site: repeat 0 and 1.
+    locations = tuple(LocsetMask.from_columns(np.zeros(count, dtype=int), np.full(count, 0.2)) for count in counts)
+    cell.place(locations, Synapse("Exp2Syn", name="x", tau1=tau1 * u.ms, tau2=10 * u.ms))
+    declared = {
+        "a": {"tau": lambda m, k, i: u.Quantity(tau_a[m, 0], u.ms)},
+        "b": {"tau": lambda m, k, i: 1500.0 * u.us, "e": lambda m, k, i: -0.005 * u.volt},
+        "c": {"tau": lambda m, k, i: u.Quantity(tau_c[m], u.ms), "e": lambda m, k, i: u.Quantity(-7.0, u.mV)},
+        "d": {"tau": lambda m, k, i: u.Quantity(tau_d[m, 0], u.us)},
+        "std": {
+            "tau": lambda m, k, i: 2.0 * u.ms,
+            "U": lambda m, k, i: np.float64([0.25, 0.75][k]),
+            "tau_rec": lambda m, k, i: u.Quantity(tau_rec[m, k], u.ms),
+        },
+        "std1": {"tau": lambda m, k, i: 3.0 * u.ms, "U": lambda m, k, i: 1},
+        "x": {"tau1": lambda m, k, i: u.Quantity(tau1[i], u.ms), "tau2": lambda m, k, i: 10 * u.ms},
+    }
+    return cell, declared
+
+
+def _reference_store(cell, declared):
+    """The store's columns built one row at a time from the cell's placements.
+
+    This is the construction the store did before CELL-38, written out
+    without shortcuts: rows are cell-major and, within a member, in
+    placement id order; each parameter column stacks one value per row
+    in the unit of the type's first row.
+    """
+    n = int(cell.pop_size[0])
+    placements = [p for p in cell.point_placements if isinstance(p.mechanism, braincell.mech.Synapse)]
+    rows = sorted(
+        (
+            (owner, p)
+            for p in placements
+            for owner in (range(n) if p.population_index is None else (int(p.population_index),))
+        ),
+        key=lambda row: (row[0], row[1].id),
+    )
+    seen, repeat, sites = Counter(), {}, {}
+    for p in placements:
+        member = -1 if p.population_index is None else int(p.population_index)
+        key = (p._rule_index, p._mechanism_index, member, p.branch_name, float(p.branch_x))
+        repeat[p.id] = seen[key]
+        seen[key] += 1
+        sites.setdefault(key[:2], []).append(key[2:])
+    expected = {
+        "id": [p.id * n + owner for owner, p in rows],
+        "placement_id": [p.id for _, p in rows],
+        "population_index": [owner for owner, _ in rows],
+        "point_id": [p.point_id for _, p in rows],
+        "cv_id": [p.cv_id for _, p in rows],
+        "branch_id": [p.branch_id for _, p in rows],
+        "branch_x": [float(p.branch_x) for _, p in rows],
+        "branch_name_code": [_BRANCH_NAME_CODES[p.branch_name] for _, p in rows],
+        "rule_index": [p._rule_index for _, p in rows],
+        "mechanism_index": [p._mechanism_index for _, p in rows],
+        "repeat_index": [repeat[p.id] for _, p in rows],
+        "name": [p.mechanism.instance_name for _, p in rows],
+        "synapse_type": [p.mechanism.synapse_type for _, p in rows],
+    }
+    k_seen, i_seen, values = Counter(), Counter(), []
+    for owner, p in rows:
+        name = p.mechanism.instance_name
+        values.append((owner, k_seen[(owner, name)], i_seen[name]))
+        k_seen[(owner, name)] += 1
+        i_seen[name] += 1
+    columns, type_rows, local_by_id = {}, {}, {}
+    for synapse_type in dict.fromkeys(expected["synapse_type"]):
+        schema = braincell.mech.get_registry().get("synapse", synapse_type).parameter_info()
+        selected = [row for row, item in enumerate(expected["synapse_type"]) if item == synapse_type]
+        type_rows[synapse_type] = selected
+        local_by_id.update((expected["id"][row], local) for local, row in enumerate(selected))
+        columns[synapse_type] = {}
+        for parameter, spec in schema.items():
+            items = []
+            for row in selected:
+                given = declared[expected["name"][row]].get(parameter)
+                items.append(spec.default if given is None else given(*values[row]))
+            if isinstance(items[0], u.Quantity):
+                unit = items[0].unit
+                column = u.Quantity(np.asarray([np.asarray(item.to_decimal(unit)) for item in items]), unit)
+            else:
+                column = np.asarray(items)
+            columns[synapse_type][parameter] = column
+    sites = {key: tuple(sorted(value)) for key, value in sites.items()}
+    return rows, expected, sites, columns, type_rows, local_by_id
+
+
+class SynapseStoreBuildTest(unittest.TestCase):
+    """CELL-38: the store matches its row-by-row construction, element by element and in order."""
+
+    def _check_store_matches_reference(self, n):
+        cell, declared = _declare_every_parameter_form(n)
+        store = _SynapseStore(cell)
+        rows, expected, sites, columns, type_rows, local_by_id = _reference_store(cell, declared)
+
+        self.assertEqual(len(store.id), len(rows))
+        for field, values in expected.items():
+            with self.subTest(field=field):
+                actual = getattr(store, field)
+                self.assertIsInstance(actual, np.ndarray)
+                self.assertEqual(actual.dtype, np.asarray(values, dtype=actual.dtype).dtype)
+                np.testing.assert_array_equal(actual, np.asarray(values, dtype=actual.dtype))
+        self.assertEqual(store.id.dtype, np.int64)
+        self.assertEqual(store.branch_x.dtype, np.float64)
+        self.assertEqual(store.name.dtype, object)
+        self.assertIsInstance(store.mechanism, tuple)
+        self.assertIsInstance(store.declaration, tuple)
+        self.assertEqual(len(store.mechanism), len(rows))
+        self.assertTrue(all(item is p.mechanism for item, (_, p) in zip(store.mechanism, rows)))
+        origins = cell._synapse_origins
+        self.assertTrue(
+            all(item is origins.get(id(p.mechanism), p.mechanism) for item, (_, p) in zip(store.declaration, rows))
+        )
+        self.assertEqual(store.sites, sites)
+        self.assertEqual(list(store.parameter_columns), list(columns))
+        for synapse_type, type_columns in columns.items():
+            self.assertEqual(list(store.parameter_columns[synapse_type]), list(type_columns))
+            for parameter, column in type_columns.items():
+                with self.subTest(synapse_type=synapse_type, parameter=parameter):
+                    actual = store.parameter_columns[synapse_type][parameter]
+                    self.assertIs(type(actual), type(column))
+                    if isinstance(column, u.Quantity):
+                        self.assertEqual(actual.unit, column.unit)
+                        actual, column = np.asarray(actual.mantissa), np.asarray(column.mantissa)
+                    self.assertEqual(actual.dtype, column.dtype)
+                    np.testing.assert_array_equal(actual, column)
+        self.assertEqual(list(store._type_rows), list(type_rows))
+        for synapse_type, selected in type_rows.items():
+            self.assertEqual(store._type_rows[synapse_type].dtype, np.int64)
+            np.testing.assert_array_equal(store._type_rows[synapse_type], selected)
+        self.assertEqual(store._type_local_by_id, local_by_id)
+        self.assertEqual(store._row_by_id, {logical_id: row for row, logical_id in enumerate(expected["id"])})
+        return store, columns
+
+    def test_store_matches_row_by_row_construction_for_10_members(self):
+        store, columns = self._check_store_matches_reference(10)
+        # The forms the declarations exercise, read back in members 0 and 1.
+        tau = columns["ExpSyn"]["tau"].mantissa
+        np.testing.assert_array_equal(tau[[0, 1, 2, 3, 5, 6, 7, 8]], [1.0, 1.0, 1.5, 2.0, 1.001, 1.001, 1.5, 2.001])
+        np.testing.assert_allclose(tau[[4, 9]], [2.5001, 2.50047], rtol=1e-15)
+        np.testing.assert_array_equal(columns["ExpSyn"]["e"].mantissa[:5], [0.0, 0.0, -5.0, -7.0, 0.0])
+        np.testing.assert_array_equal(columns["ExpSynSTD"]["U"][:6], [0.25, 0.75, 1.0, 0.25, 0.75, 1.0])
+        self.assertEqual(columns["Exp2Syn"]["tau2"].mantissa.dtype, np.int64)
+        np.testing.assert_array_equal(store.repeat_index[store.name == "x"][:3], [0, 0, 1])
+
+    def test_store_matches_row_by_row_construction_for_1000_members(self):
+        self._check_store_matches_reference(1000)
+
+    def test_valid_declarations_skip_the_row_by_row_build(self):
+        # Every parameter form above takes the per-declaration build; only a
+        # failing value rebuilds its column row by row to name the row.
+        cell, _ = _declare_every_parameter_form(10)
+        with mock.patch.object(_SynapseStore, "_column_by_row", side_effect=AssertionError("row-by-row build")):
+            store = _SynapseStore(cell)
+        self.assertEqual(len(store.id), 10 * 8 + 15)
+        cell = Cell(make_tree_s(), pop_size=(2,))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", tau=np.nan * u.ms, e=0.0 * u.mV))
+        by_row = _SynapseStore._column_by_row
+        with mock.patch.object(_SynapseStore, "_column_by_row", autospec=True, side_effect=by_row) as spy:
+            with self.assertRaisesRegex(ValueError, r"^Synapse 'ExpSyn' parameter 'tau' must contain only finite"):
+                _SynapseStore(cell)
+        self.assertEqual([call.args[1] for call in spy.call_args_list], ["tau"])
+
+    def test_invalid_values_name_the_first_failing_row(self):
+        Synapse = braincell.mech.Synapse
+        soma = at("soma", 0.5)
+        cases = (
+            # "a" first fails in member 1; "b" already in member 0.
+            (
+                lambda: (
+                    (Terminals(), Synapse("ExpSyn", name="a", tau=[[1.0], [np.nan], [3.0]] * u.ms)),
+                    (soma, Synapse("ExpSyn", name="b", tau=np.inf * u.ms)),
+                ),
+                ValueError,
+                r"^Synapse 'b' \(ExpSyn\) parameter 'tau' must contain only finite values; got inf ms\. Placed on ",
+            ),
+            (
+                lambda: ((soma, Synapse("ExpSyn", name="s", tau=[1.0, np.nan, 3.0] * u.ms)),),
+                ValueError,
+                r"^Synapse 's' \(ExpSyn\) parameter 'tau' must contain only finite values; got nan ms\. Placed on ",
+            ),
+            (
+                lambda: ((soma, Synapse("ExpSyn", name="s", tau=[1.0, 2.0] * u.ms)),),
+                ValueError,
+                r"^Synapse parameter shape \(2,\) cannot broadcast to 3 logical instances\.$",
+            ),
+            (
+                lambda: ((soma, Synapse("ExpSyn", name="s", tau=2 * u.mV)),),
+                ValueError,
+                r"^Synapse 's' \(ExpSyn\) parameter 'tau' has units incompatible with ms; got 2 mV\. Placed on ",
+            ),
+            (
+                lambda: ((soma, Synapse("ExpSyn", name="s", tau=2.0)),),
+                TypeError,
+                r"^Synapse 's' \(ExpSyn\) parameter 'tau' requires a quantity compatible with ms; got 2\.0 \(no unit\)",
+            ),
+            (
+                lambda: ((soma, Synapse("ExpSynSTD", name="s", U=0.5 * u.ms)),),
+                TypeError,
+                r"^Synapse 's' \(ExpSynSTD\) parameter 'U' must be dimensionless; got 0\.5 ms\. Placed on ",
+            ),
+            (
+                lambda: ((soma, Synapse("ExpSynSTD", name="s", U=[0.5, 0.6, 0.2])),),
+                ValueError,
+                r"^Synapse parameter 'U' must resolve to one scalar per logical instance; got shape \(3, 3\)\.$",
+            ),
+            (
+                lambda: ((soma, Synapse("ExpSyn", name="s", tau=-1.0 * u.ms)),),
+                ValueError,
+                r"^Synapse 's' \(ExpSyn\) parameter 'tau' must be > 0\. Placed on ",
+            ),
+            (
+                lambda: ((soma, Synapse("ExpSyn", name="s", foo=1.0)),),
+                TypeError,
+                r"^Synapse type 'ExpSyn' has no parameters \('foo',\)\.$",
+            ),
+        )
+        for declare, error, message in cases:
+            with self.subTest(message=message):
+                cell = Cell(make_tree_s(), pop_size=(3,))
+                with warnings.catch_warnings():
+                    # Declarations warn now and raise from braincell 0.4.
+                    warnings.simplefilter("ignore", FutureWarning)
+                    for locset, declaration in declare():
+                        cell.place(locset, declaration)
+                with self.assertRaisesRegex(error, message):
+                    _SynapseStore(cell)
+
+    def test_values_of_a_parameter_without_a_unit_prototype(self):
+        # Each value is its own unit prototype, so values that pass their
+        # own check can still disagree with each other.
+        @braincell.mech.register_synapse("_FreeGainExpSyn")
+        class _FreeGainExpSyn(braincell.synapse.ExpSyn):
+            def __init__(self, size, name=None, tau=0.1 * u.ms, e=0.0 * u.mV, gain=None):
+                super().__init__(size, name=name, tau=tau, e=e)
+                self.gain = gain
+
+        cases = (
+            ((2.0 * u.ms, 2500.0 * u.us), None, None),
+            ((2.0, 1.0 * u.ms), TypeError, r"^Synapse parameter 'gain' mixes dimensioned and dimensionless values\.$"),
+            (
+                (2.0 * u.ms, 1.0 * u.mV),
+                ValueError,
+                r"^Synapse parameter 'gain' has incompatible units across instances\.$",
+            ),
+        )
+        try:
+            for gains, error, message in cases:
+                with self.subTest(gains=gains):
+                    cell = Cell(make_tree_s(), pop_size=(2,))
+                    for x, gain in zip((0.25, 0.75), gains):
+                        cell.place(at("soma", x), braincell.mech.Synapse("_FreeGainExpSyn", gain=gain))
+                    if error is None:
+                        column = _SynapseStore(cell).parameter_columns["_FreeGainExpSyn"]["gain"]
+                        self.assertEqual(column.unit, u.ms)
+                        np.testing.assert_array_equal(column.mantissa, [2.0, 2.5, 2.0, 2.5])
+                    else:
+                        with self.assertRaisesRegex(error, message):
+                            _SynapseStore(cell)
+        finally:
+            braincell.mech.get_registry().unregister("synapse", "_FreeGainExpSyn")
 
 
 if __name__ == "__main__":

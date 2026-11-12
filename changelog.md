@@ -1760,7 +1760,7 @@
   previous time plus `dt`, rounded in the run precision, so in float32 a
   loop of 32010 `update()` calls at `dt = 0.025 ms` ended at 800.443176 ms
   instead of 800.25 ms, and events at 100, 409.6 and 800 ms acted at updates
-  4000, 16387 and 31992 instead of 4000, 16384 and 32000 (main `81cdff5`).
+  4000, 16387 and 31992 instead of 4000, 16384 and 32000 (main `aba2709`).
   Split runs of 800 steps started 6338 of 32010 steps at other times than one
   run in float32, 10841 in float64 (within 6.1e-5 and 1.1e-13 ms). A Network
   and a Cell now count their steps, and step `k` of a run starts at

@@ -1807,6 +1807,14 @@
   stored outputs, from braincell 0.1.0, differed by one 0.025 ms step. The
   notebook stores its outputs.
 
+- The connection tutorial (`examples/network/connection.ipynb`) runs to the
+  end again and is in English. It called `ConnectionView.set()` before
+  `init_state()`, which raises: it now gives the weights and delays to
+  `connect()` and shows `.set(weight=...)` after the run, with the
+  `RuntimeError` that a delay change raises. It read a connection view
+  after `run()` had initialized the Cell, which raised "This discrete View is
+  stale"; it now selects the rows again. The notebook stores its outputs.
+
 ### Deprecations
 
 - **Constructing an invalid mechanism declaration** (MECH-26).

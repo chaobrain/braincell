@@ -2457,6 +2457,42 @@ def _synapse_run(model, solver, dt_ms):
     return _diffeq_values(cell)
 
 
+def _gaba_block_solver_report() -> dict:
+    """CELL-31b on G; run in a float64 subprocess by :func:`_gaba_block_solver_numbers`.
+
+    ``{"<solver>/<dt>": (max |V - reference| in mV, max |Ci - reference| in mM)}``
+    against rk4 at dt = 0.00025 ms.
+    """
+    with brainstate.environ.context(precision=64):
+        ref_V, ref_states = _synapse_run("G", "rk4", 0.00025)
+        report = {}
+        for name in _BLOCK_SOLVER_NAMES:
+            for dt_ms in (0.005, 0.001):
+                V, states = _synapse_run("G", name, dt_ms)
+                ci = "ion_channels.cl.Ci"
+                report[f"{name}/{dt_ms}"] = (
+                    float(np.max(np.abs(V - ref_V))),
+                    float(np.max(np.abs(states[ci] - ref_states[ci]))),
+                )
+    return report
+
+
+@functools.cache
+def _gaba_block_solver_numbers() -> dict:
+    # In a subprocess, as _kinetic_integration_numbers: in one process a
+    # Cldif_JE2011 Cell run at one precision makes the next one fail at the
+    # other (JaxRuntimeError at init_state; on main too).
+    code = (
+        "import json; from braincell._multi_compartment.cell_test import _gaba_block_solver_report; "
+        "print(json.dumps(_gaba_block_solver_report()))"
+    )
+    env = dict(os.environ, JAX_ENABLE_X64="1", JAX_PLATFORMS="cpu")
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
+    if result.returncode != 0:
+        raise AssertionError(result.stderr)
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
 class CellBlockSolverPointSynapseTest(unittest.TestCase):
     """CELL-31b: the block solvers advance point synapses, each row in a slot of its cell's block."""
 
@@ -2489,20 +2525,21 @@ class CellBlockSolverPointSynapseTest(unittest.TestCase):
         # The snapshot path: Cl- current read after the block from the new V and
         # synapse states. Reference: rk4 at dt 0.00025 ms (rk4 itself is only
         # about 1.3rd order here: Cldif_JE2011 advances after the main step).
+        # Measured V: exp_euler 2.62e-5 -> 1.15e-6, crank_nicolson 2.06e-5 ->
+        # 7.25e-7, backward_euler 6.42e-4 -> 1.39e-4 mV; Ci at most 2.26e-5 ->
+        # 3.58e-6 mM.
         bounds = {
             "exp_euler": (4e-5, 1.8e-6),
             "crank_nicolson": (3.1e-5, 1.1e-6),
             "backward_euler": (9.6e-4, 2.1e-4),
         }
-        with jax.enable_x64(True), brainstate.environ.context(precision=64):
-            ref_V, ref_states = _synapse_run("G", "rk4", 0.00025)
-            for name, (coarse, fine) in bounds.items():
-                with self.subTest(solver=name):
-                    for dt, bound, ci_bound in ((0.005, coarse, 3.4e-5), (0.001, fine, 5.4e-6)):
-                        V, states = _synapse_run("G", name, dt)
-                        self.assertLessEqual(float(np.max(np.abs(V - ref_V))), bound)
-                        ci = "ion_channels.cl.Ci"
-                        self.assertLessEqual(float(np.max(np.abs(states[ci] - ref_states[ci]))), ci_bound)
+        report = _gaba_block_solver_numbers()
+        for name, (coarse, fine) in bounds.items():
+            with self.subTest(solver=name):
+                for dt, bound, ci_bound in ((0.005, coarse, 3.4e-5), (0.001, fine, 5.4e-6)):
+                    gap_V, gap_ci = report[f"{name}/{dt}"]
+                    self.assertLessEqual(gap_V, bound)
+                    self.assertLessEqual(gap_ci, ci_bound)
 
     def test_an_unused_slot_leaves_its_cell_as_if_alone(self):
         # P's cell 1 has one synapse row and one zero slot; it is S.

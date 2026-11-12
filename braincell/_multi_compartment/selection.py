@@ -222,9 +222,19 @@ class BranchSelector:
         return self._owner._with_scope(self._owner._scope.select_branches(self._owner.root, selected))
 
     def by_type(self, branch_type: str):
+        """Select the branches of morphology type ``branch_type``.
+
+        Raises ``ValueError`` if ``branch_type`` is not a non-empty string or
+        no branch of the morphology has that type; the message names the
+        types it has.
+        """
         if not isinstance(branch_type, str) or not branch_type:
             raise ValueError("branch type must be a non-empty string.")
-        selected = tuple(branch.index for branch in self._owner.root.morpho.branches if branch.type == branch_type)
+        branches = self._owner.root.morpho.branches
+        selected = tuple(branch.index for branch in branches if branch.type == branch_type)
+        if not selected:
+            types = sorted({str(branch.type) for branch in branches})
+            raise ValueError(f"The morphology has no branch of type {branch_type!r}; its branch types are {types!r}.")
         return self._owner._with_scope(
             self._owner._scope.select_branches(self._owner.root, selected, branch_in("type", [branch_type]))
         )

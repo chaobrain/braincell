@@ -411,13 +411,13 @@ def _leak_cell(kind="cable"):
 
 
 def _failing_cell():
-    """A Cell whose init_state raises: a Junction placed without its conductance."""
+    """A Cell whose init_state raises: a sodium ion named after the potassium family."""
     cell = _leak_cell()
-    cell.place(at("soma", 0.5), braincell.mech.Junction())
+    cell.paint(AllRegion(), braincell.mech.Ion("SodiumFixed", name="k"))
     return cell
 
 
-_JUNCTION_ERROR = "Mechanism Junction has no attribute 'conductance'"
+_INIT_ERROR = "conflicts with canonical family key"
 
 
 class NetworkInitRollbackTest(unittest.TestCase):
@@ -446,7 +446,7 @@ class NetworkInitRollbackTest(unittest.TestCase):
                 generation = a._view_generation
                 leak = a.channels["leak"]
 
-                with self.assertRaisesRegex(KeyError, _JUNCTION_ERROR):
+                with self.assertRaisesRegex(ValueError, _INIT_ERROR):
                     net.init_state()
 
                 self.assertEqual((a._initialized, b._initialized, net._initialized), (False, False, False))
@@ -508,7 +508,7 @@ class NetworkInitRollbackTest(unittest.TestCase):
             return reset(cell)
 
         with patch.object(braincell.Cell, "reset", autospec=True, side_effect=tracked):
-            with self.assertRaisesRegex(KeyError, _JUNCTION_ERROR):
+            with self.assertRaisesRegex(ValueError, _INIT_ERROR):
                 net.init_state()
 
         self.assertEqual([id(cell) for cell in order], [id(second), id(first)])

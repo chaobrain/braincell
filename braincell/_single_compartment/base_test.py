@@ -679,8 +679,11 @@ class SingleCompartmentIndependentIntegrationTest(unittest.TestCase):
     predicate behind the filter is an untested invariant.
     """
 
+    def setUp(self) -> None:
+        # A context rather than ``environ.set``: the dt is gone after the test.
+        self.enterContext(brainstate.environ.context(dt=0.01 * u.ms))
+
     def _neuron(self):
-        brainstate.environ.set(dt=0.01 * u.ms)
         channel = _SelfIntegratingChannel(size=(1,))
         sc = SingleCompartment(size=(1,), self_int=channel)
         sc.init_state()
@@ -696,7 +699,6 @@ class SingleCompartmentIndependentIntegrationTest(unittest.TestCase):
 
     def test_hooks_do_reach_an_ordinary_channel(self) -> None:
         """The control: the same three hooks reach a channel without the mixin."""
-        brainstate.environ.set(dt=0.01 * u.ms)
         leak = IL(size=(1,))
         sc = SingleCompartment(size=(1,), leak=leak)
         sc.init_state()
@@ -714,6 +716,19 @@ class SingleCompartmentIndependentIntegrationTest(unittest.TestCase):
         self.assertIn("ind_update", channel.calls)
         self.assertNotIn("pre_integral", channel.calls)
         self.assertNotIn("post_integral", channel.calls)
+
+
+class SingleCompartmentIndependentIntegrationEnvironTest(unittest.TestCase):
+    def test_the_tests_leave_the_global_dt_as_they_found_it(self) -> None:
+        # On main two of them set dt = 0.01 ms process-wide, which every later
+        # test in the same process saw.
+        saved = brainstate.environ.pop("dt", None)
+        if saved is not None:
+            self.addCleanup(brainstate.environ.set, dt=saved)
+        result = unittest.TestResult()
+        unittest.defaultTestLoader.loadTestsFromTestCase(SingleCompartmentIndependentIntegrationTest).run(result)
+        self.assertEqual((result.testsRun, result.errors, result.failures), (3, [], []))
+        self.assertIsNone(brainstate.environ.get("dt", None))
 
 
 class _SelfIntegratingPools(SingleCompartment):

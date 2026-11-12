@@ -480,8 +480,8 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
 
     For :class:`Density` this is the declared ``params`` keys. Synapses are
     materialized through their runtime schema before this helper is reached.
-    For junctions it is the parameter keys (or a single default name when
-    empty). For clamps it is the concrete dataclass field names. The v1 probe
+    For junctions it is the parameter keys, none for an empty
+    ``Junction()``. For clamps it is the concrete dataclass field names. The v1 probe
     declarations do not allocate their own state buffers.
     """
     if isinstance(mechanism, Density):
@@ -489,8 +489,7 @@ def _mechanism_var_names(mechanism: object) -> tuple[str, ...]:
     if isinstance(mechanism, SynapsePlacement):
         return tuple(mechanism.params.keys())
     if isinstance(mechanism, Junction):
-        names = tuple(mechanism.params.keys())
-        return names if names else ("conductance",)
+        return tuple(mechanism.params.keys())
     if isinstance(mechanism, CurrentClamp):
         return ("delay", "durations", "amplitudes")
     if isinstance(mechanism, SineClamp):

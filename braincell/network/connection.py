@@ -610,7 +610,9 @@ class ConnectionView(DiscreteView):
             If a plasticity rule rejects the new weight (outside its
             ``w_min``/``w_max``, for example); no row changes.
         """
-        self.cell._raise_if_not_initialized("ConnectionView.set(); configure connect() before init_state()")
+        self.cell._raise_if_not_initialized(
+            "ConnectionView.set()", hint="Before init_state(), give the values to connect()."
+        )
         if delay is not _UNSET:
             raise RuntimeError("Connection delay is structural; configure it in connect() before init_state().")
         if weight is not _UNSET:

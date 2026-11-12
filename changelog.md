@@ -1724,6 +1724,10 @@
   `GeometryView`, whose hint now follows as its own sentence, for example
   "CellView.set() requires init_state() first. Before init_state(), assign
   Cell.V_init and Cell.V_th instead.".
+  `ConnectionView.set()` before `init_state()` said "ConnectionView.set();
+  configure connect() before init_state() requires init_state() first." and
+  now says "ConnectionView.set() requires init_state() first. Before
+  init_state(), give the values to connect().".
 
 ### Documentation
 

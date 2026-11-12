@@ -97,10 +97,11 @@
   - A block holds `n_cv * n_s + sum_l k_l * m_l` states: `n_s` states per
     CV, `k_l` the most synapses of type `l` on one cell, `m_l` the states of
     one. A step costs the cube of that per cell. With 1000 one-CV cells with
-    one or two synapses each, `exp_euler` costs about 140 times as much per
-    step as `ralston2`, and the implicit two about 7-8 times. For cells with
-    many synapses, use `staggered`, `ind_exp_euler` or an explicit
-    Runge-Kutta solver.
+    one or two synapses each, `exp_euler` costs about 180 times as much per
+    step as `ralston2` (14 times without the synapses), `backward_euler`
+    about 7 times and `crank_nicolson` about 12 times. For cells with many
+    synapses, use `staggered`, `ind_exp_euler` or an explicit Runge-Kutta
+    solver.
   - A lumped cell still rejects these three solvers with point synapses.
   - Models without point synapses are unchanged.
 - **`braincell.morph` exports its classes** (MORPH-4a). `Branch`, `Morphology`

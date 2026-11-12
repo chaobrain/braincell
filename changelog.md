@@ -807,6 +807,24 @@
 
 ### Bug Fixes
 
+- brainpy's `align_pre` with a descriptor given no size works on a lumped
+  `Cell` (`Cell.point`, `cv_policy=Lumped()`), as in
+  `cell.align_pre(brainpy.state.STD.desc(tau=700 * u.ms, U=0.07))`. brainpy
+  built the module with `varshape`, which keeps a trailing one-CV axis on a
+  lumped Cell (`pop_size + (1,)`) while `V` and the spike have shape
+  `pop_size`, so the first step of a projection fed by the chain failed on
+  the shapes. `Cell.align_pre` builds such a descriptor with `pop_size` on a
+  lumped Cell; on a cable Cell, and for a descriptor given a size or a module,
+  it is brainpy's method as before. `varshape` is unchanged.
+- An empty `Junction()` placed on a `Cell` no longer fails `init_state` with
+  `KeyError: "Mechanism Junction has no attribute 'conductance'."`: it carries
+  no parameter, as its docstring allows, and `init_state` allocates nothing
+  for it.
+- `cell.soma`, `cell.axon`, `cell.dendrite`, `cell.basal_dendrite`,
+  `cell.apical_dendrite` and `cell.branch.by_type(...)` on a morphology with no
+  branch of that type raise `ValueError` naming the type and the types the
+  morphology has, instead of `TypeError: branch ids must be a one-dimensional
+  integer selection.`
 - `backward_euler` and `crank_nicolson` now solve a cable `Cell` as one block
   per cell, as `exp_euler` does (CELL-31a). Both steps used to merge the states
   with `'stack'` whatever the host declared, so a `Cell` with more than one CV

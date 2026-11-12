@@ -26,7 +26,9 @@ import unittest
 import warnings
 from unittest import mock
 
+import brainpy
 import brainstate
+import braintools
 import brainunit as u
 import jax
 import jax.numpy as jnp
@@ -3248,6 +3250,114 @@ class CellPopulationWideningIsNumericallyNeutralTest(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(single)))
         for member in range(3):
             np.testing.assert_allclose(population[:, member], single[:, 0], rtol=1e-5, atol=1e-5)
+
+
+class LumpedCellAlignPreTest(unittest.TestCase):
+    """brainpy's ``align_pre`` with a descriptor builds the module for the spike a Cell returns.
+
+    On main a lumped Cell built it with ``varshape`` (``pop_size + (1,)``)
+    while ``V`` and the spike have shape ``pop_size``, so the first step of
+    an ``align_pre`` chain into a projection failed on the shapes.
+    """
+
+    DT = 0.025 * u.ms
+    DRIVE = np.asarray([0.2, 0.4, 0.6, 0.8]) * u.nA
+
+    @staticmethod
+    def _leak():
+        return mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV)
+
+    def _pair(self):
+        pre = Cell.point(4, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV)
+        pre.paint(
+            AllRegion(),
+            mech.Ion("SodiumFixed", E=50.0 * u.mV),
+            mech.Ion("PotassiumFixed", E=-77.0 * u.mV),
+            mech.Channel("Na_HH1952", g_max=120.0 * u.mS / u.cm**2),
+            mech.Channel("K_HH1952", g_max=36.0 * u.mS / u.cm**2),
+            self._leak(),
+        )
+        post = Cell.point(3, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV)
+        post.paint(AllRegion(), self._leak())
+        return pre, post
+
+    def _run(self, *size):
+        """Post voltages and pre spikes of an STD -> AMPA ``CurrentProj`` and an ``AlignPostProj``."""
+        pre, post = self._pair()
+        weight = np.linspace(1.0, 2.0, 12).reshape(4, 3) * u.nS
+        std = pre.align_pre(brainpy.state.STD.desc(*size, tau=700.0 * u.ms, U=0.07))
+        ampa = std.align_pre(
+            brainpy.state.AMPA.desc(
+                *size,
+                alpha=0.94 / (u.ms * u.mM),
+                beta=0.18 / u.ms,
+                g_initializer=braintools.init.Constant(0.0),
+            )
+        )
+        self.assertEqual((std.varshape, ampa.varshape), ((4,), (4,)))
+        current = brainpy.state.CurrentProj(
+            ampa.prefetch("g"),
+            comm=_MatMul(weight),
+            out=brainpy.state.COBA(E=0.0 * u.mV),
+            post=post,
+        )
+        aligned = brainpy.state.AlignPostProj(
+            comm=_MatMul(weight),
+            syn=brainpy.state.Expon.desc(post.pop_size, tau=5.0 * u.ms),
+            out=brainpy.state.COBA.desc(E=0.0 * u.mV),
+            post=post,
+        )
+        brainstate.nn.init_all_states([pre, post, current, aligned])
+
+        def step(index):
+            with brainstate.environ.context(t=index * self.DT, i=index, dt=self.DT):
+                current()
+                spike = pre(self.DRIVE)
+                aligned(spike)
+                post()
+                return post.V.value, spike
+
+        return brainstate.transform.for_loop(step, np.arange(400))
+
+    def test_a_descriptor_without_a_size_runs_as_one_sized_by_pop_size(self) -> None:
+        voltage, spike = self._run()
+        sized_voltage, sized_spike = self._run((4,))
+        self.assertEqual((voltage.shape, spike.shape), ((400, 3), (400, 4)))
+        self.assertGreater(float(np.sum(np.asarray(spike))), 0.0)
+        self.assertGreater(float(u.math.max(voltage).to_decimal(u.mV)), -64.0)  # the synapses reach post
+        np.testing.assert_array_equal(np.asarray(spike), np.asarray(sized_spike))
+        np.testing.assert_array_equal(voltage.to_decimal(u.mV), sized_voltage.to_decimal(u.mV))
+
+    def test_a_descriptor_is_built_once_and_other_inputs_follow_brainpy(self) -> None:
+        cell = Cell.point(4)
+        descriptor = brainpy.state.STD.desc(tau=700.0 * u.ms, U=0.07)
+        self.assertIs(cell.align_pre(descriptor), cell.align_pre(descriptor))
+        self.assertEqual(cell.align_pre(brainpy.state.STD.desc(in_size=(2, 2), tau=700.0 * u.ms)).varshape, (2, 2))
+        module = brainpy.state.STD(4, tau=700.0 * u.ms)
+        self.assertIs(cell.align_pre(module), module)
+        with self.assertRaisesRegex(TypeError, "should be an instance of"):
+            cell.align_pre(brainstate.mixin.ParamDescriber(dict))
+        with self.assertRaisesRegex(TypeError, "should be an instance of"):
+            cell.align_pre(object())
+
+    def test_a_cable_cell_sizes_a_descriptor_by_varshape_the_shape_of_its_spike(self) -> None:
+        cable = Cell(Morphology.from_soma(), pop_size=4, cv_policy=CVPerBranch(3))
+        std = cable.align_pre(brainpy.state.STD.desc(tau=700.0 * u.ms, U=0.07))
+        self.assertEqual(std.varshape, (4, 3))
+        cable.init_state()
+        with brainstate.environ.context(t=0.0 * u.ms, dt=self.DT):
+            self.assertEqual(cable.update().shape, std.varshape)
+
+
+class _MatMul(brainstate.nn.Module):
+    """``spikes @ weight``, the communication of :class:`LumpedCellAlignPreTest`."""
+
+    def __init__(self, weight):
+        super().__init__()
+        self.weight = weight
+
+    def update(self, spikes):
+        return u.math.matmul(spikes, self.weight)
 
 
 class MultiCompartmentAliasTest(unittest.TestCase):

@@ -43,7 +43,8 @@ class Junction(Point):
     params : Params or Mapping
         Parameter mapping for the junction (e.g. conductance). An
         empty mapping is allowed while the full ``partner`` wiring is
-        still being designed.
+        still being designed: ``Junction()`` carries no parameter, and
+        ``Cell.init_state`` allocates nothing for it.
 
     Notes
     -----

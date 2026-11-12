@@ -47,12 +47,14 @@ from types import MappingProxyType
 from typing import Callable, ClassVar, Mapping, Optional
 from dataclasses import dataclass, replace
 
+import brainpy
 import brainstate
 import braintools
 import brainunit as u
 import jax
 import jax.numpy as jnp
 import numpy as np
+from brainstate.mixin import ParamDescriber
 
 from braincell._base_channel import Channel, IonChannel, Synapse as RuntimeSynapse
 from braincell._base_ion import Ion, MixIons
@@ -249,27 +251,27 @@ class _CellFacade:
 
     @property
     def soma(self) -> "CellView":
-        """Select branches whose morphology type is ``soma``."""
+        """Select branches whose morphology type is ``soma`` (``ValueError`` if there is none)."""
         return self.branch.by_type("soma")
 
     @property
     def axon(self) -> "CellView":
-        """Select branches whose morphology type is ``axon``."""
+        """Select branches whose morphology type is ``axon`` (``ValueError`` if there is none)."""
         return self.branch.by_type("axon")
 
     @property
     def dendrite(self) -> "CellView":
-        """Select branches whose morphology type is ``dendrite``."""
+        """Select branches whose morphology type is ``dendrite`` (``ValueError`` if there is none)."""
         return self.branch.by_type("dendrite")
 
     @property
     def basal_dendrite(self) -> "CellView":
-        """Select branches whose morphology type is ``basal_dendrite``."""
+        """Select branches whose morphology type is ``basal_dendrite`` (``ValueError`` if there is none)."""
         return self.branch.by_type("basal_dendrite")
 
     @property
     def apical_dendrite(self) -> "CellView":
-        """Select branches whose morphology type is ``apical_dendrite``."""
+        """Select branches whose morphology type is ``apical_dendrite`` (``ValueError`` if there is none)."""
         return self.branch.by_type("apical_dendrite")
 
     @property
@@ -3073,6 +3075,57 @@ class Cell(_CellFacade, HHTypedNeuron):
     @property
     def varshape(self) -> tuple[int, ...]:
         return self.pop_size + (self.n_cv,)
+
+    def align_pre(self, dyn):
+        """Register a module that runs after every :meth:`update` on its spike output.
+
+        This is brainpy's ``align_pre`` (``brainpy.state.Dynamics``), with
+        one difference on a lumped Cell (``cv_policy=Lumped()``,
+        :meth:`point`): a descriptor given no size is built with
+        :attr:`pop_size`, the shape of the spike :meth:`update` returns,
+        rather than with :attr:`varshape`, which keeps a trailing one-CV
+        axis there. On a cable Cell the spike has the shape of
+        :attr:`varshape`, and the method is brainpy's.
+
+        Parameters
+        ----------
+        dyn : brainpy.state.Dynamics or brainstate.mixin.ParamDescriber
+            A module, registered as it is, or a descriptor of one such as
+            ``brainpy.state.STD.desc(tau=..., U=...)``. A descriptor is built
+            once: aligning the same descriptor again returns the module built
+            the first time. A descriptor given a size (``in_size=`` or a
+            positional argument) is built with that size.
+
+        Returns
+        -------
+        brainpy.state.Dynamics
+            The registered module, so that calls can be chained.
+
+        Raises
+        ------
+        TypeError
+            If ``dyn`` is neither a ``Dynamics`` nor a descriptor of one.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainpy
+            >>> import brainunit as u
+            >>> import braincell
+            >>> cell = braincell.Cell.point(4)
+            >>> std = cell.align_pre(brainpy.state.STD.desc(tau=700.0 * u.ms, U=0.07))
+            >>> std.varshape
+            (4,)
+        """
+        sized = isinstance(dyn, ParamDescriber) and ("in_size" in dyn.kwargs or len(dyn.args) > 0)
+        if not self._is_lumped or not isinstance(dyn, ParamDescriber) or sized:
+            return super().align_pre(dyn)
+        if not (isinstance(dyn.cls, type) and issubclass(dyn.cls, brainpy.state.Dynamics)):
+            raise TypeError(f"The input {dyn} should be an instance of {brainpy.state.Dynamics}.")
+        if not self.has_after_update(dyn.identifier):
+            self.add_after_update(dyn.identifier, dyn(in_size=self.pop_size))
+        return self.get_after_update(dyn.identifier)
 
     @property
     def n_compartment(self) -> int:

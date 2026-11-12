@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+import re
 import unittest
 
 import brainunit as u
@@ -52,6 +53,24 @@ class CellSpatialSelectionTest(unittest.TestCase):
         np.testing.assert_array_equal(view.cv.by_id([3, 0, 99]).cv.ids, [3])
         self.assertEqual(cell.soma.cv.ids.tolist(), [0])
         self.assertEqual(cell.dendrite.cv.ids.tolist(), [1, 2, 3])
+
+    def test_a_missing_branch_type_names_itself(self) -> None:
+        # On main every case raised "TypeError: branch ids must be a
+        # one-dimensional integer selection."
+        soma_only = braincell.Cell(braincell.Morphology.from_soma())
+        lumped = braincell.Cell(braincell.Morphology.from_soma(), cv_policy=braincell.Lumped())
+        cases = (
+            ("axon", lambda: soma_only.axon, "['soma']"),
+            ("apical_dendrite", lambda: lumped.apical_dendrite, "['soma']"),
+            ("dendrite", lambda: soma_only[0].dendrite, "['soma']"),
+            ("axn", lambda: _cell().branch.by_type("axn"), "['dendrite', 'soma']"),
+        )
+        for branch_type, select, types in cases:
+            with self.subTest(branch_type=branch_type):
+                message = f"no branch of type '{branch_type}'; its branch types are {types}"
+                with self.assertRaisesRegex(ValueError, re.escape(message)):
+                    select()
+        self.assertEqual(soma_only.soma.cv.ids.tolist(), [0])
 
     def test_region_preserves_positive_coverage(self) -> None:
         cell = _cell()

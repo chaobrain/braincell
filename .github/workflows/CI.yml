@@ -248,7 +248,9 @@ jobs:
   # selected by marker, so a new slow module joins without editing this file.
   # Like `slow_tests`, it runs only when the daily workflow calls this file and
   # is not in ci-ok's `needs`; a failure fails the daily run, which opens the
-  # red issue. Each suite runs in its own process (mechanism libraries).
+  # red issue. Each suite runs in its own process (mechanism libraries). It
+  # also compiles every cerebellar model's whole-cell mechanisms, which no
+  # suite on a pull request builds.
   slow_tests_neuron:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -290,6 +292,21 @@ jobs:
             echo "No slow test under validation/neuron/ion."
             exit 0
           fi
+          exit "$status"
+      - name: Compile the whole-cell mechanisms
+        # The channel builds above leave each model's ion and synapse MOD
+        # files uncompiled; a cell build compiles channel, ion and synapse
+        # sources together. Runs after a failed step too, and reports every
+        # model that fails to build.
+        if: ${{ !cancelled() }}
+        run: |
+          status=0
+          for model in bc_ma2025 dcn_su2015 goc_ma2020 grc_ma2020 io_zh2019 pc_ma2024 sc_ma2021; do
+            if ! python -m validation.neuron._mechanisms "$model" --kind cell > /dev/null; then
+              echo "::error::The $model whole-cell mechanisms do not compile."
+              status=1
+            fi
+          done
           exit "$status"
 
   # macOS and Windows run only in the daily workflow (like `slow_tests`), to

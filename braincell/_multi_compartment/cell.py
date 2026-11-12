@@ -1429,6 +1429,16 @@ class Cell(_CellFacade, HHTypedNeuron):
         except Exception:
             self._discretization_policy, self._cv_policy_index_basis = previous
             raise
+        if lumped:
+            # The check place() runs on a lumped Cell (CELL-43): every placed
+            # site must be the one CV's midpoint. On failure the previous
+            # policy and its discretization come back before the error.
+            try:
+                self._check_lumped_sites()
+            except ValueError:
+                self._discretization_policy, self._cv_policy_index_basis = previous
+                self.discretize()
+                raise
         self._solver_name, self._solver_fn = solver
         self._run_loop_cache.clear()
 

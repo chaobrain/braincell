@@ -692,6 +692,57 @@ class LumpedCounterexampleTest(unittest.TestCase):
                     cell.place(RootLocation(x), _clamp())
                 self.assertEqual(cell.place_rules, ())
 
+    def test_assigning_lumped_checks_the_placed_sites(self) -> None:
+        # CELL-43 (D19): assigning Lumped() runs the check place runs on a
+        # lumped Cell, and a failure leaves the cell as it was.
+        sites = {
+            "ExpSyn": lambda: bc.mech.Synapse("ExpSyn", name="syn"),
+            "CurrentClamp": lambda: bc.mech.CurrentClamp(delay=0.0 * u.ms, durations=1.0 * u.ms, amplitudes=0.1 * u.nA),
+            "Junction": lambda: bc.mech.Junction(params={"g": 1.0}),
+        }
+
+        def cable_cell(mechanism):
+            cell = bc.Cell(
+                bc.Morphology.from_soma(length=LENGTH, radius=RADIUS),
+                cv_policy=bc.CVPerBranch(),
+                V_init=-65.0 * u.mV,
+            )
+            cell.paint(AllRegion(), *_mechanisms(True))
+            cell.place(RootLocation(0.2), mechanism)
+            return cell
+
+        def voltage(cell):
+            cell.init_state()
+            cell.run(dt=DT, duration=10 * DT)
+            return cell.V.value.to_decimal(u.mV)
+
+        for name, make in sites.items():
+            with self.subTest(mechanism=name):
+                with self.assertRaises(ValueError) as expected:
+                    bc.Cell.point(1, length=LENGTH, radius=RADIUS).place(RootLocation(0.2), make())
+                cell = cable_cell(make())
+                policy = cell.cv_policy
+                with self.assertRaises(ValueError) as caught:
+                    cell.cv_policy = bc.Lumped()
+                self.assertEqual(str(caught.exception), str(expected.exception))
+                self.assertIs(cell.cv_policy, policy)
+                self.assertEqual(cell.n_cv, 1)
+                self.assertFalse(cell._is_lumped)
+                np.testing.assert_allclose(voltage(cell), voltage(cable_cell(make())), rtol=1e-12)
+
+    def test_assigning_lumped_keeps_midpoint_sites(self) -> None:
+        # CELL-43: a site at the CV midpoint passes, however it was written.
+        for name, place in {
+            "RootLocation(0.5)": lambda cell: cell.place(RootLocation(0.5), _clamp()),
+            "cv_midpoints": lambda cell: cell.place(cell.cv_midpoints, _clamp()),
+        }.items():
+            with self.subTest(locset=name):
+                cell = bc.Cell(bc.Morphology.from_soma(length=LENGTH, radius=RADIUS), cv_policy=bc.CVPerBranch())
+                place(cell)
+                cell.cv_policy = bc.Lumped()
+                self.assertIsInstance(cell.cv_policy, bc.Lumped)
+                self.assertEqual(len(cell.point_placements), 1)
+
     def test_place_needs_a_locset_on_a_cable_cell(self) -> None:
         cell = bc.Cell(bc.Morphology.from_soma())
         with self.assertRaisesRegex(TypeError, "needs a locset"):

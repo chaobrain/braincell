@@ -55,6 +55,10 @@ _SCHEDULE_HORIZON_KEY = "_braincell_netstim_horizon_ms"
 #: boundary ``t`` a run loop set (:func:`boundary_step`).
 _BOUNDARY_STEP_KEY = "_braincell_boundary_step"
 
+#: ``brainstate.environ`` key carrying ``(origin in ms, step)``: the arrival
+#: steps count from that time, the boundary numbered ``step`` (:func:`arrival_origin`).
+_ARRIVAL_ORIGIN_KEY = "_braincell_arrival_origin"
+
 #: Arrival steps past the int32 step count, which no run reaches, are clipped to it.
 _MAX_STEP = 2**31 - 1
 
@@ -302,7 +306,8 @@ class EventSequence(EventSource):
         the host, from the float64 event times and delays, so a float32 run
         delivers each event at the step a float64 run does (CELL-46). Inside
         ``Cell.run``, ``Network.run`` and ``Network.update()`` it is compared
-        with the loop's integer step. For a ``t`` the caller chose, the step
+        with the loop's integer step; after ``Cell.run`` changes ``dt``, both
+        count from the time reached (CELL-48). For a ``t`` the caller chose, the step
         is ``t / dt`` rounded in the run precision. A ``delay`` or ``dt``
         that is traced (an argument of a ``jax.jit`` function) has no host
         value; its arrivals are then rounded in the run precision too.
@@ -492,7 +497,8 @@ class NetStim(EventSource):
         the host, from the float64 event times and delays, so a float32 run
         delivers each event at the step a float64 run does (CELL-46). Inside
         ``Cell.run``, ``Network.run`` and ``Network.update()`` it is compared
-        with the loop's integer step. For a ``t`` the caller chose, the step
+        with the loop's integer step; after ``Cell.run`` changes ``dt``, both
+        count from the time reached (CELL-48). For a ``t`` the caller chose, the step
         is ``t / dt`` rounded in the run precision. A ``delay`` or ``dt``
         that is traced (an argument of a ``jax.jit`` function) has no host
         value; its arrivals are then rounded in the run precision too.
@@ -1038,19 +1044,41 @@ def grid_step(origin, step, dt):
     return (step + offset.astype(jnp.int32)).astype(jnp.int32)
 
 
+def arrival_origin(origin_ms, step):
+    """Context in which the arrival steps count ``dt`` steps from ``origin_ms``, the boundary numbered ``step``.
+
+    The arrival steps count from time 0 on the ``dt`` grid. After
+    ``Cell.run`` changes ``dt``, its steps count from the time reached
+    (CELL-45), which need not be on the new grid: after 3 steps of 0.025 ms,
+    steps of 0.05 ms start at 0.075 ms. That run numbers its boundaries from
+    ``step`` and sets this context while its loop is traced, so an arrival at
+    ``time + delay`` is due at the boundary
+    ``step + round((time + delay - origin_ms) / dt)``, the one of its steps
+    nearest the arrival, rounded as on the grid from time 0 (CELL-48).
+    ``origin_ms`` of ``None`` keeps the grid from time 0.
+    """
+    if origin_ms is None:
+        return contextlib.nullcontext()
+    return brainstate.environ.context(**{_ARRIVAL_ORIGIN_KEY: (float(origin_ms), int(step))})
+
+
 def _boundary_step(t, dt):
     """The int32 step of the boundary ``t``.
 
     It is the run loop's count when the loop set this ``t``
     (:func:`boundary_step`). For a ``t`` the caller chose, it is ``t / dt``
-    rounded in the run precision.
+    rounded in the run precision, counted from the :func:`arrival_origin`.
     """
     pair = brainstate.environ.get(_BOUNDARY_STEP_KEY, None)
     if pair is not None and pair[0] is t:
         return jnp.asarray(pair[1], dtype=jnp.int32)
     t_ms = u.math.asarray(t.to_decimal(u.ms))
     dt_ms = u.math.asarray(dt.to_decimal(u.ms))
-    return _round_half_up_steps(t_ms / dt_ms).astype(jnp.int32)
+    origin = brainstate.environ.get(_ARRIVAL_ORIGIN_KEY, None)
+    if origin is None:
+        return _round_half_up_steps(t_ms / dt_ms).astype(jnp.int32)
+    origin_ms, origin_step = origin
+    return (_round_half_up_steps((t_ms - origin_ms) / dt_ms) + origin_step).astype(jnp.int32)
 
 
 def _host_ms(value):
@@ -1066,17 +1094,24 @@ def _host_arrival_steps(time_ms, delay_ms, dt_ms) -> np.ndarray:
 
     The event times and delays are float64 declarations, so the step does
     not depend on the run precision: a float32 run delivers an event at the
-    step a float64 run does (CELL-46).
+    step a float64 run does (CELL-46). Inside :func:`arrival_origin` the
+    steps count from its origin (CELL-48).
     """
-    ratio = (np.asarray(time_ms, dtype=np.float64) + delay_ms) / dt_ms
-    return np.minimum(round_half_up_steps_host(ratio), _MAX_STEP).astype(np.int32)
+    arrival_ms = np.asarray(time_ms, dtype=np.float64) + delay_ms
+    origin = brainstate.environ.get(_ARRIVAL_ORIGIN_KEY, None)
+    if origin is None:
+        steps = round_half_up_steps_host(arrival_ms / dt_ms)
+    else:
+        origin_ms, origin_step = origin
+        steps = round_half_up_steps_host((arrival_ms - origin_ms) / dt_ms) + origin_step
+    return np.minimum(steps, _MAX_STEP).astype(np.int32)
 
 
 def _matrix_arrival_steps(time_ms, delay, dt, *, rows):
     """Arrival steps of ``time_ms + delay[..., None]``, one row of events per connection row.
 
     At float64 on the host, unless ``delay`` or ``dt`` is traced; then in
-    the run precision.
+    the run precision. Both count from the :func:`arrival_origin`.
     """
     delay_ms, dt_ms = _host_ms(delay), _host_ms(dt)
     if delay_ms is None or dt_ms is None:
@@ -1084,7 +1119,12 @@ def _matrix_arrival_steps(time_ms, delay, dt, *, rows):
         if getattr(delay_ms, "ndim", 0) == 0:
             delay_ms = u.math.broadcast_to(delay_ms, rows)
         arrivals = u.math.asarray(time_ms) + delay_ms[..., None]
-        return _round_half_up_steps(arrivals / u.math.asarray(dt.to_decimal(u.ms))).astype(jnp.int32)
+        dt_ms = u.math.asarray(dt.to_decimal(u.ms))
+        origin = brainstate.environ.get(_ARRIVAL_ORIGIN_KEY, None)
+        if origin is None:
+            return _round_half_up_steps(arrivals / dt_ms).astype(jnp.int32)
+        origin_ms, origin_step = origin
+        return (_round_half_up_steps((arrivals - origin_ms) / dt_ms) + origin_step).astype(jnp.int32)
     if delay_ms.ndim == 0:
         delay_ms = np.broadcast_to(delay_ms, rows)
     return jnp.asarray(_host_arrival_steps(time_ms, delay_ms[..., None], dt_ms))

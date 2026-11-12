@@ -297,6 +297,10 @@ def _synaptic_kernel_area_ms(synapse) -> float:
     if synapse.synapse_type == "Exp2Syn":
         tau1 = _time_parameter_ms(synapse, "tau1")
         tau2 = _time_parameter_ms(synapse, "tau2")
+        # The rule and message of Exp2Syn itself, which a Cell applies at
+        # init_state; tau1 == tau2 would divide by zero below.
+        if tau1 >= tau2:
+            raise ValueError("Exp2Syn requires tau1 < tau2.")
         t_peak = tau1 * tau2 / (tau2 - tau1) * np.log(tau2 / tau1)
         factor = 1.0 / (np.exp(-t_peak / tau2) - np.exp(-t_peak / tau1))
         return float(factor * (tau2 - tau1))

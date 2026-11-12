@@ -755,5 +755,605 @@ class RuleStateTest(unittest.TestCase):
             cell.connections.rule_state("w")
 
 
+# ---------------------------------------------------------------------------
+# Recording rule states (CELL-12c). The references are closed forms and a
+# float64 host rule written from the documented PairSTDP equations; neither
+# calls the code under test.
+
+STATES = ("w", "x_pre", "y_post")
+
+
+def _host_pair_stdp(pre, post, w0, *, A_plus, A_minus, tau, dt, w_min=-np.inf, w_max=np.inf):
+    """Float64 pair STDP on the host; row ``b`` is the state the update at boundary ``b`` receives.
+
+    ``pre`` and ``post`` are ``(boundaries, rows)`` event counts. Each
+    update decays both traces by ``exp(-dt / tau)``, adds
+    ``A_plus * x_pre * post - A_minus * y_post * pre`` to the clipped
+    weight, then adds the counts to the traces. Returns ``(w, x_pre, y_post)``.
+    """
+    boundaries, rows = pre.shape
+    w = np.broadcast_to(np.asarray(w0, dtype=np.float64), (rows,)).copy()
+    x = np.zeros(rows)
+    y = np.zeros(rows)
+    decay = np.exp(-dt / tau)
+    out = np.zeros((3, boundaries, rows))
+    for b in range(boundaries):
+        out[:, b] = w, x, y
+        x, y = x * decay, y * decay
+        w = np.clip(w + A_plus * x * post[b] - A_minus * y * pre[b], w_min, w_max)
+        x, y = x + pre[b], y + post[b]
+    return out[0], out[1], out[2]
+
+
+def _arrivals(times_ms, delay_ms, dt_ms, boundaries):
+    """Counts per boundary of events at ``times_ms`` that arrive ``delay_ms`` later, rounded half up to a boundary."""
+    counts = np.zeros(boundaries)
+    for t in np.atleast_1d(np.asarray(times_ms, dtype=np.float64)):
+        boundary = int(np.floor((t + delay_ms) / dt_ms + 0.5))
+        if 0 <= boundary < boundaries:
+            counts[boundary] += 1
+    return counts
+
+
+def _decimal(value, unit=None):
+    """``value`` as a float64 array, in ``unit`` when it has one."""
+    return np.asarray(value.to_decimal(unit) if unit is not None else value, dtype=np.float64)
+
+
+def _rec(samples, name, unit=None):
+    """The values of the recording ``name`` as float64, in ``unit`` when it has one."""
+    return _decimal(samples[name].values, unit)
+
+
+def _g_of(samples):
+    return _rec(samples, "g", u.uS)[:, 0]
+
+
+def _unit(state):
+    return u.uS if state == "w" else None
+
+
+def _record_states(view, states=STATES, prefix=""):
+    for state in states:
+        view.record(prefix + state, state)
+
+
+def _standalone_model():
+    """Pre 0 and 12 ms, post 10 and 14 ms (12a acceptance 6e), every state recorded, on a standalone Cell."""
+    cell = _toy_cell(post_ms=[10.0, 14.0])
+    view = braincell.connect("c", source=_seq([0.0, 12.0]), synapse=cell.synapses["s"], weight=W0, plasticity=_stdp())
+    _record_states(view)
+    return cell
+
+
+def _recorded_lifecycle_model():
+    """The 12a acceptance 6(a) model, every state of both calls recorded as ``<call>_<state>``."""
+    net, cell = _lifecycle_model()
+    for name in ("live", "sched"):
+        _record_states(cell.connections[name], prefix=f"{name}_")
+    return net, cell
+
+
+LIFECYCLE_RECORDINGS = tuple(f"{name}_{state}" for name in ("live", "sched") for state in STATES)
+
+
+def _assert_same_recordings(test, got, want, names, rtol=RTOL, atol=1e-15):
+    for name in names:
+        unit = u.uS if name.endswith("w") else None
+        test.assertEqual(got[name].values.shape, want[name].values.shape, name)
+        np.testing.assert_allclose(_rec(got, name, unit), _rec(want, name, unit), rtol=rtol, atol=atol, err_msg=name)
+
+
+class RecordRuleStateTest(unittest.TestCase):
+    """``ConnectionView.record``: sample ``k`` is the state before the update at ``time[k]`` (CELL-12c)."""
+
+    @staticmethod
+    def _both_drivers(pre_ms, post_ms, states, *, duration=12.0 * u.ms):
+        """The samples of the same one-row model, run by a standalone ``Cell.run`` and by a Network."""
+        cell = _toy_cell(post_ms=post_ms)
+        view = braincell.connect("c", source=_seq(pre_ms), synapse=cell.synapses["s"], weight=W0, plasticity=_stdp())
+        _record_states(view, states)
+        post = _toy_cell(post_ms=post_ms)
+        net = _network(_seq(pre_ms), post, rule=_stdp())
+        _record_states(post.connections["c"], states)
+        return cell.run(dt=DT, duration=duration).samples, net.run(dt=DT, duration=duration).samples["post"]
+
+    @_float64
+    def test_both_drivers_record_the_closed_form(self) -> None:
+        k = np.arange(120)
+        expected = {
+            "w": np.where(k <= 100, 0.05, 0.05 + A_PLUS * E_HALF),
+            "x_pre": np.where(k == 0, 0.0, np.exp(-(k - 1) / 200.0)),
+            "y_post": np.where(k <= 100, 0.0, np.exp(-(k - 101) / 200.0)),
+        }
+        standalone, network = self._both_drivers([0.0], [10.0], STATES)
+        for samples in (standalone, network):
+            for state, reference in expected.items():
+                self.assertEqual(samples[state].values.shape, (120, 1))
+                np.testing.assert_allclose(_rec(samples, state, _unit(state))[:, 0], reference, rtol=RTOL, atol=1e-15)
+                (row,) = samples[state].schema.rows
+                self.assertEqual(
+                    (row.population_index, row.cv_id, row.synapse_id, row.connection_id, row.source_index), (0,) * 5
+                )
+                self.assertEqual(
+                    (row.mechanism_category, row.mechanism_type, row.mechanism_name, row.field),
+                    ("connection_rule", "PairSTDP", "c", state),
+                )
+                self.assertEqual(row.unit, _unit(state))
+            self.assertEqual(float(samples["w"].time[0].to_decimal(u.ms)), 0.0)
+        _assert_same_recordings(self, standalone, network, STATES)
+
+    @_float64
+    def test_the_recorded_weight_is_the_delivered_weight(self) -> None:
+        w100 = _reference(0.05 + A_PLUS * np.exp(-0.25), 0.057788007831)
+        w101 = _reference(w100 + A_PLUS * E_HALF - A_MINUS * np.exp(-0.25), 0.055675906206)
+        for samples in self._both_drivers([0.0, 10.0], [5.0, 10.0], ("w",)):
+            w = _rec(samples, "w", u.uS)[:, 0]
+            g = _g_of(samples)
+            np.testing.assert_allclose([w[0], w[100], w[101]], [0.05, w100, w101], rtol=RTOL)
+            # The jump of g at a boundary is the weight sampled there.
+            np.testing.assert_allclose([g[1] - g[0], g[101] - g[100]], [w[0], w[100]], rtol=RTOL)
+
+    @_float64
+    def test_live_arrivals_with_their_delays(self) -> None:
+        # The source crosses threshold in the step ending at 2.1 ms (detected at step 20).
+        late = _reference(A_PLUS * np.exp(-7.9 / TAU), 0.006736800392)
+        later = _reference(A_PLUS * np.exp(-7.7 / TAU), 0.006804506362)
+        # delay, first x_pre row, first g row (a zero delay acts at the end of the detecting step), change of w
+        for delay, first_x, first_g, change in ((0.0, 22, 21, late), (0.1, 22, 22, late), (0.3, 24, 24, later)):
+            post = _toy_cell(post_ms=[10.0])
+            net = _network(_live_pre([2.1]), post, delay=delay * u.ms, rule=_stdp())
+            post.connections["c"].record("w", "w")
+            post.connections["c"].record("x", "x_pre")
+            samples = net.run(dt=DT, duration=12.0 * u.ms).samples["post"]
+            x, w, g = _rec(samples, "x")[:, 0], _rec(samples, "w", u.uS)[:, 0], _g_of(samples)
+            self.assertEqual((int(np.flatnonzero(x)[0]), x[first_x]), (first_x, 1.0))
+            self.assertEqual(int(np.flatnonzero(g)[0]), first_g)
+            np.testing.assert_allclose(g[first_g] - g[first_g - 1], w[first_g], rtol=RTOL)
+            self.assertEqual(w[100], 0.05)
+            np.testing.assert_allclose(w[101] - 0.05, change, rtol=RTOL)
+
+    @_float64
+    def test_period_frequency_and_start_choose_the_samples(self) -> None:
+        for driver in ("cell", "network"):
+            cell = _toy_cell(post_ms=[10.0])
+            if driver == "cell":
+                braincell.connect("c", source=_seq([0.0]), synapse=cell.synapses["s"], weight=W0, plasticity=_stdp())
+                model = cell
+            else:
+                model = _network(_seq([0.0]), cell, rule=_stdp())
+            view = cell.connections["c"]
+            view.record("every", "x_pre")
+            view.record("coarse", "x_pre", period=1.0 * u.ms, start=0.5 * u.ms)
+            view.record("w_khz", "w", frequency=1.0 * u.kHz)
+            result = model.run(dt=DT, duration=12.0 * u.ms)
+            samples = result.samples if driver == "cell" else result.samples["post"]
+            self.assertEqual(samples["coarse"].values.shape, (12, 1))
+            np.testing.assert_allclose(samples["coarse"].time.to_decimal(u.ms), np.arange(0.5, 12.0, 1.0), rtol=RTOL)
+            np.testing.assert_array_equal(_rec(samples, "coarse"), _rec(samples, "every")[5::10])
+            np.testing.assert_allclose(
+                _rec(samples, "w_khz", u.uS)[10:12, 0], [0.05, 0.05 + A_PLUS * E_HALF], rtol=RTOL
+            )
+
+    @_float64
+    def test_rows_follow_their_synapse_onto_a_new_grid(self) -> None:
+        cell = _toy_cell(post_ms=[10.0])
+        view = braincell.connect("c", source=_seq([0.0]), synapse=cell.synapses["s"], weight=W0, plasticity=_stdp())
+        view.record("w", "w")
+        cell.cv_policy = CVPerBranch(3)
+        samples = cell.run(dt=DT, duration=12.0 * u.ms).samples
+        (row,), (g_row,) = samples["w"].schema.rows, samples["g"].schema.rows
+        self.assertEqual((row.cv_id, row.point_id), (1, 2))
+        self.assertEqual((row.cv_id, row.point_id, row.branch_id), (g_row.cv_id, g_row.point_id, g_row.branch_id))
+        k = np.arange(120)
+        np.testing.assert_allclose(
+            _rec(samples, "w", u.uS)[:, 0], np.where(k <= 100, 0.05, 0.05 + A_PLUS * E_HALF), rtol=RTOL
+        )
+
+
+class RecordRuleStateRowsTest(unittest.TestCase):
+    """The rows of a rule-state recording are the view's connected rows, in view order."""
+
+    @staticmethod
+    def _model():
+        """Rule calls ``ee`` (IDs 0-2) and ``ff`` (IDs 3-4) and a call ``plain`` without a rule (ID 5)."""
+        net = braincell.Network("rows")
+        pre = net.add_population("pre", _seq([0.0], [1.0], [2.0]))
+        stim = net.add_population("stim", braincell.NetStim(size=1, start=4.0 * u.ms, number=3, interval=2.0 * u.ms))
+        cell = _toy_cell(post_ms=[5.0, 9.0], n_sites=3)
+        net.add_population("post", cell)
+        synapse = cell.synapses["s"]
+        net.connect(
+            "ee",
+            source=pre,
+            synapse=synapse,
+            weight=[0.05, 0.04, 0.03] * u.uS,
+            delay=[0.0, 0.2, 0.4] * u.ms,
+            plasticity=_stdp(),
+        )
+        net.connect(
+            "ff",
+            source=pre.event_outputs["event"][[2, 0]],
+            synapse=synapse[[0, 1]],
+            weight=[20.0, 10.0] * u.nS,
+            plasticity=_stdp(A_plus=2.0 * u.nS, A_minus=1.0 * u.nS),
+        )
+        net.connect("plain", source=stim, synapse=synapse[2], weight=0.01 * u.uS)
+        return net, cell
+
+    @staticmethod
+    def _across(cell):
+        """The ``ff`` rows, then the ``ee`` rows."""
+        return cell.connections[[3, 4, 0, 1, 2]]
+
+    @_float64
+    def test_rows_follow_the_view_across_calls(self) -> None:
+        net, cell = self._model()
+        across = self._across(cell)
+        np.testing.assert_array_equal(across.id, [3, 4, 0, 1, 2])
+        across.record("w", "w")
+        across.record("x", "x_pre")
+        cell.connections["ee"][[2, 0]].record("picked", "w")
+        samples = net.run(dt=DT, duration=10.0 * u.ms).samples["post"]
+
+        rows = samples["w"].schema.rows
+        self.assertEqual([row.connection_id for row in rows], [3, 4, 0, 1, 2])
+        self.assertEqual([row.source_index for row in rows], [2, 0, 0, 1, 2])
+        self.assertEqual([row.synapse_id for row in rows], [0, 1, 0, 1, 2])
+        self.assertEqual([row.mechanism_name for row in rows], ["ff", "ff", "ee", "ee", "ee"])
+        # connect gives the weights the synapse's event unit, uS.
+        self.assertEqual({row.unit for row in rows}, {u.uS})
+        self.assertEqual([row.connection_id for row in samples["picked"].schema.rows], [2, 0])
+
+        post = np.zeros(100)
+        post[[50, 90]] = 1.0
+        ee_pre = np.stack([_arrivals([t], d, 0.1, 100) for t, d in ((0.0, 0.0), (1.0, 0.2), (2.0, 0.4))], axis=1)
+        ff_pre = np.stack([_arrivals([2.0], 0.0, 0.1, 100), _arrivals([0.0], 0.0, 0.1, 100)], axis=1)
+        ee_w, ee_x, _ = _host_pair_stdp(
+            ee_pre, np.stack([post] * 3, axis=1), [0.05, 0.04, 0.03], A_plus=A_PLUS, A_minus=A_MINUS, tau=TAU, dt=0.1
+        )
+        ff_w, ff_x, _ = _host_pair_stdp(
+            ff_pre, np.stack([post] * 2, axis=1), [20.0, 10.0], A_plus=2.0, A_minus=1.0, tau=TAU, dt=0.1
+        )
+        np.testing.assert_allclose(
+            _rec(samples, "w", u.uS), np.concatenate([ff_w / 1000.0, ee_w], axis=1), rtol=RTOL, atol=1e-15
+        )
+        np.testing.assert_allclose(_rec(samples, "x"), np.concatenate([ff_x, ee_x], axis=1), rtol=RTOL, atol=1e-15)
+        np.testing.assert_allclose(_rec(samples, "picked", u.uS), ee_w[:, [2, 0]], rtol=RTOL, atol=1e-15)
+
+        # The same views read by rule_state before each Network.update().
+        net2, cell2 = self._model()
+        net2.prepare_run(dt=DT)
+        across2, picked2 = self._across(cell2), cell2.connections["ee"][[2, 0]]
+
+        def step(_):
+            values = (across2.rule_state("w"), across2.rule_state("x_pre"), picked2.rule_state("w"))
+            net2.update()
+            return values
+
+        w, x, picked = brainstate.transform.for_loop(step, np.arange(100))
+        np.testing.assert_allclose(_rec(samples, "w", u.uS), _decimal(w, u.uS), rtol=RTOL, atol=1e-15)
+        np.testing.assert_allclose(_rec(samples, "x"), _decimal(x), rtol=RTOL, atol=1e-15)
+        np.testing.assert_allclose(_rec(samples, "picked", u.uS), _decimal(picked, u.uS), rtol=RTOL, atol=1e-15)
+
+    @_float64
+    def test_removed_rows_are_not_recorded(self) -> None:
+        cell = _toy_cell(post_ms=[10.0], n_sites=3)
+        view = braincell.connect(
+            "c",
+            source=_seq([0.0], [0.5], [1.0]),
+            synapse=cell.synapses["s"],
+            weight=[0.05, 0.04, 0.03] * u.uS,
+            plasticity=_stdp(),
+        )
+        view.record("w", "w")
+        view[[1]].record("only_removed", "w")
+        cell.connections["c"][[1]].remove()
+        first = cell.run(dt=DT, duration=12.0 * u.ms).samples
+        self.assertEqual([row.connection_id for row in first["w"].schema.rows], [0, 2])
+        self.assertEqual(first["w"].values.shape, (120, 2))
+        self.assertEqual(first["only_removed"].values.shape, (120, 0))
+        post = np.zeros((120, 2))
+        post[100] = 1.0
+        pre = np.stack([_arrivals([0.0], 0.0, 0.1, 120), _arrivals([1.0], 0.0, 0.1, 120)], axis=1)
+        reference, _, _ = _host_pair_stdp(pre, post, [0.05, 0.03], A_plus=A_PLUS, A_minus=A_MINUS, tau=TAU, dt=0.1)
+        np.testing.assert_allclose(_rec(first, "w", u.uS), reference, rtol=RTOL, atol=1e-15)
+        cell.reset()
+        second = cell.run(dt=DT, duration=12.0 * u.ms).samples
+        _assert_same_recordings(self, second, first, ("w", "only_removed"))
+
+    def test_only_a_cell_outside_a_network_keeps_a_copy(self) -> None:
+        def count_states(*, record, in_network):
+            cell = _toy_cell(post_ms=[10.0])
+            if in_network:
+                model = _network(_seq([0.0]), cell, rule=_stdp())
+            else:
+                model = cell
+                braincell.connect("c", source=_seq([0.0]), synapse=cell.synapses["s"], weight=W0, plasticity=_stdp())
+            if record:
+                cell.connections["c"].record("w", "w")
+                cell.connections["c"].record("x", "x_pre")
+            model.init_state()
+            return len(brainstate.graph.states(cell))
+
+        alone = count_states(record=False, in_network=False)
+        self.assertEqual(count_states(record=True, in_network=False), alone + 2)
+        in_network = count_states(record=False, in_network=True)
+        self.assertEqual(count_states(record=True, in_network=True), in_network)
+
+
+class RecordRuleStateLoopTest(unittest.TestCase):
+    """Rule-state recordings against update loops, segments, reset_state and scheduled delivery."""
+
+    @_float64
+    def test_network_update_loop_reads_sample_k_before_update_k(self) -> None:
+        net, _ = _recorded_lifecycle_model()
+        samples = net.run(dt=DT, duration=60.0 * u.ms).samples["post"]
+        net2, cell2 = _recorded_lifecycle_model()
+        net2.prepare_run(dt=DT)
+
+        def step(_):
+            values = {
+                f"{name}_{state}": cell2.connections[name].rule_state(state)
+                for name in ("live", "sched")
+                for state in STATES
+            }
+            net2.update()
+            return values
+
+        read = brainstate.transform.for_loop(step, np.arange(600))
+        for name, value in read.items():
+            unit = u.uS if name.endswith("w") else None
+            np.testing.assert_allclose(_decimal(value, unit), _rec(samples, name, unit), rtol=RTOL, atol=1e-15)
+        # The scheduled call's weight reaches its bound.
+        self.assertEqual(_rec(samples, "sched_w", u.uS).max(), 0.0015)
+
+    @_float64
+    def test_standalone_update_loop_reads_two_samples_ahead(self) -> None:
+        cell = _standalone_model()
+        samples = cell.run(dt=DT, duration=16.0 * u.ms).samples
+        np.testing.assert_allclose(_w(cell), [W_STANDALONE], rtol=RTOL)
+        np.testing.assert_allclose(_rec(samples, "w", u.uS)[-1], [W_STANDALONE], rtol=RTOL)
+        post = np.zeros((160, 1))
+        post[[100, 140]] = 1.0
+        pre = _arrivals([0.0, 12.0], 0.0, 0.1, 160)[:, None]
+        reference = _host_pair_stdp(pre, post, [0.05], A_plus=A_PLUS, A_minus=A_MINUS, tau=TAU, dt=0.1)
+        for state, want in zip(STATES, reference):
+            np.testing.assert_allclose(_rec(samples, state, _unit(state)), want, rtol=RTOL, atol=1e-15)
+
+        cell2 = _standalone_model()
+        cell2.init_state()
+
+        def step(t):
+            with brainstate.environ.context(t=t):
+                cell2.update()
+            return {state: cell2.connections["c"].rule_state(state) for state in STATES}
+
+        with brainstate.environ.context(dt=DT):
+            read = brainstate.transform.for_loop(step, u.math.arange(159) * DT)
+        for state in STATES:
+            # rule_state after update j (from 0) is sample j + 2.
+            np.testing.assert_allclose(
+                _decimal(read[state], _unit(state))[:158], _rec(samples, state, _unit(state))[2:], rtol=RTOL, atol=1e-15
+            )
+
+    @_float64
+    def test_scheduled_delivery_keeps_the_rule_rows(self) -> None:
+        def lifecycle(drive):
+            net, cell = _recorded_lifecycle_model()
+            stim = net.add_population("drive", drive)
+            net.connect("plain", source=stim, synapse=cell.synapses["s"], weight=0.0005 * u.uS, delay=0.2 * u.ms)
+            return net
+
+        def sparse():
+            return lifecycle(braincell.NetStim(size=1, start=0.5 * u.ms, number=40, interval=1.1 * u.ms))
+
+        def dense():
+            return lifecycle(braincell.NetStim(size=1, start=0.0 * u.ms, number=600, interval=0.1 * u.ms))
+
+        def across_calls():
+            net, cell = RecordRuleStateRowsTest._model()
+            RecordRuleStateRowsTest._across(cell).record("w", "w")
+            return net
+
+        cases = (
+            (across_calls, 10.0, ("w",), ("direct",)),
+            (sparse, 60.0, LIFECYCLE_RECORDINGS, ("direct",)),
+            # "padded" needs about one record per step (CELL-9).
+            (dense, 60.0, LIFECYCLE_RECORDINGS, ("direct", "padded")),
+        )
+        for build, duration, names, methods in cases:
+            default = build().run(dt=DT, duration=duration * u.ms).samples["post"]
+            for method in methods:
+                planned = build().run(dt=DT, duration=duration * u.ms, scheduled_delivery=method).samples["post"]
+                _assert_same_recordings(self, planned, default, names)
+        net = dense()
+        net.prepare_run(dt=DT, scheduled_delivery="direct")
+        cell = net.populations["post"].cell
+
+        def step(_):
+            values = (cell.connections["live"].rule_state("w"), cell.connections["sched"].rule_state("w"))
+            net.update()
+            return values
+
+        live, sched = brainstate.transform.for_loop(step, np.arange(600))
+        default = dense().run(dt=DT, duration=60.0 * u.ms).samples["post"]
+        np.testing.assert_allclose(_decimal(live, u.uS), _rec(default, "live_w", u.uS), rtol=RTOL)
+        np.testing.assert_allclose(_decimal(sched, u.uS), _rec(default, "sched_w", u.uS), rtol=RTOL)
+
+    @_float64
+    def test_segments_and_reset_state_match_one_run(self) -> None:
+        net, _ = _recorded_lifecycle_model()
+        one = net.run(dt=DT, duration=60.0 * u.ms)
+        net.reset_state()
+        joined = braincell.NetworkResult.concat([net.run(dt=DT, duration=d * u.ms) for d in (13.0, 0.1, 21.9, 25.0)])
+        net.reset_state()
+        again = net.run(dt=DT, duration=60.0 * u.ms)
+        for other in (joined, again):
+            _assert_same_recordings(self, other.samples["post"], one.samples["post"], LIFECYCLE_RECORDINGS)
+        np.testing.assert_array_equal(
+            joined.samples["post"]["live_w"].time.to_decimal(u.ms), one.samples["post"]["live_w"].time.to_decimal(u.ms)
+        )
+
+        cell = _standalone_model()
+        one = cell.run(dt=DT, duration=16.0 * u.ms)
+        cell.reset_state()
+        joined = braincell.RunResult.concat(
+            [cell.run(dt=DT, duration=7.0 * u.ms), cell.run(dt=DT, duration=9.0 * u.ms)]
+        )
+        cell.reset_state()
+        again = cell.run(dt=DT, duration=16.0 * u.ms)
+        for other in (joined, again):
+            _assert_same_recordings(self, other.samples, one.samples, STATES)
+
+    @_float64
+    def test_a_weight_set_between_runs_shows_when_it_is_delivered(self) -> None:
+        # The boundary at 5 ms ends the first run. A standalone Cell has
+        # prepared it before set(), so its event still carries 0.05 uS
+        # (CELL-55); a Network prepares it in the next run.
+        for driver, rows in (("cell", [0.05, 0.08]), ("network", [0.08, 0.08])):
+            cell = _toy_cell()
+            if driver == "cell":
+                braincell.connect("c", source=_seq([5.0]), synapse=cell.synapses["s"], weight=W0, plasticity=_stdp())
+                model = cell
+            else:
+                model = _network(_seq([5.0]), cell, rule=_stdp())
+            cell.connections["c"].record("w", "w")
+            model.run(dt=DT, duration=5.0 * u.ms)
+            cell.connections["c"].set(weight=0.08 * u.uS)
+            result = model.run(dt=DT, duration=1.0 * u.ms)
+            samples = result.samples if driver == "cell" else result.samples["post"]
+            w, g = _rec(samples, "w", u.uS)[:, 0], _g_of(samples)
+            np.testing.assert_allclose(w[:2], rows, rtol=RTOL)
+            np.testing.assert_allclose(g[1] - g[0], w[0], rtol=RTOL)
+
+
+class RecordRuleStateFloat32Test(unittest.TestCase):
+    """A float32 run of 32010 steps (800.25 ms) with two NetStim rows into one synapse (L77)."""
+
+    DT = 0.025 * u.ms
+    STEPS = 32010
+    RULE = dict(
+        A_plus=1e-4 * u.uS,
+        A_minus=1.05e-4 * u.uS,
+        tau_plus=20.0 * u.ms,
+        tau_minus=20.0 * u.ms,
+        w_min=0.0 * u.uS,
+        w_max=0.002 * u.uS,
+    )
+
+    @staticmethod
+    def _sources():
+        pre = braincell.NetStim(size=2, start=[1.0, 2.0] * u.ms, number=[205, 117], interval=[4.0, 7.0] * u.ms)
+        post = braincell.NetStim(size=1, start=3.0 * u.ms, number=165, interval=5.0 * u.ms)
+        return pre, post
+
+    def _connect(self, connect, cell, pre, post):
+        view = connect(
+            "c",
+            source=pre,
+            synapse=cell.synapses["s"],
+            weight=[0.001, 0.0015] * u.uS,
+            delay=[0.3, 1.1] * u.ms,
+            plasticity=_stdp(signals={"post": post}, **self.RULE),
+        )
+        _record_states(view)
+
+    def _network(self):
+        net = braincell.Network("f32")
+        pre, post = self._sources()
+        source = net.add_population("pre", pre)
+        cell = _real_cell()
+        net.add_population("post", cell)
+        self._connect(net.connect, cell, source, post)
+        return net, cell
+
+    @staticmethod
+    def _arrays(samples):
+        return {state: _rec(samples, state, _unit(state)) for state in STATES}
+
+    def test_long_float32_run(self) -> None:
+        steps, dt = self.STEPS, self.DT
+        net, _ = self._network()
+        one = net.run(dt=dt, duration=steps * dt).samples["post"]
+        self.assertEqual(one["w"].values.dtype, jnp.float32)
+        self.assertEqual(one["w"].values.shape, (steps, 2))
+        want = self._arrays(one)
+
+        def same(got):
+            for state in STATES:
+                atol = 1e-6 * float(np.abs(want[state]).max())
+                np.testing.assert_allclose(got[state], want[state], rtol=0.0, atol=atol, err_msg=state)
+
+        net.reset_state()
+        parts = [net.run(dt=dt, duration=12000 * dt), net.run(dt=dt, duration=20010 * dt)]
+        same(self._arrays(braincell.NetworkResult.concat(parts).samples["post"]))
+
+        net2, cell2 = self._network()
+        net2.prepare_run(dt=dt)
+
+        def step(_):
+            values = {state: cell2.connections["c"].rule_state(state) for state in STATES}
+            net2.update()
+            return values
+
+        read = brainstate.transform.for_loop(step, np.arange(steps))
+        same({state: _decimal(read[state], _unit(state)) for state in STATES})
+        self.assertEqual(float(cell2.current_time.to_decimal(u.ms)), 800.25)
+
+        pre, post = self._sources()
+        cell3 = _real_cell()
+        self._connect(braincell.connect, cell3, pre, post)
+        same(self._arrays(cell3.run(dt=dt, duration=steps * dt).samples))
+        cell3.reset_state()
+        parts = [cell3.run(dt=dt, duration=12000 * dt), cell3.run(dt=dt, duration=20010 * dt)]
+        same(self._arrays(braincell.RunResult.concat(parts).samples))
+
+        pre_counts = np.stack(
+            [
+                _arrivals(1.0 + 4.0 * np.arange(205), 0.3, 0.025, steps),
+                _arrivals(2.0 + 7.0 * np.arange(117), 1.1, 0.025, steps),
+            ],
+            axis=1,
+        )
+        post_counts = np.stack([_arrivals(3.0 + 5.0 * np.arange(165), 0.0, 0.025, steps)] * 2, axis=1)
+        reference = _host_pair_stdp(
+            pre_counts,
+            post_counts,
+            [0.001, 0.0015],
+            A_plus=1e-4,
+            A_minus=1.05e-4,
+            tau=TAU,
+            dt=0.025,
+            w_min=0.0,
+            w_max=0.002,
+        )
+        for state, ref, bound in zip(STATES, reference, (1e-4, 2e-4, 2e-4)):
+            self.assertLessEqual(float(np.abs(want[state] - ref).max()), bound * float(np.abs(ref).max()), state)
+        self.assertEqual(int(np.sum(reference[0] == 0.0)), 4552)
+
+
+class RecordRuleStatePytreeTest(unittest.TestCase):
+    """Results that hold rule-state recordings are pytrees as other results are."""
+
+    @_float64
+    def test_jit_and_tree_utilities(self) -> None:
+        cell = _standalone_model()
+        cell.init_state()
+        jitted = brainstate.transform.jit(lambda: cell.run(dt=DT, duration=16.0 * u.ms))()
+        eager = _standalone_model().run(dt=DT, duration=16.0 * u.ms)
+        _assert_same_recordings(self, jitted.samples, eager.samples, STATES)
+        other = _standalone_model().run(dt=DT, duration=16.0 * u.ms)
+        self.assertEqual(jax.tree.structure(other), jax.tree.structure(eager))
+        self.assertEqual(hash(jax.tree.structure(other)), hash(jax.tree.structure(eager)))
+        self.assertIn((160, 1), [np.shape(leaf) for leaf in jax.tree.leaves(eager.samples["w"])])
+        self.assertIs(jax.block_until_ready(eager), eager)
+
+        net, _ = _recorded_lifecycle_model()
+        result = net.run(dt=DT, duration=5.0 * u.ms)
+        mapped = jax.tree.map(lambda leaf: leaf, result)
+        _assert_same_recordings(self, mapped.samples["post"], result.samples["post"], LIFECYCLE_RECORDINGS)
+
+
 if __name__ == "__main__":
     unittest.main()

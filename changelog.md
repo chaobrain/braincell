@@ -214,6 +214,24 @@
   | `cell.bind_synapse_input("syn", source, weight=w)` | `braincell.connect(name, source=<an EventSource: braincell.NetStim(...), braincell.EventSequence.from_times(...) or a Cell's spikes>, synapse=cell.synapses["syn"], weight=w)` |
   | `density.exponential("branch_x", 0.2)` | `lambda context: np.exp(metric.branch_x(context) / 0.2)` (`direction="decreasing"` negates the exponent) |
   | `density.gaussian("branch_x", 0.5, 0.1)` | `lambda context: np.exp(-0.5 * ((metric.branch_x(context) - 0.5) / 0.1) ** 2)` |
+- **A Cell that ran on its own to a time off a Network's `dt` grid cannot
+  start the Network** (CELL-58). A Network steps at multiples of `dt`, and its
+  recordings and scheduled events assume that grid. A Cell that ran alone for
+  3 steps of 0.025 ms stands at 0.075 ms, 1.5 steps of 0.05 ms; a Network at
+  `dt = 0.05 ms` with it as a member ran without error but recorded nothing
+  (0 of 22 samples for a recording taken every step) and delivered each
+  `EventSequence` or `NetStim` event on the grid from `t = 0` instead of the
+  steps it ran on: the 0.3 ms event acted at 0.275 ms, half a step early (main
+  `e43d794`, float32 and float64, `Network.run`, `prepare_run` with
+  `update()`, and `scheduled_delivery="direct"` alike). `Network.run` and
+  `Network.prepare_run` now raise `ValueError` ("... cannot start population
+  'post' at t = 0.075 ms, which is not a multiple of dt = 0.05 ms ...") before
+  anything changes. A time on the grid, to within the run precision, joins as
+  before (10 steps of 0.025 ms, then `dt = 0.05 ms`), with bitwise the same
+  results. There is no deprecation period (0.3 allows breaking changes
+  without one, a project-lead decision): the rejected runs never gave correct
+  results. Call `Network.reset_state()` to start from `t = 0`, or run the
+  Cell on its own to a multiple of the Network's `dt` before adding it.
 
 ### New Features
 
@@ -887,6 +905,25 @@
   `2**20` steps; `ScheduledDeliveryCell` leaves rule rows to their rule
   and gives `"sum_count"` layouts their counts instead of raising
   `TypeError`.
+- **`ConnectionView.record(name, state, *, period, frequency, start)`
+  records a plasticity rule's state during a run** (CELL-12c): the dynamic
+  weight `"w"`, `PairSTDP`'s traces `"x_pre"` and `"y_post"`, or any state
+  of a custom rule, with one column per row of the view, in view order, in
+  `RunResult.samples` and `NetworkResult.samples` like any recording.
+  Sample `k` is the state just before the update at the boundary `time[k]`,
+  so the `"w"` sample is the weight that the events arriving there carry,
+  and a `Network` and a standalone `Cell.run` give the same samples; the
+  docstring gives how `rule_state` relates to them in each. A view may take
+  rows of several `connect` calls whose state has one dimension. The rows'
+  `RecordingRow` names the connect call and the rule, and two new fields,
+  `connection_id` and `source_index`, give the connection row and its pre
+  endpoint (`None` on other rows). A Cell outside a `Network` keeps a copy
+  of each recorded state from before the latest update, one more state in
+  its state tree; a `Network` keeps none, and a Cell it initialized raises
+  `RuntimeError` in `Cell.run` once that `Network` is gone (call `reset()`
+  and `init_state()`). Declare the recording before `init_state()`, as
+  other recordings; a view without a rule raises `TypeError`, an unknown
+  state `KeyError`.
 
 ### Changes & Improvements
 
@@ -1321,6 +1358,13 @@
   names it twice. It now reads: "braincell.quad.rk2_step was removed; it was
   Ralston's second-order method; use braincell.quad.ralston2_step (same
   numbers), or heun2_step for Heun's method."
+- `SynapticKernelAccumulatorReduction` raises `ValueError("Exp2Syn requires
+  tau1 < tau2.")` when it reads an `Exp2Syn` whose `tau1` is not below
+  `tau2`, the rule and message a Cell applies to the same synapse at
+  `init_state`. In a context built by hand, `tau1 == tau2` raised
+  `ZeroDivisionError` from the kernel area, and `tau1 > tau2` gave the area
+  of the kernel with the two swapped. A Cell rejects both before the model
+  runs, so Cells are unchanged.
 
 - The concept page "Ions & Channels" (`docs/concepts/ions_channels.ipynb`)
   runs: its cells used an undefined `size` and passed `...` to
@@ -1982,6 +2026,38 @@
   now has shape `(n_samples, batch, n_rows)` and `get` `(n_rows, batch)`,
   and each batch element equals a run of that element alone, to 1e-12
   relative. Runs without a batch axis are unchanged.
+- After `Cell.run` changes `dt` to a step the time reached is not a
+  multiple of, each scheduled event acts on the new step nearest it instead
+  of up to a step early (CELL-48). The arrival steps counted from time 0 on
+  the new grid while the steps counted from the time reached: after 3 steps
+  of 0.025 ms, steps of 0.05 ms start at 0.075 ms, and an `EventSequence`
+  event at 0.3 ms acted on the step at 0.275 ms, one at 0.5125 ms on the
+  step at 0.475 ms (main `cfbdd6c`). The arrival steps now count from the
+  time reached, at float64 in float32 runs too, so these act at 0.325 and
+  0.525 ms in both precisions (0.3 ms is a half-step tie, which goes to the
+  later step). Runs that keep `dt`, and runs whose new `dt` the time
+  reached is a multiple of, are unchanged bit for bit. A traced run (inside
+  `jax.jit`) still counts its arrivals from time 0.
+- `Cell.add_reduction` on a multi-dimensional `pop_size`, as in
+  `Cell.point((2, 3))`, raises before it registers the model, so the Cell
+  is left as it was. It used to store the model and then raise `ValueError`:
+  `use_model(name)` then selected it, `init_state()` raised
+  `NotImplementedError` from the model, and a second `add_reduction` with
+  the same name reported a duplicate. The `ValueError` now names
+  `add_reduction()`; one-dimensional and scalar populations are unchanged.
+- `Cell.init_state` that raises leaves every attribute of the Cell as it
+  was before the call, on lumped and cable Cells, inside
+  `Network.init_state` too (CELL-61). It builds the runtime step by step,
+  and some steps refuse the declaration after earlier ones have set
+  attributes; only the morphology snapshot was undone. On main `8aa8e77`, a
+  `Cell.point((2, 3))` with a placed Synapse kept a per-member spike
+  threshold, its sizes and its initial voltage from the refused call, so
+  `cell.V_th = -10 * u.mV` then raised `ValueError` where a new Cell takes
+  it; the refusal of `cache_ion_total_current=False` for an ion-reading
+  synapse left the half-built runtime, `init_state(batch_size=2)` the batch
+  size, and a connected Cell its saved weights, on both kinds of Cell, as
+  did a stiff-gate warning raised as an error on a lumped Cell. A
+  successful `init_state` is unchanged.
 
 ### Documentation
 

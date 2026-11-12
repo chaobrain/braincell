@@ -80,6 +80,14 @@ class _ClampCurrentObservable:
     reduce: str
 
 
+@dataclass(frozen=True)
+class _RuleStateObservable:
+    """One plasticity-rule state of the connection rows ``row_ids`` (``ConnectionView.record``)."""
+
+    row_ids: tuple[int, ...]
+    field: str
+
+
 class _MechanismObservableBuilder:
     __slots__ = ("_category", "_selector")
 
@@ -267,6 +275,13 @@ class RecordingRow:
     index on each axis. A whole-Cell recording lists members in that order,
     then CVs (or points, clamps, mechanisms) within each member.
 
+    A row of ``ConnectionView.record`` is one connection row: its site
+    fields and ``synapse_id`` are its synapse's, ``mechanism_category`` is
+    ``"connection_rule"``, ``mechanism_type`` its rule, ``mechanism_name``
+    its connect name, ``connection_id`` its stable ID
+    (``ConnectionView.id``) and ``source_index`` its pre endpoint
+    (``ConnectionView.source_index``). Other rows leave these two ``None``.
+
     Examples
     --------
     >>> import brainunit as u
@@ -294,6 +309,8 @@ class RecordingRow:
     contributor_ids: tuple[int, ...] = ()
     output_name: str | None = None
     output_index: tuple[int, ...] = ()
+    connection_id: int | None = None
+    source_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -432,7 +449,8 @@ def compile_recording(cell, spec: RecordingSpec, *, dt):
             f"Recording {spec.name!r} sampler returned {values.shape[-1]!r} rows for schema size {len(rows)!r}."
         )
     unit = values.unit if isinstance(values, u.Quantity) else None
-    rows = tuple(replace(row, unit=unit) if row.unit is None else row for row in rows)
+    if unit is not None:
+        rows = tuple(replace(row, unit=unit) if row.unit is None else row for row in rows)
     schema = RecordingSchema(
         name=spec.name,
         rows=rows,
@@ -557,7 +575,58 @@ def _observable_rows_and_sampler(cell, spec: RecordingSpec):
     if isinstance(observable, _ClampCurrentObservable):
         return _clamp_current_rows_and_sampler(cell, spec.scope, observable)
 
+    if isinstance(observable, _RuleStateObservable):
+        return _rule_state_rows_and_sampler(cell, observable)
+
     raise TypeError(f"Unsupported observable {type(observable).__name__!s}.")
+
+
+def _rule_state_rows_and_sampler(cell, observable: _RuleStateObservable):
+    """Rows and sampler of a ``ConnectionView.record`` declaration.
+
+    The rows are the declared connection rows still connected, in the order
+    of the view they were declared on; each row's site is its synapse's.
+    """
+    view = cell.connections._with_ids(observable.row_ids)
+    synapse = view.synapse
+    # Each view property gathers every row: read each once.
+    population_index = synapse.population_index.tolist()
+    cv_id = synapse.cv_id.tolist()
+    point_id = synapse.point_id.tolist()
+    branch_of_cv = [int(cv.branch_id) for cv in cell.cvs]
+    # The sampler joins the rows in the first call's unit; set it here, as
+    # filling it in later replaces every row (``compile_recording``).
+    groups = view._rule_groups() if len(view) else []
+    first = groups[0][0].plasticity.value(observable.field) if groups else None
+    unit = first.unit if isinstance(first, u.Quantity) and not first.unit.is_unitless else None
+    columns = zip(
+        population_index,
+        cv_id,
+        point_id,
+        view._rule_type_names(),
+        view.connect_name.tolist(),
+        view.synapse_id.tolist(),
+        view.id.tolist(),
+        view.source_index.tolist(),
+    )
+    rows = tuple(
+        RecordingRow(
+            population_index=int(member),
+            cv_id=int(cv),
+            point_id=int(point),
+            branch_id=branch_of_cv[int(cv)],
+            field=observable.field,
+            unit=unit,
+            mechanism_category="connection_rule",
+            mechanism_type=rule_type,
+            mechanism_name=str(connect_name),
+            synapse_id=int(synapse_id),
+            connection_id=int(row_id),
+            source_index=int(source_index),
+        )
+        for member, cv, point, rule_type, connect_name, synapse_id, row_id, source_index in columns
+    )
+    return rows, view._rule_state_sampler(observable.field)
 
 
 def _clamp_current_rows_and_sampler(cell, scope, observable: _ClampCurrentObservable):

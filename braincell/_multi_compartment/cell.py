@@ -2755,8 +2755,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         The Cell then runs on a read-only snapshot of the morphology it was
         declared with (:attr:`morpho`), on the grid already built from it.
         Later edits of the declaration tree apply at the next :meth:`reset`
-        and ``init_state()``. If initialization fails, :attr:`morpho` is
-        the declaration tree again.
+        and ``init_state()``. If initialization raises (a warning raised as
+        an error included), the Cell is left as it was before the call:
+        every attribute is restored, :attr:`morpho` is the declaration tree
+        again, and a corrected declaration initializes as on a new Cell.
 
         Raises
         ------
@@ -2788,17 +2790,25 @@ class Cell(_CellFacade, HHTypedNeuron):
         # policy or create a second grid generation.
         self._resolve_declarations()
         self._check_connection_rules(batch_size)
-        declaration_key = self._discretization_cache_key
-        self._take_morphology_snapshot()
+        # The runtime is built step by step, and some steps refuse the
+        # declaration after earlier ones have assigned attributes; a refused
+        # call puts every attribute back (CELL-61).
+        attributes = dict(vars(self))
         try:
+            self._take_morphology_snapshot()
             self._init_runtime(batch_size)
             self._connection_rules = self.connections._init_rules()
         except BaseException:
-            self._morpho = self._declaration_morpho
-            self._discretization_cache_key = declaration_key
-            self._snapshot_source_revision = self._snapshot_reindex_revision = None
-            self._snapshot_warned_revision = None
+            self._restore_attributes(attributes)
             raise
+
+    def _restore_attributes(self, attributes: dict) -> None:
+        """Make this Cell's attributes exactly ``attributes`` (a copy of ``vars(self)``)."""
+        current = vars(self)
+        for name in tuple(current):
+            if name not in attributes:
+                del current[name]
+        current.update(attributes)
 
     def _check_connection_rules(self, batch_size) -> None:
         """Reject a plasticity rule where its boundary does not run yet (CELL-12a)."""
@@ -4686,14 +4696,21 @@ class Cell(_CellFacade, HHTypedNeuron):
         """Merge one Network arrival with any event staged for this boundary.
 
         ``count`` is the arrival's per-row event count, given for a
-        ``"sum_count"`` layout only (CELL-12b).
+        ``"sum_count"`` layout only (CELL-12b). A detailed or lumped Cell's
+        buffer is empty here, as the step before consumed it, unless a run
+        on its own prepared this boundary before the Network's first step:
+        the sum keeps that run's events (CELL-57), in the arrival's unit.
         """
         if self._uses_reduction:
             current = self._reduction_input_runtime.get_event_buffer(layout_id)
             arrival = current + _coerce_drive_like(arrival, current)
+        else:
+            current = self._runtime.get_event_buffer(layout_id)
+            arrival = _coerce_drive_like(arrival, current) + current
         self._set_event_buffer(layout_id, arrival)
         if count is not None:
-            self._event_count_state(layout_id).value = count
+            state = self._event_count_state(layout_id)
+            state.value = count + state.value
 
     def _update_runtime_synapses(self, point_V):
         """Advance runtime synapse dynamics.
@@ -4902,6 +4919,23 @@ class Cell(_CellFacade, HHTypedNeuron):
         which ``dt`` last changed. Each time is one rounding of a product,
         so segments step at the times of one run, however long it is.
         :meth:`reset_state` returns to ``t = 0``.
+
+        A scheduled event (``NetStim``, ``EventSequence``) acts on the
+        step nearest its arrival, and is delivered once also when ``dt``
+        changes. A run ends by preparing the boundary at the time it
+        reached, with the events within half of its step: a run at another
+        ``dt`` keeps that boundary as it is, skips the events it took, and
+        delivers the others on its own steps, counted from the time reached
+        when that is not a multiple of the new ``dt``, but not on the step
+        at that time. So within half of the old step of the change an event
+        can act a step later or earlier than on the new grid: after 10
+        steps of 0.025 ms, at ``dt = 0.05 ms`` events at 0.265 and 0.27 ms
+        act at 0.3 ms, not 0.25 ms; after 5 steps of 0.05 ms, at
+        ``dt = 0.025 ms`` events at 0.2625 and 0.27 ms act at 0.25 ms, not
+        0.275 ms. A Cell run on its own after a Network at another ``dt``
+        skips the events the Network delivered in the same way. A traced
+        run (inside ``jax.jit``) has no host clock: it counts the arrivals
+        on the grid from time 0, without this hand-over.
 
         On GPU, a run whose step count has a divisor in [8, 32] packs the
         spikes of its ``spikes`` result every K steps, K the largest such

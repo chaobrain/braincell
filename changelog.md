@@ -2045,6 +2045,44 @@
   `NotImplementedError` from the model, and a second `add_reduction` with
   the same name reported a duplicate. The `ValueError` now names
   `add_reduction()`; one-dimensional and scalar populations are unchanged.
+- `Cell.init_state` that raises leaves every attribute of the Cell as it
+  was before the call, on lumped and cable Cells, inside
+  `Network.init_state` too (CELL-61). It builds the runtime step by step,
+  and some steps refuse the declaration after earlier ones have set
+  attributes; only the morphology snapshot was undone. On main `8aa8e77`, a
+  `Cell.point((2, 3))` with a placed Synapse kept a per-member spike
+  threshold, its sizes and its initial voltage from the refused call, so
+  `cell.V_th = -10 * u.mV` then raised `ValueError` where a new Cell takes
+  it; the refusal of `cache_ion_total_current=False` for an ion-reading
+  synapse left the half-built runtime, `init_state(batch_size=2)` the batch
+  size, and a connected Cell its saved weights, on both kinds of Cell, as
+  did a stiff-gate warning raised as an error on a lumped Cell. A
+  successful `init_state` is unchanged.
+- Each `NetStim` and `EventSequence` event is delivered once where a run
+  continues one at another `dt`, and where a `Cell` that ran on its own
+  joins a `Network` (CELL-57). A `Cell.run` ends by preparing the boundary
+  at the time it reached, with the events within half of its step; the run
+  after it took that boundary for its own at the new `dt`, and a Network
+  prepared it again. On main `8aa8e77`, in float32 and float64: after 10
+  steps of 0.025 ms, steps of 0.05 ms lost the events at 0.265 and 0.27 ms
+  (4 of 6 delivered); after 5 steps of 0.05 ms, steps of 0.025 ms delivered
+  those at 0.2625 and 0.27 ms twice (8 of 6); a Network the Cell joined at
+  0.25 ms prepared that boundary again, delivering its events twice (13 of
+  8 at `dt = 0.025 ms`, 14 of 8 at 0.05 ms), and ran a plasticity rule's
+  update there twice; a Cell run on its own after a Network at another `dt`
+  delivered an event twice (9 of 8) or lost it (7 of 8). The boundary now
+  stays the earlier run's: the later run, or the Network's first step,
+  leaves it as it is, skips the events it took, and delivers the others on
+  its own steps, no earlier than the next one. Every event arrives once, and
+  a rule updates once per boundary. Within half of the old step of the
+  change an event can act a step later or earlier than on the new grid
+  from the start: at `dt = 0.05 ms` after 10 steps of 0.025 ms, events at
+  0.265 and 0.27 ms act at 0.3 ms, not 0.25 ms; at `dt = 0.025 ms` after
+  5 steps of 0.05 ms, those at 0.2625 and 0.27 ms act at 0.25 ms, not
+  0.275 ms. Runs that keep `dt`, and Networks whose Cells did not run on
+  their own, are unchanged bit for bit. The first Network run after such a
+  join compiles a loop of its own. A traced `Cell.run` (inside `jax.jit`)
+  still counts its arrivals from time 0, without the hand-over.
 
 ### Documentation
 

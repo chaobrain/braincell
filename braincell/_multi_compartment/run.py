@@ -106,18 +106,95 @@ def _float64_clock(rcell: "Cell", clock) -> tuple[float, int, float]:
     return clock
 
 
-def _keep_float64_clock(rcell: "Cell", clock, origin_ms: float, dt) -> None:
-    """After a run at ``dt`` that changed the clock's ``dt``, keep its float64 origin and ``dt``.
+def _keep_float64_clock(rcell: "Cell", clock, origin_ms: float, dt, handover=None) -> None:
+    """After a run at ``dt`` that changed the clock's ``dt``, keep its float64 origin and ``dt``, and its hand-over.
 
     ``clock`` is the clock before the run and ``origin_ms`` the float64
     origin the run counted from (:func:`host_clock_start`). The origin
     state moved only if the clock had counted steps, so only then is it read
-    back, after the loop.
+    back, after the loop. ``handover`` is the run's
+    :class:`~braincell.network.event.ArrivalHandover`, which the later runs
+    at that ``dt`` keep (:func:`_kept_handover`).
     """
     dt_ms = _scalar_decimal(dt, u.ms)
     origin_image = clock[0] if clock[1] == 0 else _scalar_decimal(rcell._clock_origin.value, u.ms)
     dt_image = float(np.asarray(dt_ms, dtype=brainstate.environ.dftype()))
     rcell._run_float64_clock = (origin_image, dt_image, origin_ms, dt_ms)
+    rcell._run_handover = handover
+
+
+def _keep_started_clock(rcell: "Cell", time_ms: float, dt_ms: float, handover) -> None:
+    """Keep the float64 origin ``time_ms`` and ``dt_ms``, and ``handover``, of a clock just started at another ``dt``.
+
+    A Network starting its Cells at its ``dt`` (``Network._start_clocks``)
+    keeps them as :func:`_keep_float64_clock` does, beside the clock's
+    states as they are now, so that a Cell running on its own after it
+    skips the events the Network took, counted at float64 (CELL-57).
+    """
+    origin_image, _, dt_image = rcell._clock_host()
+    rcell._run_float64_clock = (origin_image, dt_image, time_ms, dt_ms)
+    rcell._run_handover = handover
+
+
+def _kept_handover(rcell: "Cell", clock):
+    """The :class:`~braincell.network.event.ArrivalHandover` of the clock's ``dt``, or ``None``.
+
+    It is the one of the run that changed the clock to that ``dt``, kept
+    while the clock's states hold what that run left
+    (:func:`_float64_clock`).
+    """
+    kept = getattr(rcell, "_run_float64_clock", None)
+    if kept is None or kept[:2] != (clock[0], clock[2]):
+        return None
+    return getattr(rcell, "_run_handover", None)
+
+
+def _dt_change_handover(rcell: "Cell", clock, dt, prepared: bool | None = None):
+    """The :class:`~braincell.network.event.ArrivalHandover` of a run at ``dt`` from ``clock``, at another ``dt``.
+
+    ``clock`` is ``Cell._clock_host()`` and ``prepared`` the Cell's
+    prepared-boundary flag, read here when ``None``. The run before took
+    the events of its boundaries up to the time reached, and of the
+    boundary there too when it prepared it, as a ``Cell.run`` does at its
+    end (a Network step consumes its boundary within the step). They count
+    on that run's grid (:func:`_arrival_origin`), at its float64 ``dt``.
+    Of what it took and what the runs before it took (the hand-over it
+    kept), the one with the later edge holds. The new run's first boundary
+    is the time reached, or the next one when that is prepared (CELL-57).
+    ``None`` when nothing ran since ``init_state`` or ``reset_state``.
+    """
+    from braincell.network.event import ArrivalHandover, round_half_up_steps_host
+
+    origin_ms, step, old_dt_ms = _float64_clock(rcell, clock)
+    if old_dt_ms == 0.0:
+        return None
+    if prepared is None:
+        prepared = bool(np.asarray(rcell._next_synapse_inputs_prepared.value))
+    numbering = _arrival_origin_ms(origin_ms, old_dt_ms)
+    if numbering is None:
+        taken_origin, taken_origin_step = 0.0, 0
+        reached = int(round_half_up_steps_host(np.asarray(origin_ms / old_dt_ms))) + step
+    else:
+        taken_origin, taken_origin_step = numbering
+        reached = taken_origin_step + step
+    dt_ms = _scalar_decimal(dt, u.ms)
+    time_ms = origin_ms + step * old_dt_ms
+    numbering = _arrival_origin_ms(time_ms, dt_ms)
+    first = int(round_half_up_steps_host(np.asarray(time_ms / dt_ms))) if numbering is None else numbering[1]
+    handover = ArrivalHandover(
+        taken_origin_ms=float(taken_origin),
+        taken_dt_ms=float(old_dt_ms),
+        taken_origin_step=int(taken_origin_step),
+        taken_last_step=reached if prepared else reached - 1,
+        first_step=first + 1 if prepared else first,
+    )
+    chain = _kept_handover(rcell, clock)
+    if chain is not None and chain.edge_ms > handover.edge_ms:
+        handover = handover._replace(**{name: getattr(chain, name) for name in ArrivalHandover._fields[:4]})
+    elif handover.taken_last_step < 0:
+        # At t = 0 with nothing prepared: nothing was taken.
+        return None
+    return handover
 
 
 def _arrival_origin(origin_ms: float, dt) -> tuple[float, int] | None:
@@ -129,9 +206,14 @@ def _arrival_origin(origin_ms: float, dt) -> tuple[float, int] | None:
     arrivals count from the origin, which the loop numbers by its nearest
     step on the grid (``event.arrival_origin``, CELL-48).
     """
+    return _arrival_origin_ms(origin_ms, _scalar_decimal(dt, u.ms))
+
+
+def _arrival_origin_ms(origin_ms: float, dt_ms: float) -> tuple[float, int] | None:
+    """:func:`_arrival_origin` with ``dt`` in ms."""
     from braincell.network.event import round_half_up_steps_host
 
-    ratio = origin_ms / _scalar_decimal(dt, u.ms)
+    ratio = origin_ms / dt_ms
     if abs(ratio - np.rint(ratio)) <= 4.0 * np.finfo(brainstate.environ.dftype()).eps * max(1.0, abs(ratio)):
         return None
     return float(origin_ms), int(round_half_up_steps_host(np.asarray(ratio)))
@@ -318,7 +400,11 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     scheduled events count from it too, at float64, so each event acts on
     the step nearest it on the run's own grid instead of the grid from time
     0 (CELL-48); the program for such a run is compiled for its origin. A
-    traced run has no host clock and keeps the grid from time 0.
+    run at another ``dt`` keeps the boundary the run before prepared and
+    skips the events it took (:func:`_dt_change_handover`, CELL-57); its
+    program is compiled for that hand-over, which the segments that follow
+    at that ``dt`` keep. A traced run has no host clock and keeps the grid
+    from time 0.
     """
     from braincell.network.event import _prepare_netstim_schedules, _schedule_horizon
 
@@ -333,12 +419,14 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     clock = rcell._clock_host()
     until_ms = None
     arrival_origin = None
+    handover = None
     with_spikes = clock is not None
     if with_spikes:
         origin_ms, step, counts_dt = host_clock_start(_float64_clock(rcell, clock), dt)
         check_step_limit(step, n_steps, dt=dt, prefix="Cell.run(...)")
         until_ms = origin_ms + (step + n_steps + 1) * _scalar_decimal(dt, u.ms)
         arrival_origin = _arrival_origin(origin_ms, dt)
+        handover = _kept_handover(rcell, clock) if counts_dt else _dt_change_handover(rcell, clock, dt)
     schedule_key = _prepare_netstim_schedules(
         (view.source for view in rcell.connections._call_views(scheduled=True)),
         until_ms=until_ms,
@@ -353,6 +441,7 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
         schedule_key=schedule_key,
         with_spikes=with_spikes,
         arrival_origin=arrival_origin,
+        handover=handover,
         spike_path=_spike_output_path(rcell) if with_spikes else None,
     )
 
@@ -367,7 +456,7 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
         rcell._restore_value_inputs(values)
         raise
     if with_spikes and not counts_dt:
-        _keep_float64_clock(rcell, clock, origin_ms, dt)
+        _keep_float64_clock(rcell, clock, origin_ms, dt, handover)
 
     traced = is_traced_value(times)
     if traced and plan.schedule_issues:
@@ -617,6 +706,7 @@ def _cached_run_plan(
     schedule_key: tuple = (),
     with_spikes: bool = True,
     arrival_origin: tuple[float, int] | None = None,
+    handover=None,
     spike_path: tuple[bool, bool] | None = None,
 ) -> _RunPlan:
     """Return the persistent plan for one run shape.
@@ -633,9 +723,11 @@ def _cached_run_plan(
     also outputs the spike port; a traced run uses the one without.
     ``arrival_origin`` (:func:`_arrival_origin`) is baked into the arrival
     steps; it is ``None`` unless the run changed ``dt`` off the new grid,
-    and stays the same over the segments that follow at that ``dt``.
-    ``spike_path`` (:func:`_spike_output_path`) selects how the loop packs
-    the spikes and copies them back; ``None`` is neither way.
+    and stays the same over the segments that follow at that ``dt``. So is
+    ``handover`` (:func:`_dt_change_handover`), ``None`` unless a run at
+    another ``dt`` came before. ``spike_path`` (:func:`_spike_output_path`)
+    selects how the loop packs the spikes and copies them back; ``None`` is
+    neither way.
     """
     cache = rcell._run_loop_cache
     key = (
@@ -646,6 +738,7 @@ def _cached_run_plan(
         schedule_key,
         bool(with_spikes),
         arrival_origin,
+        handover,
         spike_path,
     )
     cached = cache.get(key)
@@ -668,6 +761,7 @@ def _cached_run_plan(
                 fixed_schedules=fixed_schedules,
                 spike_port=spike_port,
                 arrival_origin=arrival_origin,
+                handover=handover,
             ),
             fixed_schedules=fixed_schedules,
             schedule_issues=_differentiable_schedule_issues(compiled_recordings, dt=dt, n_steps=n_steps),
@@ -687,6 +781,7 @@ def _make_run_loop(
     fixed_schedules: tuple[bool, ...],
     spike_port: _SpikePort | None = None,
     arrival_origin: tuple[float, int] | None = None,
+    handover=None,
 ):
     """Create the jitted stateful run loop for a fixed observer layout.
 
@@ -704,8 +799,10 @@ def _make_run_loop(
     ``None`` for a variable-length one (selected eagerly by the caller).
     ``arrival_origin`` is ``(origin in ms, its step)`` when the clock's
     origin is off the ``dt`` grid from time 0 (:func:`_arrival_origin`).
+    ``handover`` holds what the runs at another ``dt`` before took
+    (:func:`_dt_change_handover`).
     """
-    from braincell.network.event import arrival_origin as arrivals_from, boundary_step, grid_step
+    from braincell.network.event import arrival_origin as arrivals_from, boundary_step, grid_step, handed_over
 
     n_recordings = len(compiled_recordings)
     period_steps = tuple(_recording_steps(compiled.schema.period, dt) for compiled in compiled_recordings)
@@ -713,7 +810,7 @@ def _make_run_loop(
     block_steps = None if spike_port is None else spike_port.block_steps
 
     def _run_loop(values):
-        with brainstate.environ.context(dt=dt), arrivals_from(origin_ms, origin_step):
+        with brainstate.environ.context(dt=dt), arrivals_from(origin_ms, origin_step), handed_over(handover):
             origin, step = rcell._clock_start(dt)
             start_t = origin + step * dt
             times = origin + (step + jnp.arange(n_steps, dtype=jnp.int32)) * dt

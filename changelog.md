@@ -23,6 +23,20 @@
   the registry lookup of `mech.Channel("CaHT_HM1992", ...)` raises `KeyError`;
   both name the new class. Replace `CaHT_HM1992` with `CaT_HM1992_Shifted25`,
   in class references and in `mech.Channel("...")` strings alike.
+- **Event aggregations that never took effect are rejected** (CELL-40).
+  `ScalarEventInput(unit, aggregation="ordered")` and
+  `TriggerEventInput(aggregation="any")` or `(aggregation="ordered")` raise
+  `ValueError` when the contract is constructed, which for a synapse class is
+  its definition. The runtime always summed the payloads and counted the
+  triggers that reach one synapse row on one boundary, so these values silently
+  meant `"sum"` and `"count"`; results of existing models do not change. There
+  is no deprecation period (0.3 allows breaking changes without one, a
+  project-lead decision). The message names the value to use:
+
+  | Old | New |
+  |---|---|
+  | `ScalarEventInput(unit, aggregation="ordered")` | `ScalarEventInput(unit)` (`aggregation="sum"`) |
+  | `TriggerEventInput(aggregation="any")`, `TriggerEventInput(aggregation="ordered")` | `TriggerEventInput()` (`aggregation="count"`) |
 - **`braincell.SingleCompartment` and `braincell.MultiCompartment` are removed**
   (CELL-28). A point neuron is a lumped `Cell`: build it with
   `braincell.Cell.point(...)` and declare its ions and channels with `paint`.

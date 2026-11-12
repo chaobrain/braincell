@@ -37,6 +37,31 @@ __all__ = [
     "TriggerEventInput",
 ]
 
+#: The aggregations a :class:`TriggerEventInput` may declare. Each one has a
+#: runtime behaviour test; add a value here only together with its test.
+TRIGGER_AGGREGATIONS = frozenset({"count"})
+#: The aggregations a :class:`ScalarEventInput` may declare, under the same rule.
+SCALAR_AGGREGATIONS = frozenset({"sum"})
+
+#: Values accepted before braincell 0.3 that the runtime never honoured
+#: (CELL-40): it summed every payload and counted every trigger.
+_REMOVED_TRIGGER_AGGREGATIONS = ("any", "ordered")
+_REMOVED_SCALAR_AGGREGATIONS = ("ordered",)
+
+
+def _check_aggregation(contract: str, aggregation: str, allowed: frozenset, removed: tuple, runtime: str) -> None:
+    if aggregation in allowed:
+        return
+    supported = ", ".join(repr(value) for value in sorted(allowed))
+    if aggregation in removed:
+        raise ValueError(
+            f"{contract}(aggregation={aggregation!r}) was removed in braincell 0.3: the runtime always "
+            f"{runtime} the events that reach one synapse row on one boundary, so {aggregation!r} never took "
+            f"effect. Use aggregation={supported}."
+        )
+    kind = "trigger" if contract == "TriggerEventInput" else "scalar"
+    raise ValueError(f"Unsupported {kind}-event aggregation {aggregation!r}. Supported: {supported}.")
+
 
 @dataclass(frozen=True)
 class EventInput:
@@ -56,23 +81,69 @@ class NoEventInput(EventInput):
 
 @dataclass(frozen=True, init=False)
 class TriggerEventInput(EventInput):
-    """Declare a payload-free event input."""
+    """Declare a payload-free event input.
+
+    Parameters
+    ----------
+    aggregation : {"count"}, optional
+        How the events that reach one synapse row on one boundary combine.
+        ``"count"``, the only value, passes their number to
+        ``apply_events``.
+
+    Raises
+    ------
+    ValueError
+        For any other value. ``"any"`` and ``"ordered"`` were accepted
+        before braincell 0.3, but the runtime counted the events anyway;
+        they are now rejected with a pointer to ``"count"``.
+
+    Examples
+    --------
+    >>> from braincell.mech import TriggerEventInput
+    >>> TriggerEventInput().aggregation
+    'count'
+    """
 
     def __init__(self, *, aggregation: str = "count") -> None:
-        if aggregation not in {"count", "any", "ordered"}:
-            raise ValueError(f"Unsupported trigger-event aggregation {aggregation!r}.")
+        _check_aggregation(
+            "TriggerEventInput", aggregation, TRIGGER_AGGREGATIONS, _REMOVED_TRIGGER_AGGREGATIONS, "counted"
+        )
         super().__init__(payload_kind="trigger", aggregation=aggregation)
 
 
 @dataclass(frozen=True, init=False)
 class ScalarEventInput(EventInput):
-    """Declare a scalar physical event payload."""
+    """Declare a scalar physical event payload.
+
+    Parameters
+    ----------
+    unit : brainunit.Unit
+        Unit the payload must be compatible with, such as ``u.uS`` for a
+        conductance increment.
+    aggregation : {"sum"}, optional
+        How the payloads of the events that reach one synapse row on one
+        boundary combine. ``"sum"``, the only value, passes their sum to
+        ``apply_events``.
+
+    Raises
+    ------
+    ValueError
+        For any other value. ``"ordered"`` was accepted before braincell
+        0.3, but the runtime summed the payloads anyway; it is now rejected
+        with a pointer to ``"sum"``.
+
+    Examples
+    --------
+    >>> import brainunit as u
+    >>> from braincell.mech import ScalarEventInput
+    >>> ScalarEventInput(u.uS).aggregation
+    'sum'
+    """
 
     unit: object
 
     def __init__(self, unit, *, aggregation: str = "sum") -> None:
-        if aggregation not in {"sum", "ordered"}:
-            raise ValueError(f"Unsupported scalar-event aggregation {aggregation!r}.")
+        _check_aggregation("ScalarEventInput", aggregation, SCALAR_AGGREGATIONS, _REMOVED_SCALAR_AGGREGATIONS, "summed")
         super().__init__(payload_kind="scalar", aggregation=aggregation)
         object.__setattr__(self, "unit", unit)
 

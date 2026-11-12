@@ -185,6 +185,22 @@ class EventAccumulatorRuleTest(_OutputAssertions):
         )
         self.assertEqual(model.reset_state(batch_size=4).values["value"].shape, (4, 2))
 
+    def test_counts_slots_of_any_input_contract(self) -> None:
+        # A slot counts once whatever its payload: a trigger slot that merged two events,
+        # or a scalar payload in any unit. Member 0: trigger slot 0 and the mV slot; member 1: trigger slot 1.
+        owner = _Owner((2,))
+        trigger = _schema(
+            braincell.mech.TriggerEventInput(), synapse_id=[0, 1], synapse_index=[0, 0], population_index=[0, 1]
+        )
+        voltage = _schema(
+            braincell.mech.ScalarEventInput(u.mV), layout_id=1, synapse_id=[2], synapse_index=[1], population_index=[0]
+        )
+        model = _EVENT(threshold=10.0)
+        model.init_state(_context(owner, trigger, voltage))
+
+        output = model.update(_inputs((trigger, jnp.asarray([2, 1])), (voltage, [0.3] * u.mV)))
+        self.assert_output(output, [2.0, 1.0], [0, 0])
+
     def test_empty_inputs_only_decay(self) -> None:
         owner = _Owner((2,))
         schema = _schema()

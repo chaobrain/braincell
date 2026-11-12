@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 
 import braincell
+from braincell import mech
 
 brainstate.environ.set(dt=0.01 * u.ms)
 
@@ -37,6 +38,11 @@ df_out_traces = pd.read_csv(DATA_DIR / 'output_traces_hh.csv')
 area = 20000 * u.um ** 2  # neuronal area
 inp_traces = df_inp_traces.to_numpy()[:, 1:] * 1e9 * u.nA  # input currents
 mem_traces = df_out_traces.to_numpy()[:, 1:] * u.mV  # membrane potentials to record
+n_input = inp_traces.shape[0]
+
+# A point neuron with this membrane area: a cylinder as long as it is wide,
+# whose lateral area 2 pi r L is pi d^2.
+diam = u.math.sqrt(area / u.math.pi)
 
 
 class INa(braincell.Channel):
@@ -55,8 +61,13 @@ class INa(braincell.Channel):
         self.V_th = braintools.init.param(vth, self.varshape)
 
     def init_state(self, V, batch_size=None):
-        self.m = braincell.state(braintools.init.param(u.math.zeros, self.varshape))
-        self.h = braincell.state(braintools.init.param(u.math.zeros, self.varshape))
+        self.m = braincell.state(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+        self.h = braincell.state(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+
+    def reset_state(self, V, batch_size=None):
+        # Every run starts with the gates closed.
+        self.m.value = braintools.init.param(u.math.zeros, self.varshape, batch_size)
+        self.h.value = braintools.init.param(u.math.zeros, self.varshape, batch_size)
 
     #  m channel
     m_alpha = lambda self, V: 0.32 * 4 / u.math.exprel((13. * u.mV - V + self.V_th).to_decimal(u.mV) / 4.)
@@ -96,7 +107,10 @@ class IK(braincell.Channel):
         self.V_th = braintools.init.param(vth, self.varshape)
 
     def init_state(self, V, batch_size=None):
-        self.n = braincell.state(braintools.init.param(u.math.zeros, self.varshape))
+        self.n = braincell.state(braintools.init.param(u.math.zeros, self.varshape, batch_size))
+
+    def reset_state(self, V, batch_size=None):
+        self.n.value = braintools.init.param(u.math.zeros, self.varshape, batch_size)
 
     # n channel
     n_alpha = lambda self, V: 0.032 * 5 / u.math.exprel((15. * u.mV - V + self.V_th).to_decimal(u.mV) / 5.)
@@ -112,21 +126,29 @@ class IK(braincell.Channel):
         return (self.gK * n2 * n2) * (self.EK - V)
 
 
-class HH(braincell.SingleCompartment):
-    def __init__(
-        self,
-        size,
-        v_initializer: Callable = braintools.init.Uniform(-70 * u.mV, -60. * u.mV),
-        gL: Union[brainstate.typing.ArrayLike, Callable] = 0.3 * (u.mS / u.cm ** 2),
-        gNa: Union[brainstate.typing.ArrayLike, Callable] = 120. * (u.mS / u.cm ** 2),
-        gK: Union[brainstate.typing.ArrayLike, Callable] = 36. * (u.mS / u.cm ** 2),
-        C: Union[brainstate.typing.ArrayLike, Callable] = 1. * (u.uF / u.cm ** 2),
-        solver: str = 'rk4'
-    ):
-        super().__init__(size, V_initializer=v_initializer, C=C, solver=solver)
-        self.ina = INa(size, gNa=gNa)
-        self.ik = IK(size, gK=gK)
-        self.il = braincell.channel.IL(size, g_max=gL, E=-65. * u.mV)
+def build_model(n_sample):
+    """Build one point neuron per (candidate, input trace) pair.
+
+    Population member ``s * n_input + b`` runs candidate ``s`` on trace ``b``.
+    The four fitted parameters are trainable roots with one value per member,
+    so trying a batch of candidates writes their states instead of building
+    a new model.
+    """
+    cell = braincell.Cell.point(
+        n_sample * n_input, length=diam, radius=diam / 2, V_init=-65. * u.mV, solver='rk4',
+    )
+    cell.paint(
+        mech.Channel(INa, name='ina'),
+        mech.Channel(IK, name='ik'),
+        mech.Channel('IL', name='il', E=-65. * u.mV),
+    )
+    cell.init_state()
+    fitted = braincell.trainable.parameter
+    cell.channels['il'].trainable(g_max=fitted(group_by='population', name='gl'))
+    cell.channels['ina'].trainable(gNa=fitted(group_by='population', name='g_na'))
+    cell.channels['ik'].trainable(gK=fitted(group_by='population', name='g_kd'))
+    cell.geometry.trainable(cm=fitted(group_by='population', name='C'))
+    return cell
 
 
 def visualize_target(voltages):
@@ -146,7 +168,8 @@ def visualize_target(voltages):
 def visualize(voltages, gl, g_na, g_kd, C):
     # currents: [T, B]
     # voltages: [T, B]
-    simulated_vs = simulate_model(gl, g_na, g_kd, C)
+    params = {'gl': gl, 'g_na': g_na, 'g_kd': g_kd, 'C': C}
+    simulated_vs = simulate_model(build_model(1), **one_candidate(params))[:, 0].mantissa
     voltages = voltages.mantissa
 
     fig, gs = braintools.visualize.get_figure(2, simulated_vs.shape[1], 3, 4.5)
@@ -160,42 +183,49 @@ def visualize(voltages, gl, g_na, g_kd, C):
     plt.show()
 
 
-def simulate_model(gl, g_na, g_kd, C):
+def simulate_model(cell, gl, g_na, g_kd, C):
+    """Simulate ``n_sample`` candidates, each parameter of shape ``(n_sample,)``.
+
+    Returns the membrane potentials with shape ``(T, n_sample, B)``.
+    """
+    n_sample = cell.pop_size[0] // n_input
     # The fitted parameters are whole-cell values (conductances in S, C in F);
-    # braincell channels take densities, so divide them and the injected
-    # current by the membrane area.
-    current = inp_traces.T / area
-    assert current.ndim == 2  # [T, B]
-    n_input = current.shape[1]
-    hh = HH(
-        (n_input, 1), gL=gl / area, gNa=g_na / area, gK=g_kd / area, C=C / area,
-        v_initializer=braintools.init.Constant(-65. * u.mV),
-    )
-    hh.init_state()
+    # braincell channels take densities, so divide them by the membrane area.
+    # The Cell divides the injected current (nA) by the area itself.
+    states = cell.trainables.parameters().states()
+    for name, value in (('gl', gl), ('g_na', g_na), ('g_kd', g_kd), ('C', C)):
+        state = states[name]
+        state.value = u.math.repeat(value / area, n_input).to(state.value.unit)
+    cell.reset_state()
 
     def step_fun(i, inp):
         with brainstate.environ.context(i=i, t=brainstate.environ.get_dt() * i):
-            spike = hh(inp)
-        return hh.V.value
+            cell.update(inp)
+        return cell.V.value
 
+    current = u.math.tile(inp_traces.T, (1, n_sample))  # [T, n_sample * B]
     indices = np.arange(current.shape[0])
-    current = u.math.expand_dims(current, axis=-1)  # [T, B, 1]
-    return brainstate.transform.for_loop(step_fun, indices, current)  # (T, B)
+    vs = brainstate.transform.for_loop(step_fun, indices, current)
+    return vs.reshape((vs.shape[0], n_sample, n_input))
 
 
-def compare_potentials(param):
-    vs = simulate_model(param['gl'], param['g_na'], param['g_kd'], param['C'])  # (T, B)
-    losses = braintools.metric.squared_error(vs.mantissa, target_vs.mantissa)
-    return losses.mean()
+def compare_potentials(cell, params):
+    vs = simulate_model(cell, **params)  # (T, n_sample, B)
+    target = u.math.broadcast_to(target_vs[:, None], vs.shape)
+    losses = braintools.metric.squared_error(vs.mantissa, target.mantissa)
+    return losses.mean(axis=(0, 2))  # (n_sample,)
+
+
+def one_candidate(param):
+    return {key: u.math.reshape(value, (1,)) for key, value in param.items()}
 
 
 # inp_traces: [B, T]
-# target_vs: [B, T, 1]
-# target_vs = simulate_model(50.37195496 * u.nsiemens,
-#                            28.01317016 * u.usiemens,
-#                            8.15968937 * u.usiemens,
-#                            195.2173985 * u.pfarad)
-target_vs = u.math.expand_dims(mem_traces.T, axis=-1)  # [T, B, 1]
+# target_vs: [T, B]
+# target_vs = simulate_model(build_model(1), **one_candidate({
+#     'gl': 50.37195496 * u.nsiemens, 'g_na': 28.01317016 * u.usiemens,
+#     'g_kd': 8.15968937 * u.usiemens, 'C': 195.2173985 * u.pfarad}))[:, 0]
+target_vs = mem_traces.T  # [T, B]
 
 
 # visualize_target(target_vs)
@@ -236,13 +266,14 @@ bounds = {
 
 def fitting_by_nevergrad(method='DE', n_sample=200, n_iter=20):
     print(f"Method: {method}, n_sample: {n_sample}")
+    cell = build_model(n_sample)
 
     @brainstate.transform.jit
     def loss_with_multiple_run(**params):
         # NevergradOptimizer passes plain numbers expressed in the unit of
         # each lower bound; attach those units again.
         params = {key: u.Quantity(value, bounds[key].unit) for key, value in params.items()}
-        return brainstate.transform.vmap(compare_potentials)(params)
+        return compare_potentials(cell, params)
 
     opt = braintools.optim.NevergradOptimizer(
         loss_with_multiple_run,
@@ -252,7 +283,7 @@ def fitting_by_nevergrad(method='DE', n_sample=200, n_iter=20):
     )
     opt.initialize()
     param = opt.minimize(n_iter)
-    loss = compare_potentials(param)
+    loss = compare_potentials(build_model(1), one_candidate(param))[0]
     print(param)
     print(loss)
     visualize(target_vs, **param)

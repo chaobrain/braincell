@@ -1319,6 +1319,32 @@
   - The rebound burst is unchanged.
   - The E–I network's first volley comes at about 14 ms instead of 18 ms.
 
+- The example scripts `examples/single_compartment/SC01` and `SC03`–`SC07`
+  build point neurons with `braincell.Cell.point(...)` and `paint`
+  (CELL-27c). So do the braincell side of the NEURON step-by-step notebook
+  (`examples/convert_mod/mod_validate`) and the `braincell.quad` notebook's
+  description of the hidden-state classes.
+  - SC01 fits its four whole-cell parameters on one population of point
+    neurons, one member per candidate and input trace. The parameters are
+    trainable roots, so each batch of candidates writes their states and
+    reuses the model. With the same seed, the fit finds the same parameters
+    and errors as before.
+  - The thalamic cells of SC05 and SC06 no longer multiply every input by
+    `area_factor` (1e-3 / area). Conductances and currents are totals, which
+    each cell divides by its membrane area. They are written 1e3 smaller in
+    the old units: SC05's step is 0.05 nA, and SC06 uses Poisson-input
+    weights of 0.1–17 nS, synaptic weights of 1–6 nS, gap junctions of 10 µS
+    and 1/300 µS, and 0.2 nA pulses. AMPA and GABAa `g` is now an open
+    fraction, so the connection weight is the conductance. The model is the
+    same.
+  - Each gate now starts at its steady state; SC03–SC07 started them at 0
+    after `init_state()` alone. SC04 starts at -65 mV instead of a random
+    voltage between -70 and -60 mV. SC01's custom channels still start
+    their gates at 0.
+  - The step-by-step notebook places a `CurrentClamp` and records with
+    `run`. Its samples, taken at the start of each step, line up with
+    NEURON's from t = 0. The voltage error stays at 0.0022 mV (MAE).
+
 ### Deprecations
 
 - **`braincell.mech.StateProbe`, `braincell.mech.MechanismProbe`,

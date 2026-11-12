@@ -1,10 +1,11 @@
 # Cell examples
 
-- [One-CV Cell](one_cv_cell.ipynb): construct a Cell and compare its usage with SingleCompartment.
+- [Point neurons](one_cv_cell.ipynb): `Cell.point` and the one-CV cable `Cell` side by side:
+  numerical equivalence, networks, point placement and timing.
 - [Current clamps](clamp.ipynb): DC, sine and arbitrary waveforms with voltage responses.
 - [Recording](recording.ipynb): select states and read structured simulation results.
 
-Start with the one-CV example. Recording builds on [Synapse](../synapse/README.md)
+Start with the point-neuron example. Recording builds on [Synapse](../synapse/README.md)
 and [Network](../network/README.md). See the
 [cells guide](../../docs/concepts/cells.ipynb) for interface and solver details.
 

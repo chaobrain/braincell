@@ -112,19 +112,30 @@ class _ConnectionCall:
             object.__setattr__(self, name, value)
 
 
+def _store_column(name: str, doc: str) -> property:
+    def read(store: "_ConnectionStore"):
+        if store._pending:
+            store._concatenate_pending()
+        return store._columns[name]
+
+    return property(read, doc=doc)
+
+
 class _ConnectionStore:
-    """Cell-owned SoA columns for all direct event-routing rows."""
+    """Cell-owned SoA columns for all direct event-routing rows.
+
+    ``add`` keeps each call's columns aside and the first read concatenates
+    everything kept since the last one (CELL-18e): re-concatenating every
+    column on every call made ``n`` connects cost O(n x rows). Reads return
+    the concatenated arrays themselves, so writes into them (``remove``,
+    ``follow_synapses``) change the store, as before.
+    """
 
     __slots__ = (
         "cell",
-        "id",
-        "connect_id",
-        "source_index",
-        "synapse_id",
-        "target_index",
-        "delay",
-        "active",
-        "_row_of_id",
+        "_columns",
+        "_pending",
+        "_n_rows",
         "_calls",
         "_call_by_id",
         "_call_by_name",
@@ -133,22 +144,46 @@ class _ConnectionStore:
         "_warning_emitted",
     )
 
+    id = _store_column("id", "Stable row id of each row.")
+    connect_id = _store_column("connect_id", "Id of the connect call each row came from.")
+    source_index = _store_column("source_index", "Index of each row's event source member.")
+    synapse_id = _store_column("synapse_id", "Logical id of each row's synapse.")
+    target_index = _store_column("target_index", "Index of each row in the SynapseView passed to connect().")
+    delay = _store_column("delay", "Delay of each row, in ms.")
+    active = _store_column("active", "Whether each row is still connected.")
+    _row_of_id = _store_column("_row_of_id", "Row of each stable row id.")
+
     def __init__(self, cell) -> None:
         self.cell = cell
-        self.id = np.asarray([], dtype=np.int64)
-        self.connect_id = np.asarray([], dtype=np.int64)
-        self.source_index = np.asarray([], dtype=np.int64)
-        self.synapse_id = np.asarray([], dtype=np.int64)
-        self.target_index = np.asarray([], dtype=np.int64)
-        self.delay = np.asarray([], dtype=np.float64) * u.ms
-        self.active = np.asarray([], dtype=bool)
-        self._row_of_id = np.asarray([], dtype=np.int64)
+        self._columns = {
+            "id": np.asarray([], dtype=np.int64),
+            "connect_id": np.asarray([], dtype=np.int64),
+            "source_index": np.asarray([], dtype=np.int64),
+            "synapse_id": np.asarray([], dtype=np.int64),
+            "target_index": np.asarray([], dtype=np.int64),
+            "delay": np.asarray([], dtype=np.float64) * u.ms,
+            "active": np.asarray([], dtype=bool),
+            "_row_of_id": np.asarray([], dtype=np.int64),
+        }
+        self._pending: list[dict[str, np.ndarray]] = []
+        self._n_rows = 0
         self._calls: list[_ConnectionCall] = []
         self._call_by_id: dict[int, _ConnectionCall] = {}
         self._call_by_name: dict[str, _ConnectionCall] = {}
         self._next_row_id = 0
         self._next_connect_id = 0
         self._warning_emitted = False
+
+    def _concatenate_pending(self) -> None:
+        pending, self._pending = self._pending, []
+        columns = self._columns
+        for name, column in columns.items():
+            if name == "delay":
+                # Joined as ms decimals, as each call's delay was converted in ``add``.
+                decimals = [np.asarray(column.to_decimal(u.ms)), *(chunk[name] for chunk in pending)]
+                columns[name] = u.Quantity(np.concatenate(decimals), u.ms)
+            else:
+                columns[name] = np.concatenate([column, *(chunk[name] for chunk in pending)])
 
     def add(
         self,
@@ -170,15 +205,20 @@ class _ConnectionStore:
         row_ids = np.arange(self._next_row_id, self._next_row_id + count, dtype=np.int64)
         self._next_row_id += count
 
-        start = len(self.id)
-        self.id = np.concatenate((self.id, row_ids))
-        self.connect_id = np.concatenate((self.connect_id, np.full(count, connect_id, dtype=np.int64)))
-        self.source_index = np.concatenate((self.source_index, np.asarray(source_index, dtype=np.int64)))
-        self.synapse_id = np.concatenate((self.synapse_id, np.asarray(synapse_id, dtype=np.int64)))
-        self.target_index = np.concatenate((self.target_index, np.asarray(target_index, dtype=np.int64)))
-        self.delay = _concat_quantities(self.delay, delay, unit=u.ms)
-        self.active = np.concatenate((self.active, np.ones(count, dtype=bool)))
-        self._row_of_id = np.concatenate((self._row_of_id, np.arange(start, start + count, dtype=np.int64)))
+        start = self._n_rows
+        self._pending.append(
+            {
+                "id": row_ids,
+                "connect_id": np.full(count, connect_id, dtype=np.int64),
+                "source_index": np.asarray(source_index, dtype=np.int64),
+                "synapse_id": np.asarray(synapse_id, dtype=np.int64),
+                "target_index": np.asarray(target_index, dtype=np.int64),
+                "delay": np.asarray(delay.to_decimal(u.ms)),
+                "active": np.ones(count, dtype=bool),
+                "_row_of_id": np.arange(start, start + count, dtype=np.int64),
+            }
+        )
+        self._n_rows += count
 
         synapses = synapse._store
         identity = synapses.identity(synapses.rows_of(synapse_id)[0])
@@ -969,13 +1009,6 @@ def _normalize_weight(synapse: SynapseView, value, *, count: int, omitted: bool 
     if value is None:
         raise TypeError("Scalar-event Connection weight cannot be None.")
     return _quantity_vector(value, unit=first.unit, size=count, name="Connection.weight")
-
-
-def _concat_quantities(left, right, *, unit):
-    return u.Quantity(
-        np.concatenate((np.asarray(left.to_decimal(unit)), np.asarray(right.to_decimal(unit)))),
-        unit,
-    )
 
 
 def _set_quantity_or_array(destination, rows, values):

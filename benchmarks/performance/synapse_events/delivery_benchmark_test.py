@@ -505,6 +505,12 @@ class RegressionMeasurementTest(unittest.TestCase):
             )
         with patch("builtins.open", side_effect=OSError("no /proc")):
             self.assertEqual(b._cpu_ticks(), {})
+        self.assertFalse(b._gpu_free(None))
+        self.assertFalse(b._gpu_free(dict(error="x")))
+        self.assertFalse(b._gpu_free(dict(utilization=50.0, compute_apps=[])))
+        self.assertFalse(b._gpu_free(dict(utilization=0.0, compute_apps=[[1, 2048.0]])))
+        self.assertTrue(b._gpu_free(dict(utilization=0.0, compute_apps=[[1, 2048.0]]), pid=1))
+        self.assertTrue(b._gpu_free(dict(utilization=1.0, compute_apps=[[2, 258.0]])))
 
     def test_coordinator_order_retries_lock_and_budget(self):
         launched = []
@@ -628,6 +634,37 @@ class RegressionMeasurementTest(unittest.TestCase):
                 argv5[argv5.index("--devices") + 1] = "gpu"
                 self.assertEqual(b.main(argv5 + ["--gpu", "1", "--cases", "small", "--methods", "padded"]), 0)
             self.assertEqual(gpu_cmds[0][gpu_cmds[0].index("--gpu") + 1], "1")
+            # Selected groups only; GPU attempts wait for a free GPU out of one total budget.
+            group_cmds = []
+
+            def fake_group(cmd, **kwargs):
+                group_cmds.append(cmd)
+                Path(cmd[cmd.index("--out") + 1]).write_text(json.dumps(dict(status="not_applicable")))
+                return subprocess.CompletedProcess(cmd, 0)
+
+            busy = dict(utilization=0.0, compute_apps=[[77, 18358.0]])
+            free = dict(utilization=0.0, compute_apps=[[78, 258.0]])
+            group_argv = list(argv2) + ["--gpu", "1", "--gpu-wait", "25", "--groups", "1:active:run,0:small:run"]
+            group_argv[group_argv.index("--out") + 1] = str(Path(tmp) / "groups")
+            group_argv[group_argv.index("--devices") + 1] = "gpu"
+            statuses = [busy, busy, free] + [free] * 2 + [busy] * 100
+            with (
+                patch.object(b.subprocess, "run", side_effect=fake_group),
+                patch.object(b, "_gpu_status", side_effect=statuses),
+                patch.object(b.time, "sleep"),
+                patch.object(b.time, "monotonic", side_effect=[float(i) for i in range(0, 4000, 10)]),
+            ):
+                self.assertEqual(b.main(group_argv), 1)
+            manifest = json.loads((Path(tmp) / "groups" / "manifest.json").read_text())
+            self.assertEqual(manifest["protocol"]["groups"], [[0, "small", "run"], [1, "active", "run"]])
+            self.assertEqual({(r["round"], r["case"]) for r in manifest["rows"]}, {(0, "small"), (1, "active")})
+            # The first attempt waits out the whole budget on a busy GPU and is not run; later ones
+            # run only if the GPU is free when they are reached.
+            waits = [a["gpu_wait_s"] for r in manifest["rows"] for a in r["attempts"]]
+            self.assertEqual(waits[0], 30.0)
+            statuses = [r["status"] for r in manifest["rows"]]
+            self.assertEqual(statuses, ["not_run"] + ["not_applicable"] * 3 + ["not_run"] * 2)
+            self.assertEqual(len(group_cmds), 3)
 
     def test_regression_cli_validation_and_worker(self):
         for extra in (
@@ -640,6 +677,10 @@ class RegressionMeasurementTest(unittest.TestCase):
             ["--max-sibling-busy", "0.05"],
             ["--sibling-cpus", "a", "--max-sibling-busy", "0.05"],
             ["--sibling-cpus", "1", "--max-sibling-busy", "1.5"],
+            ["--groups", "0:small"],
+            ["--groups", "x:small:run"],
+            ["--groups", "0:bad:run"],
+            ["--gpu-wait", "-1"],
             ["--methods", "bucket"],
             ["--cases", "bad"],
             ["--worker", "small"],

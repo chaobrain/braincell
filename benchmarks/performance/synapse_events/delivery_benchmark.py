@@ -1205,13 +1205,34 @@ def _git(*args):
         return None
 
 
+def _gpu_free(status, pid=None):
+    """Whether a :func:`_gpu_status` shows the GPU idle: below the busy limits, no other process over them."""
+    if not status or "error" in status:
+        return False
+    held = [mib for p, mib in status.get("compute_apps", []) if p != pid and mib >= GPU_BUSY_MIB]
+    return status.get("utilization", 0.0) < GPU_BUSY_UTILIZATION and not held
+
+
+def _wait_for_gpu(gpu, budget, poll=10.0):
+    """Poll the GPU until it is free or ``budget`` seconds pass; returns (free, seconds waited)."""
+    start = time.monotonic()
+    while True:
+        if _gpu_free(_gpu_status(gpu)):
+            return True, time.monotonic() - start
+        if time.monotonic() - start + poll > budget:
+            return False, time.monotonic() - start
+        time.sleep(poll)
+
+
 def run_regression(args, models):
     """Coordinate the regression phase: one fresh worker per (round, model, entry, method, device).
 
     The methods of each (round, model, entry) run back to back in a random
     order seeded by ``args.seed``; a worker whose IQR/median, load or GPU
     occupancy breaks the limits is re-run up to ``args.retries`` times.
-    Every attempt is kept; the manifest names the accepted one.
+    Every attempt is kept; the manifest names the accepted one. With
+    ``args.groups`` only those (round, model, entry) run; with ``args.gpu_wait``
+    each GPU attempt first waits, out of that total budget, for a free GPU.
     """
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
@@ -1250,6 +1271,8 @@ def run_regression(args, models):
         max_load=args.max_load,
         sibling_cpus=args.sibling_cpus,
         max_sibling_busy=args.max_sibling_busy,
+        groups=None if args.groups is None else sorted(list(g) for g in args.groups),
+        gpu_wait=args.gpu_wait,
         retries=args.retries,
         seed=args.seed,
         gpu=args.gpu,
@@ -1260,9 +1283,12 @@ def run_regression(args, models):
     )
     manifest = dict(created_utc=datetime.now(timezone.utc).isoformat(), protocol=protocol, rows=[])
     deadline = time.monotonic() + args.budget_seconds
+    gpu_wait_left = args.gpu_wait
     for round_id in range(args.rounds):
         for model in models:
             for entry in args.entries:
+                if args.groups is not None and (round_id, model, entry) not in args.groups:
+                    continue
                 order = list(methods)
                 random.Random(f"{args.seed}:{round_id}:{model}:{entry}").shuffle(order)
                 for method in order:
@@ -1279,8 +1305,14 @@ def run_regression(args, models):
                         for attempt in range(args.retries + 1):
                             stem = f"{device}_{model}_{entry}_{method}_r{round_id}_a{attempt}"
                             path = out / f"{stem}.json"
+                            waited = None
+                            if device == "gpu" and args.gpu_wait and deadline - time.monotonic() > 0:
+                                free, waited = _wait_for_gpu(args.gpu, min(gpu_wait_left, deadline - time.monotonic()))
+                                gpu_wait_left = max(gpu_wait_left - waited, 0.0)
                             if deadline - time.monotonic() <= 0:
                                 _write_json(path, dict(status="not_run", reason="coordinator budget exhausted"))
+                            elif waited is not None and not free:
+                                _write_json(path, dict(status="not_run", reason="GPU not free within --gpu-wait"))
                             else:
                                 _launch_regression_worker(args, device, model, entry, method, out, stem)
                             data = json.loads(path.read_text())
@@ -1293,7 +1325,9 @@ def run_regression(args, models):
                                 if args.max_sibling_busy is None
                                 else (args.sibling_cpus, args.max_sibling_busy),
                             )
-                            record["attempts"].append(dict(file=path.name, status=data["status"], rerun=rerun))
+                            record["attempts"].append(
+                                dict(file=path.name, status=data["status"], rerun=rerun, gpu_wait_s=waited)
+                            )
                             record.update(file=path.name, status=data["status"], flagged=rerun)
                             print(
                                 f"regression round {round_id} {device} {model} {entry} {method} attempt {attempt}: "
@@ -1462,6 +1496,10 @@ def main(argv=None):
         "--max-sibling-busy", type=float, help="re-run a worker if a --sibling-cpus CPU was busier (0-1) over its run"
     )
     regression.add_argument("--retries", type=int, default=2, help="re-runs per worker at most")
+    regression.add_argument("--groups", help="only these round:model:entry groups (comma-separated)")
+    regression.add_argument(
+        "--gpu-wait", type=float, default=0.0, help="total seconds to wait for a free GPU before GPU attempts"
+    )
     regression.add_argument("--seed", type=int, default=0, help="seed of the method order")
     regression.add_argument("--method", choices=REGRESSION_METHODS, help=argparse.SUPPRESS)
     regression.add_argument("--entry", choices=ENTRIES, help=argparse.SUPPRESS)
@@ -1493,6 +1531,16 @@ def main(argv=None):
                 args.sibling_cpus = tuple(int(c) for c in args.sibling_cpus.split(","))
         except ValueError:
             parser.error("--steps and --sibling-cpus must be comma-separated integers")
+        if args.groups is not None:
+            groups = [g.split(":") for g in args.groups.split(",")]
+            if any(
+                len(g) != 3 or not g[0].isdigit() or g[1] not in cases_for("regression") or g[2] not in ENTRIES
+                for g in groups
+            ):
+                parser.error("--groups takes round:model:entry items")
+            args.groups = {(int(r), m, e) for r, m, e in groups}
+        if args.gpu_wait < 0:
+            parser.error("--gpu-wait must be nonnegative")
         if (args.sibling_cpus is None) != (args.max_sibling_busy is None) or not (
             args.max_sibling_busy is None or 0 <= args.max_sibling_busy < 1
         ):

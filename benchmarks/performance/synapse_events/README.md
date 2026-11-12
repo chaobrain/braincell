@@ -102,6 +102,7 @@ The coordinator runs the methods of each (round, model, entry) back to back, in 
 
 - `--lock` holds a `flock` file for each worker, with the worker's timeout starting once the lock is held. `--cpus` pins workers with `taskset`, and `--single-thread` makes XLA's CPU backend single-threaded. `--pause` waits after each worker.
 - A worker is re-run, up to `--retries` times, if its IQR/median exceeds `--max-iqr`, if the 1-minute load reaches `--max-load`, or, on a GPU, if at the worker's start the device was at least 5 % busy or another process held at least 1 GiB of it. Smaller contexts (a process whose JAX opened every GPU but computes on another holds about 260 MiB) are recorded without a re-run. With `--sibling-cpus` and `--max-sibling-busy`, a worker is also re-run if one of those CPUs, normally the hyperthread siblings of `--cpus`, was busier than that share over the worker's run: a busy sibling can slow a pinned worker by 1.2–2× without raising its IQR. Every attempt is kept.
+- `--groups round:model:entry,...` runs only those groups (all methods of each, in the same seeded order), to re-measure flagged groups. `--gpu-wait <seconds>` makes each GPU attempt first wait, out of that total budget, until the GPU is under the busy limits above; an attempt that finds no free GPU in time is recorded as `not_run`.
 - Each worker records the load, the busy share of every CPU over its run, the GPU's utilization and processes, and `braincell.__file__`.
 
 ```text

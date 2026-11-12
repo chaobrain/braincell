@@ -371,12 +371,15 @@ def collect_regression(root):
     for path in manifests:
         manifest = json.loads(path.read_text())
         protocol = manifest["protocol"]
+        groups = protocol.get("groups")
         expected = (
-            len(protocol["cases"])
-            * len(protocol["entries"])
-            * len(protocol["methods"])
+            len(protocol["methods"])
             * len(protocol["devices"])
-            * protocol["rounds"]
+            * (
+                len(protocol["cases"]) * len(protocol["entries"]) * protocol["rounds"]
+                if groups is None
+                else len(groups)
+            )
         )
         if len(manifest["rows"]) != expected:
             failures.append(f"{path.parent.name}: incomplete workers {len(manifest['rows'])}/{expected}")

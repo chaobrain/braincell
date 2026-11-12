@@ -317,6 +317,15 @@ class RegressionReportTest(unittest.TestCase):
             self.assertIn("cpu/active/run/direct/r1", failures)
             self.assertEqual(r.main([tmp, "--regression", "--report", str(root / "failed.md")]), 1)
         with tempfile.TemporaryDirectory() as tmp:
+            # A run of selected groups expects their workers only.
+            directory, manifest = _regression_fixture(Path(tmp))
+            manifest["protocol"]["groups"] = [[r, c, "run"] for r in range(3) for c in ("small", "active")]
+            (directory / "manifest.json").write_text(json.dumps(manifest))
+            self.assertEqual(r.collect_regression(Path(tmp))[1], [])
+            manifest["protocol"]["groups"] = manifest["protocol"]["groups"][:2]
+            (directory / "manifest.json").write_text(json.dumps(manifest))
+            self.assertEqual(r.collect_regression(Path(tmp))[1], ["regression: incomplete workers 18/6"])
+        with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(r.export_regression(Path(tmp))["failures"], ["no regression manifests found"])
             directory, manifest = _regression_fixture(Path(tmp))
             for row in manifest["rows"]:

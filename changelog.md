@@ -622,8 +622,8 @@
   now kept on the `Morphology` until its next edit (`Morphology.revision`),
   each branch is decoded once, and all of a branch's sites are placed at
   once. On a CA1 reconstruction with 2,000 synapses, the geometry columns
-  took 349 ms per `connect` and now take 76 ms, and 100 such connects took
-  33.5 s and now 5.6 s. Every value is the same as before, bit for bit.
+  took 367 ms per `connect` and now take 34 ms, and 100 such connects took
+  30.0 s and now 5.3 s. Every value is the same as before, bit for bit.
 
 - **A Cell declaration whose branch name is gone says which declaration it
   is** (MORPH-2b). A location expression names its branch, such as

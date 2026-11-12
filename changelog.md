@@ -735,6 +735,13 @@
   Channel parameter in a Cell now says initializers are not supported there,
   instead of asking for a quantity.
 
+- **The brainevent backend groups a connection's contacts by delay with
+  one sort** (CELL-18g). It scanned every contact once per distinct delay;
+  one stable sort now lists each delay's contacts, in the same order.
+  100,000 contacts over 1,000 delays: 21.5 ms and now 17.7 ms per run
+  setup on an idle machine (50 ms and 27 ms under load). The routes are
+  the same.
+
 - **`Cell.run` costs less per call.** Each call now dispatches one cached
   compiled program: segment start / stop times and the selection of
   fixed-schedule samples moved inside it, and the schedule checks are

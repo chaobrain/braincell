@@ -16,6 +16,7 @@
 import unittest
 import warnings
 from collections import Counter
+from unittest import mock
 
 import brainunit as u
 import brainstate
@@ -547,6 +548,23 @@ class SynapseStoreBuildTest(unittest.TestCase):
     def test_store_matches_row_by_row_construction_for_1000_members(self):
         self._check_store_matches_reference(1000)
 
+    def test_valid_declarations_skip_the_row_by_row_build(self):
+        # Every parameter form above takes the per-declaration build; only a
+        # failing value rebuilds its column row by row to name the row.
+        cell, _ = _declare_every_parameter_form(10)
+        with mock.patch.object(_SynapseStore, "_column_by_row", side_effect=AssertionError("row-by-row build")):
+            store = _SynapseStore(cell)
+        self.assertEqual(len(store.id), 10 * 8 + 15)
+        cell = Cell(make_tree_s(), pop_size=(2,))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", tau=np.nan * u.ms, e=0.0 * u.mV))
+        by_row = _SynapseStore._column_by_row
+        with mock.patch.object(_SynapseStore, "_column_by_row", autospec=True, side_effect=by_row) as spy:
+            with self.assertRaisesRegex(ValueError, r"^Synapse 'ExpSyn' parameter 'tau' must contain only finite"):
+                _SynapseStore(cell)
+        self.assertEqual([call.args[1] for call in spy.call_args_list], ["tau"])
+
     def test_invalid_values_name_the_first_failing_row(self):
         Synapse = braincell.mech.Synapse
         soma = at("soma", 0.5)
@@ -611,6 +629,40 @@ class SynapseStoreBuildTest(unittest.TestCase):
                         cell.place(locset, declaration)
                 with self.assertRaisesRegex(error, message):
                     _SynapseStore(cell)
+
+    def test_values_of_a_parameter_without_a_unit_prototype(self):
+        # Each value is its own unit prototype, so values that pass their
+        # own check can still disagree with each other.
+        @braincell.mech.register_synapse("_FreeGainExpSyn")
+        class _FreeGainExpSyn(braincell.synapse.ExpSyn):
+            def __init__(self, size, name=None, tau=0.1 * u.ms, e=0.0 * u.mV, gain=None):
+                super().__init__(size, name=name, tau=tau, e=e)
+                self.gain = gain
+
+        cases = (
+            ((2.0 * u.ms, 2500.0 * u.us), None, None),
+            ((2.0, 1.0 * u.ms), TypeError, r"^Synapse parameter 'gain' mixes dimensioned and dimensionless values\.$"),
+            (
+                (2.0 * u.ms, 1.0 * u.mV),
+                ValueError,
+                r"^Synapse parameter 'gain' has incompatible units across instances\.$",
+            ),
+        )
+        try:
+            for gains, error, message in cases:
+                with self.subTest(gains=gains):
+                    cell = Cell(make_tree_s(), pop_size=(2,))
+                    for x, gain in zip((0.25, 0.75), gains):
+                        cell.place(at("soma", x), braincell.mech.Synapse("_FreeGainExpSyn", gain=gain))
+                    if error is None:
+                        column = _SynapseStore(cell).parameter_columns["_FreeGainExpSyn"]["gain"]
+                        self.assertEqual(column.unit, u.ms)
+                        np.testing.assert_array_equal(column.mantissa, [2.0, 2.5, 2.0, 2.5])
+                    else:
+                        with self.assertRaisesRegex(error, message):
+                            _SynapseStore(cell)
+        finally:
+            braincell.mech.get_registry().unregister("synapse", "_FreeGainExpSyn")
 
 
 if __name__ == "__main__":

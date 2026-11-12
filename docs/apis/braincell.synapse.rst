@@ -15,6 +15,16 @@ Exponential-Decay Synapses
    ExpSyn
    Exp2Syn
 
+Short-Term Plasticity
+---------------------
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+   ExpSynSTD
+
 Ion-Coupled Synapses
 --------------------
 

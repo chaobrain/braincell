@@ -67,6 +67,22 @@ Base Classes for Ion Channels and Synapses
 cell places is :class:`braincell.mech.Synapse`.
 
 
+Base Class for Connection Plasticity Rules
+------------------------------------------
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+    ConnectionRule
+
+:class:`ConnectionRule` is the runtime base class of a plasticity rule; the
+declaration passed to ``connect(..., plasticity=...)`` is
+:class:`braincell.mech.ConnectionRule`, and the built-in rules are in
+:mod:`braincell.plasticity`.
+
+
 Ion Helpers
 -----------
 

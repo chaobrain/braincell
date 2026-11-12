@@ -61,6 +61,12 @@ class ScheduledDeliveryCell(Cell):
         if method not in ("current", "scan", "bucket", "direct", "padded"):
             raise ValueError("unknown experimental delivery method")
         self._raise_if_not_initialized("prepare_scheduled_delivery")
+        rule_calls = self._get_connection_store().rule_calls()
+        if rule_calls:
+            raise TypeError(
+                f"Connections {tuple(call.name for call in rule_calls)!r} have plasticity rules, which this "
+                "experimental delivery plan does not support: it precomputes fixed-weight deliveries."
+            )
         routes, plans, arrays = {}, [], []
         store = self._get_synapse_store()
         for layout in self._event_layouts():

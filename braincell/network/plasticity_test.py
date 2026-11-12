@@ -43,6 +43,20 @@ RTOL = 1e-12
 E_HALF = float(np.exp(-0.5))
 
 
+def _reference(value: float, published: float, decimals: int = 12) -> float:
+    """``value``, the closed form of an acceptance number, after checking it rounds to ``published``.
+
+    The acceptance numbers are rounded to ``decimals`` places, coarser than
+    ``rtol=1e-12``; the tests compare with the closed form at that tolerance.
+    """
+    assert abs(value - published) <= 0.5 * 10.0**-decimals, (value, published)
+    return value
+
+
+A_PLUS, A_MINUS, TAU = 0.01, 0.0105, 20.0
+DW_PRE_POST = _reference(A_PLUS * np.exp(-10.0 / TAU), 0.006065306597)
+
+
 def _float64(test):
     """Run ``test`` in float64."""
 
@@ -133,6 +147,16 @@ def _network(pre_model, post_cell, *, delay=0.0 * u.ms, rule=None, weight=W0, sy
     return net
 
 
+#: Pre 0 and 12 ms, post 10 and 14 ms (acceptance 6e).
+W_STANDALONE = _reference(
+    0.05
+    + A_PLUS * np.exp(-10.0 / TAU)
+    - A_MINUS * np.exp(-2.0 / TAU)
+    + A_PLUS * (np.exp(-14.0 / TAU) + np.exp(-2.0 / TAU)),
+    0.060578740926,
+)
+
+
 class PairReferenceTest(unittest.TestCase):
     """Acceptance 1: the pair rule against the reference and its pairing contract."""
 
@@ -140,20 +164,22 @@ class PairReferenceTest(unittest.TestCase):
     def test_pre_then_post_potentiates_by_the_reference(self) -> None:
         cell = _toy_cell(post_ms=[10.0])
         _network(_seq([0.0]), cell, rule=_stdp()).run(dt=DT, duration=12.0 * u.ms)
-        np.testing.assert_allclose(_w(cell) - 0.05, [0.006065306597], rtol=RTOL)
+        np.testing.assert_allclose(_w(cell) - 0.05, [DW_PRE_POST], rtol=RTOL)
 
     @_float64
     def test_a_scheduled_teacher_post_signal_gives_the_same_change(self) -> None:
         cell = _toy_cell()
         rule = _stdp(signals={"post": _seq([10.0])})
         _network(_seq([0.0]), cell, rule=rule).run(dt=DT, duration=12.0 * u.ms)
-        np.testing.assert_allclose(_w(cell) - 0.05, [0.006065306597], rtol=RTOL)
+        np.testing.assert_allclose(_w(cell) - 0.05, [DW_PRE_POST], rtol=RTOL)
 
     @_float64
     def test_post_then_pre_depresses(self) -> None:
         cell = _toy_cell(post_ms=[5.0])
         _network(_seq([15.0]), cell, rule=_stdp()).run(dt=DT, duration=17.0 * u.ms)
-        np.testing.assert_allclose(_w(cell) - 0.05, [-0.006368571927], rtol=RTOL)
+        np.testing.assert_allclose(
+            _w(cell) - 0.05, [_reference(-A_MINUS * np.exp(-10.0 / TAU), -0.006368571927)], rtol=RTOL
+        )
 
     @_float64
     def test_pre_and_post_on_one_boundary_do_not_pair(self) -> None:
@@ -165,7 +191,7 @@ class PairReferenceTest(unittest.TestCase):
     def test_two_pre_events_on_one_boundary_count_twice(self) -> None:
         cell = _toy_cell(post_ms=[10.0])
         result = _network(_seq([0.0, 0.0]), cell, rule=_stdp()).run(dt=DT, duration=12.0 * u.ms)
-        np.testing.assert_allclose(_w(cell) - 0.05, [0.012130613194], rtol=RTOL)
+        np.testing.assert_allclose(_w(cell) - 0.05, [_reference(2 * DW_PRE_POST, 0.012130613194)], rtol=RTOL)
         # The 0 ms boundary delivers both events with the weight before its update.
         np.testing.assert_allclose(_g(result)[1], [0.1], rtol=RTOL)
 
@@ -173,7 +199,8 @@ class PairReferenceTest(unittest.TestCase):
     def test_every_earlier_pre_pairs_with_a_post(self) -> None:
         cell = _toy_cell(post_ms=[10.0])
         _network(_seq([0.0, 5.0]), cell, rule=_stdp()).run(dt=DT, duration=12.0 * u.ms)
-        np.testing.assert_allclose(_w(cell) - 0.05, [0.013853314428], rtol=RTOL)
+        expected = _reference(A_PLUS * (np.exp(-10.0 / TAU) + np.exp(-5.0 / TAU)), 0.013853314428)
+        np.testing.assert_allclose(_w(cell) - 0.05, [expected], rtol=RTOL)
 
 
 class DelayTest(unittest.TestCase):
@@ -183,12 +210,17 @@ class DelayTest(unittest.TestCase):
     def test_a_scheduled_delay_moves_the_pre_time(self) -> None:
         cell = _toy_cell(post_ms=[10.0])
         _network(_seq([0.0]), cell, delay=2.0 * u.ms, rule=_stdp()).run(dt=DT, duration=12.0 * u.ms)
-        np.testing.assert_allclose(_w(cell) - 0.05, [0.006703200460], rtol=RTOL)
+        np.testing.assert_allclose(
+            _w(cell) - 0.05, [_reference(A_PLUS * np.exp(-8.0 / TAU), 0.006703200460)], rtol=RTOL
+        )
 
     @_float64
     def test_live_arrivals_and_first_conductance_samples(self) -> None:
-        # The source crosses in step 20 (its EventSeries time is 2.0 ms).
-        expected = {0.0: (0.006736800392, 21), 0.1: (0.006736800392, 22), 0.3: (0.006804506362, 24)}
+        # The source crosses in step 20 (its EventSeries time is 2.0 ms), so
+        # its events arrive at 2.1, 2.1 and 2.3 ms.
+        at_2_1 = _reference(A_PLUS * np.exp(-7.9 / TAU), 0.006736800392)
+        at_2_3 = _reference(A_PLUS * np.exp(-7.7 / TAU), 0.006804506362)
+        expected = {0.0: (at_2_1, 21), 0.1: (at_2_1, 22), 0.3: (at_2_3, 24)}
         for delay_ms, (dw, first) in expected.items():
             with self.subTest(delay_ms=delay_ms):
                 firsts = []
@@ -206,11 +238,13 @@ class DelayTest(unittest.TestCase):
 
     @_float64
     def test_two_step_live_delay_reads_its_arrival_and_delivers_once(self) -> None:
-        cell = _toy_cell()
-        net = _network(_live_pre([2.1, 2.2]), cell, delay=0.2 * u.ms, rule=_stdp(A_plus=0.0 * u.uS))
-        g = _g(net.run(dt=DT, duration=3.0 * u.ms))[:, 0]
-        # Spikes in steps 20 and 21 arrive at 2.2 and 2.3 ms, each with w0.
-        np.testing.assert_allclose(g[[22, 23, 24]], [0.0, 0.05, 0.1], rtol=RTOL)
+        # Spikes in steps 20 and 22 arrive at 2.2 and 2.4 ms, each with w0,
+        # once: as without a rule.
+        for rule in (_stdp(A_plus=0.0 * u.uS), None):
+            with self.subTest(rule=rule is not None):
+                net = _network(_live_pre([2.1, 2.3]), _toy_cell(), delay=0.2 * u.ms, rule=rule)
+                g = _g(net.run(dt=DT, duration=3.0 * u.ms))[:, 0]
+                np.testing.assert_allclose(g[[22, 23, 24, 25]], [0.0, 0.05, 0.05, 0.1], rtol=RTOL)
 
 
 class OrderTest(unittest.TestCase):
@@ -220,8 +254,10 @@ class OrderTest(unittest.TestCase):
     def test_the_payload_uses_the_weight_before_the_boundary(self) -> None:
         cell = _toy_cell(post_ms=[5.0, 10.0])
         g = _g(_network(_seq([0.0, 10.0]), cell, rule=_stdp()).run(dt=DT, duration=12.0 * u.ms))[:, 0]
-        np.testing.assert_allclose(g[101] - g[100], 0.057788007831, rtol=RTOL)
-        np.testing.assert_allclose(_w(cell), [0.055675906206], rtol=RTOL)
+        w_after_5 = _reference(0.05 + A_PLUS * np.exp(-5.0 / TAU), 0.057788007831)
+        np.testing.assert_allclose(g[101] - g[100], w_after_5, rtol=RTOL)
+        w_end = w_after_5 + A_PLUS * np.exp(-10.0 / TAU) - A_MINUS * np.exp(-5.0 / TAU)
+        np.testing.assert_allclose(_w(cell), [_reference(w_end, 0.055675906206)], rtol=RTOL)
 
 
 class SharedSynapseTest(unittest.TestCase):
@@ -240,7 +276,9 @@ class SharedSynapseTest(unittest.TestCase):
                     synapse_index=index,
                 )
                 net.run(dt=DT, duration=22.0 * u.ms)
-                np.testing.assert_allclose(_w(cell), [0.04969673467, 0.02969673467], rtol=RTOL)
+                dw = (A_PLUS - A_MINUS) * np.exp(-10.0 / TAU)
+                expected = [_reference(0.05 + dw, 0.04969673467, 11), _reference(0.03 + dw, 0.02969673467, 11)]
+                np.testing.assert_allclose(_w(cell), expected, rtol=RTOL)
 
 
 def _zero_rule_model(delay, rule):
@@ -257,7 +295,9 @@ def _zero_rule_model(delay, rule):
         delay=delay,
         plasticity=rule,
     )
-    net.connect("sched", source=stim, synapse=cell.synapses["s"], weight=0.004 * u.uS, delay=0.3 * u.ms, plasticity=rule)
+    net.connect(
+        "sched", source=stim, synapse=cell.synapses["s"], weight=0.004 * u.uS, delay=0.3 * u.ms, plasticity=rule
+    )
     return net
 
 
@@ -363,7 +403,7 @@ class LifecycleTest(unittest.TestCase):
         cell.init_state()
         np.testing.assert_allclose(_w(cell), [0.05], rtol=RTOL)
         cell.run(dt=DT, duration=12.0 * u.ms)
-        np.testing.assert_allclose(_w(cell) - 0.05, [0.006065306597], rtol=RTOL)
+        np.testing.assert_allclose(_w(cell) - 0.05, [DW_PRE_POST], rtol=RTOL)
 
     @_float64
     def test_rule_states_are_in_the_cell_state_tree(self) -> None:
@@ -386,7 +426,7 @@ class LifecycleTest(unittest.TestCase):
                 cell.run(dt=DT, duration=duration * u.ms)
             weights.append(_w(cell))
         for w in weights:
-            np.testing.assert_allclose(w, [0.060578740926], rtol=RTOL)
+            np.testing.assert_allclose(w, [W_STANDALONE], rtol=RTOL)
 
     @_float64
     def test_standalone_update_loop_matches_cell_run(self) -> None:
@@ -404,7 +444,7 @@ class LifecycleTest(unittest.TestCase):
 
         with brainstate.environ.context(dt=DT):
             brainstate.transform.for_loop(step, u.math.arange(160) * DT)
-        np.testing.assert_allclose(_w(cell), [0.060578740926], rtol=RTOL)
+        np.testing.assert_allclose(_w(cell), [W_STANDALONE], rtol=RTOL)
 
     @_float64
     def test_prepare_run_and_update_match_run(self) -> None:

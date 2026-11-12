@@ -43,19 +43,24 @@ states. Both are pure declarations, which keeps this package a leaf:
 :mod:`braincell.mech` imports nothing from :mod:`braincell`. The event
 *sources* that emit these events live in :mod:`braincell.network.event`.
 
+A Connection plasticity rule is declared with :class:`ConnectionRule`
+and passed to ``connect(..., plasticity=...)``; it is not installed on a
+cell, so it is not a :class:`Mechanism`.
+
 Class lookup by name is handled by :class:`MechanismRegistry`
 (accessed through :func:`get_registry`). Concrete channel / ion /
-synapse classes register themselves with the global registry via the
-:func:`register_channel` / :func:`register_ion` /
-:func:`register_synapse` decorators, which run as a side effect of
-importing ``braincell.channel`` / ``braincell.ion`` /
-``braincell.synapse``.
+synapse / plasticity-rule classes register themselves with the global
+registry via the :func:`register_channel` / :func:`register_ion` /
+:func:`register_synapse` / :func:`register_connection_rule` decorators,
+which run as a side effect of importing ``braincell.channel`` /
+``braincell.ion`` / ``braincell.synapse`` / ``braincell.plasticity``.
 
 See Also
 --------
 braincell.channel : Concrete ion-channel implementations.
 braincell.ion : Concrete ion-species implementations.
 braincell.synapse : Concrete synapse implementations.
+braincell.plasticity : Concrete Connection plasticity rules.
 """
 
 from braincell._deprecation import removed_attributes as _removed_attributes
@@ -79,9 +84,11 @@ from braincell.mech._registry import (
     MechanismRegistry,
     get_registry,
     register_channel,
+    register_connection_rule,
     register_ion,
     register_synapse,
 )
+from braincell.mech._rule import ConnectionRule
 
 # Grouped by kind rather than sorted: the headings below are the map of
 # what this package declares. ``__init___test`` checks membership and
@@ -114,11 +121,14 @@ __all__ = [
     "Point",
     "SineClamp",
     "Synapse",
+    # Connection plasticity
+    "ConnectionRule",
     # Registry
     "MechanismEntry",
     "MechanismRegistry",
     "get_registry",
     "register_channel",
+    "register_connection_rule",
     "register_ion",
     "register_synapse",
 ]

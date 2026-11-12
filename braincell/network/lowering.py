@@ -66,7 +66,7 @@ def lower_direct_connections(
     population_by_cell = {id(population.cell): population for population in cell_populations}
     blocks: list[ConnectionBlock] = []
     for post in cell_populations:
-        for connection in post.cell.connections._call_views(scheduled=False):
+        for call, connection in post.cell.connections._call_items(scheduled=False):
             source = connection.source
             owner = source.execution_owner
             pre = population_by_cell.get(id(owner))
@@ -89,6 +89,24 @@ def lower_direct_connections(
                 n_contact=len(connection),
                 quantization=delay_quantization,
             )
+            pre_index = connection.source_index.astype(np.int32)
+            post_index = connection.synapse.population_index.astype(np.int32)
+            weight = connection.weight
+            weight_getter = lambda connection=connection: connection.weight  # noqa: E731
+            if call.plasticity is not None:
+                # A plasticity rule delivers its delayed rows itself, at its
+                # boundary (CELL-12a); the zero-delay rows stay on the
+                # immediate path and read the rule's dynamic weight.
+                keep = np.flatnonzero(delay_steps == 0)
+                if keep.size == 0:
+                    continue
+                offsets = connection._active_ids[keep] - int(call.row_ids[0])
+                weight_getter = call.plasticity.weight_getter(offsets)
+                weight = weight_getter()
+                pre_index = pre_index[keep]
+                post_index = post_index[keep]
+                synapse_index = synapse_index[keep]
+                delay_steps = delay_steps[keep]
             blocks.append(
                 ConnectionBlock(
                     pre_population=pre.name,
@@ -96,13 +114,13 @@ def lower_direct_connections(
                     synapse=str(connection.synapse_name[0]),
                     layout_id=int(layout_id),
                     n_active=int(layout.n_active),
-                    pre_index=connection.source_index.astype(np.int32),
-                    post_index=connection.synapse.population_index.astype(np.int32),
+                    pre_index=pre_index,
+                    post_index=post_index,
                     synapse_index=synapse_index,
-                    weight=connection.weight,
+                    weight=weight,
                     delay_steps=delay_steps,
                     event_source=source,
-                    weight_getter=lambda connection=connection: connection.weight,
+                    weight_getter=weight_getter,
                 )
             )
     return tuple(blocks)

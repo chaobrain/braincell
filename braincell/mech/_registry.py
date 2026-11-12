@@ -17,12 +17,12 @@
 
 This module implements the single lookup table that maps a short string
 name like ``"IL"`` or ``"Na_HH1952"`` to a concrete runtime class in
-:mod:`braincell.channel`, :mod:`braincell.ion`, or
-:mod:`braincell.synapse`.
+:mod:`braincell.channel`, :mod:`braincell.ion`, :mod:`braincell.synapse`,
+or :mod:`braincell.plasticity`.
 
 Registration happens at class definition time via decorators such as
-:func:`register_channel`, :func:`register_ion`, and
-:func:`register_synapse`, which simply insert the class into the
+:func:`register_channel`, :func:`register_ion`, :func:`register_synapse`,
+and :func:`register_connection_rule`, which simply insert the class into the
 module-level :data:`_REGISTRY` singleton as a side effect of importing
 the module that defines the class. After
 ``import braincell.channel`` has been executed, the registry is fully
@@ -59,6 +59,7 @@ __all__ = [
     "MechanismRegistry",
     "get_registry",
     "register_channel",
+    "register_connection_rule",
     "register_ion",
     "register_synapse",
 ]
@@ -67,8 +68,9 @@ __all__ = [
 _CATEGORY_CHANNEL = "channel"
 _CATEGORY_ION = "ion"
 _CATEGORY_SYNAPSE = "synapse"
+_CATEGORY_CONNECTION_RULE = "connection_rule"
 
-_VALID_CATEGORIES = frozenset({_CATEGORY_CHANNEL, _CATEGORY_ION, _CATEGORY_SYNAPSE})
+_VALID_CATEGORIES = frozenset({_CATEGORY_CHANNEL, _CATEGORY_ION, _CATEGORY_SYNAPSE, _CATEGORY_CONNECTION_RULE})
 
 
 _T = TypeVar("_T", bound=type)
@@ -81,7 +83,8 @@ class MechanismEntry:
     Parameters
     ----------
     category : str
-        One of ``"channel"``, ``"ion"``, or ``"synapse"``.
+        One of ``"channel"``, ``"ion"``, ``"synapse"``, or
+        ``"connection_rule"``.
     name : str
         The canonical registry key. Must be unique within a category.
     cls : type
@@ -280,7 +283,8 @@ class MechanismRegistry:
         Parameters
         ----------
         category : str
-            One of ``"channel"``, ``"ion"``, or ``"synapse"``.
+            One of ``"channel"``, ``"ion"``, ``"synapse"``, or
+            ``"connection_rule"``.
         name : str
             Canonical name, alias, or identity key (see :meth:`key_for`).
 
@@ -483,6 +487,40 @@ def register_synapse(
     See :func:`register_channel` for the parameter semantics.
     """
     return _make_decorator(_CATEGORY_SYNAPSE, name, aliases)
+
+
+def register_connection_rule(
+    name: str,
+    *,
+    aliases: tuple[str, ...] = (),
+) -> Callable[[_T], _T]:
+    """Class decorator that registers a Connection plasticity rule by name.
+
+    The decorated class subclasses the runtime base
+    :class:`braincell.ConnectionRule`; a
+    :class:`~braincell.mech.ConnectionRule` declaration then names it, and
+    ``connect(..., plasticity=...)`` looks the name up. See
+    :func:`register_channel` for the parameter semantics.
+
+    Examples
+    --------
+
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> import braincell
+        >>> @braincell.mech.register_connection_rule("ConstantDrift")
+        ... class ConstantDrift(braincell.ConnectionRule):
+        ...     def __init__(self, size, weight_unit, *, rate):
+        ...         super().__init__(size, weight_unit)
+        ...         self.rate = rate
+        ...     def update(self, state, *, pre, dt):
+        ...         return {"w": state["w"] + self.rate * dt}
+        >>> braincell.mech.get_registry().get("connection_rule", "ConstantDrift") is ConstantDrift
+        True
+        >>> braincell.mech.get_registry().unregister("connection_rule", "ConstantDrift")
+    """
+    return _make_decorator(_CATEGORY_CONNECTION_RULE, name, aliases)
 
 
 # ---------------------------------------------------------------------------

@@ -142,9 +142,9 @@ def crank_nicolson_step(target: DiffEqModule, *args, t: T = None, dt: DT = None)
 
     by Newton iteration. The states of ``target`` are merged along the last
     axis as it declares in ``diffeq_state_merging``: ``'stack'`` (the
-    default, e.g. :class:`braincell.SingleCompartment`) gives one
-    ``n_state x n_state`` Jacobian per neuron, ``'concat'``
-    (:class:`braincell.Cell`) one per cell over all of its compartments,
+    default, e.g. the engine of a lumped :class:`braincell.Cell`) gives one
+    ``n_state x n_state`` Jacobian per neuron, ``'concat'`` (a cable
+    :class:`braincell.Cell`) one per cell over all of its compartments,
     axial coupling included. Each Newton iteration solves these systems in
     a batch. Iteration stops
     when :math:`\max |\Delta y| / (1 + |y|) \le \varepsilon^{3/4}`

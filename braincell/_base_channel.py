@@ -452,7 +452,7 @@ class Channel(IonChannel):
     the channel through a Cell are checked against these units in
     ``Cell.init_state()``, by ``View.set`` and when a trainable source is
     registered (see :meth:`IonChannel.parameter_info`). A directly
-    constructed channel (``IL(1, g_max=...)``, as in a ``SingleCompartment``)
+    constructed channel (``IL(1, g_max=...)``, outside a Cell)
     compares the units of these parameters once its outermost ``__init__``
     returns; values traced under ``jax.jit`` or ``jax.grad`` are compared too.
 

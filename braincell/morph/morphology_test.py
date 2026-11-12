@@ -28,7 +28,7 @@ import brainunit as u
 import numpy as np
 
 import braincell.morph
-from braincell import Branch, Cell, MaxCVLen, Morphology, SingleCompartment
+from braincell import Branch, Cell, MaxCVLen, Morphology
 from braincell.filter import (
     AllRegion,
     BranchSlice,
@@ -2985,8 +2985,10 @@ class MorphoFromSomaTest(unittest.TestCase):
         # Float32 by default, so compare at its precision.
         np.testing.assert_allclose(area, 2.0 * np.pi * 10.0 * 20.0, rtol=1e-6)
 
-    def test_defaults_give_the_single_compartment_default_area(self) -> None:
-        expected = SingleCompartment(1).area.to_decimal(u.um**2)
+    def test_defaults_give_the_point_neuron_default_area(self) -> None:
+        # The default soma of the point-neuron class braincell 0.3 removed
+        # (CELL-28), 10 um long with a 5 um radius; Cell.point keeps it.
+        expected = 2.0 * np.pi * 5.0 * 10.0
         np.testing.assert_allclose(Morphology.from_soma().total_area.to_decimal(u.um**2), expected, rtol=1e-6)
 
     def test_name_is_passed_to_the_root(self) -> None:

@@ -135,6 +135,42 @@ class PlottingLivesInBraintoolsTest(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "[]")
 
 
+class RemovedNamesTest(unittest.TestCase):
+    """CELL-28: braincell 0.3 removed ``SingleCompartment`` and the ``MultiCompartment`` alias of ``Cell``."""
+
+    #: Each removed name and the replacements its message must name.
+    _REPLACEMENTS = {
+        "SingleCompartment": ("braincell.Cell.point(", "paint()"),
+        "MultiCompartment": ("braincell.Cell",),
+    }
+
+    def test_access_names_the_release_and_the_replacement(self) -> None:
+        for name, replacements in self._REPLACEMENTS.items():
+            with self.subTest(name=name):
+                with self.assertRaises(AttributeError) as caught:
+                    getattr(braincell, name)
+                message = str(caught.exception)
+                self.assertTrue(message.startswith(f"braincell.{name} was removed in braincell 0.3."), message)
+                for replacement in replacements:
+                    self.assertIn(replacement, message)
+                self.assertFalse(hasattr(braincell, name))
+                self.assertNotIn(name, braincell.__all__)
+
+    def test_from_import_raises_import_error_with_the_message(self) -> None:
+        with self.assertRaisesRegex(ImportError, r"^braincell\.SingleCompartment was removed in braincell 0\.3\."):
+            from braincell import SingleCompartment  # noqa: F401
+        with self.assertRaisesRegex(ImportError, r"^braincell\.MultiCompartment was removed in braincell 0\.3\."):
+            from braincell import MultiCompartment  # noqa: F401
+
+    def test_star_import_and_other_names_are_unaffected(self) -> None:
+        namespace = {}
+        exec("from braincell import *", namespace)
+        self.assertIs(namespace["Cell"], braincell.Cell)
+        self.assertTrue(set(self._REPLACEMENTS).isdisjoint(namespace))
+        with self.assertRaisesRegex(AttributeError, "module 'braincell' has no attribute 'NoSuchName'"):
+            braincell.NoSuchName
+
+
 class UserMaterialImportsTest(UserMaterialImportTests, unittest.TestCase):
     """Examples, the user docs and the README import braincell by public paths only (API-2b).
 

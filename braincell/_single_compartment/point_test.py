@@ -14,23 +14,26 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Comprehensive unit tests for :class:`braincell.SingleCompartment`.
+"""Unit tests for :class:`PointNeuron`, the point-neuron math of the lumped Cell's engine.
 
-The tests are organised by surface area:
+The math is that of the point-neuron class braincell 0.3 removed (CELL-28); these
+are its tests with the geometry ones dropped, expected values unchanged. They
+are organised by surface area:
 
-* :class:`SingleCompartmentDefaultsTest` - construction & default parameters
-* :class:`SingleCompartmentPropertiesTest` - ``area`` / ``pop_size`` / ``n_compartment``
-* :class:`SingleCompartmentLifecycleTest` - ``init_state`` / ``reset_state``
-* :class:`SingleCompartmentPreIntegralTest` - ``pre_integral`` forwarding
-* :class:`SingleCompartmentComputeDerivativeTest` - core ``compute_derivative`` path
-* :class:`SingleCompartmentPostIntegralTest` - ``post_integral`` forwarding
-* :class:`SingleCompartmentSpikeTest` - ``get_spike`` / ``soma_spike``
-* :class:`SingleCompartmentUpdateTest` - the full ``update`` path through the solver
-* :class:`SingleCompartmentSolverResolutionTest` - string / callable solver kwarg
+* :class:`PointNeuronDefaultsTest` - construction & default parameters
+* :class:`PointNeuronPropertiesTest` - ``pop_size`` / ``n_compartment``
+* :class:`PointNeuronLifecycleTest` - ``init_state`` / ``reset_state``
+* :class:`PointNeuronPreIntegralTest` - ``pre_integral`` forwarding
+* :class:`PointNeuronComputeDerivativeTest` - core ``compute_derivative`` path
+* :class:`PointNeuronPostIntegralTest` - ``post_integral`` forwarding
+* :class:`PointNeuronSpikeTest` - ``get_spike`` / ``soma_spike``
+* :class:`PointNeuronUpdateTest` - the full ``update`` path through the solver
+* :class:`PointNeuronSolverResolutionTest` - string / callable solver kwarg
 """
 
 import types
 import unittest
+import warnings
 
 import brainstate
 import braintools
@@ -40,7 +43,8 @@ import jax.numpy as jnp
 import numpy as np
 
 import braincell
-from braincell import Channel, HHTypedNeuron, SingleCompartment
+from braincell import Channel, HHTypedNeuron
+from braincell._single_compartment.point import PointNeuron
 from braincell.channel import (
     K_HH1952,
     IL,
@@ -59,7 +63,7 @@ class _BadChannel(Channel):
     """A minimal :class:`Channel` whose ``current`` always raises.
 
     Used to exercise the exception-wrapping branch of
-    :meth:`SingleCompartment.compute_derivative` without depending on the
+    :meth:`PointNeuron.compute_derivative` without depending on the
     internal state of any real channel implementation.
     """
 
@@ -86,64 +90,42 @@ class _BadChannel(Channel):
 # ---------------------------------------------------------------------------
 
 
-class SingleCompartmentDefaultsTest(unittest.TestCase):
+class PointNeuronDefaultsTest(unittest.TestCase):
     """Construction with defaults and with explicit keyword overrides."""
 
     def test_default_scalar_parameters(self) -> None:
-        sc = SingleCompartment(size=1)
-        self.assertTrue(u.math.allclose(sc.length, 10.0 * u.um, atol=1e-9 * u.um))
-        self.assertTrue(u.math.allclose(sc.radius, 5.0 * u.um, atol=1e-9 * u.um))
+        sc = PointNeuron(size=1)
         self.assertTrue(u.math.allclose(sc.C, 1.0 * u.uF / u.cm**2, atol=1e-12 * u.uF / u.cm**2))
         self.assertTrue(u.math.allclose(sc.V_th, 0.0 * u.mV, atol=1e-9 * u.mV))
 
     def test_default_solver_is_ralston2(self) -> None:
-        sc = SingleCompartment(size=1)
+        sc = PointNeuron(size=1)
         self.assertIs(sc.solver, ralston2_step)
 
     def test_default_spk_fun_is_callable(self) -> None:
-        sc = SingleCompartment(size=1)
+        sc = PointNeuron(size=1)
         self.assertTrue(callable(sc.spk_fun))
 
     def test_default_v_initializer_is_uniform(self) -> None:
-        sc = SingleCompartment(size=1)
+        sc = PointNeuron(size=1)
         self.assertIsInstance(sc.V_initializer, braintools.init.Uniform)
 
     def test_varshape_matches_size(self) -> None:
-        self.assertEqual(SingleCompartment(size=1).varshape, (1,))
-        self.assertEqual(SingleCompartment(size=5).varshape, (5,))
-        self.assertEqual(SingleCompartment(size=(3,)).varshape, (3,))
+        self.assertEqual(PointNeuron(size=1).varshape, (1,))
+        self.assertEqual(PointNeuron(size=5).varshape, (5,))
+        self.assertEqual(PointNeuron(size=(3,)).varshape, (3,))
 
     def test_custom_scalar_parameters_are_honoured(self) -> None:
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=2,
-            length=20.0 * u.um,
-            radius=3.0 * u.um,
             C=0.5 * u.uF / u.cm**2,
             V_th=-30.0 * u.mV,
         )
-        self.assertTrue(u.math.allclose(sc.length, 20.0 * u.um, atol=1e-9 * u.um))
-        self.assertTrue(u.math.allclose(sc.radius, 3.0 * u.um, atol=1e-9 * u.um))
         self.assertTrue(u.math.allclose(sc.C, 0.5 * u.uF / u.cm**2, atol=1e-12 * u.uF / u.cm**2))
         self.assertTrue(u.math.allclose(sc.V_th, -30.0 * u.mV, atol=1e-9 * u.mV))
 
-    def test_callable_parameters_broadcast_across_size(self) -> None:
-        sc = SingleCompartment(
-            size=3,
-            length=lambda shape: jnp.array([5.0, 10.0, 15.0]) * u.um,
-            radius=lambda shape: jnp.array([1.0, 2.0, 3.0]) * u.um,
-        )
-        self.assertEqual(sc.length.shape, (3,))
-        self.assertEqual(sc.radius.shape, (3,))
-        self.assertTrue(
-            u.math.allclose(
-                sc.length,
-                jnp.array([5.0, 10.0, 15.0]) * u.um,
-                atol=1e-9 * u.um,
-            )
-        )
-
     def test_ion_channels_are_attached(self) -> None:
-        sc = SingleCompartment(size=1, IL=IL(size=1))
+        sc = PointNeuron(size=1, IL=IL(size=1))
         self.assertIn("IL", sc.ion_channels)
         self.assertIsInstance(sc.ion_channels["IL"], IL)
 
@@ -153,40 +135,14 @@ class SingleCompartmentDefaultsTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class SingleCompartmentPropertiesTest(unittest.TestCase):
+class PointNeuronPropertiesTest(unittest.TestCase):
     def test_n_compartment_is_one(self) -> None:
-        self.assertEqual(SingleCompartment(size=1).n_compartment, 1)
-        self.assertEqual(SingleCompartment(size=7).n_compartment, 1)
+        self.assertEqual(PointNeuron(size=1).n_compartment, 1)
+        self.assertEqual(PointNeuron(size=7).n_compartment, 1)
 
     def test_pop_size_matches_varshape(self) -> None:
-        self.assertEqual(SingleCompartment(size=1).pop_size, (1,))
-        self.assertEqual(SingleCompartment(size=4).pop_size, (4,))
-
-    def test_area_is_cylinder_lateral_surface(self) -> None:
-        sc = SingleCompartment(size=1, length=10.0 * u.um, radius=5.0 * u.um)
-        expected = 2.0 * u.math.pi * 5.0 * u.um * 10.0 * u.um
-        self.assertTrue(
-            u.math.allclose(
-                sc.area.to_decimal(u.um**2),
-                expected.to_decimal(u.um**2),
-                atol=1e-9,
-            )
-        )
-
-    def test_area_broadcasts_with_callable_geometry(self) -> None:
-        sc = SingleCompartment(
-            size=2,
-            length=lambda shape: jnp.array([10.0, 20.0]) * u.um,
-            radius=lambda shape: jnp.array([1.0, 2.0]) * u.um,
-        )
-        expected = 2.0 * u.math.pi * jnp.array([1.0, 2.0]) * u.um * jnp.array([10.0, 20.0]) * u.um
-        self.assertTrue(
-            u.math.allclose(
-                sc.area.to_decimal(u.um**2),
-                expected.to_decimal(u.um**2),
-                atol=1e-9,
-            )
-        )
+        self.assertEqual(PointNeuron(size=1).pop_size, (1,))
+        self.assertEqual(PointNeuron(size=4).pop_size, (4,))
 
 
 # ---------------------------------------------------------------------------
@@ -194,9 +150,9 @@ class SingleCompartmentPropertiesTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class SingleCompartmentLifecycleTest(unittest.TestCase):
+class PointNeuronLifecycleTest(unittest.TestCase):
     def test_init_state_creates_diffeq_state_V(self) -> None:
-        sc = SingleCompartment(size=2)
+        sc = PointNeuron(size=2)
         sc.init_state()
         self.assertIsInstance(sc.V, DiffEqState)
         self.assertEqual(sc.V.value.shape, (2,))
@@ -204,7 +160,7 @@ class SingleCompartmentLifecycleTest(unittest.TestCase):
         self.assertEqual(sc.spike.value.shape, (2,))
 
     def test_init_state_with_constant_initializer_matches_value(self) -> None:
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=3,
             V_initializer=braintools.init.Constant(-65.0 * u.mV),
         )
@@ -218,14 +174,14 @@ class SingleCompartmentLifecycleTest(unittest.TestCase):
         )
 
     def test_init_state_samples_in_uniform_range(self) -> None:
-        sc = SingleCompartment(size=16)  # default Uniform(-70, -60) mV
+        sc = PointNeuron(size=16)  # default Uniform(-70, -60) mV
         sc.init_state()
         # every sample is inside the default [-70, -60] mV range
         self.assertTrue(bool(jnp.all(sc.V.value.to_decimal(u.mV) >= -70.0)))
         self.assertTrue(bool(jnp.all(sc.V.value.to_decimal(u.mV) <= -60.0)))
 
     def test_init_state_with_batch_dim(self) -> None:
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=3,
             V_initializer=braintools.init.Constant(-65.0 * u.mV),
         )
@@ -233,7 +189,7 @@ class SingleCompartmentLifecycleTest(unittest.TestCase):
         self.assertEqual(sc.V.value.shape, (4, 3))
 
     def test_init_state_forwards_to_child_channel_ion(self) -> None:
-        sc = SingleCompartment(size=1)
+        sc = PointNeuron(size=1)
         sc.na = SodiumFixed(size=1, E=50.0 * u.mV)
         sc.na.add(INa=Na_HH1952(size=1))
         sc.init_state()
@@ -242,7 +198,7 @@ class SingleCompartmentLifecycleTest(unittest.TestCase):
         self.assertEqual(inchannel.q.value.shape, (1,))
 
     def test_reset_state_restores_constant_V(self) -> None:
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=2,
             V_initializer=braintools.init.Constant(-65.0 * u.mV),
         )
@@ -258,7 +214,7 @@ class SingleCompartmentLifecycleTest(unittest.TestCase):
         )
 
     def test_reset_state_clears_spike_buffer(self) -> None:
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=2,
             V_initializer=braintools.init.Constant(-65.0 * u.mV),
             V_th=0.0 * u.mV,
@@ -273,7 +229,7 @@ class SingleCompartmentLifecycleTest(unittest.TestCase):
         # Pin V to a constant so reset_state() re-samples the same V each time;
         # otherwise the default Uniform(-70, -60) mV initializer would randomise
         # V on every call and the INa steady states would not match.
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=1,
             V_initializer=braintools.init.Constant(-65.0 * u.mV),
         )
@@ -293,16 +249,16 @@ class SingleCompartmentLifecycleTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class SingleCompartmentPreIntegralTest(unittest.TestCase):
+class PointNeuronPreIntegralTest(unittest.TestCase):
     def test_pre_integral_without_channels_is_a_no_op(self) -> None:
-        sc = SingleCompartment(size=1)
+        sc = PointNeuron(size=1)
         sc.init_state()
         # Should not raise even with no ion channels and no I_ext argument.
         sc.pre_integral()
         sc.pre_integral(1.0 * u.nA / u.cm**2)
 
     def test_pre_integral_forwards_to_ion_channel(self) -> None:
-        sc = SingleCompartment(size=1)
+        sc = PointNeuron(size=1)
         sc.na = SodiumFixed(size=1, E=50.0 * u.mV)
         sc.na.add(INa=Na_HH1952(size=1))
         sc.init_state()
@@ -325,9 +281,9 @@ class SingleCompartmentPreIntegralTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class SingleCompartmentComputeDerivativeTest(unittest.TestCase):
+class PointNeuronComputeDerivativeTest(unittest.TestCase):
     def test_zero_current_no_channels_yields_zero_derivative(self) -> None:
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=2,
             V_initializer=braintools.init.Constant(-60.0 * u.mV),
         )
@@ -342,7 +298,7 @@ class SingleCompartmentComputeDerivativeTest(unittest.TestCase):
         )
 
     def test_constant_current_no_channels_matches_I_over_C(self) -> None:
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=1,
             V_initializer=braintools.init.Constant(-60.0 * u.mV),
             C=1.0 * u.uF / u.cm**2,
@@ -361,7 +317,7 @@ class SingleCompartmentComputeDerivativeTest(unittest.TestCase):
 
     def test_default_I_ext_argument_is_zero(self) -> None:
         # compute_derivative with no I_ext argument must default to 0 nA/cm².
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=1,
             V_initializer=braintools.init.Constant(-60.0 * u.mV),
         )
@@ -379,7 +335,7 @@ class SingleCompartmentComputeDerivativeTest(unittest.TestCase):
         # With V held at E_L the leak current must be zero; away from E_L it
         # must push dV/dt in the correct direction.
         V_hold = -70.0 * u.mV
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=1,
             V_initializer=braintools.init.Constant(V_hold),
             IL=IL(size=1, g_max=0.1 * u.mS / u.cm**2, E=V_hold),
@@ -406,7 +362,7 @@ class SingleCompartmentComputeDerivativeTest(unittest.TestCase):
         g = 0.3 * u.mS / u.cm**2
         EL = -54.0 * u.mV
         V0 = -65.0 * u.mV
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=1,
             V_initializer=braintools.init.Constant(V0),
             C=1.0 * u.uF / u.cm**2,
@@ -426,7 +382,7 @@ class SingleCompartmentComputeDerivativeTest(unittest.TestCase):
         )
 
     def test_ion_channel_derivatives_are_populated(self) -> None:
-        sc = SingleCompartment(size=1)
+        sc = PointNeuron(size=1)
         sc.na = SodiumFixed(size=1, E=50.0 * u.mV)
         sc.na.add(INa=Na_HH1952(size=1))
         sc.k = PotassiumFixed(size=1, E=-77.0 * u.mV)
@@ -441,7 +397,7 @@ class SingleCompartmentComputeDerivativeTest(unittest.TestCase):
         self.assertEqual(sc.V.derivative.shape, (1,))
 
     def test_bad_channel_current_is_wrapped_in_value_error(self) -> None:
-        sc = SingleCompartment(size=1, bad=_BadChannel(size=1))
+        sc = PointNeuron(size=1, bad=_BadChannel(size=1))
         sc.init_state()
         with self.assertRaises(ValueError) as ctx:
             sc.compute_derivative(0.0 * u.nA / u.cm**2)
@@ -469,7 +425,7 @@ class SingleCompartmentComputeDerivativeTest(unittest.TestCase):
             def reset_state(self, V, batch_size=None):  # pragma: no cover
                 pass
 
-        sc = SingleCompartment(size=1, attr=_AttrErrorChannel(size=1))
+        sc = PointNeuron(size=1, attr=_AttrErrorChannel(size=1))
         sc.init_state()
         with self.assertRaises(AttributeError):
             sc.compute_derivative(0.0 * u.nA / u.cm**2)
@@ -480,9 +436,9 @@ class SingleCompartmentComputeDerivativeTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class SingleCompartmentPostIntegralTest(unittest.TestCase):
+class PointNeuronPostIntegralTest(unittest.TestCase):
     def test_post_integral_without_delta_inputs_preserves_V(self) -> None:
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=2,
             V_initializer=braintools.init.Constant(-65.0 * u.mV),
         )
@@ -492,7 +448,7 @@ class SingleCompartmentPostIntegralTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(sc.V.value, before, atol=1e-9 * u.mV))
 
     def test_post_integral_forwards_to_ion_channel(self) -> None:
-        sc = SingleCompartment(size=1)
+        sc = PointNeuron(size=1)
         sc.na = SodiumFixed(size=1, E=50.0 * u.mV)
         sc.na.add(INa=Na_HH1952(size=1))
         sc.init_state()
@@ -513,33 +469,33 @@ class SingleCompartmentPostIntegralTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class SingleCompartmentSpikeTest(unittest.TestCase):
+class PointNeuronSpikeTest(unittest.TestCase):
     def test_get_spike_rising_crossing_is_nonzero(self) -> None:
-        sc = SingleCompartment(size=1, V_th=0.0 * u.mV)
+        sc = PointNeuron(size=1, V_th=0.0 * u.mV)
         sc.init_state()
         spk = sc.get_spike(jnp.array([-10.0]) * u.mV, jnp.array([10.0]) * u.mV)
         self.assertGreater(float(spk[0]), 0.0)
 
     def test_get_spike_falling_crossing_is_zero(self) -> None:
-        sc = SingleCompartment(size=1, V_th=0.0 * u.mV)
+        sc = PointNeuron(size=1, V_th=0.0 * u.mV)
         sc.init_state()
         spk = sc.get_spike(jnp.array([10.0]) * u.mV, jnp.array([-10.0]) * u.mV)
         self.assertTrue(u.math.allclose(spk, jnp.zeros((1,)), atol=1e-9))
 
     def test_get_spike_both_below_threshold_is_zero(self) -> None:
-        sc = SingleCompartment(size=1, V_th=0.0 * u.mV)
+        sc = PointNeuron(size=1, V_th=0.0 * u.mV)
         sc.init_state()
         spk = sc.get_spike(jnp.array([-30.0]) * u.mV, jnp.array([-20.0]) * u.mV)
         self.assertTrue(u.math.allclose(spk, jnp.zeros((1,)), atol=1e-9))
 
     def test_get_spike_both_above_threshold_is_zero(self) -> None:
-        sc = SingleCompartment(size=1, V_th=0.0 * u.mV)
+        sc = PointNeuron(size=1, V_th=0.0 * u.mV)
         sc.init_state()
         spk = sc.get_spike(jnp.array([10.0]) * u.mV, jnp.array([20.0]) * u.mV)
         self.assertTrue(u.math.allclose(spk, jnp.zeros((1,)), atol=1e-9))
 
     def test_soma_spike_below_threshold_is_zero(self) -> None:
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=1,
             V_initializer=braintools.init.Constant(-65.0 * u.mV),
             V_th=0.0 * u.mV,
@@ -549,7 +505,7 @@ class SingleCompartmentSpikeTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(out, jnp.zeros((1,)), atol=1e-9))
 
     def test_soma_spike_above_threshold_is_positive(self) -> None:
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=1,
             V_initializer=braintools.init.Constant(20.0 * u.mV),
             V_th=0.0 * u.mV,
@@ -564,9 +520,9 @@ class SingleCompartmentSpikeTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class SingleCompartmentUpdateTest(unittest.TestCase):
+class PointNeuronUpdateTest(unittest.TestCase):
     def test_update_zero_current_leaves_V_unchanged(self) -> None:
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=2,
             V_initializer=braintools.init.Constant(-65.0 * u.mV),
         )
@@ -584,7 +540,7 @@ class SingleCompartmentUpdateTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(spk, jnp.zeros((2,)), atol=1e-9))
 
     def test_update_nonzero_current_advances_V(self) -> None:
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=1,
             V_initializer=braintools.init.Constant(-65.0 * u.mV),
             C=1.0 * u.uF / u.cm**2,
@@ -602,7 +558,7 @@ class SingleCompartmentUpdateTest(unittest.TestCase):
         )
 
     def test_update_writes_spike_buffer(self) -> None:
-        sc = SingleCompartment(
+        sc = PointNeuron(
             size=1,
             V_initializer=braintools.init.Constant(-65.0 * u.mV),
         )
@@ -614,7 +570,7 @@ class SingleCompartmentUpdateTest(unittest.TestCase):
     def test_update_with_hh_stack_runs(self) -> None:
         # A full HH setup with Na + K + IL should go through one update step
         # without raising and produce a finite V.
-        sc = SingleCompartment(size=1, solver="exp_euler")
+        sc = PointNeuron(size=1, solver="exp_euler")
         sc.na = SodiumFixed(size=1, E=50.0 * u.mV)
         sc.na.add(INa=Na_HH1952(size=1))
         sc.k = PotassiumFixed(size=1, E=-77.0 * u.mV)
@@ -670,7 +626,7 @@ class _SelfIntegratingChannel(Channel, IndependentIntegration):
         self.calls.append("ind_update")
 
 
-class SingleCompartmentIndependentIntegrationTest(unittest.TestCase):
+class PointNeuronIndependentIntegrationTest(unittest.TestCase):
     """The neuron must not step a channel that steps itself.
 
     Pins both halves of the split: the three hook methods filter
@@ -685,7 +641,7 @@ class SingleCompartmentIndependentIntegrationTest(unittest.TestCase):
 
     def _neuron(self):
         channel = _SelfIntegratingChannel(size=(1,))
-        sc = SingleCompartment(size=(1,), self_int=channel)
+        sc = PointNeuron(size=(1,), self_int=channel)
         sc.init_state()
         channel.calls.clear()
         return sc, channel
@@ -700,7 +656,7 @@ class SingleCompartmentIndependentIntegrationTest(unittest.TestCase):
     def test_hooks_do_reach_an_ordinary_channel(self) -> None:
         """The control: the same three hooks reach a channel without the mixin."""
         leak = IL(size=(1,))
-        sc = SingleCompartment(size=(1,), leak=leak)
+        sc = PointNeuron(size=(1,), leak=leak)
         sc.init_state()
         seen = []
         leak.pre_integral = lambda V: seen.append("pre_integral")
@@ -718,7 +674,7 @@ class SingleCompartmentIndependentIntegrationTest(unittest.TestCase):
         self.assertNotIn("post_integral", channel.calls)
 
 
-class SingleCompartmentIndependentIntegrationEnvironTest(unittest.TestCase):
+class PointNeuronIndependentIntegrationEnvironTest(unittest.TestCase):
     def test_the_tests_leave_the_global_dt_as_they_found_it(self) -> None:
         # On main two of them set dt = 0.01 ms process-wide, which every later
         # test in the same process saw.
@@ -726,12 +682,12 @@ class SingleCompartmentIndependentIntegrationEnvironTest(unittest.TestCase):
         if saved is not None:
             self.addCleanup(brainstate.environ.set, dt=saved)
         result = unittest.TestResult()
-        unittest.defaultTestLoader.loadTestsFromTestCase(SingleCompartmentIndependentIntegrationTest).run(result)
+        unittest.defaultTestLoader.loadTestsFromTestCase(PointNeuronIndependentIntegrationTest).run(result)
         self.assertEqual((result.testsRun, result.errors, result.failures), (3, [], []))
         self.assertIsNone(brainstate.environ.get("dt", None))
 
 
-class _SelfIntegratingPools(SingleCompartment):
+class _SelfIntegratingPools(PointNeuron):
     """A Markov sodium channel and a kinetic calcium pool with an HH channel of its own."""
 
     def __init__(self, solver):
@@ -741,10 +697,11 @@ class _SelfIntegratingPools(SingleCompartment):
         self.na.add(nav=braincell.channel.Nav_MA2020_GrC(1, g_max=10.0 * u.mS / u.cm**2))
         self.ca = braincell.ion.CdpStC_MA2020_GoC(1)
         self.ca.add(hva=braincell.channel.CaHVA_MA2020_GoC(1, g_max=0.5 * u.mS / u.cm**2))
-        self.ca.diam_arc_mean = 2.0 * self.radius
+        # The removed class's default soma radius, 5 um.
+        self.ca.diam_arc_mean = braintools.init.param(10.0 * u.um, self.varshape)
 
 
-class SingleCompartmentSelfIntegratingPoolTest(unittest.TestCase):
+class PointNeuronSelfIntegratingPoolTest(unittest.TestCase):
     """CELL-19: Markov channels and kinetic ions under every kind of solver.
 
     The explicit methods (``ralston2`` is the default) raised ``ValueError:
@@ -788,9 +745,9 @@ class SingleCompartmentSelfIntegratingPoolTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class SingleCompartmentSolverResolutionTest(unittest.TestCase):
+class PointNeuronSolverResolutionTest(unittest.TestCase):
     def test_string_solver_resolves_via_registry(self) -> None:
-        sc = SingleCompartment(size=1, solver="rk4")
+        sc = PointNeuron(size=1, solver="rk4")
         self.assertIs(sc.solver, rk4_step)
 
     def test_callable_solver_is_stored_directly(self) -> None:
@@ -799,23 +756,23 @@ class SingleCompartmentSolverResolutionTest(unittest.TestCase):
         def _stub(target, *args):  # pragma: no cover - never called
             return marker
 
-        sc = SingleCompartment(size=1, solver=_stub)
+        sc = PointNeuron(size=1, solver=_stub)
         self.assertIs(sc.solver, _stub)
 
     def test_unknown_solver_name_raises(self) -> None:
         with self.assertRaises(ValueError):
-            SingleCompartment(size=1, solver="not-a-real-integrator")
+            PointNeuron(size=1, solver="not-a-real-integrator")
 
 
-class SingleCompartmentHiddenStatesAreNotGroupedTest(unittest.TestCase):
-    """A ``SingleCompartment`` has no spatial axis, so nothing is grouped.
+class PointNeuronHiddenStatesAreNotGroupedTest(unittest.TestCase):
+    """A ``PointNeuron`` has no spatial axis, so nothing is grouped.
 
     The counterpart to ``CellHiddenStatesAreGroupStatesTest``.
     """
 
     @staticmethod
-    def _neuron() -> SingleCompartment:
-        sc = SingleCompartment(5)
+    def _neuron() -> PointNeuron:
+        sc = PointNeuron(5)
         sc.add(
             na=SodiumFixed(5, E=50.0 * u.mV),
             k=PotassiumFixed(5, E=-77.0 * u.mV),
@@ -824,7 +781,7 @@ class SingleCompartmentHiddenStatesAreNotGroupedTest(unittest.TestCase):
         sc.k.add(ch=K_HH1952(5))
         return sc
 
-    def _assert_none_grouped(self, neuron: SingleCompartment) -> None:
+    def _assert_none_grouped(self, neuron: PointNeuron) -> None:
         hidden = [
             (".".join(map(str, path)), state)
             for path, state in brainstate.graph.states(neuron).items()
@@ -850,7 +807,7 @@ class SingleCompartmentHiddenStatesAreNotGroupedTest(unittest.TestCase):
         self.assertIs(type(neuron.V), DiffEqSingleState)
 
     def test_a_preceding_cell_does_not_leak_its_grouped_scope(self) -> None:
-        # A program may build both model types; SingleCompartment sets the
+        # A program may build both model types; PointNeuron sets the
         # scope explicitly rather than relying on the default, so the order
         # of construction cannot matter.
         with braincell.state_grouping(True):
@@ -861,11 +818,9 @@ class SingleCompartmentHiddenStatesAreNotGroupedTest(unittest.TestCase):
 
 
 def _resting_leaky(solver, size=1):
-    """Soma 20 um x 10 um, leak 0.3 mS/cm^2 at its reversal -65 mV."""
-    neuron = SingleCompartment(
+    """A leak of 0.3 mS/cm^2 at its reversal -65 mV."""
+    neuron = PointNeuron(
         size,
-        length=20.0 * u.um,
-        radius=10.0 * u.um,
         V_initializer=braintools.init.Constant(-65.0 * u.mV),
         solver=solver,
     )
@@ -875,7 +830,7 @@ def _resting_leaky(solver, size=1):
     return neuron
 
 
-class SingleCompartmentValueInputTest(unittest.TestCase):
+class PointNeuronValueInputTest(unittest.TestCase):
     """CELL-36: a value input acts on one step and every stage of that step reads it."""
 
     # 10 uA/cm^2 for one 0.025 ms step against the leak: I / g * (1 - exp(-0.0075)).
@@ -905,7 +860,7 @@ class SingleCompartmentValueInputTest(unittest.TestCase):
         # A subclass that sums its inputs itself, with brainpy's default pop.
         seen = []
 
-        class Custom(SingleCompartment):
+        class Custom(PointNeuron):
             def compute_derivative(self, I_ext=0.0 * u.nA / u.cm**2):
                 total = self.sum_current_inputs(I_ext, self.V.value)
                 seen.append(float(np.asarray(total.to_decimal(u.uA / u.cm**2)).reshape(-1)[0]))
@@ -938,6 +893,27 @@ class SingleCompartmentValueInputTest(unittest.TestCase):
         neuron.add_delta_input("e", 1.0 * u.mV)
         self.assertEqual(neuron.sum_delta_inputs(0.0 * u.mV, pop=False).to_decimal(u.mV), 1.0)
         self.assertIn("e", neuron.delta_inputs)
+
+
+class LumpedEngineTest(unittest.TestCase):
+    """CELL-28: a lumped Cell runs on PointNeuron, and building and running it warns of nothing deprecated."""
+
+    def test_a_lumped_cell_runs_on_a_point_neuron_without_a_deprecation_warning(self) -> None:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cell = braincell.Cell.point(2, V_init=-65.0 * u.mV)
+            cell.paint(
+                braincell.filter.AllRegion(),
+                braincell.mech.Ion("SodiumFixed", E=50.0 * u.mV),
+                braincell.mech.Channel("Na_HH1952", g_max=120.0 * u.mS / u.cm**2),
+                braincell.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+            )
+            cell.record("v", braincell.observe.state("v"))
+            cell.init_state()
+            values = cell.run(dt=0.025 * u.ms, duration=0.1 * u.ms).samples["v"].values
+        self.assertIsInstance(cell._lumped_runtime, PointNeuron)
+        self.assertEqual(values.shape, (4, 2))
+        self.assertEqual([w.message for w in caught if issubclass(w.category, DeprecationWarning)], [])
 
 
 if __name__ == "__main__":

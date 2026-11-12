@@ -13,7 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
+"""Private point-neuron base of the lumped Cell's engine (:class:`PointNeuron`)."""
 
-from braincell._single_compartment.base import SingleCompartment
+from braincell._single_compartment.point import PointNeuron
 
-__all__ = ["SingleCompartment"]
+__all__ = ["PointNeuron"]

@@ -131,15 +131,18 @@ class PopulationTest(unittest.TestCase):
                 synapse=target.synapses["ampa"],
             )
 
-    def test_single_compartment_is_rejected_with_a_type_error(self) -> None:
+    def test_point_neuron_model_is_rejected_with_a_type_error(self) -> None:
         # It has a one-dimensional pop_size, which used to be all the check
         # asked for; add_population then failed with an AttributeError.
+        from braincell._single_compartment.point import PointNeuron
+
         network = braincell.Network("point_neurons")
-        with self.assertRaisesRegex(TypeError, "SingleCompartment cannot join a Network"):
-            network.add_population("p", braincell.SingleCompartment(2))
+        model = PointNeuron(2)
+        with self.assertRaisesRegex(TypeError, "that is not a Cell cannot join a Network"):
+            network.add_population("p", model)
         self.assertEqual(len(network.populations), 0)
         with self.assertRaisesRegex(TypeError, "must be a Cell, NetStim, or EventSequence"):
-            Population("p", braincell.SingleCompartment(2))
+            Population("p", model)
 
     def test_custom_metadata_cannot_shadow_reserved_names(self) -> None:
         with self.assertRaisesRegex(ValueError, "reserved names"):

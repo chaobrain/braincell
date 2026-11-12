@@ -35,6 +35,7 @@ import numpy as np
 
 import braincell as bc
 from braincell._multi_compartment import cell as cell_module, lumped
+from braincell._single_compartment.point import PointNeuron
 from braincell.filter import AllRegion, RootLocation, at
 from braincell.quad._util import split_diffeq_states
 
@@ -115,16 +116,13 @@ def _point_cell(*, hh=True, clamp=False, solver=None, pop_size=N):
     return cell
 
 
-def _single_compartment(*, hh, solver):
-    class Model(bc.SingleCompartment):
+def _point_neuron(*, hh, solver):
+    """The point-neuron math built by hand: the model a lumped Cell must reproduce."""
+
+    class Model(PointNeuron):
         def __init__(self):
-            super().__init__(
-                N,
-                length=LENGTH,
-                radius=RADIUS,
-                V_initializer=braintools.init.Constant(-65.0 * u.mV),
-                solver=solver,
-            )
+            super().__init__(N, V_initializer=braintools.init.Constant(-65.0 * u.mV), solver=solver)
+            self.area = _area()
             if hh:
                 self.na = bc.ion.SodiumFixed(N, E=50.0 * u.mV)
                 self.na.add(INa=bc.channel.Na_HH1952(N, g_max=120.0 * u.mS / u.cm**2))
@@ -135,7 +133,7 @@ def _single_compartment(*, hh, solver):
     return Model()
 
 
-def _run_single_compartment(model, *, clamp):
+def _run_point_neuron(model, *, clamp):
     """Voltage before each step; I_ext is the clamp density at t + dt/2."""
     model.init_state()
     model.reset_state()
@@ -156,16 +154,16 @@ def _run_single_compartment(model, *, clamp):
 
 
 class LumpedEquivalenceTest(unittest.TestCase):
-    """Acceptance 1: a lumped Cell reproduces SingleCompartment in float64."""
+    """Acceptance 1: a lumped Cell reproduces a hand-built PointNeuron in float64."""
 
-    def test_voltage_matches_single_compartment(self) -> None:
+    def test_voltage_matches_point_neuron(self) -> None:
         bounds = {"rk4": 1e-10, "euler": 1e-10, "ralston2": 1e-10, "exp_euler": 1e-9}
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
             for hh in (False, True):
                 for clamp in (False, True):
                     for solver, bound in bounds.items():
                         with self.subTest(hh=hh, clamp=clamp, solver=solver):
-                            expected = _run_single_compartment(_single_compartment(hh=hh, solver=solver), clamp=clamp)
+                            expected = _run_point_neuron(_point_neuron(hh=hh, solver=solver), clamp=clamp)
                             cell = _point_cell(hh=hh, clamp=clamp, solver=solver)
                             cell.init_state()
                             values = cell.run(dt=DT, duration=DURATION).samples["v"].values
@@ -173,11 +171,11 @@ class LumpedEquivalenceTest(unittest.TestCase):
                             error = float(u.math.max(u.math.abs(values - expected)).to_decimal(u.mV))
                             self.assertLessEqual(error, bound)
 
-    def test_initial_derivative_matches_single_compartment(self) -> None:
+    def test_initial_derivative_matches_point_neuron(self) -> None:
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
             for hh in (False, True):
                 with self.subTest(hh=hh):
-                    model = _single_compartment(hh=hh, solver="rk4")
+                    model = _point_neuron(hh=hh, solver="rk4")
                     model.init_state()
                     model.reset_state()
                     cell = _point_cell(hh=hh, solver="rk4")
@@ -917,7 +915,7 @@ class _Dense(brainstate.nn.Module):
 def _run_projection(post, proj, raster):
     """Initialise through the projection (it reaches ``post`` once) and drive it."""
     brainstate.nn.init_all_states(proj)
-    if isinstance(post, bc.SingleCompartment):
+    if isinstance(post, PointNeuron):
         post.reset_state()
 
     def step(index, t):
@@ -937,7 +935,7 @@ def _align_post(post, weight, g_unit):
 
 
 class ExternalInputEquivalenceTest(unittest.TestCase):
-    """CELL-23 acceptance 1: every drive matches SingleCompartment step by step in float64."""
+    """CELL-23 acceptance 1: every drive matches a hand-built PointNeuron step by step in float64."""
 
     def _check(self, drive):
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
@@ -949,7 +947,7 @@ class ExternalInputEquivalenceTest(unittest.TestCase):
 
     def test_total_current(self) -> None:
         def drive(solver):
-            model = _single_compartment(hh=True, solver=solver)
+            model = _point_neuron(hh=True, solver=solver)
             model.init_state()
             model.reset_state()
             area = model.area
@@ -966,7 +964,7 @@ class ExternalInputEquivalenceTest(unittest.TestCase):
 
     def test_current_density(self) -> None:
         def drive(solver):
-            model = _single_compartment(hh=True, solver=solver)
+            model = _point_neuron(hh=True, solver=solver)
             model.init_state()
             model.reset_state()
             area = model.area
@@ -988,7 +986,7 @@ class ExternalInputEquivalenceTest(unittest.TestCase):
         rows = np.asarray([[1.0], [2.0]])
 
         def drive(solver):
-            model = _single_compartment(hh=True, solver=solver)
+            model = _point_neuron(hh=True, solver=solver)
             model.init_state(batch_size=2)
             model.reset_state(batch_size=2)
             area = model.area
@@ -1007,7 +1005,7 @@ class ExternalInputEquivalenceTest(unittest.TestCase):
         for kind in ("current", "density"):
 
             def drive(solver, kind=kind):
-                model = _single_compartment(hh=True, solver=solver)
+                model = _point_neuron(hh=True, solver=solver)
                 density = (weight / model.area).in_unit(u.mS / u.cm**2)
                 expected = _run_projection(model, _align_post(model, density, u.mS / u.cm**2), raster)
                 cell = _point_cell(solver=solver)
@@ -1031,7 +1029,7 @@ class ExternalInputEquivalenceTest(unittest.TestCase):
         for name, (weight, density_unit, make_out) in outputs.items():
 
             def drive(solver, weight=weight, density_unit=density_unit, make_out=make_out):
-                model = _single_compartment(hh=True, solver=solver)
+                model = _point_neuron(hh=True, solver=solver)
                 density = (weight / model.area).in_unit(density_unit)
                 expected = _run_projection(
                     model, brainpy.state.CurrentProj(comm=_Dense(density), out=make_out(), post=model), raster
@@ -1136,11 +1134,11 @@ class ExternalInputTest(unittest.TestCase):
         self.assertGreater(float(np.min(traces[1] - traces[0])), 1e-3)
         np.testing.assert_allclose(traces[2], traces[1], rtol=0.0, atol=1e-5)
 
-    def test_value_input_is_added_once_as_on_single_compartment(self) -> None:
+    def test_value_input_is_added_once_as_on_point_neuron(self) -> None:
         # brainpy's rule: a non-callable input is added at the first
         # evaluation (the first solver stage) and then removed.
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
-            model = _single_compartment(hh=True, solver="rk4")
+            model = _point_neuron(hh=True, solver="rk4")
             model.init_state()
             model.reset_state()
             model.add_current_input("kick", (0.2 * u.nA / model.area).in_unit(u.uA / u.cm**2))
@@ -1294,12 +1292,10 @@ def _runnable_one_cv_cells(kind, **kwargs):
         yield solver, cell
 
 
-def _resting_single_compartment(solver):
-    class Model(bc.SingleCompartment):
+def _resting_point_neuron(solver):
+    class Model(PointNeuron):
         def __init__(self):
-            super().__init__(
-                1, length=LENGTH, radius=RADIUS, V_initializer=braintools.init.Constant(-65.0 * u.mV), solver=solver
-            )
+            super().__init__(1, V_initializer=braintools.init.Constant(-65.0 * u.mV), solver=solver)
             self.IL = bc.channel.IL(1, g_max=0.3 * u.mS / u.cm**2, E=-65.0 * u.mV)
 
     model = Model()
@@ -1322,13 +1318,13 @@ def _kick_projection(post, weight):
 
 
 class DeltaInputTest(unittest.TestCase):
-    """CELL-33: a delta input moves V on every path, at the end of the step as on SingleCompartment."""
+    """CELL-33: a delta input moves V on every path, at the end of the step as on PointNeuron."""
 
-    def test_kick_matches_single_compartment_on_every_solver(self) -> None:
+    def test_kick_matches_point_neuron_on_every_solver(self) -> None:
         # Acceptance 1. On main the lumped cell (every solver) and the cable
         # cell under "staggered" and "dhs_voltage" stayed at -65 mV.
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
-            model = _resting_single_compartment("rk4")
+            model = _resting_point_neuron("rk4")
             model.add_delta_input("kick", _KICK)
             with brainstate.environ.context(t=0.0 * u.ms, dt=DT):
                 model.update()
@@ -1352,7 +1348,7 @@ class DeltaInputTest(unittest.TestCase):
     def test_kick_is_added_after_the_step_dynamics(self) -> None:
         # The delta does not take part in the step it is applied in: V ends
         # exactly 5 mV above the unkicked step and every gate is unchanged,
-        # on SingleCompartment and on every path.
+        # on PointNeuron and on every path.
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
             for kind in ("lumped", "cable"):
                 for solver, plain in _runnable_one_cv_cells(kind, hh=True):
@@ -1372,13 +1368,13 @@ class DeltaInputTest(unittest.TestCase):
                         for path, value in _gates(kicked).items():
                             np.testing.assert_array_equal(value, gates[path], err_msg=path)
 
-    def test_delta_projection_matches_single_compartment(self) -> None:
+    def test_delta_projection_matches_point_neuron(self) -> None:
         # Acceptance 2: brainpy DeltaProj drives both models with the same raster.
         raster = _raster(13)
         weight = _weights(17) * 4.0 * u.mV
 
         def drive(solver):
-            model = _single_compartment(hh=True, solver=solver)
+            model = _point_neuron(hh=True, solver=solver)
             expected = _run_projection(model, _kick_projection(model, weight), raster)
             # The kicks make the cell fire, so the comparison is not trivial.
             self.assertGreater(float(u.math.max(expected).to_decimal(u.mV)), 0.0)
@@ -1457,7 +1453,7 @@ class DeltaInputTest(unittest.TestCase):
 
     def test_runtime_without_its_cell_reads_its_own_inputs(self) -> None:
         # The weak reference is dead once the Cell is gone; the runtime then
-        # behaves as the SingleCompartment it is.
+        # behaves as the PointNeuron it is.
         cell = _one_cv_cell("lumped", "rk4")
         cell.init_state()
         runtime = cell._lumped_runtime
@@ -1863,7 +1859,7 @@ class LumpedBlockSolverPointSynapseTest(unittest.TestCase):
 
     def test_cells_without_synapses_keep_the_merged_layout(self):
         # No synapse state: the hook returns None and the step merges as
-        # before; the SingleCompartment equivalence tests above hold unchanged.
+        # before; the PointNeuron equivalence tests above hold unchanged.
         returned = []
         declare = lumped.LumpedRuntime._diffeq_block_layout
 

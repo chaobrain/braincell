@@ -14,9 +14,6 @@
 # ==============================================================================
 
 
-from braincell._single_compartment import (
-    SingleCompartment,
-)
 from braincell.quad.protocol import (
     DiffEqGroupState,
     DiffEqModule,
@@ -52,7 +49,6 @@ from braincell._multi_compartment import (
     ChannelView,
     ClampView,
     IonView,
-    MultiCompartment,
     RunResult,
     SynapseView,
 )
@@ -86,6 +82,22 @@ from braincell.mech import CableProperty, CurrentClamp, FunctionClamp, SineClamp
 from braincell.morph.branch import ApicalDendrite, Axon, BasalDendrite, Branch, CustomBranch, Dendrite, Soma
 from braincell.morph.morphology import Morphology
 from braincell import io, network
+from braincell._deprecation import removed_attributes as _removed_attributes
+
+#: Names that braincell 0.3 removed without a deprecation period (CELL-28),
+#: with what to use instead; raised as ``AttributeError`` (``ImportError`` on a
+#: ``from braincell import ...`` line).
+_REMOVED_ATTRIBUTES = {
+    "SingleCompartment": (
+        "braincell.SingleCompartment was removed in braincell 0.3. Build a point neuron with "
+        "braincell.Cell.point(pop_size, length=..., radius=...) and declare its ions and channels "
+        "with paint(); the cells guide (\"Coming from SingleCompartment\") translates a model line by line."
+    ),
+    "MultiCompartment": (
+        "braincell.MultiCompartment was removed in braincell 0.3. Use braincell.Cell, the class it was an alias of."
+    ),
+}
+__getattr__ = _removed_attributes(__name__, _REMOVED_ATTRIBUTES)
 
 # ASCII-sorted, so a new export lands in exactly one place and the guard in
 # ``__init___test.py`` can say so. Every public domain package is listed:
@@ -135,7 +147,6 @@ __all__ = [
     "MaxCVLen",
     "MixIons",
     "Morphology",
-    "MultiCompartment",
     "NetStim",
     "Network",
     "NetworkConnections",
@@ -158,7 +169,6 @@ __all__ = [
     "RunResult",
     "SampleBlock",
     "SineClamp",
-    "SingleCompartment",
     "Soma",
     "Synapse",
     "SynapseView",

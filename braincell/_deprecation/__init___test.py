@@ -34,7 +34,7 @@ import brainstate
 
 import braincell
 from braincell import _deprecation as dep
-from braincell._deprecation import _PACKAGE_DIR, Deprecation, deprecated_attributes
+from braincell._deprecation import _PACKAGE_DIR, Deprecation, deprecated_attributes, removed_attributes
 
 #: The deprecations that must be registered once every module is imported.
 _KNOWN = (
@@ -399,6 +399,53 @@ class InvalidDeprecationTest(_RegistryTest):
     def test_deprecated_attributes_rejects_a_value_without_its_deprecation(self) -> None:
         with self.assertRaisesRegex(TypeError, "expected a \\(Deprecation, value\\) pair"):
             deprecated_attributes("m", {"Old": int})
+
+
+class RemovedAttributesTest(unittest.TestCase):
+    """A removed name raises with its message: ``AttributeError``, or ``ImportError`` on a ``from`` import."""
+
+    _MESSAGE = "_removed_package.Old was removed in braincell 0.3. Use _removed_package.New."
+
+    def _package(self):
+        return _temporary_package("_removed_package", removed_attributes("_removed_package", {"Old": self._MESSAGE}))
+
+    def test_attribute_access_raises_attribute_error_with_the_message(self) -> None:
+        with self._package() as package:
+            with self.assertRaises(AttributeError) as caught:
+                package.Old
+            self.assertEqual(str(caught.exception), self._MESSAGE)
+            self.assertFalse(hasattr(package, "Old"))
+            self.assertIsNone(getattr(package, "Old", None))
+
+    def test_from_import_raises_import_error_with_the_message(self) -> None:
+        # Python replaces an AttributeError from a module ``__getattr__`` on
+        # ``from M import X`` by its own "cannot import name"; the ImportError
+        # raised there keeps the message.
+        with self._package():
+            with self.assertRaises(ImportError) as caught:
+                from _removed_package import Old  # noqa: F401
+        self.assertEqual(str(caught.exception), self._MESSAGE)
+        self.assertEqual(caught.exception.name, "_removed_package")
+
+    def test_other_names_are_missing_as_usual(self) -> None:
+        with self._package() as package:
+            with self.assertRaisesRegex(AttributeError, "module '_removed_package' has no attribute 'Other'"):
+                package.Other
+            with self.assertRaisesRegex(ImportError, "cannot import name 'Other'"):
+                from _removed_package import Other  # noqa: F401
+
+    def test_without_frames_a_from_import_still_fails(self) -> None:
+        # The message is lost to Python's generic ImportError, the name is not.
+        for getframe in (None, lambda depth: None):
+            with self.subTest(getframe=getframe), self._package():
+                with mock.patch.object(sys, "_getframe", getframe):
+                    with self.assertRaisesRegex(ImportError, "cannot import name 'Old'"):
+                        from _removed_package import Old  # noqa: F401
+
+    def test_a_message_is_required(self) -> None:
+        for message in ("", None, 3):
+            with self.subTest(message=message), self.assertRaisesRegex(TypeError, "expected a non-empty message"):
+                removed_attributes("_removed_package", {"Old": message})
 
 
 class ExpiryTest(unittest.TestCase):

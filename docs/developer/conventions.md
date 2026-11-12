@@ -125,34 +125,32 @@ Each deprecation is a module-level `Deprecation` constant from the private modul
 from braincell._deprecation import Deprecation, deprecated_attributes
 
 # A class (a function or method is the same).
-_SINGLE = Deprecation(
-    "braincell.SingleCompartment", since="0.3", removed_in="0.4",
-    replacement="braincell.Cell.point(pop_size, length=..., radius=...)",
-)
+_OLD_MODEL = Deprecation("braincell.OldModel", since="0.4", removed_in="0.5", replacement="braincell.NewModel")
 
-class SingleCompartment(HHTypedNeuron):
+class OldModel(NewModel):
     def __init__(self, size, **kwargs):
-        _SINGLE.warn()
+        _OLD_MODEL.warn()
         super().__init__(size, **kwargs)
 
 # A module attribute, served by the module's __getattr__ and kept out of __all__.
 __getattr__ = deprecated_attributes(__name__, {
-    "MultiCompartment": (
-        Deprecation("braincell.MultiCompartment", since="0.3", removed_in="0.4", replacement="braincell.Cell"),
-        Cell,
+    "old_name": (
+        Deprecation("braincell.old_name", since="0.4", removed_in="0.5", replacement="braincell.new_name"),
+        new_name,
     ),
 })
 
 # A parameter or an accepted value.
-_SEED = Deprecation("Network(seed=...)", since="0.3", removed_in="0.4",
-                    replacement="brainstate.random.seed_context(seed)")
+_OLD_PARAMETER = Deprecation("Model(old_name=...)", since="0.4", removed_in="0.5",
+                             replacement="Model(new_name=...)")
 
-def __init__(self, *, seed=None):
-    if seed is not None:
-        _SEED.warn()
+def __init__(self, *, new_name=None, old_name=None):
+    if old_name is not None:
+        _OLD_PARAMETER.warn()
+        new_name = old_name
 ```
 
-- `name` is what the user wrote, as they would search for it (`braincell.mech.StateProbe`, `braincell.Cell.bind_synapse_input()`, `Network(seed=...)`); the changelog entry quotes it verbatim.
+- `name` is what the user wrote, as they would search for it (`braincell.OldModel`, `braincell.Cell.old_method()`, `Model(old_name=...)`); the changelog entry quotes it verbatim.
 - `since` is the `"MAJOR.MINOR"` release whose changelog first announces the deprecation, normally the next minor release; `removed_in` is a later one, by default the minor release after `since`.
 - `replacement` is required; pass `None` only with a `note` that says what to do instead.
 - Construction raises on a malformed version, a `removed_in` not after `since`, a missing replacement, another warning category, or a `name` registered twice with different fields, so a mistake fails `import braincell`.
@@ -179,6 +177,7 @@ Python shows a `DeprecationWarning` by default only when it is attributed to `__
 
 - A name served by `deprecated_attributes` leaves `__all__` and the API reference when it is deprecated; `from module import *` then no longer binds it, which the changelog entry says.
 - A class or function still defined in its module stays in `__all__` and the API reference. Its docstring gets `.. deprecated:: <since>` after the summary line, naming the replacement and the removal release.
+- A removed module attribute keeps its name as a tombstone that says what to use instead: `__getattr__ = removed_attributes(__name__, {"old_name": "braincell.old_name was removed in braincell 0.5. Use braincell.new_name."})`. Access raises `AttributeError` with the message, and `from braincell import old_name` raises `ImportError` with it (Python would turn a plain `AttributeError` there into its generic "cannot import name").
 
 ### Tests
 

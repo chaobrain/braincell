@@ -129,7 +129,7 @@ from braincell._multi_compartment.lumped import (
 )
 from braincell.morph.morphology import Morphology as _Morphology
 
-__all__ = ["Cell", "CellView", "MultiCompartment"]
+__all__ = ["Cell", "CellView"]
 
 #: ``Cell.bind_synapse_input`` is deprecated; ``removed_in`` is provisional.
 _BIND_SYNAPSE_INPUT = Deprecation(
@@ -1444,8 +1444,8 @@ class Cell(_CellFacade, HHTypedNeuron):
             Population shape. Default is 1.
         length, radius : Quantity, optional
             Soma cylinder; its lateral area ``2 pi radius length`` is the
-            membrane area. Defaults (10 um, 5 um) match
-            :class:`~braincell.SingleCompartment`.
+            membrane area. Defaults (10 um, 5 um) are those of the
+            point-neuron class that braincell 0.3 removed.
         V_th, V_init, spk_fun, subsolver, substeps, name
             As for :class:`Cell`. ``V_init=None`` starts at the resting
             potential of the cable property (default -65 mV).
@@ -2800,7 +2800,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         # A Cell is spatial: every hidden state's trailing axis enumerates
         # CVs (V and painted density state) or sparse point-layout rows, so all
         # are group states. Channel / ion / synapse code is shared with
-        # SingleCompartment, hence the scoped factory rather than a
+        # the lumped Cell's point-neuron engine, hence the scoped factory rather than a
         # per-call-site class choice.
         self.V = DiffEqGroupState(v_value)
         self.spike = brainstate.ShortTermState(_zero_spike_like(self.V.value))
@@ -2872,7 +2872,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                 )
 
     def _init_lumped_state(self, *, batch_size=None) -> None:
-        """Build the lumped runtime: SingleCompartment math with no CV axis."""
+        """Build the lumped runtime: the point-neuron math (``PointNeuron``) with no CV axis."""
         self._in_size = self.pop_size
         self._out_size = self.pop_size
         V_th = self._materialize_population_parameter("V_th")[..., 0]
@@ -3760,7 +3760,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         """Add the delta inputs to ``V``, the last part of every solver step.
 
         ``add_delta_input`` (brainpy ``DeltaProj``) registers a voltage
-        increment. As in ``SingleCompartment``, a step adds it after the
+        increment. As in a lumped Cell's point-neuron engine, a step adds it after the
         voltage and the mechanism states have advanced: it takes no part in
         the step it ends, and the spike test of that step sees it. The
         generic solvers call this from :meth:`post_integral`; the
@@ -3994,7 +3994,7 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         Every solver adds the registered inputs to ``V`` at the end of each
         step, after the voltage and the mechanism states have advanced, as
-        ``SingleCompartment`` does; the spike test of the step sees them.
+        the point-neuron engine of a lumped Cell does; the spike test of the step sees them.
         Registering a callable also drops the compiled loops of :meth:`run`
         (and of the owning :class:`~braincell.Network`), so the next run
         includes it; a value is passed into the loop, as for
@@ -4708,14 +4708,6 @@ class Cell(_CellFacade, HHTypedNeuron):
                 stacklevel=2,
             )
         return run_module.run(self, dt=dt, duration=duration)
-
-
-#: Alias of :class:`Cell`, named for what the model is rather than for the
-#: shorthand. ``MultiCompartment is Cell`` — the two names are the same
-#: object, so ``isinstance``, subclassing, and pickling behave identically
-#: through either. Prefer it when the surrounding code also mentions
-#: :class:`~braincell.SingleCompartment` and the contrast matters.
-MultiCompartment = Cell
 
 
 # ----------------------------------------------------------------------

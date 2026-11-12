@@ -21,6 +21,7 @@ Not a test module: the leading underscore keeps pytest from collecting it.
 from __future__ import annotations
 
 import ast
+import importlib
 import inspect
 import json
 import re
@@ -159,6 +160,124 @@ class ReExportTests:
             expected.update(module.__all__)
         dropped = sorted(expected - set(self.package.__all__))
         self.assertEqual(dropped, [], f"public in a submodule but not re-exported: {dropped}")
+
+
+_RST_MODULE = re.compile(r"^\s*\.\. (?:currentmodule|module|automodule)::\s+(?P<name>\S+)\s*$")
+_RST_AUTO = re.compile(r"^\s*\.\. (?:py:)?(?:auto)?(?:class|function|data|exception|module)::\s+(?P<name>[^\s(]+)")
+_RST_AUTOSUMMARY = re.compile(r"^(?P<indent>[ \t]*)\.\. autosummary::\s*$")
+
+
+def _qualify(name: str, module: str | None) -> str:
+    """Resolve an rst target the way Sphinx does: relative to ``module`` unless absolute."""
+    if module is None or name == "braincell" or name.startswith("braincell."):
+        return name
+    return f"{module}.{name}"
+
+
+def api_reference_entries(apis_dir: Path) -> list[tuple[str, str]]:
+    """Return ``(dotted path, rst file name)`` for each entry in the API reference.
+
+    Reads every ``*.rst`` file in ``apis_dir``. An entry is a name in an
+    ``.. autosummary::`` block (option lines skipped) or the target of an
+    object directive: ``autoclass``, ``autofunction``, ``autodata``,
+    ``autoexception`` or ``automodule``, or the same without ``auto`` (with or
+    without the ``py:`` prefix; a signature after the name is dropped). Names
+    are resolved against the latest ``.. currentmodule::`` (or ``module::`` /
+    ``automodule::``).
+    """
+    entries = []
+    for page in sorted(Path(apis_dir).glob("*.rst")):
+        module = None
+        lines = page.read_text(encoding="utf-8").splitlines()
+        index = 0
+        while index < len(lines):
+            line = lines[index]
+            index += 1
+            auto = _RST_AUTO.match(line)
+            if auto is not None:
+                entries.append((_qualify(auto["name"], module), page.name))
+            current = _RST_MODULE.match(line)
+            if current is not None:
+                module = current["name"]
+                continue
+            summary = _RST_AUTOSUMMARY.match(line)
+            if summary is None:
+                continue
+            indent = len(summary["indent"])
+            while index < len(lines) and (
+                not lines[index].strip() or len(lines[index]) - len(lines[index].lstrip()) > indent
+            ):
+                name = lines[index].strip()
+                index += 1
+                if name and not name.startswith((":", "..")):
+                    entries.append((_qualify(name, module), page.name))
+    return entries
+
+
+_UNRESOLVED = object()
+
+
+def _resolve(path: str) -> object:
+    """Return the object a dotted path names, or ``_UNRESOLVED``."""
+    parts = path.split(".")
+    for split in range(len(parts), 0, -1):
+        try:
+            obj = importlib.import_module(".".join(parts[:split]))
+        except ImportError:
+            continue
+        for part in parts[split:]:
+            obj = getattr(obj, part, _UNRESOLVED)
+            if obj is _UNRESOLVED:
+                break
+        return obj
+    return _UNRESOLVED
+
+
+def api_reference_gaps(
+    entries: list[tuple[str, str]], public: Mapping[str, object]
+) -> tuple[list[str], list[tuple[tuple[str, str], ...]], list[tuple[str, str]], list[tuple[str, str]]]:
+    """Compare API reference entries with the public objects.
+
+    Objects are compared by identity, so an object exported under two paths
+    is one object; modules are left out on both sides.
+
+    Parameters
+    ----------
+    entries : list of (str, str)
+        ``(dotted path, file)`` pairs, as from :func:`api_reference_entries`.
+    public : mapping of str to object
+        ``{path: object}``, as from :func:`public_paths`.
+
+    Returns
+    -------
+    missing : list of str
+        One path (the first in ``public``) per public object without an entry.
+    duplicated : list of tuple
+        For each object with two or more entries, its entries.
+    not_public : list of (str, str)
+        Entries naming an object that is not public.
+    unresolved : list of (str, str)
+        Entries naming nothing.
+    """
+    first_path = {}
+    for path, obj in public.items():
+        if not isinstance(obj, ModuleType):
+            first_path.setdefault(id(obj), path)
+    by_object: dict[int, list[tuple[str, str]]] = {}
+    not_public, unresolved = [], []
+    for path, file in entries:
+        obj = _resolve(path)
+        if obj is _UNRESOLVED:
+            unresolved.append((path, file))
+        elif isinstance(obj, ModuleType):
+            continue
+        elif id(obj) not in first_path:
+            not_public.append((path, file))
+        else:
+            by_object.setdefault(id(obj), []).append((path, file))
+    missing = sorted(path for key, path in first_path.items() if key not in by_object)
+    duplicated = [tuple(group) for group in by_object.values() if len(group) > 1]
+    return missing, duplicated, not_public, unresolved
 
 
 class DocstringConformanceTests:

@@ -34,9 +34,28 @@ reads better; ``MultiCompartment`` is usually clearer next to
 :class:`SingleCompartment`.
 
 
+Cell Views
+----------
 
-Base Class for Ion Channels
----------------------------
+Views over selected members of a :class:`Cell` population (``cell[...]``
+returns a :class:`CellView`) and over the logical channel, ion, clamp and
+synapse instances installed on it.
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+    CellView
+    ChannelView
+    ClampView
+    IonView
+    SynapseView
+
+
+
+Base Classes for Ion Channels and Synapses
+------------------------------------------
 
 .. autosummary::
    :toctree: generated/
@@ -48,6 +67,10 @@ Base Class for Ion Channels
     IonInfo
     MixIons
     Channel
+    Synapse
+
+:class:`Synapse` is the runtime base class of point synapses; the declaration a
+cell places is :class:`braincell.mech.Synapse`.
 
 
 Ion Helpers
@@ -83,6 +106,8 @@ CVs each branch receives.
     DLambda
     Lumped
     MaxCVLen
+    CVPerBranchList
+    PointPlacement
 
 
 Morphology
@@ -121,3 +146,11 @@ Passive cable properties and stimulus clamps attachable to a cell. See
     CurrentClamp
     SineClamp
     FunctionClamp
+
+
+Version
+-------
+
+.. autodata:: __version__
+
+.. autodata:: __version_info__

@@ -110,3 +110,64 @@ Probes
     MechanismProbe
     CurrentProbe
     ProbeMechanism
+
+
+Event Inputs
+------------
+
+How a point mechanism receives the events delivered to it.
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+    EventInput
+    NoEventInput
+    ScalarEventInput
+    TriggerEventInput
+
+
+Registry
+--------
+
+The mechanism registry maps names to catalogue classes; the ``register_*``
+decorators add a class to it.
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+    MechanismEntry
+    MechanismRegistry
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+
+    get_registry
+    register_channel
+    register_ion
+    register_synapse
+
+
+Parameter and State Specs
+-------------------------
+
+Declarations of a mechanism's parameters and states, and ``positive``, a
+value check for parameter specs.
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+    ParameterSpec
+    StateSpec
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+
+    positive

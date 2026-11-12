@@ -24,6 +24,8 @@ from types import ModuleType
 from braincell._testing import (
     UnitSafetyGuardTests,
     UserMaterialImportTests,
+    api_reference_entries,
+    api_reference_gaps,
     has_citation,
     is_public_import,
     public_paths,
@@ -300,6 +302,123 @@ class UserMaterialImportMixinTest(unittest.TestCase):
     def test_repository_without_examples_is_skipped(self):
         # The reasons check reads only the entries, so it runs; the three scans skip.
         self.assertEqual(self._failures((), (), write=False), ({}, 3))
+
+
+#: An API reference page using every directive ``api_reference_entries`` reads.
+_API_PAGE = """``braincell`` module
+====================
+
+.. currentmodule:: braincell
+.. automodule:: braincell
+
+Cells
+-----
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+    Cell
+    CVPerBranchList
+
+Text after the list ends it.
+
+.. autofunction:: mix_ions
+.. autodata:: __version__
+.. py:data:: __version_info__
+
+   Written by hand.
+
+.. function:: connect(source, synapse)
+
+.. currentmodule:: braincell.filter
+
+.. autoclass:: braincell.Morphology
+.. autofunction:: at
+"""
+
+
+class ApiReferenceEntriesTest(unittest.TestCase):
+    """``api_reference_entries`` reads the directives and resolves names against ``currentmodule``."""
+
+    def test_entries_of_one_page(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "braincell.rst").write_text(_API_PAGE)
+            Path(tmp, "notes.txt").write_text(".. autofunction:: ignored\n")
+            entries = api_reference_entries(Path(tmp))
+        self.assertEqual(
+            entries,
+            [
+                ("braincell", "braincell.rst"),
+                ("braincell.Cell", "braincell.rst"),
+                ("braincell.CVPerBranchList", "braincell.rst"),
+                ("braincell.mix_ions", "braincell.rst"),
+                ("braincell.__version__", "braincell.rst"),
+                ("braincell.__version_info__", "braincell.rst"),
+                ("braincell.connect", "braincell.rst"),
+                ("braincell.Morphology", "braincell.rst"),
+                ("braincell.filter.at", "braincell.rst"),
+            ],
+        )
+
+
+class ApiReferenceGapsTest(unittest.TestCase):
+    """``api_reference_gaps`` finds missing, duplicated, non-public and unresolvable entries."""
+
+    def setUp(self):
+        import braincell
+
+        self.braincell = braincell
+        self.public = {
+            "braincell.Cell": braincell.Cell,
+            "braincell.MultiCompartment": braincell.Cell,
+            "braincell.CVPerBranchList": braincell.CVPerBranchList,
+            "braincell.mix_ions": braincell.mix_ions,
+            "braincell.filter": braincell.filter,
+        }
+
+    def test_complete_reference_has_no_gaps(self):
+        entries = [("braincell.Cell", "a.rst"), ("braincell.CVPerBranchList", "a.rst"), ("braincell.mix_ions", "b.rst")]
+        self.assertEqual(api_reference_gaps(entries, self.public), ([], [], [], []))
+
+    def test_deleted_entry_is_missing(self):
+        entries = [("braincell.Cell", "a.rst"), ("braincell.mix_ions", "b.rst")]
+        self.assertEqual(api_reference_gaps(entries, self.public), (["braincell.CVPerBranchList"], [], [], []))
+        missing, *_ = api_reference_gaps(entries, public_paths())
+        self.assertIn("braincell.CVPerBranchList", missing)
+
+    def test_alias_with_a_second_entry_is_duplicated(self):
+        entries = [
+            ("braincell.Cell", "a.rst"),
+            ("braincell.MultiCompartment", "b.rst"),
+            ("braincell.CVPerBranchList", "a.rst"),
+            ("braincell.mix_ions", "b.rst"),
+        ]
+        duplicated = [(("braincell.Cell", "a.rst"), ("braincell.MultiCompartment", "b.rst"))]
+        self.assertEqual(api_reference_gaps(entries, self.public), ([], duplicated, [], []))
+
+    def test_entry_for_an_internal_object_is_not_public(self):
+        entries = [
+            ("braincell.Cell", "a.rst"),
+            ("braincell.CVPerBranchList", "a.rst"),
+            ("braincell.mix_ions", "b.rst"),
+            ("braincell.morph._spatial.MorphologySpatialGeometry", "morphology.rst"),
+            ("braincell.morph._spatial", "morphology.rst"),
+        ]
+        not_public = [("braincell.morph._spatial.MorphologySpatialGeometry", "morphology.rst")]
+        self.assertEqual(api_reference_gaps(entries, self.public), ([], [], not_public, []))
+
+    def test_unresolvable_entry_names_its_file(self):
+        entries = [
+            ("braincell.Cell", "a.rst"),
+            ("braincell.CVPerBranchList", "a.rst"),
+            ("braincell.mix_ions", "b.rst"),
+            ("braincell.NoSuchThing", "b.rst"),
+            ("braincell_no_such_package.X", "b.rst"),
+        ]
+        unresolved = [("braincell.NoSuchThing", "b.rst"), ("braincell_no_such_package.X", "b.rst")]
+        self.assertEqual(api_reference_gaps(entries, self.public), ([], [], [], unresolved))
 
 
 if __name__ == "__main__":

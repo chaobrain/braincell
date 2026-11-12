@@ -62,6 +62,8 @@ NeuroMorpho.Org client
     load_neuromorpho
     fetch_neuromorpho
 
+.. autodata:: DEFAULT_USER_CACHE_DIR
+
 .. autosummary::
    :toctree: generated/
    :nosignatures:

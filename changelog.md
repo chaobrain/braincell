@@ -5,6 +5,17 @@
 
 ### Breaking Changes
 
+- **Assigning `cv_policy = Lumped()` checks the placed sites** (CELL-43). A
+  lumped Cell has one site, its CV midpoint, and `place` on a lumped Cell
+  already rejected any other location; assigning `Lumped()` to a Cell that had
+  placed a synapse, clamp or `Junction` elsewhere (e.g. at
+  `RootLocation(0.2)`) succeeded, and the run treated that site as the
+  midpoint. The assignment now raises the same `ValueError` as `place` ("A
+  lumped Cell (cv_policy=Lumped()) has a single site, the CV midpoint ..."),
+  and the Cell keeps its previous policy and discretization. There is no
+  deprecation period (0.3 allows breaking changes without one, a project-lead
+  decision). Place the mechanism at `RootLocation(0.5)` or
+  `cell.cv_midpoints`, or omit the locset after assigning `Lumped()`.
 - **`braincell.channel.CaHT_HM1992` is renamed `CaT_HM1992_Shifted25`**
   (MECH-42). Huguenard & McCormick (1992) has no high-threshold calcium
   current: the class is their T current (`CaT_HM1992`) with the gates shifted

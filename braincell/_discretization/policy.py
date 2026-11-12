@@ -189,6 +189,10 @@ class Lumped(CVPolicy):
     ValueError
         From :meth:`resolve_cv_bounds` when the morphology has more than one
         branch; the lumped form of a branched morphology is not defined yet.
+        Also from ``cell.cv_policy = Lumped()`` when the cell already places
+        a mechanism away from the CV midpoint, with the message
+        :meth:`braincell.Cell.place` gives on a lumped cell; the cell keeps
+        its previous policy.
 
     Examples
     --------

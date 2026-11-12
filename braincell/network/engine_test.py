@@ -19,10 +19,13 @@ from types import ModuleType
 from unittest.mock import patch
 
 import brainstate
+import braintools
 import brainunit as u
+import jax
 import numpy as np
 
 import braincell
+from braincell._random_test import default_key_data, drawn_seeds
 from braincell._multi_compartment.run_test import (
     DT,
     WEIGHT,
@@ -32,7 +35,9 @@ from braincell._multi_compartment.run_test import (
     split_steps,
 )
 from braincell.filter import AllRegion, at
+from braincell.filter import RandomSamples
 from braincell.network import Network
+from braincell.network.connection import independent
 from braincell.network._testing import make_runtime_network, make_threshold_cell
 
 
@@ -596,6 +601,196 @@ class NetworkValueInputTest(unittest.TestCase):
             with brainstate.environ.context(dt=DT), self.assertRaisesRegex(ValueError, "pulse"):
                 advance()
             self.assertIn("pulse", cell.current_inputs)
+
+
+def _event_times(stim) -> np.ndarray:
+    model = stim.model if hasattr(stim, "model") else stim
+    return np.asarray(model.event_times.to_decimal(u.ms))
+
+
+def _soma_dend_cell(name, *, random):
+    soma = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    morpho = braincell.Morphology.from_root(soma, name="soma")
+    morpho.soma.dend = braincell.Branch.from_lengths(lengths=[200.0] * u.um, radii=[1.0, 1.0] * u.um, type="dendrite")
+    v_init = braintools.init.Uniform(-70.0 * u.mV, -60.0 * u.mV) if random else -65.0 * u.mV
+    cell = braincell.Cell(morpho, pop_size=3, cv_policy=braincell.CVPerBranch(4), V_init=v_init, name=name)
+    cell.paint(AllRegion(), braincell.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="ampa", tau=2.0 * u.ms, e=0.0 * u.mV))
+    cell.loc(at("soma", 0.5)).record("v", braincell.observe.state("v"))
+    if not random:
+        cell.place(
+            at("soma", 0.5),
+            braincell.mech.CurrentClamp(delay=1.0 * u.ms, durations=5.0 * u.ms, amplitudes=0.05 * u.nA),
+        )
+        return cell, None
+    sites = braincell.filter.sample(AllRegion(), number=3)
+    cell.place(sites, braincell.mech.Synapse("ExpSyn", name="dend", tau=3.0 * u.ms, e=0.0 * u.mV))
+    # A user callback drawing from the default stream at every step.
+    cell.place(
+        at("soma", 0.5),
+        braincell.mech.FunctionClamp(fn=lambda t: brainstate.random.uniform(0.0, 0.02) * u.nA),
+    )
+    return cell, sites
+
+
+def _context_experiment() -> dict:
+    """Every source of randomness of a Network experiment, none given a seed (CELL-11a acceptance 2)."""
+    net = Network("demo", seed=None)
+    stim = net.add_population(
+        "stim", braincell.NetStim(size=4, number=5, noise=1.0, start=1.0 * u.ms, interval=2.0 * u.ms)
+    )
+    cell, sites = _soma_dend_cell("post", random=True)
+    det, _ = _soma_dend_cell("det", random=False)
+    post = net.add_population("post", cell)
+    net.add_population("det", det)
+    rows = net.connect("drive", source=stim, synapse=post.synapses["ampa"], weight=0.002 * u.uS, pairing=independent(6))
+    out = {
+        "root": np.asarray(net.seed),
+        "netstim": _event_times(stim),
+        "pairing": np.stack([np.asarray(rows.source_index), np.asarray(rows.target_index)]),
+        "sample_seed": np.asarray(sites.seed),
+        "sites": np.asarray(sites.evaluate(cell.morpho).points, dtype=float),
+    }
+    result = net.run(dt=DT, duration=6.0 * u.ms)
+    out["v_post"] = np.asarray(result.samples["post"]["v"].values.to_decimal(u.mV))
+    out["v_det"] = np.asarray(result.samples["det"]["v"].values.to_decimal(u.mV))
+    return out
+
+
+def _two_stim_network(order) -> dict:
+    net = Network("ordered", seed=None)
+    made = {name: net.add_population(name, braincell.NetStim(size=2, number=4, noise=1.0)) for name in order}
+    return {name: _event_times(stim) for name, stim in made.items()}
+
+
+def _explicit_seed_draws() -> dict:
+    """Explicit seeds and independent generators: local streams that no context controls."""
+    soma = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    morpho = braincell.Morphology.from_root(soma, name="soma")
+    network_stim = Network(seed=7).add_population("s", braincell.NetStim(size=3, number=4, noise=1.0))
+    return {
+        "NetStim(seed=9)": _event_times(braincell.NetStim(size=3, number=4, noise=1.0, seed=9)),
+        "Network(seed=7)": _event_times(network_stim),
+        "sample(seed=3)": np.asarray(
+            braincell.filter.sample(AllRegion(), number=4, seed=3).evaluate(morpho).points, dtype=float
+        ),
+        "RandomSamples(seed=123)": np.asarray(RandomSamples(AllRegion(), 4, 123).evaluate(morpho).points, dtype=float),
+        "RandomState(5)": np.asarray(brainstate.random.RandomState(5).normal(size=3)),
+        "jax.random.key(3)": np.asarray(jax.random.normal(jax.random.key(3), (3,))),
+        "default_rng(1)": np.random.default_rng(1).random(3),
+    }
+
+
+class NetworkContextSeedTest(unittest.TestCase):
+    """CELL-11a: ``Network(seed=None)`` draws its root from the BrainState default stream."""
+
+    def test_seed_none_draws_the_root_by_the_definition(self) -> None:
+        # Acceptance 1. On main ``Network(seed=None)`` raised TypeError.
+        for seed in (0, 42):
+            with self.subTest(seed=seed):
+                with brainstate.random.seed_context(seed):
+                    roots = [Network(seed=None).seed, Network("second", seed=None).seed]
+                self.assertEqual(roots, drawn_seeds(seed, 2))
+                self.assertNotEqual(roots[0], roots[1])
+                self.assertIs(type(roots[0]), int)
+        roots = []
+        for precision in (32, 64):
+            with brainstate.environ.context(precision=precision), brainstate.random.seed_context(42):
+                roots.append(Network(seed=None).seed)
+        self.assertEqual(roots[0], roots[1])
+
+    def test_one_context_seed_controls_every_random_stream_of_an_experiment(self) -> None:
+        # Acceptance 2: root, NetStim noise, pairing, sampled locations,
+        # initial values and a callback; the Cell without randomness keeps its V.
+        with brainstate.random.seed_context(42):
+            first = _context_experiment()
+        with brainstate.random.seed_context(42):
+            again = _context_experiment()
+        with brainstate.random.seed_context(43):
+            other = _context_experiment()
+        for key, value in first.items():
+            with self.subTest(stream=key):
+                np.testing.assert_array_equal(again[key], value)
+                if key == "v_det":
+                    np.testing.assert_allclose(other[key], value, rtol=1e-12, atol=0.0)
+                else:
+                    self.assertFalse(np.array_equal(other[key], value), f"{key} did not change with the seed")
+
+    def test_the_recorded_root_reproduces_the_network_streams(self) -> None:
+        # Acceptance 3: record ``net.seed``, pass it back as an explicit root.
+        with brainstate.random.seed_context(42):
+            drawn = Network(seed=None)
+            stim = drawn.add_population("stim", braincell.NetStim(size=2, number=3, noise=1.0))
+        replayed = Network(seed=drawn.seed).add_population("stim", braincell.NetStim(size=2, number=3, noise=1.0))
+        np.testing.assert_array_equal(_event_times(replayed), _event_times(stim))
+
+    def test_registration_order_does_not_change_the_streams_under_a_drawn_root(self) -> None:
+        # Acceptance 4: a Network takes one draw, then derives by path.
+        with brainstate.random.seed_context(5):
+            forward = _two_stim_network(("a", "b"))
+        with brainstate.random.seed_context(5):
+            backward = _two_stim_network(("b", "a"))
+        for name in ("a", "b"):
+            np.testing.assert_array_equal(backward[name], forward[name])
+        self.assertFalse(np.array_equal(forward["a"], forward["b"]))
+
+    def test_reset_keeps_the_drawn_streams_and_outside_a_context_the_global_stream_is_used(self) -> None:
+        # Acceptance 5. No persistent RNG: the schedule and the rows are concrete.
+        with brainstate.random.seed_context(3):
+            net = Network("reset", seed=None)
+            stim = net.add_population("stim", braincell.NetStim(size=3, number=2, noise=1.0))
+            soma = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+            cell = braincell.Cell(braincell.Morphology.from_root(soma, name="soma"), pop_size=2, V_init=-65.0 * u.mV)
+            cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="ampa", tau=2.0 * u.ms, e=0.0 * u.mV))
+            post = net.add_population("c", cell)
+            rows = net.connect("d", source=stim, synapse=post.synapses["ampa"], weight=WEIGHT, pairing=independent(5))
+            events = _event_times(stim)
+            pairs = (np.asarray(rows.source_index).copy(), np.asarray(rows.target_index).copy())
+            net.run(dt=DT, duration=1.0 * u.ms)
+            net.reset_state()
+        fresh = net.connections["c", "d"]
+        np.testing.assert_array_equal(_event_times(stim), events)
+        np.testing.assert_array_equal(np.asarray(fresh.source_index), pairs[0])
+        np.testing.assert_array_equal(np.asarray(fresh.target_index), pairs[1])
+
+        with brainstate.random.seed_context(4):
+            inside = Network(seed=None).seed
+        brainstate.random.seed(4)
+        self.assertEqual(Network(seed=None).seed, inside)
+
+    def test_invalid_seeds_still_raise_at_construction(self) -> None:
+        # Acceptance 6; main raised the same TypeError.
+        for seed in (True, 1.5, "3"):
+            with self.subTest(seed=seed), self.assertRaisesRegex(TypeError, "Network seed must be an integer"):
+                Network(seed=seed)
+
+    def test_seed_none_under_a_transformation_raises_and_leaves_the_default_stream(self) -> None:
+        # Acceptance 6: inside a trace the default stream has no concrete key.
+        def in_loop(fn):
+            return lambda: brainstate.transform.for_loop(lambda i: fn(), np.arange(2))
+
+        for name, transform in (("jit", brainstate.transform.jit), ("for_loop", in_loop)):
+            with self.subTest(transform=name):
+                brainstate.random.seed(1)
+                expected = float(brainstate.random.uniform())
+                brainstate.random.seed(1)
+                before = default_key_data()
+                with self.assertRaisesRegex(TypeError, "traced"):
+                    transform(lambda: Network(seed=None).seed)()
+                np.testing.assert_array_equal(default_key_data(), before)
+                self.assertEqual(float(brainstate.random.uniform()), expected)
+        # The suggested fix, an integer seed, builds inside jit.
+        self.assertEqual(int(brainstate.transform.jit(lambda: Network(seed=3).seed)()), 3)
+
+    def test_explicit_seeds_and_independent_generators_ignore_the_context(self) -> None:
+        # Acceptance 7.
+        with brainstate.random.seed_context(1):
+            one = _explicit_seed_draws()
+        with brainstate.random.seed_context(2):
+            two = _explicit_seed_draws()
+        for key, value in one.items():
+            with self.subTest(stream=key):
+                np.testing.assert_array_equal(two[key], value)
 
 
 if __name__ == "__main__":

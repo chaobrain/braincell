@@ -22,6 +22,7 @@ import numpy as np
 
 from brainunit import Quantity
 
+from braincell._random import draw_seed
 from braincell.morph.morphology import Morphology
 from braincell.filter import helper
 from braincell.filter._sampling import sample_locations_from_region
@@ -753,9 +754,52 @@ class UniformSamples(LocsetExpr):
 
 @dataclass(frozen=True)
 class RandomSamples(LocsetExpr):
+    """Random locations, uniform in length over the intervals of a region.
+
+    Each sample picks one interval of the region with probability
+    proportional to its physical length, then a uniform position inside it.
+    The draws use a NumPy ``default_rng(seed)``; for an explicit measure, a
+    density or a preserved draw order use :func:`sample`.
+
+    Parameters
+    ----------
+    region : RegionExpr
+        Region to sample; an empty or zero-length region raises ``ValueError``
+        when evaluated.
+    count : int
+        Number of locations.
+    seed : int or None, optional
+        Local seed of the draws. ``None`` (the default) draws an integer once,
+        when the expression is built, from the BrainState default random
+        stream, so an enclosing ``brainstate.random.seed_context(s)`` controls
+        it; each such expression advances that stream by one draw. The drawn
+        integer is stored in ``seed``, so every evaluation gives the same
+        locations and ``RandomSamples(region, count, expr.seed)`` reproduces
+        them. Inside ``brainstate.transform.jit``, ``for_loop`` or another
+        transformation ``None`` raises ``TypeError``; build the expression
+        outside it or pass an integer.
+
+    Examples
+    --------
+    >>> import brainstate
+    >>> import brainunit as u
+    >>> import braincell
+    >>> from braincell.filter import AllRegion, RandomSamples
+    >>> soma = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    >>> morpho = braincell.Morphology.from_root(soma, name="soma")
+    >>> with brainstate.random.seed_context(42):
+    ...     sites = RandomSamples(AllRegion(), 3)
+    >>> sites.evaluate(morpho).points == RandomSamples(AllRegion(), 3, sites.seed).evaluate(morpho).points
+    True
+    """
+
     region: RegionExpr
     count: int
-    seed: int
+    seed: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.seed is None:
+            object.__setattr__(self, "seed", draw_seed("RandomSamples"))
 
     def _evaluate(
         self,
@@ -784,8 +828,9 @@ class SampleLocations(LocsetExpr):
         Continuous morphology support.
     number : int
         Number of locations to draw. Duplicates are retained.
-    seed : int
-        Explicit local random seed.
+    seed : int or None
+        Local random seed. ``None`` draws one from the BrainState default
+        random stream when the expression is built (see :func:`sample`).
     measure : {'normalized', 'length', 'lateral_area', 'area'}, optional
         Base geometry measure multiplied by ``density``. ``area`` includes
         discrete annular area at zero-length radius jumps.
@@ -798,10 +843,14 @@ class SampleLocations(LocsetExpr):
 
     region: RegionExpr
     number: int
-    seed: int
+    seed: int | None
     measure: str = "length"
     density: object | None = None
     u_resolution: float = 1e-10
+
+    def __post_init__(self) -> None:
+        if self.seed is None:
+            object.__setattr__(self, "seed", draw_seed("sample"))
 
     def _evaluate(
         self,
@@ -827,7 +876,7 @@ def sample(
     region: RegionExpr,
     *,
     number: int,
-    seed: int,
+    seed: int | None = None,
     measure: str = "length",
     density: object | None = None,
     u_resolution: float = 1e-10,
@@ -840,8 +889,17 @@ def sample(
         Continuous morphology support.
     number : int
         Number of samples. Draw order and duplicate locations are preserved.
-    seed : int
-        Explicit seed local to this sampling rule.
+    seed : int or None, optional
+        Seed local to this sampling rule. ``None`` (the default) draws an
+        integer once, here, from the BrainState default random stream, so an
+        enclosing ``brainstate.random.seed_context(s)`` (or an earlier
+        ``brainstate.random.seed(s)``) controls the locations together with
+        the other default-stream draws; each such call advances that stream
+        by one draw. The drawn integer is stored in the returned expression's
+        ``seed``, so every evaluation gives the same locations and
+        ``sample(region, number=n, seed=expr.seed)`` reproduces them. Inside
+        ``brainstate.transform.jit``, ``for_loop`` or another transformation
+        ``None`` raises ``TypeError``; call it outside or pass an integer.
     measure : {'normalized', 'length', 'lateral_area', 'area'}, optional
         Geometry measure beneath the preference density. Default is physical
         branch length.
@@ -854,6 +912,20 @@ def sample(
     -------
     SampleLocations
         Lazy locset expression resolved against a morphology later.
+
+    Examples
+    --------
+    >>> import brainstate
+    >>> import brainunit as u
+    >>> import braincell
+    >>> from braincell.filter import AllRegion, sample
+    >>> soma = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    >>> morpho = braincell.Morphology.from_root(soma, name="soma")
+    >>> with brainstate.random.seed_context(42):
+    ...     sites = sample(AllRegion(), number=3)
+    >>> again = sample(AllRegion(), number=3, seed=sites.seed)
+    >>> sites.evaluate(morpho).points == again.evaluate(morpho).points
+    True
     """
     return SampleLocations(
         region=region,

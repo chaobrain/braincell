@@ -15,14 +15,17 @@
 
 
 import copy
+import dataclasses
 import pickle
 import unittest
 
+import brainstate
 import brainunit as u
 import numpy as np
 
 import braincell
 from braincell import Branch, Morphology
+from braincell._random_test import default_key_data, drawn_seeds
 from braincell.filter._testing import make_soma, make_soma_dend_tree
 from braincell.morph._testing import make_tree_t
 from braincell.filter import (
@@ -46,6 +49,7 @@ from braincell.filter import (
     UniformSamples,
     at,
     branch_in,
+    sample,
 )
 from braincell.filter import helper
 from braincell.filter import locset as locset_mod
@@ -583,6 +587,90 @@ class LocsetSetOpValidationTest(unittest.TestCase):
 
     def test_unique_expression_type_is_public(self) -> None:
         self.assertIsInstance(RootLocation(x=0.5).unique(), LocsetUniqueOp)
+
+
+#: The two random-location expressions, built without a seed and with one.
+_SAMPLERS = (
+    ("sample", lambda region, seed=None: sample(region, number=3, seed=seed)),
+    ("RandomSamples", lambda region, seed=None: RandomSamples(region, 3, seed)),
+)
+
+
+class ContextSeedSamplingTest(unittest.TestCase):
+    """CELL-11a: ``sample`` and ``RandomSamples`` without a seed draw one when built."""
+
+    def test_the_seed_is_drawn_at_construction_by_the_definition(self) -> None:
+        # Acceptance 1 and 3. On main ``sample`` without a seed raised at the
+        # call, ``RandomSamples`` without one at construction, and both with
+        # ``seed=None`` at evaluate.
+        tree = _build_sampling_tree()
+        with brainstate.random.seed_context(42):
+            built = [make(AllRegion()) for _, make in _SAMPLERS]
+            direct = locset_mod.SampleLocations(AllRegion(), 3, None)
+        self.assertEqual([expr.seed for expr in (*built, direct)], drawn_seeds(42, 3))
+        for (name, make), expr in zip(_SAMPLERS, built):
+            with self.subTest(sampler=name):
+                self.assertIs(type(expr.seed), int)
+                points = expr.evaluate(tree).points
+                self.assertEqual(expr.evaluate(tree).points, points)
+                self.assertEqual(expr.evaluate(tree, SelectionCache()).points, points)
+                self.assertEqual(make(AllRegion(), expr.seed).evaluate(tree).points, points)
+
+    def test_a_context_seed_reproduces_and_changes_the_locations(self) -> None:
+        tree = _build_sampling_tree()
+        for name, make in _SAMPLERS:
+            with self.subTest(sampler=name):
+                runs = []
+                for seed in (42, 42, 43):
+                    with brainstate.random.seed_context(seed):
+                        runs.append(make(AllRegion()).evaluate(tree).points)
+                self.assertEqual(runs[0], runs[1])
+                self.assertNotEqual(runs[0], runs[2])
+
+    def test_copies_keep_the_drawn_seed_without_drawing_again(self) -> None:
+        with brainstate.random.seed_context(7):
+            built = [make(AllRegion()) for _, make in _SAMPLERS]
+            before = default_key_data()
+            copies = [
+                (copy.copy(expr), copy.deepcopy(expr), pickle.loads(pickle.dumps(expr)), dataclasses.replace(expr))
+                for expr in built
+            ]
+            np.testing.assert_array_equal(default_key_data(), before)
+        for expr, made in zip(built, copies):
+            for duplicate in made:
+                self.assertEqual(duplicate.seed, expr.seed)
+
+    def test_explicit_seeds_ignore_the_context(self) -> None:
+        # Acceptance 7.
+        tree = _build_sampling_tree()
+        for name, make, seed in (("sample", _SAMPLERS[0][1], 3), ("RandomSamples", _SAMPLERS[1][1], 123)):
+            with self.subTest(sampler=name):
+                with brainstate.random.seed_context(1):
+                    one = make(AllRegion(), seed)
+                with brainstate.random.seed_context(2):
+                    two = make(AllRegion(), seed)
+                self.assertEqual(one.seed, seed)
+                self.assertEqual(two.evaluate(tree).points, one.evaluate(tree).points)
+
+    def test_a_bool_seed_still_raises_at_evaluate(self) -> None:
+        # Acceptance 6; main raised the same TypeError.
+        tree = _build_sampling_tree()
+        for name, make in _SAMPLERS:
+            with self.subTest(sampler=name), self.assertRaisesRegex(TypeError, "seed must be an integer"):
+                make(AllRegion(), True).evaluate(tree)
+
+    def test_seed_none_under_a_transformation_raises_and_leaves_the_default_stream(self) -> None:
+        # Acceptance 6.
+        for name, make in _SAMPLERS:
+            with self.subTest(sampler=name):
+                brainstate.random.seed(1)
+                expected = float(brainstate.random.uniform())
+                brainstate.random.seed(1)
+                before = default_key_data()
+                with self.assertRaisesRegex(TypeError, rf"{name}\(seed=None\).*traced"):
+                    brainstate.transform.jit(lambda: make(AllRegion()).seed)()
+                np.testing.assert_array_equal(default_key_data(), before)
+                self.assertEqual(float(brainstate.random.uniform()), expected)
 
 
 class LocsetModuleAllTest(unittest.TestCase):

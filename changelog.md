@@ -1710,6 +1710,14 @@
   `docs/apis/braincell.synapse.rst`, the two GitHub issue templates,
   `.github/dependabot.yml` and four files under `examples/convert_mod/nmodl/`.
   They are stored with LF; their content is unchanged.
+- Running the NMODL walkthrough notebook
+  (`examples/convert_mod/nmodl/examples/walktrough.ipynb`) rewrote its tracked
+  `kv` artifacts with the absolute path of the checkout's `kv.mod`.
+  `save_pipeline_artifacts` now names a source inside the repository by its
+  path relative to the repository, as the tracked artifacts did, so running
+  the notebook again leaves them unchanged. The tracked `ast.json` is
+  regenerated: it kept a carriage return from before `kv.mod` was stored
+  with LF.
 - `from braincell.quad import rk2_step`, or a from-import of any other name
   that `braincell.quad` removed, raised a bare "cannot import name 'rk2_step'
   from 'braincell.quad'". It now raises an `ImportError` with the same

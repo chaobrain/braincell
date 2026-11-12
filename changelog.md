@@ -211,6 +211,30 @@
 
 ### New Features
 
+- **Connection plasticity rules and pair STDP** (CELL-12a). `connect` and
+  `Network.connect` take `plasticity=braincell.mech.ConnectionRule(...)`; the
+  rule changes the weight of every row of that call while the model runs, and
+  `ConnectionView.rule_state("w")` reads it. The first built-in rule is
+  `braincell.plasticity.PairSTDP`, all-to-all pair STDP with exact trace decay
+  and optional hard bounds `w_min`/`w_max`.
+  - A rule runs once per event boundary `t_n = n dt`, in the target Cell,
+    before its synapses consume that boundary's events: the event delivered
+    there carries the weight before the update, and pre and post events on the
+    same boundary do not pair. A row's pre time is its arrival, after the
+    delay. `post` defaults to the target Cell's spikes; bind a scheduled source
+    as a teaching signal with `signals={"post": source}`.
+  - `init_state` and `reset_state` start the dynamic weight from the rows'
+    weight (`ConnectionView.weight`, or the value of a bound trainable, so the
+    weight scale stays differentiable); `set(weight=...)` changes both;
+    `Cell.reset()` keeps the rule and drops its state. The rule state is in
+    the Cell's state tree.
+  - Scheduled sources (`EventSequence`, `NetStim`) work with a standalone
+    `Cell.run` and `update`, and in a `Network`; a live source works in a
+    `Network`, with any delay. Batches, reductions and the experimental
+    scheduled-delivery adapter reject a rule.
+  - New rules subclass `braincell.ConnectionRule` and register with
+    `braincell.mech.register_connection_rule`. Rows without a rule are
+    unchanged.
 - **The block solvers advance point synapses on cable and lumped `Cell`s**
   (CELL-31b, CELL-31c). `exp_euler`, `backward_euler` and `crank_nicolson`
   used to reject a `Cell` with a point synapse at `init_state`: a synapse
@@ -776,6 +800,12 @@
 
 ### Changes & Improvements
 
+- **`ConnectionView.weight` reads each `connect` call with one gather**
+  (CELL-12a). It stacked one value per row, which compiled an XLA operation
+  with one operand per row. `Cell.run` and `Network.run` read it when they
+  set up a run, so on CPU a connection of 1e4 rows spent 33 s there and one
+  of 3e4 rows 245 s; reading 3e4 rows now takes 0.02 s. The values are
+  bitwise unchanged.
 - **A scheduled source costs a lookup per step, not a pass over its
   schedule** (CELL-18a). `NetStim.event_count` and
   `EventSequence.event_count`, which `Cell.run` and `Network.run` call on

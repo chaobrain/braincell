@@ -55,6 +55,7 @@ from braincell.network.event import (
     _quantity_vector,
     round_half_up_steps_host as _round_half_up_steps,
 )
+from braincell.network.plasticity import bind_rule
 
 __all__ = [
     "ConnectionView",
@@ -96,6 +97,8 @@ class _ConnectionCall:
     synapse_sites: dict | None = None
     #: ``_SynapseStore.serial`` of the store the rows' synapse ids refer to.
     synapse_store_serial: int = -1
+    #: The call's plasticity rule (``network.plasticity.RuleBinding``), or ``None``.
+    plasticity: object = None
 
     def __post_init__(self):
         if self.weight is not None:
@@ -197,6 +200,7 @@ class _ConnectionStore:
         target_index,
         weight,
         delay,
+        plasticity=None,
     ) -> np.ndarray:
         if name in self._call_by_name:
             raise ValueError(f"Connection name {name!r} is already used on Cell {self.cell.name!r}.")
@@ -236,6 +240,7 @@ class _ConnectionStore:
                 key: synapses.sites[key] for key in dict.fromkeys(zip(identity[0].tolist(), identity[1].tolist()))
             },
             synapse_store_serial=synapses.serial,
+            plasticity=plasticity,
         )
         self._calls.append(call)
         self._call_by_id[connect_id] = call
@@ -328,19 +333,32 @@ class _ConnectionStore:
         ids = self.active_ids(ids)
         if ids.size == 0:
             raise ValueError("Cannot access weight on an empty ConnectionView.")
-        calls = [self.call(int(value)) for value in self.connect_id[self.rows(ids)].tolist()]
-        if calls[0].weight is None:
-            if any(call.weight is not None for call in calls):
+        connect_id = self.connect_id[self.rows(ids)]
+        call_ids = list(dict.fromkeys(connect_id.tolist()))
+        calls = [self.call(int(call_id)) for call_id in call_ids]
+        trigger = [call.weight is None for call in calls]
+        if any(trigger):
+            if not all(trigger):
                 raise TypeError("ConnectionView mixes trigger-only and scalar-weight rows.")
             return None
-        if any(call.weight is None for call in calls):
-            raise TypeError("ConnectionView mixes trigger-only and scalar-weight rows.")
         # ``add`` builds ``row_ids`` as one ``np.arange``, so a row's slot
         # in its call's weight vector is its offset from that call's first
-        # row. Searching for it cost O(rows) per row.
-        return _stack_values(
-            [call.weight[int(row_id) - int(call.row_ids[0])] for row_id, call in zip(ids.tolist(), calls)]
-        )
+        # row. Searching for it cost O(rows) per row. One gather per call:
+        # stacking one scalar per row built an XLA op with an operand per
+        # row, whose compile took 33 s at 1e4 rows and 245 s at 3e4 (CELL-12a).
+        first = calls[0].weight
+        unit = first.unit if isinstance(first, u.Quantity) else None
+        positions, pieces = [], []
+        for call_id, call in zip(call_ids, calls):
+            position = np.flatnonzero(connect_id == call_id)
+            value = call.weight[ids[position] - int(call.row_ids[0])]
+            positions.append(position)
+            pieces.append(jnp.asarray(value.to_decimal(unit)) if unit is not None else jnp.asarray(value))
+        if len(pieces) == 1:
+            mantissa = pieces[0]
+        else:
+            mantissa = jnp.concatenate(pieces)[np.argsort(np.concatenate(positions), kind="stable")]
+        return mantissa if unit is None else u.Quantity(mantissa, unit)
 
     def set_weight(self, ids, values) -> None:
         ids = self.active_ids(ids)
@@ -349,15 +367,30 @@ class _ConnectionStore:
         # ``_set_quantity_or_array`` rebuilds the call's whole weight
         # vector, so doing it once per row was quadratic in the rows of a
         # single call. Group first, then assign each call's slots at once.
+        # Every call's new weight is checked before any is assigned, so a
+        # weight a plasticity rule rejects leaves all calls as they were.
+        updates = []
         for call_id in np.unique(connect_id).tolist():
             mask = connect_id == call_id
             call = self.call(int(call_id))
             selected = [value for value, keep in zip(split, mask.tolist()) if keep]
-            call.weight = _set_quantity_or_array(
-                call.weight,
-                ids[mask] - int(call.row_ids[0]),
-                _stack_values(selected),
-            )
+            offsets = ids[mask] - int(call.row_ids[0])
+            weight = _set_quantity_or_array(call.weight, offsets, _stack_values(selected))
+            if call.plasticity is not None:
+                call.plasticity.rule.check_weight(weight)
+            updates.append((call, offsets, weight))
+        for call, offsets, weight in updates:
+            call.weight = weight
+            if call.plasticity is not None:
+                call.plasticity.set_weight(offsets, weight)
+
+    def rule_calls(self) -> tuple[_ConnectionCall, ...]:
+        """The calls with a plasticity rule and at least one active row."""
+        return tuple(
+            call
+            for call in self._calls
+            if call.plasticity is not None and bool(self.active[self.rows(call.row_ids)].any())
+        )
 
 
 def _same_identity(first, second) -> bool:
@@ -565,7 +598,18 @@ class ConnectionView(DiscreteView):
         return self
 
     def set(self, *, weight=_UNSET, delay=_UNSET) -> "ConnectionView":
-        """Update existing runtime weights without modifying routing or delay."""
+        """Update existing runtime weights without modifying routing or delay.
+
+        On rows with a plasticity rule, the new weight is both the weight
+        ``reset_state`` returns to and the current dynamic weight
+        (``rule_state("w")``).
+
+        Raises
+        ------
+        ValueError
+            If a plasticity rule rejects the new weight (outside its
+            ``w_min``/``w_max``, for example); no row changes.
+        """
         self.cell._raise_if_not_initialized("ConnectionView.set(); configure connect() before init_state()")
         if delay is not _UNSET:
             raise RuntimeError("Connection delay is structural; configure it in connect() before init_state().")
@@ -614,11 +658,85 @@ class ConnectionView(DiscreteView):
         ``Network.run`` reaches here on every call, as does ``Cell`` once
         per synapse layout.
         """
+        return tuple(view for _, view in self._call_items(scheduled=scheduled))
+
+    def _call_items(self, *, scheduled=None) -> tuple[tuple[_ConnectionCall, "ConnectionView"], ...]:
+        """``(call, sub-view)`` for each originating ``connect()`` call, as :meth:`_call_views`."""
         return tuple(
-            ConnectionView(self._store, ids)
+            (call, ConnectionView(self._store, ids))
             for call, ids in self._call_groups()
             if scheduled is None or bool(call.source.is_scheduled) == bool(scheduled)
         )
+
+    def rule_state(self, name: str):
+        """Return one state of the plasticity rule of these rows.
+
+        Parameters
+        ----------
+        name : str
+            A state of the rule: ``"w"``, the dynamic weight, for every rule;
+            ``PairSTDP`` also has the traces ``"x_pre"`` and ``"y_post"``.
+
+        Returns
+        -------
+        brainunit.Quantity or jax.Array
+            One value per row, in the order of this view; ``"w"`` carries the
+            weight's unit. Inside a compiled loop the value is traced.
+
+        Raises
+        ------
+        RuntimeError
+            Before the Cell's ``init_state()``: the state exists from then on.
+        TypeError
+            If a row comes from a ``connect`` call without a rule.
+        KeyError
+            If the rule has no state ``name``.
+        ValueError
+            On an empty view.
+
+        Examples
+        --------
+        >>> import brainunit as u
+        >>> import braincell
+        >>> cell = braincell.Cell.point(1, V_init=-65.0 * u.mV)
+        >>> cell = cell.place(braincell.mech.Synapse("ExpSyn", name="s"))
+        >>> rule = braincell.mech.ConnectionRule(
+        ...     "PairSTDP",
+        ...     A_plus=0.01 * u.uS,
+        ...     A_minus=0.0105 * u.uS,
+        ...     tau_plus=20.0 * u.ms,
+        ...     tau_minus=20.0 * u.ms,
+        ... )
+        >>> source = braincell.EventSequence.from_times(([1.0] * u.ms,))
+        >>> view = braincell.connect("c", source=source, synapse=cell.synapses["s"], weight=0.05 * u.uS, plasticity=rule)
+        >>> cell.init_state()
+        >>> print(cell.connections["c"].rule_state("w"))
+        [0.05] uS
+        """
+        self.cell._raise_if_not_initialized("ConnectionView.rule_state()")
+        ids = self._active_ids
+        if ids.size == 0:
+            raise ValueError("Cannot read rule state on an empty ConnectionView.")
+        connect_id = self._store.connect_id[self._store.rows(ids)]
+        pieces = []
+        for call_id in dict.fromkeys(connect_id.tolist()):
+            call = self._store.call(int(call_id))
+            if call.plasticity is None:
+                raise TypeError(f"Connection {call.name!r} has no plasticity rule, so it has no rule state.")
+            value = call.plasticity.value(name)
+            mask = connect_id == call_id
+            offsets = ids[mask] - int(call.row_ids[0])
+            if not (offsets.size == value.shape[0] and np.array_equal(offsets, np.arange(offsets.size))):
+                value = value[offsets]
+            pieces.append((mask, value))
+        if len(pieces) == 1:
+            return pieces[0][1]
+        unit = u.get_unit(pieces[0][1])
+        mantissas = [jnp.asarray(u.Quantity(value).to_decimal(unit)) for _, value in pieces]
+        out = jnp.zeros((ids.size,), dtype=jnp.result_type(*mantissas))
+        for (mask, _), mantissa in zip(pieces, mantissas):
+            out = out.at[np.flatnonzero(mask)].set(mantissa)
+        return out if unit.is_unitless else u.Quantity(out, unit)
 
     def event_count(self, *, t, dt):
         """Return one arrival count per row for a single connect call."""
@@ -628,8 +746,35 @@ class ConnectionView(DiscreteView):
         return call.source.event_count(self.source_index, t=t, delay=self.delay, dt=dt)
 
     def prepare_runtime(self, dt) -> None:
+        for call, _ in self._call_items(scheduled=False):
+            if call.plasticity is not None:
+                # Raised before any live history is allocated.
+                raise NotImplementedError(
+                    f"Connection {call.name!r} has a plasticity rule on a live source, which runs only in a "
+                    "braincell.Network: a standalone Cell.run delivers live events on another schedule. Add the "
+                    "Cells to a Network and run that, or connect a scheduled source (EventSequence, NetStim)."
+                )
         for view in self._call_views(scheduled=False):
             view._prepare_live_runtime(dt)
+
+    def _init_rules(self) -> dict | None:
+        """Allocate the state of every plasticity rule (``Cell.init_state``).
+
+        Returns
+        -------
+        dict or None
+            ``{connect name: states}`` for the Cell to keep, so that its state
+            tree holds them; ``None`` without a rule.
+        """
+        rules = {}
+        for call in self._store.rule_calls():
+            rules[call.name] = call.plasticity.init(self.cell, call, self._store)
+        return rules or None
+
+    def _prepare_rules(self, dt, *, delay_quantization: str) -> None:
+        """Prepare the live plasticity rows for a Network run setup."""
+        for call in self._store.rule_calls():
+            call.plasticity.prepare_network(call, dt=dt, delay_quantization=delay_quantization)
 
     def _prepare_live_runtime(self, dt) -> None:
         call = self._require_single_call("prepare runtime")
@@ -655,12 +800,16 @@ class ConnectionView(DiscreteView):
         for call in (self._store.call(item) for item in self._store.active_call_ids(self._candidate_ids)):
             if call.live_history is not None:
                 call.live_history.value = jnp.zeros_like(call.live_history.value)
+            if call.plasticity is not None:
+                call.plasticity.reset(call.weight)
 
     def clear_runtime(self) -> None:
         for call in (self._store.call(item) for item in self._store.active_call_ids(self._candidate_ids)):
             call.live_history = None
             call.live_delay_steps = None
             call.live_dt_ms = None
+            if call.plasticity is not None:
+                call.plasticity.clear()
 
     def _live_event_count(self, *, call: _ConnectionCall, dt):
         self._prepare_live_runtime(dt)
@@ -817,6 +966,7 @@ def connect(
     pairing: PairingSpec | None = None,
     weight=_UNSET,
     delay=0.0 * u.ms,
+    plasticity=None,
 ) -> ConnectionView:
     """Connect aligned event-source and logical-synapse endpoints.
 
@@ -842,6 +992,10 @@ def connect(
         Scalar event payload, scalar or one value per resulting routing row.
     delay : Quantity, optional
         Non-negative delay, scalar or one value per resulting routing row.
+    plasticity : braincell.mech.ConnectionRule, optional
+        A plasticity rule for every row of this call: the rule changes each
+        row's weight as the model runs, and ``rule_state("w")`` reads it
+        (see Notes). ``None`` (default) keeps the weight fixed.
 
     Returns
     -------
@@ -854,7 +1008,17 @@ def connect(
         If ``pairing`` has no seed and the call runs inside
         ``brainstate.transform.jit``, ``for_loop`` or another
         transformation, where the default stream is traced. Call
-        ``connect`` outside the transformation.
+        ``connect`` outside the transformation. If ``plasticity`` is not a
+        ``ConnectionRule``, the synapse is trigger-only (``weight=None``),
+        or the rule binds a signal it does not declare.
+    KeyError
+        If no rule is registered under ``plasticity``'s name.
+    ValueError
+        If the rule rejects its parameters or the initial weight (a unit
+        incompatible with the weight, a non-positive time constant, a weight
+        outside the bounds), or its ``post`` source has another number of
+        endpoints than the target Cell has members or is a live source of
+        another model.
     RuntimeError
         At the destination Cell's ``init_state`` (or ``Network.init_state``,
         before any Cell initializes), if the grid was rebuilt after this call
@@ -870,6 +1034,26 @@ def connect(
     logical synapse ids can shift, and ``init_state`` moves each row to the
     id its synapse has now. A branch removed and attached again under the
     same name keeps its synapses' rows.
+
+    With ``plasticity``, the target Cell runs the rule once per event
+    boundary, before its synapses consume that boundary's events. A row's
+    pre time is its arrival (after the delay), and the event delivered
+    there carries the weight before that boundary's update.
+    ``init_state`` and ``reset_state`` set the dynamic weight to the rows'
+    weight (``ConnectionView.weight``, or the value a bound trainable gives
+    it); ``set(weight=...)`` changes both. A rule on a live source runs in a
+    Network only.
+
+    Examples
+    --------
+    >>> import brainunit as u
+    >>> import braincell
+    >>> cell = braincell.Cell.point(1, V_init=-65.0 * u.mV)
+    >>> cell = cell.place(braincell.mech.Synapse("ExpSyn", name="s"))
+    >>> source = braincell.EventSequence.from_times(([1.0, 3.0] * u.ms,))
+    >>> view = braincell.connect("drive", source=source, synapse=cell.synapses["s"], weight=0.01 * u.uS)
+    >>> len(view)
+    1
     """
     return _connect_with_pairing_seed(
         name,
@@ -878,6 +1062,7 @@ def connect(
         pairing=pairing,
         weight=weight,
         delay=delay,
+        plasticity=plasticity,
         pairing_seed_root=None,
         pairing_seed_path=(),
     )
@@ -893,6 +1078,7 @@ def _connect_with_pairing_seed(
     delay,
     pairing_seed_root,
     pairing_seed_path,
+    plasticity=None,
 ):
     _require_name(name, "connection name")
     source_view = _as_source_view(source)
@@ -935,6 +1121,9 @@ def _connect_with_pairing_seed(
         omitted=weight is _UNSET,
     )
     normalized_delay = _normalize_delay(delay, count=len(source_index))
+    rule = None
+    if plasticity is not None:
+        rule = bind_rule(plasticity, cell=cell, weight=normalized_weight, n_rows=len(source_index))
     ids = cell._get_connection_store().add(
         name=name,
         source=source_view.owner,
@@ -944,6 +1133,7 @@ def _connect_with_pairing_seed(
         target_index=target_index,
         weight=normalized_weight,
         delay=normalized_delay,
+        plasticity=rule,
     )
     return ConnectionView(cell._get_connection_store(), ids)
 

@@ -266,6 +266,7 @@ class Network:
         pairing: PairingSpec | None = None,
         weight=_UNSET,
         delay=0.0 * u.ms,
+        plasticity=None,
     ):
         """Connect a registered source to existing or newly placed synapses.
 
@@ -290,6 +291,10 @@ class Network:
             Scalar or row-aligned event payload.
         delay : Quantity, optional
             Scalar or row-aligned non-negative delivery delay.
+        plasticity : braincell.mech.ConnectionRule, optional
+            A plasticity rule for every row of this call, as in
+            :func:`braincell.connect`. A rule on a live source runs only in
+            a Network.
 
         Returns
         -------
@@ -311,6 +316,7 @@ class Network:
                 pairing=pairing,
                 weight=weight,
                 delay=delay,
+                plasticity=plasticity,
                 pairing_seed_root=self.seed,
                 pairing_seed_path=(source_population.name, target_population.name, name),
             )
@@ -343,6 +349,7 @@ class Network:
                 pairing=None,
                 weight=weight,
                 delay=delay,
+                plasticity=plasticity,
                 pairing_seed_root=self.seed,
                 pairing_seed_path=(),
             )
@@ -726,6 +733,11 @@ class Network:
         if setup is not None:
             return setup
 
+        # Live plasticity rows quantize their delays and allocate their count
+        # history before lowering, which then leaves their delayed rows to
+        # the rule boundary.
+        for population in self._cell_populations().values():
+            population.cell.connections._prepare_rules(dt, delay_quantization=delay_quantization)
         blocks = lower_direct_connections(
             self.populations,
             dt=dt,

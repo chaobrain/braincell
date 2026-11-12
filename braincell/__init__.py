@@ -26,6 +26,7 @@ from braincell.quad.protocol import (
 )
 from braincell import quad, mech, channel, synapse, ion, filter, morph, reduction, trainable
 from braincell._base_channel import Channel, IonInfo, IonChannel, Synapse
+from braincell._base_rule import ConnectionRule
 from braincell._base_ion import Ion, MixIons, mix_ions
 from braincell._base_neuron import HHTypedNeuron
 from braincell._discretization import (
@@ -81,7 +82,7 @@ from braincell._version import __version__, __version_info__
 from braincell.mech import CableProperty, CurrentClamp, FunctionClamp, SineClamp
 from braincell.morph.branch import ApicalDendrite, Axon, BasalDendrite, Branch, CustomBranch, Dendrite, Soma
 from braincell.morph.morphology import Morphology
-from braincell import io, network
+from braincell import io, network, plasticity
 from braincell._deprecation import removed_attributes as _removed_attributes
 
 #: Names that braincell 0.3 removed without a deprecation period (CELL-28),
@@ -121,6 +122,7 @@ __all__ = [
     "ChannelView",
     "ClampView",
     "CompositeByTypePolicy",
+    "ConnectionRule",
     "ConnectionView",
     "CurrentClamp",
     "CustomBranch",
@@ -187,6 +189,7 @@ __all__ = [
     "morph",
     "network",
     "observe",
+    "plasticity",
     "quad",
     "reduction",
     "state",

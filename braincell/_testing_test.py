@@ -206,7 +206,7 @@ class PublicPathsTest(unittest.TestCase):
         packages = [
             getattr(braincell, name) for name in braincell.__all__ if isinstance(getattr(braincell, name), ModuleType)
         ]
-        self.assertEqual(len(packages), 11)
+        self.assertEqual(len(packages), 12)
         self.assertEqual(len(paths), len(braincell.__all__) + sum(len(package.__all__) for package in packages))
         self.assertFalse(any(path.startswith("braincell.experimental") for path in paths))
         self.assertFalse(any(path.startswith("braincell.filter.metric.") for path in paths))

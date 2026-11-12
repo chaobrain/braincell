@@ -95,6 +95,7 @@ from braincell._discretization.base import (
 from braincell.filter import AllRegion, LocsetBatch, LocsetExpr, LocsetMask, RegionExpr, RegionMask, at
 from braincell.filter._index_refs import held_branch_indices
 from braincell.network.event import EventOutputCollection, _CellSpikeSource
+from braincell.network.plasticity import advance_rules
 from braincell.network.recording import (
     RecordingSpec,
     _ClampCurrentObservable,
@@ -1273,6 +1274,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._synapse_origins: dict[int, SynapsePlacement] = {}
         self._connection_store_cache = None
         self._connection_weight_declarations = ()
+        # ``{connect name: states}`` of the plasticity rules while initialized,
+        # held here so the Cell's state tree reaches them (CELL-12a).
+        self._connection_rules = None
         self._network_owner_ref: weakref.ReferenceType | None = None
         self._recording_specs: dict[str, RecordingSpec] = {}
         # Per recording: (tree, revision, grid fingerprint, index basis) it
@@ -2695,16 +2699,35 @@ class Cell(_CellFacade, HHTypedNeuron):
         # Initialization consumes that snapshot; it must never silently rerun a
         # policy or create a second grid generation.
         self._resolve_declarations()
+        self._check_connection_rules(batch_size)
         declaration_key = self._discretization_cache_key
         self._take_morphology_snapshot()
         try:
             self._init_runtime(batch_size)
+            self._connection_rules = self.connections._init_rules()
         except BaseException:
             self._morpho = self._declaration_morpho
             self._discretization_cache_key = declaration_key
             self._snapshot_source_revision = self._snapshot_reindex_revision = None
             self._snapshot_warned_revision = None
             raise
+
+    def _check_connection_rules(self, batch_size) -> None:
+        """Reject a plasticity rule where its boundary does not run yet (CELL-12a)."""
+        store = self._connection_store_cache
+        if store is None or not store.rule_calls():
+            return
+        names = tuple(call.name for call in store.rule_calls())
+        if batch_size is not None:
+            raise NotImplementedError(
+                f"Connections {names!r} have plasticity rules, which do not support a batch axis yet; "
+                "call init_state() without batch_size."
+            )
+        if self._uses_reduction:
+            raise TypeError(
+                f"Connections {names!r} have plasticity rules, which run on the detailed or lumped model only; "
+                f"the reduction {self._selected_model_name!r} is selected. Call use_model('detailed') first."
+            )
 
     def _take_morphology_snapshot(self) -> None:
         """Run on a frozen copy of the declaration tree from here to :meth:`reset` (MORPH-14).
@@ -2967,6 +2990,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._raise_if_not_initialized("reset()")
 
         self.connections.clear_runtime()
+        self._connection_rules = None
         for call, weight in self._connection_weight_declarations:
             call.weight = weight
         self._connection_weight_declarations = ()
@@ -4337,6 +4361,10 @@ class Cell(_CellFacade, HHTypedNeuron):
             )
             total_drive = total_drive + _coerce_drive_like(contact_drive, total_drive)
             self._set_event_buffer(layout.id, total_drive)
+        if self._connection_rules:
+            # The rules deliver their own rows with the weight before this
+            # boundary, then advance (CELL-12a).
+            advance_rules(self, t=t)
 
     def _evaluate_contact_inputs(self, layout, *, t, template, scheduled_only=True):
         """Return weighted Connection arrivals addressed to one synapse layout."""
@@ -4348,7 +4376,9 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         output = _zeros_like_event_template(template)
         synapse_store = self._get_synapse_store()
-        for connection in self.connections._call_views(scheduled=scheduled_only):
+        for call, connection in self.connections._call_items(scheduled=scheduled_only):
+            if call.plasticity is not None:
+                continue  # its rule delivers it (``advance_rules``)
             synapse_type = str(connection.synapse_type[0])
             if synapse_store.layout_id(synapse_type) != int(layout.id):
                 continue

@@ -129,6 +129,25 @@ class ScheduledCellTest(unittest.TestCase):
             for key in grad:
                 np.testing.assert_allclose(grad[key], results[0][1][key], rtol=3e-5)
 
+    def test_adapter_rejects_plasticity_rules(self):
+        import braincell as bc
+        from braincell.filter import LocsetMask
+
+        branch = bc.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+        cell = ScheduledDeliveryCell(
+            bc.Morphology.from_root(branch), cv_policy=bc.CVPerBranch(1), pop_size=1, V_init=-65.0 * u.mV
+        )
+        cell.place(LocsetMask.from_columns(np.array([0]), np.array([0.5])), bc.mech.Synapse("ExpSyn", name="exp"))
+        rule = bc.mech.ConnectionRule(
+            "PairSTDP", A_plus=0.01 * u.uS, A_minus=0.01 * u.uS, tau_plus=20.0 * u.ms, tau_minus=20.0 * u.ms
+        )
+        source = bc.EventSequence.from_times(([1.0] * u.ms,))
+        bc.connect("drive", source=source, synapse=cell.synapses["exp"], weight=0.001 * u.uS, plasticity=rule)
+        cell.init_state()
+        with self.assertRaisesRegex(TypeError, "plasticity"):
+            cell.prepare_scheduled_delivery(method="direct", dt=0.25 * u.ms, n_steps=8)
+        self.assertFalse(hasattr(cell, "_scheduled_delivery_routes"))
+
     def test_adapter_rejects_dimensionless_buffers(self):
         cfg = Case(n=1, m=1, duration_ms=2.0, dt_ms=0.25)
         work = build_workload(cfg, cell_type=ScheduledDeliveryCell)

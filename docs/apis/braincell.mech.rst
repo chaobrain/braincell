@@ -114,6 +114,20 @@ How a point mechanism receives the events delivered to it.
     TriggerEventInput
 
 
+Connection Plasticity
+---------------------
+
+The declaration of a plasticity rule for the rows of one ``connect`` call;
+the rules themselves are in :mod:`braincell.plasticity`.
+
+.. autosummary::
+   :toctree: generated/
+   :nosignatures:
+   :template: classtemplate.rst
+
+    ConnectionRule
+
+
 Registry
 --------
 
@@ -134,6 +148,7 @@ decorators add a class to it.
 
     get_registry
     register_channel
+    register_connection_rule
     register_ion
     register_synapse
 

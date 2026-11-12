@@ -62,6 +62,7 @@ _DOMAIN_PACKAGES = (
     "mech",
     "morph",
     "network",
+    "plasticity",
     "quad",
     "reduction",
     "synapse",

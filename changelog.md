@@ -2045,6 +2045,19 @@
   `NotImplementedError` from the model, and a second `add_reduction` with
   the same name reported a duplicate. The `ValueError` now names
   `add_reduction()`; one-dimensional and scalar populations are unchanged.
+- `Cell.init_state` that raises leaves every attribute of the Cell as it
+  was before the call, on lumped and cable Cells, inside
+  `Network.init_state` too (CELL-61). It builds the runtime step by step,
+  and some steps refuse the declaration after earlier ones have set
+  attributes; only the morphology snapshot was undone. On main `8aa8e77`, a
+  `Cell.point((2, 3))` with a placed Synapse kept a per-member spike
+  threshold, its sizes and its initial voltage from the refused call, so
+  `cell.V_th = -10 * u.mV` then raised `ValueError` where a new Cell takes
+  it; the refusal of `cache_ion_total_current=False` for an ion-reading
+  synapse left the half-built runtime, `init_state(batch_size=2)` the batch
+  size, and a connected Cell its saved weights, on both kinds of Cell, as
+  did a stiff-gate warning raised as an error on a lumped Cell. A
+  successful `init_state` is unchanged.
 
 ### Documentation
 

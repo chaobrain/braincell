@@ -91,7 +91,7 @@ def make_event_cell(solver="staggered", cv_per_branch=3):
     )
     declaration = mech.Synapse(ExpSyn, name="syn", tau=2.0 * u.ms, e=0.0 * u.mV)
     cell.place(RootLocation(0.0), declaration)
-    cell.record("v", braincell.observe.state("v"))
+    cell.record("v", braincell.observe.state("V"))
     cell.loc(RootLocation(0.0)).record("g", braincell.observe.synapse(name="syn").state("g"))
     return cell, cell.synapses[declaration]
 
@@ -377,6 +377,291 @@ class UpdateLoopTest(unittest.TestCase):
             np.testing.assert_allclose(_state(_synapse(model)), _state(_synapse(whole)), rtol=1e-12, atol=0.0)
             np.testing.assert_allclose(_state(model), _state(whole), rtol=1e-12, atol=0.0)
         self.assertGreater(float(_state(_synapse(whole))[0]), 0.0)
+
+
+AMPLITUDES = np.asarray([0.0, 0.05, 0.1]) * u.nA
+
+
+def _hh_cell(kind, n=3, *, amplitudes=AMPLITUDES, V_th=0.0 * u.mV):
+    """A Hodgkin-Huxley population that spikes under a 1-19 ms clamp (CELL-26).
+
+    ``kind="lumped"``: ``Cell.point(n, length=20 um, radius=10 um)`` on rk4;
+    ``kind="cable"``: one 60 um x 5 um branch, ``CVPerBranch(3)``, staggered.
+    SodiumFixed E 50 mV, PotassiumFixed E -77 mV, Na_HH1952 120 mS/cm^2,
+    K_HH1952 36 mS/cm^2, IL 0.3 mS/cm^2 at -54.3 mV, V_init -65 mV.
+    ``amplitudes=None`` places no clamp.
+    """
+    if kind == "lumped":
+        cell = braincell.Cell.point(
+            n, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, V_th=V_th, solver="rk4"
+        )
+    else:
+        branch = braincell.Branch.from_lengths(lengths=[60.0] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
+        cell = braincell.Cell(
+            braincell.Morphology.from_root(branch),
+            pop_size=n,
+            cv_policy=braincell.CVPerBranch(3),
+            V_init=-65.0 * u.mV,
+            V_th=V_th,
+        )
+    _paint_hh(cell)
+    if amplitudes is not None:
+        cell.place(
+            RootLocation(0.5),
+            mech.CurrentClamp(delay=1.0 * u.ms, durations=18.0 * u.ms, amplitudes=amplitudes[:n]),
+        )
+    return cell
+
+
+def _paint_hh(cell):
+    cell.paint(
+        mech.Ion("SodiumFixed", E=50.0 * u.mV),
+        mech.Ion("PotassiumFixed", E=-77.0 * u.mV),
+        mech.Channel("Na_HH1952", name="na", g_max=120.0 * u.mS / u.cm**2),
+        mech.Channel("K_HH1952", name="k", g_max=36.0 * u.mS / u.cm**2),
+        mech.Channel("IL", name="leak", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+    )
+
+
+def _reduced_cell():
+    """A PayloadAccumulatorReduction (threshold 0.1 uS) with an ``input`` ExpSyn, not connected."""
+    cell = _cell(1)
+    cell.place(at("soma", 0.5), mech.Synapse("ExpSyn", name="input"))
+    cell.add_reduction("payload", braincell.PayloadAccumulatorReduction(threshold=0.1 * u.uS))
+    cell.use_model("payload")
+    return cell
+
+
+def _netstim():
+    return braincell.NetStim(start=0.3 * u.ms, interval=1.0 * u.ms, number=3)
+
+
+def _ms(series):
+    return np.asarray(series.time.to_decimal(u.ms))
+
+
+def assert_same_events(actual, expected):
+    """Event rows equal: integer columns exactly, times to rtol 1e-12."""
+    np.testing.assert_array_equal(actual.source_id, expected.source_id)
+    np.testing.assert_array_equal(actual.count, expected.count)
+    np.testing.assert_allclose(_ms(actual), _ms(expected), rtol=1e-12, atol=0.0)
+
+
+class RunSpikesTest(unittest.TestCase):
+    """CELL-26: ``RunResult.spikes`` carries the Cell's spikes as ``NetworkResult.events`` would."""
+
+    DURATION = 20.0 * u.ms
+
+    def setUp(self):
+        self.enterContext(_float64())
+
+    def _alone_and_in_network(self, build, *, dt=DT, duration=DURATION, stim=None):
+        cell = build()
+        if stim is not None:
+            braincell.connect("drive", source=stim(), synapse=cell.synapses["input"], weight=0.2 * u.uS)
+        alone = cell.run(dt=dt, duration=duration).spikes
+        network = braincell.Network()
+        post = network.add_population("post", build())
+        if stim is not None:
+            source = network.add_population("stim", stim())
+            network.connect("drive", source=source, synapse=post.synapses["input"], weight=0.2 * u.uS)
+        events = network.run(dt=dt, duration=duration).events["post"]["spike"]
+        return alone, events
+
+    def test_spikes_match_network_events(self):
+        cases = {
+            "lumped": (lambda: _hh_cell("lumped"), {}, ([3.175, 4.525, 19.425], [2, 1, 2])),
+            "cable": (lambda: _hh_cell("cable"), {}, ([3.875, 6.325], [2, 1])),
+            "reduction": (
+                _reduced_cell,
+                dict(dt=0.1 * u.ms, duration=4.0 * u.ms, stim=_netstim),
+                ([0.3, 1.3, 2.3], [0, 0, 0]),
+            ),
+        }
+        for name, (build, options, (times, ids)) in cases.items():
+            with self.subTest(name):
+                alone, events = self._alone_and_in_network(build, **options)
+                assert_same_events(alone, events)
+                self.assertEqual(dict(alone.metadata).keys(), {"port", "cv_id"})
+                self.assertEqual(alone.metadata["port"], events.metadata["port"])
+                np.testing.assert_array_equal(alone.metadata["cv_id"], events.metadata["cv_id"])
+                # This machine's values (2b02a98); the comparison above is the contract.
+                np.testing.assert_allclose(_ms(alone), times, rtol=1e-9)
+                np.testing.assert_array_equal(alone.source_id, ids)
+                np.testing.assert_array_equal(alone.count, np.ones(len(ids)))
+
+    def test_events_sit_at_the_step_whose_end_crosses_the_threshold(self):
+        for kind, V_th in (("lumped", 0.0), ("cable", 0.0), ("lumped", -20.0)):
+            with self.subTest(kind=kind, V_th=V_th):
+                cell = _hh_cell(kind, V_th=V_th * u.mV)
+                cell.loc(RootLocation(0.5)).record("v", "V")
+                result = cell.run(dt=DT, duration=self.DURATION)
+                v = np.asarray(result.samples["v"].values.to_decimal(u.mV))
+                t = np.asarray(result.time.to_decimal(u.ms))
+                rows = result.samples["v"].schema.rows
+                for member in range(3):
+                    (column,) = [i for i, row in enumerate(rows) if row.population_index == member]
+                    crossed = np.flatnonzero((v[:-1, column] < V_th) & (v[1:, column] >= V_th))
+                    spikes = result.spikes
+                    np.testing.assert_allclose(_ms(spikes)[spikes.source_id == member], t[crossed], rtol=1e-12)
+                    self.assertLessEqual(len(crossed), 3)
+                self.assertGreater(len(result.spikes.source_id), 0)
+
+    def test_a_lower_threshold_fires_earlier(self):
+        at_zero = _hh_cell("lumped").run(dt=DT, duration=self.DURATION).spikes
+        at_minus_20 = _hh_cell("lumped", V_th=-20.0 * u.mV).run(dt=DT, duration=self.DURATION).spikes
+        np.testing.assert_array_equal(at_minus_20.source_id, at_zero.source_id)
+        self.assertTrue(np.all(_ms(at_minus_20) < _ms(at_zero)))
+
+    def test_batch_rows_are_batch_major_with_their_member_and_batch(self):
+        drive = np.asarray([[0.0, 0.05, 0.1], [0.1, 0.0, 0.05]]) * u.nA
+        cell = _hh_cell("lumped", amplitudes=None)
+        cell.add_current_input("drive", lambda V: drive)
+        cell.init_state(batch_size=2)
+        batched = cell.run(dt=DT, duration=self.DURATION).spikes
+        batch_index = batched.metadata["batch_index"]
+        population_index = batched.metadata["population_index"]
+        np.testing.assert_array_equal(batch_index, [0, 0, 0, 1, 1, 1])
+        np.testing.assert_array_equal(population_index, [0, 1, 2, 0, 1, 2])
+        np.testing.assert_array_equal(batched.metadata["cv_id"], np.zeros(6))
+        for b in range(2):
+            single = _hh_cell("lumped", amplitudes=None)
+            single.add_current_input("drive", lambda V, b=b: drive[b])
+            expected = single.run(dt=DT, duration=self.DURATION).spikes
+            rows = batch_index[batched.source_id] == b
+            np.testing.assert_array_equal(population_index[batched.source_id][rows], expected.source_id)
+            np.testing.assert_array_equal(batched.source_id[rows], 3 * b + expected.source_id)
+            np.testing.assert_allclose(_ms(batched)[rows], _ms(expected), rtol=1e-12)
+            self.assertGreater(len(expected.source_id), 0)
+
+    def test_a_batched_cable_cell_reports_each_batch(self):
+        # One member: staggered with pop_size > 1 and a batch fails on main (a separate fix).
+        cell = _hh_cell("cable", n=1, amplitudes=np.asarray([0.3]) * u.nA)
+        cell.init_state(batch_size=2)
+        batched = cell.run(dt=DT, duration=self.DURATION).spikes
+        expected = _hh_cell("cable", n=1, amplitudes=np.asarray([0.3]) * u.nA).run(dt=DT, duration=self.DURATION).spikes
+        self.assertGreater(len(expected.source_id), 0)
+        for b in range(2):
+            rows = batched.metadata["batch_index"][batched.source_id] == b
+            np.testing.assert_array_equal(batched.source_id[rows], np.full(len(expected.source_id), b))
+            np.testing.assert_allclose(_ms(batched)[rows], _ms(expected), rtol=1e-12)
+
+    def test_a_run_split_at_a_spike_step_concatenates_to_one_run(self):
+        for kind in ("lumped", "cable"):
+            with self.subTest(kind):
+                whole = _hh_cell(kind).run(dt=DT, duration=self.DURATION)
+                first_step = int(round(_ms(whole.spikes)[0] / 0.025))
+                cell = _hh_cell(kind)
+                parts = (cell.run(dt=DT, duration=first_step * DT), cell.run(dt=DT, duration=(800 - first_step) * DT))
+                self.assertEqual(len(parts[0].spikes.source_id), 0)
+                np.testing.assert_allclose(_ms(parts[1].spikes)[0], first_step * 0.025, rtol=1e-12)
+                assert_same_events(RunResult.concat(parts).spikes, whole.spikes)
+
+    def test_concat_without_spikes_in_a_part_has_none(self):
+        cell = _hh_cell("lumped")
+        first = cell.run(dt=DT, duration=1.0 * u.ms)
+        second = cell.run(dt=DT, duration=1.0 * u.ms)
+        stripped = RunResult(
+            time=second.time,
+            traces=second.traces,
+            samples=second.samples,
+            start_time=second.start_time,
+            stop_time=second.stop_time,
+            dt=second.dt,
+        )
+        self.assertIsNotNone(RunResult.concat((first, second)).spikes)
+        self.assertIsNone(RunResult.concat((first, stripped)).spikes)
+
+    def test_reset_state_gives_the_same_spikes_again(self):
+        cell = _hh_cell("lumped")
+        first = cell.run(dt=DT, duration=self.DURATION).spikes
+        cell.reset_state()
+        assert_same_events(cell.run(dt=DT, duration=self.DURATION).spikes, first)
+
+    def test_a_new_grid_after_reset_moves_the_port(self):
+        cell = _hh_cell("cable")
+        self.assertEqual(cell.run(dt=DT, duration=1.0 * u.ms).spikes.metadata["cv_id"].tolist(), [1, 1, 1])
+        cell.reset()
+        cell.cv_policy = braincell.CVPerBranch(5)
+        cell.init_state()
+        spikes = cell.run(dt=DT, duration=self.DURATION).spikes
+        self.assertEqual(spikes.metadata["cv_id"].tolist(), [2, 2, 2])
+        network = braincell.Network()
+        twin = _hh_cell("cable")
+        twin.cv_policy = braincell.CVPerBranch(5)
+        network.add_population("post", twin)
+        assert_same_events(spikes, network.run(dt=DT, duration=self.DURATION).events["post"]["spike"])
+
+    def test_a_traced_run_has_no_spikes(self):
+        cell = _hh_cell("lumped")
+        cell.record("v", "V")
+        cell.init_state()
+        seen = {}
+
+        @brainstate.transform.jit
+        def traced():
+            result = cell.run(dt=DT, duration=1.0 * u.ms)
+            seen["spikes"] = result.spikes
+            return result.samples["v"].values
+
+        self.assertEqual(traced().shape, (40, 3))
+        self.assertIsNone(seen["spikes"])
+        self.assertIsNotNone(cell.run(dt=DT, duration=1.0 * u.ms).spikes)
+
+    def test_a_two_dimensional_population_flattens_in_c_order(self):
+        drive = np.asarray([[0.0, 0.05, 0.1], [0.1, 0.0, 0.05]]) * u.nA
+        grid = braincell.Cell.point((2, 3), length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, solver="rk4")
+        flat = _hh_cell("lumped", n=6, amplitudes=None)
+        _paint_hh(grid)
+        grid.add_current_input("drive", lambda V: drive)
+        flat.add_current_input("drive", lambda V: drive.reshape(6))
+        on_grid = grid.run(dt=DT, duration=self.DURATION).spikes
+        assert_same_events(on_grid, flat.run(dt=DT, duration=self.DURATION).spikes)
+        self.assertEqual(on_grid.metadata["cv_id"].shape, (6,))
+        self.assertGreater(len(on_grid.source_id), 0)
+
+
+class RunResultPytreeTest(unittest.TestCase):
+    """CELL-26: a RunResult is a JAX pytree whose leaves are its arrays."""
+
+    def _result(self):
+        cell = _hh_cell("lumped")
+        cell.record("v", "V")
+        return cell, cell.run(dt=DT, duration=5.0 * u.ms)
+
+    def test_leaves_hold_the_arrays_and_rebuild_the_result(self):
+        cell, result = self._result()
+        leaves, treedef = jax.tree.flatten(result)
+        self.assertTrue(any(leaf is u.get_mantissa(result.samples["v"].values) for leaf in leaves))
+        self.assertTrue(any(leaf is result.spikes.source_id for leaf in leaves))
+        rebuilt = jax.tree.unflatten(treedef, leaves)
+        self.assertIsInstance(rebuilt, RunResult)
+        self.assertEqual(tuple(rebuilt.samples), ("v",))
+        self.assertEqual(rebuilt.samples["v"].schema, result.samples["v"].schema)
+        with self.assertRaises(TypeError):
+            rebuilt.samples["w"] = rebuilt.samples["v"]
+        assert_same_events(rebuilt.spikes, result.spikes)
+        joined = RunResult.concat((rebuilt, cell.run(dt=DT, duration=5.0 * u.ms)))
+        self.assertEqual(joined.time.shape, (400,))
+
+    def test_tree_utilities_accept_results(self):
+        _, result = self._result()
+        self.assertIsInstance(jax.block_until_ready(result), RunResult)
+        copied = jax.tree.map(lambda x: x, result)
+        np.testing.assert_array_equal(
+            copied.samples["v"].values.to_decimal(u.mV), result.samples["v"].values.to_decimal(u.mV)
+        )
+        self.assertEqual(np.shape(jax.tree.leaves(result.samples["v"])[0]), (200, 3))
+        self.assertIsInstance(jax.tree.map(lambda a, b: a, result, result), RunResult)
+
+    def test_a_jitted_function_returns_a_result(self):
+        cell = _hh_cell("lumped")
+        cell.record("v", "V")
+        cell.init_state()
+        result = brainstate.transform.jit(lambda: cell.run(dt=DT, duration=1.0 * u.ms))()
+        self.assertIsInstance(result, RunResult)
+        self.assertEqual(result.samples["v"].values.shape, (40, 3))
+        self.assertIsNone(result.spikes)
 
 
 def _synapse(cell):

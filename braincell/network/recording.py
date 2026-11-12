@@ -29,6 +29,7 @@ import numpy as np
 from braincell._misc import (
     concat_values as _concat_values,
     freeze_array as _freeze_array,
+    register_result_pytree,
     require_name as _require_name,
     scalar_decimal as _scalar_decimal,
 )
@@ -104,9 +105,34 @@ class _ObserveNamespace:
     __slots__ = ()
 
     def state(self, field: str):
-        """Observe a Cell state field such as membrane voltage ``v``."""
+        """Observe a Cell state field: the membrane voltage.
+
+        Parameters
+        ----------
+        field : str
+            ``"V"``, the membrane voltage, as in ``cell.V``. The rows carry
+            the field ``"V"``.
+
+        Returns
+        -------
+        object
+            Observable declaration for :meth:`braincell.Cell.record`: one row
+            per selected ``(population member, CV)``.
+
+        Raises
+        ------
+        KeyError
+            If ``field`` is not ``"V"``, including ``"v"``, which was
+            removed in 0.3.
+
+        Examples
+        --------
+        >>> import braincell
+        >>> braincell.observe.state("V").field
+        'V'
+        """
         _require_name(field, "state field")
-        return _CellStateObservable(field)
+        return _CellStateObservable(_cell_state_field(field))
 
     def output(self, name: str):
         """Observe one selected model output after each model update."""
@@ -158,6 +184,47 @@ class _ObserveNamespace:
 
 
 observe = _ObserveNamespace()
+
+
+def _cell_state_field(field: str) -> str:
+    """The one recordable Cell state is the membrane voltage ``"V"``, named as ``cell.V``."""
+    if field == "V":
+        return field
+    if field == "v":
+        raise KeyError("Cell state 'v' was removed in 0.3; record the membrane voltage as 'V', as in cell.V.")
+    raise KeyError(f"Cell state {field!r} is not recordable; record the membrane voltage as 'V'.")
+
+
+def as_observable(observable):
+    """Return the observable a :meth:`braincell.Cell.record` argument declares.
+
+    ``"V"`` stands for ``observe.state("V")``; an ``observe.*`` declaration
+    is returned unchanged.
+
+    Raises
+    ------
+    KeyError
+        If ``observable`` is a string other than ``"V"``.
+    TypeError
+        If ``observable`` is neither a string nor an ``observe.*`` declaration.
+    """
+    if isinstance(observable, str):
+        return observe.state(observable)
+    if not isinstance(observable, _OBSERVABLE_TYPES):
+        raise TypeError(
+            f"Cell.record observable must be 'V' or a braincell.observe declaration, got {type(observable).__name__}."
+        )
+    return observable
+
+
+_OBSERVABLE_TYPES = (
+    _CellStateObservable,
+    _OutputObservable,
+    _MechanismStateObservable,
+    _CurrentObservable,
+    _MembraneCurrentObservable,
+    _ClampCurrentObservable,
+)
 
 
 @dataclass(frozen=True)
@@ -228,7 +295,11 @@ class RecordingSchema:
 
 @dataclass(frozen=True)
 class SampleBlock:
-    """Immutable regular samples plus their static logical-row schema."""
+    """Immutable regular samples plus their static logical-row schema.
+
+    A JAX pytree: ``values`` and the time fields are its leaves, ``schema``
+    is static.
+    """
 
     values: object
     schema: RecordingSchema
@@ -283,7 +354,26 @@ def concat_sample_blocks(blocks):
 
 @dataclass(frozen=True)
 class EventSeries:
-    """Immutable sparse event rows."""
+    """Immutable sparse event rows.
+
+    Attributes
+    ----------
+    time : brainunit.Quantity
+        ``(n_events,)`` event times.
+    source_id : numpy.ndarray
+        ``(n_events,)`` int64 source rows; for a Cell output they index the
+        row-aligned arrays in ``metadata``.
+    count : numpy.ndarray
+        ``(n_events,)`` int64 event counts.
+    metadata : Mapping[str, object]
+        Read-only port facts, such as ``"port"`` and the row-aligned
+        ``"cv_id"``.
+
+    Notes
+    -----
+    A JAX pytree: ``time``, ``source_id`` and ``count`` are its leaves,
+    ``metadata`` is static.
+    """
 
     time: object
     source_id: np.ndarray
@@ -305,6 +395,10 @@ class EventSeries:
             "metadata",
             MappingProxyType({key: _freeze_array(value) for key, value in self.metadata.items()}),
         )
+
+
+register_result_pytree(SampleBlock, ("values", "segment_start", "segment_stop", "first_time"), static=("schema",))
+register_result_pytree(EventSeries, ("time", "source_id", "count"), static=("metadata",))
 
 
 def compile_recording(cell, spec: RecordingSpec, *, dt):
@@ -378,9 +472,9 @@ def _observable_rows_and_sampler(cell, spec: RecordingSpec):
         return rows, sample
 
     if isinstance(observable, _CellStateObservable):
-        if observable.field != "v":
+        if observable.field != "V":
             raise KeyError(f"Cell state {observable.field!r} is not recordable in v1.")
-        rows = tuple(_spatial_row(cell, pair, field="v") for pair in spec.scope.pairs)
+        rows = tuple(_spatial_row(cell, pair, field="V") for pair in spec.scope.pairs)
 
         if getattr(cell, "_is_lumped", False):
             # A lumped Cell's V has no CV axis: every pair is (member, the one CV).

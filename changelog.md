@@ -97,6 +97,15 @@
   whole population. On linear models the result is unchanged; on nonlinear
   ones it changes: a Hodgkin-Huxley neuron (10 ms, dt = 0.1 ms, float64)
   differs from the old step by 2.6e-2 relative (1.9 mV).
+- **The membrane voltage is recorded as `"V"`; the name `"v"` is removed**
+  (CELL-26). `braincell.observe.state("V")` records the membrane voltage,
+  named as `cell.V`, `V_init` and `V_th`, and its `RecordingRow.field` is now
+  `"V"` (it was `"v"`). `observe.state("v")` raises `KeyError` when it is
+  written, with a message naming `"V"`; so does `Cell.record(name, "v")`.
+  There is no alias. Migrate by replacing `observe.state("v")` with
+  `observe.state("V")` (or `cell.record(name, "V")`) and any check of
+  `row.field == "v"` with `"V"`; recording names are labels and need no
+  change. The legacy `StateProbe(field="v")` is unchanged.
 
 ### New Features
 
@@ -532,7 +541,7 @@
   cell.paint(bc.filter.AllRegion(), bc.mech.Ion("SodiumFixed", E=50 * u.mV),
              bc.mech.Channel("Na_HH1952", g_max=120 * u.mS / u.cm**2), ...)
   cell.place(bc.mech.CurrentClamp(durations=50 * u.ms, amplitudes=0.1 * u.nA))  # the one site
-  cell.record("v", bc.observe.state("v"))
+  cell.record("V", bc.observe.state("V"))
   result = cell.run(dt=0.025 * u.ms, duration=50 * u.ms)  # cell.V.value.shape == (100,)
   ```
 
@@ -643,6 +652,26 @@
   `RandomSamples` (default `None`). Defaults and explicit seeds are
   unchanged: `Network()` keeps the root 0, and every explicit seed gives the
   same results as before.
+
+- **`RunResult.spikes`, `Cell.record(name, "V")`, and results as JAX
+  pytrees** (CELL-26). A standalone `Cell.run` now returns the Cell's
+  `"spike"` port as `RunResult.spikes`, an `EventSeries` in the format of
+  `NetworkResult.events[population]["spike"]` for the same Cell in a
+  Network: an event at the start `t_k` of each step that takes the root
+  midpoint CV from below `V_th` to `V_th` or above, `source_id` the
+  population member (rows of `(batch,) + pop_size` in C order, with
+  `metadata["batch_index"]` and `metadata["population_index"]` under a batch
+  axis) and `metadata["cv_id"]` its CV. A reduction model reports its event
+  values as `count`. `RunResult.concat` joins the spikes of its parts; a
+  traced run (`jax.jit`, `jax.grad`) has `spikes=None`, since the number of
+  events depends on the data. `Cell.record(name, "V")` is short for
+  `Cell.record(name, observe.state("V"))`. A state name other than `"V"`
+  raises `KeyError`, and an observable that is neither `"V"` nor an
+  `observe.*` declaration raises `TypeError`, both when the recording is
+  declared instead of at the first run. `RunResult`,
+  `NetworkResult`, `SampleBlock` and `EventSeries` are JAX pytrees, so
+  `jax.block_until_ready(result)` waits for their arrays and a jitted
+  function can return a result.
 
 ### Changes & Improvements
 

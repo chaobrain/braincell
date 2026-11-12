@@ -17,6 +17,8 @@
 
 import re
 import unittest
+from dataclasses import dataclass
+from types import MappingProxyType
 
 import brainunit as u
 import jax
@@ -27,6 +29,7 @@ from braincell._misc import (
     Container,
     normalize_loop_outputs,
     normalize_param,
+    register_result_pytree,
     require_name,
     scalar_decimal,
     validate_time_quantity,
@@ -292,6 +295,65 @@ class NormalizeLoopOutputsTest(unittest.TestCase):
             normalize_loop_outputs(("a",), count=2, prefix="Cell.run(...)", noun="trace arrays")
         with self.assertRaisesRegex(TypeError, r"Network\.run\(\.\.\.\) expected 2 scan outputs, got str"):
             normalize_loop_outputs("a", count=2, prefix="Network.run(...)", noun="scan outputs")
+
+
+@dataclass(frozen=True)
+class _Result:
+    values: object
+    groups: object
+    period: object
+
+
+register_result_pytree(_Result, ("values", "groups"), static=("period",))
+
+
+class RegisterResultPytreeTest(unittest.TestCase):
+    """CELL-26: result objects are pytrees with ordered mappings and a static part compared by value."""
+
+    @staticmethod
+    def _result(period=0.1 * u.ms):
+        groups = MappingProxyType({"z": MappingProxyType({"b": np.ones(2), "a": np.zeros(3)}), "y": jnp.arange(4)})
+        return _Result(values=np.arange(5.0) * u.mV, groups=groups, period=period)
+
+    def test_leaves_follow_the_insertion_order_and_rebuild_read_only_mappings(self) -> None:
+        result = self._result()
+        leaves, treedef = jax.tree.flatten(result)
+        self.assertEqual([np.shape(leaf) for leaf in leaves], [(5,), (2,), (3,), (4,)])
+        rebuilt = jax.tree.unflatten(treedef, leaves)
+        self.assertEqual((tuple(rebuilt.groups), tuple(rebuilt.groups["z"])), (("z", "y"), ("b", "a")))
+        self.assertIsInstance(rebuilt.groups["z"], MappingProxyType)
+        self.assertIs(rebuilt.period, result.period)
+        np.testing.assert_array_equal(rebuilt.values.to_decimal(u.mV), np.arange(5.0))
+
+    def test_an_unhashable_static_part_compares_by_value(self) -> None:
+        # Quantities do not hash; equal ones must still give equal, equally hashed structures.
+        self.assertEqual(jax.tree.structure(self._result()), jax.tree.structure(self._result()))
+        self.assertEqual(hash(jax.tree.structure(self._result())), hash(jax.tree.structure(self._result())))
+        self.assertNotEqual(jax.tree.structure(self._result()), jax.tree.structure(self._result(0.2 * u.ms)))
+
+    def test_static_wrapper_hashes_equal_values_alike(self) -> None:
+        from braincell._misc import _Static
+
+        metadata = {"port": "spike", "cv_id": np.asarray([0, 1])}
+        self.assertEqual(_Static(metadata), _Static(dict(metadata, cv_id=np.asarray([0, 1]))))
+        self.assertEqual(hash(_Static(metadata)), hash(_Static(dict(metadata))))
+        self.assertNotEqual(_Static(metadata), _Static(dict(metadata, cv_id=np.asarray([0, 2]))))
+        self.assertEqual(hash(_Static(0.1 * u.ms)), hash(_Static(0.1 * u.ms)))
+        self.assertEqual(hash(_Static("spike")), hash("spike"))
+        self.assertNotEqual(_Static(1), _Static(1.0))
+        self.assertNotEqual(_Static("spike"), "spike")
+
+    def test_jit_traces_once_for_equal_static_parts(self) -> None:
+        traces = []
+
+        @jax.jit
+        def total(result):
+            traces.append(None)
+            return result.values.mantissa.sum() + result.groups["y"].sum()
+
+        self.assertEqual(float(total(self._result())), 16.0)
+        self.assertEqual(float(total(self._result())), 16.0)
+        self.assertEqual(len(traces), 1)
 
 
 if __name__ == "__main__":

@@ -908,7 +908,7 @@ class LumpedEngineTest(unittest.TestCase):
                 braincell.mech.Channel("Na_HH1952", g_max=120.0 * u.mS / u.cm**2),
                 braincell.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
             )
-            cell.record("v", braincell.observe.state("v"))
+            cell.record("v", braincell.observe.state("V"))
             cell.init_state()
             values = cell.run(dt=0.025 * u.ms, duration=0.1 * u.ms).samples["v"].values
         self.assertIsInstance(cell._lumped_runtime, PointNeuron)

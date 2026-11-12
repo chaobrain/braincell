@@ -23,7 +23,12 @@ from types import MappingProxyType
 import brainunit as u
 import numpy as np
 
-from braincell._misc import concat_values as _concat_values, freeze_array, same_time_quantity as _same_time
+from braincell._misc import (
+    concat_values as _concat_values,
+    freeze_array,
+    register_result_pytree,
+    same_time_quantity as _same_time,
+)
 
 
 class Population:
@@ -300,6 +305,11 @@ class NetworkResult:
         Exclusive end of the segment.
     dt : brainunit.Quantity or None
         Fixed step the segment was run with. :meth:`concat` requires it.
+
+    Notes
+    -----
+    A result is a JAX pytree, so ``jax.block_until_ready(result)`` waits for
+    its arrays.
     """
 
     time: object
@@ -389,6 +399,9 @@ class NetworkResult:
             stop_time=parts[-1].stop_time,
             dt=first.dt,
         )
+
+
+register_result_pytree(NetworkResult, ("time", "traces", "samples", "events", "start_time", "stop_time", "dt"))
 
 
 def _nested_mapping_proxy(value):

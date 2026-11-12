@@ -291,7 +291,7 @@ class DynamicShellIonContractTests:
         cell = bc.Cell.point(1, length=15.0 * u.um, radius=7.5 * u.um, V_init=-65.0 * u.mV)
         cell.paint(bc.mech.Ion(self.ION_CLASS.__name__, name="ion"))
         cell.paint(bc.mech.Channel(self.LEAK))
-        cell.record("v", bc.observe.state("v"))
+        cell.record("v", bc.observe.state("V"))
         result = cell.run(dt=0.025 * u.ms, duration=10.0 * u.ms)
         self.assertTrue(np.all(np.isfinite(np.asarray(result.samples["v"].values.to_decimal(u.mV)))))
 

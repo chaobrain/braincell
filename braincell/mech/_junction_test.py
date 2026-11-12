@@ -52,7 +52,7 @@ class JunctionTest(unittest.TestCase):
                     cell = braincell.Cell(braincell.Morphology.from_soma(), cv_policy=policy, V_init=-65.0 * u.mV)
                     cell.paint(AllRegion(), braincell.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
                     cell.place(RootLocation(0.5), junction)
-                    cell.record("v", braincell.observe.state("v"))
+                    cell.record("v", braincell.observe.state("V"))
                     cell.init_state()
                     v = cell.run(dt=0.025 * u.ms, duration=0.1 * u.ms).samples["v"].values.to_decimal(u.mV)
                     np.testing.assert_allclose(np.asarray(v), -65.0, atol=1e-5)

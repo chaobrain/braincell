@@ -133,7 +133,7 @@ class ReplaySolverTest(unittest.TestCase):
             solver=_clamp.voltage_replay_solver(voltages),
             ion_channel_update_order=order,
         )
-        cell.record("v", braincell.observe.state("v"))
+        cell.record("v", braincell.observe.state("V"))
         result = cell.run(dt=DT_MS * u.ms, duration=(len(voltages) - 1) * DT_MS * u.ms)
         # The recording samples V(t_n) for n = 0 .. N - 1; the final V_N is the state after the run.
         recorded = np.asarray(result.samples["v"].values.to_decimal(u.mV)).reshape(-1)

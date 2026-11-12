@@ -149,7 +149,7 @@ def _exp_syn_cell():
     cell = Cell(Morphology.from_root(branch, name="soma"), cv_policy=CVPerBranch(1), V_init=-65.0 * u.mV)
     cell.paint(bc.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
     cell.place(RootLocation(0.5), bc.mech.Synapse("ExpSyn", name="syn", tau=2.0 * u.ms, e=0.0 * u.mV))
-    cell.record("v", bc.observe.state("v"))
+    cell.record("v", bc.observe.state("V"))
     return cell
 
 

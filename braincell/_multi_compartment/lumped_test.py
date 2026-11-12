@@ -112,7 +112,7 @@ def _point_cell(*, hh=True, clamp=False, solver=None, pop_size=N):
     cell.paint(AllRegion(), *_mechanisms(hh))
     if clamp:
         cell.place(_clamp())
-    cell.record("v", bc.observe.state("v"))
+    cell.record("v", bc.observe.state("V"))
     return cell
 
 
@@ -292,7 +292,7 @@ class LumpedShapeLifecycleTest(unittest.TestCase):
         def run(g_max):
             cell = bc.Cell.point(N, V_init=-65.0 * u.mV)
             cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=g_max, E=-54.3 * u.mV))
-            cell.record("v", bc.observe.state("v"))
+            cell.record("v", bc.observe.state("V"))
             cell.init_state()
             return cell.run(dt=DT, duration=2.0 * u.ms).samples["v"].values.to_decimal(u.mV)
 
@@ -308,7 +308,7 @@ class LumpedShapeLifecycleTest(unittest.TestCase):
                 bc.mech.Ion("SodiumFixed", name="na"),
                 bc.mech.Channel("IL", name=name, g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
             )
-            cell.record("v", bc.observe.state("v"))
+            cell.record("v", bc.observe.state("V"))
             cell.init_state()
             traces.append(cell.run(dt=DT, duration=2.0 * u.ms).samples["v"].values.to_decimal(u.mV))
         np.testing.assert_array_equal(traces[0], traces[1])
@@ -325,7 +325,7 @@ class LumpedShapeLifecycleTest(unittest.TestCase):
             )
             cell.paint(AllRegion(), bc.mech.Ion("CalciumDetailed", name="ca", **declared))
             cell.paint(AllRegion(), bc.mech.Channel("CaT_HM1992", name="cat"))
-            cell.record("v", bc.observe.state("v"))
+            cell.record("v", bc.observe.state("V"))
             cell.init_state()
             ion = cell._lumped_runtime.ion_channels["ca"]
             initial_shape = ion.Ci.value.shape
@@ -487,7 +487,7 @@ def _stiff_gate_cell(*channels, solver=None, pop_size=1, ion=("CalciumFixed", "c
     cell.paint(AllRegion(), *channels)
     if np.ndim(pop_size) == 0:
         # Recording needs a one-dimensional population.
-        cell.record("v", bc.observe.state("v"))
+        cell.record("v", bc.observe.state("V"))
     return cell
 
 
@@ -647,11 +647,11 @@ class LumpedSiteTest(unittest.TestCase):
         explicit = bc.Cell.point(N, length=LENGTH, radius=RADIUS, V_init=-65.0 * u.mV)
         explicit.paint(AllRegion(), *_mechanisms(True))
         explicit.place(RootLocation(0.5), _clamp())
-        explicit.record("v", bc.observe.state("v"))
+        explicit.record("v", bc.observe.state("V"))
         midpoints = bc.Cell.point(N, length=LENGTH, radius=RADIUS, V_init=-65.0 * u.mV)
         midpoints.paint(AllRegion(), *_mechanisms(True))
         midpoints.place(midpoints.cv_midpoints, _clamp())
-        midpoints.record("v", bc.observe.state("v"))
+        midpoints.record("v", bc.observe.state("V"))
         traces = []
         for cell in (implicit, explicit, midpoints):
             cell.init_state()
@@ -670,7 +670,7 @@ class LumpedSiteTest(unittest.TestCase):
                 )
                 self.paint(AllRegion(), *_mechanisms(True))
                 self.place(_clamp())
-                self.record("v", bc.observe.state("v"))
+                self.record("v", bc.observe.state("V"))
 
         subclass = HH(N)
         reference = _point_cell(clamp=True)
@@ -811,7 +811,7 @@ class LumpedCounterexampleTest(unittest.TestCase):
         for g_max in (0.3 * u.mS / u.cm**2, braintools.init.Constant(0.3 * u.mS / u.cm**2)):
             cell = bc.Cell.point(N, V_init=-60.0 * u.mV)
             cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=g_max, E=-54.3 * u.mV))
-            cell.record("v", bc.observe.state("v"))
+            cell.record("v", bc.observe.state("V"))
             cell.init_state()
             traces.append(cell.run(dt=DT, duration=1.0 * u.ms).samples["v"].values.to_decimal(u.mV))
         np.testing.assert_array_equal(traces[0], traces[1])

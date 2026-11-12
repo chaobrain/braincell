@@ -2724,7 +2724,7 @@ def _run_briefly(cell: Cell):
 def _record_clamped_voltage(cell: Cell) -> Cell:
     """Drive the soma so the recorded voltage depends on the whole tree's geometry."""
     cell.place(at("soma", 0.5), CurrentClamp(delay=0.0 * u.ms, durations=1.0 * u.ms, amplitudes=0.5 * u.nA))
-    cell.record("v", braincell.observe.state("v"))
+    cell.record("v", braincell.observe.state("V"))
     return cell
 
 

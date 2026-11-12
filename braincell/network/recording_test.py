@@ -16,6 +16,7 @@
 import unittest
 
 import brainunit as u
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -23,6 +24,7 @@ import braincell
 from braincell._multi_compartment.selection_test import _cell
 from braincell.filter import BranchSlice, at, branch_in
 from braincell.morph._testing import make_tree_s, make_tree_t, make_tree_u
+from braincell.network.recording import EventSeries, SampleBlock
 
 
 class RecordingTest(unittest.TestCase):
@@ -88,7 +90,7 @@ class RecordingTest(unittest.TestCase):
             type="soma",
         )
         cell = braincell.Cell(braincell.Morphology.from_root(soma, name="soma"))
-        cell.soma.record("v", braincell.observe.state("v"))
+        cell.soma.record("v", braincell.observe.state("V"))
 
         result = cell.run(dt=0.05 * u.ms, duration=0.1 * u.ms)
 
@@ -97,7 +99,7 @@ class RecordingTest(unittest.TestCase):
     def test_state_recording_uses_global_half_open_schedule(self) -> None:
         cell = _cell(2)
         before_placements = len(cell.point_placements)
-        cell[0].soma.record("soma_v", braincell.observe.state("v"), period=0.1 * u.ms)
+        cell[0].soma.record("soma_v", braincell.observe.state("V"), period=0.1 * u.ms)
         self.assertEqual(len(cell.point_placements), before_placements)
 
         first = cell.run(dt=0.05 * u.ms, duration=0.2 * u.ms)
@@ -111,8 +113,8 @@ class RecordingTest(unittest.TestCase):
 
     def test_recordings_support_different_fixed_sampling_periods(self) -> None:
         cell = _cell(1)
-        cell.soma.record("fast", braincell.observe.state("v"), period=0.1 * u.ms)
-        cell.soma.record("slow", braincell.observe.state("v"), period=0.2 * u.ms)
+        cell.soma.record("fast", braincell.observe.state("V"), period=0.1 * u.ms)
+        cell.soma.record("slow", braincell.observe.state("V"), period=0.2 * u.ms)
 
         first = cell.run(dt=0.05 * u.ms, duration=0.4 * u.ms)
         second = cell.run(dt=0.05 * u.ms, duration=0.4 * u.ms)
@@ -124,7 +126,7 @@ class RecordingTest(unittest.TestCase):
 
     def test_unaligned_eager_recording_warns_and_keeps_variable_length_results(self) -> None:
         cell = _cell(1)
-        cell.soma.record("v", braincell.observe.state("v"), period=0.1 * u.ms)
+        cell.soma.record("v", braincell.observe.state("V"), period=0.1 * u.ms)
 
         with self.assertWarnsRegex(RuntimeWarning, "unsupported under jax.jit/grad"):
             first = cell.run(dt=0.05 * u.ms, duration=0.15 * u.ms)
@@ -140,7 +142,7 @@ class RecordingTest(unittest.TestCase):
         cell = _cell(1)
         cell.soma.record(
             "v",
-            braincell.observe.state("v"),
+            braincell.observe.state("V"),
             period=0.1 * u.ms,
             start=0.1 * u.ms,
         )
@@ -151,7 +153,7 @@ class RecordingTest(unittest.TestCase):
 
     def test_split_result_concatenates_to_single_run(self) -> None:
         split = _cell(1)
-        split.soma.record("v", braincell.observe.state("v"))
+        split.soma.record("v", braincell.observe.state("V"))
         parts = (
             split.run(dt=0.05 * u.ms, duration=0.1 * u.ms),
             split.run(dt=0.05 * u.ms, duration=0.1 * u.ms),
@@ -159,7 +161,7 @@ class RecordingTest(unittest.TestCase):
         joined = braincell.RunResult.concat(parts)
 
         full = _cell(1)
-        full.soma.record("v", braincell.observe.state("v"))
+        full.soma.record("v", braincell.observe.state("V"))
         one = full.run(dt=0.05 * u.ms, duration=0.2 * u.ms)
 
         np.testing.assert_allclose(joined.time.to_decimal(u.ms), one.time.to_decimal(u.ms))
@@ -173,11 +175,11 @@ class RecordingTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "mutually exclusive"):
             cell.record(
                 "bad",
-                braincell.observe.state("v"),
+                braincell.observe.state("V"),
                 period=0.1 * u.ms,
                 frequency=10.0 * u.kHz,
             )
-        cell.record("v", braincell.observe.state("v"))
+        cell.record("v", braincell.observe.state("V"))
         with self.assertRaisesRegex(ValueError, "integer multiple"):
             cell.run(dt=0.05 * u.ms, duration=0.12 * u.ms)
         result = cell.run(dt=0.05 * u.ms, duration=0.1 * u.ms)
@@ -275,7 +277,7 @@ class RecordingFollowsItsDeclarationTest(unittest.TestCase):
 
     def test_a_region_recording_follows_a_new_cv_policy(self) -> None:
         cell = braincell.Cell(make_tree_s())
-        cell.on(branch_in("type", "axon")).record("av", braincell.observe.state("v"))
+        cell.on(branch_in("type", "axon")).record("av", braincell.observe.state("V"))
         cell.cv_policy = braincell.MaxCVLen(40.0 * u.um)
 
         self.assertEqual(_rows(_run(cell), "av"), [(2, 4)])
@@ -283,7 +285,7 @@ class RecordingFollowsItsDeclarationTest(unittest.TestCase):
     def test_a_region_recording_includes_a_branch_appended_later(self) -> None:
         morpho = make_tree_s()
         cell = braincell.Cell(morpho)
-        cell.on(branch_in("type", "basal_dendrite")).record("dv", braincell.observe.state("v"))
+        cell.on(branch_in("type", "basal_dendrite")).record("dv", braincell.observe.state("V"))
         morpho.soma.dend2 = _basal()
 
         self.assertEqual(_rows(_run(cell), "dv"), [(1, 1), (3, 3)])
@@ -293,7 +295,7 @@ class RecordingFollowsItsDeclarationTest(unittest.TestCase):
         # CV (CVPerBranch) but changes which CVs the type selection names.
         morpho = make_tree_u()
         cell = braincell.Cell(morpho)
-        cell.apical_dendrite.record("ap", braincell.observe.state("v"))
+        cell.apical_dendrite.record("ap", braincell.observe.state("V"))
         morpho.replace(
             "dend",
             braincell.Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="apical_dendrite"),
@@ -304,7 +306,7 @@ class RecordingFollowsItsDeclarationTest(unittest.TestCase):
     def test_population_and_location_selections_are_kept(self) -> None:
         morpho = make_tree_s()
         cell = braincell.Cell(morpho, pop_size=(3,))
-        cell[[2, 0]].loc(at("axon", 0.5)).record("ax", braincell.observe.state("v"))
+        cell[[2, 0]].loc(at("axon", 0.5)).record("ax", braincell.observe.state("V"))
         cell.cv_policy = braincell.MaxCVLen(40.0 * u.um)
 
         rows = _run(cell).samples["ax"].schema.rows
@@ -312,7 +314,7 @@ class RecordingFollowsItsDeclarationTest(unittest.TestCase):
 
     def test_an_unchanged_grid_keeps_the_declared_selection(self) -> None:
         cell = braincell.Cell(make_tree_s())
-        spec = cell.cv[1].record("c1", braincell.observe.state("v"))
+        spec = cell.cv[1].record("c1", braincell.observe.state("V"))
         cell.paint(braincell.filter.AllRegion(), braincell.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2))
 
         self.assertEqual(_rows(_run(cell), "c1"), [(1, 1)])
@@ -320,7 +322,7 @@ class RecordingFollowsItsDeclarationTest(unittest.TestCase):
 
     def test_a_cv_recording_raises_on_a_new_grid(self) -> None:
         cell = braincell.Cell(_soma_dend_tree())
-        cell.cv[1].record("c1", braincell.observe.state("v"))
+        cell.cv[1].record("c1", braincell.observe.state("V"))
         cell.cv_policy = braincell.MaxCVLen(20.0 * u.um)
         self.assertEqual(cell.n_cv, 6)
 
@@ -339,7 +341,7 @@ class RecordingFollowsItsDeclarationTest(unittest.TestCase):
         # more CVs and d1's CV ids move.
         morpho = make_tree_t()
         cell = braincell.Cell(morpho, cv_policy=braincell.MaxCVLen(40.0 * u.um))
-        cell.branch["d1"].record("d1v", braincell.observe.state("v"))
+        cell.branch["d1"].record("d1v", braincell.observe.state("V"))
         self.assertEqual([cv.id for cv in cell.cvs if cv.branch_id == 2], [4, 5, 6])
 
         morpho.scale(2)
@@ -351,7 +353,7 @@ class RecordingFollowsItsDeclarationTest(unittest.TestCase):
     def test_a_cv_recording_is_kept_when_an_edit_keeps_the_grid(self) -> None:
         morpho = make_tree_u()
         cell = braincell.Cell(morpho)
-        cell.cv[1].record("c1", braincell.observe.state("v"))
+        cell.cv[1].record("c1", braincell.observe.state("V"))
         morpho.replace(
             "dend",
             braincell.Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="apical_dendrite"),
@@ -362,7 +364,7 @@ class RecordingFollowsItsDeclarationTest(unittest.TestCase):
     def test_an_expression_on_a_removed_branch_names_the_recording(self) -> None:
         morpho = make_tree_u()
         cell = braincell.Cell(morpho)
-        cell.loc(at("dend", 0.5)).record("dv", braincell.observe.state("v"))
+        cell.loc(at("dend", 0.5)).record("dv", braincell.observe.state("V"))
         morpho.remove("dend")
 
         with self.assertRaisesRegex(KeyError, r"Recording 'dv' selects branch 'dend'.*does not have"):
@@ -374,7 +376,7 @@ class RecordingFollowsItsDeclarationTest(unittest.TestCase):
     def test_a_mask_recording_raises_once_a_removal_moves_its_indices(self) -> None:
         morpho = make_tree_u()
         cell = braincell.Cell(morpho)
-        cell.loc(at("axon", 0.5).evaluate(morpho)).record("ax", braincell.observe.state("v"))
+        cell.loc(at("axon", 0.5).evaluate(morpho)).record("ax", braincell.observe.state("V"))
         morpho.soma.extra = _basal()
         self.assertEqual(_rows(_run(cell), "ax"), [(2, 2)])
 
@@ -396,8 +398,8 @@ class RecordingByIndexTest(unittest.TestCase):
     def test_a_removal_before_init_raises_at_init_state(self) -> None:
         morpho = make_tree_u()
         cell = braincell.Cell(morpho)
-        cell.on(BranchSlice(2, 0.0, 1.0)).record("ax", braincell.observe.state("v"))
-        cell.loc(at(2, 0.5)).record("ax_mid", braincell.observe.state("v"))
+        cell.on(BranchSlice(2, 0.0, 1.0)).record("ax", braincell.observe.state("V"))
+        cell.loc(at(2, 0.5)).record("ax_mid", braincell.observe.state("V"))
 
         morpho.remove("dend")
 
@@ -407,13 +409,13 @@ class RecordingByIndexTest(unittest.TestCase):
         self.assertIs(cell.morpho, morpho)
         # The recovery the message names: record on a new Cell, by name.
         fresh = braincell.Cell(morpho)
-        fresh.branch["axon"].record("ax", braincell.observe.state("v"))
+        fresh.branch["axon"].record("ax", braincell.observe.state("V"))
         self.assertEqual(_rows(_run(fresh), "ax"), [(1, 1)])
 
     def test_a_removal_after_init_raises_after_reset(self) -> None:
         morpho = make_tree_u()
         cell = braincell.Cell(morpho)
-        cell.branch[2].record("ax", braincell.observe.state("v"))
+        cell.branch[2].record("ax", braincell.observe.state("V"))
         self.assertEqual(_rows(_run(cell), "ax"), [(2, 2)])
 
         morpho.remove("dend")
@@ -429,7 +431,7 @@ class RecordingByIndexTest(unittest.TestCase):
     def test_an_index_recording_survives_an_append_and_a_new_policy(self) -> None:
         morpho = make_tree_u()
         cell = braincell.Cell(morpho)
-        cell.on(BranchSlice(2, 0.0, 1.0)).record("ax", braincell.observe.state("v"))
+        cell.on(BranchSlice(2, 0.0, 1.0)).record("ax", braincell.observe.state("V"))
 
         morpho.soma.extra = _basal()
         cell.cv_policy = braincell.CVPerBranch(2)
@@ -439,7 +441,7 @@ class RecordingByIndexTest(unittest.TestCase):
     def test_network_init_state_initializes_no_cell(self) -> None:
         morpho = make_tree_u()
         stale = braincell.Cell(morpho)
-        stale.loc(at(2, 0.5)).record("ax", braincell.observe.state("v"))
+        stale.loc(at(2, 0.5)).record("ax", braincell.observe.state("V"))
         other = braincell.Cell(make_tree_u())
         network = braincell.Network("n")
         network.add_population("a", other)
@@ -451,6 +453,134 @@ class RecordingByIndexTest(unittest.TestCase):
             network.init_state()
         self.assertFalse(other._initialized)
         self.assertFalse(stale._initialized)
+
+
+def _leaky(kind: str) -> braincell.Cell:
+    """Three leaky members, lumped or on the two-branch ``_cell`` tree, away from rest."""
+    if kind == "lumped":
+        cell = braincell.Cell.point(3, V_init=-65.0 * u.mV)
+    else:
+        cell = _cell(3)
+        cell.V_init = -65.0 * u.mV
+    cell.paint(braincell.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV))
+    return cell
+
+
+class VoltageNameTest(unittest.TestCase):
+    """CELL-26: ``"V"``, as in ``cell.V``, is the one name of the membrane voltage in recordings."""
+
+    def test_the_shorthand_records_what_observe_state_records(self) -> None:
+        for kind in ("lumped", "cable"):
+            blocks = {}
+            for label, observable in (("state('V')", braincell.observe.state("V")), ("'V'", "V")):
+                cell = _leaky(kind)
+                cell.record("V", observable)
+                blocks[label] = cell.run(dt=0.05 * u.ms, duration=1.0 * u.ms).samples["V"]
+            reference, shorthand = blocks["state('V')"], blocks["'V'"]
+            with self.subTest(kind=kind):
+                self.assertEqual(reference.values.shape, (20, 3 if kind == "lumped" else 12))
+                values = reference.values.to_decimal(u.mV)
+                self.assertFalse(np.allclose(values[0], values[-1]))
+                self.assertEqual({row.field for row in reference.schema.rows}, {"V"})
+                self.assertEqual(shorthand.schema, reference.schema)
+                np.testing.assert_array_equal(shorthand.values.to_decimal(u.mV), values)
+
+    def test_views_take_the_shorthand(self) -> None:
+        cell = _leaky("cable")
+        cell.soma.record("soma", "V")
+        cell[0].record("first", "V")
+        cell.soma.record("soma_ref", braincell.observe.state("V"))
+        cell[0].record("first_ref", braincell.observe.state("V"))
+        result = cell.run(dt=0.05 * u.ms, duration=0.2 * u.ms)
+        self.assertEqual(_rows(result, "soma"), _rows(result, "soma_ref"))
+        self.assertEqual(_rows(result, "first"), _rows(result, "first_ref"))
+        self.assertEqual(result.samples["soma"].schema.size, 3)
+        self.assertEqual(result.samples["first"].schema.size, 4)
+
+    def test_the_spec_holds_the_observe_declaration(self) -> None:
+        cell = _leaky("lumped")
+        spec = cell.record("V", "V")
+        self.assertEqual(spec.observable, braincell.observe.state("V"))
+        self.assertEqual(cell.recordings["V"].observable, braincell.observe.state("V"))
+        self.assertEqual(braincell.observe.state("V").field, "V")
+
+    def test_the_removed_name_v_fails_with_the_new_name(self) -> None:
+        cell = _leaky("lumped")
+        removed = r"Cell state 'v' was removed in 0\.3; record the membrane voltage as 'V', as in cell\.V"
+        with self.assertRaisesRegex(KeyError, removed):
+            braincell.observe.state("v")
+        with self.assertRaisesRegex(KeyError, removed):
+            cell.record("v", "v")
+        self.assertEqual(dict(cell.recordings), {})
+
+    def test_other_names_fail_where_they_are_written(self) -> None:
+        cell = _leaky("lumped")
+        message = r"Cell state 'voltage' is not recordable; record the membrane voltage as 'V'"
+        with self.assertRaisesRegex(KeyError, message):
+            braincell.observe.state("voltage")
+        with self.assertRaisesRegex(KeyError, "Cell state 'x'"):
+            braincell.observe.state("x")
+        with self.assertRaisesRegex(KeyError, message):
+            cell.record("a", "voltage")
+        with self.assertRaisesRegex(TypeError, r"'V' or a braincell.observe declaration, got int"):
+            cell.record("a", 3)
+        self.assertEqual(dict(cell.recordings), {})
+        # The name stays free for a valid declaration.
+        cell.record("a", "V")
+        self.assertEqual(tuple(cell.recordings), ("a",))
+
+
+class ResultPytreeTest(unittest.TestCase):
+    """CELL-26: SampleBlock and EventSeries are JAX pytrees with a static schema or metadata."""
+
+    def _block(self) -> SampleBlock:
+        cell = _leaky("lumped")
+        cell.record("v", "V")
+        return cell.run(dt=0.05 * u.ms, duration=0.5 * u.ms).samples["v"]
+
+    @staticmethod
+    def _events(cv_id=(0, 0)) -> EventSeries:
+        return EventSeries(
+            time=np.asarray([0.1, 0.3]) * u.ms,
+            source_id=np.asarray([1, 0]),
+            count=np.asarray([1, 2]),
+            metadata={"port": "spike", "cv_id": np.asarray(cv_id)},
+        )
+
+    def test_a_sample_block_round_trips(self) -> None:
+        block = self._block()
+        leaves, treedef = jax.tree.flatten(block)
+        self.assertIs(leaves[0], u.get_mantissa(block.values))
+        rebuilt = jax.tree.unflatten(treedef, leaves)
+        self.assertIsInstance(rebuilt, SampleBlock)
+        self.assertIs(rebuilt.schema, block.schema)
+        np.testing.assert_array_equal(rebuilt.time.to_decimal(u.ms), block.time.to_decimal(u.ms))
+        self.assertIs(jax.block_until_ready(block), block)
+        doubled = jax.tree.map(lambda x: 2 * x, block)
+        np.testing.assert_allclose(doubled.values.to_decimal(u.mV), 2 * block.values.to_decimal(u.mV))
+
+    def test_an_event_series_round_trips(self) -> None:
+        events = self._events()
+        leaves, treedef = jax.tree.flatten(events)
+        self.assertEqual([np.shape(leaf) for leaf in leaves], [(2,)] * 3)
+        rebuilt = jax.tree.unflatten(treedef, leaves)
+        self.assertIsInstance(rebuilt, EventSeries)
+        np.testing.assert_array_equal(rebuilt.count, [1, 2])
+        self.assertEqual(rebuilt.metadata["port"], "spike")
+        with self.assertRaises(TypeError):
+            rebuilt.metadata["port"] = "other"
+
+    def test_equal_static_parts_give_equal_tree_structures(self) -> None:
+        # Equal structures let jit reuse a trace for a result argument; the
+        # schema holds Quantities and the metadata arrays, so both compare by value.
+        self.assertEqual(jax.tree.structure(self._block()), jax.tree.structure(self._block()))
+        self.assertEqual(hash(jax.tree.structure(self._events())), hash(jax.tree.structure(self._events())))
+        self.assertEqual(jax.tree.structure(self._events()), jax.tree.structure(self._events()))
+        self.assertNotEqual(jax.tree.structure(self._events()), jax.tree.structure(self._events(cv_id=(0, 1))))
+        cell = _leaky("lumped")
+        cell.record("w", "V")
+        other = cell.run(dt=0.05 * u.ms, duration=0.5 * u.ms).samples["w"]
+        self.assertNotEqual(jax.tree.structure(self._block()), jax.tree.structure(other))
 
 
 if __name__ == "__main__":

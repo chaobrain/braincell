@@ -165,13 +165,11 @@ class Network:
             lines.append("    <none>")
 
         lines.append("  connections:")
-        if len(self.connections):
-            for target in self.connections.target_names:
-                view = self.connections[target]
-                lines.append(f"    {target}: connections={len(view.connect_names)}, rows={len(view)}")
-                for name in view.connect_names:
-                    lines.append(f"      {self.connections.describe(target, name)}")
-        else:
+        summaries = self.connections._summaries()
+        for target, rows, calls in summaries:
+            lines.append(f"    {target}: connections={len(calls)}, rows={rows}")
+            lines.extend(f"      {line}" for line in calls)
+        if not summaries:
             lines.append("    <none>")
         return "\n".join(lines)
 

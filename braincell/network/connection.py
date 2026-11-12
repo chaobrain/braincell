@@ -272,6 +272,13 @@ class _ConnectionStore:
     def call(self, connect_id: int) -> _ConnectionCall:
         return self._call_by_id[int(connect_id)]
 
+    def call_names(self) -> np.ndarray:
+        """Each call's name at the position of its connect id."""
+        names = np.empty(self._next_connect_id, dtype=object)
+        for call in self._calls:
+            names[call.id] = call.name
+        return names
+
     def active_call_ids(self, ids) -> tuple[int, ...]:
         rows = self.rows(self.active_ids(ids))
         return tuple(dict.fromkeys(int(item) for item in self.connect_id[rows].tolist()))
@@ -351,11 +358,11 @@ class ConnectionView(DiscreteView):
 
     @property
     def connect_name(self) -> np.ndarray:
-        return np.asarray([self._store.call(value).name for value in self.connect_id.tolist()], dtype=object)
+        return self._store.call_names()[self.connect_id]
 
     @property
     def connect_names(self) -> tuple[str, ...]:
-        return tuple(dict.fromkeys(str(item) for item in self.connect_name.tolist()))
+        return tuple(call.name for call, _ in self._call_groups())
 
     @property
     def source_index(self) -> np.ndarray:
@@ -539,14 +546,12 @@ class ConnectionView(DiscreteView):
         self.cell._raise_if_initialized("remove Connection")
         self._store.active[self._store.rows(self._candidate_ids)] = False
 
-    def _call_views(self, *, scheduled=None) -> tuple["ConnectionView", ...]:
-        """Split this view into one sub-view per originating ``connect()`` call.
+    def _call_groups(self) -> tuple[tuple[_ConnectionCall, np.ndarray], ...]:
+        """Each connect call of this view, in first-row order, with its row ids.
 
-        Both ``_active_ids`` and ``connect_id`` are recomputed properties that
-        walk every row, so asking for them once per connect call made this
-        O(calls x rows) -- 20.7 s for 256 calls over 1600 rows against 9 ms
-        for the single grouping pass below. ``Network.run`` reaches here on
-        every call, as does ``Cell`` once per synapse layout.
+        One grouping pass over the rows: asking ``_active_ids`` and
+        ``connect_id``, which walk every row, once per call cost
+        O(calls x rows).
         """
         ids = self._active_ids
         if ids.size == 0:
@@ -556,15 +561,23 @@ class ConnectionView(DiscreteView):
         sorter = np.argsort(inverse, kind="stable")
         starts = np.searchsorted(inverse[sorter], np.arange(call_ids.size))
         grouped = np.split(ids[sorter], starts[1:])
-        result = []
-        # ``np.unique`` sorts; the previous ``dict.fromkeys`` shape yielded
-        # calls in first-appearance order, so restore that ordering.
-        for position in np.argsort(first_seen).tolist():
-            call = self._store.call(int(call_ids[position]))
-            if scheduled is not None and bool(call.source.is_scheduled) != bool(scheduled):
-                continue
-            result.append(ConnectionView(self._store, grouped[position]))
-        return tuple(result)
+        # ``np.unique`` sorts; calls come in first-appearance order.
+        return tuple(
+            (self._store.call(int(call_ids[position])), grouped[position])
+            for position in np.argsort(first_seen).tolist()
+        )
+
+    def _call_views(self, *, scheduled=None) -> tuple["ConnectionView", ...]:
+        """Split this view into one sub-view per originating ``connect()`` call.
+
+        ``Network.run`` reaches here on every call, as does ``Cell`` once
+        per synapse layout.
+        """
+        return tuple(
+            ConnectionView(self._store, ids)
+            for call, ids in self._call_groups()
+            if scheduled is None or bool(call.source.is_scheduled) == bool(scheduled)
+        )
 
     def event_count(self, *, t, dt):
         """Return one arrival count per row for a single connect call."""
@@ -639,21 +652,19 @@ class ConnectionView(DiscreteView):
         return types[0]
 
     def __repr__(self) -> str:
-        names = self.connect_names
+        calls = self._call_groups()
         header = (
             f"ConnectionView(cell={_cell_label(self.cell, self.synapse.population_index)}, "
-            f"rows={len(self)}, connects={len(names)})"
+            f"rows={len(self)}, connects={len(calls)})"
         )
         lines = [header]
-        for name in names[:_CONNECT_CALL_WARNING_THRESHOLD]:
-            view = self.by_connect_name(name)
-            call = view._require_single_call("format connection")
+        for call, ids in calls[:_CONNECT_CALL_WARNING_THRESHOLD]:
             lines.append(
-                f"  {name}: {call.source.source_type}({call.source.source_name}) -> "
-                f"{call.synapse_type}({call.synapse_name}), rows={len(view)}"
+                f"  {call.name}: {call.source.source_type}({call.source.source_name}) -> "
+                f"{call.synapse_type}({call.synapse_name}), rows={ids.size}"
             )
-        if len(names) > _CONNECT_CALL_WARNING_THRESHOLD:
-            lines.append(f"  ... +{len(names) - _CONNECT_CALL_WARNING_THRESHOLD} more")
+        if len(calls) > _CONNECT_CALL_WARNING_THRESHOLD:
+            lines.append(f"  ... +{len(calls) - _CONNECT_CALL_WARNING_THRESHOLD} more")
         return "\n".join(lines)
 
 
@@ -688,7 +699,7 @@ class NetworkConnections:
     @property
     def n_connections(self) -> int:
         """Return the number of active named connect calls."""
-        return sum(len(self[name].connect_names) for name in self.target_names)
+        return sum(len(self[name]._call_groups()) for name in self.target_names)
 
     @property
     def n_rows(self) -> int:
@@ -715,21 +726,34 @@ class NetworkConnections:
         return population.connections
 
     def __repr__(self) -> str:
+        summaries = self._summaries()
         lines = [
-            f"NetworkConnections(targets={len(self.target_names)}, "
-            f"connections={self.n_connections}, rows={self.n_rows})"
+            f"NetworkConnections(targets={len(summaries)}, "
+            f"connections={sum(len(calls) for _, _, calls in summaries)}, "
+            f"rows={sum(rows for _, rows, _ in summaries)})"
         ]
+        for target, rows, calls in summaries:
+            lines.append(f"  {target}: connections={len(calls)}, rows={rows}")
+            lines.extend(f"    {line}" for line in calls)
+        return "\n".join(lines)
+
+    def _summaries(self) -> tuple[tuple[str, int, tuple[str, ...]], ...]:
+        """``(target, rows, one describe() line per connect call)`` per target, reading each row once."""
+        summaries = []
         for target in self.target_names:
             view = self[target]
-            lines.append(f"  {target}: connections={len(view.connect_names)}, rows={len(view)}")
-            for name in view.connect_names:
-                lines.append(f"    {self.describe(target, name)}")
-        return "\n".join(lines)
+            calls = view._call_groups()
+            summaries.append(
+                (target, sum(ids.size for _, ids in calls), tuple(self._describe(call, ids.size) for call, ids in calls))
+            )
+        return tuple(summaries)
 
     def describe(self, target: str, name: str) -> str:
         """Return one target-qualified connect-call summary."""
         view = self[target, name]
-        call = view._require_single_call("format connection")
+        return self._describe(view._require_single_call("format connection"), len(view))
+
+    def _describe(self, call: _ConnectionCall, rows: int) -> str:
         source_name = call.source.source_name
         if not source_name:
             owner = call.source if call.source.is_scheduled else call.source.execution_owner
@@ -737,10 +761,7 @@ class NetworkConnections:
                 (population.name for population in self._network.populations.values() if population.model is owner),
                 call.source.source_type,
             )
-        return (
-            f"{name}: {call.source.source_type}({source_name}) -> "
-            f"{call.synapse_type}({call.synapse_name}), rows={len(view)}"
-        )
+        return f"{call.name}: {call.source.source_type}({source_name}) -> {call.synapse_type}({call.synapse_name}), rows={rows}"
 
 
 def connect(

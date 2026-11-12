@@ -36,7 +36,9 @@ projections. Steady timing includes state restoration, 800 updates and synchroni
 construction, compilation and output transfers are reported separately. Accuracy failure
 prevents the performance plot. BrainCell uses the point-local linearizer by default;
 `--braincell-linearizer generic` selects the alternative. Spike-bookkeeping `off` is
-restricted to isolated cells without runtime synapses.
+restricted to isolated cable cells without runtime synapses. It removes the threshold
+test and the previous-voltage state; `cell.spike` stays at zero, because `Cell.run`
+still reads it for `RunResult.spikes`.
 
 Generated backend JSON, aggregate tables and plots belong in ignored `artifacts/`.
 [Historical setup](results/historical-protocol.md) preserves prior environment and command

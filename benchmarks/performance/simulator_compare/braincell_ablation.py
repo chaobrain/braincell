@@ -113,13 +113,20 @@ def _inventory(cell: object) -> tuple[tuple[dict[str, object], ...], tuple[dict[
     return tuple(dynamic_rows), tuple(parameter_rows)
 
 
-def _update_dynamics_without_spikes(cell) -> None:
-    if brainstate.environ.get("dt", None) is None:
-        raise ValueError("Cell update requires brainstate.environ['dt'] to be set.")
+def _advance_membrane_without_spikes(cell, external=None) -> object:
+    """``Cell._advance_membrane`` of a cable Cell, without the spike test.
+
+    ``cell.spike`` is never written, so it stays at its initial zeros:
+    ``Cell.run`` still reads it as the ``"spike"`` port of ``RunResult.spikes``.
+    """
     with jax.named_scope("braincell:cell_update:solver"):
         cell.solver(cell)
+    if cell._ind_update_after_solver:
+        with jax.named_scope("braincell:cell_update:independent_update"):
+            cell._update_independent_mechanisms(cell.V.value)
     with jax.named_scope("braincell:cell_update:clear_ion_total_current_cache"):
         cell.clear_ion_total_current_cache()
+    return cell.spike.value
 
 
 def _disable_spike_bookkeeping(cell: object) -> None:
@@ -127,9 +134,10 @@ def _disable_spike_bookkeeping(cell: object) -> None:
         raise ValueError("spike-off ablation only supports an isolated Cell without connections")
     if any(layout.kind.startswith("synapse:") for layout in cell.layouts):
         raise ValueError("spike-off ablation does not support runtime synapses")
-    del cell.spike
+    if cell._is_lumped or cell._uses_reduction:
+        raise ValueError("spike-off ablation only supports a cable Cell")
     del cell._event_previous_V
-    cell._update_dynamics = types.MethodType(_update_dynamics_without_spikes, cell)
+    cell._advance_membrane = types.MethodType(_advance_membrane_without_spikes, cell)
 
 
 def _mapped_states(cell: object) -> dict[object, object]:

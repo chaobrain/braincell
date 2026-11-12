@@ -1725,6 +1725,16 @@
   "CellView.set() requires init_state() first. Before init_state(), assign
   Cell.V_init and Cell.V_th instead.".
 
+- Two benchmark drivers run again. The spike-off case of
+  `benchmarks/performance/simulator_compare/braincell_ablation.py` deleted
+  `cell.spike`, which `Cell.run` now reads for `RunResult.spikes`, so it failed
+  with `AttributeError: 'Cell' object has no attribute 'spike'`. It now keeps
+  `cell.spike` at zero and removes only the threshold test and the
+  previous-voltage state. The cerebellar case of
+  `benchmarks/profiling/profile_simulation.py` reset its `Network` before
+  initializing it, and gave its `ExpSyn` synapses a `weight`, which they no
+  longer take.
+
 ### Documentation
 
 - The NEURON comparison of heterogeneous `NetStim` sources

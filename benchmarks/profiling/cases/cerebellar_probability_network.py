@@ -173,6 +173,7 @@ class CerebellarProbabilityNetworkWorkload:
 
     def init_reset(self) -> None:
         self._require_net()
+        self.net.init_state()
         self.net.reset_state()
 
     def reset_for_run(self) -> None:
@@ -273,7 +274,6 @@ def _build_population(spec: CellSpec, *, size: int, incoming_configs):
                 "ExpSyn",
                 tau=cfg["tau_ms"] * u.ms,
                 e=cfg["e_mV"] * u.mV,
-                weight=1.0 * u.uS,
                 name=_synapse_name(cfg["pre"], cfg["post"]),
             ),
         )

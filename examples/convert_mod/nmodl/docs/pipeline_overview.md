@@ -2,7 +2,7 @@
 
 ## Summary
 
-当前这条 BrainCell-oriented 流水线的重点是“分层降级”，而不是把 parser AST 直接交给模板：
+This BrainCell-oriented pipeline is built around "layered lowering" rather than handing the parser AST straight to a template:
 
 ```text
 .mod
@@ -16,7 +16,7 @@
 -> render validation
 ```
 
-外层入口仍然是三个 step，但内部边界已经拆成：
+The outer entry points are still three steps, but the internal boundaries are split into:
 
 - Step 1: parser AST -> `raw_blocks` / `canonical_blocks` / `bc_ast`
 - Step 2: `bc_ast` -> `semantic_ir` -> `target_ir`
@@ -53,7 +53,7 @@
 
 ## Step Variants
 
-当前注册组合仍然是：
+The registered combination is still:
 
 ```text
 step1: canonical_default
@@ -61,41 +61,41 @@ step2: one_ion_hh_ohmic
 step3: braincell_one_ion_hh_ohmic
 ```
 
-它们现在的职责是：
+Their responsibilities are:
 
 - `canonical_default`
-  - 产出 `raw_blocks`、`canonical_blocks`、`bc_ast`
+  - produces `raw_blocks`, `canonical_blocks`, `bc_ast`
 - `one_ion_hh_ohmic`
-  - 从 `bc_ast` 构建 `semantic_ir`
-  - 再 lowering 到当前 density-channel `target_ir`
+  - builds `semantic_ir` from `bc_ast`
+  - then lowers it to the current density-channel `target_ir`
 - `braincell_one_ion_hh_ohmic`
-  - 渲染 target IR
-  - 对生成源码做 `compile + exec` 验证
+  - renders the target IR
+  - validates the generated source with `compile + exec`
 
 ## Data Boundaries
 
 ### Step 1: parse and normalize
 
-当前 Step 1 输出：
+Step 1 outputs:
 
 - parser AST
 - `raw_blocks`
 - `canonical_blocks`
 - `bc_ast`
 
-`bc_ast` 是 BrainCell 自己的 typed AST 边界。它保留：
+`bc_ast` is BrainCell's own typed AST boundary. It keeps:
 
 - `NEURON`/`USEION`/`RANGE`/`GLOBAL`
 - `PARAMETER`/`ASSIGNED`/`STATE`
 - `INITIAL`/`BREAKPOINT`/`SOLVE`
 - `FUNCTION`/`PROCEDURE`
-- statement / expression 级别的结构和 source span
+- statement- and expression-level structure and source spans
 
 ### Step 2: semantic recovery and lowering
 
-Step 2 先构建 `semantic_ir`，再构建 `target_ir`。
+Step 2 builds `semantic_ir` first, then `target_ir`.
 
-`semantic_ir` 当前重点字段：
+Main fields of `semantic_ir`:
 
 - `symbols`
 - `procedure_env`
@@ -105,7 +105,7 @@ Step 2 先构建 `semantic_ir`，再构建 `target_ir`。
 - `ion_dependencies`
 - `unsupported_features`
 
-`target_ir` 当前重点字段：
+Main fields of `target_ir`:
 
 - `target_family`
 - `class_name`
@@ -119,46 +119,46 @@ Step 2 先构建 `semantic_ir`，再构建 `target_ir`。
 
 ### Step 3: render and validation
 
-Step 3 当前输出：
+Step 3 outputs:
 
 - `rendered_text`
 - `summary`
 - `validation`
 
-`validation` 现在会记录：
+`validation` records:
 
-- 是否 `compile` 成功
-- 是否 `exec` 成功
-- 是否成功取得目标 class
+- whether `compile` succeeds
+- whether `exec` succeeds
+- whether the target class is obtained
 
 ## Current Coverage
 
-当前 density-channel lowering 接受：
+The density-channel lowering accepts:
 
-- 恰好一个 `USEION`
-- 可识别的单 ohmic current
-- 可识别 gate power
-- 参与电流的 gate 可规约到
+- exactly one `USEION`
+- a single recognizable ohmic current
+- recognizable gate powers
+- gates in the current that reduce to
   - `hh_ohmic_inf_tau`
   - `hh_ohmic_alpha_beta`
 
-正例：
+Positive cases:
 
 - `examples/convert_mod/nmodl/mod_files/kv.mod`
 - `examples/convert_mod/nmodl/mod_files/na_alpha_beta.mod`
 
-反例：
+Negative case:
 
 - `examples/convert_mod/nmodl/mod_files/hh.mod`
 
-`hh.mod` 不是 parser 失败，而是：
+`hh.mod` does not fail in the parser; instead:
 
-- `semantic_ir` 能完整构建
-- 但 `target_ir` 因 `multi_useion` 和 `nonspecific_current` 被拒绝
+- `semantic_ir` builds completely
+- but `target_ir` is rejected because of `multi_useion` and `nonspecific_current`
 
 ## Current Unsupported Areas
 
-虽然 Step 1 仍可保留原始块文本，但当前 BrainCell path 不会生成这些高级结构：
+Step 1 can still keep the raw block text, but the BrainCell path does not generate these advanced constructs yet:
 
 - `KINETIC`
 - `DISCRETE`
@@ -175,17 +175,17 @@ Step 3 当前输出：
 
 ## Extension Direction
 
-后续扩展仍然遵循原来的分层思路，但边界应以当前实现为准：
+Further extensions keep the same layered approach, with the boundaries of the current implementation as the reference:
 
-1. 先扩展 Step 1 的 `bc_ast` 规范化能力
-2. 再扩展 `semantic_ir` 对语义和符号的恢复
-3. 再增加新的 `target_ir` 家族
-4. 最后增加匹配的 renderer / template / validation
+1. first extend the `bc_ast` canonicalization of Step 1
+2. then extend the semantic and symbol recovery of `semantic_ir`
+3. then add new `target_ir` families
+4. finally add the matching renderer / template / validation
 
-这样可以保持：
+This keeps:
 
-- parser-facing 逻辑在 `inspect_ast/`
-- semantics 在 `semantic_ir.py`
-- BrainCell lowering 在 `target_ir.py`
-- 渲染和验证在 `render/`
-- orchestration 继续留在 `flow.py` 和 `registry.py`
+- parser-facing logic in `inspect_ast/`
+- semantics in `semantic_ir.py`
+- BrainCell lowering in `target_ir.py`
+- rendering and validation in `render/`
+- orchestration in `flow.py` and `registry.py`

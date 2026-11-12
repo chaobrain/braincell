@@ -1,10 +1,11 @@
-# Parameter Learning 历史实验与训练诊断
+# Parameter Learning: Past Experiments and Training Diagnostics
 
-## 当前状态
+## Current state
 
-本目录保留 parameter-fitting 训练诊断和 1-CV 组合式实验框架。它不是公共 API，也不再包含
-早期完整的九参数训练、dataset、ablation 和 demo 源码。初始化和刺激设计已经拆到独立实验
-目录，当前本目录代码为：
+This directory keeps the parameter-fitting training diagnostics and the composable 1-CV experiment
+framework. It is not public API, and it no longer contains the source of the early full
+nine-parameter training, dataset, ablation and demo code. Initialization and stimulus design have
+moved to their own experiment directories; the code currently in this directory is:
 
 ```text
 diagnostics.py
@@ -14,28 +15,28 @@ optimizers.py / search.py / training.py / reporting.py / run.py
 configs/
 ```
 
-相关的 DC/Sobol/Nevergrad 实验见 [`optim_initialization`](../initialization)，PRMLS、OED
-和 global ensemble 见 [`optim_stimulus_design`](../stimulus_design)。
+For the related DC/Sobol/Nevergrad experiments see [`optim_initialization`](../initialization); for
+PRMLS, OED and the global ensemble see [`optim_stimulus_design`](../stimulus_design).
 
-## 当前活跃代码
+## Active code
 
-`diagnostics.py` 提供 experiment-local、optimizer-agnostic 的 multistart 训练诊断：
+`diagnostics.py` provides experiment-local, optimizer-agnostic multistart training diagnostics:
 
-- optimizer-space 与 physical parameter history；
-- total/component loss 和 evaluator metrics；
-- gradient norm、gradient cosine 和 optimizer/physical step norm；
-- parameter bound position；
-- per-start continuous-best 与 spike-feasible best archives；
-- failure summary、plotting 和 artifact serialization。
+- optimizer-space and physical parameter history;
+- total/component loss and evaluator metrics;
+- gradient norm, gradient cosine and optimizer/physical step norm;
+- parameter bound position;
+- per-start continuous-best and spike-feasible best archives;
+- failure summary, plotting and artifact serialization.
 
-它不负责：
+It does not handle:
 
-- 模型参数声明和 runtime materialization；这些由 `braincell.trainable` 负责；
-- BPTT/RTRL 或 solver；这些由 BrainState/JAX 和对应实验模块负责；
-- optimizer；当前继续使用 `braintools.optim`；
-- 通用 Trainer、Dataset 或 checkpoint 公共 API。
+- model parameter declaration and runtime materialization; `braincell.trainable` handles these;
+- BPTT/RTRL or the solver; BrainState/JAX and the corresponding experiment modules handle these;
+- the optimizer; `braintools.optim` is still used;
+- a general Trainer, Dataset or checkpoint public API.
 
-当前直接调用方：
+Current direct callers:
 
 ```text
 examples/optim/parameter_learning/trainable_hh_multistart.py
@@ -43,38 +44,40 @@ examples/optim/parameter_learning/trainable_hh_multistart_test.py
 examples/optim/parameter_learning/train.ipynb
 ```
 
-这个 helper 同时适用于 BPTT、RTRL 或其他能返回相同命名 gradient mapping 的实验，因此保留在
-该框架保留在 `optim_parameter_fitting/`，不并入只提供模型无关梯度能力的 `optim/`。
+This helper applies equally to BPTT, RTRL or any other experiment that returns the same named
+gradient mapping, so the framework stays in `optim_parameter_fitting/` and is not merged into
+`optim/`, which only provides model-independent gradient machinery.
 
-## Hybrid Initialization 实验
+## Hybrid Initialization Experiment
 
-`dc_protocol_dataset.py` 构建 3 CV、9 conductance-scale 的 synthetic target。每条 protocol
-是完整 50 ms 的恒定 DC；电流按 target response 在三个注入位置独立校准。固定 split 为：
+`dc_protocol_dataset.py` builds a 3-CV synthetic target with 9 conductance scales. Each protocol is
+a constant DC over the full 50 ms; the currents are calibrated independently at the three injection
+sites from the target response. The fixed split is:
 
-| Split | 每个位置 | 总数 |
+| Split | Per site | Total |
 | --- | --- | ---: |
-| train | `-80/-110 mV`、`0/1/3 spike` | 15 |
-| validation | `-90 mV`、`2 spike` | 6 |
-| test | `-100 mV`、`4 spike` | 6 |
+| train | `-80/-110 mV`, `0/1/3 spike` | 15 |
+| validation | `-90 mV`, `2 spike` | 6 |
+| test | `-100 mV`, `4 spike` | 6 |
 
-`../optim_initialization/hybrid_initialization.py` 固定 raw voltage MSE 和 exact RTRL + Adam，只比较
-初始化入口：
+`../optim_initialization/hybrid_initialization.py` fixes raw voltage MSE and exact RTRL + Adam, and
+compares only the initialization entry point:
 
 | Method | Forward screening budget | Adam starts |
 | --- | ---: | ---: |
-| direct random | 16（不筛选） | 16 |
+| direct random | 16 (no screening) | 16 |
 | random screen | 1024 | 16 |
 | scrambled Sobol | 1024 | 16 |
 | Nevergrad TwoPointsDE | `64 x 16 = 1024` | 16 |
 
-所有方法在九维 relative physical scale 的 `[0.5, 1.5]` 中工作，并统一在 log-space
-生成候选。Nevergrad 是可选依赖：
+All methods work in `[0.5, 1.5]` of the nine-dimensional relative physical scale and all generate
+candidates in log space. Nevergrad is an optional dependency:
 
 ```bash
 pip install -e '.[optim]'
 ```
 
-先运行单 search seed pilot：
+First run the single-search-seed pilot:
 
 ```bash
 python examples/optim/initialization/hybrid_initialization.py run \
@@ -83,7 +86,7 @@ python examples/optim/initialization/hybrid_initialization.py run \
   --resume
 ```
 
-pilot 通过后运行 search seeds `0/1/2`：
+Once the pilot passes, run search seeds `0/1/2`:
 
 ```bash
 python examples/optim/initialization/hybrid_initialization.py run \
@@ -92,17 +95,19 @@ python examples/optim/initialization/hybrid_initialization.py run \
   --resume
 ```
 
-每个 update 保存 loss、参数、raw gradient、gradient norm 和 optimizer delta；每 10 updates
-保存逐 protocol MSE、spike count 和 timing。完整 voltage 只为 initial、validation-best 和
-final 保存。Test split 从不参与候选排序或 checkpoint 选择。
+Every update saves the loss, the parameters, the raw gradient, the gradient norm and the optimizer
+delta; every 10 updates save the per-protocol MSE, spike counts and timing. Full voltages are saved
+only for the initial, validation-best and final states. The test split never takes part in
+candidate ranking or checkpoint selection.
 
-生成结果位于被 Git 忽略的：
+Generated results are in the Git-ignored directory:
 
 ```text
 examples/optim/initialization/artifacts/hybrid_initialization/
 ```
 
-当前 A100 x64 正式结果使用 search seeds `0/1/2`，每种方法共训练 48 个 starts：
+The current A100 x64 formal results use search seeds `0/1/2`, training 48 starts per method in
+total:
 
 | Method | Trace success | Parameter success | Joint success | Median validation MSE | Median parameter relative RMS |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -111,34 +116,39 @@ examples/optim/initialization/artifacts/hybrid_initialization/
 | Sobol-1024 | 21/48 | 0/48 | 0/48 | 24.097 | 0.251 |
 | TwoPointsDE-1024 | 19/48 | 0/48 | 0/48 | 24.216 | 0.248 |
 
-这里的 trace success 要求所有 validation spike counts 正确且 aggregate RMSE 不超过 5 mV；
-parameter success 要求九参数 relative RMS 不超过 10%。三种 1024-evaluation screening 都提高了
-trace success，Sobol 在本轮最高；但没有方法产生 joint success。说明 initialization screening
-已经改善进入可拟合轨迹区域的概率，而 DC-only/raw-MSE 数据仍不足以稳定识别九个 conductance。
-下一轮应先分析 observation Jacobian conditioning，再决定增加 protocol 还是改变 loss。
+Here trace success requires every validation spike count to be correct and the aggregate RMSE to be
+at most 5 mV; parameter success requires the nine-parameter relative RMS to be at most 10%. All three
+1024-evaluation screenings raised trace success, with Sobol highest in this round, but no method
+produced a joint success. Initialization screening therefore already raises the probability of
+entering the region of fittable trajectories, while DC-only/raw-MSE data is still not enough to
+identify the nine conductances reliably. The next round should first analyse the conditioning of
+the observation Jacobian before deciding whether to add protocols or change the loss.
 
 ## Stimulus Design v2
 
-`../optim_stimulus_design/dataset.py` 保留旧 morphology 几何，但使用 `1/3/3` CV 和六个参数：soma
-Leak/Na/K，以及所有 dend CV 共享的 Leak/Na/K。它生成统一100 ms current tensor：
+`../optim_stimulus_design/dataset.py` keeps the old morphology geometry but uses `1/3/3` CVs and six
+parameters: soma Leak/Na/K, and Leak/Na/K shared by all dend CVs. It generates a uniform 100 ms
+current tensor:
 
 ```text
 0--20 ms baseline / 20--80 ms stimulus / 80--100 ms recovery
 ```
 
-候选输入包括 feature-based Step 和 `2/5/10 ms` 四电平 PRMLS，并与 soma、distal dend_a、
-distal dend_b 三个注入位置组合。总计 `train/validation/test = 33/15/12` 条，全部保存7 CV voltage。
+The candidate inputs include feature-based steps and four-level PRMLS at `2/5/10 ms`, combined with
+three injection sites: the soma, distal dend_a and distal dend_b. In total there are
+`train/validation/test = 33/15/12` protocols, and the 7-CV voltage is saved for all of them.
 
-`../optim_stimulus_design/robust_oed.py` 在 target 和16个 log-space Sobol parameter points 上用 exact RTRL
-在线累计 observation Fisher information，只对33条 train candidates生成 robust D-opt greedy
-ordering。它不运行参数优化，也不自动冻结最终 train subset。
+`../optim_stimulus_design/robust_oed.py` accumulates the observation Fisher information online with
+exact RTRL at the target and 16 log-space Sobol parameter points, and produces a robust D-optimal
+greedy ordering of the 33 train candidates only. It does not run parameter optimization and does
+not freeze the final train subset automatically.
 
 ```bash
 python examples/optim/stimulus_design/dataset.py
 python examples/optim/stimulus_design/robust_oed.py
 ```
 
-当前 A100 x64 dataset/OED 结果：
+Current A100 x64 dataset/OED results:
 
 ```text
 target dataset: current (60, 4000, 3), voltage (60, 4000, 7)
@@ -150,14 +160,17 @@ FIM execution: 0.78 s
 XLA temporary: 2.99 MB
 ```
 
-Greedy prefix 第一条在相对 rank 阈值下已经达到 rank 6，但 worst condition 仍为 `1.36e7`，
-全部33条后仍约 `1.89e7`，worst parameter-column correlation 约 `0.99997`。因此这些 stimuli
-数值上能看到六个方向，却仍存在很强的 practical compensation；不能因为“满 rank”就直接冻结
-最小训练集。当前 ordering 前十项由1-spike、mild-negative、3-spike三个位置和 dend_b
-small-positive 构成，PRMLS 从第11项开始进入。最终 subset 需先审阅完整 conditioning curve。
+Under the relative rank threshold, the first protocol of the greedy prefix already reaches rank 6,
+but the worst condition number is still `1.36e7`, still about `1.89e7` after all 33 protocols, and
+the worst parameter-column correlation is about `0.99997`. These stimuli therefore resolve all six
+directions numerically, yet strong practical compensation remains; "full rank" alone is no reason to
+freeze the minimal training set. The first ten entries of the current ordering are the 1-spike,
+mild-negative and 3-spike protocols at the three sites plus dend_b small-positive; PRMLS enters from
+the 11th entry. Review the full conditioning curve before choosing the final subset.
 
-`../optim_stimulus_design/global_ensemble.py` 在六维 log-scale parameter box 中评估16384个 forward-only Sobol
-candidates，同时保存全60条 protocol MSE 和 hard spike count。它使用两种 train score：
+`../optim_stimulus_design/global_ensemble.py` evaluates 16384 forward-only Sobol candidates in the
+six-dimensional log-scale parameter box, saving the MSE of all 60 protocols and the hard spike
+counts. It uses two train scores:
 
 ```text
 raw MSE
@@ -168,7 +181,7 @@ prior-median protocol-normalized MSE
 python examples/optim/stimulus_design/global_ensemble.py
 ```
 
-当前 A100 x64 结果：
+Current A100 x64 results:
 
 ```text
 candidates: 16384
@@ -181,16 +194,18 @@ raw Top PC1 vs FIM weak cosine: 0.871
 normalized Top PC1 vs FIM weak cosine: 0.790
 ```
 
-Raw Top256 的 validation/test spike-signature exact 数为 `12/51`，normalized Top256 为 `4/29`；
-低 voltage score 不自动保证所有 hard spike counts 正确。两种 Top256 的 parameter relative RMS
-中位数仍约 `0.25`，说明当前最好的稀疏全局 samples 远离 synthetic target。Target-centered
-weak-direction profile 则显示 target 附近存在明显浅方向，因此16384点 Sobol ensemble主要用于
-验证几何趋势，不能冒充完整posterior或证明已经找到全部 equivalent solutions。
+The raw Top256 has `12/51` exact validation/test spike signatures and the normalized Top256 has
+`4/29`; a low voltage score does not guarantee that every hard spike count is correct. The median
+parameter relative RMS of both Top256 sets is still about `0.25`, so the best sparse global samples
+so far are far from the synthetic target. The target-centered weak-direction profile shows clearly
+shallow directions near the target, so the 16384-point Sobol ensemble mainly serves to check the
+geometric trend; it cannot stand in for a full posterior or prove that all equivalent solutions
+have been found.
 
-### Python 组合式零号基线
+### Composable Python baseline zero
 
-本目录是当前固定实验入口，不是 BrainCell 公共 API。Python preset 直接组合真实组件，
-不通过 JSON 字符串 registry：
+This directory is the current fixed experiment entry point, not BrainCell public API. A Python
+preset composes the real components directly, without a JSON string registry:
 
 ```python
 CONFIG = ExperimentConfig(
@@ -202,21 +217,23 @@ CONFIG = ExperimentConfig(
 )
 ```
 
-组件职责：
+Component responsibilities:
 
-| 模块 | 可替换内容 | 固定合同 |
+| Module | Replaceable content | Fixed contract |
 | --- | --- | --- |
-| `models.py` | morphology、channel、parameter space | physical / bounded `u` / optimizer `z` 往返 |
-| `datasets.py` | waveform、split、target generation | train/validation/test metadata |
-| `losses.py` | local/trajectory objective | 训练与split评价同义 |
-| `optimizers.py` | Adam等gradient stage | optimizer只接收`z` gradient |
-| `search.py` | forward-only/non-gradient stage | 通过physical `CandidateSet`交接 |
-| `training.py` | stage pipeline、RTRL/BPTT | 不隐式拆candidate |
-| `reporting.py` | success、CSV/JSON、plots | test final-only |
-| `run.py` | worker、resume、GPU monitor | 一个固定CLI |
+| `models.py` | morphology, channel, parameter space | physical / bounded `u` / optimizer `z` round trip |
+| `datasets.py` | waveform, split, target generation | train/validation/test metadata |
+| `losses.py` | local/trajectory objective | training and split evaluation mean the same thing |
+| `optimizers.py` | Adam and other gradient stages | the optimizer receives only the `z` gradient |
+| `search.py` | forward-only/non-gradient stage | hands over through a physical `CandidateSet` |
+| `training.py` | stage pipeline, RTRL/BPTT | never splits candidates implicitly |
+| `reporting.py` | success, CSV/JSON, plots | test final-only |
+| `run.py` | worker, resume, GPU monitor | one fixed CLI |
 
-增加普通配置字段时在dataclass中给默认值；行为不兼容时增加版本化factory。非梯度stage只使用train
-objective，DFO后重新进入gradient stage时从physical参数反解`z`并重建optimizer moments。可以组合：
+A new ordinary configuration field gets a default value in the dataclass; an incompatible behaviour
+change adds a versioned factory. Non-gradient stages use only the train objective; when a DFO stage
+hands back to a gradient stage, `z` is recovered from the physical parameters and the optimizer
+moments are rebuilt. Stages compose:
 
 ```python
 stages = (sobol_screen(...), adam(...))
@@ -224,9 +241,10 @@ stages = (adam(...), differential_evolution(...))
 stages = (adam(...), local_search(...), adam(...))
 ```
 
-当前只正式运行plain Adam；`ForwardSelectionStage`用于验证stage交接合同，未冒充实际搜索算法。
+Only plain Adam is run formally at present; `ForwardSelectionStage` checks the stage hand-over
+contract and does not pose as a real search algorithm.
 
-零号模型是一个25 um soma CV，直接学习有界的经典HH conductance：
+Model zero is one 25 um soma CV that learns the bounded classic HH conductances directly:
 
 | Parameter | Target | Bounds | Runtime mapping |
 | --- | ---: | ---: | --- |
@@ -234,9 +252,10 @@ stages = (adam(...), local_search(...), adam(...))
 | `na.g_max` | `120` | `[60,180] mS/cm^2` | direct parameter |
 | `k.g_max` | `36` | `[18,54] mS/cm^2` | direct parameter |
 
-Cell runtime使用`theta=lower+(upper-lower)*sigmoid(z)`，不存在frozen baseline scale。数据全部为
-`0--20/20--80/80--100 ms`的DC Step，split为`5/2/1`；PRMLS不进入零号实验。64个start由一个
-seed生成并一次进入同一个RTRL kernel和Adam optimizer，不拆cohort。Test只在epoch 180评价。
+The cell runtime uses `theta=lower+(upper-lower)*sigmoid(z)`; there is no frozen baseline scale.
+All data are DC steps over `0--20/20--80/80--100 ms` with a `5/2/1` split; PRMLS is not part of
+experiment zero. The 64 starts are generated from one seed and enter the same RTRL kernel and Adam
+optimizer together, without splitting into cohorts. The test split is evaluated only at epoch 180.
 
 ```bash
 python examples/optim/parameter_fitting/run.py run \
@@ -244,9 +263,9 @@ python examples/optim/parameter_fitting/run.py run \
   --gpu 1 --resume
 ```
 
-当前A100 x64正式结果：
+Current A100 x64 formal results:
 
-| 指标 | 结果 |
+| Metric | Value |
 | --- | ---: |
 | trace success | `8/64 = 12.5%` |
 | trace-success Wilson 95% CI | `[6.47%,22.77%]` |
@@ -257,23 +276,26 @@ python examples/optim/parameter_fitting/run.py run \
 | compile / 180-update stage / end-to-end | `2.85 / 48.88 / 82.50 s` |
 | XLA temporary / monitored peak GPU memory | `2.10 MiB / 1166 MiB` |
 
-64个endpoint全部finite；validation count全对`22/64`，RMSE不超过5 mV为`8/64`，交集为
-`8/64`。Test count全对`35/64`，同时满足5 mV与count为`5/64`。结果位于被Git忽略的：
+All 64 endpoints are finite; `22/64` get every validation count right, `8/64` have an RMSE of at
+most 5 mV, and the intersection is `8/64`. `35/64` get every test count right, and `5/64` meet
+both the 5 mV and the count criteria. The results are in the Git-ignored directory:
 
 ```text
 examples/optim/parameter_fitting/artifacts/parameter_experiments/
   20260831-210204_adam-narrow-e180_db936968/
 ```
 
-旧7CV/6-scale/四cohort且holdout混入PRMLS的`6/64`结果保留为legacy，不再作为零号reference。
+The older `6/64` result (7 CVs, 6 scales, four cohorts, PRMLS mixed into the holdout) is kept as
+legacy and is no longer the zero reference.
 
-#### Epoch预算：180 vs 300
+#### Epoch budget: 180 vs 300
 
-`basic_1cv_bounded_direct_adam_e300.py`使用`dataclasses.replace()`派生，resolved config唯一变化为
-`stages[0].epochs: 180 -> 300`。初始physical/normalized/`z`逐位相同，前180轮optimizer `z`、
-physical参数和gradient逐位相同；epoch-180 validation完全相同。
+`basic_1cv_bounded_direct_adam_e300.py` is derived with `dataclasses.replace()`; the only change in
+the resolved config is `stages[0].epochs: 180 -> 300`. The initial physical/normalized/`z` values
+are bitwise identical, the optimizer `z`, physical parameters and gradients of the first 180 epochs
+are bitwise identical, and the epoch-180 validation is exactly the same.
 
-| 指标 | Epoch 180 | Epoch 300 |
+| Metric | Epoch 180 | Epoch 300 |
 | --- | ---: | ---: |
 | trace success | `8/64` | `10/64` |
 | parameter success | `3/64` | `6/64` |
@@ -283,17 +305,19 @@ physical参数和gradient逐位相同；epoch-180 validation完全相同。
 | median test RMSE | `17.2393` | `17.1670 mV` |
 | end-to-end | `82.50` | `112.95 s` |
 
-同start配对显示trace success为`6`个保持、`4`个新增、`2`个丢失；parameter success新增3个且无
-丢失；joint success总数不变，但从start 37迁移到start 59。继续训练总体降低loss，却不保证每条
-lane的held-out成功单调保持。正式比较artifact位于300轮结果的
-`comparisons/20260831-210204_adam-narrow-e180_db936968/`。
+Pairing by start shows that trace success is kept by `6`, gained by `4` and lost by `2`; parameter
+success gains 3 and loses none; the joint success count is unchanged but moves from start 37 to
+start 59. Training longer lowers the loss overall but does not guarantee that held-out success
+holds monotonically on every lane. The formal comparison artifact is under the 300-epoch results in
+`comparisons/20260831-210204_adam-narrow-e180_db936968/`.
 
 #### LR 0.02 + Wide Bounds
 
-在300轮配置上同时把Adam LR从`0.01`改为`0.02`，把transform bounds从`0.5--1.5`扩为
-`0.1--2.0 x target`；64个physical初值与`c00763f960b0`逐位相同，仍位于`0.5--1.5 x target`。
+On the 300-epoch configuration, the Adam LR changes from `0.01` to `0.02` and the transform bounds
+widen from `0.5--1.5` to `0.1--2.0 x target` at the same time; the 64 physical initial values are
+bitwise identical to `c00763f960b0` and still lie within `0.5--1.5 x target`.
 
-| 指标 | 300轮基准 | LR 0.02 + wide bounds |
+| Metric | 300-epoch baseline | LR 0.02 + wide bounds |
 | --- | ---: | ---: |
 | trace success | `10/64` | `5/64` |
 | parameter success | `6/64` | `14/64` |
@@ -303,14 +327,17 @@ lane的held-out成功单调保持。正式比较artifact位于300轮结果的
 | median test RMSE | `17.1670` | `16.4772 mV` |
 | median parameter relative RMS | `0.2261` | `0.1706` |
 
-全部final参数均离新bounds至少10%；parameter success迁移为`4保持/10新增/2丢失`，trace为
-`2保持/3新增/8丢失`。`3-spike` train protocol的count exact只有`1/64`，说明组合设置改善连续
-误差和parameter recovery，却更容易错过目标spike region。由于LR与bounds同时改变，不能把结果
-单独归因给其中一项。结果digest为`682d461a9318`。
+Every final parameter is at least 10% away from the new bounds; parameter success shifts as
+`4 kept/10 gained/2 lost`, and trace success as `2 kept/3 gained/8 lost`. The count of the
+`3-spike` train protocol is exact for only `1/64`: the combined setting improves the continuous
+error and parameter recovery but misses the target spike region more easily. Because the LR and the
+bounds changed together, the result cannot be attributed to either one alone. The result digest is
+`682d461a9318`.
 
-为拆开两个变量，另运行wide bounds但保持`lr=0.01`，digest为`3692d0969bca`：
+To separate the two variables, another run uses the wide bounds but keeps `lr=0.01`, with digest
+`3692d0969bca`:
 
-| 指标 | 原bounds LR 0.01 | Wide LR 0.01 | Wide LR 0.02 |
+| Metric | Original bounds LR 0.01 | Wide LR 0.01 | Wide LR 0.02 |
 | --- | ---: | ---: | ---: |
 | trace success | `10/64` | `9/64` | `5/64` |
 | parameter success | `6/64` | `8/64` | `14/64` |
@@ -319,17 +346,19 @@ lane的held-out成功单调保持。正式比较artifact位于300轮结果的
 | test RMSE | `17.1670` | `16.8468` | `16.4772 mV` |
 | parameter relative RMS | `0.2261` | `0.1956` | `0.1706` |
 
-Bounds-only使42/64 validation MSE和45/64 parameter error改善，joint success增至3/64；trace总数
-只减少1，但集合为`3保持/6新增/7丢失`。在相同wide bounds下把LR升到0.02，trace从9降至5、joint
-从3降至1，而per-start train MSE median delta仅`+0.063 mV^2`。因此wide bounds总体有益于连续
-fit/parameter recovery；高LR进一步推动参数恢复，却明显损害spike-region稳定性。
+Bounds alone improve the validation MSE of 42/64 and the parameter error of 45/64, and raise joint
+success to 3/64; the trace total drops by only 1, but the set is `3 kept/6 gained/7 lost`. Raising
+the LR to 0.02 under the same wide bounds lowers trace from 9 to 5 and joint from 3 to 1, while the
+per-start median delta of the train MSE is only `+0.063 mV^2`. Wide bounds therefore help the
+continuous fit and parameter recovery overall; a high LR pushes parameter recovery further but
+clearly hurts spike-region stability.
 
 #### Rprop Optimizer
 
-在wide bounds、300轮和完全相同初值下，只把Adam替换为
-`Rprop(lr=0.01, etas=(0.5,1.2), step_sizes=(1e-6,50))`：
+With wide bounds, 300 epochs and exactly the same initial values, only Adam is replaced by
+`Rprop(lr=0.01, etas=(0.5,1.2), step_sizes=(1e-6,50))`:
 
-| 指标 | Adam | Rprop |
+| Metric | Adam | Rprop |
 | --- | ---: | ---: |
 | trace success | `9/64` | `35/64` |
 | parameter success | `8/64` | `13/64` |
@@ -338,86 +367,96 @@ fit/parameter recovery；高LR进一步推动参数恢复，却明显损害spike
 | test RMSE | `16.8468` | `9.4214 mV` |
 | stage time | `78.06` | `89.53 s` |
 
-Optimizer-only配对中，Rprop新增28个trace成功、丢失2个；49/64 validation MSE和47/64 test
-MSE改善。Validation-feasible archive进一步得到validation trace `38/64`、test trace `12/64`，
-而Adam archive为`22/64`与`7/64`。Rprop对当前deterministic low-dimensional问题明显优于Adam，
-且多数收益已保留到final endpoint。结果digest为`8ae34281f8a6`。
+In the optimizer-only pairing, Rprop gains 28 trace successes and loses 2; the validation MSE of
+49/64 and the test MSE of 47/64 improve. The validation-feasible archive further reaches validation
+trace `38/64` and test trace `12/64`, against `22/64` and `7/64` for the Adam archive. Rprop is
+clearly better than Adam on the current deterministic low-dimensional problem, and most of the gain
+is kept at the final endpoint. The result digest is `8ae34281f8a6`.
 
-BrainTools Rprop wrapper会在`scale_by_rprop(base_lr)`后再次应用同一LR scheduler，因此名义
-`lr=0.01`的实际initial/min step约为`1e-4/1e-8`。使用custom Optax tx只应用一次LR，并保持
-initial step=`1e-4`、min step=`1e-6`后：
+The BrainTools Rprop wrapper applies the same LR scheduler again after `scale_by_rprop(base_lr)`, so
+a nominal `lr=0.01` gives an actual initial/min step of about `1e-4/1e-8`. With a custom Optax tx
+that applies the LR once and keeps initial step=`1e-4`, min step=`1e-6`:
 
-| 指标 | Wrapper Rprop | Single-scale Rprop |
+| Metric | Wrapper Rprop | Single-scale Rprop |
 | --- | ---: | ---: |
 | trace / parameter / joint | `35/13/11` | `36/11/10` |
 | validation / test RMSE | `4.4684/9.4214` | `4.5119/9.4196 mV` |
 | archive validation / test trace | `38/12` | `39/12` |
-| K最后50轮median `abs(delta z)` | `1.5e-8` | `1.2e-6` |
+| K median `abs(delta z)` over the last 50 epochs | `1.5e-8` | `1.2e-6` |
 
-解除`1e-8`冻结使K的physical movement提高约80倍，但final/held-out只小幅变化；约24%的gradient
-sign flip仍会让Rprop在反号轮执行零更新。因此wrapper重复LR是实际bug，但不是Rprop优于Adam或
-后期停滞的唯一原因。Single-scale结果digest为`81eff6e7aa2e`。
+Lifting the `1e-8` freeze raises the physical movement of K by about 80 times, but the final and
+held-out results change only slightly; about 24% of gradient sign flips still make Rprop take a
+zero update on the epoch where the sign reverses. The repeated LR in the wrapper is therefore a
+real bug, but it is not the only reason Rprop beats Adam or stalls late. The single-scale result
+digest is `81eff6e7aa2e`.
 
 #### Protocol-Balanced MSE
 
-在single-scale Rprop上只把protocol权重改为inverse target-voltage std（`5 mV` floor），final
-trace/parameter/joint从`36/11/10`提高到`43/15/12`，validation/test RMSE从`4.5119/9.4196`
-降至`3.8424/9.1728 mV`。配对中trace `34保持/9新增/2丢失`，47/64 validation、42/64 test、
-46/64 parameter error改善。Validation archive得到validation trace `47/64`，但test trace为
-`9/64`，低于raw-loss archive的`12/64`；因此balanced loss改善总体与validation拟合，但严格test
-成功没有同比提高。结果digest为`cdc6f22c0f24`。
+On single-scale Rprop, changing only the protocol weights to the inverse target-voltage std (with a
+`5 mV` floor) raises final trace/parameter/joint from `36/11/10` to `43/15/12` and lowers the
+validation/test RMSE from `4.5119/9.4196` to `3.8424/9.1728 mV`. In the pairing, trace is
+`34 kept/9 gained/2 lost`, and the validation error of 47/64, the test error of 42/64 and the
+parameter error of 46/64 improve. The validation archive reaches validation trace `47/64`, but its
+test trace is `9/64`, below the `12/64` of the raw-loss archive; the balanced loss improves the
+overall and validation fit, but strict test success does not rise with it. The result digest is
+`cdc6f22c0f24`.
 
 #### Balanced Huber Delta 5 mV
 
-从balanced MSE只替换逐点惩罚为MSE-normalized Huber，`abs(error)<=5 mV`时与MSE完全一致，
-大误差进入线性尾部：
+Starting from balanced MSE, only the pointwise penalty is replaced by an MSE-normalized Huber: it is
+identical to MSE for `abs(error)<=5 mV`, and large errors enter the linear tail:
 
-| 指标 | Balanced MSE | Balanced Huber |
+| Metric | Balanced MSE | Balanced Huber |
 | --- | ---: | ---: |
 | final trace / parameter / joint | `43/15/12` | `38/17/15` |
 | validation / test RMSE | `3.8424/9.1728` | `3.3781/9.1748 mV` |
 | archive validation / test trace | `47/9` | `39/13` |
 | archive median test RMSE | `8.9297` | `9.0319 mV` |
 
-Huber减少final和archive validation trace覆盖，但parameter、joint以及严格archive test success提高。
-它不是全面降低所有raw MSE：`3-spike` median MSE从`13.995`降到`8.930`，但small-positive从
-`7.217`升到`96.045`，说明线性尾部允许部分lane牺牲subthreshold轨迹以改善spiking/parameter
-方向。结果目录为：
+Huber reduces the final and archive validation trace coverage, but raises parameter, joint and
+strict archive test success. It does not lower every raw MSE: the `3-spike` median MSE drops from
+`13.995` to `8.930`, but small-positive rises from `7.217` to `96.045`, so the linear tail lets some
+lanes sacrifice the subthreshold trajectory to improve the spiking/parameter directions. The result
+directory is:
 
 ```text
 20260901-152320_balanced-huber-d5_3ee11164/
 ```
 
-`checkpoint_every=10`是历史命名，实际只表示每10轮执行一次validation forward；不保存optimizer
-checkpoint，也不改变trajectory。新配置可写`validation_every=10`，旧名称继续兼容。所有完整run
-可通过`plot/parameter_experiments/runs.csv`查询。
+`checkpoint_every=10` is a historical name: it only means that a validation forward pass runs every
+10 epochs; it saves no optimizer checkpoint and does not change the trajectory. New configurations
+can write `validation_every=10`; the old name remains supported. Every complete run can be queried
+through `plot/parameter_experiments/runs.csv`.
 
 #### Vanilla SGD
 
-在balanced Huber配置上只替换为vanilla SGD `lr=1e-4`，不使用momentum、Nesterov、weight decay、
-clip或scheduler。结果显著差于single-scale Rprop：
+On the balanced Huber configuration, only the optimizer is replaced by vanilla SGD `lr=1e-4`, with
+no momentum, Nesterov, weight decay, clipping or scheduler. The result is much worse than
+single-scale Rprop:
 
-| 指标 | Rprop | SGD |
+| Metric | Rprop | SGD |
 | --- | ---: | ---: |
 | final trace / parameter / joint | `38/17/15` | `0/2/0` |
 | validation / test RMSE | `3.3781/9.1748` | `15.1178/21.5266 mV` |
 | archive validation / test trace | `39/13` | `0/3` |
 | median final objective | `6.5554` | `21.1214 mV^2` |
 
-SGD没有发散或贴边，gradient norm中位数从`22.7`降到`5.38`，但300轮内没有形成正确validation
-spike signature。它稳定降低Huber objective，却沿错误连续basin缓慢移动；Rprop同号gradient时指数
-扩大step的机制对跨入目标spike region更有效。结果目录为：
+SGD neither diverges nor sticks to the bounds, and the median gradient norm drops from `22.7` to
+`5.38`, but within 300 epochs it forms no correct validation spike signature. It lowers the Huber
+objective steadily, but moves slowly along the wrong continuous basin; Rprop's exponential growth of
+the step while the gradient sign holds is more effective at crossing into the target spike region.
+The result directory is:
 
 ```text
 20260902-143337_sgd-lr1e-4-balanced-huber_94649c2f/
 ```
 
-#### Momentum 与 Nesterov SGD
+#### Momentum and Nesterov SGD
 
-在相同`lr=1e-4`下并行测试`momentum=0.9`和Nesterov。两者明显加速Huber objective下降，但没有
-恢复final trace success：
+With the same `lr=1e-4`, `momentum=0.9` and Nesterov are tested in parallel. Both clearly speed up
+the decrease of the Huber objective, but neither restores final trace success:
 
-| 指标 | Vanilla | Momentum | Nesterov | Rprop |
+| Metric | Vanilla | Momentum | Nesterov | Rprop |
 | --- | ---: | ---: | ---: | ---: |
 | final trace | `0/64` | `0/64` | `0/64` | `38/64` |
 | parameter | `2/64` | `8/64` | `11/64` | `17/64` |
@@ -427,42 +466,45 @@ spike signature。它稳定降低Huber objective，却沿错误连续basin缓慢
 | final Huber objective | `21.12` | `10.69` | `11.42` | `6.56` |
 | archive validation/test trace | `0/3` | `6/2` | `5/6` | `39/13` |
 
-Momentum/Nesterov解决了vanilla移动慢的问题，但5/7条lane最终靠近transform边缘，且仍落在错误
-spike basin；Nesterov没有稳定优于普通Momentum。这进一步说明Rprop的per-coordinate sign-step
-机制比统一velocity累积更适合当前任务。两个并行run分别为：
+Momentum/Nesterov fix the slow movement of vanilla SGD, but 5/7 of the lanes end close to the
+transform edge and still fall into the wrong spike basin; Nesterov is not consistently better than
+plain momentum. This further indicates that Rprop's per-coordinate sign step suits the current task
+better than a uniform velocity accumulation. The two parallel runs are:
 
 ```text
 20260902-145308_momentum09-lr1e-4-balanced-huber_1404e6e8/
 20260902-145308_nesterov09-lr1e-4-balanced-huber_2025b7f6/
 ```
 
-## 历史源码
+## Historical sources
 
-仓库历史曾包含下列实验方向，但当前 worktree 已没有对应 `.py` 源文件：
+The repository history once contained the following experiment lines, but the current worktree no
+longer has the corresponding `.py` source files:
 
-- `conductance_learning_core.py`；
-- `heterogeneous_nine_parameter_training.py`；
-- `heterogeneous_protocol_dataset.py`；
-- `heterogeneous_nine_parameter_composite_ablation.py`；
-- `parameter_learning_demo.py`；
-- `sine_expanded_batch_comparison.py`。
+- `conductance_learning_core.py`;
+- `heterogeneous_nine_parameter_training.py`;
+- `heterogeneous_protocol_dataset.py`;
+- `heterogeneous_nine_parameter_composite_ablation.py`;
+- `parameter_learning_demo.py`;
+- `sine_expanded_batch_comparison.py`.
 
-局部机器可能残留同名 `.pyc`，这些只是 Python cache：
+A local machine may still hold `.pyc` files of the same names; these are only the Python cache:
 
-- 不能作为代码依赖；
-- 不进入版本控制；
-- 不应反编译后恢复为当前实现；
-- 应由测试或维护过程直接清理。
+- they are not a code dependency;
+- they are not under version control;
+- they must not be decompiled and restored as the current implementation;
+- tests or maintenance should remove them directly.
 
-相关设计文档引用这些名字时，表示历史快照中的实验依据，不表示文件仍存在于当前分支。
+When design documents refer to these names, they mean the experimental evidence in a historical
+snapshot, not that the files still exist on the current branch.
 
-## 相关文档
+## Related documents
 
-- [Experimental Optimization Work](../README.md)：exact forward sensitivity、RTRL/BPTT、正确性与 scaling 实验导航。
+- [Experimental Optimization Work](../README.md): navigation for the exact forward sensitivity, RTRL/BPTT, correctness and scaling experiments.
 
-## 最小使用方式
+## Minimal usage
 
-当前训练示例采用以下数据流：
+The current training examples use this data flow:
 
 ```text
 rollout
@@ -474,15 +516,16 @@ rollout
   -> extract_best_archives / summarize_history
 ```
 
-新增实验应尽量只替换其中一个角色，例如 objective 或 evaluator，不要复制整套 history/archive
-实现。
+A new experiment should replace only one of these roles where possible, for example the objective
+or the evaluator, rather than copy the whole history/archive implementation.
 
-## 验证
+## Verification
 
 ```bash
 pytest -q examples/optim/parameter_fitting/diagnostics_test.py
 pytest -q examples/optim/parameter_learning/trainable_hh_multistart_test.py
 ```
 
-如果未来该 helper 有多个稳定调用方并形成明确公共合同，再决定是否移动到正式模块；本 README
-不承诺当前位置或类型名长期稳定。
+If this helper later gains several stable callers and a clear public contract, decide then whether
+to move it into a proper module; this README does not promise that its current location or type
+names will stay stable.

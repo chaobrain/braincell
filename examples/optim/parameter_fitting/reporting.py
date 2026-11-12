@@ -502,31 +502,31 @@ def _format_report(config: ExperimentConfig, dataset: DatasetBundle, summary) ->
         for name, target, lower, upper in zip(parameter.names, parameter.target, parameter.lower, parameter.upper)
     )
     trace = summary["trace_success"]
-    return f"""# {run_label} 实验结果
+    return f"""# {run_label} results
 
-## 配置
+## Configuration
 
-- 模型：`{config.model.name}`，1 CV，3个bounded direct conductance parameters。
-- 参数坐标：optimizer更新`z`，runtime使用`lower + (upper-lower) * sigmoid(z)`。
-- 数据：Step-only，train/validation/test=`5/2/1`。
-- Loss：`{loss_name}`；下表RMSE仍使用protocol等权raw voltage MSE。
-- 优化：64个start一次并行，exact RTRL + {optimizer_name}，{summary['epochs']} updates。
-- Test：只在最终状态评价。
-- Validation：每{config.stages[-1].validation_every}轮评价一次，不影响optimizer trajectory。
+- Model: `{config.model.name}`, 1 CV, 3 bounded direct conductance parameters.
+- Parameter coordinates: the optimizer updates `z`; the runtime uses `lower + (upper-lower) * sigmoid(z)`.
+- Data: step currents only, train/validation/test = `5/2/1`.
+- Loss: `{loss_name}`; the RMSE values below still use the raw voltage MSE with equal protocol weights.
+- Optimization: 64 starts in one parallel batch, exact RTRL + {optimizer_name}, {summary['epochs']} updates.
+- Test: evaluated on the final state only.
+- Validation: evaluated every {config.stages[-1].validation_every} epochs; it does not affect the optimizer trajectory.
 
-| 参数 | Target | Lower | Upper | Unit |
+| Parameter | Target | Lower | Upper | Unit |
 | --- | ---: | ---: | ---: | --- |
 {parameter_rows}
 
-## 协议
+## Protocols
 
 | Split | Protocol | Current nA | Target spikes |
 | --- | --- | ---: | ---: |
 {protocols}
 
-## 结果
+## Results
 
-| 指标 | 结果 |
+| Metric | Value |
 | --- | ---: |
 | Trace success | {trace['count']}/{summary['num_starts']} = {trace['fraction']:.3%} |
 | Trace Wilson 95% | [{trace['wilson_95'][0]:.3%}, {trace['wilson_95'][1]:.3%}] |

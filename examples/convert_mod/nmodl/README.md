@@ -1,30 +1,30 @@
 # BrainCell NMODL Pipeline
 
-这个目录现在提供的是一条可检查的 `.mod -> BrainCell density channel` 转换链，重点不是“直接套模板”，而是把 NMODL 逐层降到 BrainCell 自己的中间表示。
+This directory provides an inspectable `.mod -> BrainCell density channel` conversion chain. The point is not to "fill in a template directly" but to lower NMODL layer by layer into BrainCell's own intermediate representations.
 
-当前首版稳定支持的目标机制是：
+The first version stably supports target mechanisms with:
 
-- 单 `USEION`
-- Hodgkin-Huxley 风格门控动力学
-- ohmic current
-- 生成 BrainCell Python density channel 源码
+- a single `USEION`
+- Hodgkin-Huxley-style gating dynamics
+- an ohmic current
+- generated BrainCell Python density-channel source
 
-当前代表性样例：
+Representative samples:
 
 - `mod_files/kv.mod`
-  - 正例，`inf/tau`
+  - positive case, `inf/tau`
 - `mod_files/na_alpha_beta.mod`
-  - 正例，`alpha/beta`
+  - positive case, `alpha/beta`
 - `mod_files/hh.mod`
-  - 反例，语义层保留，但因多离子和 `NONSPECIFIC_CURRENT` 在 target lowering 阶段拒绝
+  - negative case: kept in the semantic layer, but rejected in target lowering because it uses several ions and `NONSPECIFIC_CURRENT`
 
-如果你现在主要是在补 NMODL 基础，而不是直接改 pipeline，建议先看：
+If you are mainly filling in NMODL fundamentals rather than changing the pipeline, start with:
 
-- `docs/nmodl_mental_model_zh.md`
-  - 从最小 leak 机制、`hh.mod`、`NET_RECEIVE` 三个层次理解 `PARAMETER` / `ASSIGNED` / `STATE` 与 `INITIAL` / `BREAKPOINT` / `DERIVATIVE`
-  - 顺带整理了 `NEURON 8.2.x`、`9.0` 与 Arbor 的关键差异
+- `docs/nmodl_mental_model.md`
+  - explains `PARAMETER` / `ASSIGNED` / `STATE` and `INITIAL` / `BREAKPOINT` / `DERIVATIVE` at three levels: a minimal leak mechanism, `hh.mod`, and `NET_RECEIVE`
+  - also summarizes the key differences between `NEURON 8.2.x`, `9.0` and Arbor
 
-## 当前流水线
+## Current pipeline
 
 ```text
 .mod
@@ -38,27 +38,27 @@
 -> render validation
 ```
 
-外部 CLI 仍然保持三步入口，但内部边界已经是四层：
+The external CLI keeps three entry steps, but the internal boundaries are four layers:
 
 1. Step 1
-   - 解析并规范化
-   - 产出 `raw_blocks`、`canonical_blocks`、`bc_ast`
+   - parse and canonicalize
+   - produce `raw_blocks`, `canonical_blocks`, `bc_ast`
 2. Step 2
-   - 构建 `semantic_ir`
-   - 再 lowering 到 `target_ir`
+   - build `semantic_ir`
+   - then lower to `target_ir`
 3. Step 3
-   - 渲染 Python 源码
-   - 执行 `compile + exec` 验证
+   - render the Python source
+   - validate with `compile + exec`
 
-## 目录结构
+## Directory layout
 
 - `mod_files/`
-  - 示例 `.mod` 输入
+  - sample `.mod` inputs
 - `examples/`
   - `generate_braincell.py`
-    - 一条命令跑完整流水线并写出最终 `.py`
+    - runs the full pipeline in one command and writes the final `.py`
   - `walktrough.ipynb`
-    - 逐层 walkthrough notebook
+    - layer-by-layer walkthrough notebook
 - `steps/`
   - `inspect_ast/`
     - Step 1
@@ -67,25 +67,25 @@
   - `render/`
     - Step 3
   - `model.py`
-    - `bc_ast` / `semantic_ir` / `target_ir` 的 dataclass 边界
+    - dataclass boundaries of `bc_ast` / `semantic_ir` / `target_ir`
   - `semantic_ir.py`
-    - 语义恢复
+    - semantic recovery
   - `target_ir.py`
     - BrainCell density-channel lowering
 - `templates/`
   - `density_channel.py`
-    - 当前 renderer 使用的模板
+    - the template the renderer currently uses
 - `docs/`
-  - 架构说明
+  - architecture notes
 
-## 环境依赖
+## Dependencies
 
-第一步 AST 解析依赖 NMODL Python backend。当前代码会优先尝试：
+Step 1 AST parsing depends on an NMODL Python backend. The code tries, in order:
 
 - `neuron.nmodl`
 - `nmodl.dsl`
 
-快速检查：
+Quick check:
 
 ```bash
 python - <<'PY'
@@ -96,15 +96,15 @@ for name in ("neuron.nmodl", "nmodl.dsl"):
 PY
 ```
 
-若两者都不可用，需要安装 Blue Brain 的 `nmodl` 包，或切换到已经提供 `neuron.nmodl` 的环境。
+If neither is available, install Blue Brain's `nmodl` package, or switch to an environment that already provides `neuron.nmodl`.
 
-渲染阶段还需要 `jinja2`：
+The rendering stage also needs `jinja2`:
 
 ```bash
 python -m pip install jinja2
 ```
 
-## 当前入口
+## Entry points
 
 ### Step 1: AST / blocks / bc_ast
 
@@ -113,7 +113,7 @@ python examples/convert_mod/nmodl/steps/inspect_ast/cli.py \
   examples/convert_mod/nmodl/mod_files/kv.mod
 ```
 
-当前输出重点：
+Main outputs:
 
 - `ast_root_type`
 - `block_counts`
@@ -129,14 +129,14 @@ python examples/convert_mod/nmodl/steps/inspect_ir/cli.py \
   examples/convert_mod/nmodl/mod_files/kv.mod
 ```
 
-当前输出重点：
+Main outputs:
 
 - `summary`
 - `semantic_ir`
 - `target_ir`
 - `braincell_ir`
 
-这里的 `braincell_ir` 目前等同于当前 target IR payload，保留是为了兼容旧入口。
+`braincell_ir` is currently the same as the target IR payload; it is kept for compatibility with the old entry point.
 
 ### Step 3: render preview / validation
 
@@ -145,26 +145,26 @@ python examples/convert_mod/nmodl/steps/render/cli.py \
   examples/convert_mod/nmodl/mod_files/kv.mod
 ```
 
-当前输出重点：
+Main outputs:
 
 - `summary`
 - `render_preview`
 - `validation`
 
-`validation` 现在会报告生成源码是否能：
+`validation` reports whether the generated source can:
 
 - `compile`
 - `exec`
-- 取到目标 class
+- yield the target class
 
-### 一步生成源码
+### Generate the source in one step
 
 ```bash
 python examples/convert_mod/nmodl/examples/generate_braincell.py \
   examples/convert_mod/nmodl/mod_files/kv.mod
 ```
 
-可显式指定 pipeline：
+The pipeline can be given explicitly:
 
 ```bash
 python examples/convert_mod/nmodl/examples/generate_braincell.py \
@@ -172,29 +172,29 @@ python examples/convert_mod/nmodl/examples/generate_braincell.py \
   --pipeline canonical_default__one_ion_hh_ohmic__braincell_one_ion_hh_ohmic
 ```
 
-默认输出：
+Default output:
 
 - `examples/generated_<mod_stem>_one_ion_hh_ohmic.py`
 
-## 当前支持范围
+## Supported scope
 
-首版 target lowering 接受：
+The first version of target lowering accepts:
 
-- 恰好一个 `USEION`
-- 可识别的单 ohmic current
-- 可从 current expression 中提取 gate powers
-- 参与电流的 gate 可规约为
+- exactly one `USEION`
+- a single recognizable ohmic current
+- gate powers that can be extracted from the current expression
+- gates in the current that reduce to
   - `inf/tau`
-  - 或 `alpha/beta`
+  - or `alpha/beta`
 
-当前 `target_family`：
+Current `target_family` values:
 
 - `hh_ohmic_inf_tau`
 - `hh_ohmic_alpha_beta`
 
-## 当前不支持
+## Not supported yet
 
-虽然 parser 和 Step 1 还能保留很多高级块，但当前 BrainCell density-channel 路径还不会生成它们：
+The parser and Step 1 still keep many advanced blocks, but the BrainCell density-channel path does not generate them yet:
 
 - `KINETIC`
 - `DISCRETE`
@@ -209,23 +209,23 @@ python examples/convert_mod/nmodl/examples/generate_braincell.py \
 - `CVODE`
 - `LONGITUDINAL_DIFFUSION`
 
-此外，下列机制目前会在 target lowering 阶段拒绝：
+In addition, target lowering currently rejects these mechanisms:
 
-- 多 `USEION`
+- several `USEION`
 - `NONSPECIFIC_CURRENT`
-- 非 ohmic current
-- 无法识别 gate power 或门控动力学的机制
+- non-ohmic currents
+- mechanisms whose gate powers or gating dynamics cannot be recognized
 
 ## Walkthrough
 
-推荐先打开：
+Start with:
 
 - `examples/walktrough.ipynb`
 
-这个 notebook 会按当前实现顺序展示：
+The notebook shows, in the order of the current implementation:
 
-1. 输入 `.mod`
-2. parser AST 摘要
+1. the input `.mod`
+2. the parser AST summary
 3. `raw_blocks`
 4. `canonical_blocks`
 5. `bc_ast`
@@ -233,21 +233,21 @@ python examples/convert_mod/nmodl/examples/generate_braincell.py \
 7. `target_ir`
 8. `rendered Python`
 9. `validation`
-10. 正例 / 反例对照
+10. positive and negative cases side by side
 
-它也会通过 `steps.save_pipeline_artifacts()` 把核心产物保存到 `examples/artifacts/<mod_stem>/` 下面，便于人工检查。
+It also saves the core artifacts under `examples/artifacts/<mod_stem>/` through `steps.save_pipeline_artifacts()` for manual inspection.
 
-## 推荐使用顺序
+## Recommended order
 
-调试或扩展转换器时：
+When debugging or extending the converter:
 
-1. 先看 Step 1 的 `bc_ast`
-2. 再看 Step 2 的 `semantic_ir`
-3. 确认 `target_ir["supported"]` 为 `true`
-4. 最后再看 Step 3 的 render preview 和 validation
+1. look at the Step 1 `bc_ast` first
+2. then the Step 2 `semantic_ir`
+3. confirm that `target_ir["supported"]` is `true`
+4. finally look at the Step 3 render preview and validation
 
-快速 smoke test：
+Quick smoke test:
 
-1. 先跑 `kv.mod`
-2. 再跑 `na_alpha_beta.mod`
-3. 最后确认 `hh.mod` 在 target lowering 阶段被拒绝
+1. run `kv.mod` first
+2. then `na_alpha_beta.mod`
+3. finally confirm that `hh.mod` is rejected in target lowering

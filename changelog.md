@@ -1128,6 +1128,21 @@
   counted), and against NEURON's built-in mechanisms in
   `validation/neuron/synapse/reference_test.py` (V within 1e-9 mV). That
   test replaces the synapse comparison runners, which no longer ran.
+- **Large populations with synapses initialize much faster** (CELL-38).
+  `init_state` (or the first `cell.synapses` access) builds a table of every
+  synapse of the Cell, and it resolved, checked and stacked each parameter
+  once per synapse in Python. It now does so once per `Synapse` declaration
+  (array values once per unit), and orders the rows with array operations.
+  With one `ExpSyn` on each dendrite and axon end and one at the soma of
+  every member, the build took 5.9 s at 1e5 members and 60 s at 1e6 on main
+  `36c731f`, and now takes 48 ms and 0.62 s; `init_state` as a whole went
+  from 6.1 s to 0.26 s and from 62 s to 2.8 s. With `ExpSynSTD` (four
+  parameters) the build went from 9.4 s to 43 ms at 1e5. A list of
+  locations per member, which gives one declaration per member, no longer
+  costs time quadratic in the members: at 1e5 members, one soma synapse
+  each, the build takes 1.4 s, down from 149 s. The table's rows,
+  order, values, units and dtypes are unchanged, and an invalid value
+  still names the first failing synapse and its `place` call.
 
 ### Bug Fixes
 

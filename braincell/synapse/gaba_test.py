@@ -226,6 +226,23 @@ class GabaAModelTest(unittest.TestCase):
         GabaA_JE2011(size=1, P=0.0)
         GabaA_JE2011(size=1, P=1.0)
 
+    def test_invalid_parameters_through_a_cell_name_the_synapse(self) -> None:
+        # CELL-44: the checks above, reached through init_state and set, say which synapse failed.
+        for kwargs, problem in (
+            ({"tau1": 6.0 * u.ms}, "tau1 < tau2"),
+            ({"P": 1.1}, "0 <= P <= 1"),
+            ({"HCO3i": -1.0 * u.mM}, "'HCO3i' must be > 0"),
+        ):
+            with self.subTest(next(iter(kwargs))):
+                cell = _cell((0.5, bc.mech.Synapse("GabaA_JE2011", name="g", **kwargs)))
+                with self.assertRaisesRegex(ValueError, rf"^Synapse 'g' \(GabaA_JE2011\).*{problem}.*Placed on"):
+                    cell.init_state()
+        cell = _cell((0.5, bc.mech.Synapse("GabaA_JE2011", name="g")))
+        cell.init_state()
+        with self.assertRaisesRegex(ValueError, r"^Synapse 'g' \(GabaA_JE2011\): GabaA_JE2011 requires 0 <= P <= 1\.$"):
+            cell.synapses["g"].set(P=-0.5)
+        np.testing.assert_allclose(cell.synapses["g"].P, [0.18])
+
 
 class GabaACellTest(unittest.TestCase):
     """The Cell passes each row's chloride state and adds the chloride current to the ion."""

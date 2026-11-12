@@ -32,6 +32,18 @@ class _SynapseViewTrainableExpSyn(braincell.synapse.ExpSyn):
         self.tau = brainstate.nn.Param(self.tau)
 
 
+@braincell.mech.register_synapse("_DistinctTauExpSyn")
+class _DistinctTauExpSyn(braincell.synapse.ExpSyn):
+    """A check that relates rows: no declaration fails it alone."""
+
+    @classmethod
+    def validate_parameter_values(cls, parameters):
+        super().validate_parameter_values(parameters)
+        tau = np.asarray(parameters["tau"].to_decimal(u.ms)).reshape(-1)
+        if np.unique(tau).size != tau.size:
+            raise ValueError("_DistinctTauExpSyn requires distinct tau values.")
+
+
 def _population(size=2):
     soma = Branch.from_lengths(
         lengths=[20.0] * u.um,
@@ -130,6 +142,39 @@ class SynapseViewTest(unittest.TestCase):
             cell.synapses["fast"].set(tau=5 * u.mV)
         with self.assertRaisesRegex(TypeError, r"^Synapse 'ExpSyn' parameter 'tau' requires .* got 5.0 \(no unit\)\.$"):
             cell.synapses.set(tau=5.0)
+
+    def test_init_state_names_the_declaration_that_fails_a_type_check(self):
+        # CELL-44: the positive and tau1 < tau2 checks see every synapse of a
+        # type at once; the error names the declaration whose rows fail.
+        cell = _population()
+        cell.place(at("soma", 0.2), braincell.mech.Synapse("ExpSyn", name="fast", tau=1.0 * u.ms))
+        cell.place(at("soma", 0.4), braincell.mech.Synapse("ExpSyn", name="slow", tau=[2.0, -2.0] * u.ms))
+        with self.assertRaisesRegex(
+            ValueError,
+            r"^Synapse 'slow' \(ExpSyn\) parameter 'tau' must be > 0\. Placed on AtLocation\(branch='soma', x=0\.4\)",
+        ):
+            cell.init_state()
+
+    def test_init_state_names_the_first_failing_of_many_declarations(self):
+        for invalid, named in (({1, 3}, "s1"), ({4}, "s4"), ({0, 1, 2, 3, 4}, "s0")):
+            with self.subTest(invalid=sorted(invalid)):
+                cell = _population(size=1)
+                for index in range(5):
+                    tau = (-1.0 if index in invalid else 1.0 + index) * u.ms
+                    cell.place(
+                        at("soma", 0.1 * (index + 1)), braincell.mech.Synapse("ExpSyn", name=f"s{index}", tau=tau)
+                    )
+                with self.assertRaisesRegex(
+                    ValueError, rf"^Synapse '{named}' \(ExpSyn\) parameter 'tau' must be > 0\."
+                ):
+                    cell.init_state()
+
+    def test_a_check_no_declaration_fails_alone_keeps_its_message(self):
+        cell = _population(size=1)
+        cell.place(at("soma", 0.2), braincell.mech.Synapse("_DistinctTauExpSyn", name="a", tau=1.0 * u.ms))
+        cell.place(at("soma", 0.4), braincell.mech.Synapse("_DistinctTauExpSyn", name="b", tau=1.0 * u.ms))
+        with self.assertRaisesRegex(ValueError, r"^_DistinctTauExpSyn requires distinct tau values\.$"):
+            cell.init_state()
 
     def test_post_init_parameter_validation_is_atomic(self):
         cell = _population()

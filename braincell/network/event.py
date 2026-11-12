@@ -451,9 +451,12 @@ class NetStim(EventSource):
         """Count delayed events assigned to the nearest fixed-step boundary.
 
         An arrival is delivered at step ``t`` when it lies in the half-open
-        interval ``[t - dt / 2, t + dt / 2)``. This matches NEURON's
-        fixed-step event delivery rule and assigns an exact half-step tie to
-        the later boundary.
+        interval ``[t - dt / 2, t + dt / 2)``, so an exact half-step tie goes
+        to the later boundary; a step ratio within four ulp of a half counts
+        as a tie. Away from ties this is the step NEURON's fixed-step
+        delivery picks. At an exact tie NEURON's choice follows its
+        accumulated ``t``: arrivals at 0.0125, 5.0375 and 8.0125 ms with
+        ``dt = 0.025 ms`` land one step earlier in NEURON 9.0 than here.
 
         Inside ``Cell.run`` and ``Network.run`` it reads the events up to
         the end of the run; elsewhere it generates every event (see the

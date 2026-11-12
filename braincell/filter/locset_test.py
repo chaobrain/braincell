@@ -589,6 +589,70 @@ class LocsetSetOpValidationTest(unittest.TestCase):
         self.assertIsInstance(RootLocation(x=0.5).unique(), LocsetUniqueOp)
 
 
+class LongLocsetChainTest(unittest.TestCase):
+    """A locset built one operand at a time in a loop stays one level deep.
+
+    On main each ``+``, ``|``, ``&`` or ``-`` nested one level, and hashing or
+    evaluating a few hundred levels raised ``RecursionError``.
+    """
+
+    def test_a_5000_operand_fold_hashes_compares_and_evaluates(self) -> None:
+        tree = _build_sampling_tree()
+        n = 5000
+        # Ten distinct points, repeated: the union and intersection stay small.
+        points = [RootLocation(x=(k % 10) / 10) for k in range(n)]
+        tenth = tuple((0, k / 10) for k in range(10))
+        cases = (
+            ("concat", lambda x, y: x + y, RootLocation(x=1.0), ((0, 1.0),) + tenth * (n // 10)),
+            ("union", lambda x, y: x | y, RootLocation(x=1.0), ((0, 1.0),) + tenth),
+            ("intersection", lambda x, y: x & y, RootLocation(x=0.0), ()),
+            ("difference", lambda x, y: x - y, RootLocation(x=1.0), ((0, 1.0),)),
+        )
+        for op, combine, first, expected in cases:
+            with self.subTest(op):
+                expr = first
+                for point in points:
+                    expr = combine(expr, point)
+                self.assertEqual(tuple(expr.evaluate(tree, SelectionCache()).points), expected)
+                self.assertEqual(expr.evaluate(tree).points, expr.evaluate(tree, SelectionCache()).points)
+                self.assertEqual(hash(expr), hash(copy.deepcopy(expr)))
+                self.assertEqual(expr, copy.deepcopy(expr))
+                self.assertEqual(len(expr.operands), n + 1)
+                if op != "concat":
+                    self.assertEqual(expr.op, op)
+
+    def test_only_an_equivalent_operand_is_spliced(self) -> None:
+        a, b, c = (RootLocation(x=x) for x in (0.1, 0.2, 0.3))
+        cases = (
+            ((a + b) + c, LocsetConcatOp((a, b, c))),
+            (a + (b + c), LocsetConcatOp((a, b, c))),
+            ((a | b) | c, LocsetSetOp("union", (a, b, c))),
+            (a | (b | c), LocsetSetOp("union", (a, b, c))),
+            ((a & b) & c, LocsetSetOp("intersection", (a, b, c))),
+            (a & (b & c), LocsetSetOp("intersection", (a, b, c))),
+            ((a - b) - c, LocsetSetOp("difference", (a, b, c))),
+            (a - (b - c), LocsetSetOp("difference", (a, LocsetSetOp("difference", (b, c))))),
+            ((a | b) + c, LocsetConcatOp((LocsetSetOp("union", (a, b)), c))),
+            ((a + b) | c, LocsetSetOp("union", (LocsetConcatOp((a, b)), c))),
+        )
+        for got, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(got, expected)
+
+    def test_a_malformed_operand_is_not_spliced_into_a_valid_one(self) -> None:
+        tree = _build_sampling_tree()
+        a, b = RootLocation(x=0.1), RootLocation(x=0.2)
+        cases = (
+            (LocsetConcatOp((a,)) + b, "concatenation expects at least two operands"),
+            (b + LocsetConcatOp((a,)), "concatenation expects at least two operands"),
+            (LocsetSetOp("union", (a,)) | b, "union expects at least two operands"),
+            (b | LocsetSetOp("union", (a,)), "union expects at least two operands"),
+        )
+        for expr, message in cases:
+            with self.subTest(expr=expr), self.assertRaisesRegex(ValueError, message):
+                expr.evaluate(tree)
+
+
 #: The two random-location expressions, built without a seed and with one.
 _SAMPLERS = (
     ("sample", lambda region, seed=None: sample(region, number=3, seed=seed)),

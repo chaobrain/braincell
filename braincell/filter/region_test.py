@@ -45,13 +45,14 @@ from braincell.filter import (
     RadiusRangeRegion,
     RegionMask,
     RegionSetOp,
+    SelectionCache,
     SubtreeRegion,
     TreeDistanceRegion,
     branch_in,
     branch_range,
 )
 from braincell.filter import region as region_mod
-from braincell.morph._testing import make_tree_t, make_tree_u
+from braincell.morph._testing import make_deep_chain_tree, make_tree_t, make_tree_u
 
 
 def _soma_dend_axon_tree(*, with_tuft: bool = False) -> Morphology:
@@ -360,6 +361,91 @@ class RegionSetOpTest(unittest.TestCase):
             RegionSetOp("complement", (left, right)).evaluate(tree)
         with self.assertRaises(ValueError):
             RegionSetOp("union", (left,)).evaluate(tree)
+
+
+class LongSetOpChainTest(unittest.TestCase):
+    """A region built one operand at a time in a loop stays one level deep.
+
+    On main a union of one ``branch_in`` per branch name nested one level per
+    operand, and hashing, comparing or evaluating it recursed once per level:
+    the 401-branch distal dendrite of a DCN reconstruction raised
+    ``RecursionError``. The operators now splice a same-operation operand.
+    """
+
+    def setUp(self) -> None:
+        self.a, self.b, self.c = (BranchSlice(branch_index=0, prox=0.1 * k, dist=0.1 * k + 0.05) for k in range(3))
+
+    def test_a_union_of_every_branch_name_on_a_deep_chain(self) -> None:
+        # 600 operands is three times the depth that overflowed with a cache.
+        tree = make_deep_chain_tree(600)
+        names = [branch.name for branch in tree.branches]
+        expected = tuple((index, 0.0, 1.0) for index in range(len(names)))
+        left = branch_in("name", names[0])
+        right = branch_in("name", names[0])
+        for name in names[1:]:
+            left = left | branch_in("name", name)
+            right = branch_in("name", name) | right
+        self.assertEqual(left.evaluate(tree).intervals, expected)
+        self.assertEqual(left.evaluate(tree, SelectionCache()).intervals, expected)
+        self.assertEqual(tree.select(right).intervals, expected)
+        self.assertEqual(len(left.operands), len(names))
+        self.assertEqual(len(right.operands), len(names))
+
+    def test_a_5000_operand_fold_hashes_compares_and_evaluates(self) -> None:
+        tree = _soma_dend_axon_tree()
+        n = 5000
+        pieces = [BranchSlice(branch_index=1, prox=k / n, dist=(k + 1) / n) for k in range(n)]
+        cases = (
+            (
+                "union",
+                lambda x, y: x | y,
+                AllRegion() - BranchSlice(branch_index=1, prox=0.0, dist=1.0),
+                ((0, 0.0, 1.0), (1, 0.0, 1.0), (2, 0.0, 1.0)),
+            ),
+            ("intersection", lambda x, y: x & y, AllRegion(), ()),
+            ("difference", lambda x, y: x - y, AllRegion(), ((0, 0.0, 1.0), (2, 0.0, 1.0))),
+        )
+        for op, combine, first, expected in cases:
+            with self.subTest(op):
+                expr = first
+                for piece in pieces:
+                    expr = combine(expr, piece)
+                self.assertEqual((expr.op, len(expr.operands)), (op, n + 1))
+                self.assertEqual(hash(expr), hash(copy.deepcopy(expr)))
+                self.assertEqual(expr, copy.deepcopy(expr))
+                self.assertIn(f"RegionSetOp(op='{op}'", repr(expr))
+                got = expr.evaluate(tree, SelectionCache()).intervals
+                self.assertEqual(len(got), len(expected))
+                for actual, target in zip(got, expected):
+                    self.assertEqual(actual[0], target[0])
+                    self.assertAlmostEqual(actual[1], target[1], places=12)
+                    self.assertAlmostEqual(actual[2], target[2], places=12)
+
+    def test_only_an_equivalent_operand_is_spliced(self) -> None:
+        a, b, c = self.a, self.b, self.c
+        cases = (
+            ((a | b) | c, RegionSetOp("union", (a, b, c))),
+            (a | (b | c), RegionSetOp("union", (a, b, c))),
+            ((a | b) | (b | c), RegionSetOp("union", (a, b, b, c))),
+            ((a & b) & c, RegionSetOp("intersection", (a, b, c))),
+            (a & (b & c), RegionSetOp("intersection", (a, b, c))),
+            # (a - b) - c removes b then c, as the left-to-right fold does ...
+            ((a - b) - c, RegionSetOp("difference", (a, b, c))),
+            # ... but a - (b - c) keeps c, so it stays nested.
+            (a - (b - c), RegionSetOp("difference", (a, RegionSetOp("difference", (b, c))))),
+            ((a | b) & c, RegionSetOp("intersection", (RegionSetOp("union", (a, b)), c))),
+            (a.complement() | b, RegionSetOp("union", (RegionSetOp("complement", (a,)), b))),
+        )
+        for got, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(got, expected)
+
+    def test_a_malformed_operand_is_not_spliced_into_a_valid_one(self) -> None:
+        tree = _soma_dend_axon_tree()
+        one = RegionSetOp("union", (self.a,))
+        for expr in (one | self.b, self.b | one):
+            with self.subTest(expr=expr), self.assertRaisesRegex(ValueError, "union expects at least two operands"):
+                expr.evaluate(tree)
 
 
 class RegionExprOperatorsRejectNonRegionTest(unittest.TestCase):

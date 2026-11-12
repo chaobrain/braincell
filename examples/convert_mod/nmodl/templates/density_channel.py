@@ -22,7 +22,7 @@ import brainunit as u
 from braincell import IonInfo
 from braincell.mech import get_registry
 from braincell.mech import register_channel
-from braincell.quad.protocol import state
+from braincell.quad import state
 
 
 def _to_decimal_if_possible(value, unit):

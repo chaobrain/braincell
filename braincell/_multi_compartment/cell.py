@@ -4686,14 +4686,21 @@ class Cell(_CellFacade, HHTypedNeuron):
         """Merge one Network arrival with any event staged for this boundary.
 
         ``count`` is the arrival's per-row event count, given for a
-        ``"sum_count"`` layout only (CELL-12b).
+        ``"sum_count"`` layout only (CELL-12b). A detailed or lumped Cell's
+        buffer is empty here, as the step before consumed it, unless a run
+        on its own prepared this boundary before the Network's first step:
+        the sum keeps that run's events (CELL-57), in the arrival's unit.
         """
         if self._uses_reduction:
             current = self._reduction_input_runtime.get_event_buffer(layout_id)
             arrival = current + _coerce_drive_like(arrival, current)
+        else:
+            current = self._runtime.get_event_buffer(layout_id)
+            arrival = _coerce_drive_like(arrival, current) + current
         self._set_event_buffer(layout_id, arrival)
         if count is not None:
-            self._event_count_state(layout_id).value = count
+            state = self._event_count_state(layout_id)
+            state.value = count + state.value
 
     def _update_runtime_synapses(self, point_V):
         """Advance runtime synapse dynamics.
@@ -4902,6 +4909,21 @@ class Cell(_CellFacade, HHTypedNeuron):
         which ``dt`` last changed. Each time is one rounding of a product,
         so segments step at the times of one run, however long it is.
         :meth:`reset_state` returns to ``t = 0``.
+
+        A scheduled event (``NetStim``, ``EventSequence``) acts on the
+        step nearest its arrival, and is delivered once also when ``dt``
+        changes. A run ends by preparing the boundary at the time it
+        reached, with the events within half of its step: a run at another
+        ``dt`` keeps that boundary as it is, skips the events it took, and
+        delivers the others on its own steps, counted from the time reached
+        when that is not a multiple of the new ``dt``, but not on the step
+        at that time. So within half a step of the change an event can act
+        a step later than on the new grid: after 10 steps of 0.025 ms, at
+        ``dt = 0.05 ms`` events at 0.265 and 0.27 ms act at 0.3 ms, not
+        0.25 ms. A Cell run on its own after a Network at another ``dt``
+        skips the events the Network delivered in the same way. A traced
+        run (inside ``jax.jit``) has no host clock: it counts the arrivals
+        on the grid from time 0, without this hand-over.
 
         Raises
         ------

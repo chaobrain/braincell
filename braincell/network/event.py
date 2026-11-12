@@ -25,7 +25,7 @@ from abc import ABC
 import contextlib
 from dataclasses import dataclass, field
 import hashlib
-from typing import Any
+from typing import Any, NamedTuple
 
 import brainstate
 import brainunit as u
@@ -59,8 +59,15 @@ _BOUNDARY_STEP_KEY = "_braincell_boundary_step"
 #: steps count from that time, the boundary numbered ``step`` (:func:`arrival_origin`).
 _ARRIVAL_ORIGIN_KEY = "_braincell_arrival_origin"
 
+#: ``brainstate.environ`` key carrying the :class:`ArrivalHandover` of a run
+#: that takes over from a run at another ``dt`` (:func:`handed_over`).
+_HANDOVER_KEY = "_braincell_arrival_handover"
+
 #: Arrival steps past the int32 step count, which no run reaches, are clipped to it.
 _MAX_STEP = 2**31 - 1
+
+#: The arrival step of an event a run never delivers: an earlier run took it (CELL-57).
+TAKEN_STEP = -1
 
 
 class EventSource(ABC):
@@ -307,10 +314,13 @@ class EventSequence(EventSource):
         delivers each event at the step a float64 run does (CELL-46). Inside
         ``Cell.run``, ``Network.run`` and ``Network.update()`` it is compared
         with the loop's integer step; after ``Cell.run`` changes ``dt``, both
-        count from the time reached (CELL-48). For a ``t`` the caller chose, the step
-        is ``t / dt`` rounded in the run precision. A ``delay`` or ``dt``
-        that is traced (an argument of a ``jax.jit`` function) has no host
-        value; its arrivals are then rounded in the run precision too.
+        count from the time reached (CELL-48). A run after one at another
+        ``dt`` skips the events that run took, and delivers the others no
+        earlier than its first boundary that run did not prepare (CELL-57).
+        For a ``t`` the caller chose, the step is ``t / dt`` rounded in the
+        run precision. A ``delay`` or ``dt`` that is traced (an argument of
+        a ``jax.jit`` function) has no host value; its arrivals are then
+        rounded in the run precision too.
         """
         source_index = np.asarray(source_index, dtype=np.int64).reshape(-1)
         plan = _ArrivalPlan.build(
@@ -498,10 +508,13 @@ class NetStim(EventSource):
         delivers each event at the step a float64 run does (CELL-46). Inside
         ``Cell.run``, ``Network.run`` and ``Network.update()`` it is compared
         with the loop's integer step; after ``Cell.run`` changes ``dt``, both
-        count from the time reached (CELL-48). For a ``t`` the caller chose, the step
-        is ``t / dt`` rounded in the run precision. A ``delay`` or ``dt``
-        that is traced (an argument of a ``jax.jit`` function) has no host
-        value; its arrivals are then rounded in the run precision too.
+        count from the time reached (CELL-48). A run after one at another
+        ``dt`` skips the events that run took, and delivers the others no
+        earlier than its first boundary that run did not prepare (CELL-57).
+        For a ``t`` the caller chose, the step is ``t / dt`` rounded in the
+        run precision. A ``delay`` or ``dt`` that is traced (an argument of
+        a ``jax.jit`` function) has no host value; its arrivals are then
+        rounded in the run precision too.
         """
         self._ensure_schedule(until_ms=brainstate.environ.get(_SCHEDULE_HORIZON_KEY, None))
         source_index = np.asarray(source_index, dtype=np.int32)
@@ -1089,13 +1102,68 @@ def _host_ms(value):
     return np.asarray(decimal, dtype=np.float64)
 
 
-def _host_arrival_steps(time_ms, delay_ms, dt_ms) -> np.ndarray:
+class ArrivalHandover(NamedTuple):
+    """What a run at a new ``dt`` takes over from the runs before it (CELL-57).
+
+    A Cell's run ends by preparing the boundary at the time it reached, with
+    the events of that boundary's window at its own ``dt``; a Network step
+    prepares and consumes its boundary within the step. The run that
+    follows at another ``dt`` keeps what they took: an event whose arrival
+    step, counted in steps of ``taken_dt_ms`` from ``taken_origin_ms`` (the
+    boundary numbered ``taken_origin_step`` there, CELL-48), is at most
+    ``taken_last_step`` was taken, and is not delivered again
+    (:data:`TAKEN_STEP`). Every other event arrives at its step on the new
+    run's grid, but no earlier than ``first_step``, the new run's first
+    boundary that no earlier run prepared. Without it, a ``dt`` that grows
+    loses the events between the two half steps after the change, and a
+    ``dt`` that shrinks delivers them twice.
+
+    The steps are those the runs computed, at float64 on the host, so each
+    event is taken by exactly one run.
+    """
+
+    taken_origin_ms: float
+    taken_dt_ms: float
+    taken_origin_step: int
+    taken_last_step: int
+    first_step: int
+
+    @property
+    def edge_ms(self) -> float:
+        """The end of the last window taken: an arrival before it was taken."""
+        return self.taken_origin_ms + (self.taken_last_step - self.taken_origin_step + 0.5) * self.taken_dt_ms
+
+    def taken(self, arrival_ms) -> np.ndarray:
+        """Whether the runs before took each of ``arrival_ms`` (float64 ms)."""
+        ratio = (np.asarray(arrival_ms, dtype=np.float64) - self.taken_origin_ms) / self.taken_dt_ms
+        return round_half_up_steps_host(ratio) + self.taken_origin_step <= self.taken_last_step
+
+    def steps(self, steps, arrival_ms) -> np.ndarray:
+        """``steps``, the arrival steps of ``arrival_ms`` on the new grid, with the hand-over applied."""
+        return np.where(self.taken(arrival_ms), TAKEN_STEP, np.maximum(steps, self.first_step))
+
+
+def handed_over(handover: "ArrivalHandover | None"):
+    """Context in which the arrival steps apply ``handover`` (:class:`ArrivalHandover`); ``None`` changes nothing.
+
+    The run loops set it while they are traced, next to
+    :func:`arrival_origin`, so the arrival plans built inside it keep it.
+    """
+    if handover is None:
+        return contextlib.nullcontext()
+    return brainstate.environ.context(**{_HANDOVER_KEY: handover})
+
+
+def _host_arrival_steps(time_ms, delay_ms, dt_ms, handover: "ArrivalHandover | None" = None) -> np.ndarray:
     """int32 arrival steps ``(time + delay) / dt``, rounded at float64 on the host.
 
     The event times and delays are float64 declarations, so the step does
     not depend on the run precision: a float32 run delivers an event at the
     step a float64 run does (CELL-46). Inside :func:`arrival_origin` the
-    steps count from its origin (CELL-48).
+    steps count from its origin (CELL-48). ``handover``, or else the one of
+    :func:`handed_over`, gives the events earlier runs took
+    :data:`TAKEN_STEP` and moves the others to its first step or later
+    (CELL-57).
     """
     arrival_ms = np.asarray(time_ms, dtype=np.float64) + delay_ms
     origin = brainstate.environ.get(_ARRIVAL_ORIGIN_KEY, None)
@@ -1104,6 +1172,10 @@ def _host_arrival_steps(time_ms, delay_ms, dt_ms) -> np.ndarray:
     else:
         origin_ms, origin_step = origin
         steps = round_half_up_steps_host((arrival_ms - origin_ms) / dt_ms) + origin_step
+    if handover is None:
+        handover = brainstate.environ.get(_HANDOVER_KEY, None)
+    if handover is not None:
+        steps = handover.steps(steps, arrival_ms)
     return np.minimum(steps, _MAX_STEP).astype(np.int32)
 
 
@@ -1198,6 +1270,13 @@ class _ArrivalPlan:
         pair_group = np.repeat(np.arange(len(keys), dtype=np.int32), per_group)
         pair_event = np.arange(n_pairs) + np.repeat(lo - (np.cumsum(per_group) - per_group), per_group)
         steps = _host_arrival_steps(sorted_time[pair_event], group_delay[pair_group], dt_ms)
+        delivered = steps != TAKEN_STEP
+        if not delivered.all():
+            # Events an earlier run took (CELL-57) never arrive.
+            steps, pair_group = steps[delivered], pair_group[delivered]
+            n_pairs = int(steps.size)
+            if n_pairs == 0:
+                return cls(np.zeros(0, np.int32), np.zeros(0, np.int32), 0, row_group, len(keys), shape)
         by_step = np.argsort(steps, kind="stable")
         steps, pair_group = steps[by_step], pair_group[by_step]
         boundaries = np.flatnonzero(np.diff(steps) != 0)

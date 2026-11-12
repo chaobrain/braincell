@@ -149,7 +149,7 @@ class _SequenceArrivals:
     group: np.ndarray
 
     @classmethod
-    def build(cls, groups: _Groups, source: EventSequence, dt_ms: float) -> "_SequenceArrivals":
+    def build(cls, groups: _Groups, source: EventSequence, dt_ms: float, handover=None) -> "_SequenceArrivals":
         event_source = np.asarray(source.events.source_index, dtype=np.int64)
         event_ms = np.asarray(source.events.time.to_decimal(u.ms), dtype=np.float64)
         order = np.argsort(event_source, kind="stable")
@@ -158,7 +158,8 @@ class _SequenceArrivals:
         per_group = np.searchsorted(sorted_source, groups.source, side="right") - lo
         pair_group = np.repeat(np.arange(groups.source.size, dtype=np.int64), per_group)
         pair_event = np.arange(int(per_group.sum())) + np.repeat(lo - (np.cumsum(per_group) - per_group), per_group)
-        steps = _host_arrival_steps(sorted_ms[pair_event], groups.delay_ms[pair_group], dt_ms).astype(np.int64)
+        steps = _host_arrival_steps(sorted_ms[pair_event], groups.delay_ms[pair_group], dt_ms, handover)
+        steps = steps.astype(np.int64)
         by_step = np.argsort(steps, kind="stable")
         return cls(groups, steps[by_step], pair_group[by_step])
 
@@ -182,17 +183,19 @@ class _ScheduleArrivals:
     checked before use.
     """
 
-    def __init__(self, groups: _Groups, source: NetStim, dt_ms: float, cursor=None):
+    def __init__(self, groups: _Groups, source: NetStim, dt_ms: float, cursor=None, handover=None):
         self.groups = groups
         self.times = source._event_times_ms
         self.count = np.count_nonzero(source._event_mask, axis=1)[groups.source]
         self.dt_ms = dt_ms
         #: ``(step, column of each group's first arrival at or after it)``.
         self.cursor = cursor
+        #: What earlier runs at another ``dt`` took (CELL-57): the steps stay in order.
+        self.handover = handover
 
     def _steps(self, group: np.ndarray, column: np.ndarray) -> np.ndarray:
         times = self.times[self.groups.source[group], column]
-        return _host_arrival_steps(times, self.groups.delay_ms[group], self.dt_ms).astype(np.int64)
+        return _host_arrival_steps(times, self.groups.delay_ms[group], self.dt_ms, self.handover).astype(np.int64)
 
     def _first_columns(self, start: int) -> np.ndarray:
         """The column of each group's first arrival at or after ``start`` (its event count if none)."""
@@ -226,8 +229,11 @@ class _ScheduleArrivals:
             arrival = self._steps(active, column[active])
             inside = arrival < stop
             active = active[inside]
-            steps.append(arrival[inside])
-            group.append(active)
+            arrival = arrival[inside]
+            # Only the arrivals an earlier run took are before a start of 0 or less.
+            due = arrival >= start
+            steps.append(arrival[due])
+            group.append(active[due])
             column[active] += 1
             active = active[column[active] < self.count[active]]
         self.cursor = (stop, column)
@@ -393,19 +399,25 @@ class ScheduledPlans:
     full: tuple | None = None
     #: Statistics of the plan built last: preparation time, records, bytes.
     preparation: dict = field(default_factory=dict)
+    #: Population -> the ``ArrivalHandover`` of its Cell's runs before (CELL-57).
+    handovers: dict = field(default_factory=dict)
 
     @classmethod
     def build(cls, method, populations, dt_ms) -> "ScheduledPlans":
         return cls(method=method, routes=_routes(populations), dt_ms=float(dt_ms))
 
     def _tokens(self) -> tuple:
-        return tuple(tuple(_schedule_token(source) for source in route.sources) for route in self.routes)
+        tokens = tuple(tuple(_schedule_token(source) for source in route.sources) for route in self.routes)
+        if not self.handovers:
+            return tokens
+        return tokens, tuple(sorted(self.handovers.items()))
 
     def _table(self, route: _Route, position: int):
         """The arrivals of one call of ``route`` for its source's current schedule."""
         source = route.sources[position]
         key = (route.population, route.layout_id, route.call_ids[position])
-        token = _schedule_token(source)
+        handover = self.handovers.get(route.population)
+        token = (_schedule_token(source), handover)
         cached = self.tables.get(key)
         if cached is not None and cached[0] == token:
             return cached[1]
@@ -415,10 +427,10 @@ class ScheduledPlans:
             self.groups[key] = groups
         if isinstance(source, NetStim):
             # A schedule that grew keeps its first events: reuse where the last window stopped.
-            cursor = cached[1].cursor if cached is not None else None
-            table = _ScheduleArrivals(groups, source, self.dt_ms, cursor)
+            cursor = cached[1].cursor if cached is not None and cached[0][1] == handover else None
+            table = _ScheduleArrivals(groups, source, self.dt_ms, cursor, handover)
         elif isinstance(source, EventSequence):
-            table = _SequenceArrivals.build(groups, source, self.dt_ms)
+            table = _SequenceArrivals.build(groups, source, self.dt_ms, handover)
         else:  # pragma: no cover - a Network registers no other scheduled source
             raise TypeError(
                 f"scheduled_delivery supports NetStim and EventSequence sources, not {type(source).__name__}."

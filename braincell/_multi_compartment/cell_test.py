@@ -1387,7 +1387,7 @@ class TestCellLifecycle(unittest.TestCase):
 
     def test_runtime_method_requires_init(self):
         cell = _cell_with_recording()
-        for method_name in ("sample_probes", "mech_table"):
+        for method_name in ("mech_table",):
             with self.subTest(method=method_name):
                 with self.assertRaisesRegex(RuntimeError, r"init_state\(\)"):
                     getattr(cell, method_name)()
@@ -1590,14 +1590,22 @@ class TestCellLifecycle(unittest.TestCase):
                 self.assertIn("braincell.connect(", message)
                 self.assertFalse(hasattr(target, "bind_synapse_input"))
 
-    def test_probe_sampling_finds_no_probe(self):
-        # API-15: no probe can be placed any more, so nothing is sampled and
-        # no name resolves; the KeyError points to Cell.record.
+    def test_probe_sampling_was_removed(self):
+        # API-16: removed in braincell 0.3 with the probes (API-15); the
+        # message names Cell.record, the replacement.
         cell = _cell_with_recording()
-        cell.init_state()
-        self.assertEqual(cell.sample_probes(), {})
-        with self.assertRaisesRegex(KeyError, r"No probe is registered with name 'V_root'.*Cell\.record"):
-            cell.sample_probe("V_root")
+        for stage in ("declared", "initialized"):
+            if stage == "initialized":
+                cell.init_state()
+            for target in (cell, Cell):
+                for name in ("sample_probe", "sample_probes"):
+                    with self.subTest(stage=stage, target=target, name=name):
+                        with self.assertRaises(AttributeError) as caught:
+                            getattr(target, name)
+                        message = str(caught.exception)
+                        self.assertTrue(message.startswith(f"braincell.Cell.{name}() was removed in braincell 0.3 "))
+                        self.assertIn("Cell.record", message)
+                        self.assertFalse(hasattr(target, name))
 
 
 class CellMembraneLinearizerTest(unittest.TestCase):

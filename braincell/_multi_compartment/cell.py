@@ -99,6 +99,7 @@ from braincell.network.plasticity import advance_rules
 from braincell.network.recording import (
     RecordingSpec,
     _ClampCurrentObservable,
+    _OutputObservable,
     as_observable,
     compile_recording,
     recording_is_active,
@@ -222,7 +223,36 @@ class _CellFacade:
         return CellView(self._view_root, scope.population_indices, scope=scope)
 
     def __getitem__(self, selection) -> "CellView":
-        """Return a view selected relative to this cell-like object."""
+        """Return a view of population members selected relative to this one.
+
+        On a one-dimensional selection, ``selection`` is an integer, a slice
+        or a sequence of integers; a sequence lists members in its order and
+        drops repeats. On a multi-dimensional ``pop_size``, a selection with
+        more than one axis takes one integer or slice per axis, as NumPy basic
+        indexing does (``cell[1, 2]``, ``cell[:, 1]``, ``cell[0]``): the view
+        holds the members in C order, and its :attr:`CellView.shape` is the
+        shape that indexing gives. Once a selection has one axis left, the
+        one-dimensional rules apply again: ``cell[0][[2, 0]]``.
+
+        Raises
+        ------
+        IndexError
+            If an index is outside its axis, or a multi-axis selection has
+            more indices than axes.
+        TypeError
+            If an entry of a multi-axis selection is not an integer or a slice
+            (a sequence, an array, a boolean, ``...`` or ``None``).
+
+        Examples
+        --------
+        >>> import brainunit as u
+        >>> import braincell
+        >>> cell = braincell.Cell.point((2, 3), V_init=-65.0 * u.mV)
+        >>> cell[:, 1].population_indices, cell[:, 1].shape
+        ((1, 4), (2,))
+        >>> cell[1].shape, cell[1][[2, 0]].population_indices
+        ((3,), (5, 3))
+        """
         return self._with_scope(self._scope.select_population(selection))
 
     def on(self, region: RegionExpr | RegionMask) -> "CellView":
@@ -271,17 +301,20 @@ class _CellFacade:
     @property
     def channels(self) -> ChannelView:
         """Return Channel logical owners intersecting this scope."""
+        self._view_root._require_one_dimensional("channels")
         return ChannelView(self._view_root, self._scope)
 
     @property
     def ions(self) -> IonView:
         """Return Ion logical owners intersecting this scope."""
+        self._view_root._require_one_dimensional("ions")
         return IonView(self._view_root, self._scope)
 
     @property
     def geometry(self) -> GeometryView:
         """Return fixed-grid runtime geometry parameters for this scope."""
         self._view_root._raise_if_not_initialized("geometry")
+        self._view_root._require_one_dimensional("geometry")
         return GeometryView(self._view_root, self._scope)
 
     # CV selections expose geometry fields directly.  ``geometry`` remains a
@@ -369,6 +402,15 @@ class _CellFacade:
         ``cell.on(BranchSlice(1, 0.0, 1.0))``) is not followed through a
         removal or a move of a branch: ``init_state`` raises ``ValueError``.
 
+        Each selected member gives its rows, members in the order of the
+        view; :attr:`RecordingRow.population_index` is the member's flat
+        index. On a multi-dimensional ``pop_size`` that is its position in C
+        order over the population axes, so ``values.reshape(n_samples, *pop_size,
+        -1)`` restores the grid of a whole-Cell recording. A batch axis comes
+        before the rows: ``values`` has shape ``(n_samples, batch, n_rows)``.
+        ``observe.output(...)`` needs a one-dimensional ``pop_size`` and raises
+        ``ValueError`` otherwise.
+
         Examples
         --------
         >>> import brainunit as u
@@ -379,12 +421,24 @@ class _CellFacade:
         True
         >>> cell.run(dt=0.025 * u.ms, duration=1.0 * u.ms).samples["V"].values.shape
         (40, 2)
+
+        On a population of shape ``(2, 3)``, ``cell[:, 1]`` records members 1
+        and 4:
+
+        >>> grid = braincell.Cell.point((2, 3), V_init=-65.0 * u.mV)
+        >>> _ = grid[:, 1].record("column", "V")
+        >>> block = grid.run(dt=0.025 * u.ms, duration=1.0 * u.ms).samples["column"]
+        >>> [row.population_index for row in block.schema.rows], block.values.shape
+        ([1, 4], (40, 2))
         """
+        observable = as_observable(observable)
+        if isinstance(observable, _OutputObservable):
+            self._view_root._require_one_dimensional("observe.output(...)")
         return self._view_root._add_recording(
             RecordingSpec(
                 name=name,
                 scope=self._scope,
-                observable=as_observable(observable),
+                observable=observable,
                 period=period,
                 frequency=frequency,
                 start=start,
@@ -476,7 +530,9 @@ class CellView(DiscreteView, _CellFacade):
         self._cell = cell
         self._population_indices = tuple(population_indices)
         self._selection_scope = (
-            cell._root_scope().select_population(tuple(population_indices)) if scope is None else scope
+            cell._root_scope().select_members(self._population_indices, (len(self._population_indices),))
+            if scope is None
+            else scope
         )
         self._bind_view(cell)
 
@@ -513,9 +569,22 @@ class CellView(DiscreteView, _CellFacade):
         return np.asarray(self._population_indices, dtype=np.int64)
 
     @property
-    def shape(self) -> tuple[int]:
-        """Return the one-dimensional selection shape."""
-        return (len(self),)
+    def shape(self) -> tuple[int, ...]:
+        """Return the shape of the selected members.
+
+        ``(len(self),)`` on a one-dimensional population. On a
+        multi-dimensional ``pop_size`` it is the shape NumPy indexing of that
+        grid gives: ``(2, 3)`` for ``cell.soma``, ``(3,)`` for ``cell[0]``.
+
+        Examples
+        --------
+        >>> import brainunit as u
+        >>> import braincell
+        >>> cell = braincell.Cell.point((2, 3), V_init=-65.0 * u.mV)
+        >>> cell.soma.shape, cell[0].shape, cell[:, ::-2].shape
+        ((2, 3), (3,), (2, 2))
+        """
+        return self._scope.population_shape or (len(self),)
 
     @property
     def size(self) -> int:
@@ -523,8 +592,8 @@ class CellView(DiscreteView, _CellFacade):
         return len(self)
 
     @property
-    def pop_size(self) -> tuple[int]:
-        """Return the selected population shape."""
+    def pop_size(self) -> tuple[int, ...]:
+        """Return the selected population shape, :attr:`shape`."""
         return self.shape
 
     @property
@@ -734,6 +803,7 @@ class CellView(DiscreteView, _CellFacade):
         """Return registered reduction models over selected population members."""
         if self._scope.spatially_restricted:
             raise RuntimeError("Reduction parameters can only be selected by population, not by morphology location.")
+        self._cell._require_one_dimensional("reductions")
         return ReductionViewCollection(self._cell, self._population_indices)
 
     @property
@@ -777,6 +847,7 @@ class CellView(DiscreteView, _CellFacade):
     def V(self):
         """Return initialized membrane voltage gathered over selected cells."""
         self._cell._raise_if_not_initialized("CellView.V")
+        self._cell._require_one_dimensional("CellView.V")
         if self._cell._is_lumped:
             # No CV axis: a spatial selection reads the member of each pair.
             populations = (
@@ -797,6 +868,7 @@ class CellView(DiscreteView, _CellFacade):
     def spike(self):
         """Return initialized spike values gathered over selected cells."""
         self._cell._raise_if_not_initialized("CellView.spike")
+        self._cell._require_one_dimensional("CellView.spike")
         if self._cell._uses_reduction:
             return _select_model_output(
                 self._cell.spike.value,
@@ -3110,9 +3182,21 @@ class Cell(_CellFacade, HHTypedNeuron):
     def _population_size(self) -> int:
         if len(self.pop_size) == 0:
             return 1
-        if len(self.pop_size) != 1:
-            raise ValueError(f"Cell population views require one-dimensional pop_size; got {self.pop_size!r}.")
+        self._require_one_dimensional("This operation")
         return int(self.pop_size[0])
+
+    def _require_one_dimensional(self, what: str) -> None:
+        """Raise ``ValueError`` naming ``what`` if :attr:`pop_size` has more than one axis.
+
+        Views of a multi-dimensional population select members and record
+        them; reading and writing state and parameters through a view needs
+        one axis.
+        """
+        if len(self.pop_size) > 1:
+            raise ValueError(
+                f"{what} requires a one-dimensional pop_size; got {self.pop_size!r}. On a multi-dimensional "
+                "population, views select members (cell[i, j], cell[:, j]) to record them."
+            )
 
     @property
     def _view_root(self) -> "Cell":

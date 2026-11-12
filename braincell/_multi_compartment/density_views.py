@@ -192,7 +192,7 @@ class _DensityView(DiscreteView):
             if isinstance(point_value, brainstate.State):
                 point_value = point_value.value
             point_value = _take_point(point_value, row.cv_id, self._cell.n_cv)
-        return _take_population(point_value, row.population_index, self._cell._population_size)
+        return _take_population(point_value, row.population_index, self._cell.pop_size)
 
     def _initial_default(self, row, field):
         """Resolve a default initializer against this row's current parameters."""
@@ -203,7 +203,7 @@ class _DensityView(DiscreteView):
             if callable(value) and not isinstance(value, braintools.init.Initialization):
                 value = value(self._cell.cv_contexts[row.cv_id])
             value = _take_point(value, row.cv_id, self._cell.n_cv)
-            params[name] = _take_population(value, row.population_index, self._cell._population_size)
+            params[name] = _take_population(value, row.population_index, self._cell.pop_size)
         cls = get_registry().get("ion", row.mechanism.class_name)
         node = cls(size=(1,), **params)
         value = getattr(node, _ion_runtime_attr_name(cls, field))
@@ -341,11 +341,19 @@ def _take_point(value, point_id: int, point_size: int):
     return value
 
 
-def _take_population(value, population_index: int, population_size: int):
+def _take_population(value, population_index: int, pop_size: tuple[int, ...]):
+    """Member ``population_index`` (flat, C order) of ``value``'s population axes.
+
+    The population axes are the trailing ``len(pop_size)`` axes once the CV
+    axis is taken, after a batch axis if there is one. A value without them
+    (a scalar parameter) is the same for every member.
+    """
     shape = tuple(getattr(value, "shape", ()))
-    if shape and shape[0] == population_size:
-        return value[population_index]
-    return value
+    rank = len(pop_size)
+    if len(shape) < rank or shape[len(shape) - rank :] != tuple(pop_size):
+        return value
+    members = int(np.prod(pop_size, dtype=np.int64))
+    return u.math.reshape(value, shape[: len(shape) - rank] + (members,))[..., int(population_index)]
 
 
 def _set_population_point(

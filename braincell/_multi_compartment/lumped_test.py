@@ -485,9 +485,7 @@ def _stiff_gate_cell(*channels, solver=None, pop_size=1, ion=("CalciumFixed", "c
     if ion is not None:
         cell.paint(AllRegion(), bc.mech.Ion(ion[0], name=ion[1]))
     cell.paint(AllRegion(), *channels)
-    if np.ndim(pop_size) == 0:
-        # Recording needs a one-dimensional population.
-        cell.record("v", bc.observe.state("V"))
+    cell.record("v", bc.observe.state("V"))
     return cell
 
 

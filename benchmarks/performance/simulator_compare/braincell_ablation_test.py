@@ -54,10 +54,17 @@ class BrainCellAblationTest(unittest.TestCase):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 braincell_ablation.prepare_case(**kwargs)
 
-    @mock.patch("braincell_ablation.brainstate.environ.get", return_value=None)
-    def test_spike_off_update_requires_dt(self, _get) -> None:
-        with self.assertRaisesRegex(ValueError, "requires brainstate.environ"):
-            braincell_ablation._update_dynamics_without_spikes(mock.Mock())
+    def test_spike_off_rejects_lumped_and_reduced_cells(self) -> None:
+        for lumped, reduced in ((True, False), (False, True)):
+            cell = SimpleNamespace(
+                network_owner=None,
+                connections=(),
+                layouts=(),
+                _is_lumped=lumped,
+                _uses_reduction=reduced,
+            )
+            with self.subTest(lumped=lumped), self.assertRaisesRegex(ValueError, "only supports a cable Cell"):
+                braincell_ablation._disable_spike_bookkeeping(cell)
 
     def test_uniform_amplitude_shape_is_validated(self) -> None:
         with self.assertRaisesRegex(ValueError, "amplitudes_na must have shape"):
@@ -89,8 +96,10 @@ class BrainCellAblationTest(unittest.TestCase):
         tracked_traces = tracked.normalize_host_traces(jax.device_get(tracked.simulate()))
         off_traces = off.normalize_host_traces(jax.device_get(off.simulate()))
         paths = {row["path"] for row in off.state_inventory}
-        self.assertNotIn("spike", paths)
+        # Cell.run reads cell.spike for RunResult.spikes; "off" never writes it.
+        self.assertIn("spike", paths)
         self.assertNotIn("_event_previous_V", paths)
+        self.assertFalse(np.any(np.asarray(off.cell.spike.value)))
         np.testing.assert_allclose(off_traces, tracked_traces, rtol=1e-5, atol=1e-5)
 
     def test_vmap_matches_population(self) -> None:

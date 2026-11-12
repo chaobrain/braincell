@@ -858,3 +858,96 @@ class ConnectionSummaryTest(unittest.TestCase):
                 connect(f"input_{index}", source=NetStim(size=2), synapse=target[[index % 2]])
         self._assert_view(cell.connections)
         self._assert_view(cell.connections[::-3])
+
+
+_STORE_COLUMNS = ("id", "connect_id", "source_index", "synapse_id", "target_index", "active", "_row_of_id")
+
+
+class ConnectionStoreColumnsTest(unittest.TestCase):
+    """CELL-18e: the routing columns, however connects, reads and removals interleave."""
+
+    def _recorded_cell(self):
+        from unittest import mock
+
+        from braincell.network.connection import _ConnectionStore
+
+        calls = []
+        original = _ConnectionStore.add
+
+        def add(store, **fields):
+            row_ids = original(store, **fields)
+            calls.append(fields)
+            return row_ids
+
+        patcher = mock.patch.object(_ConnectionStore, "add", autospec=True, side_effect=add)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        cell, exp = _population(4)
+        return cell, cell.synapses[exp], calls
+
+    @staticmethod
+    def _reference_columns(calls, removed):
+        # ``_ConnectionStore.add`` before CELL-18e: every column re-concatenated per call.
+        columns = {name: np.asarray([], dtype=np.int64) for name in _STORE_COLUMNS}
+        columns["active"] = np.asarray([], dtype=bool)
+        delay = np.asarray([], dtype=np.float64) * u.ms
+        next_row = 0
+        for connect_id, fields in enumerate(calls):
+            count = len(fields["source_index"])
+            row_ids = np.arange(next_row, next_row + count, dtype=np.int64)
+            start = len(columns["id"])
+            next_row += count
+            columns["id"] = np.concatenate((columns["id"], row_ids))
+            columns["connect_id"] = np.concatenate((columns["connect_id"], np.full(count, connect_id, dtype=np.int64)))
+            for name in ("source_index", "synapse_id", "target_index"):
+                columns[name] = np.concatenate((columns[name], np.asarray(fields[name], dtype=np.int64)))
+            delay = u.Quantity(
+                np.concatenate((np.asarray(delay.to_decimal(u.ms)), np.asarray(fields["delay"].to_decimal(u.ms)))),
+                u.ms,
+            )
+            columns["active"] = np.concatenate((columns["active"], np.ones(count, dtype=bool)))
+            columns["_row_of_id"] = np.concatenate(
+                (columns["_row_of_id"], np.arange(start, start + count, dtype=np.int64))
+            )
+        columns["active"][np.asarray(sorted(removed), dtype=np.int64)] = False
+        return columns, delay
+
+    def _assert_columns(self, cell, calls, removed) -> None:
+        store = cell._get_connection_store()
+        columns, delay = self._reference_columns(calls, removed)
+        for name in _STORE_COLUMNS:
+            actual = getattr(store, name)
+            self.assertEqual(actual.dtype, columns[name].dtype, name)
+            np.testing.assert_array_equal(actual, columns[name], err_msg=name)
+        self.assertEqual(u.get_unit(store.delay), u.ms)
+        self.assertEqual(np.asarray(store.delay.mantissa).dtype, np.asarray(delay.mantissa).dtype)
+        np.testing.assert_array_equal(np.asarray(store.delay.mantissa), np.asarray(delay.mantissa))
+
+    def test_columns_match_one_concatenation_per_connect(self) -> None:
+        cell, target, calls = self._recorded_cell()
+        rng = np.random.default_rng(18)
+        removed = set()
+        connect("first", source=NetStim(size=4), synapse=target)
+        self._assert_columns(cell, calls, removed)
+        connect("micro", source=NetStim(size=4), synapse=target, delay=np.asarray([100.0, 250.0, 0.5, 7.0]) * u.us)
+        connect("single", source=NetStim(size=1), synapse=target[2], delay=0.3 * u.ms)
+        removed.update(cell.connections["micro"].id[[1, 2]].tolist())
+        cell.connections["micro"][[1, 2]].remove()
+        connect("after removal", source=NetStim(size=2), synapse=target[[3, 0]], delay=np.float32(0.1) * u.ms)
+        self._assert_columns(cell, calls, removed)
+        for index in range(40):
+            size = int(rng.integers(1, 5))
+            delay = rng.uniform(0.0, 3.0, size) * (u.ms if index % 3 else u.us)
+            connect(f"many_{index}", source=NetStim(size=size), synapse=target[rng.permutation(4)[:size]], delay=delay)
+            if index % 9 == 0:
+                np.testing.assert_array_equal(cell.connections.id, np.flatnonzero(self._reference_columns(calls, removed)[0]["active"]))
+            if index == 20:
+                removed.update(cell.connections[f"many_{index}"].id.tolist())
+                cell.connections[f"many_{index}"].remove()
+        self._assert_columns(cell, calls, removed)
+        self.assertEqual(len(cell.connections), len(self._reference_columns(calls, removed)[0]["id"]) - len(removed))
+
+    def test_an_empty_store_has_empty_columns(self) -> None:
+        cell, target, calls = self._recorded_cell()
+        self._assert_columns(cell, calls, set())
+        self.assertEqual(len(cell.connections), 0)

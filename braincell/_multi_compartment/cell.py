@@ -3305,6 +3305,22 @@ class Cell(_CellFacade, HHTypedNeuron):
         step = jnp.where(same, step, 0).astype(jnp.int32)
         return origin, step
 
+    def _clock_host(self):
+        """``(origin in ms, step, dt in ms)`` of the clock as host numbers, or ``None`` inside a trace.
+
+        Host reads cost a few microseconds where eager array arithmetic on
+        the states costs about a hundred: the eager entry points of ``run``
+        decide with these.
+        """
+        step = self._clock_step.value
+        if is_traced_value(step):
+            return None
+        return (
+            scalar_decimal(self._clock_origin.value, u.ms),
+            int(step),
+            scalar_decimal(self._clock_dt.value, u.ms),
+        )
+
     def _set_clock(self, origin, step, dt) -> None:
         """Store a clock that has counted ``step`` steps of ``dt`` from ``origin``."""
         self._clock_origin.value = origin

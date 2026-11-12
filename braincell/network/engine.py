@@ -34,7 +34,12 @@ from braincell._misc import (
     scalar_decimal,
     validate_time_quantity,
 )
-from braincell._multi_compartment.run import _duration_steps, _recording_time_mask, check_step_limit
+from braincell._multi_compartment.run import (
+    _duration_steps,
+    _recording_time_mask,
+    check_step_limit,
+    host_clock_start,
+)
 from braincell._multi_compartment.synapses import SynapseView
 from braincell.network.connection import NetworkConnections, PairingSpec, _UNSET, _connect_with_pairing_seed
 from braincell.network.recording import EventSeries, SampleBlock
@@ -541,12 +546,12 @@ class Network:
         )
         ordered_population_names = setup.ordered_population_names
         n_steps = _duration_steps(duration, dt)
-        start_t = self._start_clocks(ordered_population_names, dt=dt, n_steps=n_steps, prefix="Network.run(...)")
+        start_ms = self._start_clocks(ordered_population_names, dt=dt, n_steps=n_steps, prefix="Network.run(...)")
         n_recording = setup.n_recording
         n_event = setup.n_event
         # NetStim events up to one step past the end cover every arrival the
         # loop delivers; later events are not generated.
-        until_ms = scalar_decimal(start_t, u.ms) + (n_steps + 1) * scalar_decimal(dt, u.ms)
+        until_ms = start_ms + (n_steps + 1) * scalar_decimal(dt, u.ms)
         cached_loop = self._network_run_loop(
             setup=setup,
             setup_key=setup_key,
@@ -557,7 +562,7 @@ class Network:
         values = self._take_value_inputs(ordered_population_names)
         try:
             with _schedule_horizon(until_ms):
-                times, stop_t, samples_over_time = cached_loop.runner(values)
+                times, start_t, stop_t, samples_over_time = cached_loop.runner(values)
         except BaseException:
             self._restore_value_inputs(values)
             raise
@@ -895,8 +900,8 @@ class Network:
     ):
         """Create a persistent jitted scan of ``n_steps`` steps for one network run shape.
 
-        The loop takes the value inputs and returns ``(times, stop time,
-        samples)``. Step ``k`` runs at ``origin + (step + k)·dt`` of the
+        The loop takes the value inputs and returns ``(times, start time,
+        stop time, samples)``. Step ``k`` runs at ``origin + (step + k)·dt`` of the
         Cells' clocks, which :meth:`_start_clocks` made equal; the step count
         is a state, so a later segment reuses the loop (CELL-45).
         """
@@ -981,7 +986,7 @@ class Network:
             end_step = (step + n_steps).astype(jnp.int32)
             for cell in cells:
                 cell._clock_step.value = end_step
-            return times, origin + end_step * dt, samples_over_time
+            return times, origin + step * dt, origin + end_step * dt, samples_over_time
 
         return brainstate.transform.jit(_run_loop)
 
@@ -994,28 +999,33 @@ class Network:
             until_ms=until_ms,
         )
 
-    def _start_clocks(self, names: tuple[str, ...], *, dt, n_steps: int, prefix: str):
-        """Give the Cells named ``names`` one clock counting steps of ``dt``; return its time.
+    def _start_clocks(self, names: tuple[str, ...], *, dt, n_steps: int, prefix: str) -> float:
+        """Give the Cells named ``names`` one clock counting steps of ``dt``; return its time in ms.
 
         The Cells must be at the same ``current_time``. They take the clock
         of the first, counting from its time if it last ran at another
         ``dt`` (``Cell._clock_start``); the run loop reads it from the
         first and advances them all. Raises ``ValueError``, before changing
         any clock, when ``n_steps`` more steps would pass the step limit.
+        The usual call, on clocks already shared and counting ``dt``, only
+        reads them on the host.
         """
         cells = [self.populations[name].cell for name in names]
-        first = cells[0].current_time
-        for cell in cells[1:]:
-            if not np.allclose(
-                np.asarray(cell.current_time.to_decimal(u.ms), dtype=float),
-                np.asarray(first.to_decimal(u.ms), dtype=float),
-            ):
-                raise ValueError("Network populations must have the same current_time.")
-        origin, step = cells[0]._clock_start(dt)
+        clocks = [cell._clock_host() for cell in cells]
+        times = [origin + step * clock_dt for origin, step, clock_dt in clocks]
+        if not np.allclose(times[1:], times[0]):
+            raise ValueError("Network populations must have the same current_time.")
+        origin_ms, step, counts_dt = host_clock_start(clocks[0], dt)
         check_step_limit(step, n_steps, dt=dt, prefix=prefix)
-        for cell in cells:
-            cell._set_clock(origin, step, dt)
-        return origin + step * dt
+        if not counts_dt:
+            origin, step_value = cells[0]._clock_start(dt)
+            for cell in cells:
+                cell._set_clock(origin, step_value, dt)
+        elif any(clock != clocks[0] for clock in clocks[1:]):
+            first = cells[0]
+            for cell in cells[1:]:
+                cell._set_clock(first._clock_origin.value, first._clock_step.value, first._clock_dt.value)
+        return origin_ms + step * scalar_decimal(dt, u.ms)
 
     def _cell_populations(self) -> dict[str, Population]:
         return {name: population for name, population in self.populations.items() if population.kind == "cell"}

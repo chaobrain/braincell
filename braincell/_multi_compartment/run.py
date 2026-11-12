@@ -53,6 +53,22 @@ __all__ = ["RunResult", "run"]
 MAX_STEPS = 2**31 - 1
 
 
+def host_clock_start(clock, dt) -> tuple[float, int, bool]:
+    """``(origin in ms, step, counts dt)`` a run at ``dt`` starts from, on the host, from ``Cell._clock_host()``.
+
+    The host side of ``Cell._clock_start``: a ``dt`` other than the one the
+    clock counts (``counts dt`` false) moves the origin to the time reached
+    and the count to 0. The two ``dt`` are compared in the run precision,
+    as the compiled loop compares them.
+    """
+    origin_ms, step, clock_dt_ms = clock
+    dt_ms = _scalar_decimal(dt, u.ms)
+    float_type = brainstate.environ.dftype()
+    if np.asarray(clock_dt_ms, dtype=float_type) == np.asarray(dt_ms, dtype=float_type):
+        return origin_ms, step, True
+    return origin_ms + step * clock_dt_ms, 0, False
+
+
 def check_step_limit(step: int, n_steps: int, *, dt, prefix: str) -> None:
     """Raise ``ValueError`` if ``n_steps`` more steps would take the step count past :data:`MAX_STEPS`."""
     if int(step) + int(n_steps) <= MAX_STEPS:
@@ -227,13 +243,13 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     # A scheduled source needs its events up to the last step's next-input
     # boundary, ``stop``; one more step bounds every rounding. A traced start
     # leaves the end unknown, so such a run generates every event.
-    start = rcell.current_time
+    clock = rcell._clock_host()
     until_ms = None
-    with_spikes = not is_traced_value(start)
+    with_spikes = clock is not None
     if with_spikes:
-        _, step = rcell._clock_start(dt)
+        origin_ms, step, _ = host_clock_start(clock, dt)
         check_step_limit(step, n_steps, dt=dt, prefix="Cell.run(...)")
-        until_ms = _scalar_decimal(start, u.ms) + (n_steps + 1) * _scalar_decimal(dt, u.ms)
+        until_ms = origin_ms + (step + n_steps + 1) * _scalar_decimal(dt, u.ms)
     schedule_key = _prepare_netstim_schedules(
         (view.source for view in rcell.connections._call_views(scheduled=True)),
         until_ms=until_ms,

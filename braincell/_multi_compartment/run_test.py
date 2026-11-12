@@ -368,7 +368,9 @@ class CellArrivalStepTest(unittest.TestCase):
         # -> 11 (0.625 ms), 0.8375 ms 15.25 -> 15 (0.825 ms), 1.0 and 1.0125 ms
         # 18.5 and 18.75 -> 19 (1.025 ms). main counted them from time 0, so
         # the boundary at 0.275 ms took 0.3 ms, half a new step early, and
-        # 0.475 ms took 0.5125 ms (CELL-48).
+        # 0.475 ms took 0.5125 ms (CELL-48). An event at 0.06 ms acted on the
+        # first segment's step at 0.05 ms (2.4 steps of 0.025 ms); 0.3 steps
+        # before the new origin, it is not delivered again.
         # After 10 steps the clock counts from 0.25 ms, on the 0.05 ms grid:
         # the steps are those of the grid from time 0, as on main.
         # Steps of 0.025, 0.05 and 0.1 ms (3, 5, 13) count the last from
@@ -379,7 +381,12 @@ class CellArrivalStepTest(unittest.TestCase):
         # time 0, 4.55 -> 5 and 10.6 -> 11 steps of 0.1 ms).
         later = (0.425, 0.455, 0.475, 0.6, 1.06, 1.375)
         cases = {
-            "off the new grid": (self.TIMES, (3, 22), [0.375, 0.575, 0.675, 0.875, 1.075], [1, 1, 1, 1, 2]),
+            "off the new grid": (
+                (0.06,) + self.TIMES,
+                (3, 22),
+                [0.075, 0.375, 0.575, 0.675, 0.875, 1.075],
+                [1, 1, 1, 1, 1, 2],
+            ),
             "on the new grid": (self.TIMES, (10, 20), [0.35, 0.55, 0.65, 0.9, 1.05], [1, 1, 1, 1, 2]),
             "two changes": (later, (3, 5, 13), [0.525, 0.625, 0.725, 1.125, 1.525], [2, 1, 1, 1, 1]),
         }
@@ -389,9 +396,7 @@ class CellArrivalStepTest(unittest.TestCase):
                 with self.subTest(precision=precision, case=name), context:
                     cell = self._counting_cell(times)
                     for _ in range(2):  # again after reset_state(), which forgets the clock
-                        results = tuple(
-                            cell.run(dt=(2**i) * DT, duration=n * (2**i) * DT) for i, n in enumerate(steps)
-                        )
+                        results = tuple(cell.run(dt=(2**i) * DT, duration=n * (2**i) * DT) for i, n in enumerate(steps))
                         actual_times, actual_counts = self._jumps(results)
                         np.testing.assert_allclose(actual_times, expected_times, rtol=1e-6)
                         np.testing.assert_array_equal(actual_counts, counts)

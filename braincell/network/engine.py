@@ -59,6 +59,12 @@ from braincell.network.delivery import (
     write_arrivals,
 )
 from braincell.network.lowering import lower_direct_connections
+from braincell.network.scheduled import (
+    ScheduledPlans,
+    loop_schedule_key,
+    normalize_scheduled_delivery,
+    scheduled_inputs,
+)
 from braincell.mech import Synapse
 
 
@@ -158,6 +164,9 @@ class Network:
 
         self.trainables = NetworkTrainables(self)
         self._prepared_run = None
+        # Planned scheduled delivery (CELL-9): the plans, and those prepare_run made for update().
+        self._scheduled_plans: ScheduledPlans | None = None
+        self._prepared_plans = None
 
     def _raise_if_initialized(self, action: str) -> None:
         if self._initialized:
@@ -197,6 +206,7 @@ class Network:
         self._run_setup_cache.clear()
         self._network_run_loop_cache.clear()
         self._delivery_state_cache.clear()
+        self._scheduled_plans = None
 
     def __repr__(self) -> str:
         """Return a compact network summary."""
@@ -487,15 +497,52 @@ class Network:
         delay_quantization: str = "nearest",
         event_backend: str = "auto",
         brainevent_backend: str | None = "jax_raw",
+        scheduled_delivery: str | None = None,
     ) -> NetworkResult:
         """Run the network for ``duration`` at fixed step ``dt``.
+
+        Parameters
+        ----------
+        dt : brainunit.Quantity
+            Fixed time step.
+        duration : brainunit.Quantity
+            Length of this segment, an integer multiple of ``dt``.
+        delay_quantization : str, optional
+            How connection delays round to steps: ``"nearest"`` (default),
+            ``"ceil"``, ``"floor"`` or ``"strict"``.
+        event_backend : str, optional
+            Delivery of live events: ``"auto"`` (default, which is
+            ``"scatter"``), ``"scatter"`` or ``"brainevent"``.
+        brainevent_backend : str or None, optional
+            Backend of ``brainevent.csrmv`` under ``"brainevent"``.
+        scheduled_delivery : {None, "direct", "padded"}, optional
+            How the rows of scheduled sources (``NetStim``,
+            ``EventSequence``) reach their synapses. ``None``, the default,
+            counts each row's arrivals on every step. ``"direct"`` and
+            ``"padded"`` plan the arrivals of this run's steps on the host
+            before the loop; see Notes. Rows with a plasticity rule keep
+            the rule's path, and live sources the delay queues.
+
+        Returns
+        -------
+        NetworkResult
+            Samples and events of the half-open segment
+            ``[start_time, stop_time)``.
 
         Raises
         ------
         ValueError
             If the run would take the step count past ``2**31 - 1`` (14.9 h
             at ``dt = 0.025 ms``); nothing has run. :meth:`reset_state`
-            starts the count again.
+            starts the count again. Also if ``scheduled_delivery`` is not
+            one of its values, before anything is initialized.
+        PaddingLimitError
+            A ``ValueError``, if a ``"padded"`` plan would exceed its limits
+            (Notes); nothing has run.
+        RuntimeError
+            If ``dt``, ``delay_quantization``, the backends or
+            ``scheduled_delivery`` differ from the first run's (or
+            :meth:`prepare_run`'s).
 
         Warns
         -----
@@ -512,12 +559,69 @@ class Network:
         :meth:`update`. Each time is one rounding of a product, in the run
         precision, so a run split into segments, or into ``update()``
         calls, steps at the same times as one run, however long it is.
+
+        **Scheduled delivery** (``scheduled_delivery``, CELL-9). The
+        arrivals of the run's steps ``[n, n + steps)`` are planned on the
+        host before the compiled loop: for each synapse layout, one record
+        per step and row that has arrivals, holding their number. The
+        plan's arrays are arguments of the loop, so a later window of the
+        same length reuses the compiled loop. The plans of the last four
+        windows are kept: a run after :meth:`reset_state`, or after a
+        weight change (weights, trainable ones included, are read on every
+        step), builds no plan. Each event arrives at the step, and with
+        the weight, of the default path, so the results are the default
+        path's (to rounding where several rows reach one synapse).
+
+        - ``"direct"`` stores the records in step order with one offset per
+          step and reads the current step's: storage grows with the
+          records, the steps and the rows. It is reverse-differentiable to
+          first order only: forward mode (``jax.jvp``, ``jacfwd``) through it
+          raises ``TypeError`` when traced.
+        - ``"padded"`` stores ``steps x width`` slots, ``width`` being the
+          most records any step has, rounded up to a power of two so that
+          windows of one length share a shape. It raises
+          :class:`~braincell.network.scheduled.PaddingLimitError` before the
+          run when the slots would take more than 256 MiB, or the steps
+          times the needed width would exceed 8 times the records; it does
+          not fall back to another method. It differentiates as ordinary
+          JAX code, forward mode included.
+
+        Try ``"direct"`` when many scheduled rows have few arrivals per
+        step, above all when rows share synapses, or when a source's
+        schedule is much longer than the run; ``"padded"`` within its
+        limits. Keep the default for small models: preparing a plan costs
+        more than it saves. The method is part of the runtime
+        configuration, fixed after the first run as ``event_backend`` is;
+        a first run that raised ``PaddingLimitError`` fixes nothing.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainunit as u
+            >>> import braincell
+            >>> from braincell.filter import at
+            >>> cell = braincell.Cell(
+            ...     braincell.Morphology.from_soma(length=20.0 * u.um, radius=10.0 * u.um), pop_size=1
+            ... )
+            >>> _ = cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms))
+            >>> net = braincell.Network("demo", seed=1)
+            >>> post = net.add_population("post", cell)
+            >>> stim = net.add_population(
+            ...     "stim", braincell.NetStim(size=1, start=1.0 * u.ms, interval=2.0 * u.ms, number=5)
+            ... )
+            >>> _ = net.connect("drive", source=stim, synapse=post.synapses["s"], weight=0.001 * u.uS)
+            >>> first = net.run(dt=0.025 * u.ms, duration=5.0 * u.ms, scheduled_delivery="direct")
+            >>> second = net.run(dt=0.025 * u.ms, duration=5.0 * u.ms, scheduled_delivery="direct")
+            >>> second.events["stim"]["spike"].time  # the second window's events, planned before it ran
+            Quantity([5. 7. 9.], "ms")
         """
         from braincell.network.event import _schedule_horizon
 
         validate_time_quantity(dt, name="dt", prefix="Network.run(...)")
         validate_time_quantity(duration, name="duration", prefix="Network.run(...)")
         event_backend = normalize_event_backend(event_backend)
+        scheduled_delivery = normalize_scheduled_delivery(scheduled_delivery, prefix="Network.run(...)")
         if not self.populations:
             raise ValueError("Network.run(...) requires at least one population.")
         self.init_state()
@@ -531,13 +635,14 @@ class Network:
             event_backend=event_backend,
             brainevent_backend=brainevent_backend,
         )
-        runtime_config = setup_key[2:]
-        if self._runtime_config is None:
+        runtime_config = setup_key[2:] + (scheduled_delivery,)
+        first_config = self._runtime_config is None
+        if first_config:
             self._runtime_config = runtime_config
         elif self._runtime_config != runtime_config:
             raise RuntimeError(
                 "Network runtime configuration is fixed after the first run; "
-                "dt, delay quantization, and event backend must remain unchanged."
+                "dt, delay quantization, event backend, and scheduled delivery must remain unchanged."
             )
         setup = self._run_setup(
             dt=dt,
@@ -553,17 +658,29 @@ class Network:
         # NetStim events up to one step past the end cover every arrival the
         # loop delivers; later events are not generated.
         until_ms = start_ms + (n_steps + 1) * scalar_decimal(dt, u.ms)
+        schedule_key = self._prepare_netstim_schedules(until_ms=until_ms)
+        plans = None
+        if scheduled_delivery is not None:
+            # The plans of the window [step, step + n_steps), before the loop (CELL-9).
+            start_step = self._grid_start_step(ordered_population_names, dt)
+            plans, schedule_key = self._scheduled_arrays(
+                scheduled_delivery, dt=dt, window=(start_step, n_steps), first_config=first_config
+            )
         cached_loop = self._network_run_loop(
             setup=setup,
             setup_key=setup_key,
             dt=dt,
             n_steps=n_steps,
-            schedule_key=self._prepare_netstim_schedules(until_ms=until_ms),
+            schedule_key=schedule_key,
+            scheduled_delivery=scheduled_delivery,
         )
         values = self._take_value_inputs(ordered_population_names)
         try:
             with _schedule_horizon(until_ms):
-                times, start_t, stop_t, samples_over_time = cached_loop.runner(values)
+                if plans is None:
+                    times, start_t, stop_t, samples_over_time = cached_loop.runner(values)
+                else:
+                    times, start_t, stop_t, samples_over_time = cached_loop.runner(values, plans)
         except BaseException:
             self._restore_value_inputs(values)
             raise
@@ -633,7 +750,15 @@ class Network:
                 stacklevel=3,
             )
 
-    def prepare_run(self, *, dt, delay_quantization="nearest", event_backend="auto", brainevent_backend="jax_raw"):
+    def prepare_run(
+        self,
+        *,
+        dt,
+        delay_quantization="nearest",
+        event_backend="auto",
+        brainevent_backend="jax_raw",
+        scheduled_delivery=None,
+    ):
         """Prepare static routing and queues outside a differentiated rollout.
 
         Parameters
@@ -646,14 +771,63 @@ class Network:
             Event delivery backend, as in :meth:`run`.
         brainevent_backend : str or None, optional
             Backend for the sparse event operator.
+        scheduled_delivery : {None, "direct", "padded"}, optional
+            As in :meth:`run`. The plan :meth:`update` reads covers every
+            event, steps ``[0, last arrival + 1)`` of each synapse layout,
+            and is built once, here: a training loop of ``update()`` calls,
+            split over several ``for_loop`` calls or rerun after
+            :meth:`reset_state`, uses it throughout. Steps past the last
+            arrival receive nothing, as on the default path.
 
         Returns
         -------
         Network
             This initialized and prepared network.
+
+        Raises
+        ------
+        ValueError
+            If ``scheduled_delivery`` is not one of its values; or
+            ``PaddingLimitError`` if a ``"padded"`` plan exceeds its limits.
+        RuntimeError
+            If the configuration differs from an earlier run's.
+
+        Notes
+        -----
+        ``"direct"`` supports first-order reverse differentiation of the
+        ``update()`` rollout (``jax.grad``, ``brainstate.transform.grad``)
+        only; forward mode through it (``jax.jvp``, ``jacfwd``) raises
+        ``TypeError`` when traced. ``"padded"`` differentiates as ordinary
+        JAX code. Either way the gradients with respect to weights and
+        synapse parameters are the default path's.
+
+        Examples
+        --------
+        .. code-block:: python
+
+            >>> import brainstate
+            >>> import brainunit as u
+            >>> import jax.numpy as jnp
+            >>> import braincell
+            >>> from braincell.filter import at
+            >>> cell = braincell.Cell(
+            ...     braincell.Morphology.from_soma(length=20.0 * u.um, radius=10.0 * u.um), pop_size=1
+            ... )
+            >>> _ = cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms))
+            >>> net = braincell.Network("train", seed=1)
+            >>> post = net.add_population("post", cell)
+            >>> stim = net.add_population(
+            ...     "stim", braincell.NetStim(size=1, start=1.0 * u.ms, interval=2.0 * u.ms, number=5)
+            ... )
+            >>> _ = net.connect("drive", source=stim, synapse=post.synapses["s"], weight=0.001 * u.uS)
+            >>> _ = net.prepare_run(dt=0.025 * u.ms, scheduled_delivery="direct")
+            >>> spikes = brainstate.transform.for_loop(lambda _: net.update()["post"], jnp.arange(400))
+            >>> spikes.shape
+            (400, 1, 1)
         """
         validate_time_quantity(dt, name="dt", prefix="Network.prepare_run")
         event_backend = normalize_event_backend(event_backend)
+        scheduled_delivery = normalize_scheduled_delivery(scheduled_delivery, prefix="Network.prepare_run(...)")
         self.init_state()
         if not self._cell_populations():
             raise ValueError("Network.prepare_run requires at least one Cell population.")
@@ -663,9 +837,11 @@ class Network:
             event_backend=event_backend,
             brainevent_backend=brainevent_backend,
         )
-        if self._runtime_config is not None and self._runtime_config != key[2:]:
+        runtime_config = key[2:] + (scheduled_delivery,)
+        if self._runtime_config is not None and self._runtime_config != runtime_config:
             raise RuntimeError("Network runtime configuration is fixed after the first run.")
-        self._runtime_config = key[2:]
+        first_config = self._runtime_config is None
+        self._runtime_config = runtime_config
         setup = self._run_setup(
             dt=dt,
             delay_quantization=delay_quantization,
@@ -675,15 +851,24 @@ class Network:
         # update() runs for an unknown number of steps: each eager call checks
         # the step limit, and every event is generated.
         self._start_clocks(setup.ordered_population_names, dt=dt, n_steps=0, prefix="Network.prepare_run(...)")
+        schedule_key = self._prepare_netstim_schedules(until_ms=None)
+        plans = None
+        if scheduled_delivery is not None:
+            # One plan of every event, for every update() (CELL-9).
+            plans, schedule_key = self._scheduled_arrays(
+                scheduled_delivery, dt=dt, window=None, first_config=first_config
+            )
         cached = self._network_run_loop(
             setup=setup,
             setup_key=key,
             dt=dt,
             n_steps=1,
-            schedule_key=self._prepare_netstim_schedules(until_ms=None),
+            schedule_key=schedule_key,
+            scheduled_delivery=scheduled_delivery,
         )
         self.trainables.materialize()
         self._prepared_run = (setup, cached, dt)
+        self._prepared_plans = plans
         return self
 
     def update(self):
@@ -720,7 +905,13 @@ class Network:
         if cached.runner is None:
             # A Cell registered an input since the loop was traced.
             cached = _CachedRunLoop(
-                runner=self._make_network_run_loop(setup=setup, dt=dt, n_steps=1, delivery_state=cached.delivery_state),
+                runner=self._make_network_run_loop(
+                    setup=setup,
+                    dt=dt,
+                    n_steps=1,
+                    delivery_state=cached.delivery_state,
+                    scheduled_delivery=self._runtime_config[-1],
+                ),
                 delivery_state=cached.delivery_state,
             )
             self._prepared_run = (setup, cached, dt)
@@ -732,7 +923,10 @@ class Network:
         self.trainables.materialize()
         values = self._take_value_inputs(setup.ordered_population_names)
         try:
-            cached.runner(values)
+            if self._prepared_plans is None:
+                cached.runner(values)
+            else:
+                cached.runner(values, self._prepared_plans)
         except BaseException:
             self._restore_value_inputs(values)
             raise
@@ -863,6 +1057,7 @@ class Network:
         dt,
         n_steps: int,
         schedule_key: tuple = (),
+        scheduled_delivery: str | None = None,
     ) -> _CachedRunLoop:
         key = (
             setup_key,
@@ -870,6 +1065,8 @@ class Network:
             int(brainstate.environ.get_precision()),
             schedule_key,
         )
+        if scheduled_delivery is not None:
+            key = key + (scheduled_delivery,)
         cached = self._network_run_loop_cache.get(key)
         if cached is None:
             delivery_state = self._delivery_state_cache.get(setup_key)
@@ -886,6 +1083,7 @@ class Network:
                     dt=dt,
                     n_steps=n_steps,
                     delivery_state=delivery_state,
+                    scheduled_delivery=scheduled_delivery,
                 ),
                 delivery_state=delivery_state,
             )
@@ -908,6 +1106,7 @@ class Network:
         dt,
         n_steps: int,
         delivery_state,
+        scheduled_delivery: str | None = None,
     ):
         """Create a persistent jitted scan of ``n_steps`` steps for one network run shape.
 
@@ -915,6 +1114,10 @@ class Network:
         stop time, samples)``. Step ``k`` runs at ``origin + (step + k)·dt`` of the
         Cells' clocks, which :meth:`_start_clocks` made equal; the step count
         is a state, so a later segment reuses the loop (CELL-45).
+
+        With ``scheduled_delivery`` the loop also takes the plans' arrays
+        (:meth:`_scheduled_arrays`), so a window of the same length reuses
+        it (CELL-9).
         """
         from braincell.network.event import boundary_step, grid_step
 
@@ -1004,7 +1207,52 @@ class Network:
                 cell._clock_step.value = end_step
             return times, origin + step * dt, origin + end_step * dt, samples_over_time
 
-        return brainstate.transform.jit(axial_operator_before_steps(_run_loop, cells))
+        loop = axial_operator_before_steps(_run_loop, cells)
+        if scheduled_delivery is None:
+            return brainstate.transform.jit(loop)
+        routes = self._scheduled_plans.routes
+
+        def _scheduled_run_loop(values, plans):
+            with scheduled_inputs(scheduled_delivery, routes, plans):
+                return loop(values)
+
+        return brainstate.transform.jit(_scheduled_run_loop)
+
+    def _scheduled_arrays(self, method: str, *, dt, window, first_config: bool) -> tuple:
+        """Return the plans' arrays of ``window`` (``None``: every event) and the loop's schedule token.
+
+        A plan that cannot be built (``PaddingLimitError``) leaves the
+        runtime configuration as this call found it, so a first run can
+        switch to another method.
+        """
+        from braincell.network.event import _host_ms
+
+        try:
+            plans = self._scheduled_plans
+            if plans is None or plans.method != method:
+                plans = ScheduledPlans.build(method, self.populations, float(_host_ms(dt)))
+                self._scheduled_plans = plans
+            arrays = plans.everything() if window is None else plans.window(*window)
+        except BaseException:
+            if first_config:
+                self._runtime_config = None
+            raise
+        return arrays, loop_schedule_key(self.populations, plans)
+
+    def _grid_start_step(self, names, dt) -> int:
+        """The step on the ``dt`` grid from time 0 at which a run of the Cells ``names`` starts.
+
+        It is the loop's first ``grid_step`` (CELL-46): the clock's step
+        plus its origin in steps, which is 0 unless a Cell ran at another
+        ``dt`` before.
+        """
+        from braincell.network.event import grid_step
+
+        cell = self.populations[names[0]].cell
+        origin_ms, step, _ = cell._clock_host()
+        if origin_ms == 0.0:
+            return int(step)
+        return int(grid_step(cell._clock_origin.value, jnp.asarray(step, dtype=jnp.int32), dt))
 
     def _prepare_netstim_schedules(self, *, until_ms: float | None) -> tuple:
         """Generate NetStim events up to ``until_ms``; return the loop-cache token."""

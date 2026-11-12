@@ -24,7 +24,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell.experimental.scheduled_events import METHODS, prepare_events
-from braincell.network.event import NetStim
+from braincell.network.event import EventSequence, NetStim
 from braincell.synapse import ExpSyn
 
 
@@ -204,18 +204,37 @@ class QueryTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 prepare_events(**(base | {"source": source_with_times(times, mask)}))
 
-    def test_reject_float32_window_beyond_half_tie_resolution(self):
-        # At 2**20 the production float32 four-ULP snapping can map an
-        # integer step to the next integer. A cursor indexed by raw steps
-        # must reject that grid rather than silently shift delivery.
-        with brainstate.environ.context(precision=32):
-            source = source_with_times([[float(2**20)]])
-            for method in METHODS:
-                with self.subTest(method=method), self.assertRaises(ValueError):
-                    prepare_events(source, [0], delay=0 * u.ms, dt=1 * u.ms, start_step=2**20, n_steps=2, method=method)
-        with brainstate.environ.context(precision=64):
-            for method in METHODS:
-                plan = prepare_events(
-                    source, [0], delay=0 * u.ms, dt=1 * u.ms, start_step=2**20, n_steps=2, method=method
-                )
-                np.testing.assert_array_equal(trajectory(plan)[1][:, 0], [1, 0])
+    def test_float32_window_beyond_two_to_the_twenty(self):
+        # CELL-9: arrival steps are rounded at float64 on the host and the
+        # step is an integer, so a float32 window past 2**20 (where four-ULP
+        # snapping of a float32 ratio reaches half a step) delivers exactly.
+        source = source_with_times([[float(2**20)]])
+        for precision in (32, 64):
+            with brainstate.environ.context(precision=precision):
+                for method in METHODS:
+                    with self.subTest(precision=precision, method=method):
+                        plan = prepare_events(
+                            source, [0], delay=0 * u.ms, dt=1 * u.ms, start_step=2**20, n_steps=2, method=method
+                        )
+                        np.testing.assert_array_equal(trajectory(plan)[1][:, 0], [1, 0])
+
+    def test_event_sequence_matches_netstim(self):
+        # CELL-9: an EventSequence, with two events of a source on one step.
+        times = [[0.0, 1.0, 1.0, 3.0], [2.0, 2.0, 2.0, 2.0]]
+        sequence = EventSequence.from_times(tuple(np.asarray(row) * u.ms for row in times))
+        netstim = source_with_times(times)
+        for method in METHODS:
+            with self.subTest(method=method):
+                kwargs = dict(delay=np.array([0.0, 1.0, 0.0]) * u.ms, dt=1 * u.ms, n_steps=6, method=method)
+                got = trajectory(prepare_events(sequence, [0, 1, 0], **kwargs))[1]
+                expected = trajectory(prepare_events(netstim, [0, 1, 0], **kwargs))[1]
+                np.testing.assert_array_equal(got, expected)
+                self.assertEqual(int(np.asarray(got).sum()), 12)
+
+    def test_netstim_events_are_generated_up_to_the_window(self):
+        # CELL-9: as Network.run does, not the whole schedule.
+        source = NetStim(size=2, start=1 * u.ms, interval=1 * u.ms, number=2**20)
+        self.assertFalse(source._schedule_complete)
+        plan = prepare_events(source, [0, 1], delay=0 * u.ms, dt=1 * u.ms, n_steps=10, method="bucket")
+        self.assertLess(source._event_times_ms.shape[1], 100)
+        np.testing.assert_array_equal(trajectory(plan)[1].sum(axis=1), [0] + [2] * 9)

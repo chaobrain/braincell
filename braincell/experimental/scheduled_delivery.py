@@ -24,10 +24,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from braincell.experimental.scheduled_events import prepare_events
-
-
-class PaddingLimitError(ValueError):
-    """Indicate that a fixed-width plan exceeds its declared resource limits."""
+from braincell.network.scheduled import PaddingLimitError, _direct_op
 
 
 @dataclass(frozen=True)
@@ -96,39 +93,20 @@ class DeliveryPlan:
 
 
 def _compact_op(n_targets, block_size):
-    """Define a sparse primal and sparse transpose for a fixed layout."""
+    """Define a sparse primal and sparse transpose for a fixed layout.
 
-    def consume(arrays, step, values, transpose=False):
-        connections, multiplicity, offsets, targets = arrays
-        lo, hi = offsets[step], offsets[step + 1]
-        size = targets.size if transpose else n_targets
+    The production ``"direct"`` operation (``Network.run(...,
+    scheduled_delivery="direct")``), whose window start is a dynamic
+    input; here ``step`` is already relative to the window, so the start
+    is 0.
+    """
+    op = _direct_op(n_targets, block_size)
+    start = np.int32(0)
 
-        def body(carry):
-            pos, result = carry
-            ids = jax.lax.dynamic_slice_in_dim(connections, pos, block_size)
-            count = jax.lax.dynamic_slice_in_dim(multiplicity, pos, block_size)
-            valid = pos + jnp.arange(block_size) < hi
-            src, dst = (targets[ids], ids) if transpose else (ids, targets[ids])
-            value = jnp.where(valid, values[src] * count, 0)
-            # Invalid lanes scatter out of bounds rather than contending on 0.
-            result = result.at[jnp.where(valid, dst, size)].add(value, mode="drop")
-            return pos + block_size, result
+    def compact(arrays, step, weights):
+        return op((*arrays, start), step, weights)
 
-        return jax.lax.while_loop(lambda carry: carry[0] < hi, body, (lo, jnp.zeros(size, dtype=values.dtype)))[1]
-
-    @jax.custom_vjp
-    def op(arrays, step, weights):
-        return consume(arrays, step, weights)
-
-    def forward(arrays, step, weights):
-        return consume(arrays, step, weights), (arrays, step)
-
-    def backward(residual, cotangent):
-        arrays, step = residual
-        return None, None, consume(arrays, step, cotangent, transpose=True)
-
-    op.defvjp(forward, backward)
-    return op
+    return compact
 
 
 def prepare_delivery(
@@ -150,7 +128,7 @@ def prepare_delivery(
 
     Parameters
     ----------
-    source : braincell.NetStim
+    source : braincell.NetStim or braincell.EventSequence
         Immutable source schedule.
     source_index, target_index : array-like
         One source and target index per connection.

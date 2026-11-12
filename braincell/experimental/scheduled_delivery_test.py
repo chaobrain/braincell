@@ -200,7 +200,7 @@ class DeliveryTest(unittest.TestCase):
             ({"max_padding_ratio": 0.5}, ValueError),
             ({"max_padding_ratio": float("nan")}, ValueError),
             ({"delay": 0}, TypeError),
-            ({"start_step": 2**20}, ValueError),
+            ({"start_step": 2**31}, ValueError),
         ]:
             with self.subTest(changes=changes), self.assertRaises(exception):
                 prepare_delivery(**(args | changes))

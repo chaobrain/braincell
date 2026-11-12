@@ -862,6 +862,31 @@
   `geometry` and its fields, `outputs`, `reductions`, `get_ion` and
   `get_runtime_node` raise `ValueError` there, as on every view before, and
   so does recording `observe.output(...)`.
+- **`Network.run(..., scheduled_delivery="direct" | "padded")`** and the
+  same argument of `Network.prepare_run` (CELL-9). The default, `None`,
+  keeps the existing path: every step counts each scheduled row's arrivals.
+  `"direct"` and `"padded"` instead plan, on the host and before the
+  compiled loop, the arrivals of the run's steps `[n, n + steps)` of every
+  scheduled row (`NetStim`, `EventSequence`) without a plasticity rule:
+  one record per step and row, holding the number of events. The plan's
+  arrays are arguments of the loop, so a later window of the same length
+  reuses it, and the plans of the last four windows are kept (a run after
+  `reset_state`, or after a weight change, builds none). `prepare_run`
+  plans every event once for the `update()` loop. Events arrive at the
+  default path's step and weight, so results and gradients match it
+  (bitwise on the tested models with one row per synapse). `"direct"`
+  supports first-order reverse differentiation only; `"padded"` rounds
+  its per-step width up to a power of two and raises
+  `PaddingLimitError` (a `ValueError`) before the run when its storage
+  would exceed 256 MiB or 8 slots per record. Rows with a rule keep the
+  rule's path, `"sum_count"` layouts receive their counts, and live
+  sources keep the delay queues. The method is fixed after the first run,
+  as `event_backend` is. The experimental `prepare_events` and
+  `prepare_delivery` accept `EventSequence`, generate a `NetStim`'s events
+  only up to the window, and no longer reject float32 windows past
+  `2**20` steps; `ScheduledDeliveryCell` leaves rule rows to their rule
+  and gives `"sum_count"` layouts their counts instead of raising
+  `TypeError`.
 
 ### Changes & Improvements
 

@@ -28,170 +28,164 @@ import brainstate
 import braintools
 import brainunit as u
 import matplotlib.pyplot as plt
+from braincell import mech
 
 
-class ThalamusNeuron(braincell.SingleCompartment):
-    def compute_derivative(self, I_ext=0. * u.nA):
-        I_ext = self.sum_current_inputs(I_ext, self.V.value) * self.area_factor
-        for key, ch in self.nodes(braincell.IonChannel, allowed_hierarchy=(1, 1)).items():
-            I_ext = I_ext + ch.current(self.V.value)
-        self.V.derivative = I_ext / self.C
-        for key, node in self.nodes(braincell.IonChannel, allowed_hierarchy=(1, 1)).items():
-            node.compute_derivative(self.V.value)
+def thalamic_cell(size, area, V_init, solver):
+    """A point neuron with membrane ``area``: a cylinder as long as it is wide.
 
-    def step_run(self, t, inp):
-        with brainstate.environ.context(t=t):
-            self.update(inp)
-            return self.V.value
+    Currents given to ``update`` or by projections are totals; the cell
+    divides them by ``area``.
+    """
+    diam = u.math.sqrt(area / u.math.pi)
+    return braincell.Cell.point(
+        size, length=diam, radius=diam / 2, V_init=V_init, V_th=20. * u.mV, solver=solver,
+    )
 
 
-class HTC(ThalamusNeuron):
-    def __init__(
-        self,
-        size,
-        gKL=0.01 * (u.mS / u.cm ** 2),
-        V_initializer=braintools.init.Constant(-65. * u.mV),
-        solver: str = 'ind_exp_euler'
-    ):
-        super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV, solver=solver)
+def step_run(cell, t, inp):
+    with brainstate.environ.context(t=t):
+        cell.update(inp)
+        return cell.V.value
 
-        self.area_factor = 1e-3 / (2.9e-4 * u.cm ** 2)
 
-        self.na = braincell.ion.SodiumFixed(size, E=50. * u.mV)
-        self.na.add(INa=braincell.channel.Na_Ba2002(size, V_sh=-30 * u.mV))
+def HTC(
+    size,
+    gKL=0.01 * (u.mS / u.cm ** 2),
+    V_init=-65. * u.mV,
+    solver: str = 'ind_exp_euler'
+):
+    cell = thalamic_cell(size, 2.9e-4 * u.cm ** 2, V_init, solver)
+    cell.paint(
+        mech.Ion('SodiumFixed', E=50. * u.mV),
+        mech.Channel('Na_Ba2002', V_sh=-30 * u.mV),
 
-        self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
-        self.k.add(IKL=braincell.channel.K_Leak(size, g_max=gKL))
-        self.k.add(IDR=braincell.channel.KDR_Ba2002(
-            size,
+        mech.Ion('PotassiumFixed', E=-90. * u.mV),
+        mech.Channel('K_Leak', g_max=gKL),
+        mech.Channel(
+            'KDR_Ba2002',
             V_sh=-30. * u.mV,
             temp=u.celsius2kelvin(36.0),
             q10=0.25,
             temp_ref=u.celsius2kelvin(26.0),
-        ))
+        ),
 
-        self.ca = braincell.ion.CalciumDetailed(size, C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um)
-        self.ca.add(ICaL=braincell.channel.CaL_IS2008(size, g_max=0.5 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaN=braincell.channel.CaN_IS2008(size, g_max=0.5 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaT=braincell.channel.CaT_HM1992(size, g_max=2.1 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaHT=braincell.channel.CaHT_HM1992(size, g_max=3.0 * (u.mS / u.cm ** 2)))
+        mech.Ion('CalciumDetailed', C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um),
+        mech.Channel('CaL_IS2008', g_max=0.5 * (u.mS / u.cm ** 2)),
+        mech.Channel('CaN_IS2008', g_max=0.5 * (u.mS / u.cm ** 2)),
+        mech.Channel('CaT_HM1992', g_max=2.1 * (u.mS / u.cm ** 2)),
+        mech.Channel('CaHT_HM1992', g_max=3.0 * (u.mS / u.cm ** 2)),
 
-        self.kca = braincell.MixIons(self.k, self.ca)
-        self.kca.add(IAHP=braincell.channel.AHP_De1994(size, g_max=0.3 * (u.mS / u.cm ** 2)))
+        # Reads the potassium and the calcium ion.
+        mech.Channel('AHP_De1994', g_max=0.3 * (u.mS / u.cm ** 2)),
 
-        self.Ih = braincell.channel.HCN_HM1992(size, g_max=0.01 * (u.mS / u.cm ** 2), E=-43 * u.mV)
-        self.IL = braincell.channel.IL(size, g_max=0.0075 * (u.mS / u.cm ** 2), E=-70 * u.mV)
+        mech.Channel('HCN_HM1992', g_max=0.01 * (u.mS / u.cm ** 2), E=-43 * u.mV),
+        mech.Channel('IL', g_max=0.0075 * (u.mS / u.cm ** 2), E=-70 * u.mV),
+    )
+    return cell
 
 
-class RTC(ThalamusNeuron):
-    def __init__(
-        self,
-        size,
-        gKL=0.01 * (u.mS / u.cm ** 2),
-        V_initializer=braintools.init.Constant(-65. * u.mV),
-        solver: str = 'ind_exp_euler'
-    ):
-        super().__init__(size, V_initializer=V_initializer, V_th=20 * u.mV, solver=solver)
+def RTC(
+    size,
+    gKL=0.01 * (u.mS / u.cm ** 2),
+    V_init=-65. * u.mV,
+    solver: str = 'ind_exp_euler'
+):
+    cell = thalamic_cell(size, 2.9e-4 * u.cm ** 2, V_init, solver)
+    cell.paint(
+        mech.Ion('SodiumFixed'),
+        mech.Channel('Na_Ba2002', V_sh=-40 * u.mV),
 
-        self.area_factor = 1e-3 / (2.9e-4 * u.cm ** 2)
-
-        self.na = braincell.ion.SodiumFixed(size)
-        self.na.add(INa=braincell.channel.Na_Ba2002(size, V_sh=-40 * u.mV))
-
-        self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
-        self.k.add(IDR=braincell.channel.KDR_Ba2002(
-            size,
+        mech.Ion('PotassiumFixed', E=-90. * u.mV),
+        mech.Channel(
+            'KDR_Ba2002',
             V_sh=-40 * u.mV,
             temp=u.celsius2kelvin(36.0),
             q10=0.25,
             temp_ref=u.celsius2kelvin(26.0),
-        ))
-        self.k.add(IKL=braincell.channel.K_Leak(size, g_max=gKL))
+        ),
+        mech.Channel('K_Leak', g_max=gKL),
 
-        self.ca = braincell.ion.CalciumDetailed(size, C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um)
-        self.ca.add(ICaL=braincell.channel.CaL_IS2008(size, g_max=0.3 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaN=braincell.channel.CaN_IS2008(size, g_max=0.6 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaT=braincell.channel.CaT_HM1992(size, g_max=2.1 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaHT=braincell.channel.CaHT_HM1992(size, g_max=0.6 * (u.mS / u.cm ** 2)))
+        mech.Ion('CalciumDetailed', C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um),
+        mech.Channel('CaL_IS2008', g_max=0.3 * (u.mS / u.cm ** 2)),
+        mech.Channel('CaN_IS2008', g_max=0.6 * (u.mS / u.cm ** 2)),
+        mech.Channel('CaT_HM1992', g_max=2.1 * (u.mS / u.cm ** 2)),
+        mech.Channel('CaHT_HM1992', g_max=0.6 * (u.mS / u.cm ** 2)),
 
-        self.kca = braincell.MixIons(self.k, self.ca)
-        self.kca.add(IAHP=braincell.channel.AHP_De1994(size, g_max=0.1 * (u.mS / u.cm ** 2)))
+        mech.Channel('AHP_De1994', g_max=0.1 * (u.mS / u.cm ** 2)),
 
-        self.Ih = braincell.channel.HCN_HM1992(size, g_max=0.01 * (u.mS / u.cm ** 2), E=-43 * u.mV)
-        self.IL = braincell.channel.IL(size, g_max=0.0075 * (u.mS / u.cm ** 2), E=-70 * u.mV)
+        mech.Channel('HCN_HM1992', g_max=0.01 * (u.mS / u.cm ** 2), E=-43 * u.mV),
+        mech.Channel('IL', g_max=0.0075 * (u.mS / u.cm ** 2), E=-70 * u.mV),
+    )
+    return cell
 
 
-class IN(ThalamusNeuron):
-    def __init__(
-        self,
-        size,
-        gKL=0.01 * (u.mS / u.cm ** 2),
-        V_initializer=braintools.init.Constant(-70. * u.mV),
-        solver: str = 'ind_exp_euler'
-    ):
-        super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV, solver=solver)
+def IN(
+    size,
+    gKL=0.01 * (u.mS / u.cm ** 2),
+    V_init=-70. * u.mV,
+    solver: str = 'ind_exp_euler'
+):
+    cell = thalamic_cell(size, 1.7e-4 * u.cm ** 2, V_init, solver)
+    cell.paint(
+        mech.Ion('SodiumFixed'),
+        mech.Channel('Na_Ba2002', V_sh=-30 * u.mV),
 
-        self.area_factor = 1e-3 / (1.7e-4 * u.cm ** 2)
-
-        self.na = braincell.ion.SodiumFixed(size)
-        self.na.add(INa=braincell.channel.Na_Ba2002(size, V_sh=-30 * u.mV))
-
-        self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
-        self.k.add(IDR=braincell.channel.KDR_Ba2002(
-            size,
+        mech.Ion('PotassiumFixed', E=-90. * u.mV),
+        mech.Channel(
+            'KDR_Ba2002',
             V_sh=-30 * u.mV,
             temp=u.celsius2kelvin(36.0),
             q10=0.25,
             temp_ref=u.celsius2kelvin(26.0),
-        ))
-        self.k.add(IKL=braincell.channel.K_Leak(size, g_max=gKL))
+        ),
+        mech.Channel('K_Leak', g_max=gKL),
 
-        self.ca = braincell.ion.CalciumDetailed(size, C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um)
-        self.ca.add(ICaN=braincell.channel.CaN_IS2008(size, g_max=0.1 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaHT=braincell.channel.CaHT_HM1992(size, g_max=2.5 * (u.mS / u.cm ** 2)))
+        mech.Ion('CalciumDetailed', C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um),
+        mech.Channel('CaN_IS2008', g_max=0.1 * (u.mS / u.cm ** 2)),
+        mech.Channel('CaHT_HM1992', g_max=2.5 * (u.mS / u.cm ** 2)),
 
-        self.kca = braincell.MixIons(self.k, self.ca)
-        self.kca.add(IAHP=braincell.channel.AHP_De1994(size, g_max=0.2 * (u.mS / u.cm ** 2)))
+        mech.Channel('AHP_De1994', g_max=0.2 * (u.mS / u.cm ** 2)),
 
-        self.IL = braincell.channel.IL(size, g_max=0.0075 * (u.mS / u.cm ** 2), E=-60 * u.mV)
-        self.Ih = braincell.channel.HCN_HM1992(size, g_max=0.05 * (u.mS / u.cm ** 2), E=-43 * u.mV)
+        mech.Channel('IL', g_max=0.0075 * (u.mS / u.cm ** 2), E=-60 * u.mV),
+        mech.Channel('HCN_HM1992', g_max=0.05 * (u.mS / u.cm ** 2), E=-43 * u.mV),
+    )
+    return cell
 
 
-class TRN(ThalamusNeuron):
-    def __init__(
-        self,
-        size,
-        gKL=0.01 * (u.mS / u.cm ** 2),
-        V_initializer=braintools.init.Constant(-70. * u.mV),
-        gl=0.0075,
-        solver: str = 'ind_exp_euler'
-    ):
-        super().__init__(size, V_initializer=V_initializer, V_th=20. * u.mV, solver=solver)
+def TRN(
+    size,
+    gKL=0.01 * (u.mS / u.cm ** 2),
+    V_init=-70. * u.mV,
+    gl=0.0075,
+    solver: str = 'ind_exp_euler'
+):
+    cell = thalamic_cell(size, 1.43e-4 * u.cm ** 2, V_init, solver)
+    cell.paint(
+        mech.Ion('SodiumFixed'),
+        mech.Channel('Na_Ba2002', V_sh=-40 * u.mV),
 
-        self.area_factor = 1e-3 / (1.43e-4 * u.cm ** 2)
+        mech.Ion('PotassiumFixed', E=-90. * u.mV),
+        mech.Channel('KDR_Ba2002', V_sh=-40 * u.mV),
+        mech.Channel('K_Leak', g_max=gKL),
 
-        self.na = braincell.ion.SodiumFixed(size)
-        self.na.add(INa=braincell.channel.Na_Ba2002(size, V_sh=-40 * u.mV))
+        mech.Ion('CalciumDetailed', C_rest=5e-5 * u.mM, tau=100. * u.ms, d=0.5 * u.um),
+        mech.Channel('CaN_IS2008', g_max=0.2 * (u.mS / u.cm ** 2)),
+        mech.Channel('CaT_HP1992', g_max=1.3 * (u.mS / u.cm ** 2)),
 
-        self.k = braincell.ion.PotassiumFixed(size, E=-90. * u.mV)
-        self.k.add(IDR=braincell.channel.KDR_Ba2002(size, V_sh=-40 * u.mV))
-        self.k.add(IKL=braincell.channel.K_Leak(size, g_max=gKL))
+        mech.Channel('AHP_De1994', g_max=0.2 * (u.mS / u.cm ** 2)),
 
-        self.ca = braincell.ion.CalciumDetailed(size, C_rest=5e-5 * u.mM, tau=100. * u.ms, d=0.5 * u.um)
-        self.ca.add(ICaN=braincell.channel.CaN_IS2008(size, g_max=0.2 * (u.mS / u.cm ** 2)))
-        self.ca.add(ICaT=braincell.channel.CaT_HP1992(size, g_max=1.3 * (u.mS / u.cm ** 2)))
-
-        self.kca = braincell.MixIons(self.k, self.ca)
-        self.kca.add(IAHP=braincell.channel.AHP_De1994(size, g_max=0.2 * (u.mS / u.cm ** 2)))
-
-        # self.IL = braincell.channel.IL(size, g_max=0.01 * (u.mS / u.cm ** 2), E=-60 * u.mV)
-        self.IL = braincell.channel.IL(size, g_max=gl * (u.mS / u.cm ** 2), E=-60 * u.mV)
+        # mech.Channel('IL', g_max=0.01 * (u.mS / u.cm ** 2), E=-60 * u.mV),
+        mech.Channel('IL', g_max=gl * (u.mS / u.cm ** 2), E=-60 * u.mV),
+    )
+    return cell
 
 
 def try_neuron_simulation():
     brainstate.environ.set(dt=0.1 * u.ms)
 
-    I = braintools.input.section(values=[0, 0.05, 0], durations=[50 * u.ms, 200 * u.ms, 100 * u.ms]) * u.uA
+    # Total current, divided by the membrane area.
+    I = braintools.input.section(values=[0, 0.05, 0], durations=[50 * u.ms, 200 * u.ms, 100 * u.ms]) * u.nA
     times = u.math.arange(I.shape[0]) * brainstate.environ.get_dt()
 
     neu = TRN(1)  # [n_neuron, ]
@@ -201,7 +195,7 @@ def try_neuron_simulation():
     neu.init_state()
 
     t0 = time.time()
-    vs = brainstate.transform.for_loop(neu.step_run, times, I)
+    vs = brainstate.transform.for_loop(lambda t, inp: step_run(neu, t, inp), times, I)
     t1 = time.time()
     print(f"Elapsed time: {t1 - t0:.4f} s")
 

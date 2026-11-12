@@ -22,27 +22,36 @@
 
 import brainpy
 import brainstate
+import braintools
 import brainunit as u
 import matplotlib.pyplot as plt
 
 import braincell
+from braincell import mech
 
 V_th = -20. * u.mV
-area = 20000 * u.um ** 2
-area = area.in_unit(u.cm ** 2)
-Cm = (1 * u.uF * u.cm ** -2) * area  # Membrane Capacitance [pF]
+area = 20000 * u.um ** 2  # membrane area of one neuron
+diam = u.math.sqrt(area / u.math.pi)  # a cylinder as long as it is wide
 
 
-class HH(braincell.SingleCompartment):
-    def __init__(self, in_size):
-        super().__init__(in_size, C=Cm, solver='ind_exp_euler')
-        self.na = braincell.ion.SodiumFixed(in_size, E=50. * u.mV)
-        self.na.add(INa=braincell.channel.Na_TM1991(in_size, g_max=100. * u.mS / u.cm ** 2 * area, V_sh=-63. * u.mV))
-
-        self.k = braincell.ion.PotassiumFixed(in_size, E=-90 * u.mV)
-        self.k.add(IK=braincell.channel.K_TM1991(in_size, g_max=30. * u.mS / u.cm ** 2 * area, V_sh=-63. * u.mV))
-
-        self.IL = braincell.channel.IL(in_size, E=-60. * u.mV, g_max=5. * u.nS / u.cm ** 2 * area)
+def HH(in_size):
+    # Conductances are densities and the membrane capacitance is 1 uF/cm^2;
+    # the synaptic weights below are totals, which the cell divides by its area.
+    cell = braincell.Cell.point(
+        in_size,
+        length=diam,
+        radius=diam / 2,
+        V_init=braintools.init.Uniform(-70. * u.mV, -60. * u.mV),
+        solver='ind_exp_euler',
+    )
+    cell.paint(
+        mech.Ion('SodiumFixed', E=50. * u.mV),
+        mech.Channel('Na_TM1991', g_max=100. * u.mS / u.cm ** 2, V_sh=-63. * u.mV),
+        mech.Ion('PotassiumFixed', E=-90 * u.mV),
+        mech.Channel('K_TM1991', g_max=30. * u.mS / u.cm ** 2, V_sh=-63. * u.mV),
+        mech.Channel('IL', E=-60. * u.mV, g_max=5. * u.nS / u.cm ** 2),
+    )
+    return cell
 
 
 class EINet(brainstate.nn.Module):

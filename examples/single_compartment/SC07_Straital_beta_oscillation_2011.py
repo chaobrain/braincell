@@ -30,6 +30,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import braincell
+from braincell import mech
 from braincell.channel import Gate, HH
 
 brainstate.environ.set(dt=0.1 * u.ms)
@@ -126,18 +127,26 @@ class GABAa(brainpy.state.Synapse):
         return self.g.value
 
 
-class MSNCell(braincell.SingleCompartment):
-    def __init__(self, size, solver='rk4', g_M=1.3 * (u.mS / u.cm ** 2)):
-        super().__init__(size, solver=solver, C=1.0 * u.uF / u.cm ** 2)
+def MSNCell(
+    size,
+    solver='rk4',
+    g_M=1.3 * (u.mS / u.cm ** 2),
+    V_init=braintools.init.Uniform(-70. * u.mV, -60. * u.mV),
+):
+    # The inputs are current densities, so the membrane area does not matter;
+    # the membrane capacitance is 1 uF/cm^2.
+    cell = braincell.Cell.point(size, V_init=V_init, solver=solver)
+    cell.paint(
+        mech.Ion('SodiumFixed', E=50. * u.mV),
+        mech.Channel(NaChannel, g_max=100. * (u.mS / u.cm ** 2)),
 
-        self.na = braincell.ion.SodiumFixed(size, E=50. * u.mV)
-        self.na.add(INa=NaChannel(size, g_max=100. * (u.mS / u.cm ** 2)))
+        mech.Ion('PotassiumFixed', E=-100. * u.mV),
+        mech.Channel(KChannel, g_max=80. * (u.mS / u.cm ** 2)),
+        mech.Channel(MChannel, g_max=g_M),
 
-        self.k = braincell.ion.PotassiumFixed(size, E=-100. * u.mV)
-        self.k.add(IK=KChannel(size, g_max=80. * (u.mS / u.cm ** 2)))
-        self.k.add(IM=MChannel(size, g_max=g_M))
-
-        self.IL = braincell.channel.IL(size, E=-67. * u.mV, g_max=0.1 * (u.mS / u.cm ** 2))
+        mech.Channel('IL', E=-67. * u.mV, g_max=0.1 * (u.mS / u.cm ** 2)),
+    )
+    return cell
 
 
 class StraitalNetwork(brainstate.nn.Module):

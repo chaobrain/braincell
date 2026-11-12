@@ -18,22 +18,24 @@ import brainunit as u
 import matplotlib.pyplot as plt
 
 import braincell
+from braincell import mech
 
 
-class HH(braincell.SingleCompartment):
-    def __init__(self, size, solver='rk4'):
-        super().__init__(size, solver=solver)
+def HH(size, solver='rk4'):
+    # V starts at rest (-65 mV) and every gate at its steady state there.
+    cell = braincell.Cell.point(size, solver=solver)
+    cell.paint(
+        mech.Ion('SodiumFixed', E=50. * u.mV),
+        mech.Channel('Na_HH1952'),
 
-        self.na = braincell.ion.SodiumFixed(size, E=50. * u.mV)
-        self.na.add(INa=braincell.channel.Na_HH1952(size))
+        mech.Ion('PotassiumFixed', E=-77. * u.mV),
+        mech.Channel('K_HH1952'),
 
-        self.k = braincell.ion.PotassiumFixed(size, E=-77. * u.mV)
-        self.k.add(IK=braincell.channel.K_HH1952(size))
+        mech.Channel('IL', E=-54.387 * u.mV, g_max=0.03 * (u.mS / u.cm ** 2)),
+    )
+    return cell
 
-        self.IL = braincell.channel.IL(size, E=-54.387 * u.mV, g_max=0.03 * (u.mS / u.cm ** 2))
 
-
-hh = HH(1, solver='exp_euler')
 hh = HH(1, solver='ind_exp_euler')
 hh.init_state()
 

@@ -1794,6 +1794,19 @@
     `run`. Its samples, taken at the start of each step, line up with
     NEURON's from t = 0. The voltage error stays at 0.0022 mV (MAE).
 
+- The BrainCell vs NEURON 2x2 HH network comparison
+  (`validation/neuron/synapse/hh_2x2_neuron_compare.ipynb`) runs to the end
+  again. It gave `NetStim` a `weight` and `ExpSyn` a `weight`, which neither
+  takes any more, and stopped with a `TypeError`. Its
+  direct-event stage now connects one `NetStim` to the synapse with
+  `braincell.connect(..., weight=0.001 * u.uS)`, the weight of NEURON's
+  `NetCon`. The NEURON side sets `h.usetable_hh = 0`, as the other
+  comparisons do; with the built-in `hh` rate table the NEURON post-synaptic
+  maxima moved by up to 0.06 mV from BrainCell's. On main `81cdff5` the
+  presynaptic spike times of the two simulators agree within 1.3e-11 ms; the
+  stored outputs, from braincell 0.1.0, differed by one 0.025 ms step. The
+  notebook stores its outputs.
+
 ### Deprecations
 
 - **Constructing an invalid mechanism declaration** (MECH-26).

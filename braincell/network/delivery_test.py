@@ -124,7 +124,6 @@ class DeliveryTest(unittest.TestCase):
                 delivery.resolve_event_backend("brainevent")
 
 
-
 def _one_route_per_block(blocks):
     """Routes as ``delivery_blocks(..., group_by_delay=False)`` built them before CELL-18b."""
     from braincell.network.delivery import DeliveryBlock
@@ -139,6 +138,7 @@ def _one_route_per_block(blocks):
         )
         for block in blocks
     )
+
 
 class _RecordingCell:
     """Stands in for a Cell: keeps what delivery writes during one step."""
@@ -302,7 +302,9 @@ class DeliveryOrderTest(unittest.TestCase):
         for name, (targets, sources, units, contacts) in cases.items():
             with self.subTest(name):
                 blocks = tuple(
-                    self._block(source, "post", 0, np.zeros(len(target)), target, 1, self._weights(rng, len(target), unit))
+                    self._block(
+                        source, "post", 0, np.zeros(len(target)), target, 1, self._weights(rng, len(target), unit)
+                    )
                     for target, source, unit in zip(targets, sources, units)
                 )
                 routes = delivery_blocks(blocks, group_by_delay=False)

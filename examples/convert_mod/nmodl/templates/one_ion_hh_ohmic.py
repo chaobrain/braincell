@@ -22,7 +22,7 @@ import braintools
 import brainunit as u
 
 from braincell import IonInfo
-from braincell.quad.protocol import state
+from braincell.quad import state
 
 
 class {{ context.class_name }}(braincell.Channel):

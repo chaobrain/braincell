@@ -22,10 +22,14 @@ from __future__ import annotations
 
 import ast
 import inspect
+import json
 import re
+import subprocess
+import textwrap
+import unittest
 from pathlib import Path
 from types import ModuleType
-from typing import Iterator
+from typing import Iterator, Mapping
 
 _SECTION = re.compile(r"^(?P<title>[A-Z][A-Za-z ]{2,})\n(?P<rule>-{3,})[ \t]*$", re.MULTILINE)
 _CITATION = re.compile(r"^\s*\.\.\s+\[\d+\]\s+\S", re.MULTILINE)
@@ -35,6 +39,36 @@ def public_symbols(module: ModuleType) -> Iterator[tuple[str, object]]:
     """Yield ``(name, obj)`` for every entry in ``module.__all__``."""
     for name in getattr(module, "__all__", ()):
         yield name, getattr(module, name)
+
+
+def public_paths() -> dict[str, object]:
+    """Return ``{path: object}`` for every public path of braincell.
+
+    The public paths are ``braincell.<name>`` for each name in
+    ``braincell.__all__``, and ``braincell.<package>.<name>`` for each name in
+    the ``__all__`` of a stable package (a module listed in
+    ``braincell.__all__``). ``braincell.experimental`` is imported explicitly
+    and is not among them. Every other path is internal, including a submodule
+    path without an underscore such as ``braincell.morph.morphology``.
+    """
+    import braincell
+
+    paths = {}
+    for name, obj in public_symbols(braincell):
+        paths[f"braincell.{name}"] = obj
+        if isinstance(obj, ModuleType):
+            for sub_name, sub_obj in public_symbols(obj):
+                paths[f"braincell.{name}.{sub_name}"] = sub_obj
+    return paths
+
+
+def is_public_import(path: str, public: Mapping[str, object]) -> bool:
+    """Return whether importing the dotted ``path`` uses a public path.
+
+    ``public`` is :func:`public_paths`. ``braincell`` itself and anything
+    under ``braincell.experimental`` also count.
+    """
+    return path in public or path == "braincell" or path.split(".")[:2] == ["braincell", "experimental"]
 
 
 def own_docstring(obj) -> str | None:
@@ -306,4 +340,200 @@ class UnitSafetyGuardTests:
 
     def test_unit_safety_allowlist_entries_have_reasons(self):
         bad = [entry[:3] for entry in self.allowlist if len(entry) != 4 or not entry[3].strip()]
+        self.assertEqual(bad, [], f"allowlist entries without a reason: {bad}")
+
+
+#: Where users copy code from. ``docs/developer/`` is written for
+#: contributors and may show internal paths.
+_USER_MATERIAL = ("examples", "docs", "README.md")
+_CONTRIBUTOR_DOCS = "docs/developer/"
+_USER_MATERIAL_SUFFIXES = (".py", ".ipynb", ".md", ".rst")
+_MD_PYTHON_FENCE = re.compile(r"^\s*```\s*(?:python|py|ipython3?)\s*$")
+_MD_FENCE_END = re.compile(r"^\s*```\s*$")
+_RST_PYTHON_BLOCK = re.compile(
+    r"^(?P<indent>[ \t]*)\.\. (?:code-block|code|sourcecode)::\s*(?:python|py|ipython3?)\s*$"
+)
+_RST_OPTION = re.compile(r"^\s*:[\w-]+:")
+
+
+def _user_material_files(repo: Path) -> list[str]:
+    """Return the user-material files under ``repo``, relative and sorted.
+
+    In a git checkout only tracked files count, so build output and
+    scratch files never enter the scan.
+    """
+    if (repo / ".git").exists():
+        listed = subprocess.run(
+            ["git", "-C", str(repo), "ls-files", "--", *_USER_MATERIAL], capture_output=True, text=True, check=True
+        ).stdout.splitlines()
+    else:
+        listed = [
+            path.relative_to(repo).as_posix()
+            for root in _USER_MATERIAL
+            for path in ([repo / root] if (repo / root).is_file() else sorted((repo / root).rglob("*")))
+            if path.is_file()
+        ]
+    return sorted(
+        name
+        for name in listed
+        if name.endswith(_USER_MATERIAL_SUFFIXES) and not name.startswith(_CONTRIBUTOR_DOCS) and (repo / name).is_file()
+    )
+
+
+def _markdown_python(text: str) -> Iterator[str]:
+    """Yield the body of every Python code fence in a Markdown text."""
+    block = None
+    for line in text.splitlines():
+        if block is None:
+            if _MD_PYTHON_FENCE.match(line):
+                block = []
+        elif _MD_FENCE_END.match(line):
+            yield textwrap.dedent("\n".join(block))
+            block = None
+        else:
+            block.append(line)
+
+
+def _rst_python(text: str) -> Iterator[str]:
+    """Yield the body of every Python ``code-block`` in a reStructuredText text."""
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        match = _RST_PYTHON_BLOCK.match(lines[index])
+        index += 1
+        if match is None:
+            continue
+        indent = len(match["indent"])
+        block = []
+        while index < len(lines) and (
+            not lines[index].strip() or len(lines[index]) - len(lines[index].lstrip()) > indent
+        ):
+            if not _RST_OPTION.match(lines[index]):
+                block.append(lines[index])
+            index += 1
+        yield textwrap.dedent("\n".join(block))
+
+
+def _notebook_python(text: str) -> Iterator[str]:
+    """Yield each code cell of a notebook, without IPython magics and shell lines."""
+    for cell in json.loads(text).get("cells", []):
+        if cell.get("cell_type") != "code":
+            continue
+        source = cell.get("source", "")
+        lines = ("".join(source) if isinstance(source, list) else source).splitlines()
+        if lines and lines[0].lstrip().startswith("%%"):
+            continue  # a cell magic: the cell body is not Python
+        yield "\n".join(line for line in lines if not line.lstrip().startswith(("%", "!")))
+
+
+def _braincell_imports(tree: ast.AST) -> Iterator[str]:
+    """Yield the dotted path of every absolute ``braincell`` import in ``tree``."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names = [node.module if alias.name == "*" else f"{node.module}.{alias.name}" for alias in node.names]
+        else:
+            continue
+        yield from (name for name in names if name == "braincell" or name.startswith("braincell."))
+
+
+def user_material_imports(repo: Path) -> tuple[list[tuple[str, str]], list[str]]:
+    """Scan the code users read for its ``braincell`` imports.
+
+    The material is ``examples/``, ``docs/`` without ``docs/developer/``, and
+    ``README.md``. The code is every ``.py`` file, every notebook code cell
+    (IPython magics and ``!`` lines dropped), and every Python code fence in
+    ``.md`` and ``.rst`` files.
+
+    Returns
+    -------
+    imports : list of (str, str)
+        ``(file, dotted path)`` for each import, in file order;
+        ``from braincell.x import *`` gives ``braincell.x``.
+    unparsable : list of str
+        Files with a piece of code that does not parse; their remaining
+        pieces are still scanned.
+    """
+    repo = Path(repo)
+    imports, unparsable = [], []
+    for name in _user_material_files(repo):
+        text = (repo / name).read_text(encoding="utf-8")
+        if name.endswith(".py"):
+            sources = [text]
+        elif name.endswith(".ipynb"):
+            sources = _notebook_python(text)
+        elif name.endswith(".md"):
+            sources = _markdown_python(text)
+        else:
+            sources = _rst_python(text)
+        for source in sources:
+            try:
+                tree = ast.parse(source)
+            except SyntaxError:
+                if name not in unparsable:
+                    unparsable.append(name)
+                continue
+            imports.extend((name, path) for path in _braincell_imports(tree))
+    return imports, unparsable
+
+
+class UserMaterialImportTests:
+    """Assertions for the guard on the ``braincell`` imports in user material.
+
+    Mix into a :class:`unittest.TestCase` subclass that sets ``repo``, the
+    repository root, which :func:`user_material_imports` scans. Every import
+    must be public (:func:`is_public_import`) or match an ``allowlist`` entry
+    ``(file, dotted path, reason)``. Every file must parse or match an
+    ``unparsable`` entry ``(file, reason)``. Every entry must match something
+    and give a reason. The tests skip when ``repo`` has no ``examples/``, as
+    for an installed package.
+    """
+
+    repo: Path | None = None
+    allowlist: tuple[tuple[str, str, str], ...] = ()
+    unparsable: tuple[tuple[str, str], ...] = ()
+
+    def _scan(self) -> tuple[list[tuple[str, str]], list[str]]:
+        if self.repo is None or not (Path(self.repo) / "examples").is_dir():
+            raise unittest.SkipTest("no examples/ beside the package; nothing to scan")
+        if "_scanned" not in type(self).__dict__:
+            type(self)._scanned = user_material_imports(Path(self.repo))
+        return type(self)._scanned
+
+    def test_user_material_imports_only_public_paths(self):
+        imports, _ = self._scan()
+        public = public_paths()
+        listed = {entry[:2] for entry in self.allowlist}
+        bad = sorted(
+            {
+                f"{file}: {path}"
+                for file, path in imports
+                if (file, path) not in listed and not is_public_import(path, public)
+            }
+        )
+        self.assertEqual(
+            bad,
+            [],
+            "user material imports braincell only by public paths: braincell, a name in braincell.__all__, a stable "
+            "package or a name in its __all__, or braincell.experimental. A submodule path such as "
+            "braincell.morph.morphology is internal. Import the public name, or allowlist the import with a reason.",
+        )
+
+    def test_user_material_parses(self):
+        _, unparsable = self._scan()
+        exempt = {entry[0] for entry in self.unparsable}
+        bad = [file for file in unparsable if file not in exempt]
+        self.assertEqual(bad, [], "these files hold code that does not parse, so their imports cannot be checked")
+
+    def test_user_material_allowlists_have_no_dead_entries(self):
+        imports, unparsable = self._scan()
+        live = set(imports)
+        dead = [entry[:2] for entry in self.allowlist if entry[:2] not in live]
+        dead += [entry[:1] for entry in self.unparsable if entry[0] not in unparsable]
+        self.assertEqual(dead, [], f"allowlist entries that match nothing: {dead}")
+
+    def test_user_material_allowlist_entries_have_reasons(self):
+        bad = [entry[:2] for entry in self.allowlist if len(entry) != 3 or not entry[2].strip()]
+        bad += [entry[:1] for entry in self.unparsable if len(entry) != 2 or not entry[1].strip()]
         self.assertEqual(bad, [], f"allowlist entries without a reason: {bad}")

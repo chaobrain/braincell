@@ -14,12 +14,23 @@
 # ==============================================================================
 
 
+import json
 import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from types import ModuleType
 
-from braincell._testing import UnitSafetyGuardTests, has_citation, unit_safety_hits, unreferenced_footnotes
+from braincell._testing import (
+    UnitSafetyGuardTests,
+    UserMaterialImportTests,
+    has_citation,
+    is_public_import,
+    public_paths,
+    unit_safety_hits,
+    unreferenced_footnotes,
+    user_material_imports,
+)
 
 _DOC = """Summary.
 
@@ -137,6 +148,158 @@ class UnitSafetyGuardMixinTest(unittest.TestCase):
         dead = ("pool.py", "missing", "get_magnitude", "gone.")
         self.assertEqual(self._failures((entry, dead)), ["test_unit_safety_allowlist_has_no_dead_entries"])
         self.assertEqual(self._failures((entry[:3] + (" ",),)), ["test_unit_safety_allowlist_entries_have_reasons"])
+
+
+def _notebook(*cells):
+    """Return the JSON text of a notebook whose cells are ``(cell_type, source)`` pairs."""
+    return json.dumps({"cells": [{"cell_type": kind, "source": source} for kind, source in cells], "nbformat": 4})
+
+
+#: A small repository of user material: one file per case the import guard handles.
+_USER_MATERIAL = {
+    "README.md": "Intro.\n\n```python\nimport braincell as bc\n```\n",
+    "examples/public.py": (
+        "import braincell\n"
+        "import braincell.quad as bq\n"
+        "from braincell import Cell\n"
+        "from braincell.filter import *\n"
+        "from braincell.experimental.optim import RolloutGradientEngine\n"
+    ),
+    "examples/private.py": "from braincell.morph._spatial import interpolate_branch\n",
+    "examples/submodule.py": "from braincell.morph.morphology import Morphology\n",
+    "examples/broken.py": "def (:\n",
+    "examples/tutorial.ipynb": _notebook(
+        ("code", ["%matplotlib inline\n", "import braincell.quad._util\n"]),
+        ("markdown", "`import braincell._not_code` is prose, not code"),
+        ("code", "%%bash\necho not python\n"),
+        ("code", "!pip install braincell\nfrom braincell import Morphology\n"),
+    ),
+    "docs/page.md": ("```python\nfrom braincell.filter import at\n```\n\n```bash\nimport braincell._not_python\n```\n"),
+    "docs/page.rst": (
+        "Title\n=====\n\n.. code-block:: python\n   :caption: A cell\n\n   from braincell.mech import _point\n\nText.\n"
+    ),
+    "docs/developer/guide.md": "```python\nfrom braincell._deprecation import Deprecation\n```\n",
+    "examples/data.txt": "import braincell._ignored\n",
+}
+
+
+def _write_user_material(root: Path) -> None:
+    for name, text in _USER_MATERIAL.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+
+class PublicPathsTest(unittest.TestCase):
+    """``public_paths`` lists the root and the stable packages, not experimental."""
+
+    def test_paths_cover_the_root_and_each_stable_package(self):
+        import braincell
+
+        paths = public_paths()
+        self.assertIs(paths["braincell.Cell"], braincell.Cell)
+        self.assertIs(paths["braincell.quad"], braincell.quad)
+        self.assertIs(paths["braincell.filter.at"], braincell.filter.at)
+        packages = [
+            getattr(braincell, name) for name in braincell.__all__ if isinstance(getattr(braincell, name), ModuleType)
+        ]
+        self.assertEqual(len(packages), 11)
+        self.assertEqual(len(paths), len(braincell.__all__) + sum(len(package.__all__) for package in packages))
+        self.assertFalse(any(path.startswith("braincell.experimental") for path in paths))
+        self.assertFalse(any(path.startswith("braincell.filter.metric.") for path in paths))
+
+    def test_is_public_import(self):
+        paths = public_paths()
+        for path in ("braincell", "braincell.quad", "braincell.filter.at", "braincell.experimental.optim.X"):
+            with self.subTest(path=path):
+                self.assertTrue(is_public_import(path, paths))
+        for path in ("braincell.morph.morphology.Morphology", "braincell.quad._util", "braincell.NoSuchName"):
+            with self.subTest(path=path):
+                self.assertFalse(is_public_import(path, paths))
+
+
+class UserMaterialScanTest(unittest.TestCase):
+    """``user_material_imports`` reads code, not prose, and skips contributor docs."""
+
+    def test_scan_of_a_small_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_user_material(Path(tmp))
+            imports, unparsable = user_material_imports(Path(tmp))
+        self.assertEqual(
+            sorted(imports),
+            [
+                ("README.md", "braincell"),
+                ("docs/page.md", "braincell.filter.at"),
+                ("docs/page.rst", "braincell.mech._point"),
+                ("examples/private.py", "braincell.morph._spatial.interpolate_branch"),
+                ("examples/public.py", "braincell"),
+                ("examples/public.py", "braincell.Cell"),
+                ("examples/public.py", "braincell.experimental.optim.RolloutGradientEngine"),
+                ("examples/public.py", "braincell.filter"),
+                ("examples/public.py", "braincell.quad"),
+                ("examples/submodule.py", "braincell.morph.morphology.Morphology"),
+                ("examples/tutorial.ipynb", "braincell.Morphology"),
+                ("examples/tutorial.ipynb", "braincell.quad._util"),
+            ],
+        )
+        self.assertEqual(unparsable, ["examples/broken.py"])
+
+
+class UserMaterialImportMixinTest(unittest.TestCase):
+    """The mixin fails on a private import, a submodule path, an unparsable file and a bad entry."""
+
+    _ALLOW = (
+        ("examples/private.py", "braincell.morph._spatial.interpolate_branch", "reason."),
+        ("examples/submodule.py", "braincell.morph.morphology.Morphology", "reason."),
+        ("examples/tutorial.ipynb", "braincell.quad._util", "reason."),
+        ("docs/page.rst", "braincell.mech._point", "reason."),
+    )
+    _BROKEN = (("examples/broken.py", "reason."),)
+
+    def _failures(self, allowlist, unparsable, *, write=True):
+        with tempfile.TemporaryDirectory() as tmp:
+            if write:
+                _write_user_material(Path(tmp))
+            attrs = {"repo": Path(tmp), "allowlist": allowlist, "unparsable": unparsable}
+            case = type("Guard", (UserMaterialImportTests, unittest.TestCase), attrs)
+            result = unittest.TestResult()
+            unittest.defaultTestLoader.loadTestsFromTestCase(case).run(result)
+        failed = {test.id().rsplit(".", 1)[-1]: message for test, message in result.failures + result.errors}
+        return failed, len(result.skipped)
+
+    def test_fully_allowlisted_material_passes(self):
+        self.assertEqual(self._failures(self._ALLOW, self._BROKEN), ({}, 0))
+
+    def test_non_public_imports_are_reported_with_file_and_path(self):
+        failed, _ = self._failures((), self._BROKEN)
+        self.assertEqual(list(failed), ["test_user_material_imports_only_public_paths"])
+        message = failed["test_user_material_imports_only_public_paths"]
+        for line in (
+            "examples/private.py: braincell.morph._spatial.interpolate_branch",
+            "examples/submodule.py: braincell.morph.morphology.Morphology",
+            "examples/tutorial.ipynb: braincell.quad._util",
+            "docs/page.rst: braincell.mech._point",
+        ):
+            self.assertIn(line, message)
+        self.assertNotIn("public.py", message)
+
+    def test_unparsable_file_is_reported_by_name(self):
+        failed, _ = self._failures(self._ALLOW, ())
+        self.assertEqual(list(failed), ["test_user_material_parses"])
+        self.assertIn("examples/broken.py", failed["test_user_material_parses"])
+
+    def test_dead_entries_and_missing_reasons_fail(self):
+        dead = (("examples/gone.py", "braincell._gone", "reason."),)
+        failed, _ = self._failures(self._ALLOW + dead, self._BROKEN + (("examples/public.py", "reason."),))
+        self.assertEqual(list(failed), ["test_user_material_allowlists_have_no_dead_entries"])
+        self.assertIn("examples/gone.py", failed["test_user_material_allowlists_have_no_dead_entries"])
+        self.assertIn("examples/public.py", failed["test_user_material_allowlists_have_no_dead_entries"])
+        failed, _ = self._failures(self._ALLOW[:-1] + (self._ALLOW[-1][:2] + (" ",),), self._BROKEN)
+        self.assertEqual(list(failed), ["test_user_material_allowlist_entries_have_reasons"])
+
+    def test_repository_without_examples_is_skipped(self):
+        # The reasons check reads only the entries, so it runs; the three scans skip.
+        self.assertEqual(self._failures((), (), write=False), ({}, 3))
 
 
 if __name__ == "__main__":

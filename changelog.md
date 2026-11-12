@@ -1318,6 +1318,14 @@
   - The F–I curve counts change by at most one spike.
   - The rebound burst is unchanged.
   - The E–I network's first volley comes at about 14 ms instead of 18 ms.
+- The examples, the user documentation and the README import braincell by public
+  paths only (API-2b): `braincell`, a name in `braincell.__all__`, a stable
+  package or a name in its `__all__`, or `braincell.experimental`. The NMODL
+  converter's templates and its rendered Kv channel import `state` from
+  `braincell.quad` instead of the internal `braincell.quad.protocol`, and the
+  multistart parameter-learning example test no longer holds leftover
+  merge-conflict markers. A test in `braincell/__init___test.py` scans that
+  material and fails on a new import of an internal path.
 
 - The example scripts `examples/single_compartment/SC01` and `SC03`–`SC07`
   build point neurons with `braincell.Cell.point(...)` and `paint`

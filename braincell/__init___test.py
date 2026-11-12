@@ -40,7 +40,7 @@ import jax.numpy as jnp
 import numpy as np
 
 import braincell
-from braincell._testing import ReExportTests
+from braincell._testing import ReExportTests, UserMaterialImportTests
 
 #: Stable domain packages must be reachable from a bare ``import braincell``
 #: and advertised in its ``__all__``.
@@ -123,6 +123,34 @@ class PlottingLivesInBraintoolsTest(unittest.TestCase):
         )
         result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
         self.assertEqual(result.stdout.strip(), "[]")
+
+
+class UserMaterialImportsTest(UserMaterialImportTests, unittest.TestCase):
+    """Examples, the user docs and the README import braincell by public paths only (API-2b).
+
+    A reader copies these imports. A public path is ``braincell``, a name in
+    ``braincell.__all__``, a stable package or a name in its ``__all__``, or
+    anything under ``braincell.experimental``. A submodule path such as
+    ``braincell.morph.morphology`` is internal even without an underscore.
+    """
+
+    repo = pathlib.Path(braincell.__file__).resolve().parents[1]
+    allowlist = (
+        (
+            "examples/quad/quad.ipynb",
+            "braincell.quad._util.apply_standard_solver_step",
+            "the custom-integrator tutorial calls the solver-step helper; kept until API-3 classifies quad._util",
+        ),
+        (
+            "examples/quad/quad.ipynb",
+            "braincell.quad._util.split_diffeq_states",
+            "the same tutorial splits the states by hand; kept until API-3 classifies quad._util",
+        ),
+    )
+    unparsable = (
+        ("examples/convert_mod/nmodl/templates/density_channel.py", "Jinja template; it is Python only once rendered"),
+        ("examples/convert_mod/nmodl/templates/one_ion_hh_ohmic.py", "Jinja template; it is Python only once rendered"),
+    )
 
 
 class ModuleAttributeTest(unittest.TestCase):

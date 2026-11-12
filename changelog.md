@@ -803,6 +803,20 @@
 
 ### Changes & Improvements
 
+- **`Cell.run` spends less on each step on GPU** (CELL-39). Its compiled
+  loop carried two states that every step rewrites before reading them:
+  the flag that marks the next step's synapse inputs as prepared, and the
+  voltage before the step, which a `VoltageCrossingSource` reads. On GPU
+  each carried state cost a device copy per step. The spike output also
+  recomputed each step's spikes from the voltages before and after the
+  step, which kept the old voltage alive. The loop now carries neither
+  state and packs the stored spikes, and `RunResult.spikes` finds the
+  packed spike bytes several times faster after the run. Results are
+  unchanged. A Hodgkin-Huxley point population on an RTX 3090 (float32,
+  10,000 steps, 300 to 10,000 members, `ralston2` or `rk4`, with or
+  without a current clamp) now takes 0.70-0.82 of its former time per
+  step: 1.01-1.43 times its engine stepped directly, where it took
+  1.28-1.93 times.
 - **`ConnectionView.weight` reads each `connect` call with one gather**
   (CELL-12a). It stacked one value per row, which compiled an XLA operation
   with one operand per row. `Cell.run` and `Network.run` read it when they

@@ -5,6 +5,24 @@
 
 ### Breaking Changes
 
+- **`braincell.channel.CaHT_HM1992` is renamed `CaT_HM1992_Shifted25`**
+  (MECH-42). Huguenard & McCormick (1992) has no high-threshold calcium
+  current: the class is their T current (`CaT_HM1992`) with the gates shifted
+  by +25 mV instead of -3 mV, and the shift has no traced source. The new name
+  says so. Rates and defaults are unchanged; on the same inputs the gates,
+  their derivatives and the current are bitwise equal to the old class in
+  float64. In a `Cell`, a channel's default instance name is its class name
+  and the order in which the cell adds channel currents follows those names,
+  so a cell that also has `CaT_HM1992` now adds the two in the other order:
+  results differ at rounding level (3e-11 mV in float64 and 6e-3 mV in
+  float32 over the 500 ms `t_current_rebound` example). Pass
+  `name="CaHT_HM1992"` to keep the old order and bitwise results. No alias is
+  kept and there is no deprecation period (0.3 allows breaking changes without
+  one, a project-lead decision). `braincell.channel.CaHT_HM1992` raises
+  `AttributeError` (`ImportError` on `from braincell.channel import ...`) and
+  the registry lookup of `mech.Channel("CaHT_HM1992", ...)` raises `KeyError`;
+  both name the new class. Replace `CaHT_HM1992` with `CaT_HM1992_Shifted25`,
+  in class references and in `mech.Channel("...")` strings alike.
 - **`braincell.SingleCompartment` and `braincell.MultiCompartment` are removed**
   (CELL-28). A point neuron is a lumped `Cell`: build it with
   `braincell.Cell.point(...)` and declare its ions and channels with `paint`.

@@ -178,11 +178,11 @@ _HM1992 = "no candidate .mod file identified for Huguenard & McCormick (1992)"
 
 UNCOVERED = {
     "AHP_De1994": f"{_MODELDB} ModelDB 3670 IAHP.mod, which also scales tau_m by 3^((celsius - 22)/10) (MECH-6a)",
-    "CaHT_HM1992": f"{_NO_MOD}; no published model: CaT_HM1992 with the gates shifted by +25 mV",
     "CaHT_Re1993": f"{_MODELDB} ModelDB 2488 ca.mod, which also scales gbar by tadj (MECH-6a)",
     "CaL_IS2008": f"{_NO_MOD}; port of BrainPy ICaL_IS2008, original model unresolved (MECH-6a)",
     "CaN_IS2008": f"{_NO_MOD}; port of BrainPy ICaN_IS2008, original model unresolved (MECH-6a)",
     "CaT_HM1992": f"{_MODELDB} ModelDB 279 ITGHK.mod, which uses a GHK drive (MECH-6a)",
+    "CaT_HM1992_Shifted25": f"{_NO_MOD}; no published model: CaT_HM1992 with the gates shifted by +25 mV",
     "CaT_HP1992": f"{_MODELDB} ModelDB 3670 IT2.mod",
     "HCN_HM1992": f"{_NO_MOD}; {_HM1992}; its +43 mV reversal default is unchecked (MECH-6c)",
     "KA1_HM1992": f"{_NO_MOD}; {_HM1992}",

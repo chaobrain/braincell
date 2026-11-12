@@ -42,8 +42,8 @@ _SU2015_DCN_FLUX_SCALE = 4.47814e6
 __all__ = [
     "CaN_IS2008",
     "CaT_HM1992",
+    "CaT_HM1992_Shifted25",
     "CaT_HP1992",
-    "CaHT_HM1992",
     "CaHT_Re1993",
     "CaL_IS2008",
     "CaHVA_SU2015_DCN",
@@ -302,9 +302,9 @@ class CaT_HM1992(OhmicHH):
 
     See Also
     --------
-    CaHT_HM1992 : Same gating functions with ``V_sh`` moved to
-        ``+25.0 mV``, relabelled as a high-threshold current; that
-        relabelling has no source in this paper (see its Notes).
+    CaT_HM1992_Shifted25 : Same gating functions with ``V_sh`` moved to
+        ``+25.0 mV``; the shift has no source in this paper (see its
+        Notes).
     CaT_HP1992 : Independently sourced T-type current for reticular
         nucleus neurons, with the same ``p^2 q`` gating shape but a
         different Boltzmann parameterisation.
@@ -534,9 +534,14 @@ class CaT_HP1992(OhmicHH):
         return 85.0 + 1.0 / (u.math.exp((V + 48.0) / 4.0) + u.math.exp(-(V + 407.0) / 50.0))
 
 
-@register_channel("CaHT_HM1992")
-class CaHT_HM1992(CaT_HM1992):
+@register_channel("CaT_HM1992_Shifted25")
+class CaT_HM1992_Shifted25(CaT_HM1992):
     r"""Depolarized-shift variant of the Huguenard & McCormick 1992 T current.
+
+    .. versionchanged:: 0.3
+       Renamed from ``CaHT_HM1992``, which presented this class as a
+       high-threshold current of that paper; the old name is not kept
+       as an alias (see Notes).
 
     :math:`p^2 q` HH gating with an ohmic driving force, using the
     same rate functions as :class:`CaT_HM1992` but with the threshold
@@ -614,10 +619,11 @@ class CaHT_HM1992(CaT_HM1992):
     same ``q10_p = 3.55`` / ``q10_q = 3.0`` at 24 degC defaults). The
     only difference is ``V_sh``: ``+25.0 mV`` here versus ``-3.0 mV``
     in :class:`CaT_HM1992`. This class is the paper's low-threshold T
-    current translated 28 mV depolarized and relabelled
-    "high-threshold" -- a BrainCell/BrainPy-derived variant, not a
-    current the cited paper reports. The ``+25 mV`` shift itself has
-    no traceable source in the paper.
+    current translated 28 mV depolarized -- a BrainCell/BrainPy-derived
+    variant, not a current the cited paper reports, which is why
+    braincell 0.3 names it after its content (the T current, shifted
+    by +25 mV) rather than as a high-threshold current. The ``+25 mV``
+    shift itself has no traceable source in the paper or elsewhere.
 
     The citation below is included because it correctly identifies
     the origin of the *gating kinetics* (they are exactly Huguenard &
@@ -721,9 +727,10 @@ class CaHT_Re1993(OhmicHH):
 
     See Also
     --------
-    CaHT_HM1992 : Nominally also a high-threshold current, but
-        actually a relabelled low-threshold T current with no
-        genuine high-threshold attribution (see its Notes).
+    CaT_HM1992_Shifted25 : Formerly presented as a high-threshold
+        current, but actually the low-threshold T current of
+        :class:`CaT_HM1992` shifted by +25 mV, with no genuine
+        high-threshold attribution (see its Notes).
 
     Notes
     -----

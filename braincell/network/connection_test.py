@@ -940,7 +940,9 @@ class ConnectionStoreColumnsTest(unittest.TestCase):
             delay = rng.uniform(0.0, 3.0, size) * (u.ms if index % 3 else u.us)
             connect(f"many_{index}", source=NetStim(size=size), synapse=target[rng.permutation(4)[:size]], delay=delay)
             if index % 9 == 0:
-                np.testing.assert_array_equal(cell.connections.id, np.flatnonzero(self._reference_columns(calls, removed)[0]["active"]))
+                np.testing.assert_array_equal(
+                    cell.connections.id, np.flatnonzero(self._reference_columns(calls, removed)[0]["active"])
+                )
             if index == 20:
                 removed.update(cell.connections[f"many_{index}"].id.tolist())
                 cell.connections[f"many_{index}"].remove()

@@ -608,14 +608,15 @@ class Network:
         step does not prepare it again, so each event, and each plasticity
         rule update, happens once. When the Cell ran at another ``dt``, the
         Network's steps also skip the events that boundary took and deliver
-        the others no earlier than their second step: within half a step of
-        the join an event can act a step later than in a Network run from
-        ``t = 0``. A Network step consumes its boundary within the step, so
-        a Cell that later runs on its own at another ``dt`` skips what the
-        Network delivered in the same way. The first run after a join is
-        compiled with its first step apart; :meth:`prepare_run` after one
-        compiles an ``update()`` that tests, on every step, whether such a
-        Cell's boundary is prepared. :meth:`reset_state` forgets the join.
+        the others no earlier than their second step: within half of the
+        Cell's step of the join an event can act a step later or earlier
+        than in a Network run from ``t = 0``. A Network step consumes its
+        boundary within the step, so a Cell that later runs on its own at
+        another ``dt`` skips what the Network delivered in the same way. The
+        first run after a join is compiled with its first step apart;
+        :meth:`prepare_run` after one compiles an ``update()`` that tests, on
+        every step, whether such a Cell's boundary is prepared.
+        :meth:`reset_state` forgets the join.
 
         **Scheduled delivery** (``scheduled_delivery``, CELL-9). The
         arrivals of the run's steps ``[n, n + steps)`` are planned on the

@@ -499,5 +499,95 @@ class SynapseGeometryTest(unittest.TestCase):
         self._assert_same_columns(cell.synapses[syn][np.zeros(0, dtype=np.int64)])
 
 
+def _reference_conditional_sample(
+    *, fixed_side, fixed, candidates, score, replace, source_data, synapse_data, group, seed
+):
+    """``_conditional_sample`` before CELL-18f: rows filled one at a time."""
+    from braincell.network.pairing import (
+        PairingContext,
+        SourceContext,
+        SynapseContext,
+        _derived_seed,
+        _sample,
+        _score,
+        _score_row,
+    )
+
+    fixed = np.asarray(fixed, dtype=np.int64)
+    if fixed.size == 0:
+        return np.asarray([], dtype=np.int64)
+    unique, inverse, counts = np.unique(fixed, return_inverse=True, return_counts=True)
+    if fixed_side == "source":
+        ctx = PairingContext(
+            SourceContext(source_data, unique, fixed=True), SynapseContext(synapse_data, candidates, fixed=False), group
+        )
+        side = "synapse"
+    else:
+        ctx = PairingContext(
+            SourceContext(source_data, candidates, fixed=False), SynapseContext(synapse_data, unique, fixed=True), group
+        )
+        side = "source"
+    weights = _score(score, ctx, (len(unique), len(candidates)), side=side, positions=candidates)
+    sampled_by_fixed = []
+    for row, (endpoint, count) in enumerate(zip(unique.tolist(), counts.tolist())):
+        endpoint_id = source_data.id[int(endpoint)] if fixed_side == "source" else synapse_data.id[int(endpoint)]
+        sampled_by_fixed.append(
+            _sample(
+                candidates,
+                _score_row(weights, row),
+                count,
+                replace,
+                _derived_seed(seed, fixed_side, int(endpoint_id)),
+            )
+        )
+    offsets = np.zeros(len(unique), dtype=np.int64)
+    result = np.empty(len(fixed), dtype=np.int64)
+    for row, unique_index in enumerate(inverse.tolist()):
+        result[row] = sampled_by_fixed[unique_index][offsets[unique_index]]
+        offsets[unique_index] += 1
+    return result
+
+
+class ConditionalSampleTest(unittest.TestCase):
+    """CELL-18f: each fixed endpoint's partners land on its rows in draw order."""
+
+    def test_partners_match_filling_one_row_at_a_time(self) -> None:
+        from unittest import mock
+
+        from braincell.network import pairing
+        from braincell.network.event import EventSourceView
+
+        cell, exp = _population(3)
+        cell.place(at("soma", 0.25), braincell.mech.Synapse("ExpSyn", name="ampa", tau=2.0 * u.ms, e=0.0 * u.mV))
+        synapses = cell.synapses[exp]
+        source = EventSourceView(NetStim(size=5, start=1.0 * u.ms), np.arange(5))
+        n_synapses = len(synapses)
+        specs = {
+            "source first": pairing.source_first(40, seed=1),
+            "source first, scored": pairing.source_first(31, synapse_score=np.linspace(0.1, 1.0, n_synapses), seed=2),
+            "by source, without replacement": pairing.by_source(2, replace=False, seed=3),
+            "synapse first, scored": pairing.synapse_first(
+                27, source_score=lambda ctx: np.arange(1.0, 6.0)[None, :] * np.ones((len(ctx.synapse.id), 1)), seed=4
+            ),
+            "by source": pairing.by_source(np.asarray([3, 0, 2, 5, 1]), seed=5),
+            "by synapse": pairing.by_synapse(2, seed=6),
+            "by source, per target cell": pairing.by_source(2, group_by="target_cell", seed=7),
+            "source first, per target cell": pairing.source_first(
+                np.asarray([7, 0, 4]), group_by="target_cell", seed=8
+            ),
+        }
+        compared = 0
+        for name, spec in specs.items():
+            with self.subTest(name):
+                actual = pairing.materialize_pairing(spec, source, synapses)
+                with mock.patch.object(pairing, "_conditional_sample", _reference_conditional_sample):
+                    expected = pairing.materialize_pairing(spec, source, synapses)
+                np.testing.assert_array_equal(actual.source_position, expected.source_position)
+                np.testing.assert_array_equal(actual.synapse_position, expected.synapse_position)
+                self.assertEqual(actual.synapse_position.dtype, expected.synapse_position.dtype)
+                compared += len(actual.source_position)
+        self.assertGreater(compared, 100)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -718,6 +718,12 @@
   `ralston2`). In the catalogue this flags `Cav1p2_*`, `Cav1p3_*`, `HCN1_*`
   and `Na_ZH2019_IO`. The default solver and all results are unchanged.
 
+- **Conditional pairing places its rows with one scatter** (CELL-18f).
+  `source_first`, `synapse_first`, `by_source` and `by_synapse` put each
+  fixed endpoint's partners on its rows one row at a time in Python; one
+  scatter over the rows sorted by endpoint now places them all. 100,000
+  rows from 10 sources: 32 ms and now 13.5 ms. The rows are the same.
+
 - **Parameter unit errors name the mechanism, the value and the declaring
   line** (MECH-25). `init_state()` errors now read like `Channel 'leak' (IL)
   parameter 'g_max' has units incompatible with mS / cm^2; got 0.1 mV.

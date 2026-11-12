@@ -1,4 +1,10 @@
 : Calcium ion accumulation with endogenous buffers, DCM and pump
+: Local change (braincell, 2026-11-12): NEURON 9 rejects re-declaring a USEION
+: variable in a CONSTANT block ("cao used in USEION statement can not be
+: re-declared in a CONSTANT block"), so the upstream `CONSTANT { cao = 2 (mM) }`
+: is commented out and `cao` is declared in ASSIGNED, read from the ca ion
+: (2 mM unless cao0_ca_ion is changed). No equation uses cao, so the dynamics
+: are unchanged. The SUFFIX is renamed from upstream cdp5StCmod (ModelDB 2018019).
 
 COMMENT
 
@@ -99,9 +105,10 @@ ASSIGNED {
 	cai       (mM)
 	mgi	(mM)
 	vrat	(1)	
+	cao       (mM)
 }
 
-CONSTANT { cao = 2	(mM) }
+: CONSTANT { cao = 2	(mM) }
 
 STATE {
 	: ca[0] is equivalent to cai

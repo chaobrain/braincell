@@ -640,9 +640,7 @@ def _tail_model(*, source="netstim", layout="independent", synapse="ExpSyn"):
     stim = net.add_population("stim", model)
     # Synapse id = placement * 10 + member: row r reaches member r % 10.
     targets = np.arange(TAIL_ROWS) if layout == "independent" else np.arange(TAIL_ROWS) % 10
-    net.connect(
-        "drive", source=stim, synapse=post.synapses["exp"][targets], weight=0.001 * u.uS, delay=0.1 * u.ms
-    )
+    net.connect("drive", source=stim, synapse=post.synapses["exp"][targets], weight=0.001 * u.uS, delay=0.1 * u.ms)
     cell.record("v", "V")
     cell.record("g", bc.observe.synapse(name="exp").state("g"))
     if synapse == "ExpSynSTD":

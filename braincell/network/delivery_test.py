@@ -313,6 +313,25 @@ class DeliveryOrderTest(unittest.TestCase):
                     np.concatenate([route.flat_target_index for route in routes]), np.concatenate(targets)
                 )
 
+    def test_a_shared_route_reads_its_members_weights(self) -> None:
+        from braincell.network.delivery import delivery_blocks
+
+        source = _StepSource(np.ones((1, 4)))
+        plain = (
+            self._block(source, "post", 0, [0, 1], [0, 1], 1, np.asarray([0.5, 0.25], np.float32)),
+            self._block(source, "post", 0, [2], [2], 1, np.asarray([2.0], np.float32)),
+        )
+        (route,) = delivery_blocks(plain, group_by_delay=False)
+        self.assertEqual(route.members, plain)
+        np.testing.assert_array_equal(np.asarray(route.weight), np.asarray([0.5, 0.25, 2.0], np.float32))
+        trigger_only = (
+            self._block(source, "post", 0, [0], [0], 1, None),
+            self._block(source, "post", 0, [1], [1], 1, None),
+        )
+        routes = delivery_blocks(trigger_only, group_by_delay=False)
+        self.assertEqual([route.source for route in routes], list(trigger_only))
+        self.assertEqual([route.weight for route in routes], [None, None])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -62,7 +62,8 @@ def host_clock_start(clock, dt) -> tuple[float, int, bool]:
     The host side of ``Cell._clock_start``: a ``dt`` other than the one the
     clock counts (``counts dt`` false) moves the origin to the time reached
     and the count to 0. The two ``dt`` are compared in the run precision,
-    as the compiled loop compares them.
+    as the compiled loop compares them. ``Cell.run`` passes the clock's
+    float64 values (:func:`_float64_clock`), so the origin is at float64.
     """
     origin_ms, step, clock_dt_ms = clock
     dt_ms = _scalar_decimal(dt, u.ms)
@@ -70,6 +71,57 @@ def host_clock_start(clock, dt) -> tuple[float, int, bool]:
     if np.asarray(clock_dt_ms, dtype=float_type) == np.asarray(dt_ms, dtype=float_type):
         return origin_ms, step, True
     return origin_ms + step * clock_dt_ms, 0, False
+
+
+def _float64_clock(rcell: "Cell", clock) -> tuple[float, int, float]:
+    """``clock`` (``Cell._clock_host()``) with its origin and ``dt`` at float64, as far as the host knows them.
+
+    The clock's states hold the origin and ``dt`` in the run precision: in
+    float32, 3 steps of 0.025 ms reach 0.07500000298 ms. A float64 run
+    reaches 0.075 ms, and the arrival steps count from it (CELL-48), so a
+    float32 run delivers each event at the step a float64 run does, as from
+    time 0 (CELL-46). A run that changed ``dt`` keeps the float64 values of
+    the clock it leaves (:func:`_keep_float64_clock`); they hold while the
+    states still have the values kept beside them. A clock that something
+    else changed (``reset_state``, a traced run at another ``dt``) is taken
+    as its states are.
+    """
+    origin_ms, step, dt_ms = clock
+    kept = getattr(rcell, "_run_float64_clock", None)
+    if kept is not None and kept[:2] == (origin_ms, dt_ms):
+        return kept[2], step, kept[3]
+    return clock
+
+
+def _keep_float64_clock(rcell: "Cell", clock, origin_ms: float, dt) -> None:
+    """After a run at ``dt`` that changed the clock's ``dt``, keep its float64 origin and ``dt``.
+
+    ``clock`` is the clock before the run and ``origin_ms`` the float64
+    origin the run counted from (:func:`host_clock_start`). The origin
+    state moved only if the clock had counted steps, so only then is it read
+    back, after the loop.
+    """
+    dt_ms = _scalar_decimal(dt, u.ms)
+    origin_image = clock[0] if clock[1] == 0 else _scalar_decimal(rcell._clock_origin.value, u.ms)
+    dt_image = float(np.asarray(dt_ms, dtype=brainstate.environ.dftype()))
+    rcell._run_float64_clock = (origin_image, dt_image, origin_ms, dt_ms)
+
+
+def _arrival_origin(origin_ms: float, dt) -> tuple[float, int] | None:
+    """``(origin in ms, its step)`` the arrival steps of a run from ``origin_ms`` count from, or ``None``.
+
+    ``None`` when the origin is on the ``dt`` grid from time 0, to within
+    the run precision: the loop then numbers its steps on that grid
+    (CELL-46), as on every run that has not changed ``dt``. Otherwise the
+    arrivals count from the origin, which the loop numbers by its nearest
+    step on the grid (``event.arrival_origin``, CELL-48).
+    """
+    from braincell.network.event import round_half_up_steps_host
+
+    ratio = origin_ms / _scalar_decimal(dt, u.ms)
+    if abs(ratio - np.rint(ratio)) <= 4.0 * np.finfo(brainstate.environ.dftype()).eps * max(1.0, abs(ratio)):
+        return None
+    return float(origin_ms), int(round_half_up_steps_host(np.asarray(ratio)))
 
 
 def check_step_limit(step: int, n_steps: int, *, dt, prefix: str) -> None:
@@ -238,6 +290,13 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
 
     The geometry is fixed for the run, so the program builds the axial
     operator once, before the steps; each step reads it.
+
+    A run at a ``dt`` the time reached is not a multiple of (3 steps of
+    0.025 ms, then 0.05 ms) steps from that time. The arrival steps of its
+    scheduled events count from it too, at float64, so each event acts on
+    the step nearest it on the run's own grid instead of the grid from time
+    0 (CELL-48); the program for such a run is compiled for its origin. A
+    traced run has no host clock and keeps the grid from time 0.
     """
     from braincell.network.event import _prepare_netstim_schedules, _schedule_horizon
 
@@ -251,11 +310,13 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     # leaves the end unknown, so such a run generates every event.
     clock = rcell._clock_host()
     until_ms = None
+    arrival_origin = None
     with_spikes = clock is not None
     if with_spikes:
-        origin_ms, step, _ = host_clock_start(clock, dt)
+        origin_ms, step, counts_dt = host_clock_start(_float64_clock(rcell, clock), dt)
         check_step_limit(step, n_steps, dt=dt, prefix="Cell.run(...)")
         until_ms = origin_ms + (step + n_steps + 1) * _scalar_decimal(dt, u.ms)
+        arrival_origin = _arrival_origin(origin_ms, dt)
     schedule_key = _prepare_netstim_schedules(
         (view.source for view in rcell.connections._call_views(scheduled=True)),
         until_ms=until_ms,
@@ -269,6 +330,7 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
         compiled_recordings=compiled_recordings,
         schedule_key=schedule_key,
         with_spikes=with_spikes,
+        arrival_origin=arrival_origin,
     )
 
     # Value inputs are arguments of the compiled loop, which applies them to
@@ -281,6 +343,8 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     except BaseException:
         rcell._restore_value_inputs(values)
         raise
+    if with_spikes and not counts_dt:
+        _keep_float64_clock(rcell, clock, origin_ms, dt)
 
     traced = is_traced_value(times)
     if traced and plan.schedule_issues:
@@ -411,6 +475,7 @@ def _cached_run_plan(
     compiled_recordings: tuple,
     schedule_key: tuple = (),
     with_spikes: bool = True,
+    arrival_origin: tuple[float, int] | None = None,
 ) -> _RunPlan:
     """Return the persistent plan for one run shape.
 
@@ -424,6 +489,9 @@ def _cached_run_plan(
     names the NetStim events the loop bakes in, so a run that needed more
     of them compiles a new loop. ``with_spikes`` selects the loop that
     also outputs the spike port; a traced run uses the one without.
+    ``arrival_origin`` (:func:`_arrival_origin`) is baked into the arrival
+    steps; it is ``None`` unless the run changed ``dt`` off the new grid,
+    and stays the same over the segments that follow at that ``dt``.
     """
     cache = rcell._run_loop_cache
     key = (
@@ -433,6 +501,7 @@ def _cached_run_plan(
         int(brainstate.environ.get_precision()),
         schedule_key,
         bool(with_spikes),
+        arrival_origin,
     )
     cached = cache.get(key)
     if cached is None:
@@ -451,6 +520,7 @@ def _cached_run_plan(
                 compiled_recordings=compiled_recordings,
                 fixed_schedules=fixed_schedules,
                 spike_port=spike_port,
+                arrival_origin=arrival_origin,
             ),
             fixed_schedules=fixed_schedules,
             schedule_issues=_differentiable_schedule_issues(compiled_recordings, dt=dt, n_steps=n_steps),
@@ -469,6 +539,7 @@ def _make_run_loop(
     compiled_recordings: tuple,
     fixed_schedules: tuple[bool, ...],
     spike_port: _SpikePort | None = None,
+    arrival_origin: tuple[float, int] | None = None,
 ):
     """Create the jitted stateful run loop for a fixed observer layout.
 
@@ -480,20 +551,28 @@ def _make_run_loop(
     ``recorded`` holds one ``(values, first_time)`` pair per recording: the
     selected samples for a fixed-shape schedule, or every step's values and
     ``None`` for a variable-length one (selected eagerly by the caller).
+    ``arrival_origin`` is ``(origin in ms, its step)`` when the clock's
+    origin is off the ``dt`` grid from time 0 (:func:`_arrival_origin`).
     """
-    from braincell.network.event import boundary_step, grid_step
+    from braincell.network.event import arrival_origin as arrivals_from, boundary_step, grid_step
 
     n_recordings = len(compiled_recordings)
     period_steps = tuple(_recording_steps(compiled.schema.period, dt) for compiled in compiled_recordings)
+    origin_ms, origin_step = (None, 0) if arrival_origin is None else arrival_origin
 
     def _run_loop(values):
-        with brainstate.environ.context(dt=dt):
+        with brainstate.environ.context(dt=dt), arrivals_from(origin_ms, origin_step):
             origin, step = rcell._clock_start(dt)
             start_t = origin + step * dt
             times = origin + (step + jnp.arange(n_steps, dtype=jnp.int32)) * dt
-            # The steps on the dt grid from time 0, which the event arrivals
-            # are compared with (CELL-46).
-            first = grid_step(origin, step, dt)
+            if origin_ms is None:
+                # The steps on the dt grid from time 0, which the event
+                # arrivals are compared with (CELL-46).
+                first = grid_step(origin, step, dt)
+            else:
+                # The clock counts from an origin off that grid; so do the
+                # arrivals, from its step (CELL-48).
+                first = (step + origin_step).astype(jnp.int32)
             grid = first + jnp.arange(n_steps, dtype=jnp.int32)
             rcell._prepare_first_synapse_inputs(t=start_t, step=first)
 

@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+import re
 import unittest
 import warnings
 from types import ModuleType
@@ -480,6 +481,204 @@ class NetworkClockTest(unittest.TestCase):
         network.add_population("late", late)
         with self.assertRaisesRegex(ValueError, "same current_time"):
             network.run(dt=DT, duration=4 * DT)
+
+
+#: CELL-58: the events of the off-grid probe and the boundaries (ms) they act on
+#: from t = 0 at dt 0.05 ms, floor(T/dt + 0.5) by hand: 6, 10.25 -> 10, 12,
+#: 16.75 -> 17, 20 and 20.25 -> 20 steps, with the arrivals at each.
+_LATE_EVENTS = (0.3, 0.5125, 0.6, 0.8375, 1.0, 1.0125)
+_LATE_BOUNDARIES = ([0.3, 0.5, 0.6, 0.85, 1.0], [1, 1, 1, 1, 2])
+_NET_DT = 2 * DT
+_NET_STEPS = 22
+
+
+def _late_network(segments):
+    """A Cell run alone for ``segments`` (``(dt, steps)`` pairs), then a Network of it and its EventSequence.
+
+    The Cell is a passive 1-CV cell at rest whose ExpSyn (tau 1e9 ms,
+    e = rest) gains 1 uS per arrival of ``_LATE_EVENTS``; ``(network, cell)``.
+    """
+    branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+    cell = braincell.Cell(
+        braincell.Morphology.from_root(branch), cv_policy=braincell.CVPerBranch(1), V_init=-65.0 * u.mV
+    )
+    cell.paint(AllRegion(), braincell.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    cell.place(at(0, 0.5), braincell.mech.Synapse("ExpSyn", name="s", tau=1e9 * u.ms, e=-65.0 * u.mV))
+    cell.record("g", braincell.observe.synapse(name="s").state("g"))
+    cell.record("V", "V")
+    source = braincell.EventSequence.from_times([np.asarray(_LATE_EVENTS) * u.ms])
+    braincell.connect("c", source=source, synapse=cell.synapses["s"], weight=1.0 * u.uS)
+    cell.init_state()
+    for dt, steps in segments:
+        cell.run(dt=dt, duration=steps * dt)
+    network = Network("late")
+    network.add_population("post", cell)
+    network.add_population("stim", source)
+    return network, cell
+
+
+def _synapse_g(cell) -> float:
+    (synapse,) = cell.runtime_objects(braincell.synapse.ExpSyn).values()
+    return float(np.asarray(synapse.g.value.to_decimal(u.uS), dtype=np.float64).reshape(-1)[0])
+
+
+def _late_state(network, cell) -> dict:
+    """Every state a rejected ``run`` or ``prepare_run`` must leave as it found it."""
+    (synapse,) = cell.runtime_objects(braincell.synapse.ExpSyn).values()
+    return {
+        "origin": np.asarray(cell._clock_origin.value.to_decimal(u.ms)).copy(),
+        "step": np.asarray(cell._clock_step.value).copy(),
+        "clock dt": np.asarray(cell._clock_dt.value.to_decimal(u.ms)).copy(),
+        "V": np.asarray(cell.V.value.to_decimal(u.mV)).copy(),
+        "g": np.asarray(synapse.g.value.to_decimal(u.uS)).copy(),
+        "prepared": np.asarray(cell._next_synapse_inputs_prepared.value).copy(),
+        "float64 clock": getattr(cell, "_run_float64_clock", None),
+        "initialized": network._initialized,
+        "runtime config": network._runtime_config,
+        "setups": len(network._run_setup_cache),
+        "loops": len(network._network_run_loop_cache),
+        "prepared run": network._prepared_run,
+    }
+
+
+class NetworkOffGridStartTest(unittest.TestCase):
+    """CELL-58: a Cell that ran alone to a time off the Network's dt grid cannot start it; on the grid it joins."""
+
+    def _contexts(self):
+        return (("float32", brainstate.environ.context(precision=32)), ("float64", _float64()))
+
+    def test_a_cell_off_the_grid_is_rejected_at_entry_and_nothing_changes(self):
+        # main ran these: 0 of 22 samples recorded, and the 0.3 ms event acted
+        # at 0.275 ms (half a step early), with no error.
+        histories = {"0.075 ms": ((DT, 3),), "0.175 ms": ((DT, 3), (_NET_DT, 2))}
+        entries = {
+            "run": lambda network: network.run(dt=_NET_DT, duration=_NET_STEPS * _NET_DT),
+            "prepare_run": lambda network: network.prepare_run(dt=_NET_DT),
+            "direct": lambda network: network.run(
+                dt=_NET_DT, duration=_NET_STEPS * _NET_DT, scheduled_delivery="direct"
+            ),
+        }
+        for precision, context in self._contexts():
+            with context:
+                for time, segments in histories.items():
+                    for entry, call in entries.items():
+                        with self.subTest(precision=precision, start=time, entry=entry):
+                            network, cell = _late_network(segments)
+                            before = _late_state(network, cell)
+                            message = (
+                                rf"cannot start population 'post' at t = {re.escape(time[:-3])} ms, which is not "
+                                r"a multiple of dt = 0\.05 ms.*Network\.reset_state\(\).*before adding it"
+                            )
+                            with self.assertRaisesRegex(ValueError, message):
+                                call(network)
+                            after = _late_state(network, cell)
+                            for key, value in before.items():
+                                np.testing.assert_array_equal(after[key], value, err_msg=key)
+
+    def test_the_ways_out_of_the_rejection(self):
+        for precision, context in self._contexts():
+            with self.subTest(precision=precision), context:
+                fresh, _ = _late_network(())
+                expected = fresh.run(dt=_NET_DT, duration=_NET_STEPS * _NET_DT)
+                # reset_state() starts the rejected Network from t = 0.
+                network, cell = _late_network(((DT, 3),))
+                with self.assertRaisesRegex(ValueError, "not a multiple of dt"):
+                    network.run(dt=_NET_DT, duration=_NET_STEPS * _NET_DT)
+                network.reset_state()
+                result = network.run(dt=_NET_DT, duration=_NET_STEPS * _NET_DT)
+                np.testing.assert_allclose(result.time.to_decimal(u.ms), expected.time.to_decimal(u.ms), rtol=1e-12)
+                for name in ("g", "V"):
+                    np.testing.assert_allclose(
+                        result.samples["post"][name].values.mantissa,
+                        expected.samples["post"][name].values.mantissa,
+                        rtol=1e-12,
+                        err_msg=name,
+                    )
+                # A Cell run alone to a multiple of dt (4 steps of 0.025 ms) joins.
+                network, cell = _late_network(((DT, 4),))
+                self.assertEqual(self._boundaries(network, cell, "run"), _LATE_BOUNDARIES)
+
+    def _boundaries(self, network, cell, driver):
+        """The boundaries (ms) of the steps whose arrivals raised g, and the arrivals at each.
+
+        Read from the synapse state (L93): ``update`` reads it after each
+        step; the runs read the recording, after checking it holds one
+        sample per step and that g rose by one per event over the run.
+        """
+        g0 = _synapse_g(cell)
+        if driver == "update":
+            network.prepare_run(dt=_NET_DT)
+            times, rises, previous = [], [], g0
+            for _ in range(_NET_STEPS):
+                time = float(np.asarray(cell.current_time.to_decimal(u.ms), dtype=np.float64))
+                network.update()
+                g = _synapse_g(cell)
+                if g - previous > 0.5:
+                    times.append(round(time, 6))
+                    rises.append(int(np.rint(g - previous)))
+                previous = g
+        else:
+            options = {"scheduled_delivery": "direct"} if driver == "direct" else {}
+            result = network.run(dt=_NET_DT, duration=_NET_STEPS * _NET_DT, **options)
+            g = np.asarray(result.samples["post"]["g"].values.to_decimal(u.uS), dtype=np.float64).reshape(-1)
+            self.assertEqual(g.shape, (_NET_STEPS,))
+            # The sample at t_k precedes the arrivals of boundary t_k.
+            steps_ms = np.asarray(result.time.to_decimal(u.ms), dtype=np.float64)
+            rise = np.diff(np.append(g, _synapse_g(cell)))
+            jumps = np.flatnonzero(rise > 0.5)
+            times = np.round(steps_ms[jumps], 6).tolist()
+            rises = np.rint(rise[jumps]).astype(int).tolist()
+        self.assertEqual(round(_synapse_g(cell) - g0), len(_LATE_EVENTS))
+        return times, rises
+
+    def test_starts_on_the_grid_deliver_each_event_once(self):
+        # Fresh, and 10 steps of 0.025 ms alone (0.25 ms, 5 steps of 0.05 ms):
+        # as on main, each event acts once on its boundary from t = 0.
+        for precision, context in self._contexts():
+            with context:
+                for start, segments in (("fresh", ()), ("0.25 ms", ((DT, 10),))):
+                    for driver in ("run", "update", "direct"):
+                        with self.subTest(precision=precision, start=start, driver=driver):
+                            network, cell = _late_network(segments)
+                            self.assertEqual(self._boundaries(network, cell, driver), _LATE_BOUNDARIES)
+
+    def test_the_grid_test_agrees_with_exact_arithmetic(self):
+        # Time reached alone / Network dt, exactly: 0.075/0.05 = 1.5, 0.3/0.05
+        # = 6, 0.32/0.03 = 10.67, 0.3/0.025 = 12; in float32 800.25/0.05 =
+        # 16005 and 800.275/0.05 = 16005.5, after 32010 and 32011 steps.
+        cases = (
+            (64, ((0.025, 3),), 0.05, False),
+            (64, ((0.1, 3),), 0.05, True),
+            (64, ((0.02, 16),), 0.03, False),
+            (64, ((0.05, 2), (0.1, 2)), 0.025, True),
+            (32, ((0.025, 32010),), 0.05, True),
+            (32, ((0.025, 32011),), 0.05, False),
+        )
+        for precision, segments, dt, on_grid in cases:
+            context = _float64() if precision == 64 else brainstate.environ.context(precision=32)
+            with self.subTest(precision=precision, segments=segments, dt=dt), context:
+                cell = braincell.Cell.point(1, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV)
+                cell.paint(AllRegion(), braincell.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+                cell.init_state()
+                for segment_dt, steps in segments:
+                    cell.run(dt=segment_dt * u.ms, duration=steps * segment_dt * u.ms)
+                network = Network("late")
+                network.add_population("post", cell)
+                if on_grid:
+                    network.prepare_run(dt=dt * u.ms)
+                else:
+                    with self.assertRaisesRegex(ValueError, "not a multiple of dt"):
+                        network.prepare_run(dt=dt * u.ms)
+
+    def test_another_dt_after_the_first_run_still_raises_its_runtime_error(self):
+        # After 3 steps of 0.05 ms the Network is at 0.15 ms, 1.5 steps of 0.1
+        # ms: the fixed dt is the error, as before.
+        network, _ = _late_network(())
+        network.run(dt=_NET_DT, duration=3 * _NET_DT)
+        with self.assertRaisesRegex(RuntimeError, "configuration is fixed"):
+            network.run(dt=2 * _NET_DT, duration=2 * _NET_DT)
+        with self.assertRaisesRegex(RuntimeError, "configuration is fixed"):
+            network.prepare_run(dt=2 * _NET_DT)
 
 
 def _resting_one_cv_cell(kind, solver, pop_size=2):

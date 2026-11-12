@@ -4461,11 +4461,18 @@ class Cell(_CellFacade, HHTypedNeuron):
         # A "sum_count" layout also counts the arrivals (CELL-12b).
         count_state = self._event_count_state(layout.id)
         counts = None if count_state is None else jnp.zeros_like(output)
+        from braincell.network.scheduled import layout_input
+
+        # A Network run with ``scheduled_delivery`` plans these calls (CELL-9).
+        planned, planned_weights = layout_input(self, layout.id), []
         for call, connection in self.connections._call_items(scheduled=scheduled_only):
             if call.plasticity is not None:
                 continue  # its rule delivers it (``advance_rules``)
             synapse_type = str(connection.synapse_type[0])
             if synapse_store.layout_id(synapse_type) != int(layout.id):
+                continue
+            if planned is not None:
+                planned_weights.append((call.id, _connection_event_weight(template, connection.weight)))
                 continue
             row_index = np.arange(len(connection), dtype=np.int32)
             local_index = synapse_store.runtime_rows(connection.synapse_id).astype(np.int32)
@@ -4482,6 +4489,8 @@ class Cell(_CellFacade, HHTypedNeuron):
             output = output.at[local_index].add(contribution)
             if counts is not None:
                 counts = counts.at[local_index].add(jnp.asarray(event_count, dtype=counts.dtype))
+        if planned is not None:
+            output, counts = planned.deliver(output, counts, planned_weights, t=t, dt=dt)
         if counts is not None:
             count_state.value = count_state.value + counts
         return _rewrap_event_template(template, output)

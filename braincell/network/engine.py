@@ -58,6 +58,12 @@ from braincell.network.delivery import (
     write_arrivals,
 )
 from braincell.network.lowering import lower_direct_connections
+from braincell.network.scheduled import (
+    ScheduledPlans,
+    loop_schedule_key,
+    normalize_scheduled_delivery,
+    scheduled_inputs,
+)
 from braincell.mech import Synapse
 
 
@@ -157,6 +163,9 @@ class Network:
 
         self.trainables = NetworkTrainables(self)
         self._prepared_run = None
+        # Planned scheduled delivery (CELL-9): the plans, and those prepare_run made for update().
+        self._scheduled_plans: ScheduledPlans | None = None
+        self._prepared_plans = None
 
     def _raise_if_initialized(self, action: str) -> None:
         if self._initialized:
@@ -196,6 +205,7 @@ class Network:
         self._run_setup_cache.clear()
         self._network_run_loop_cache.clear()
         self._delivery_state_cache.clear()
+        self._scheduled_plans = None
 
     def __repr__(self) -> str:
         """Return a compact network summary."""
@@ -486,6 +496,7 @@ class Network:
         delay_quantization: str = "nearest",
         event_backend: str = "auto",
         brainevent_backend: str | None = "jax_raw",
+        scheduled_delivery: str | None = None,
     ) -> NetworkResult:
         """Run the network for ``duration`` at fixed step ``dt``.
 
@@ -517,6 +528,7 @@ class Network:
         validate_time_quantity(dt, name="dt", prefix="Network.run(...)")
         validate_time_quantity(duration, name="duration", prefix="Network.run(...)")
         event_backend = normalize_event_backend(event_backend)
+        scheduled_delivery = normalize_scheduled_delivery(scheduled_delivery, prefix="Network.run(...)")
         if not self.populations:
             raise ValueError("Network.run(...) requires at least one population.")
         self.init_state()
@@ -530,13 +542,14 @@ class Network:
             event_backend=event_backend,
             brainevent_backend=brainevent_backend,
         )
-        runtime_config = setup_key[2:]
-        if self._runtime_config is None:
+        runtime_config = setup_key[2:] + (scheduled_delivery,)
+        first_config = self._runtime_config is None
+        if first_config:
             self._runtime_config = runtime_config
         elif self._runtime_config != runtime_config:
             raise RuntimeError(
                 "Network runtime configuration is fixed after the first run; "
-                "dt, delay quantization, and event backend must remain unchanged."
+                "dt, delay quantization, event backend, and scheduled delivery must remain unchanged."
             )
         setup = self._run_setup(
             dt=dt,
@@ -552,17 +565,29 @@ class Network:
         # NetStim events up to one step past the end cover every arrival the
         # loop delivers; later events are not generated.
         until_ms = start_ms + (n_steps + 1) * scalar_decimal(dt, u.ms)
+        schedule_key = self._prepare_netstim_schedules(until_ms=until_ms)
+        plans = None
+        if scheduled_delivery is not None:
+            # The plans of the window [step, step + n_steps), before the loop (CELL-9).
+            start_step = self._grid_start_step(ordered_population_names, dt)
+            plans, schedule_key = self._scheduled_arrays(
+                scheduled_delivery, dt=dt, window=(start_step, n_steps), first_config=first_config
+            )
         cached_loop = self._network_run_loop(
             setup=setup,
             setup_key=setup_key,
             dt=dt,
             n_steps=n_steps,
-            schedule_key=self._prepare_netstim_schedules(until_ms=until_ms),
+            schedule_key=schedule_key,
+            scheduled_delivery=scheduled_delivery,
         )
         values = self._take_value_inputs(ordered_population_names)
         try:
             with _schedule_horizon(until_ms):
-                times, start_t, stop_t, samples_over_time = cached_loop.runner(values)
+                if plans is None:
+                    times, start_t, stop_t, samples_over_time = cached_loop.runner(values)
+                else:
+                    times, start_t, stop_t, samples_over_time = cached_loop.runner(values, plans)
         except BaseException:
             self._restore_value_inputs(values)
             raise
@@ -632,7 +657,15 @@ class Network:
                 stacklevel=3,
             )
 
-    def prepare_run(self, *, dt, delay_quantization="nearest", event_backend="auto", brainevent_backend="jax_raw"):
+    def prepare_run(
+        self,
+        *,
+        dt,
+        delay_quantization="nearest",
+        event_backend="auto",
+        brainevent_backend="jax_raw",
+        scheduled_delivery=None,
+    ):
         """Prepare static routing and queues outside a differentiated rollout.
 
         Parameters
@@ -653,6 +686,7 @@ class Network:
         """
         validate_time_quantity(dt, name="dt", prefix="Network.prepare_run")
         event_backend = normalize_event_backend(event_backend)
+        scheduled_delivery = normalize_scheduled_delivery(scheduled_delivery, prefix="Network.prepare_run(...)")
         self.init_state()
         if not self._cell_populations():
             raise ValueError("Network.prepare_run requires at least one Cell population.")
@@ -662,9 +696,11 @@ class Network:
             event_backend=event_backend,
             brainevent_backend=brainevent_backend,
         )
-        if self._runtime_config is not None and self._runtime_config != key[2:]:
+        runtime_config = key[2:] + (scheduled_delivery,)
+        if self._runtime_config is not None and self._runtime_config != runtime_config:
             raise RuntimeError("Network runtime configuration is fixed after the first run.")
-        self._runtime_config = key[2:]
+        first_config = self._runtime_config is None
+        self._runtime_config = runtime_config
         setup = self._run_setup(
             dt=dt,
             delay_quantization=delay_quantization,
@@ -674,15 +710,24 @@ class Network:
         # update() runs for an unknown number of steps: each eager call checks
         # the step limit, and every event is generated.
         self._start_clocks(setup.ordered_population_names, dt=dt, n_steps=0, prefix="Network.prepare_run(...)")
+        schedule_key = self._prepare_netstim_schedules(until_ms=None)
+        plans = None
+        if scheduled_delivery is not None:
+            # One plan of every event, for every update() (CELL-9).
+            plans, schedule_key = self._scheduled_arrays(
+                scheduled_delivery, dt=dt, window=None, first_config=first_config
+            )
         cached = self._network_run_loop(
             setup=setup,
             setup_key=key,
             dt=dt,
             n_steps=1,
-            schedule_key=self._prepare_netstim_schedules(until_ms=None),
+            schedule_key=schedule_key,
+            scheduled_delivery=scheduled_delivery,
         )
         self.trainables.materialize()
         self._prepared_run = (setup, cached, dt)
+        self._prepared_plans = plans
         return self
 
     def update(self):
@@ -719,7 +764,13 @@ class Network:
         if cached.runner is None:
             # A Cell registered an input since the loop was traced.
             cached = _CachedRunLoop(
-                runner=self._make_network_run_loop(setup=setup, dt=dt, n_steps=1, delivery_state=cached.delivery_state),
+                runner=self._make_network_run_loop(
+                    setup=setup,
+                    dt=dt,
+                    n_steps=1,
+                    delivery_state=cached.delivery_state,
+                    scheduled_delivery=self._runtime_config[-1],
+                ),
                 delivery_state=cached.delivery_state,
             )
             self._prepared_run = (setup, cached, dt)
@@ -731,7 +782,10 @@ class Network:
         self.trainables.materialize()
         values = self._take_value_inputs(setup.ordered_population_names)
         try:
-            cached.runner(values)
+            if self._prepared_plans is None:
+                cached.runner(values)
+            else:
+                cached.runner(values, self._prepared_plans)
         except BaseException:
             self._restore_value_inputs(values)
             raise
@@ -862,6 +916,7 @@ class Network:
         dt,
         n_steps: int,
         schedule_key: tuple = (),
+        scheduled_delivery: str | None = None,
     ) -> _CachedRunLoop:
         key = (
             setup_key,
@@ -869,6 +924,8 @@ class Network:
             int(brainstate.environ.get_precision()),
             schedule_key,
         )
+        if scheduled_delivery is not None:
+            key = key + (scheduled_delivery,)
         cached = self._network_run_loop_cache.get(key)
         if cached is None:
             delivery_state = self._delivery_state_cache.get(setup_key)
@@ -885,6 +942,7 @@ class Network:
                     dt=dt,
                     n_steps=n_steps,
                     delivery_state=delivery_state,
+                    scheduled_delivery=scheduled_delivery,
                 ),
                 delivery_state=delivery_state,
             )
@@ -907,6 +965,7 @@ class Network:
         dt,
         n_steps: int,
         delivery_state,
+        scheduled_delivery: str | None = None,
     ):
         """Create a persistent jitted scan of ``n_steps`` steps for one network run shape.
 
@@ -914,6 +973,10 @@ class Network:
         stop time, samples)``. Step ``k`` runs at ``origin + (step + k)·dt`` of the
         Cells' clocks, which :meth:`_start_clocks` made equal; the step count
         is a state, so a later segment reuses the loop (CELL-45).
+
+        With ``scheduled_delivery`` the loop also takes the plans' arrays
+        (:meth:`_scheduled_arrays`), so a window of the same length reuses
+        it (CELL-9).
         """
         from braincell.network.event import boundary_step, grid_step
 
@@ -1003,7 +1066,51 @@ class Network:
                 cell._clock_step.value = end_step
             return times, origin + step * dt, origin + end_step * dt, samples_over_time
 
-        return brainstate.transform.jit(_run_loop)
+        if scheduled_delivery is None:
+            return brainstate.transform.jit(_run_loop)
+        routes = self._scheduled_plans.routes
+
+        def _scheduled_run_loop(values, plans):
+            with scheduled_inputs(scheduled_delivery, routes, plans):
+                return _run_loop(values)
+
+        return brainstate.transform.jit(_scheduled_run_loop)
+
+    def _scheduled_arrays(self, method: str, *, dt, window, first_config: bool) -> tuple:
+        """Return the plans' arrays of ``window`` (``None``: every event) and the loop's schedule token.
+
+        A plan that cannot be built (``PaddingLimitError``) leaves the
+        runtime configuration as this call found it, so a first run can
+        switch to another method.
+        """
+        from braincell.network.event import _host_ms
+
+        try:
+            plans = self._scheduled_plans
+            if plans is None or plans.method != method:
+                plans = ScheduledPlans.build(method, self.populations, float(_host_ms(dt)))
+                self._scheduled_plans = plans
+            arrays = plans.everything() if window is None else plans.window(*window)
+        except BaseException:
+            if first_config:
+                self._runtime_config = None
+            raise
+        return arrays, loop_schedule_key(self.populations, plans)
+
+    def _grid_start_step(self, names, dt) -> int:
+        """The step on the ``dt`` grid from time 0 at which a run of the Cells ``names`` starts.
+
+        It is the loop's first ``grid_step`` (CELL-46): the clock's step
+        plus its origin in steps, which is 0 unless a Cell ran at another
+        ``dt`` before.
+        """
+        from braincell.network.event import grid_step
+
+        cell = self.populations[names[0]].cell
+        origin_ms, step, _ = cell._clock_host()
+        if origin_ms == 0.0:
+            return int(step)
+        return int(grid_step(cell._clock_origin.value, jnp.asarray(step, dtype=jnp.int32), dt))
 
     def _prepare_netstim_schedules(self, *, until_ms: float | None) -> tuple:
         """Generate NetStim events up to ``until_ms``; return the loop-cache token."""

@@ -50,10 +50,10 @@ _MECH_DIR = pathlib.Path(braincell.mech.__file__).parent
 
 #: Sibling modules each ``braincell.network`` module imports at load time.
 #:
-#: Layer order is ``{core, event, recording}`` -> ``{lowering, pairing}``
-#: -> ``plasticity`` -> ``{connection, delivery}`` -> ``engine`` ->
-#: ``__init__``. Every edge below respects it, which is what keeps the graph
-#: acyclic.
+#: Layer order is ``{core, event, recording}`` -> ``{lowering, pairing,
+#: scheduled}`` -> ``plasticity`` -> ``{connection, delivery}`` -> ``engine``
+#: -> ``__init__``. Every edge below respects it, which is what keeps the
+#: graph acyclic.
 _EXPECTED_GRAPH = {
     "__init__": {"connection", "core", "engine"},
     "_testing": set(),
@@ -65,13 +65,15 @@ _EXPECTED_GRAPH = {
     "connection": {"core", "event", "pairing", "plasticity"},
     "core": set(),
     "delivery": {"lowering"},
-    "engine": {"connection", "core", "delivery", "lowering", "recording"},
+    "engine": {"connection", "core", "delivery", "lowering", "recording", "scheduled"},
     "event": set(),
     "lowering": {"core", "event"},
     "pairing": {"event"},
     # ``plasticity`` quantizes live rule delays as ``lowering`` does.
     "plasticity": {"event", "lowering"},
     "recording": set(),
+    # ``scheduled`` plans scheduled arrivals with the default path's rounding (CELL-9).
+    "scheduled": {"event"},
 }
 
 

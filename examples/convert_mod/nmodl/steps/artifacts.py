@@ -29,6 +29,28 @@ ARTIFACT_FILENAMES = (
     "metadata.json",
 )
 
+# The tracked artifacts name their source relative to the repository, so
+# saving them again from another checkout does not change them.
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def portable_source_file(source_file: str | Path) -> str:
+    """Return ``source_file`` relative to the repository, or unchanged outside it."""
+    try:
+        return Path(source_file).resolve().relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return str(source_file)
+
+
+def _replace_text(value: Any, old: str, new: str) -> Any:
+    if isinstance(value, str):
+        return value.replace(old, new)
+    if isinstance(value, dict):
+        return {key: _replace_text(item, old, new) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_replace_text(item, old, new) for item in value]
+    return value
+
 
 def save_pipeline_artifacts(result: dict[str, Any], artifact_dir: str | Path) -> dict[str, Any]:
     artifact_dir = Path(artifact_dir).expanduser().resolve()
@@ -38,16 +60,24 @@ def save_pipeline_artifacts(result: dict[str, Any], artifact_dir: str | Path) ->
     step2_result = result["step2_result"]
     step3_result = result["step3_result"]
     spec = result["spec"]
+    source_file = str(step3_result["source_file"])
+    saved_source_file = portable_source_file(source_file)
+
+    def portable(value: Any) -> Any:
+        return _replace_text(value, source_file, saved_source_file)
+
+    def dump(value: Any) -> str:
+        return json.dumps(portable(value), indent=2, ensure_ascii=False)
 
     payloads = {
-        "ast.json": json.dumps(step1_result["ast_json"], indent=2, ensure_ascii=False),
-        "raw_blocks.json": json.dumps(step1_result["raw_blocks"], indent=2, ensure_ascii=False),
-        "canonical_blocks.json": json.dumps(step1_result["canonical_blocks"], indent=2, ensure_ascii=False),
-        "bc_ast.json": json.dumps(step1_result["bc_ast"], indent=2, ensure_ascii=False),
-        "semantic_ir.json": json.dumps(step2_result["semantic_ir"], indent=2, ensure_ascii=False),
-        "target_ir.json": json.dumps(step2_result["target_ir"], indent=2, ensure_ascii=False),
-        "rendered_channel.py": step3_result["rendered_text"],
-        "validation.json": json.dumps(step3_result["validation"], indent=2, ensure_ascii=False),
+        "ast.json": dump(step1_result["ast_json"]),
+        "raw_blocks.json": dump(step1_result["raw_blocks"]),
+        "canonical_blocks.json": dump(step1_result["canonical_blocks"]),
+        "bc_ast.json": dump(step1_result["bc_ast"]),
+        "semantic_ir.json": dump(step2_result["semantic_ir"]),
+        "target_ir.json": dump(step2_result["target_ir"]),
+        "rendered_channel.py": portable(step3_result["rendered_text"]),
+        "validation.json": dump(step3_result["validation"]),
     }
 
     managed_files = set(ARTIFACT_FILENAMES)
@@ -59,7 +89,7 @@ def save_pipeline_artifacts(result: dict[str, Any], artifact_dir: str | Path) ->
         (artifact_dir / filename).write_text(payload, encoding="utf-8")
 
     metadata = {
-        "source_file": step3_result["source_file"],
+        "source_file": saved_source_file,
         "pipeline": spec.pipeline_name,
         "saved_files": list(ARTIFACT_FILENAMES),
     }

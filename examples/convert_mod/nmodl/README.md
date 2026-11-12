@@ -237,6 +237,8 @@ The notebook shows, in the order of the current implementation:
 
 It also saves the core artifacts under `examples/artifacts/<mod_stem>/` through `steps.save_pipeline_artifacts()` for manual inspection.
 
+The `kv` artifacts are tracked. They name the source `.mod` relative to the repository, so running the notebook again leaves them unchanged unless the pipeline's output changed; a source outside the repository is named by its absolute path.
+
 ## Recommended order
 
 When debugging or extending the converter:

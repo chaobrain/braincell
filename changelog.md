@@ -189,8 +189,11 @@
   (API-7) and are removed in 0.3 instead of 0.4; the project lead approved the
   earlier removal. Each name raises `AttributeError` (`ImportError` on a
   `from ... import` line) that names the replacement, and they are gone from
-  `__all__` and the API reference. `Cell.sample_probes()` now returns `{}` and
-  `Cell.sample_probe(name)` raises `KeyError`, since no probe can be placed.
+  `__all__` and the API reference. `Cell.sample_probe()` and
+  `Cell.sample_probes()` are removed with them (API-16, a project-lead
+  decision): once no probe could be placed they only raised `KeyError` or
+  returned `{}`; accessing either now raises `AttributeError` that names
+  `Cell.record`.
   A recording samples at the start of each step (row `k` is the state at
   `result.time[k]`, row 0 the initialized state), while a probe sampled at the
   end of it: a recording's row `k + 1` is the probe's row `k`. Recordings need

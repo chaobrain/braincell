@@ -1968,6 +1968,15 @@ class Cell(_CellFacade, HHTypedNeuron):
         "braincell.EventSequence.from_times(...) or another Cell's spikes>, synapse=cell.synapses[<synapse name>], "
         "weight=...)."
     )
+    #: Removed in braincell 0.3 with the probes, without a deprecation period (API-16).
+    sample_probe = removed_member(
+        "braincell.Cell.sample_probe() was removed in braincell 0.3 with the probe declarations. Declare a "
+        "recording with Cell.record(name, braincell.observe.state(...)) and read Cell.run(...).traces[name]."
+    )
+    sample_probes = removed_member(
+        "braincell.Cell.sample_probes() was removed in braincell 0.3 with the probe declarations. Declare "
+        "recordings with Cell.record(name, braincell.observe.state(...)); Cell.run(...).traces holds them."
+    )
 
     # ------------------------------------------------------------------
     # Static discretization (valid in both phases)
@@ -4642,27 +4651,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         return self._runtime.get_ion(name)
 
     # ------------------------------------------------------------------
-    # Probes + mech_table (runtime-only)
-
-    def sample_probe(self, name: str):
-        """Raise ``KeyError``: braincell 0.3 removed the probe declarations (API-15).
-
-        No probe can be placed any more, so no name resolves; declare a
-        recording with :meth:`record` instead.
-        """
-        self._raise_if_not_initialized("sample_probe()")
-        raise KeyError(
-            f"No probe is registered with name {name!r}: braincell 0.3 removed the probe declarations. "
-            "Declare a recording with Cell.record(...) instead."
-        )
-
-    def sample_probes(self) -> dict[str, object]:
-        """Return ``{}``: braincell 0.3 removed the probe declarations (API-15).
-
-        Declare recordings with :meth:`record`; :meth:`run` returns them.
-        """
-        self._raise_if_not_initialized("sample_probes()")
-        return {}
+    # mech_table (runtime-only)
 
     def mech_table(self) -> MechanismObjectTable:
         """Return the point-domain mechanism table for this cell.

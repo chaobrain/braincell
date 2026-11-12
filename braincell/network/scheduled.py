@@ -398,12 +398,12 @@ class ScheduledPlans:
     groups: dict = field(default_factory=dict)
     #: ``(population, layout, call id)`` -> ``(schedule token, arrivals)``.
     tables: dict = field(default_factory=dict)
+    #: ``(population, layout id)`` -> bytes of the largest ``"padded"`` plan built for it (CELL-53).
+    accepted: dict = field(default_factory=dict)
     windows: collections.OrderedDict = field(default_factory=collections.OrderedDict)
     full: tuple | None = None
     #: Statistics of the plan built last: preparation time, records, bytes.
     preparation: dict = field(default_factory=dict)
-    #: ``(population, layout id)`` -> bytes of the largest ``"padded"`` plan built for it (CELL-53).
-    accepted: dict = field(default_factory=dict)
 
     @classmethod
     def build(cls, method, populations, dt_ms) -> "ScheduledPlans":

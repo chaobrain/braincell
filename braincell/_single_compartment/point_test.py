@@ -33,6 +33,7 @@ are organised by surface area:
 
 import types
 import unittest
+import warnings
 
 import brainstate
 import braintools
@@ -892,6 +893,27 @@ class PointNeuronValueInputTest(unittest.TestCase):
         neuron.add_delta_input("e", 1.0 * u.mV)
         self.assertEqual(neuron.sum_delta_inputs(0.0 * u.mV, pop=False).to_decimal(u.mV), 1.0)
         self.assertIn("e", neuron.delta_inputs)
+
+
+class LumpedEngineTest(unittest.TestCase):
+    """CELL-28: a lumped Cell runs on PointNeuron, and building and running it warns of nothing deprecated."""
+
+    def test_a_lumped_cell_runs_on_a_point_neuron_without_a_deprecation_warning(self) -> None:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cell = braincell.Cell.point(2, V_init=-65.0 * u.mV)
+            cell.paint(
+                braincell.filter.AllRegion(),
+                braincell.mech.Ion("SodiumFixed", E=50.0 * u.mV),
+                braincell.mech.Channel("Na_HH1952", g_max=120.0 * u.mS / u.cm**2),
+                braincell.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+            )
+            cell.record("v", braincell.observe.state("v"))
+            cell.init_state()
+            values = cell.run(dt=0.025 * u.ms, duration=0.1 * u.ms).samples["v"].values
+        self.assertIsInstance(cell._lumped_runtime, PointNeuron)
+        self.assertEqual(values.shape, (4, 2))
+        self.assertEqual([w.message for w in caught if issubclass(w.category, DeprecationWarning)], [])
 
 
 if __name__ == "__main__":

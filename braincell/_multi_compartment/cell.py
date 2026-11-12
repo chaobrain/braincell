@@ -105,6 +105,7 @@ from braincell.morph.morphology import Morphology, frozen_snapshot
 from braincell.quad import get_integrator, ind_exp_euler_step, integrator_info, list_integrators
 from braincell.quad._exp_euler import _ind_exp_euler_step_selected
 from braincell.quad._staggered import build_cv_axial_operator
+from braincell.quad._util import population_slot_layout
 from braincell.quad.protocol import DiffEqGroupState, IndependentIntegration, state_grouping
 from braincell.mech import CableProperty, CVContext, Density, Point, Synapse as SynapsePlacement
 from braincell._multi_compartment import boundary, currents, field_resolution, probes, run as run_module
@@ -1098,9 +1099,13 @@ class Cell(_CellFacade, HHTypedNeuron):
         states, after which Markov channels and kinetic ions advance at the
         new voltage through their own subsolver, in the staggered order.
         ``"exp_euler"``, ``"backward_euler"`` and ``"crank_nicolson"`` solve
-        all states as one block per cell, axial coupling included, at a cost
-        per step that grows as the cube of the CV count times the states per
-        CV (use ``"staggered"`` for large cells), and reject point synapses at
+        all states as one block per cell, axial coupling and point synapses
+        included: a block holds ``M = n_cv * n_s + sum_l k_l * m_l`` states
+        (``n_s`` states per CV; ``k_l`` the most synapses of type ``l`` on one
+        cell, ``m_l`` the states of one), and a step costs ``O(M**3)`` per
+        cell. Use ``"staggered"`` for large cells, and ``"staggered"``,
+        ``"ind_exp_euler"`` or an explicit Runge-Kutta solver for cells with
+        many synapses. On a lumped cell they still reject point synapses at
         :meth:`init_state` with ``ValueError``. ``"dhs_voltage"`` advances
         ``V`` only. A callable is called as ``solver(cell)`` and owns the
         whole step. On a lumped cell an explicit Runge-Kutta solver (the
@@ -2849,18 +2854,19 @@ class Cell(_CellFacade, HHTypedNeuron):
         ------
         ValueError
             If ``exp_euler``, ``backward_euler`` or ``crank_nicolson`` meets a
-            point synapse.
+            point synapse on a lumped cell.
         """
         if not _is_generic_step(self._solver_fn):
             return False
-        if any(self._solver_fn is get_integrator(name) for name in _BLOCK_SOLVERS):
+        # A cable Cell places each synapse row in its cell's block
+        # (_diffeq_block_layout); the lumped runtime does not yet.
+        if self._is_lumped and any(self._solver_fn is get_integrator(name) for name in _BLOCK_SOLVERS):
             synapses = sorted({type(synapse).__name__ for _, synapse in self._runtime.iter_synapse_layouts()})
             if synapses:
-                staggered = "" if self._is_lumped else "'staggered', "
                 raise ValueError(
                     f"solver {self._solver_name!r} cannot advance a Cell with point synapses "
                     f"({', '.join(synapses)}): it integrates all states as one block per cell, and "
-                    f"synapse states have no CV axis. Use {staggered}'ind_exp_euler' or an explicit "
+                    "synapse states have no CV axis. Use 'ind_exp_euler' or an explicit "
                     "Runge-Kutta solver such as 'ralston2'."
                 )
         return True
@@ -3252,6 +3258,26 @@ class Cell(_CellFacade, HHTypedNeuron):
         if self._boundary_rows_cache is None:
             self._boundary_rows_cache = boundary.build_boundary_rows(self._runtime, self.cvs)
         return self._boundary_rows_cache
+
+    def _diffeq_block_layout(self, diffeq_states, merging):
+        """The block solvers' layout: each point-synapse row in a slot of its own cell's block (CELL-31b).
+
+        A packed synapse state has one row per synapse across the population
+        (``batch + (n_rows,)``) and no CV axis, so it cannot be merged with
+        ``V`` and the density states (``batch + pop_size + (n_cv,)``). Row
+        ``r`` goes to slot ``s`` of cell ``o`` (``layout.population_slots``),
+        in ``k`` columns per cell, ``k`` the most rows one cell has. Every
+        cell stays one block of ``n_cv * n_s + sum_l k_l * m_l`` states with
+        its synapses coupled to its ``V``; unused slots are zero. Returns
+        ``None``, the merged default, when no synapse state is in
+        ``diffeq_states``.
+        """
+        return population_slot_layout(
+            diffeq_states,
+            merging,
+            self.pop_size,
+            ((node, layout.population_slots) for layout, node in self._runtime.iter_synapse_layouts()),
+        )
 
     def _solve_boundary_rows(self, V):
         """Solve the boundary rows at ``V``; return the derivative term and the voltages.
@@ -4906,7 +4932,8 @@ def _resolve_solver(solver):
 
 
 #: Generic steps that merge every DiffEqState of a Cell into one array per
-#: cell (``diffeq_state_merging``) and solve it as a block.
+#: cell (``diffeq_state_merging``, ``_diffeq_block_layout``) and solve it as a
+#: block; a lumped cell's runtime cannot merge its point synapses yet.
 _BLOCK_SOLVERS = ("exp_euler", "backward_euler", "crank_nicolson")
 
 

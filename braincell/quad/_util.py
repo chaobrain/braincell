@@ -20,6 +20,7 @@ import brainstate
 import brainunit as u
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from braincell._typing import T, DT, Y0, Y1, Aux, Jacobian, VectorField, Args
 from braincell.quad.protocol import DiffEqState, DiffEqModule, IndependentIntegration
@@ -190,35 +191,153 @@ def _merging(leaves, method: str):
     return jnp.stack(leaves, axis=-1)
 
 
-def _dict_attr_to_arr(
-    a_dict: Dict[Any, brainstate.State],
-    attr: str,
-    method: str = 'concat',
-):
-    leaves = jax.tree.leaves({key: getattr(val, attr) for key, val in a_dict.items()})
-    return _merging(leaves, method=method)
+class _MergedLayout:
+    """The default block layout: every :class:`DiffEqState` leaf merged along the last axis.
+
+    ``'concat'`` joins the leaves' last axes (``[..., sum of widths]``) and
+    ``'stack'`` gives each leaf one column (``[..., n_leaves]``). A block
+    solver builds one Jacobian block per leading index of the packed array.
+
+    Parameters
+    ----------
+    method : {'concat', 'stack'}
+        The host's ``diffeq_state_merging``.
+    """
+
+    def __init__(self, method: str = 'concat'):
+        self.method = _check_merging(method)
+
+    def pack(self, values: Dict[Any, Any]) -> jax.Array:
+        """Merge ``{key: value}`` (state values or derivatives) into one array."""
+        return _merging(jax.tree.leaves(values), method=self.method)
+
+    def unpack(self, arr: jax.Array, like: Dict[Any, Any]) -> Dict[Any, Any]:
+        """Split ``arr`` into ``{key: value}`` shaped (and unit-tagged) like ``like``."""
+        stacked = self.method == 'stack'
+        leaves, tree_def = jax.tree.flatten(like)
+        index = 0
+        parts = []
+        for leaf in leaves:
+            if stacked:
+                parts.append(arr[..., index])
+                index += 1
+            else:
+                width = leaf.shape[-1]
+                parts.append(arr[..., index : index + width])
+                index += width
+        return jax.tree.unflatten(tree_def, parts)
 
 
-def _assign_arr_to_states(
-    vals: jax.Array,
-    states: Dict[Any, brainstate.State],
-    method: str = 'concat',
-):
-    stacked = _check_merging(method) == 'stack'
-    leaves, tree_def = jax.tree.flatten({key: state.value for key, state in states.items()})
-    index = 0
-    vals_like_leaves = []
-    for leaf in leaves:
-        if stacked:
-            vals_like_leaves.append(vals[..., index])
-            index += 1
-        else:
-            width = leaf.shape[-1]
-            vals_like_leaves.append(vals[..., index : index + width])
-            index += width
-    vals_like_states = jax.tree.unflatten(tree_def, vals_like_leaves)
-    for key, state_val in vals_like_states.items():
-        states[key].value = state_val
+class _PopulationSlotLayout:
+    """A block layout that scatters population-packed rows into per-entry slots.
+
+    A host may store some states with one row per instance across its whole
+    population (``batch + (n_rows,)``, e.g. a cable ``Cell``'s point synapses)
+    while its other states carry the population axes (``batch + pop_shape +
+    (width,)`` under ``'concat'``, ``batch + pop_shape`` under ``'stack'``).
+    Row ``r`` of such a state goes to slot ``slot[r]`` of population entry
+    ``owner[r]`` (a flat index into ``pop_shape``), in ``width`` columns of its
+    own: each population entry stays one block, coupled to its own rows only.
+    Unused slots hold zero with a zero derivative, so they add identity rows to
+    the linear solves and are never read back.
+
+    Parameters
+    ----------
+    method : {'concat', 'stack'}
+        The host's ``diffeq_state_merging``, for the states that are not rows.
+    pop_shape : tuple of int
+        The population shape: the axes between the batch axes and the state axis.
+    slots : dict
+        ``{key: (owner, slot, width)}`` for the row states, where ``owner`` and
+        ``slot`` are integer arrays with one entry per row.
+    """
+
+    def __init__(self, method: str, pop_shape, slots):
+        self.method = _check_merging(method)
+        self.pop_shape = tuple(int(n) for n in pop_shape)
+        self.n_pop = int(np.prod(self.pop_shape, dtype=np.int64))
+        self.slots = dict(slots)
+
+    def _widths(self, key, leaf):
+        if key in self.slots:
+            return self.slots[key][2]
+        return 1 if self.method == 'stack' else leaf.shape[-1]
+
+    def pack(self, values: Dict[Any, Any]) -> jax.Array:
+        """Merge ``{key: value}`` (state values or derivatives) into ``batch + pop_shape + (M,)``."""
+        parts = []
+        for key, value in values.items():
+            for leaf in jax.tree.leaves(value):
+                if key in self.slots:
+                    owner, slot, width = self.slots[key]
+                    lead = leaf.shape[:-1]
+                    rows = jnp.zeros(lead + (self.n_pop, width), dtype=leaf.dtype).at[..., owner, slot].set(leaf)
+                    parts.append(rows.reshape(lead + self.pop_shape + (width,)))
+                elif self.method == 'stack':
+                    parts.append(leaf[..., None])
+                else:
+                    parts.append(leaf)
+        return jnp.concatenate(parts, axis=-1)
+
+    def unpack(self, arr: jax.Array, like: Dict[Any, Any]) -> Dict[Any, Any]:
+        """Split ``arr`` into ``{key: value}`` shaped (and unit-tagged) like ``like``."""
+        out = {}
+        index = 0
+        for key, value in like.items():
+            leaves, tree_def = jax.tree.flatten(value)
+            parts = []
+            for leaf in leaves:
+                width = self._widths(key, leaf)
+                block = arr[..., index : index + width]
+                index += width
+                if key in self.slots:
+                    owner, slot, _ = self.slots[key]
+                    lead = block.shape[: block.ndim - len(self.pop_shape) - 1]
+                    parts.append(block.reshape(lead + (self.n_pop, width))[..., owner, slot])
+                elif self.method == 'stack':
+                    parts.append(block[..., 0])
+                else:
+                    parts.append(block)
+            out[key] = jax.tree.unflatten(tree_def, parts)
+        return out
+
+
+def population_slot_layout(diffeq_states, method: str, pop_shape, packed_nodes):
+    """Return a :class:`_PopulationSlotLayout` for the row states in ``diffeq_states``, or ``None``.
+
+    Parameters
+    ----------
+    diffeq_states : dict
+        The step's ``{key: DiffEqState}``.
+    method : {'concat', 'stack'}
+        The host's ``diffeq_state_merging``.
+    pop_shape : tuple of int
+        The host's population shape.
+    packed_nodes : iterable
+        ``(node, (owner, slot, width))`` pairs: every :class:`DiffEqState` of
+        ``node`` is stored as rows over the population with these slots.
+
+    Returns
+    -------
+    _PopulationSlotLayout or None
+        ``None`` when no state of ``diffeq_states`` belongs to such a node, so
+        the merged default layout applies unchanged.
+    """
+    slots_of = {}
+    for node, slots in packed_nodes:
+        for state in brainstate.graph.states(node).values():
+            slots_of[id(state)] = slots
+    slots = {key: slots_of[id(state)] for key, state in diffeq_states.items() if id(state) in slots_of}
+    if not slots:
+        return None
+    return _PopulationSlotLayout(method, pop_shape, slots)
+
+
+def _block_layout(target: DiffEqModule, diffeq_states, method: str):
+    """The layout ``target`` declares for these states (``_diffeq_block_layout``), else the merged default."""
+    declare = getattr(target, '_diffeq_block_layout', None)
+    layout = None if declare is None else declare(diffeq_states, method)
+    return _MergedLayout(method) if layout is None else layout
 
 
 def _transform_diffeq_module_into_dimensionless_fn(
@@ -230,23 +349,26 @@ def _transform_diffeq_module_into_dimensionless_fn(
     _check_merging(method)
     all_states, diffeq_states, other_states = split_diffeq_states(target, excluded_paths=excluded_paths)
     all_state_ids = {id(st) for st in all_states.values()}
+    layout = _block_layout(target, diffeq_states, method)
+    templates = {key: st.value for key, st in diffeq_states.items()}
 
     def vector_field(t, y_dimensionless, *args):
         with brainstate.StateTraceStack() as trace:
             # y: dimensionless states
-            _assign_arr_to_states(y_dimensionless, diffeq_states, method=method)
+            for key, value in layout.unpack(y_dimensionless, templates).items():
+                diffeq_states[key].value = value
             target.compute_derivative(*args)
 
             # derivative_arr: dimensionless derivatives
             for st in diffeq_states.values():
                 _check_diffeq_state_derivative(st, dt)  # THIS is important.
-            derivative_dimensionless = _dict_attr_to_arr(diffeq_states, 'derivative', method=method)
+            derivative_dimensionless = layout.pack({key: st.derivative for key, st in diffeq_states.items()})
             other_vals = {key: st.value for key, st in other_states.items()}
 
         check_unlisted_writes(trace, all_state_ids)
         return derivative_dimensionless, other_vals
 
-    return vector_field, diffeq_states, other_states
+    return vector_field, diffeq_states, other_states, layout
 
 
 def apply_standard_solver_step(
@@ -302,7 +424,7 @@ def apply_standard_solver_step(
 
     # pre integral
     target.pre_integral(*args)
-    dimensionless_fn, diffeq_states, other_states = _transform_diffeq_module_into_dimensionless_fn(
+    dimensionless_fn, diffeq_states, other_states, layout = _transform_diffeq_module_into_dimensionless_fn(
         target,
         dt=dt,
         method=merging,
@@ -310,12 +432,12 @@ def apply_standard_solver_step(
     )
 
     # one-step integration
-    diffeq_vals, other_vals = solver_step(
-        dimensionless_fn, _dict_attr_to_arr(diffeq_states, 'value', method=merging), t, dt, args
-    )
+    templates = {key: st.value for key, st in diffeq_states.items()}
+    diffeq_vals, other_vals = solver_step(dimensionless_fn, layout.pack(templates), t, dt, args)
 
     # post integral
-    _assign_arr_to_states(diffeq_vals, diffeq_states, method=merging)
+    for key, value in layout.unpack(diffeq_vals, templates).items():
+        diffeq_states[key].value = value
     for key, val in other_vals.items():
         other_states[key].value = val
     target.post_integral(*args)

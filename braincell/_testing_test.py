@@ -29,7 +29,9 @@ from braincell._testing import (
     api_reference_gaps,
     has_citation,
     is_public_import,
+    neuron_rate_table_gaps,
     public_paths,
+    tabled_mechanisms,
     unit_safety_hits,
     unreferenced_footnotes,
     user_material_imports,
@@ -422,6 +424,115 @@ class ApiReferenceGapsTest(unittest.TestCase):
         ]
         unresolved = [("braincell.NoSuchThing", "b.rst"), ("braincell_no_such_package.X", "b.rst")]
         self.assertEqual(api_reference_gaps(entries, self.public), ([], [], [], unresolved))
+
+
+def _notebook(*cells: str) -> str:
+    return json.dumps({"cells": [{"cell_type": "code", "source": cell} for cell in cells]})
+
+
+class TabledMechanismsTest(unittest.TestCase):
+    """``tabled_mechanisms`` reads TABLE statements outside comments and names the mechanism."""
+
+    def test_mod_files_with_a_table(self):
+        sources = {
+            "channel/a.mod": "NEURON { SUFFIX a }\nPROCEDURE rates(v) {\n  TABLE minf FROM -100 TO 100 WITH 200\n}\n",
+            "channel/b.mod": "NEURON { SUFFIX b }\n: TABLE minf FROM -100 TO 100 WITH 200\n",
+            "c.mod": "COMMENT\nTABLE minf\nENDCOMMENT\nNEURON { SUFFIX c }\n",
+            "synapse/d.mod": (
+                "NEURON {\n  POINT_PROCESS D\n}\n"
+                "PROCEDURE rates(v) { TABLE gate DEPEND celsius FROM -120 TO 30 WITH 1500 }\n"
+            ),
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, text in sources.items():
+                (Path(tmp) / name).parent.mkdir(parents=True, exist_ok=True)
+                (Path(tmp) / name).write_text(text)
+            self.assertEqual(tabled_mechanisms(Path(tmp)), (frozenset({"hh", "a", "D"}), 4))
+
+
+class NeuronRateTableScanTest(unittest.TestCase):
+    """``neuron_rate_table_gaps`` finds inserted tabled mechanisms and checks that their table is switched off."""
+
+    files = {
+        # The NetStim comparison before it set usetable_hh (0.165 mV of the gap came from the table).
+        "pre_fix.ipynb": _notebook(
+            "from neuron import h\n",
+            'section = h.Section(name="soma")\nsection.insert("hh")\nh.finitialize(-65.0)\n',
+        ),
+        "fixed.ipynb": _notebook(
+            "%matplotlib inline\nsection.insert('hh')\n", "previous = h.usetable_hh\nh.usetable_hh = 0\n"
+        ),
+        "helper.py": (
+            "def add(sec, mechanism):\n    sec.insert(mechanism)\n\nadd(soma, 'hh')\nadd(soma, mechanism='pas')\n"
+        ),
+        "method.py": (
+            "class Cell:\n"
+            "    def add(self, sec, name):\n"
+            "        sec.insert(name)\n\n"
+            "    def build(self, sec):\n"
+            "        self.add(sec, 'hh')\n"
+            "        setattr(h, 'usetable_hh', 0)\n"
+        ),
+        "local.py": (
+            "def build(sec):\n"
+            "    mechanism = 'hh'\n"
+            "    sec.insert(mechanism)\n"
+            "    setattr(h, f'usetable_{mechanism}', 0)\n"
+        ),
+        "point.py": "synapse = h.SynWithTable(section(0.5))\n",
+        "dynamic.py": "for name in config.mechanisms:\n    sec.insert(name)\n",
+        "dynamic_switched.py": "sec.insert(config.name)\ndisable_rate_table(h, config.name)\n",
+        "helper_dynamic.py": "def add(sec, mechanism):\n    sec.insert(mechanism)\n\nadd(soma, config.name)\n",
+        "plain.py": (
+            "import sys\nsys.path.insert(0, 'x')\nmetrics.insert(1, 'hh')\nsec.insert('pas')\nh.IClamp(sec(0.5))\n"
+        ),
+        "broken.py": "def (:\n",
+        "artifacts/generated.py": "sec.insert('hh')\n",
+        "notes.md": "sec.insert('hh')\n",
+    }
+
+    def _scan(self, files):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "validation" / "neuron"
+            for name, text in files.items():
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_text(text)
+            return neuron_rate_table_gaps(root, frozenset({"hh", "SynWithTable"}))
+
+    def test_scan_of_a_small_tree(self):
+        scanned, matched, gaps, unparsable = self._scan(self.files)
+        prefix = "validation/neuron/"
+        self.assertEqual(len(scanned), 11)  # artifacts/ and Markdown are not read
+        self.assertNotIn(prefix + "artifacts/generated.py", scanned)
+        self.assertEqual(
+            matched,
+            {
+                prefix + "dynamic.py": ["sec.insert(name)"],
+                prefix + "dynamic_switched.py": ["sec.insert(config.name)"],
+                prefix + "fixed.ipynb": ["hh"],
+                prefix + "helper.py": ["hh"],
+                prefix + "helper_dynamic.py": ["sec.insert(mechanism) in add()"],
+                prefix + "local.py": ["hh"],
+                prefix + "method.py": ["hh"],
+                prefix + "point.py": ["SynWithTable"],
+                prefix + "pre_fix.ipynb": ["hh"],
+            },
+        )
+        self.assertEqual(
+            gaps,
+            {
+                prefix + "dynamic.py": ["sec.insert(name)"],
+                prefix + "helper.py": ["hh"],
+                prefix + "helper_dynamic.py": ["sec.insert(mechanism) in add()"],
+                prefix + "point.py": ["SynWithTable"],
+                prefix + "pre_fix.ipynb": ["hh"],
+            },
+        )
+        self.assertEqual(unparsable, [prefix + "broken.py"])
+
+    def test_switching_another_mechanism_does_not_count(self):
+        _, _, gaps, _ = self._scan({"a.py": "sec.insert('hh')\nh.usetable_kv = 0\n"})
+        self.assertEqual(gaps, {"validation/neuron/a.py": ["hh"]})
 
 
 if __name__ == "__main__":

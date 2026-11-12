@@ -48,8 +48,10 @@ from braincell._testing import (
     UserMaterialImportTests,
     api_reference_entries,
     api_reference_gaps,
+    neuron_rate_table_gaps,
     own_docstring,
     public_paths,
+    tabled_mechanisms,
 )
 
 #: Stable domain packages must be reachable from a bare ``import braincell``
@@ -198,6 +200,56 @@ class UserMaterialImportsTest(UserMaterialImportTests, unittest.TestCase):
         ("examples/convert_mod/nmodl/templates/density_channel.py", "Jinja template; it is Python only once rendered"),
         ("examples/convert_mod/nmodl/templates/one_ion_hh_ohmic.py", "Jinja template; it is Python only once rendered"),
     )
+
+
+class NeuronRateTableTest(unittest.TestCase):
+    """NEURON comparisons switch off rate tables (``usetable_<mech> = 0``).
+
+    NEURON interpolates the rates of its built-in ``hh`` and of every MOD
+    mechanism with a ``TABLE``; BrainCell computes them exactly, so a
+    comparison that keeps the table reports a gap that is not BrainCell's
+    (0.165 mV in the NetStim comparison, 5e-3 in a channel I-V curve). Every
+    ``.py`` file and notebook under ``validation/neuron`` that inserts such a
+    mechanism, or a mechanism whose name is not a literal, sets
+    ``usetable_<mech>`` or calls ``disable_rate_table``. Skipped without
+    ``validation/neuron`` beside the package, as for an installed package.
+    """
+
+    repo = pathlib.Path(braincell.__file__).resolve().parents[1]
+    allowlist = (
+        (
+            "validation/neuron/_clamp_test.py",
+            "hh only hosts checks of NEURON's own clamp and Nernst potential; nothing is compared with BrainCell",
+        ),
+    )
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        root = cls.repo / "validation" / "neuron"
+        if not root.is_dir():
+            raise unittest.SkipTest("no validation/neuron beside the package; nothing to scan")
+        cls.tabled, cls.mod_files = tabled_mechanisms(cls.repo / "data")
+        cls.scanned, cls.matched, cls.gaps, cls.unparsable = neuron_rate_table_gaps(root, cls.tabled)
+
+    def test_comparisons_switch_off_rate_tables(self) -> None:
+        counts = (
+            f"{len(self.scanned)} files scanned, {len(self.matched)} insert a tabled or non-literal mechanism; "
+            f"tables from {self.mod_files} MOD files: {sorted(self.tabled)}"
+        )
+        # Floors, so that no gap cannot mean nothing checked (2026-11-12: 217 files, 5 matched, 122 MOD files).
+        self.assertGreaterEqual(len(self.scanned), 150, counts)
+        self.assertGreaterEqual(len(self.matched), 3, counts)
+        self.assertGreaterEqual(self.mod_files, 100, counts)
+        exempt = {file for file, _ in self.allowlist}
+        gaps = {file: items for file, items in self.gaps.items() if file not in exempt}
+        self.assertEqual(gaps, {}, f"set usetable_<mech> = 0 (and restore it) where these insert it; {counts}")
+
+    def test_every_scanned_file_parses(self) -> None:
+        self.assertEqual(self.unparsable, [], "these files hold code that does not parse, so they cannot be checked")
+
+    def test_allowlist_entries_are_live_and_have_reasons(self) -> None:
+        self.assertEqual([file for file, _ in self.allowlist if file not in self.gaps], [], "dead allowlist entries")
+        self.assertTrue(all(reason.strip() for _, reason in self.allowlist))
 
 
 class ModuleAttributeTest(unittest.TestCase):

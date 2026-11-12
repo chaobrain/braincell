@@ -262,8 +262,9 @@ class RecordingRow:
 
     ``population_index`` is the flat index of the row's population member:
     on a multi-dimensional ``pop_size``, its position in C order over the
-    population axes (``np.ravel_multi_index``), the index a spike's
-    ``source_id`` uses. A whole-Cell recording lists members in that order,
+    population axes, the index a spike's ``source_id`` uses;
+    ``np.unravel_index(population_index, pop_size)`` gives the member's
+    index on each axis. A whole-Cell recording lists members in that order,
     then CVs (or points, clamps, mechanisms) within each member.
 
     Examples

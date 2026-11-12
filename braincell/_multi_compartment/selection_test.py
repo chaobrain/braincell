@@ -404,7 +404,7 @@ class GridSelectionTest(unittest.TestCase):
             for index, select in enumerate(selections):
                 with self.subTest(error=error.__name__, case=index):
                     with self.assertRaises(error) as caught:
-                        select(cell).record("v", "V")
+                        select(cell)
                     if error is TypeError:
                         self.assertIn("one integer or slice per axis", str(caught.exception))
                         self.assertIn("cell[0][[0, 2]]", str(caught.exception))

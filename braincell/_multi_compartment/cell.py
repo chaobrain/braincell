@@ -1098,7 +1098,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         states, after which Markov channels and kinetic ions advance at the
         new voltage through their own subsolver, in the staggered order.
         ``"exp_euler"``, ``"backward_euler"`` and ``"crank_nicolson"`` solve
-        all states as one block per cell and reject point synapses at
+        all states as one block per cell, axial coupling included, at a cost
+        per step that grows as the cube of the CV count times the states per
+        CV (use ``"staggered"`` for large cells), and reject point synapses at
         :meth:`init_state` with ``ValueError``. ``"dhs_voltage"`` advances
         ``V`` only. A callable is called as ``solver(cell)`` and owns the
         whole step. On a lumped cell an explicit Runge-Kutta solver (the

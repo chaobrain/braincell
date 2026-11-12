@@ -389,8 +389,11 @@ class DiffEqModule(brainstate.mixin.Mixin):
         solver flattens them into one array — ``'stack'`` (the default) gives
         ``[..., n_state]``, ``'concat'`` gives ``[..., n_compartment * n_state]``.
         The host declares this because it is a property of the state layout the
-        host allocated; :func:`~braincell.quad.exp_euler_step` reads it rather
-        than inferring it from the concrete class.
+        host allocated; the block steps (:func:`~braincell.quad.exp_euler_step`,
+        :func:`~braincell.quad.backward_euler_step`,
+        :func:`~braincell.quad.crank_nicolson_step`) read it rather than
+        inferring it from the concrete class, and build one Jacobian block per
+        leading index of the merged array.
 
     See Also
     --------

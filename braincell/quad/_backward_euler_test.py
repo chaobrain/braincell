@@ -27,12 +27,13 @@ import unittest
 
 import brainstate
 import brainunit as u
+import jax
 import numpy as np
 
 from braincell.quad import (
     backward_euler_step,
 )
-from braincell.quad._testing import LinearDecay, drive, integrate
+from braincell.quad._testing import CoupledCompartments, LinearDecay, drive, integrate
 
 
 # --------------------------------------------------------------------------- #
@@ -69,6 +70,40 @@ class BackwardEulerLinearTest(unittest.TestCase):
 # --------------------------------------------------------------------------- #
 # Hodgkin-Huxley single-compartment end-to-end test.
 # --------------------------------------------------------------------------- #
+class _StackedCompartments(CoupledCompartments):
+    diffeq_state_merging = 'stack'
+
+
+def _one_coupled_step(cls, dt_ms=0.1):
+    with jax.enable_x64(True), brainstate.environ.context(precision=64):
+        module = cls()
+        x0 = np.asarray(module.x.value.to_decimal(u.mV))
+        with brainstate.environ.context(t=0.0 * u.ms, dt=dt_ms * u.ms):
+            backward_euler_step(module)
+        return x0, np.asarray(module.x.value.to_decimal(u.mV)), np.asarray(module.jacobian())
+
+
+class BackwardEulerHostMergingTest(unittest.TestCase):
+    """CELL-31a: the step merges states as the host declares (``diffeq_state_merging``)."""
+
+    def test_concat_host_gets_one_block_per_cell(self):
+        # On a linear system one step is (I - dt A) x_1 = x_0, coupling included.
+        # The step used to merge with 'stack' whatever the host declared, which
+        # made one block per compartment: on a cable Cell the axial coupling
+        # left the Jacobian and V went non-finite on stiff discretizations.
+        x0, x1, A = _one_coupled_step(CoupledCompartments)
+        expected = np.linalg.solve(np.eye(2) - 0.1 * A, x0.T).T
+        np.testing.assert_allclose(x1, expected, rtol=0, atol=1e-12)
+
+    def test_stack_host_gets_one_block_per_state_row(self):
+        # 'stack' (SingleCompartment, a plain DiffEqModule) solves each row on
+        # its own; jacrev over the last axis then sees the column sum of A,
+        # here -1/tau, so x_1 = x_0 + dt f(x_0) / (1 + dt / tau).
+        x0, x1, A = _one_coupled_step(_StackedCompartments)
+        expected = x0 + 0.1 * (x0 @ A.T) / (1.0 + 0.1 / 10.0)
+        np.testing.assert_allclose(x1, expected, rtol=0, atol=1e-12)
+
+
 class BackwardEulerHHTest(unittest.TestCase):
     def test_drives_hodgkin_huxley_to_a_spiking_trace(self):
         # Exercises the full HH stack through ``solver='backward_euler'``:

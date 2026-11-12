@@ -1755,6 +1755,16 @@
   configure connect() before init_state() requires init_state() first." and
   now says "ConnectionView.set() requires init_state() first. Before
   init_state(), give the values to connect().".
+
+- Two benchmark drivers run again. The spike-off case of
+  `benchmarks/performance/simulator_compare/braincell_ablation.py` deleted
+  `cell.spike`, which `Cell.run` now reads for `RunResult.spikes`, so it failed
+  with `AttributeError: 'Cell' object has no attribute 'spike'`. It now keeps
+  `cell.spike` at zero and removes only the threshold test and the
+  previous-voltage state. The cerebellar case of
+  `benchmarks/profiling/profile_simulation.py` reset its `Network` before
+  initializing it, and gave its `ExpSyn` synapses a `weight`, which they no
+  longer take.
 - Time no longer drifts in loops of `Network.update()` or in `Network.run`
   and `Cell.run` split into segments (CELL-45). Each step started at the
   previous time plus `dt`, rounded in the run precision, so in float32 a
@@ -1772,16 +1782,6 @@
   at a new `dt` counts from the time reached, as before. `start_time` and
   `stop_time` of a first `Network.run` are arrays of the run precision, as
   those of later runs already were, instead of Python floats.
-
-- Two benchmark drivers run again. The spike-off case of
-  `benchmarks/performance/simulator_compare/braincell_ablation.py` deleted
-  `cell.spike`, which `Cell.run` now reads for `RunResult.spikes`, so it failed
-  with `AttributeError: 'Cell' object has no attribute 'spike'`. It now keeps
-  `cell.spike` at zero and removes only the threshold test and the
-  previous-voltage state. The cerebellar case of
-  `benchmarks/profiling/profile_simulation.py` reset its `Network` before
-  initializing it, and gave its `ExpSyn` synapses a `weight`, which they no
-  longer take.
 
 ### Documentation
 

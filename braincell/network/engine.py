@@ -35,7 +35,9 @@ from braincell._misc import (
     validate_time_quantity,
 )
 from braincell._multi_compartment.run import (
+    _arrival_origin,
     _duration_steps,
+    _float64_clock,
     _recording_time_mask,
     axial_operator_before_steps,
     check_step_limit,
@@ -535,7 +537,13 @@ class Network:
             If the run would take the step count past ``2**31 - 1`` (14.9 h
             at ``dt = 0.025 ms``); nothing has run. :meth:`reset_state`
             starts the count again. Also if ``scheduled_delivery`` is not
-            one of its values, before anything is initialized.
+            one of its values, before anything is initialized. Also if the
+            Cells would start off the ``dt`` grid from ``t = 0``: a Cell
+            that ran on its own at another ``dt`` (3 steps of 0.025 ms reach
+            0.075 ms, 1.5 steps of 0.05 ms) cannot start a Network, whose
+            recordings and scheduled events assume the grid; nothing has
+            changed. Call :meth:`reset_state`, or run the Cell on its own to
+            a multiple of ``dt`` before adding it.
         PaddingLimitError
             A ``ValueError``, if a ``"padded"`` plan would exceed its limits
             (Notes); nothing has run.
@@ -624,6 +632,7 @@ class Network:
         scheduled_delivery = normalize_scheduled_delivery(scheduled_delivery, prefix="Network.run(...)")
         if not self.populations:
             raise ValueError("Network.run(...) requires at least one population.")
+        self._reject_off_grid_start(dt, prefix="Network.run(...)")
         self.init_state()
         if not self._cell_populations():
             return self._run_scheduled_sources_only(dt=dt, duration=duration)
@@ -788,7 +797,9 @@ class Network:
         ------
         ValueError
             If ``scheduled_delivery`` is not one of its values; or
-            ``PaddingLimitError`` if a ``"padded"`` plan exceeds its limits.
+            ``PaddingLimitError`` if a ``"padded"`` plan exceeds its limits;
+            or if the Cells would start off the ``dt`` grid, as in
+            :meth:`run`, before anything has changed.
         RuntimeError
             If the configuration differs from an earlier run's.
 
@@ -828,6 +839,7 @@ class Network:
         validate_time_quantity(dt, name="dt", prefix="Network.prepare_run")
         event_backend = normalize_event_backend(event_backend)
         scheduled_delivery = normalize_scheduled_delivery(scheduled_delivery, prefix="Network.prepare_run(...)")
+        self._reject_off_grid_start(dt, prefix="Network.prepare_run(...)")
         self.init_state()
         if not self._cell_populations():
             raise ValueError("Network.prepare_run requires at least one Cell population.")
@@ -1261,6 +1273,38 @@ class Network:
         return _prepare_netstim_schedules(
             (population.model for population in self.populations.values() if population.kind == "netstim"),
             until_ms=until_ms,
+        )
+
+    def _reject_off_grid_start(self, dt, *, prefix: str) -> None:
+        """Raise ``ValueError``, before changing anything, if the Network would start off the ``dt`` grid from ``t = 0``.
+
+        A Network steps at ``t = (n + k)·dt`` (CELL-45): its recordings
+        sample, and its scheduled events arrive, on that grid. Its Cells
+        take the clock of the first (:meth:`_start_clocks`), which counts
+        from the time that Cell reached if it ran on its own at another
+        ``dt``. That time can fall between two steps (3 steps of 0.025 ms
+        reach 0.075 ms, 1.5 steps of 0.05 ms): such a run recorded nothing
+        and delivered each scheduled event half a step early (CELL-58). A
+        time on the grid, to within the run precision, continues as it
+        did. A Network whose ``dt`` is fixed at another value raises its
+        own ``RuntimeError`` instead.
+        """
+        dt_ms = scalar_decimal(dt, u.ms)
+        if self._runtime_config is not None and self._runtime_config[0] != dt_ms:
+            return
+        first = next(iter(self._cell_populations().items()), None)
+        if first is None or not getattr(first[1].cell, "_initialized", False):
+            return
+        name, cell = first[0], first[1].cell
+        origin_ms, step, _ = host_clock_start(_float64_clock(cell, cell._clock_host()), dt)
+        if _arrival_origin(origin_ms, dt) is None:
+            return
+        raise ValueError(
+            f"{prefix} cannot start population {name!r} at t = {origin_ms + step * dt_ms:.9g} ms, which is not "
+            f"a multiple of dt = {dt_ms:g} ms: its Cell ran on its own at another dt. A Network steps at "
+            "multiples of dt, where it samples recordings and delivers scheduled events. Call "
+            "Network.reset_state() to start from t = 0, or run the Cell on its own to a multiple of dt before "
+            "adding it."
         )
 
     def _start_clocks(self, names: tuple[str, ...], *, dt, n_steps: int, prefix: str) -> float:

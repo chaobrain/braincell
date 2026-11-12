@@ -151,7 +151,8 @@ class ScalarEventInput(EventInput):
     ``count``; :func:`~braincell.mech.register_synapse` rejects it otherwise.
     A reduction model receives payload sums without counts and rejects a
     ``"sum_count"`` synapse at ``init_state``. See
-    :class:`braincell.synapse.ExpSynSTD` for a model that uses the count.
+    :class:`braincell.synapse.ExpSynSTD` and
+    :class:`braincell.synapse.ExpSynSTP` for models that use the count.
 
     Examples
     --------

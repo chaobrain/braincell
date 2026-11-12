@@ -19,6 +19,7 @@ import contextlib
 import re
 import unittest
 import warnings
+from unittest import mock
 
 import brainstate
 import brainunit as u
@@ -33,6 +34,7 @@ from braincell._multi_compartment.run import (
 )
 from braincell._multi_compartment.selection_test import _cell
 from braincell.filter import AllRegion, RootLocation, at
+from braincell.quad import _staggered
 from braincell.synapse import ExpSyn
 
 DT = 0.025 * u.ms
@@ -924,6 +926,185 @@ def _state(model):
     if isinstance(model, ExpSyn):
         return np.asarray(model.g.value.to_decimal(u.uS))
     return np.asarray(model.V.value.to_decimal(u.mV))
+
+
+#: The solvers whose compiled run steps a cable through the axial operator.
+AXIAL_SOLVERS = ("staggered", "rk4", "ralston2", "exp_euler")
+
+
+def hh_y_cable(solver, pop_size=2):
+    """A 3-branch Y cable, one CV per branch, firing within 1 ms.
+
+    A 100 um trunk (radius 1 um) and two 100 um children (radius 0.5 um);
+    HH sodium (120 mS/cm^2, E 50 mV), potassium (36 mS/cm^2, E -77 mV) and
+    leak (0.3 mS/cm^2, E -54.3 mV) in every CV; 0.5 nA at the trunk midpoint
+    from 0.1 ms. ``V`` is recorded as ``"v"``; the cell is not initialized.
+    """
+    trunk = braincell.Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="dendrite")
+    morpho = braincell.Morphology.from_root(trunk, name="trunk")
+    for name in ("left", "right"):
+        child = braincell.Branch.from_lengths(lengths=[100.0] * u.um, radii=[0.5, 0.5] * u.um, type="dendrite")
+        morpho.attach(parent="trunk", child_branch=child, child_name=name)
+    cell = braincell.Cell(
+        morpho, cv_policy=braincell.CVPerBranch(), pop_size=pop_size, V_init=-65.0 * u.mV, solver=solver
+    )
+    cell.paint(
+        mech.Ion("SodiumFixed", E=50.0 * u.mV),
+        mech.Ion("PotassiumFixed", E=-77.0 * u.mV),
+        mech.Channel("Na_HH1952", name="na", g_max=120.0 * u.mS / u.cm**2),
+        mech.Channel("K_HH1952", name="k", g_max=36.0 * u.mS / u.cm**2),
+        mech.Channel("IL", name="leak", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+    )
+    cell.place(RootLocation(0.5), mech.CurrentClamp(delay=0.1 * u.ms, durations=10.0 * u.ms, amplitudes=0.5 * u.nA))
+    cell.record("v", "V")
+    return cell
+
+
+def update_loop_voltage(cell, n_steps):
+    """``V`` in mV before each of ``n_steps`` ``cell.update()`` calls in one compiled loop.
+
+    A loop of the caller's own builds the axial operator inside its step,
+    from the geometry it traces: the per-step reference for ``Cell.run``.
+    """
+
+    def step(index):
+        with brainstate.environ.context(t=index * DT):
+            voltage = cell.V.value.to_decimal(u.mV)
+            cell.update()
+        return voltage
+
+    with brainstate.environ.context(dt=DT):
+        return brainstate.transform.for_loop(step, np.arange(n_steps))
+
+
+def axial_builds(run):
+    """``(in a step, before the steps)``: the axial matrices ``run()`` assembles while tracing its loop.
+
+    Every solver's operator starts from this node-tree matrix (the CV
+    operator of the generic solvers, the DHS coefficients of
+    ``"staggered"``); one assembled in the step body of a compiled loop is
+    assembled again at every step.
+    """
+    counts = [0, 0]
+    in_step = [0]
+    for_loop = brainstate.transform.for_loop
+    assemble = _staggered._build_node_tree_axial_matrix
+
+    def counting_for_loop(*args, **kwargs):
+        in_step[0] += 1
+        try:
+            return for_loop(*args, **kwargs)
+        finally:
+            in_step[0] -= 1
+
+    def counting_assemble(*args, **kwargs):
+        counts[0 if in_step[0] else 1] += 1
+        return assemble(*args, **kwargs)
+
+    with (
+        mock.patch.object(brainstate.transform, "for_loop", counting_for_loop),
+        mock.patch.object(_staggered, "_build_node_tree_axial_matrix", counting_assemble),
+    ):
+        run()
+    return tuple(counts)
+
+
+class AxialOperatorPerRunTest(unittest.TestCase):
+    """CELL-50: a compiled run builds the axial operator once, before its steps.
+
+    The geometry is the same at every step of a run, so the operator built
+    from it before the loop gives every step the values that building it in
+    the step gave: the run matches a loop of ``update()`` calls, which
+    builds it in each step, values and gradients alike.
+    """
+
+    N = 40
+
+    def setUp(self):
+        self.enterContext(_float64())
+
+    def test_run_matches_the_update_loop(self):
+        for solver in AXIAL_SOLVERS:
+            with self.subTest(solver=solver):
+                ran = hh_y_cable(solver)
+                ran.init_state()
+                expected = np.asarray(ran.run(dt=DT, duration=self.N * DT).traces["v"].to_decimal(u.mV))
+                looped = hh_y_cable(solver)
+                looped.init_state()
+                actual = np.asarray(update_loop_voltage(looped, self.N)).reshape(expected.shape)
+                np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=0.0)
+                # The run fires, and the CVs differ: the axial currents matter.
+                self.assertGreater(float(expected[-1].max()), 20.0)
+                self.assertGreater(float(np.ptp(expected[-1])), 30.0)
+
+    def test_the_operator_is_built_once_before_the_steps(self):
+        # On main 75b6104 every step built it: once (staggered, exp_euler),
+        # or at each stage (rk4 four times, ralston2 twice).
+        for solver in AXIAL_SOLVERS:
+            with self.subTest(solver=solver):
+                cell = hh_y_cable(solver)
+                cell.init_state()
+                self.assertEqual(axial_builds(lambda: cell.run(dt=DT, duration=4 * DT)), (0, 1))
+                # A later run reuses the compiled loop and builds nothing on the host.
+                self.assertEqual(axial_builds(lambda: cell.run(dt=DT, duration=4 * DT)), (0, 0))
+        with self.subTest(solver="rk4", run="traced"):
+            cell = hh_y_cable("rk4")
+            cell.init_state()
+            run = brainstate.transform.jit(lambda: cell.run(dt=DT, duration=4 * DT).traces["v"])
+            self.assertEqual(axial_builds(run), (0, 1))
+        with self.subTest(cell="lumped"):
+            # A lumped Cell has no axial operator.
+            cell = _hh_cell("lumped")
+            cell.init_state()
+            self.assertEqual(axial_builds(lambda: cell.run(dt=DT, duration=4 * DT)), (0, 0))
+
+    def test_a_run_that_fails_in_its_trace_leaves_no_operator_behind(self):
+        cell = hh_y_cable("rk4")
+        cell.init_state()
+        with mock.patch.object(braincell.Cell, "compute_axial_derivative", side_effect=RuntimeError("stage failed")):
+            with self.assertRaisesRegex(RuntimeError, "stage failed"):
+                cell.run(dt=DT, duration=4 * DT)
+        self.assertIsNone(cell.runtime.run_axial_operator)
+        cell.reset_state()
+        expected = hh_y_cable("rk4")
+        expected.init_state()
+        np.testing.assert_allclose(
+            cell.run(dt=DT, duration=4 * DT).traces["v"].to_decimal(u.mV),
+            expected.run(dt=DT, duration=4 * DT).traces["v"].to_decimal(u.mV),
+            rtol=1e-12,
+            atol=0.0,
+        )
+
+    def test_gradients_through_run_match_the_update_loop(self):
+        # Sodium g_max does not reach the operator; Ra does, through the
+        # operator built once in the run and in every step of the loop.
+        def gradient(solver, through, field):
+            cell = hh_y_cable(solver)
+            cell.init_state()
+            source = braincell.trainable.parameter(group_by="all", name=field)
+            if field == "g_max":
+                cell.channels["na"].trainable(g_max=source)
+            else:
+                cell.geometry.Ra.trainable(source)
+
+            def final_voltage():
+                cell.reset_state()
+                if through == "run":
+                    cell.run(dt=DT, duration=self.N * DT)
+                else:
+                    update_loop_voltage(cell, self.N)
+                return u.math.sum(cell.V.value.to_decimal(u.mV))
+
+            states = cell.trainables.parameters().states()
+            (value,) = brainstate.transform.grad(final_voltage, grad_states=states)().values()
+            return np.asarray(u.get_mantissa(value)).reshape(-1)
+
+        for solver in ("staggered", "rk4"):
+            for field in ("g_max", "Ra"):
+                with self.subTest(solver=solver, field=field):
+                    expected = gradient(solver, "loop", field)
+                    np.testing.assert_allclose(gradient(solver, "run", field), expected, rtol=1e-10, atol=0.0)
+                    self.assertTrue(np.all(expected != 0.0))
 
 
 if __name__ == "__main__":

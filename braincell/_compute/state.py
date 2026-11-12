@@ -168,6 +168,9 @@ class CellRuntimeState:
     dhs_static_cache: object | None = None
     axial_operator_source: object | None = None
     axial_operator_cache: object | None = None
+    #: The axial operator a compiled run built before its steps, while it
+    #: traces them (``braincell.quad._staggered.axial_operator_per_run``).
+    run_axial_operator: object | None = None
     clamp_routing_table: object | None = None
     cable: CableArrays | None = None
     cv_area: object | None = None  # (n_cv,) brainunit Quantity, cm^2

@@ -37,6 +37,7 @@ from braincell._misc import (
 from braincell._multi_compartment.run import (
     _duration_steps,
     _recording_time_mask,
+    axial_operator_before_steps,
     check_step_limit,
     host_clock_start,
 )
@@ -1206,13 +1207,14 @@ class Network:
                 cell._clock_step.value = end_step
             return times, origin + step * dt, origin + end_step * dt, samples_over_time
 
+        loop = axial_operator_before_steps(_run_loop, cells)
         if scheduled_delivery is None:
-            return brainstate.transform.jit(_run_loop)
+            return brainstate.transform.jit(loop)
         routes = self._scheduled_plans.routes
 
         def _scheduled_run_loop(values, plans):
             with scheduled_inputs(scheduled_delivery, routes, plans):
-                return _run_loop(values)
+                return loop(values)
 
         return brainstate.transform.jit(_scheduled_run_loop)
 

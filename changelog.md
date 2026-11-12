@@ -261,6 +261,17 @@
     experimental scheduled-delivery adapter reject `"sum_count"` synapses
     (`TypeError` at `init_state` and at `prepare_scheduled_delivery`).
   - Only `"sum_count"` layouts get count buffers; other models run as before.
+- **Short-term facilitation and depression** (CELL-12e). The new
+  `braincell.synapse.ExpSynSTP(tau, e, U, tau_fac, tau_rec)` adds the
+  Tsodyks-Markram release fraction `u` to `ExpSynSTD`: `u` rests at 0 and
+  decays with `tau_fac`; an event first raises it by `U (1 - u)`, then
+  releases `u x` of the resource `x`. `K` events on one boundary release
+  what `K` events in a row would, `x0 - x0 (1-u0)^K (1-U)^(K(K+1)/2)`. Each
+  event adds what NEST's `tsodyks2_synapse` with the same `U`, `tau_fac` and
+  `tau_rec` gives: with `U = 0.1`, `tau_fac = 1000 ms` and `tau_rec = 100 ms`,
+  a second event 20 ms after the first adds 1.728 times as much. Facilitation
+  needs `tau_fac > 0`: the default `tau_fac = 0` turns it off, and the model
+  then gives the `ExpSynSTD` increments (as it does with `U = 1`).
 - **The block solvers advance point synapses on cable and lumped `Cell`s**
   (CELL-31b, CELL-31c). `exp_euler`, `backward_euler` and `crank_nicolson`
   used to reject a `Cell` with a point synapse at `init_state`: a synapse
@@ -1143,6 +1154,20 @@
   each, the build takes 1.4 s, down from 149 s. The table's rows,
   order, values, units and dtypes are unchanged, and an invalid value
   still names the first failing synapse and its `place` call.
+- **A compiled run builds the axial operator once, before its steps**
+  (CELL-50). `Cell.run` and `Network.run` trace the geometry, and each step
+  built the cable's axial operator from it again: the DHS coefficients once
+  a step (`"staggered"`, `"dhs_voltage"`), and the CV operator with the dense
+  solve of its Schur complement at every stage of the other solvers (four
+  times a step for `rk4`, twice for `ralston2`). The run now builds the
+  operator its solver reads once, before the loop, from the same traced
+  geometry; the steps read it, and gradients reach the geometry through it.
+  Outputs are bitwise unchanged (CA1 and a 3-branch cable, every solver).
+  On GPU (RTX 3090, float64, main `445d169`) a step costs: CA1 `rk4`
+  8346 -> 122 us, `ralston2` 8308 -> 78 us, `"staggered"` 633 -> 580 us; a
+  1000-member 3-branch cable 0.44-0.94 of main. On CPU, XLA had already
+  moved the solve out of the loop, and a step costs the same. A loop of
+  `update()` calls written by the caller still builds it at every step.
 
 ### Bug Fixes
 

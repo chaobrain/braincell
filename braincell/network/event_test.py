@@ -668,25 +668,25 @@ class ScheduledEventCountTest(unittest.TestCase):
         source = NetStim(size=2, start=[0.0, 0.5] * u.ms, number=[4, 3], interval=[0.25, 0.1] * u.ms)
         sequence = EventSequence.from_times([[0.0, 0.25] * u.ms, [0.5] * u.ms])
         rows = np.asarray([0, 1, 1])
-        delay = np.asarray([0.0, 0.1, 0.0125]) * u.ms
+        for delay in (np.asarray([0.0, 0.1, 0.0125]) * u.ms, 0.0125 * u.ms):
 
-        @jax.jit
-        def counts(dt_ms, t_ms):
-            dt, t = dt_ms * u.ms, t_ms * u.ms
-            return (
-                source.event_count(rows, t=t, delay=delay, dt=dt),
-                _reference_netstim_count(source, rows, t=t, delay=delay, dt=dt),
-                sequence.event_count(rows, t=t, delay=delay, dt=dt),
-                _reference_flat_count(sequence.events, rows, t=t, delay=delay, dt=dt),
-            )
+            @jax.jit
+            def counts(dt_ms, t_ms):
+                dt, t = dt_ms * u.ms, t_ms * u.ms
+                return (
+                    source.event_count(rows, t=t, delay=delay, dt=dt),
+                    _reference_netstim_count(source, rows, t=t, delay=delay, dt=dt),
+                    sequence.event_count(rows, t=t, delay=delay, dt=dt),
+                    _reference_flat_count(sequence.events, rows, t=t, delay=delay, dt=dt),
+                )
 
-        seen = 0
-        for t_ms in np.arange(0, 60) * 0.025:
-            netstim, netstim_expected, flat, flat_expected = counts(0.025, t_ms)
-            np.testing.assert_array_equal(netstim, netstim_expected)
-            np.testing.assert_array_equal(flat, flat_expected)
-            seen += int(np.sum(netstim_expected)) + int(np.sum(flat_expected))
-        self.assertGreater(seen, 0)
+            seen = 0
+            for t_ms in np.arange(0, 60) * 0.025:
+                netstim, netstim_expected, flat, flat_expected = counts(0.025, t_ms)
+                np.testing.assert_array_equal(netstim, netstim_expected)
+                np.testing.assert_array_equal(flat, flat_expected)
+                seen += int(np.sum(netstim_expected)) + int(np.sum(flat_expected))
+            self.assertGreater(seen, 0)
 
     def test_delays_that_do_not_fit_the_rows_take_the_matrix_path(self) -> None:
         source = NetStim(size=2, start=[0.0, 0.5] * u.ms, number=[4, 3], interval=[0.25, 0.1] * u.ms)

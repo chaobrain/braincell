@@ -82,6 +82,16 @@ class DrawSeedTest(unittest.TestCase):
                     transform(lambda: draw_seed("Network"))()
                 self.assertEqual(float(brainstate.random.uniform()), expected)
 
+    def test_a_bare_jax_jit_is_refused_by_brainstate_and_leaves_the_stream(self) -> None:
+        # Outside a BrainState transformation the draw writes a tracer into
+        # the default stream, which BrainState refuses (0.6.1:
+        # TraceContextError) before ``draw_seed`` can check the key.
+        brainstate.random.seed(1)
+        before = default_key_data()
+        with self.assertRaises(Exception):
+            jax.jit(lambda: draw_seed("Network"))()
+        np.testing.assert_array_equal(default_key_data(), before)
+
     def test_the_module_imports_only_brainstate_and_jax(self) -> None:
         # ``braincell.network`` imports it while ``braincell`` is initializing.
         tree = ast.parse(pathlib.Path(__file__).with_name("_random.py").read_text(encoding="utf-8"))

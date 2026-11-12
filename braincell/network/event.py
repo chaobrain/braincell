@@ -294,9 +294,9 @@ class EventSequence(EventSource):
         """Count delayed events assigned to the nearest fixed-step boundary.
 
         An event at ``time`` arrives at ``time + delay`` and is delivered at
-        step ``t`` when the arrival lies in ``[t - dt / 2, t + dt / 2)``, as
-        in NEURON's fixed-step delivery; an exact half-step tie goes to the
-        later boundary.
+        step ``t`` when the arrival lies in ``[t - dt / 2, t + dt / 2)``, so
+        an exact half-step tie goes to the later boundary. Ties and
+        NEURON's fixed-step delivery are as in :meth:`NetStim.event_count`.
 
         The arrival step is ``(time + delay) / dt`` rounded at float64 on
         the host, from the float64 event times and delays, so a float32 run

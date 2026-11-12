@@ -223,8 +223,12 @@ class ConnectionTest(unittest.TestCase):
         cell, exp = _population(3)
         connections = connect("first", source=NetStim(size=3), synapse=cell.synapses[exp], delay=0.5 * u.ms)
         selected = connections[[2, 0]]
-        with self.assertRaisesRegex(RuntimeError, "init_state"):
+        with self.assertRaises(RuntimeError) as caught:
             selected.set(weight=[0.2, -0.1] * u.uS)
+        self.assertEqual(
+            str(caught.exception),
+            "ConnectionView.set() requires init_state() first. Before init_state(), give the values to connect().",
+        )
         connections[1].remove()
         np.testing.assert_array_equal(connections.id, [0, 2])
         later = connect("later", source=NetStim(), synapse=cell.synapses[exp][0])

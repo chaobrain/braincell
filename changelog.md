@@ -261,6 +261,17 @@
     experimental scheduled-delivery adapter reject `"sum_count"` synapses
     (`TypeError` at `init_state` and at `prepare_scheduled_delivery`).
   - Only `"sum_count"` layouts get count buffers; other models run as before.
+- **Short-term facilitation and depression** (CELL-12e). The new
+  `braincell.synapse.ExpSynSTP(tau, e, U, tau_fac, tau_rec)` adds the
+  Tsodyks-Markram release fraction `u` to `ExpSynSTD`: `u` rests at 0 and
+  decays with `tau_fac`; an event first raises it by `U (1 - u)`, then
+  releases `u x` of the resource `x`. `K` events on one boundary release
+  what `K` events in a row would, `x0 - x0 (1-u0)^K (1-U)^(K(K+1)/2)`. Each
+  event adds what NEST's `tsodyks2_synapse` with the same `U`, `tau_fac` and
+  `tau_rec` gives: with `U = 0.1`, `tau_fac = 1000 ms` and `tau_rec = 100 ms`,
+  a second event 20 ms after the first adds 1.728 times as much. Facilitation
+  needs `tau_fac > 0`: the default `tau_fac = 0` turns it off, and the model
+  then gives the `ExpSynSTD` increments (as it does with `U = 1`).
 - **The block solvers advance point synapses on cable and lumped `Cell`s**
   (CELL-31b, CELL-31c). `exp_euler`, `backward_euler` and `crank_nicolson`
   used to reject a `Cell` with a point synapse at `init_state`: a synapse

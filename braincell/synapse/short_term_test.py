@@ -517,7 +517,6 @@ class NoCountUnchangedTest(unittest.TestCase):
         self.assertEqual(state.count_rings, ())
 
 
-
 # ---------------------------------------------------------------- ExpSynSTP (CELL-12e)
 
 U_STP = 0.25
@@ -613,7 +612,9 @@ class STPModelTest(unittest.TestCase):
         np.testing.assert_allclose(syn.x.value, [e[2] for e in expected], rtol=RTOL)
         syn.compute_derivative()
         np.testing.assert_allclose(
-            u.get_mantissa(syn.u.derivative * u.ms), -np.asarray(syn.u.value) / np.where(tau_fac > 0, tau_fac, 1.0), rtol=RTOL
+            u.get_mantissa(syn.u.derivative * u.ms),
+            -np.asarray(syn.u.value) / np.where(tau_fac > 0, tau_fac, 1.0),
+            rtol=RTOL,
         )
         np.testing.assert_array_equal(u.get_mantissa(syn.u.derivative * u.ms)[3:], 0.0)
 
@@ -805,7 +806,10 @@ class STPRecoveryTest(unittest.TestCase):
         exact = (0.25 * np.exp(-0.5), 1.0 - 0.25 * np.exp(-1.0 / 16.0))
         discrete = {name: exact for name in ("staggered", "exp_euler", "ind_exp_euler")}
         for name, factor in rational.items():
-            discrete[name] = (float(Fraction(1, 4) * factor(z_f) ** 500), float(1 - Fraction(1, 4) * factor(z_r) ** 500))
+            discrete[name] = (
+                float(Fraction(1, 4) * factor(z_f) ** 500),
+                float(1 - Fraction(1, 4) * factor(z_r) ** 500),
+            )
         for lumped in (False, True):
             for solver, expected in discrete.items():
                 if lumped and solver == "staggered":
@@ -863,7 +867,11 @@ class STPDeliveryPathTest(unittest.TestCase):
         self._check(*_stp_samples(cell.run(dt=DT, duration=1.0 * u.ms).samples))
         cell = _stp_toy([0.6])
         braincell.connect(
-            "self", source=cell.event_outputs["spike"], synapse=cell.synapses["s"][[0, 0]], weight=W * u.uS, delay=[0.0, 0.2] * u.ms
+            "self",
+            source=cell.event_outputs["spike"],
+            synapse=cell.synapses["s"][[0, 0]],
+            weight=W * u.uS,
+            delay=[0.0, 0.2] * u.ms,
         )
         self._check(*_stp_samples(cell.run(dt=DT, duration=1.0 * u.ms).samples))
         # The compiled update() loop of a standalone Cell.
@@ -949,7 +957,8 @@ class STPLifecycleTest(unittest.TestCase):
         net2.prepare_run(dt=DT)
         brainstate.transform.for_loop(lambda _: net2.update(), np.arange(200))
         nodes = [
-            next(node for _, node in model.populations["post"].cell.runtime.iter_synapse_layouts()) for model in (net, net2)
+            next(node for _, node in model.populations["post"].cell.runtime.iter_synapse_layouts())
+            for model in (net, net2)
         ]
         for name in STP_STATES:
             got, want = (np.asarray(u.get_mantissa(getattr(node, name).value)) for node in nodes)
@@ -969,7 +978,9 @@ class STPLifecycleTest(unittest.TestCase):
         with jax.enable_x64(False), brainstate.environ.context(precision=32):
             full = _stp_trajectory(model().run(dt=DT, duration=3000.0 * u.ms))
             net = model()
-            split = _stp_trajectory(braincell.NetworkResult.concat([net.run(dt=DT, duration=1000.0 * u.ms) for _ in range(3)]))
+            split = _stp_trajectory(
+                braincell.NetworkResult.concat([net.run(dt=DT, duration=1000.0 * u.ms) for _ in range(3)])
+            )
         self.assertEqual(full[0].shape[0], 30000)
         self.assertEqual(full[0].dtype, np.float32)
         self.assertGreater(float(full[1].max()), 0.5)
@@ -1013,7 +1024,9 @@ class STPRelationTest(unittest.TestCase):
         cell = _stp_soma(lumped, e=0.0 * u.mV, synapse=synapse, states=states, tau_rec=200.0 * u.ms, **params)
         # Rows 0 and 1 both fire at 25 and 400 ms, so those boundaries carry two events.
         source = _seq([5.0, 25.0, 45.0, 65.0, 400.0], [25.0, 400.0, 401.0])
-        braincell.connect("c", source=source, synapse=cell.synapses["s"][[0, 0]], weight=np.array([0.001, 0.003]) * u.uS)
+        braincell.connect(
+            "c", source=source, synapse=cell.synapses["s"][[0, 0]], weight=np.array([0.001, 0.003]) * u.uS
+        )
         samples = cell.run(dt=DT, duration=420.0 * u.ms).samples
         out = {name: np.asarray(u.get_mantissa(samples[name].values)) for name in states + ("V",)}
         return out
@@ -1074,7 +1087,10 @@ class STPCounterExampleTest(unittest.TestCase):
 
     def test_a_placed_synapse_is_checked_at_init_state(self) -> None:
         cases = {
-            "tau_fac": (dict(tau_fac=-1.0 * u.ms), r"^Synapse 's' \(ExpSynSTP\) parameter 'tau_fac' must be >= 0\. Placed on AtLocation"),
+            "tau_fac": (
+                dict(tau_fac=-1.0 * u.ms),
+                r"^Synapse 's' \(ExpSynSTP\) parameter 'tau_fac' must be >= 0\. Placed on AtLocation",
+            ),
             "U": (dict(U=1.5), r"^Synapse 's' \(ExpSynSTP\): ExpSynSTP requires 0 < U <= 1\. Placed on AtLocation"),
         }
         for label, (kwargs, message) in cases.items():

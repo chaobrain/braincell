@@ -24,6 +24,7 @@ Short-Term Plasticity
    :template: classtemplate.rst
 
    ExpSynSTD
+   ExpSynSTP
 
 Ion-Coupled Synapses
 --------------------

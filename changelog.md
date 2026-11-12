@@ -887,6 +887,25 @@
   `2**20` steps; `ScheduledDeliveryCell` leaves rule rows to their rule
   and gives `"sum_count"` layouts their counts instead of raising
   `TypeError`.
+- **`ConnectionView.record(name, state, *, period, frequency, start)`
+  records a plasticity rule's state during a run** (CELL-12c): the dynamic
+  weight `"w"`, `PairSTDP`'s traces `"x_pre"` and `"y_post"`, or any state
+  of a custom rule, with one column per row of the view, in view order, in
+  `RunResult.samples` and `NetworkResult.samples` like any recording.
+  Sample `k` is the state just before the update at the boundary `time[k]`,
+  so the `"w"` sample is the weight that the events arriving there carry,
+  and a `Network` and a standalone `Cell.run` give the same samples; the
+  docstring gives how `rule_state` relates to them in each. A view may take
+  rows of several `connect` calls whose state has one dimension. The rows'
+  `RecordingRow` names the connect call and the rule, and two new fields,
+  `connection_id` and `source_index`, give the connection row and its pre
+  endpoint (`None` on other rows). A Cell outside a `Network` keeps a copy
+  of each recorded state from before the latest update, one more state in
+  its state tree; a `Network` keeps none, and a Cell it initialized raises
+  `RuntimeError` in `Cell.run` once that `Network` is gone (call `reset()`
+  and `init_state()`). Declare the recording before `init_state()`, as
+  other recordings; a view without a rule raises `TypeError`, an unknown
+  state `KeyError`.
 
 ### Changes & Improvements
 

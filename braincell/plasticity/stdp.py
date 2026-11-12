@@ -88,7 +88,10 @@ class PairSTDP(ConnectionRule):
     Notes
     -----
     The state names are ``"w"`` (the weight), ``"x_pre"`` and ``"y_post"``;
-    ``ConnectionView.rule_state(name)`` reads them. An initial weight outside
+    ``ConnectionView.rule_state(name)`` reads them, and
+    ``ConnectionView.record(recording, name)`` records them during a run.
+    The traces decay at the start of each update, so a stored trace is its
+    value just after the latest boundary. An initial weight outside
     ``[w_min, w_max]`` is rejected (``ValueError``), not clipped. Nearest
     neighbour, triplet and weight-dependent variants are other rules.
 

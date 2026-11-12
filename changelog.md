@@ -1279,6 +1279,11 @@
 
 ### Documentation
 
+- `pip install braincell[doc]` installs `numba`. brainevent needs it to run
+  `brainstate.nn.EventFixedProb` on CPU, so without it the brainpy network
+  notebooks (the tutorials' Overview and the E–I network example) fail on
+  CPU with `KernelCompilationError: ... No module named 'numba'`.
+
 - The getting-started pages, the foundation tutorials and the concept pages
   build point neurons with `braincell.Cell.point(...)` and `paint` instead of
   subclassing `SingleCompartment` (CELL-27a). They are `README.md`, the docs

@@ -86,15 +86,19 @@ class Network:
         ``NetStim`` without its own ``seed`` and a ``connect`` pairing rule
         without its own ``seed`` derive their streams from this root and
         their population and connection names, so registration order does
-        not matter. Default ``0``.
+        not matter.
 
-        ``None`` draws the root once, here, from the BrainState default
-        random stream: an enclosing ``brainstate.random.seed_context(s)`` (or
-        an earlier ``brainstate.random.seed(s)``) then controls these streams
-        together with initializers and callbacks, and each such ``Network``
-        advances the default stream by one draw. The drawn root is stored in
-        ``seed``; ``Network(seed=net.seed)`` reproduces the derived
-        streams. Inside ``brainstate.transform.jit``, ``for_loop`` or another
+        ``None``, the default, draws the root once, here, from the
+        BrainState default random stream: an enclosing
+        ``brainstate.random.seed_context(s)`` (or an earlier
+        ``brainstate.random.seed(s)``) then controls these streams together
+        with initializers and callbacks, and each such ``Network`` advances
+        the default stream by one draw. Outside any context the default
+        stream is seeded randomly when BrainState is imported, so each
+        process draws another root. The drawn root is stored in ``seed``;
+        ``Network(seed=net.seed)`` reproduces the derived streams. An
+        integer is a local root that no context changes. Inside
+        ``brainstate.transform.jit``, ``for_loop`` or another
         transformation the default stream is traced and ``None`` raises
         ``TypeError``; build the network outside it or pass an integer.
 
@@ -110,20 +114,22 @@ class Network:
     >>> import brainstate
     >>> import braincell
     >>> with brainstate.random.seed_context(42):
-    ...     first = braincell.Network("demo", seed=None)
+    ...     first = braincell.Network("demo")
     >>> with brainstate.random.seed_context(42):
-    ...     again = braincell.Network("demo", seed=None)
+    ...     again = braincell.Network("demo")
     >>> first.seed == again.seed
     True
+    >>> braincell.Network("fixed", seed=7).seed
+    7
     """
 
-    def __init__(self, name: str | None = None, *, seed: int | None = 0) -> None:
+    def __init__(self, name: str | None = None, *, seed: int | None = None) -> None:
         if name is not None and (not isinstance(name, str) or not name):
             raise ValueError("Network name must be a non-empty string or None.")
         if seed is None:
             from braincell._random import draw_seed
 
-            seed = draw_seed("Network")
+            seed = draw_seed("Network(seed=None)")
         if isinstance(seed, bool) or not isinstance(seed, (int, np.integer)):
             raise TypeError("Network seed must be an integer or None.")
         self.name = name

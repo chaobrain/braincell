@@ -15,12 +15,15 @@
 
 """Integer seeds drawn from the BrainState default random stream.
 
-``Network(seed=None)``, ``filter.sample(...)`` and ``filter.RandomSamples(...)``
-without a seed take one integer here when they are built, so a single
+What has no seed takes one integer here: ``Network()`` and
+``filter.sample(...)`` / ``filter.RandomSamples(...)`` when they are built, a
+``NetStim`` with noise when it is built, and a pairing rule in a direct
+``braincell.connect`` when it is called. A single
 ``brainstate.random.seed_context(s)`` (or ``brainstate.random.seed(s)``)
-controls them together with initializers and callbacks. Everything they
-derive afterwards is a pure function of that integer, which they store and
-report, so it can be recorded and passed back as an explicit seed.
+then controls them together with initializers and callbacks. Everything they
+derive afterwards is a pure function of that integer; ``Network``,
+``sample`` and ``RandomSamples`` store and report it, so it can be recorded
+and passed back as an explicit seed.
 
 This module imports only BrainState and JAX: ``braincell.network`` imports it
 while ``braincell`` is still initializing.
@@ -37,7 +40,7 @@ __all__ = ["draw_seed"]
 _SEED_MASK = 0x7FFF_FFFF
 
 
-def draw_seed(what: str) -> int:
+def draw_seed(what: str, *, remedy: str = "Build it outside the transformation, or pass an integer seed.") -> int:
     """Draw one integer seed in ``[0, 2**31)`` from the default random stream.
 
     The key comes from ``brainstate.random.split_key()``, so the draw advances
@@ -49,7 +52,10 @@ def draw_seed(what: str) -> int:
     Parameters
     ----------
     what : str
-        Name of the caller, used in the error message (``"Network"``).
+        The call that draws, as the error message names it
+        (``"Network(seed=None)"``).
+    remedy : str, optional
+        What the error message tells the user to do instead.
 
     Returns
     -------
@@ -66,8 +72,7 @@ def draw_seed(what: str) -> int:
     key = brainstate.random.split_key()
     if isinstance(key, jax.core.Tracer):
         raise TypeError(
-            f"{what}(seed=None) draws its seed from the BrainState default random stream, which is traced "
-            "here (inside jit, a loop or another transformation). Build it outside the transformation, "
-            "or pass an integer seed."
+            f"{what} draws its seed from the BrainState default random stream, which is traced "
+            f"here (inside jit, a loop or another transformation). {remedy}"
         )
     return int(jax.random.bits(key, (), jnp.uint32)) & _SEED_MASK

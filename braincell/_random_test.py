@@ -73,13 +73,13 @@ class DrawSeedTest(unittest.TestCase):
                 brainstate.random.seed(1)
                 before = default_key_data()
                 with self.assertRaisesRegex(TypeError, r"Network\(seed=None\).*traced"):
-                    transform(lambda: draw_seed("Network"))()
+                    transform(lambda: draw_seed("Network(seed=None)"))()
                 np.testing.assert_array_equal(default_key_data(), before)
                 brainstate.random.seed(1)
                 expected = float(brainstate.random.uniform())
                 brainstate.random.seed(1)
                 with self.assertRaises(TypeError):
-                    transform(lambda: draw_seed("Network"))()
+                    transform(lambda: draw_seed("Network(seed=None)"))()
                 self.assertEqual(float(brainstate.random.uniform()), expected)
 
     def test_a_bare_jax_jit_is_refused_by_brainstate_and_leaves_the_stream(self) -> None:
@@ -89,7 +89,7 @@ class DrawSeedTest(unittest.TestCase):
         brainstate.random.seed(1)
         before = default_key_data()
         with self.assertRaises(Exception):
-            jax.jit(lambda: draw_seed("Network"))()
+            jax.jit(lambda: draw_seed("Network(seed=None)"))()
         np.testing.assert_array_equal(default_key_data(), before)
 
     def test_the_module_imports_only_brainstate_and_jax(self) -> None:

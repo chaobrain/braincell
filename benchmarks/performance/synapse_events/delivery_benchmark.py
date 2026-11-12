@@ -543,9 +543,8 @@ def _check_reset_result(repeated, previous):
 def _check_control(work, case, control, voltage, g, drive):
     """Verify structure and actual arrivals outside all performance timers."""
     import brainunit as u
-    import jax.numpy as jnp
     import numpy as np
-    from braincell.network.event import _round_half_up_steps
+    from braincell.network.event import round_half_up_steps_host
 
     expected_synapses = 0 if control == "cell_only" else case.n * case.m
     expected_connections = case.n * case.m if control in ("active", "silent") else 0
@@ -562,9 +561,8 @@ def _check_control(work, case, control, voltage, g, drive):
         source_shape = list(times.shape)
         assert source_shape == [case.n * case.m, case.k]
         schedule_hash = hashlib.sha256(times.tobytes() + mask.tobytes()).hexdigest()
-        steps = np.asarray(
-            _round_half_up_steps((jnp.asarray(times) + jnp.asarray(work["delay_ms"])[:, None]) / case.dt_ms)
-        )
+        # Arrival steps are rounded at float64 on the host, as production rounds them (CELL-46).
+        steps = round_half_up_steps_host((times + np.asarray(work["delay_ms"], dtype=np.float64)[:, None]) / case.dt_ms)
         selected = mask & (steps >= 0) & (steps < case.steps)
         arrivals = int(selected.sum())
         # One source/connection per independent target, all weights .001 uS.
@@ -578,10 +576,10 @@ def _check_control(work, case, control, voltage, g, drive):
         np.testing.assert_array_equal(drive, np.zeros_like(drive))
     else:
         assert arrivals > 0 and np.max(g) > 0
-    # The production clock repeatedly adds float32 dt. Validate the delivered
-    # step, not exact equality to a host multiplication of duration.
+    # current_time is step·dt rounded once in the run precision (CELL-45);
+    # check the step it names, not equality with a float64 duration.
     final_time = work["cell"].current_time.to_decimal(u.ms)
-    final_step = int(_round_half_up_steps(final_time / case.dt_ms))
+    final_step = int(round_half_up_steps_host(np.asarray(final_time, dtype=np.float64) / case.dt_ms))
     assert final_step == case.steps
     assert abs(float(final_time) - case.duration_ms) < case.dt_ms / 2
     return dict(

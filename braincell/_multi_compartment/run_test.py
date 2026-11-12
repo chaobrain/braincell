@@ -324,6 +324,77 @@ class CellRunClockTest(unittest.TestCase):
         self.assertEqual(len(cell._run_loop_cache), 1)
 
 
+class CellArrivalStepTest(unittest.TestCase):
+    """CELL-46: arrivals in ``Cell.run`` after a change of dt, and in a ``Cell.update()`` loop with the caller's t."""
+
+    @staticmethod
+    def _counting_cell():
+        """A passive 1-CV cell at rest; its ExpSyn (tau 1e9 ms, e = rest) gains 1 uS per arrival."""
+        cell = braincell.Cell(
+            braincell.Morphology.from_root(
+                braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+            ),
+            cv_policy=braincell.CVPerBranch(1),
+            V_init=-65.0 * u.mV,
+        )
+        cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+        cell.place(at(0, 0.5), mech.Synapse("ExpSyn", name="s", tau=1e9 * u.ms, e=-65.0 * u.mV))
+        cell.record("g", braincell.observe.synapse(name="s").state("g"))
+        source = braincell.EventSequence.from_times([np.asarray([0.3, 0.5125, 0.6, 0.8375, 1.0, 1.0125]) * u.ms])
+        braincell.connect("c", source=source, synapse=cell.synapses["s"], weight=1.0 * u.uS)
+        return cell
+
+    def test_a_change_of_dt_delivers_on_the_grid_from_time_zero(self):
+        # After 10 (or 3) steps of 0.025 ms the clock counts 0.05 ms steps
+        # from 0.25 (or 0.075) ms; the arrivals keep their steps on the grid
+        # from time 0, in both precisions, as on main (the misaligned grid
+        # of the second case is CELL-48).
+        expected = {
+            10: ([0.35, 0.55, 0.65, 0.9, 1.05], [1, 1, 1, 1, 2]),
+            3: ([0.325, 0.525, 0.625, 0.875, 1.025], [1, 1, 1, 1, 2]),
+        }
+        for precision in (32, 64):
+            for first, (times, counts) in expected.items():
+                context = _float64() if precision == 64 else brainstate.environ.context(precision=32)
+                with self.subTest(precision=precision, first=first), context:
+                    cell = self._counting_cell()
+                    results = (
+                        cell.run(dt=DT, duration=first * DT),
+                        cell.run(dt=2 * DT, duration=20 * 2 * DT),
+                    )
+                    t = np.concatenate([np.asarray(r.time.to_decimal(u.ms), dtype=np.float64) for r in results])
+                    g = np.concatenate(
+                        [
+                            np.asarray(r.samples["g"].values.to_decimal(u.uS), dtype=np.float64).reshape(-1)
+                            for r in results
+                        ]
+                    )
+                    increments = np.diff(g, prepend=0.0)
+                    jumps = np.flatnonzero(increments > 0.5)
+                    np.testing.assert_allclose(t[jumps], times, rtol=1e-6)
+                    np.testing.assert_array_equal(np.rint(increments[jumps]), counts)
+
+    def test_an_update_loop_with_the_callers_t_delivers_at_the_host_steps(self):
+        # A Cell.update() loop sets its own t = k*dt, so the arrivals are
+        # compared with t / dt rounded in float32 (32010 steps, L77).
+        with brainstate.environ.context(precision=32):
+            cell = CellRunClockTest._cell()
+            cell.init_state()
+            (synapse,) = cell.runtime_objects(ExpSyn).values()
+
+            def step(k):
+                with brainstate.environ.context(t=k * DT):
+                    cell.update()
+                return synapse.g.value.to_decimal(u.uS).reshape(-1)[0]
+
+            with brainstate.environ.context(dt=DT):
+                g = brainstate.transform.jit(
+                    lambda: brainstate.transform.for_loop(step, np.arange(CellRunClockTest.N))
+                )()
+        jumps = np.flatnonzero(np.diff(np.asarray(g), prepend=0.0) > 0.5 * WEIGHT.to_decimal(u.uS))
+        np.testing.assert_array_equal(jumps, [4000, 16384, 32000])
+
+
 class UpdateLoopTest(unittest.TestCase):
     """CELL-35: an ``update()`` loop matches ``run``, events on the first step included.
 

@@ -427,19 +427,24 @@ class NetworkClockTest(unittest.TestCase):
         network, cell = _clocked_network()
         network.init_state()
         calls = counted(cell)
-        for _ in range(3):
+        for index in range(5):
+            if index == 3:
+                network.reset_state()
             network.run(dt=DT, duration=20 * DT)
         self.assertEqual(calls[0], 1)
         self.assertEqual(len(network._network_run_loop_cache), 1)
+        np.testing.assert_array_equal(cell._clock_step.value, 40)
 
         network, cell = _clocked_network()
         network.prepare_run(dt=DT)
         calls = counted(cell)
         with brainstate.environ.context(dt=DT):
-            for _ in range(3):
+            for index in range(5):
+                if index == 3:
+                    network.reset_state()
                 network.update()
         self.assertEqual(calls[0], 1)
-        np.testing.assert_array_equal(cell._clock_step.value, 3)
+        np.testing.assert_array_equal(cell._clock_step.value, 2)
 
     def test_a_cell_run_alone_before_joining_keeps_its_time(self):
         # A Cell that ran on its own at another dt joins with its time: the

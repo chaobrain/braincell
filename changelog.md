@@ -814,7 +814,7 @@
   packed spike bytes several times faster after the run. Results are
   unchanged. A Hodgkin-Huxley point population on an RTX 3090 (float32,
   10,000 steps, 300 to 10,000 members, `ralston2` or `rk4`, with or
-  without a current clamp) now takes 0.70-0.81 of its former time per
+  without a current clamp) now takes 0.68-0.81 of its former time per
   step: 0.98-1.43 times its engine stepped directly, where it took
   1.26-1.93 times.
 - **`ConnectionView.weight` reads each `connect` call with one gather**

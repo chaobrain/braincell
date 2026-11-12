@@ -327,10 +327,12 @@ class CellRunClockTest(unittest.TestCase):
 
 
 class CellArrivalStepTest(unittest.TestCase):
-    """CELL-46: arrivals in ``Cell.run`` after a change of dt, and in a ``Cell.update()`` loop with the caller's t."""
+    """CELL-46, CELL-48: arrivals in ``Cell.run`` after a change of dt, and in a ``Cell.update()`` loop with the caller's t."""
+
+    TIMES = (0.3, 0.5125, 0.6, 0.8375, 1.0, 1.0125)
 
     @staticmethod
-    def _counting_cell():
+    def _counting_cell(times=TIMES):
         """A passive 1-CV cell at rest; its ExpSyn (tau 1e9 ms, e = rest) gains 1 uS per arrival."""
         cell = braincell.Cell(
             braincell.Morphology.from_root(
@@ -342,39 +344,91 @@ class CellArrivalStepTest(unittest.TestCase):
         cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
         cell.place(at(0, 0.5), mech.Synapse("ExpSyn", name="s", tau=1e9 * u.ms, e=-65.0 * u.mV))
         cell.record("g", braincell.observe.synapse(name="s").state("g"))
-        source = braincell.EventSequence.from_times([np.asarray([0.3, 0.5125, 0.6, 0.8375, 1.0, 1.0125]) * u.ms])
+        source = braincell.EventSequence.from_times([np.asarray(times) * u.ms])
         braincell.connect("c", source=source, synapse=cell.synapses["s"], weight=1.0 * u.uS)
         return cell
 
-    def test_a_change_of_dt_delivers_on_the_grid_from_time_zero(self):
-        # After 10 (or 3) steps of 0.025 ms the clock counts 0.05 ms steps
-        # from 0.25 (or 0.075) ms; the arrivals keep their steps on the grid
-        # from time 0, in both precisions, as on main (the misaligned grid
-        # of the second case is CELL-48).
-        expected = {
-            10: ([0.35, 0.55, 0.65, 0.9, 1.05], [1, 1, 1, 1, 2]),
-            3: ([0.325, 0.525, 0.625, 0.875, 1.025], [1, 1, 1, 1, 2]),
+    @staticmethod
+    def _jumps(results):
+        """``(sample times, arrivals)`` at which g steps up over ``results``; the jump at ``t_k + dt`` is step ``t_k``'s."""
+        t = np.concatenate([np.asarray(r.time.to_decimal(u.ms), dtype=np.float64) for r in results])
+        g = np.concatenate(
+            [np.asarray(r.samples["g"].values.to_decimal(u.uS), dtype=np.float64).reshape(-1) for r in results]
+        )
+        increments = np.diff(g, prepend=0.0)
+        jumps = np.flatnonzero(increments > 0.5)
+        return t[jumps], np.rint(increments[jumps])
+
+    def test_a_change_of_dt_delivers_on_the_grid_of_the_time_reached(self):
+        # After 3 steps of 0.025 ms the clock counts 0.05 ms steps from
+        # 0.075 ms, 1.5 steps of 0.05 ms. The arrivals count from there too,
+        # rounded half up at float64 (CELL-46): 0.3 ms is (0.3 - 0.075)/0.05 =
+        # 4.5 steps, a tie, so it acts on step 5 (0.325 ms) and shows in the
+        # sample at 0.375 ms; 0.5125 ms is 8.75 -> 9 (0.525 ms), 0.6 ms 10.5
+        # -> 11 (0.625 ms), 0.8375 ms 15.25 -> 15 (0.825 ms), 1.0 and 1.0125 ms
+        # 18.5 and 18.75 -> 19 (1.025 ms). main counted them from time 0, so
+        # the boundary at 0.275 ms took 0.3 ms, half a new step early, and
+        # 0.475 ms took 0.5125 ms (CELL-48).
+        # After 10 steps the clock counts from 0.25 ms, on the 0.05 ms grid:
+        # the steps are those of the grid from time 0, as on main.
+        # Steps of 0.025, 0.05 and 0.1 ms (3, 5, 13) count the last from
+        # 0.325 ms, 3.25 steps of 0.1 ms: 0.425 ms is step 1 (0.425 ms),
+        # 0.455 ms 1.3 -> 1, 0.475 ms 1.5 -> 2 (0.525 ms), 0.6 ms 2.75 -> 3
+        # (0.625 ms), 1.06 ms 7.35 -> 7 (1.025 ms), 1.375 ms 10.5 -> 11
+        # (1.425 ms); main put 0.455 and 1.06 ms one step later (rounded from
+        # time 0, 4.55 -> 5 and 10.6 -> 11 steps of 0.1 ms).
+        later = (0.425, 0.455, 0.475, 0.6, 1.06, 1.375)
+        cases = {
+            "off the new grid": (self.TIMES, (3, 22), [0.375, 0.575, 0.675, 0.875, 1.075], [1, 1, 1, 1, 2]),
+            "on the new grid": (self.TIMES, (10, 20), [0.35, 0.55, 0.65, 0.9, 1.05], [1, 1, 1, 1, 2]),
+            "two changes": (later, (3, 5, 13), [0.525, 0.625, 0.725, 1.125, 1.525], [2, 1, 1, 1, 1]),
         }
         for precision in (32, 64):
-            for first, (times, counts) in expected.items():
+            for name, (times, steps, expected_times, counts) in cases.items():
                 context = _float64() if precision == 64 else brainstate.environ.context(precision=32)
-                with self.subTest(precision=precision, first=first), context:
-                    cell = self._counting_cell()
-                    results = (
-                        cell.run(dt=DT, duration=first * DT),
-                        cell.run(dt=2 * DT, duration=20 * 2 * DT),
-                    )
-                    t = np.concatenate([np.asarray(r.time.to_decimal(u.ms), dtype=np.float64) for r in results])
-                    g = np.concatenate(
-                        [
-                            np.asarray(r.samples["g"].values.to_decimal(u.uS), dtype=np.float64).reshape(-1)
-                            for r in results
-                        ]
-                    )
-                    increments = np.diff(g, prepend=0.0)
-                    jumps = np.flatnonzero(increments > 0.5)
-                    np.testing.assert_allclose(t[jumps], times, rtol=1e-6)
-                    np.testing.assert_array_equal(np.rint(increments[jumps]), counts)
+                with self.subTest(precision=precision, case=name), context:
+                    cell = self._counting_cell(times)
+                    for _ in range(2):  # again after reset_state(), which forgets the clock
+                        results = tuple(
+                            cell.run(dt=(2**i) * DT, duration=n * (2**i) * DT) for i, n in enumerate(steps)
+                        )
+                        actual_times, actual_counts = self._jumps(results)
+                        np.testing.assert_allclose(actual_times, expected_times, rtol=1e-6)
+                        np.testing.assert_array_equal(actual_counts, counts)
+                        cell.reset_state()
+
+    def test_segments_after_a_change_of_dt_match_one_run(self):
+        # The arrival steps count from the clock's origin, which stays where
+        # dt changed while the segments run at the new dt: they deliver at
+        # the steps of one run, and reuse one compiled loop.
+        for precision in (32, 64):
+            context = _float64() if precision == 64 else brainstate.environ.context(precision=32)
+            with self.subTest(precision=precision), context:
+                whole = self._counting_cell()
+                whole.run(dt=DT, duration=3 * DT)
+                expected = whole.run(dt=2 * DT, duration=25 * 2 * DT)
+                cell = self._counting_cell()
+                cell.run(dt=DT, duration=3 * DT)
+                parts = RunResult.concat(tuple(cell.run(dt=2 * DT, duration=5 * 2 * DT) for _ in range(5)))
+                np.testing.assert_array_equal(parts.time.to_decimal(u.ms), expected.time.to_decimal(u.ms))
+                np.testing.assert_array_equal(
+                    parts.samples["g"].values.to_decimal(u.uS), expected.samples["g"].values.to_decimal(u.uS)
+                )
+                np.testing.assert_allclose(self._jumps((parts,))[0], [0.375, 0.575, 0.675, 0.875, 1.075], rtol=1e-6)
+                self.assertEqual(len(cell._run_loop_cache), 2)
+
+    def test_a_traced_run_after_a_change_of_dt_counts_arrivals_from_time_zero(self):
+        # Inside jax.jit the clock has no host value: the arrivals keep the
+        # dt grid from time 0 (main's steps), each delivered once.
+        cell = self._counting_cell()
+        cell.run(dt=DT, duration=3 * DT)
+        g = brainstate.transform.jit(
+            lambda: cell.run(dt=2 * DT, duration=22 * 2 * DT).samples["g"].values.to_decimal(u.uS).reshape(-1)
+        )()
+        increments = np.diff(np.asarray(g, dtype=np.float64), prepend=0.0)
+        jumps = np.flatnonzero(increments > 0.5)
+        np.testing.assert_allclose(0.075 + 0.05 * jumps, [0.325, 0.525, 0.625, 0.875, 1.025], rtol=1e-6)
+        np.testing.assert_array_equal(np.rint(increments[jumps]), [1, 1, 1, 1, 2])
 
     def test_an_update_loop_with_the_callers_t_delivers_at_the_host_steps(self):
         # A Cell.update() loop sets its own t = k*dt, so the arrivals are

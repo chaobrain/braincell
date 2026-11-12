@@ -343,6 +343,64 @@ class CacheTest(unittest.TestCase):
         return net, cell
 
 
+class ArrivalsTest(unittest.TestCase):
+    """The window readers against every arrival computed directly, for consecutive and seeking windows."""
+
+    DT_MS = 0.025
+    SOURCE_INDEX = np.array([0, 0, 1, 2, 3, 4, 4, 2])
+    DELAY_MS = np.array([0.0, 0.5, 0.0, 1.0, 0.25, 0.0, 0.0, 1.0])  # rows 5, 6 and 3, 7 share a group
+
+    def _expected(self, times, mask, start, stop):
+        from braincell.network.event import _host_arrival_steps
+
+        pairs = []
+        for row, (source, delay) in enumerate(zip(self.SOURCE_INDEX, self.DELAY_MS)):
+            steps = _host_arrival_steps(times[source][mask[source]], delay, self.DT_MS)
+            pairs += [(int(step), row) for step in steps if start <= step < stop]
+        return sorted(pairs)
+
+    def _check(self, table, times, mask, windows):
+        for start, stop in windows:
+            steps, rows = table.window(start, stop)
+            self.assertEqual(sorted(zip(steps.tolist(), rows.tolist())), self._expected(times, mask, start, stop))
+
+    def test_netstim_windows_follow_a_growing_schedule(self):
+        # Too many events to generate at once (see NetStim), so the schedule grows on demand.
+        stim = bc.NetStim(size=5, start=0.2 * u.ms, interval=0.3 * u.ms, number=2**20, noise=0.7, seed=3)
+        groups = scheduled._Groups.build(self.SOURCE_INDEX, self.DELAY_MS)
+        self.assertEqual(groups.source.size, 6)
+        stim._ensure_schedule(until_ms=10.0)
+        table = scheduled._ScheduleArrivals(groups, stim, self.DT_MS)
+        # Consecutive windows, a seek back, one from step 0, and one past the generated events.
+        times, mask = stim._event_times_ms, stim._event_mask
+        self._check(table, times, mask, [(0, 100), (100, 250), (250, 400), (37, 90), (0, 400), (10**8, 10**8 + 9)])
+        # A stale or wrong cursor is checked, not trusted.
+        table.cursor = (150, np.zeros(groups.source.size, dtype=np.int64))
+        self._check(table, times, mask, [(150, 300)])
+        table.cursor = (300, np.full(groups.source.size, 10**6))
+        self._check(table, times, mask, [(300, 380)])
+
+        width = times.shape[1]
+        stim._ensure_schedule(until_ms=120.0)
+        self.assertGreater(stim._event_times_ms.shape[1], width)
+        # The wider schedule keeps the first events, so the next window starts at the last cursor.
+        np.testing.assert_array_equal(stim._event_times_ms[:, :width][mask], times[mask])
+        grown = scheduled._ScheduleArrivals(groups, stim, self.DT_MS, table.cursor)
+        times, mask = stim._event_times_ms, stim._event_mask
+        self._check(grown, times, mask, [(380, 1000), (1000, 4000), (123, 4800), (0, 2**31 - 1)])
+
+    def test_event_sequence_table(self):
+        rng = np.random.default_rng(2)
+        events = [np.sort(rng.uniform(0.0, 30.0, size)) for size in (0, 3, 40, 7, 1)]
+        source = bc.EventSequence.from_times(tuple(t * u.ms for t in events))
+        groups = scheduled._Groups.build(self.SOURCE_INDEX, self.DELAY_MS)
+        table = scheduled._SequenceArrivals.build(groups, source, self.DT_MS)
+        width = max(map(len, events))
+        times = np.array([np.pad(t, (0, width - len(t))) for t in events])
+        mask = np.arange(width)[None, :] < np.array([len(t) for t in events])[:, None]
+        self._check(table, times, mask, [(0, 300), (300, 1300), (17, 29), (0, 2**31 - 1)])
+
+
 def _grad_model():
     net, cell = _model()
     net.init_state()

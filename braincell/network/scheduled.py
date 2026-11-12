@@ -100,76 +100,140 @@ def normalize_scheduled_delivery(value, *, prefix: str):
 
 
 # ----------------------------------------------------------------------
-# Arrival tables
+# Arrivals
 
 
 @dataclass(frozen=True)
-class _ArrivalTable:
-    """The arrival steps of one ``connect`` call's rows, sorted by step.
+class _Groups:
+    """The rows of one ``connect`` call grouped by source and delay.
 
-    Rows with the same source and delay (a group) share their arrivals,
-    as in the default path's ``_ArrivalPlan``: the table holds one entry
-    per (group, event), and a window expands each entry to its group's
-    rows.
+    The rows of a group share their arrivals, as in the default path's
+    ``_ArrivalPlan``; a window finds each group's arrivals once and
+    expands them to the group's rows.
     """
 
-    steps: np.ndarray
-    group: np.ndarray
-    group_offsets: np.ndarray
-    group_rows: np.ndarray
+    source: np.ndarray
+    delay_ms: np.ndarray
+    offsets: np.ndarray
+    rows: np.ndarray
 
     @classmethod
-    def build(cls, event_source, event_time_ms, source_index, delay_ms, dt_ms) -> "_ArrivalTable":
+    def build(cls, source_index, delay_ms) -> "_Groups":
         rows = np.asarray(source_index, dtype=np.int64).reshape(-1)
         row_delay = np.broadcast_to(np.asarray(delay_ms, dtype=np.float64), rows.shape)
         delay_bits = row_delay.view(np.uint64).astype(np.int64)
         keys, row_group = np.unique(np.stack([rows, delay_bits], axis=1), axis=0, return_inverse=True)
         row_group = row_group.reshape(-1)
         _, first_row = np.unique(row_group, return_index=True)
-        group_source = keys[:, 0]
-        group_delay = row_delay[first_row]
-        group_rows = np.argsort(row_group, kind="stable").astype(np.int64)
-        group_offsets = np.concatenate([[0], np.cumsum(np.bincount(row_group, minlength=len(keys)))])
+        offsets = np.concatenate([[0], np.cumsum(np.bincount(row_group, minlength=len(keys)))])
+        return cls(keys[:, 0], row_delay[first_row], offsets, np.argsort(row_group, kind="stable").astype(np.int64))
 
+    def expand(self, steps: np.ndarray, group: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """``(steps, rows)``: each ``(step, group)`` arrival repeated for every row of the group."""
+        sizes = self.offsets[group + 1] - self.offsets[group]
+        total = int(sizes.sum())
+        first = np.repeat(self.offsets[group], sizes)
+        within = np.arange(total) - np.repeat(np.cumsum(sizes) - sizes, sizes)
+        return np.repeat(steps, sizes), self.rows[first + within]
+
+
+@dataclass(frozen=True)
+class _SequenceArrivals:
+    """The arrivals of an EventSequence call: one ``(step, group)`` entry per event, sorted by step.
+
+    An EventSequence never changes, so the table is built once.
+    """
+
+    groups: _Groups
+    steps: np.ndarray
+    group: np.ndarray
+
+    @classmethod
+    def build(cls, groups: _Groups, source: EventSequence, dt_ms: float) -> "_SequenceArrivals":
+        event_source = np.asarray(source.events.source_index, dtype=np.int64)
+        event_ms = np.asarray(source.events.time.to_decimal(u.ms), dtype=np.float64)
         order = np.argsort(event_source, kind="stable")
-        sorted_source = np.asarray(event_source, dtype=np.int64)[order]
-        sorted_time = np.asarray(event_time_ms, dtype=np.float64)[order]
-        lo = np.searchsorted(sorted_source, group_source, side="left")
-        per_group = np.searchsorted(sorted_source, group_source, side="right") - lo
-        n_pairs = int(per_group.sum())
-        pair_group = np.repeat(np.arange(len(keys), dtype=np.int64), per_group)
-        pair_event = np.arange(n_pairs) + np.repeat(lo - (np.cumsum(per_group) - per_group), per_group)
-        steps = _host_arrival_steps(sorted_time[pair_event], group_delay[pair_group], dt_ms).astype(np.int64)
+        sorted_source, sorted_ms = event_source[order], event_ms[order]
+        lo = np.searchsorted(sorted_source, groups.source, side="left")
+        per_group = np.searchsorted(sorted_source, groups.source, side="right") - lo
+        pair_group = np.repeat(np.arange(groups.source.size, dtype=np.int64), per_group)
+        pair_event = np.arange(int(per_group.sum())) + np.repeat(lo - (np.cumsum(per_group) - per_group), per_group)
+        steps = _host_arrival_steps(sorted_ms[pair_event], groups.delay_ms[pair_group], dt_ms).astype(np.int64)
         by_step = np.argsort(steps, kind="stable")
-        return cls(steps[by_step], pair_group[by_step], group_offsets, group_rows)
-
-    def last_step(self) -> int:
-        """The last step with an arrival, or ``-1``; arrivals clipped to the step limit never come."""
-        reachable = self.steps[self.steps < _MAX_STEP]
-        return int(reachable[-1]) if reachable.size else -1
+        return cls(groups, steps[by_step], pair_group[by_step])
 
     def window(self, start: int, stop: int) -> tuple[np.ndarray, np.ndarray]:
-        """``(steps, rows)`` of the arrivals at the steps ``[start, stop)``, in step order."""
+        """``(steps, rows)`` of the arrivals at the steps ``[start, stop)``."""
         lo, hi = np.searchsorted(self.steps, [start, stop], side="left")
-        steps, group = self.steps[lo:hi], self.group[lo:hi]
-        sizes = self.group_offsets[group + 1] - self.group_offsets[group]
-        total = int(sizes.sum())
-        first = np.repeat(self.group_offsets[group], sizes)
-        within = np.arange(total) - np.repeat(np.cumsum(sizes) - sizes, sizes)
-        return np.repeat(steps, sizes), self.group_rows[first + within]
+        return self.groups.expand(self.steps[lo:hi], self.group[lo:hi])
 
 
-def _source_events(source) -> tuple[np.ndarray, np.ndarray]:
-    """``(source index, time in ms)`` of a scheduled source's generated events."""
-    if isinstance(source, NetStim):
-        event_source, column = np.nonzero(source._event_mask)
-        return event_source, source._event_times_ms[event_source, column]
-    if isinstance(source, EventSequence):
-        return np.asarray(source.events.source_index), np.asarray(source.events.time.to_decimal(u.ms), dtype=np.float64)
-    # A Network registers no other scheduled source.
-    raise TypeError(  # pragma: no cover
-        f"scheduled_delivery supports NetStim and EventSequence sources, not {type(source).__name__}."
-    )
+class _ScheduleArrivals:
+    """The arrivals of a NetStim call, read from its generated ``(source, event)`` schedule.
+
+    A source's events are in time order along its row, so each group's
+    arrivals are too. A window binary-searches each group's first event
+    arriving at or after its start, then reads the next events of every
+    group until they arrive at or after its stop: the cost is that of the
+    window's arrivals, not of the whole schedule, so it does not grow with
+    the time already run. The column a window stops at is kept and tried
+    first by the next window (consecutive segments), also across a schedule
+    that grew, since a narrower schedule is a prefix of a wider one; it is
+    checked before use.
+    """
+
+    def __init__(self, groups: _Groups, source: NetStim, dt_ms: float, cursor=None):
+        self.groups = groups
+        self.times = source._event_times_ms
+        self.count = np.count_nonzero(source._event_mask, axis=1)[groups.source]
+        self.dt_ms = dt_ms
+        #: ``(step, column of each group's first arrival at or after it)``.
+        self.cursor = cursor
+
+    def _steps(self, group: np.ndarray, column: np.ndarray) -> np.ndarray:
+        times = self.times[self.groups.source[group], column]
+        return _host_arrival_steps(times, self.groups.delay_ms[group], self.dt_ms).astype(np.int64)
+
+    def _first_columns(self, start: int) -> np.ndarray:
+        """The column of each group's first arrival at or after ``start`` (its event count if none)."""
+        lo = np.zeros(self.count.shape, dtype=np.int64)
+        hi = self.count.astype(np.int64)
+        if start <= 0:
+            return lo
+        if self.cursor is not None and self.cursor[0] == start:
+            guess = np.minimum(self.cursor[1], hi)
+            ok = np.ones(guess.shape, dtype=bool)
+            before = np.flatnonzero(guess > 0)
+            ok[before] = self._steps(before, guess[before] - 1) < start
+            after = np.flatnonzero(ok & (guess < hi))
+            ok[after] = self._steps(after, guess[after]) >= start
+            lo[ok] = hi[ok] = guess[ok]
+        todo = np.flatnonzero(lo < hi)
+        while todo.size:
+            mid = (lo[todo] + hi[todo]) // 2
+            early = self._steps(todo, mid) < start
+            lo[todo[early]] = mid[early] + 1
+            hi[todo[~early]] = mid[~early]
+            todo = todo[lo[todo] < hi[todo]]
+        return lo
+
+    def window(self, start: int, stop: int) -> tuple[np.ndarray, np.ndarray]:
+        """``(steps, rows)`` of the arrivals at the steps ``[start, stop)``."""
+        column = self._first_columns(start)
+        steps, group = [], []
+        active = np.flatnonzero(column < self.count)
+        while active.size:
+            arrival = self._steps(active, column[active])
+            inside = arrival < stop
+            active = active[inside]
+            steps.append(arrival[inside])
+            group.append(active)
+            column[active] += 1
+            active = active[column[active] < self.count[active]]
+        self.cursor = (stop, column)
+        if not steps:
+            return self.groups.expand(np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64))
+        return self.groups.expand(np.concatenate(steps), np.concatenate(group))
 
 
 def _schedule_token(source):
@@ -310,7 +374,7 @@ def _layout_arrays(method, route, steps, rows, start, n_steps):
 
 @dataclass
 class ScheduledPlans:
-    """The plans of one Network: arrival tables, the routes, and the plans of the last windows.
+    """The plans of one Network: the routes, their arrivals, and the plans of the last windows.
 
     Built at the first scheduled run of an initialized Network; the
     topology is frozen then, and ``dt`` and the delay rounding are fixed
@@ -321,6 +385,9 @@ class ScheduledPlans:
     method: str
     routes: tuple[_Route, ...]
     dt_ms: float
+    #: ``(population, layout, call id)`` -> its rows grouped by source and delay.
+    groups: dict = field(default_factory=dict)
+    #: ``(population, layout, call id)`` -> ``(schedule token, arrivals)``.
     tables: dict = field(default_factory=dict)
     windows: collections.OrderedDict = field(default_factory=collections.OrderedDict)
     full: tuple | None = None
@@ -334,20 +401,29 @@ class ScheduledPlans:
     def _tokens(self) -> tuple:
         return tuple(tuple(_schedule_token(source) for source in route.sources) for route in self.routes)
 
-    def _table(self, route: _Route, position: int) -> _ArrivalTable:
+    def _table(self, route: _Route, position: int):
+        """The arrivals of one call of ``route`` for its source's current schedule."""
         source = route.sources[position]
-        key = (route.population, route.layout_id, route.call_ids[position], _schedule_token(source))
-        table = self.tables.get(key)
-        if table is None:
-            # A NetStim whose schedule grew has a new token: drop its old tables.
-            stale = [k for k in self.tables if k[:3] == key[:3]]
-            for k in stale:
-                del self.tables[k]
-            event_source, event_time_ms = _source_events(source)
-            table = _ArrivalTable.build(
-                event_source, event_time_ms, route.source_index[position], route.delay_ms[position], self.dt_ms
+        key = (route.population, route.layout_id, route.call_ids[position])
+        token = _schedule_token(source)
+        cached = self.tables.get(key)
+        if cached is not None and cached[0] == token:
+            return cached[1]
+        groups = self.groups.get(key)
+        if groups is None:
+            groups = _Groups.build(route.source_index[position], route.delay_ms[position])
+            self.groups[key] = groups
+        if isinstance(source, NetStim):
+            # A schedule that grew keeps its first events: reuse where the last window stopped.
+            cursor = cached[1].cursor if cached is not None else None
+            table = _ScheduleArrivals(groups, source, self.dt_ms, cursor)
+        elif isinstance(source, EventSequence):
+            table = _SequenceArrivals.build(groups, source, self.dt_ms)
+        else:  # pragma: no cover - a Network registers no other scheduled source
+            raise TypeError(
+                f"scheduled_delivery supports NetStim and EventSequence sources, not {type(source).__name__}."
             )
-            self.tables[key] = table
+        self.tables[key] = (token, table)
         return table
 
     def _route_records(self, route: _Route, start: int, stop: int):
@@ -389,11 +465,12 @@ def _build_plans(plans: ScheduledPlans, start: int, n_steps: int | None) -> tupl
     host, stats = [], []
     for route in plans.routes:
         if n_steps is None:
-            last = max(plans._table(route, position).last_step() for position in range(len(route.call_rows)))
-            span = last + 1 if last >= 0 else 1
+            # Arrivals past the step limit never come (``_host_arrival_steps`` clips them to it).
+            steps, rows = plans._route_records(route, 0, _MAX_STEP)
+            span = int(steps.max()) + 1 if steps.size else 1
         else:
             span = n_steps
-        steps, rows = plans._route_records(route, start, start + span)
+            steps, rows = plans._route_records(route, start, start + span)
         arrays, layout_stats = _layout_arrays(plans.method, route, steps, rows, start, span)
         host.append(arrays)
         stats.append(dict(layout_stats, population=route.population, layout_id=route.layout_id, n_steps=span))

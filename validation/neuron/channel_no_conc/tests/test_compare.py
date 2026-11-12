@@ -14,13 +14,12 @@
 # ==============================================================================
 
 import os
-from validation.neuron._paths import mechanism_build_dir
 import unittest
 from unittest import mock
 
 import numpy as np
 
-from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, build_case_payload, load_module
+from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, build_case_payload, load_module, requires_mechanisms
 
 
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
@@ -37,8 +36,6 @@ compare_module = load_module(
 
 
 class CompareSingleCaseTest(unittest.TestCase):
-    _GOC_LIBNRNMECH = mechanism_build_dir("goc_ma2020", "channel") / "x86_64" / "libnrnmech.so"
-    _BC_LIBNRNMECH = mechanism_build_dir("bc_ma2025", "channel") / "x86_64" / "libnrnmech.so"
 
     def _build_payload(self) -> dict:
         payload = build_case_payload(
@@ -50,6 +47,7 @@ class CompareSingleCaseTest(unittest.TestCase):
         payload["simulation"]["duration_ms"] = 0.1
         return payload
 
+    @requires_mechanisms("testing")
     def test_compare_case_returns_voltage_current_and_gate_metrics(self) -> None:
         case = experiment_schema.ChannelNoConcCase.from_dict(self._build_payload())
         result = compare_module.compare_case(case)
@@ -112,6 +110,7 @@ class CompareSingleCaseTest(unittest.TestCase):
         self.assertEqual(sorted(result["aligned"]["ion_state"].keys()), ["ci_mM", "co_mM", "eca_mV"])
         self.assertTrue(np.isfinite(result["metrics"]["ion_state"]["ci_mM"]["mae"]))
 
+    @requires_mechanisms("testing")
     def test_sine_case_voltage_alignment_stays_within_small_error(self) -> None:
         payload = self._build_payload()
         payload["case_id"] = "kv_compare_sine"
@@ -301,9 +300,8 @@ class CompareSingleCaseTest(unittest.TestCase):
         self.assertEqual(result["aligned"]["current"]["neuron_ix"], [1.0, 2.0])
         self.assertEqual(result["metrics"]["current"]["ix"]["mae"], 0.0)
 
+    @requires_mechanisms("bc_ma2025")
     def test_repo_nav1p6_bc_vinit_compare_case_runs(self) -> None:
-        if not self._BC_LIBNRNMECH.resolve().exists():
-            self.skipTest("BC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
         config_path = TEMPLATES_ROOT.parent / "configs" / "ma25_bc" / "nav1p6_ma25_bc.json"
         template_path = TEMPLATES_ROOT.parent / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
@@ -316,9 +314,8 @@ class CompareSingleCaseTest(unittest.TestCase):
         self.assertTrue(np.isfinite(result["metrics"]["voltage"]["mae"]))
         self.assertEqual(len(result["alignment"]["gates"]), 12)
 
+    @requires_mechanisms("goc_ma2020")
     def test_repo_kca3p1_goc_vinit_compare_case_runs(self) -> None:
-        if not self._GOC_LIBNRNMECH.resolve().exists():
-            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
         config_path = TEMPLATES_ROOT.parent / "configs" / "ma20_goc" / "kca3p1_ma20_goc.json"
         template_path = TEMPLATES_ROOT.parent / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
@@ -335,9 +332,8 @@ class CompareSingleCaseTest(unittest.TestCase):
         self.assertLess(result["metrics"]["current"]["ix"]["mae"], 5e-5)
         self.assertLess(result["metrics"]["gates"]["Y"]["mae"], 1e-4)
 
+    @requires_mechanisms("goc_ma2020")
     def test_repo_kca2p2_goc_vinit_compare_case_runs(self) -> None:
-        if not self._GOC_LIBNRNMECH.resolve().exists():
-            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
         config_path = TEMPLATES_ROOT.parent / "configs" / "ma20_goc" / "kca2p2_ma20_goc.json"
         template_path = TEMPLATES_ROOT.parent / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
@@ -351,9 +347,8 @@ class CompareSingleCaseTest(unittest.TestCase):
         self.assertTrue(np.isfinite(result["metrics"]["current"]["ix"]["mae"]))
         self.assertTrue(all(np.isfinite(record["mae"]) for record in result["metrics"]["gates"].values()))
 
+    @requires_mechanisms("goc_ma2020")
     def test_repo_kca1p1_goc_vinit_compare_case_runs(self) -> None:
-        if not self._GOC_LIBNRNMECH.resolve().exists():
-            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
         config_path = TEMPLATES_ROOT.parent / "configs" / "ma20_goc" / "kca1p1_ma20_goc.json"
         template_path = TEMPLATES_ROOT.parent / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
@@ -367,6 +362,7 @@ class CompareSingleCaseTest(unittest.TestCase):
         self.assertTrue(np.isfinite(result["metrics"]["current"]["ix"]["mae"]))
         self.assertTrue(all(np.isfinite(record["mae"]) for record in result["metrics"]["gates"].values()))
 
+    @requires_mechanisms("pc_ma2024")
     def test_repo_hcn_ma24_pc_dc_compare_case_runs(self) -> None:
         config_path = TEMPLATES_ROOT.parent / "configs" / "ma24_pc" / "hcn1_ma24_pc.json"
         template_path = TEMPLATES_ROOT.parent / "templates" / "dc.json"

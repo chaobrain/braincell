@@ -80,8 +80,12 @@ class TrainingDiagnosticsTest(unittest.TestCase):
         self.assertTrue(np.isnan(archives.spike_feasible.physical_values["theta"][2]))
 
     def test_soma_dendrite_protocol_suite_uses_the_same_contract(self) -> None:
+        # The cell's threshold for this 8 ms pulse lies between 0.016 and
+        # 0.017 nA. 0.02 nA fires too, at about 9.8 ms, near the end of the
+        # 10 ms run, so it is not a subthreshold protocol; 0.01 nA keeps V
+        # at or below -65 mV.
         targets = {
-            "subthreshold": _run_dendritic_protocol(0.02 * u.nA),
+            "subthreshold": _run_dendritic_protocol(0.01 * u.nA),
             "spiking": _run_dendritic_protocol(0.05 * u.nA),
         }
         predictions = {name: jnp.stack((target, target + 0.5), axis=1) for name, target in targets.items()}

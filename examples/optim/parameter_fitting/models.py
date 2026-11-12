@@ -176,7 +176,7 @@ class ModelDefinition:
         if cell.n_cv != 1:
             raise RuntimeError(f"Expected one CV, got {cell.n_cv}.")
         target_point = int(cell.node_tree.cv_to_mid_node_id[0])
-        area = cell.runtime.point_area.to_decimal(u.cm**2)[target_point]
+        area = cell.runtime.point_area.to_decimal(u.cm**2)[..., target_point]
         current_values = jnp.asarray(current)
 
         def playback(_point_voltage):

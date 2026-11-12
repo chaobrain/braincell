@@ -24,6 +24,7 @@ from ._helpers import (
     build_main_config_payload,
     build_scan_template_payload,
     load_module,
+    requires_mechanisms,
     write_json,
 )
 
@@ -75,6 +76,7 @@ class SweepDriverTest(unittest.TestCase):
             expanded = json.loads((run_module.Path(tmpdir) / "expanded_cases.json").read_text())
             self.assertEqual(len(expanded), 2)
 
+    @requires_mechanisms("testing")
     def test_run_config_executes_compare_and_writes_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             config_path, template_path = self._write_config_and_template(
@@ -98,6 +100,7 @@ class SweepDriverTest(unittest.TestCase):
             self.assertEqual(aggregate["n_total_cases"], 1)
             self.assertEqual(aggregate["n_failed_cases"], 0)
 
+    @requires_mechanisms("testing")
     def test_run_config_with_plot_writes_case_and_template_summary_plots(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             config_path, template_path = self._write_config_and_template(
@@ -156,6 +159,7 @@ class SweepDriverTest(unittest.TestCase):
             self.assertEqual(manifest["n_templates"], 2)
             self.assertEqual(manifest["status_counts"]["ok"], 2)
 
+    @requires_mechanisms("testing")
     def test_run_config_file_with_plot_writes_config_level_summary_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

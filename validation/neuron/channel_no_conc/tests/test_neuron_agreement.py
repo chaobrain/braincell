@@ -33,7 +33,7 @@ import pytest
 from validation.neuron._tolerance import CURRENT_CLAMP_PROTOCOLS
 from validation.neuron.channel_no_conc.tolerances import KNOWN_DIFFERENCES, TABLE, VARIANTS
 
-from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, load_module
+from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, compile_hint, load_module, uncompiled_models
 
 
 # Slow tier: runs nightly, not on every pull request. Every configuration here
@@ -117,8 +117,8 @@ class NeuronVoltageAgreementTest(unittest.TestCase):
         for name in CONFIGS:
             config_path = CHANNEL_NO_CONC_ROOT / "configs" / f"{name}.json"
             model_config = experiment_schema.load_model_config(config_path)
-            if not (Path(model_config.mod_dir) / "x86_64" / "libnrnmech.so").resolve().exists():
-                self.skipTest(f"NEURON mechanisms for {name} are not compiled into libnrnmech.so.")
+            if missing := uncompiled_models((model_config.mod_dir,)):
+                self.skipTest(compile_hint(missing))
             for template_path in model_config.template_paths:
                 template = Path(template_path).stem
                 limit = TABLE.limit(name, template, "e_V")

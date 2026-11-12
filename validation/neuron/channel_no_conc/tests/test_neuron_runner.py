@@ -15,14 +15,19 @@
 
 import math
 import os
-from pathlib import Path
-from validation.neuron._paths import mechanism_build_dir
 import unittest
 from unittest import mock
 
 import numpy as np
 
-from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, build_case_payload, build_mapping_payload, load_module
+from ._helpers import (
+    CHANNEL_NO_CONC_ROOT,
+    TEMPLATES_ROOT,
+    build_case_payload,
+    build_mapping_payload,
+    load_module,
+    requires_mechanisms,
+)
 
 
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
@@ -39,8 +44,6 @@ neuron_runner = load_module(
 
 
 class NeuronRunnerTest(unittest.TestCase):
-    _GOC_LIBNRNMECH = mechanism_build_dir("goc_ma2020", "channel") / "x86_64" / "libnrnmech.so"
-    _BC_LIBNRNMECH = mechanism_build_dir("bc_ma2025", "channel") / "x86_64" / "libnrnmech.so"
 
     def _build_payload(self, *, stimulus: dict | None = None) -> dict:
         return build_case_payload(
@@ -50,6 +53,7 @@ class NeuronRunnerTest(unittest.TestCase):
             stimulus=stimulus or {"kind": "dc", "delay_ms": 0.0, "dur_ms": 2.0, "amp_nA": 0.2},
         )
 
+    @requires_mechanisms("testing")
     def test_run_case_returns_time_voltage_current_and_gates(self) -> None:
         case = experiment_schema.ChannelNoConcCase.from_dict(self._build_payload())
         result = neuron_runner.run_case(case)
@@ -94,12 +98,10 @@ class NeuronRunnerTest(unittest.TestCase):
         finally:
             h.delete_section(sec=section)
 
+    @requires_mechanisms("bc_ma2025")
     def test_global_channel_param_is_set_on_h(self) -> None:
         # Nav1.1's gateCurrent is a GLOBAL: NEURON exposes it only as h.gateCurrent_<mechanism>.
         config = CHANNEL_NO_CONC_ROOT / "configs" / "ma25_bc" / "nav1p1_ma25_bc.json"
-        model_config = experiment_schema.load_model_config(config)
-        if not (Path(model_config.mod_dir) / "x86_64" / "libnrnmech.so").exists():
-            self.skipTest("bc_ma2025 channel mechanisms are not compiled.")
         sweep = experiment_schema.load_sweep_config(config, CHANNEL_NO_CONC_ROOT / "templates" / "dc.json")
         payload = next(iter(experiment_schema.expand_cases(sweep)))
         for value in (1.0, 0.0):
@@ -128,6 +130,7 @@ class NeuronRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "pas channel under comparison"):
             neuron_runner._build_neuron_model(case, mapping_spec=case.mapping_spec)
 
+    @requires_mechanisms("testing")
     def test_sine_stimulus_runs(self) -> None:
         case = experiment_schema.ChannelNoConcCase.from_dict(
             self._build_payload(
@@ -179,6 +182,7 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertAlmostEqual(on[0], 1.0, places=12)
         self.assertAlmostEqual(on[-1], 1.475, places=12)
 
+    @requires_mechanisms("testing")
     def test_dc_stimulus_changes_voltage_relative_to_zero_amp_case(self) -> None:
         driven = neuron_runner.run_case(experiment_schema.ChannelNoConcCase.from_dict(self._build_payload()))
         quiet = neuron_runner.run_case(
@@ -188,6 +192,7 @@ class NeuronRunnerTest(unittest.TestCase):
         )
         self.assertGreater(np.max(np.abs(driven["voltage_mV"] - quiet["voltage_mV"])), 1e-6)
 
+    @requires_mechanisms("testing")
     def test_run_case_respects_nondefault_v_init_under_h_run(self) -> None:
         payload = self._build_payload(stimulus={"kind": "dc", "delay_ms": 0.0, "dur_ms": 2.0, "amp_nA": 0.0})
         payload["simulation"]["v_init_mV"] = 0.0
@@ -196,6 +201,7 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertGreater(result["voltage_mV"][0], -1.0)
         self.assertLess(result["voltage_mV"][0], 1.0)
 
+    @requires_mechanisms("testing")
     def test_current_ix_uses_braincell_sign_convention(self) -> None:
         payload = self._build_payload(stimulus={"kind": "dc", "delay_ms": 0.0, "dur_ms": 2.0, "amp_nA": 0.02})
         payload["simulation"]["v_init_mV"] = 0.0
@@ -368,6 +374,7 @@ class NeuronRunnerTest(unittest.TestCase):
                 attr_name="missing",
             )
 
+    @requires_mechanisms("testing")
     def test_run_case_respects_nondefault_dt_under_h_run(self) -> None:
         payload = self._build_payload(stimulus={"kind": "dc", "delay_ms": 0.0, "dur_ms": 1.0, "amp_nA": 0.0})
         payload["simulation"]["dt_ms"] = 0.1
@@ -378,6 +385,7 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertAlmostEqual(result["time_ms"][0], 0.1, places=12)
         self.assertAlmostEqual(result["time_ms"][-1], 1.0, places=12)
 
+    @requires_mechanisms("pc_ma2024")
     def test_repo_hcn_smoke_case_runs_with_ih_current(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma24_pc" / "hcn1_ma24_pc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
@@ -392,6 +400,7 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
 
+    @requires_mechanisms("bc_ma2025")
     def test_repo_hcn_bc_smoke_case_runs_with_ih_current(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma25_bc" / "hcn1_ma25_bc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
@@ -406,9 +415,8 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
 
+    @requires_mechanisms("goc_ma2020")
     def test_repo_hcn_goc_smoke_case_runs_with_ih_current(self) -> None:
-        if not self._GOC_LIBNRNMECH.resolve().exists():
-            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "hcn1_ma20_goc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
@@ -422,9 +430,8 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
 
+    @requires_mechanisms("goc_ma2020")
     def test_repo_kca3p1_goc_smoke_case_runs_with_ik_current(self) -> None:
-        if not self._GOC_LIBNRNMECH.resolve().exists():
-            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca3p1_ma20_goc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
@@ -439,9 +446,8 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertTrue(np.isfinite(result["current"]["ix"]).all())
         self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
 
+    @requires_mechanisms("goc_ma2020")
     def test_repo_kca2p2_goc_smoke_case_runs_with_ik_current(self) -> None:
-        if not self._GOC_LIBNRNMECH.resolve().exists():
-            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca2p2_ma20_goc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
@@ -455,9 +461,8 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertTrue(np.isfinite(result["current"]["ix"]).all())
 
+    @requires_mechanisms("goc_ma2020")
     def test_repo_kca1p1_goc_smoke_case_runs_with_ik_current(self) -> None:
-        if not self._GOC_LIBNRNMECH.resolve().exists():
-            self.skipTest("GoC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc" / "kca1p1_ma20_goc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
@@ -474,9 +479,8 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertTrue(np.isfinite(result["current"]["ix"]).all())
 
+    @requires_mechanisms("bc_ma2025")
     def test_repo_nav1p6_bc_smoke_case_runs_with_ina_current(self) -> None:
-        if not self._BC_LIBNRNMECH.resolve().exists():
-            self.skipTest("BC NEURON mechanisms are not compiled into libnrnmech.so in the current environment.")
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ma25_bc" / "nav1p6_ma25_bc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
         config = experiment_schema.load_sweep_config(config_path, template_path)
@@ -494,20 +498,7 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertTrue(np.isfinite(result["current"]["ix"]).all())
         self.assertGreaterEqual(float(np.max(np.abs(result["current"]["ix"]))), 0.0)
 
-    def test_repo_hcn_dcn_smoke_case_runs_with_ih_current(self) -> None:
-        config_path = CHANNEL_NO_CONC_ROOT / "configs" / "su15_dcn" / "hcn_su15_dcn.json"
-        template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
-        config = experiment_schema.load_sweep_config(config_path, template_path)
-        case_payload = experiment_schema.expand_cases(config)[0]
-        case = experiment_schema.ChannelNoConcCase.from_dict(case_payload)
-
-        result = neuron_runner.run_case(case)
-
-        self.assertEqual(case.mapping_spec.current_source.neuron_current_var, "ih")
-        self.assertEqual(sorted(result["gates"].keys()), ["m"])
-        self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
-        self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
-
+    @requires_mechanisms("sc_ma2021")
     def test_repo_hcn_sc_smoke_case_runs_with_ih_current(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ri21_sc" / "hcn1_ri21_sc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
@@ -522,6 +513,7 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertGreater(float(np.max(np.abs(result["current"]["ix"]))), 1e-6)
 
+    @requires_mechanisms("sc_ma2021")
     def test_repo_cav2p1_sc_smoke_case_runs_with_ica_current(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ri21_sc" / "cav2p1_ri21_sc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
@@ -541,6 +533,7 @@ class NeuronRunnerTest(unittest.TestCase):
             self.assertEqual(trace.shape, result["time_ms"].shape)
         self.assertTrue(np.isfinite(result["current"]["ix"]).all())
 
+    @requires_mechanisms("sc_ma2021")
     def test_repo_cav3p2_sc_smoke_case_runs_with_ica_current(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ri21_sc" / "cav3p2_ri21_sc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
@@ -557,6 +550,7 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertTrue(np.isfinite(result["current"]["ix"]).all())
 
+    @requires_mechanisms("sc_ma2021")
     def test_repo_cav3p3_sc_smoke_case_runs_with_ica_current(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "ri21_sc" / "cav3p3_ri21_sc.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
@@ -573,6 +567,7 @@ class NeuronRunnerTest(unittest.TestCase):
         self.assertEqual(result["time_ms"].shape, result["current"]["ix"].shape)
         self.assertTrue(np.isfinite(result["current"]["ix"]).all())
 
+    @requires_mechanisms("dcn_su2015")
     def test_repo_hcn_dcn_smoke_case_runs_with_ih_current(self) -> None:
         config_path = CHANNEL_NO_CONC_ROOT / "configs" / "su15_dcn" / "hcn_su15_dcn.json"
         template_path = CHANNEL_NO_CONC_ROOT / "templates" / "vinit_celsius.json"
@@ -609,6 +604,7 @@ class ChlorideReversalTest(unittest.TestCase):
         nernst = -1e3 * R * T / F * math.log(case.ion_state.Co_mM / case.ion_state.Ci_mM)
         return ecl, nernst
 
+    @requires_mechanisms("testing")
     def test_initial_ecl_is_the_nernst_potential(self) -> None:
         for template in ("vinit_celsius", "dc", "ac"):
             with self.subTest(template=template):
@@ -616,6 +612,7 @@ class ChlorideReversalTest(unittest.TestCase):
                 self.assertLessEqual(abs(ecl - nernst), 1e-9)
                 self.assertLessEqual(abs(ecl - (-87.50503300603127)), 1e-9)  # all three are at 36 degC
 
+    @requires_mechanisms("testing")
     def test_without_ion_style_ecl_stays_zero(self) -> None:
         with mock.patch.object(neuron_runner, "_use_nernst_reversal"):
             ecl, nernst = self._initial_ecl("dc")

@@ -1438,6 +1438,12 @@
   says NeuroML2 import is not supported yet and points to
   `Morphology.from_swc` and `Morphology.from_asc`; the exception type is
   unchanged.
+- Twelve text files were stored with CRLF line endings although
+  `.gitattributes` asks for LF, so any edit rewrote every line: `LICENSE`,
+  `docs/conf.py`, `docs/Makefile`, `docs/_templates/classtemplate.rst`,
+  `docs/apis/braincell.synapse.rst`, the two GitHub issue templates,
+  `.github/dependabot.yml` and four files under `examples/convert_mod/nmodl/`.
+  They are stored with LF; their content is unchanged.
 
 ### Documentation
 

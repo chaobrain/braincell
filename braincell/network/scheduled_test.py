@@ -389,6 +389,24 @@ class ArrivalsTest(unittest.TestCase):
         times, mask = stim._event_times_ms, stim._event_mask
         self._check(grown, times, mask, [(380, 1000), (1000, 4000), (123, 4800), (0, 2**31 - 1)])
 
+    def test_a_window_after_the_schedule_grew_reads_its_own_events(self):
+        """The work of a window is that of its arrivals, not of every generated event (acceptance 7)."""
+        size = 50
+        stim = bc.NetStim(size=size, start=0.05 * u.ms, interval=0.1 * u.ms, number=2**20, seed=3)
+        groups = scheduled._Groups.build(np.arange(size), np.zeros(size))
+        stim._ensure_schedule(until_ms=10.0)
+        table = scheduled._ScheduleArrivals(groups, stim, self.DT_MS)
+        table.window(0, 400)
+        stim._ensure_schedule(until_ms=1000.0)
+        grown = scheduled._ScheduleArrivals(groups, stim, self.DT_MS, table.cursor)
+        with mock.patch.object(scheduled, "_host_arrival_steps", wraps=scheduled._host_arrival_steps) as rounded:
+            steps, _ = grown.window(400, 800)
+        self.assertEqual(steps.size, size * 100)  # 10 ms of events at 0.1 ms
+        computed = sum(np.size(call.args[0]) for call in rounded.call_args_list)
+        # The cursor's two checks, the window's events, and one event past its stop, per source.
+        self.assertEqual(computed, size * (2 + 100 + 1))
+        self.assertGreater(np.count_nonzero(stim._event_mask), 50 * computed)
+
     def test_event_sequence_table(self):
         rng = np.random.default_rng(2)
         events = [np.sort(rng.uniform(0.0, 30.0, size)) for size in (0, 3, 40, 7, 1)]

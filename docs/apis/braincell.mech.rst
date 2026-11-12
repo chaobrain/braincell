@@ -98,20 +98,6 @@ Point Mechanisms
     Synapse
 
 
-Probes
-------
-
-.. autosummary::
-   :toctree: generated/
-   :nosignatures:
-   :template: classtemplate.rst
-
-    StateProbe
-    MechanismProbe
-    CurrentProbe
-    ProbeMechanism
-
-
 Event Inputs
 ------------
 

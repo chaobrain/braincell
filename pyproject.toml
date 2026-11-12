@@ -223,8 +223,6 @@ ini_options.markers = [
 ini_options.filterwarnings = [
   "error:.* is deprecated since braincell:DeprecationWarning",
   "error:.*braincell [0-9]+\\.[0-9]+:FutureWarning",
-  # Legacy probes: ~200 test lines still use them. Delete this line when the probes are removed.
-  "ignore:braincell\\.mech\\.(StateProbe|MechanismProbe|CurrentProbe|ProbeMechanism) is deprecated:DeprecationWarning",
 ]
 
 [tool.coverage]

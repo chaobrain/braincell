@@ -1580,31 +1580,17 @@ class TestCellLifecycle(unittest.TestCase):
         cell.init_state(batch_size=5)
         self.assertEqual(cell.V.value.shape, (5, 2, 3, cell.n_cv))
 
-    def test_bind_synapse_input_registers_source(self):
+    def test_bind_synapse_input_was_removed(self):
+        # API-15: removed in braincell 0.3; the message names connect(), the replacement.
         cell = _simple_cell()
-        source = lambda: jnp.asarray([1.0])
-
-        with self.assertWarns(DeprecationWarning):
-            returned = cell.bind_synapse_input("ampa", source, weight=2.0)
-
-        self.assertIs(returned, cell)
-        self.assertEqual(len(cell._synapse_input_bindings["ampa"]), 1)
-
-    def test_bind_synapse_input_is_deprecated(self):
-        # API-7: the warning names the removal release and the replacement, at the calling line.
-        cell = _simple_cell()
-        source = lambda: jnp.asarray([1.0])
-        removed_in = re.escape(cell_module._BIND_SYNAPSE_INPUT.removed_in)
-        pattern = (
-            rf"^braincell\.Cell\.bind_synapse_input\(\) is deprecated since braincell 0\.3 and will be removed in "
-            rf"braincell {removed_in}\. Use an EventSource with braincell\.connect\(\) instead\.$"
-        )
-        with self.assertWarnsRegex(DeprecationWarning, pattern) as caught:
-            line, returned = sys._getframe().f_lineno, cell.bind_synapse_input("ampa", source, weight=2.0)
-
-        self.assertEqual((caught.filename, caught.lineno), (__file__, line))
-        self.assertIs(returned, cell)
-        self.assertEqual(cell._synapse_input_bindings["ampa"], [(source, 2.0, None)])
+        for target in (cell, Cell):
+            with self.subTest(target=target):
+                with self.assertRaises(AttributeError) as caught:
+                    target.bind_synapse_input
+                message = str(caught.exception)
+                self.assertTrue(message.startswith("braincell.Cell.bind_synapse_input() was removed in braincell 0.3."))
+                self.assertIn("braincell.connect(", message)
+                self.assertFalse(hasattr(target, "bind_synapse_input"))
 
 
 class CellMembraneLinearizerTest(unittest.TestCase):

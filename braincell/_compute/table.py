@@ -19,12 +19,8 @@ from typing import Literal, Sequence
 import numpy as np
 
 from braincell.mech import (
-    CurrentProbe,
     Density,
-    MechanismProbe,
     Point,
-    ProbeMechanism,
-    StateProbe,
     Synapse,
 )
 from braincell._compute.layouts import mechanism_signature
@@ -197,24 +193,6 @@ def mechanism_cell_key(mechanism: object) -> tuple[str, str]:
         return (mechanism.class_name, mechanism.instance_name)
     if isinstance(mechanism, Synapse):
         return (mechanism.synapse_type, mechanism.instance_name)
-    if isinstance(mechanism, ProbeMechanism):
-        class_name = "ProbeMechanism"
-        instance_name = mechanism.variable if mechanism.target is None else f"{mechanism.variable}@{mechanism.target}"
-        return (class_name, instance_name)
-    if isinstance(mechanism, StateProbe):
-        return ("StateProbe", mechanism.name if mechanism.name is not None else mechanism.field)
-    if isinstance(mechanism, MechanismProbe):
-        return (
-            "MechanismProbe",
-            mechanism.name if mechanism.name is not None else f"{mechanism.mechanism}_{mechanism.field}",
-        )
-    if isinstance(mechanism, CurrentProbe):
-        return (
-            "CurrentProbe",
-            mechanism.name
-            if mechanism.name is not None
-            else (f"{mechanism.mechanism}_current" if mechanism.mechanism is not None else f"{mechanism.ion}_current"),
-        )
     if isinstance(mechanism, Point):
         class_name = type(mechanism).__name__
         return (class_name, class_name)

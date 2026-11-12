@@ -13,8 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 
-import re
-import sys
 import unittest
 import warnings
 
@@ -23,20 +21,16 @@ import numpy as np
 
 from braincell import Branch, CVPerBranch, Cell, Morphology
 from braincell.filter import RootLocation
+import braincell.mech as mech_package
 from braincell.mech import (
-    CurrentProbe,
     CurrentClamp,
     FunctionClamp,
     Junction,
-    MechanismProbe,
     Mechanism,
     Point,
-    ProbeMechanism,
     SineClamp,
-    StateProbe,
     Synapse,
 )
-from braincell.mech._point import _PROBES_REMOVED_IN
 
 
 class PointBaseTest(unittest.TestCase):
@@ -44,14 +38,10 @@ class PointBaseTest(unittest.TestCase):
         cc = CurrentClamp(durations=1.0 * u.ms, amplitudes=0.1 * u.nA)
         sine = SineClamp(amplitude=0.1 * u.nA, frequency=10 * u.Hz)
         fc = FunctionClamp(fn=lambda t: 0.1 * u.nA)
-        state_probe = StateProbe(name="v_soma")
-        mechanism_probe = MechanismProbe(name="na_p", mechanism="na_soma", field="p")
-        current_probe = CurrentProbe(ion="na", mechanism="na_soma")
-        probe = ProbeMechanism(variable="v")
         syn = Synapse("ExpSyn")
         gap = Junction()
 
-        for mech in (cc, sine, fc, state_probe, mechanism_probe, current_probe, probe, syn, gap):
+        for mech in (cc, sine, fc, syn, gap):
             self.assertIsInstance(mech, Point)
             self.assertIsInstance(mech, Mechanism)
 
@@ -189,135 +179,38 @@ class FunctionClampValidatesInputsTest(unittest.TestCase):
             FunctionClamp(fn=None)
 
 
-class LegacyProbeDeprecationTest(unittest.TestCase):
-    """API-7: each legacy probe warns at the constructing line, naming the removal release and the replacement."""
+class RemovedProbesTest(unittest.TestCase):
+    """API-15: braincell 0.3 removed the four legacy probe declarations in favour of ``Cell.record``."""
 
-    def _expect(self, cls: type):
-        removed_in = re.escape(_PROBES_REMOVED_IN)
-        return self.assertWarnsRegex(
-            DeprecationWarning,
-            rf"^braincell\.mech\.{cls.__name__} is deprecated since braincell 0\.3 and will be removed in "
-            rf"braincell {removed_in}\. Use Cell\.record\(\.\.\., braincell\.observe\.\*\) instead\.$",
-        )
+    #: Each removed name and the replacement its message must name.
+    _REPLACEMENTS = {
+        "StateProbe": 'braincell.observe.state("V")',
+        "MechanismProbe": 'braincell.observe.channel(name="Na").state("m")',
+        "CurrentProbe": 'braincell.observe.ion(name="na").current()',
+        "ProbeMechanism": 'braincell.observe.state("V")',
+    }
 
-    def assertAtLine(self, caught, line: int) -> None:
-        self.assertEqual((caught.filename, caught.lineno), (__file__, line))
+    def test_access_names_the_release_and_the_replacement(self) -> None:
+        for name, replacement in self._REPLACEMENTS.items():
+            with self.subTest(name=name):
+                with self.assertRaises(AttributeError) as caught:
+                    getattr(mech_package, name)
+                message = str(caught.exception)
+                self.assertTrue(message.startswith(f"braincell.mech.{name} was removed in braincell 0.3"), message)
+                self.assertIn("cell.loc(locset).record(", message)
+                self.assertIn(replacement, message)
+                self.assertFalse(hasattr(mech_package, name))
+                self.assertNotIn(name, mech_package.__all__)
 
-    def test_state_probe(self) -> None:
-        with self._expect(StateProbe) as caught:
-            line, probe = sys._getframe().f_lineno, StateProbe(name="v_soma")
-        self.assertAtLine(caught, line)
-        self.assertEqual((probe.name, probe.field), ("v_soma", "v"))
+    def test_from_import_raises_import_error_with_the_message(self) -> None:
+        for name in self._REPLACEMENTS:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ImportError, rf"^braincell\.mech\.{name} was removed in braincell 0\.3"):
+                    exec(f"from braincell.mech import {name}", {})
 
-    def test_mechanism_probe(self) -> None:
-        with self._expect(MechanismProbe) as caught:
-            line, probe = sys._getframe().f_lineno, MechanismProbe(mechanism="na_soma", field="p")
-        self.assertAtLine(caught, line)
-        self.assertEqual((probe.name, probe.mechanism, probe.field), (None, "na_soma", "p"))
-
-    def test_current_probe(self) -> None:
-        with self._expect(CurrentProbe) as caught:
-            line, probe = sys._getframe().f_lineno, CurrentProbe(ion="k")
-        self.assertAtLine(caught, line)
-        self.assertEqual((probe.name, probe.ion, probe.mechanism), (None, "k", None))
-
-    def test_probe_mechanism(self) -> None:
-        with self._expect(ProbeMechanism) as caught:
-            line, probe = sys._getframe().f_lineno, ProbeMechanism(variable="v", target="soma")
-        self.assertAtLine(caught, line)
-        self.assertEqual((probe.variable, probe.target), ("v", "soma"))
-
-    def test_an_unnamed_probe_on_a_cell_warns_once(self) -> None:
-        # The Cell names it with ``dataclasses.replace``; that rebuild warned again, at dataclasses.py.
-        soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-        cell = Cell(Morphology.from_root(soma, name="soma"), cv_policy=CVPerBranch())
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            line, probe = sys._getframe().f_lineno, StateProbe()
-            cell.place(RootLocation(0.5), probe)
-            cell.init_state()
-        places = [(w.filename, w.lineno) for w in caught if w.category is DeprecationWarning]
-        self.assertEqual(places, [(__file__, line)])
-
-
-class StateProbeTest(unittest.TestCase):
-    def test_basic_construction(self) -> None:
-        probe = StateProbe()
-        self.assertIsNone(probe.name)
-        self.assertEqual(probe.field, "v")
-
-    def test_only_v_is_supported(self) -> None:
-        with self.assertRaises(ValueError):
-            StateProbe(name="bad", field="cm")
-
-
-class MechanismProbeTest(unittest.TestCase):
-    def test_basic_construction(self) -> None:
-        probe = MechanismProbe(mechanism="na_soma", field="p")
-        self.assertIsNone(probe.name)
-        self.assertEqual(probe.mechanism, "na_soma")
-        self.assertEqual(probe.field, "p")
-
-    def test_fields_must_be_non_empty(self) -> None:
-        with self.assertRaises(ValueError):
-            MechanismProbe(name="x", mechanism="", field="p")
-        with self.assertRaises(ValueError):
-            MechanismProbe(name="x", mechanism="na", field="")
-        with self.assertRaises(ValueError):
-            MechanismProbe(name="", mechanism="na", field="p")
-
-
-class CurrentProbeTest(unittest.TestCase):
-    def test_basic_construction_with_mechanism(self) -> None:
-        probe = CurrentProbe(ion="k", mechanism="K_Kv_test")
-        self.assertEqual(probe.ion, "k")
-        self.assertEqual(probe.mechanism, "K_Kv_test")
-        self.assertIsNone(probe.name)
-
-    def test_basic_construction_with_mechanism_only(self) -> None:
-        probe = CurrentProbe(mechanism="HCN_HM1992")
-        self.assertIsNone(probe.ion)
-        self.assertEqual(probe.mechanism, "HCN_HM1992")
-
-    def test_basic_construction_for_total_ion_current(self) -> None:
-        probe = CurrentProbe(ion="k")
-        self.assertEqual(probe.ion, "k")
-        self.assertIsNone(probe.mechanism)
-
-    def test_invalid_fields_raise(self) -> None:
-        with self.assertRaises(ValueError):
-            CurrentProbe(ion="")
-        with self.assertRaises(ValueError):
-            CurrentProbe(ion="k", mechanism="")
-        with self.assertRaises(ValueError):
-            CurrentProbe()
-        with self.assertRaises(ValueError):
-            CurrentProbe(ion="k", name="")
-
-
-class ProbeMechanismTest(unittest.TestCase):
-    def test_basic_construction(self) -> None:
-        p = ProbeMechanism(variable="v", target="soma")
-        self.assertEqual(p.variable, "v")
-        self.assertEqual(p.target, "soma")
-
-    def test_default_target_is_none(self) -> None:
-        p = ProbeMechanism(variable="v")
-        self.assertIsNone(p.target)
-
-    def test_hashable(self) -> None:
-        a = ProbeMechanism(variable="v")
-        b = ProbeMechanism(variable="v")
-        self.assertEqual(a, b)
-        self.assertEqual(hash(a), hash(b))
-
-
-class ProbeMechanismValidatesInputsTest(unittest.TestCase):
-    """MED-02: ProbeMechanism rejects empty variable name."""
-
-    def test_empty_variable_name_raises(self) -> None:
-        with self.assertRaises(ValueError):
-            ProbeMechanism(variable="")
+    def test_other_missing_names_keep_the_generic_message(self) -> None:
+        with self.assertRaisesRegex(AttributeError, "module 'braincell.mech' has no attribute 'VoltageProbe'"):
+            mech_package.VoltageProbe
 
 
 class SynapseTest(unittest.TestCase):

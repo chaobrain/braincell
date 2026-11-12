@@ -23,7 +23,7 @@ This module owns the declaration-side mechanism pipeline:
 - lower those declarations onto per-CV mechanism buckets
 """
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 import os
 import sys
 from typing import Literal
@@ -37,11 +37,8 @@ from braincell.filter.cache import SelectionCache
 from braincell.mech import (
     CableProperty,
     CVContext,
-    CurrentProbe,
     Density,
-    MechanismProbe,
     Point,
-    StateProbe,
 )
 from braincell.morph.morphology import Morphology
 from braincell._deprecation import user_frame
@@ -582,26 +579,6 @@ def _apply_density(
         bucket.density_by_key[key] = mechanism.with_coverage(fraction)
 
 
-def _resolve_point_name(mechanism: Point, *, display_name: str) -> Point:
-    if isinstance(mechanism, StateProbe):
-        if mechanism.name is not None:
-            return mechanism
-        return replace(mechanism, name=f"{display_name}_{mechanism.field}")
-    if isinstance(mechanism, MechanismProbe):
-        if mechanism.name is not None:
-            return mechanism
-        return replace(
-            mechanism,
-            name=f"{display_name}_{mechanism.mechanism}_{mechanism.field}",
-        )
-    if isinstance(mechanism, CurrentProbe):
-        if mechanism.name is not None:
-            return mechanism
-        suffix = f"{mechanism.mechanism}_current" if mechanism.mechanism is not None else f"{mechanism.ion}_current"
-        return replace(mechanism, name=f"{display_name}_{suffix}")
-    return mechanism
-
-
 def _apply_place(
     bucket: _MechBucket,
     mechanism: Point,
@@ -610,26 +587,17 @@ def _apply_place(
     placement_id: int = 0,
     branch_id: int = 0,
     branch_x: float = 0.5,
-    seen_names: set[str],
     position: Position = "mid",
     population_index: int | None = None,
     rule_index: int = -1,
     mechanism_index: int = -1,
 ) -> Point:
-    named = _resolve_point_name(mechanism, display_name=display_name)
-    auto_generated = getattr(mechanism, "name", None) is None and getattr(named, "name", None) is not None
-    if auto_generated:
-        candidate_name = named.name
-        if candidate_name in seen_names:
-            candidate_name = f"{candidate_name}__placement_{int(placement_id)}"
-            named = replace(named, name=candidate_name)
-        seen_names.add(candidate_name)
-    bucket.points.append(named)
+    bucket.points.append(mechanism)
     bucket.point_roles.append(
         CVPointMechanism(
             placement_id=int(placement_id),
             position=position,
-            mechanism=named,
+            mechanism=mechanism,
             display_name=str(display_name),
             branch_id=int(branch_id),
             branch_x=float(branch_x),
@@ -638,7 +606,7 @@ def _apply_place(
             _mechanism_index=int(mechanism_index),
         )
     )
-    return named
+    return mechanism
 
 
 def _init_bucket() -> _MechBucket:
@@ -819,7 +787,6 @@ def build_cv_mechanisms(
                 fraction=fraction,
             )
 
-    seen_names: set[str] = set()
     placement_id = 0
     for rule_index, rule in enumerate(place_rules):
         try:
@@ -852,7 +819,6 @@ def build_cv_mechanisms(
                             placement_id=placement_id,
                             branch_id=branch_id,
                             branch_x=x,
-                            seen_names=seen_names,
                             position=position,
                             population_index=population_index,
                             rule_index=rule_index,

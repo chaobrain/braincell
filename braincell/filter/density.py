@@ -20,23 +20,27 @@ from dataclasses import dataclass
 import brainunit as u
 import numpy as np
 
-from braincell._deprecation import Deprecation
+from braincell._deprecation import removed_attributes
 
-__all__ = ["exponential", "gaussian", "spatial_gaussian"]
+__all__ = ["spatial_gaussian"]
 
-#: Release that removes ``exponential`` and ``gaussian`` (provisional).
-_REMOVED_IN = "0.4"
-_EXPONENTIAL = Deprecation(
-    "braincell.filter.density.exponential()",
-    since="0.3",
-    removed_in=_REMOVED_IN,
-    replacement="a callable built from braincell.filter.metric",
-)
-_GAUSSIAN = Deprecation(
-    "braincell.filter.density.gaussian()",
-    since="0.3",
-    removed_in=_REMOVED_IN,
-    replacement="a callable built from braincell.filter.metric",
+#: The two field helpers braincell 0.3 removed without a deprecation period
+#: (API-15), with what to write instead; raised as ``AttributeError``
+#: (``ImportError`` on a ``from braincell.filter.density import ...`` line).
+__getattr__ = removed_attributes(
+    __name__,
+    {
+        "exponential": (
+            "braincell.filter.density.exponential() was removed in braincell 0.3. Write the density as a "
+            "callable built from braincell.filter.metric: exponential('branch_x', 0.2) is "
+            "lambda context: np.exp(metric.branch_x(context) / 0.2), and direction='decreasing' negates the exponent."
+        ),
+        "gaussian": (
+            "braincell.filter.density.gaussian() was removed in braincell 0.3. Write the density as a "
+            "callable built from braincell.filter.metric: gaussian('branch_x', 0.5, 0.1) is "
+            "lambda context: np.exp(-0.5 * ((metric.branch_x(context) - 0.5) / 0.1) ** 2)."
+        ),
+    },
 )
 
 
@@ -58,45 +62,6 @@ def _positive_scale(value: object, *, name: str) -> object:
     return value
 
 
-def _field(context: object, name: str) -> object:
-    # `name` is always a frozen dataclass's own `field`, and exponential() /
-    # gaussian() -- the only two construction sites -- already applied the
-    # non-empty-string check before storing it.
-    try:
-        return getattr(context, name)
-    except AttributeError as exc:
-        raise ValueError(f"Spatial context has no density field {name!r}.") from exc
-
-
-@dataclass(frozen=True)
-class _ExponentialDensity:
-    field: str
-    scale: object
-    sign: float
-
-    def _log_density(self, context: object) -> np.ndarray:
-        value = _field(context, self.field)
-        return self.sign * _dimensionless_mantissa(value / self.scale, name="exponential exponent")
-
-    def __call__(self, context: object) -> np.ndarray:
-        return np.exp(np.clip(self._log_density(context), -700.0, 700.0))
-
-
-@dataclass(frozen=True)
-class _GaussianDensity:
-    field: str
-    center: object
-    sigma: object
-
-    def _log_density(self, context: object) -> np.ndarray:
-        value = _field(context, self.field)
-        z = _dimensionless_mantissa((value - self.center) / self.sigma, name="Gaussian argument")
-        return -0.5 * z * z
-
-    def __call__(self, context: object) -> np.ndarray:
-        return np.exp(self._log_density(context))
-
-
 @dataclass(frozen=True)
 class _SpatialGaussianDensity:
     center: object
@@ -112,69 +77,6 @@ class _SpatialGaussianDensity:
 
     def __call__(self, context: object) -> np.ndarray:
         return np.exp(self._log_density(context))
-
-
-def exponential(
-    field: str,
-    scale: object,
-    direction: str = "increasing",
-) -> object:
-    """Build an exponential preference density over a context field.
-
-    .. deprecated:: 0.3
-       Write a callable built from ``braincell.filter.metric``, such as
-       ``lambda context: np.exp(metric.branch_x(context) / 0.2)``;
-       ``exponential`` is removed in braincell 0.4.
-
-    Parameters
-    ----------
-    field : str
-        Name of a numeric :class:`~braincell.filter.SamplingContext` field.
-    scale : scalar or Quantity
-        Positive scale with units compatible with the selected field.
-    direction : {'increasing', 'decreasing'}, optional
-        Whether preference grows or decays as the field increases.
-
-    Returns
-    -------
-    callable
-        A callable accepting one sampling context.
-    """
-    _EXPONENTIAL.warn()
-    if not isinstance(field, str) or not field:
-        raise TypeError("field must be a non-empty string.")
-    _positive_scale(scale, name="scale")
-    if direction not in {"increasing", "decreasing"}:
-        raise ValueError("direction must be 'increasing' or 'decreasing'.")
-    return _ExponentialDensity(field, scale, 1.0 if direction == "increasing" else -1.0)
-
-
-def gaussian(field: str, center: object, sigma: object) -> object:
-    """Build a Gaussian preference density over a context field.
-
-    .. deprecated:: 0.3
-       Write a callable built from ``braincell.filter.metric``;
-       ``gaussian`` is removed in braincell 0.4.
-
-    Parameters
-    ----------
-    field : str
-        Name of a numeric :class:`~braincell.filter.SamplingContext` field.
-    center : scalar or Quantity
-        Center in units compatible with the selected field.
-    sigma : scalar or Quantity
-        Finite positive width in units compatible with the selected field.
-
-    Returns
-    -------
-    callable
-        A callable accepting one sampling context.
-    """
-    _GAUSSIAN.warn()
-    if not isinstance(field, str) or not field:
-        raise TypeError("field must be a non-empty string.")
-    _positive_scale(sigma, name="sigma")
-    return _GaussianDensity(field, center, sigma)
 
 
 def spatial_gaussian(center: object, sigma: object) -> object:

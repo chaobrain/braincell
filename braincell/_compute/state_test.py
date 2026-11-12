@@ -574,7 +574,7 @@ class PointSynapseRuntimeTest(unittest.TestCase):
         self.assertGreater(float(np.max(result.traces["g"].to_decimal(u.uS))), 0.0)
         self.assertGreater(float(np.max(np.abs(result.traces["i_syn"].to_decimal(u.nA)))), 0.0)
 
-    def test_synapse_input_preparation_sums_manual_netstim_and_bound_drive(self) -> None:
+    def test_synapse_input_preparation_sums_the_buffer_and_every_connection(self) -> None:
         cell = Cell(
             _build_tree(),
             solver="staggered",
@@ -588,8 +588,13 @@ class PointSynapseRuntimeTest(unittest.TestCase):
             synapse=cell.synapses[exp],
             weight=2.0 * u.uS,
         )
-        with self.assertWarns(DeprecationWarning):
-            cell.bind_synapse_input("exp_syn", source=lambda: np.asarray([3.0]), weight=0.5 * u.uS)
+        # A second connection carries what a bound input (3.0 x 0.5 uS) did until API-15.
+        braincell.connect(
+            "second_to_exp",
+            source=braincell.NetStim(name="second", start=1.0 * u.ms, number=1, interval=10.0 * u.ms),
+            synapse=cell.synapses[exp],
+            weight=1.5 * u.uS,
+        )
         cell.init_state()
         runtime = cell.runtime
         layout = next(layout for layout in runtime.layouts if layout.kind == "synapse:ExpSyn")

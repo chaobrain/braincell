@@ -204,19 +204,6 @@ class SplitCellRunTest(unittest.TestCase):
         for actual, expected in zip(again, first):
             np.testing.assert_array_equal(actual, expected)
 
-    def test_bound_inputs_are_added_once_per_boundary(self):
-        def cell():
-            model, _ = make_event_cell("staggered")
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", DeprecationWarning)
-                model.bind_synapse_input("syn", 1e-4)
-            model.init_state()
-            return model
-
-        whole = self._run(cell(), (80,))
-        split = self._run(cell(), (40, 40))
-        assert_same_trajectory(split.samples, whole.samples)
-
     def test_reduced_cell_receives_a_boundary_event_once(self):
         def run(steps):
             cell = _cell(1)
@@ -266,15 +253,9 @@ class UpdateLoopTest(unittest.TestCase):
 
     @staticmethod
     def _cell(solver, start):
-        """The one-CV event cell, driven by ``NetStim(start, number=1)`` or, for
-        ``start=None``, by a bound input of 1e-4 uS on every boundary."""
+        """The one-CV event cell, driven by ``NetStim(start, number=1)``."""
         cell, synapse = make_event_cell(solver, cv_per_branch=1)
-        if start is None:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", DeprecationWarning)
-                cell.bind_synapse_input("syn", 1e-4)
-        else:
-            braincell.connect("drive", source=braincell.NetStim(start=start, number=1), synapse=synapse, weight=WEIGHT)
+        braincell.connect("drive", source=braincell.NetStim(start=start, number=1), synapse=synapse, weight=WEIGHT)
         cell.init_state()
         return cell
 
@@ -300,7 +281,7 @@ class UpdateLoopTest(unittest.TestCase):
 
     def test_update_loop_matches_run_with_an_event_at_the_start(self):
         for solver in ("staggered", "rk4"):
-            for start in (0.0 * u.ms, 1.0 * u.ms, None):
+            for start in (0.0 * u.ms, 1.0 * u.ms):
                 with self.subTest(solver=solver, start=start):
                     looped = self._cell(solver, start)
                     trajectory = self._updates(looped, 0, self.N)

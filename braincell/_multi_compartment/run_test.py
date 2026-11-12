@@ -574,6 +574,23 @@ class RunSpikesTest(unittest.TestCase):
                     self.assertLessEqual(len(crossed), 3)
                 self.assertGreater(len(result.spikes.source_id), 0)
 
+    def test_members_beyond_the_first_byte_report_their_own_crossings(self):
+        # Each step packs eight members to a byte; 20 members span three bytes.
+        drive = np.linspace(0.0, 0.2, 20) * u.nA
+        cell = _hh_cell("lumped", n=20, amplitudes=None)
+        cell.add_current_input("drive", lambda V: drive)
+        cell.loc(RootLocation(0.5)).record("v", "V")
+        result = cell.run(dt=DT, duration=self.DURATION)
+        v = np.asarray(result.samples["v"].values.to_decimal(u.mV))
+        crossed = (v[:-1] < 0.0) & (v[1:] >= 0.0)
+        rows = [row.population_index for row in result.samples["v"].schema.rows]
+        step, column = np.nonzero(crossed)
+        order = np.lexsort((np.asarray(rows)[column], step))
+        spikes = result.spikes
+        np.testing.assert_array_equal(spikes.source_id, np.asarray(rows)[column][order])
+        np.testing.assert_allclose(_ms(spikes), np.asarray(result.time.to_decimal(u.ms))[step[order]], rtol=1e-12)
+        self.assertGreater(len(set(spikes.source_id.tolist()) & set(range(16, 20))), 0)
+
     def test_a_lower_threshold_fires_earlier(self):
         at_zero = _hh_cell("lumped").run(dt=DT, duration=self.DURATION).spikes
         at_minus_20 = _hh_cell("lumped", V_th=-20.0 * u.mV).run(dt=DT, duration=self.DURATION).spikes

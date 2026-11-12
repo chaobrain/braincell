@@ -365,8 +365,10 @@ class _SpikePort:
         else:
             shape = rcell.spike.value.shape
             n_rows = int(np.prod(shape if rcell._is_lumped else shape[:-1], dtype=np.int64))
-            # Only the nonzero bytes are expanded to their eight rows.
-            step, byte = np.nonzero(rows)
+            # Only the nonzero bytes are expanded to their eight rows. NumPy
+            # finds the nonzero entries of a flat boolean array several times
+            # faster than those of a 2-D byte array (CELL-39).
+            step, byte = np.divmod(np.flatnonzero(rows != 0), rows.shape[1])
             hit, bit = np.nonzero(np.unpackbits(rows[step, byte][:, None], axis=1))
             step, source_id = step[hit], byte[hit] * 8 + bit
             count = np.ones(source_id.shape, dtype=np.int64)

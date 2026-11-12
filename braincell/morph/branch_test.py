@@ -15,6 +15,7 @@
 
 
 import math
+import re
 import unittest
 from unittest import mock
 
@@ -285,6 +286,71 @@ class BranchTest(unittest.TestCase):
             Branch(lengths=[10.0] * u.um, radii_proximal=[2.0] * u.um, radii_distal=[0.0] * u.um, type="axon")
         with self.assertRaises(ValueError):
             Branch(lengths=[10.0] * u.um, radii_proximal=[2.0] * u.um, radii_distal=[1.0] * u.um, type="unknown")
+
+    def test_non_finite_geometry_fails_at_construction(self) -> None:
+        # On main every inf case built a Branch (an inf length, radius or
+        # coordinate, or finite lengths summing to inf).
+        inf, nan = math.inf, math.nan
+        one = [1.0] * u.um
+        cases = (
+            (
+                "inf length",
+                "lengths must be finite; entry 1 is inf",
+                lambda: Branch.from_lengths(lengths=[10.0, inf] * u.um, radii=[1.0, 1.0, 1.0] * u.um),
+            ),
+            (
+                "inf radius",
+                "radii_distal must be finite; entry 0 is inf",
+                lambda: Branch.from_lengths(lengths=[10.0] * u.um, radii=[1.0, inf] * u.um),
+            ),
+            (
+                "nan radius",
+                "radii_proximal must be finite; entry 0 is nan",
+                lambda: Branch(lengths=[10.0] * u.um, radii_proximal=[nan] * u.um, radii_distal=one),
+            ),
+            (
+                "inf point",
+                "lengths must be finite; entry 0 is inf",
+                lambda: Branch.from_points(
+                    points=np.asarray([[0.0, 0.0, 0.0], [inf, 0.0, 0.0]]) * u.um, radii=[1.0, 1.0] * u.um
+                ),
+            ),
+            (
+                "inf point, direct",
+                "points_distal must be finite; entry (0, 2) is inf",
+                lambda: Branch(
+                    lengths=[10.0] * u.um,
+                    radii_proximal=one,
+                    radii_distal=one,
+                    points_proximal=np.zeros((1, 3)) * u.um,
+                    points_distal=np.asarray([[0.0, 0.0, inf]]) * u.um,
+                ),
+            ),
+            (
+                "lengths summing to inf",
+                "total length must be finite",
+                lambda: Branch.from_lengths(
+                    lengths=u.Quantity(np.asarray([1e308, 1e308]), u.um), radii=u.Quantity(np.ones(3), u.um)
+                ),
+            ),
+        )
+        for name, message, build in cases:
+            with self.subTest(name):
+                with self.assertRaisesRegex(ValueError, re.escape(message)):
+                    build()
+        # Finite extremes are still geometry.
+        self.assertEqual(
+            Branch.from_lengths(
+                lengths=u.Quantity(np.asarray([1e307]), u.um), radii=u.Quantity(np.ones(2), u.um)
+            ).n_segments,
+            1,
+        )
+        self.assertEqual(
+            float(
+                Branch.from_lengths(lengths=[0.0, 10.0] * u.um, radii=[1.0, 1.0, 1.0] * u.um).length.to_decimal(u.um)
+            ),
+            10.0,
+        )
 
     def test_branch_init_rejects_cross_parameter_mismatches(self) -> None:
         with self.assertRaises(ValueError):

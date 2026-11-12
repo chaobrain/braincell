@@ -859,6 +859,23 @@
   of `n_cv` times the states per CV. Large cells should use `staggered`.
   Both steps also raise `TypeError` for a target that is not a `DiffEqModule`
   before reading its layout.
+- `Branch` (and `Branch.from_lengths`, `Branch.from_points`) raises
+  `ValueError` at construction for an infinite length, radius or coordinate,
+  and when finite lengths sum to inf; the message names the field and the
+  first bad entry. A NaN radius or coordinate is reported as not finite. Such
+  branches used to build, with `length == inf`, against the morphology
+  contract that non-finite geometry fails at construction.
+- `interpolate_branch` gives a zero-length segment's midpoint (the mean radius
+  of a radius jump) only to sites within `1e-8` of it in `x`. The window was
+  `np.isclose`'s default, `1e-8 + 1e-5 * x`, so a site up to `5e-6` past a
+  jump at `x = 0.5` read the mean: 2.0 um instead of 3.0 um past a jump from
+  1 to 3 um. Such a site now also gets its own position rather than the
+  jump's, at most `1e-5 * x` of the branch length away (1.0e-4 um on
+  CA1.swc). The CV contexts (`fn(CVContext)` positions) and the geometry that
+  synapse pairing scores read these values. On the shipped morphologies (531
+  branches with a zero-length segment; CV midpoints for 1, 3 and 7 CVs and
+  5 um CVs, plus a 100001-point grid per branch) no CV midpoint changes, and
+  5 of 53 million grid radii and 7 grid positions change.
 - The ASC reader no longer drops a tree that has no `(Axon)`, `(Dendrite)` or
   `(Apical)` marker, and finds the soma contour by name as NEURON does
   (MORPH-5c). A top-level block that starts with `(` and holds points is a

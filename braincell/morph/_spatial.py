@@ -43,6 +43,10 @@ __all__ = ["MorphologySpatialGeometry", "interpolate_branch"]
 
 _Node = tuple[int, float]
 
+#: How close in ``x`` a site must be to a zero-length segment to take its
+#: midpoint (the mean radius of a jump); ``np.isclose``'s ``atol``.
+_AT_ZERO_LENGTH = 1e-8
+
 
 @dataclass(frozen=True)
 class MorphologySpatialGeometry:
@@ -253,10 +257,12 @@ class _BranchGeometryUm:
         """Return the radius, and the 3-D point when available, at each site.
 
         A site lies in the first segment, walking from ``x=0``, that is
-        zero-length and ``isclose`` to it, or that has a length and ends
-        past it (``x=1`` also in one ending at exactly 1); a zero-length
-        segment gives its midpoint, and a site in no segment gets the distal
-        end. All sites are placed at once (CELL-18c): ``cumsum`` adds the
+        zero-length and within ``1e-8`` of it in ``x``, or that has a length
+        and ends past it (``x=1`` also in one ending at exactly 1); a
+        zero-length segment gives its midpoint, and a site in no segment gets
+        the distal end. The window is absolute, the same at every ``x``: a
+        relative one (``np.isclose``'s default ``rtol``) gave a jump's mean
+        radius up to ``1e-5 * x`` away from it. All sites are placed at once (CELL-18c): ``cumsum`` adds the
         lengths in the order a walk does, so every boundary, and so every
         value, is the one the walk gives.
         """
@@ -283,7 +289,8 @@ class _BranchGeometryUm:
             inside = (found < long_index.size) & ((sites < end[candidate]) | (at_one & (end[candidate] == 1.0)))
             segment = np.where(inside, candidate, segment)
         for index in np.flatnonzero(~has_length)[::-1].tolist():
-            segment = np.where((index < segment) & np.isclose(sites, start[index]), index, segment)
+            near = np.abs(sites - start[index]) <= _AT_ZERO_LENGTH
+            segment = np.where((index < segment) & near, index, segment)
 
         last_long = int(long_index[-1]) if long_index.size else 0
         beyond = segment == n_segments

@@ -603,14 +603,22 @@ class LumpedSynapseTwinTest(LumpedTwinTestCase):
             for key in ("v", "g"):
                 np.testing.assert_array_equal(out["lumped", "reset"][key], out["lumped", 0.0, 1][key])
 
-    def test_block_solvers_reject_point_synapses(self) -> None:
+    def test_block_solvers_advance_point_synapses(self) -> None:
+        # The lumped Cell used to reject them at init_state; now each synapse
+        # row sits in its member's block (CELL-31c), as in the cable twin's
+        # cell block (CELL-31b), and the two agree.
         for solver in ("exp_euler", "backward_euler", "crank_nicolson"):
-            with self.subTest(solver=solver):
-                cell = _hh("lumped", synapse=True, solver=solver)
-                with self.assertRaisesRegex(ValueError, solver) as caught:
+            with self.subTest(solver=solver), _float64():
+                V = {}
+                for kind in KINDS:
+                    cell = _hh(kind, synapse=True, solver=solver)
                     cell.init_state()
-                self.assertNotIn("staggered", str(caught.exception))
-                _hh("lumped", solver=solver).init_state()
+                    for _, node in cell._runtime.iter_synapse_layouts():
+                        node.g.value = u.math.zeros_like(node.g.value) + 0.005 * u.uS
+                    cell.run(dt=DT, duration=2.0 * u.ms)
+                    V[kind] = cell.V.value
+                self.assertGreater(float(np.max(_pair(V["lumped"], V["cable"])[0])), -60.0)  # the synapse acted
+                self.assertTwin(V["lumped"], V["cable"], 1e-10)
 
 
 if __name__ == "__main__":

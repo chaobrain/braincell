@@ -2649,16 +2649,16 @@ class CellBlockSolverPointSynapseTest(unittest.TestCase):
             self.assertGreater(V[0], -69.0)
             np.testing.assert_allclose(V[1], V[0], rtol=1e-12, atol=0)
 
-    def test_a_lumped_cell_still_rejects_point_synapses(self):
+    def test_a_lumped_cell_advances_point_synapses_too(self):
+        # CELL-31c lifted the last rejection (convergence: lumped_test).
         for name in _BLOCK_SOLVER_NAMES:
             with self.subTest(solver=name):
                 cell = Cell.point(1, length=20.0 * u.um, radius=10.0 * u.um, solver=name)
                 cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-70.0 * u.mV))
                 cell.place(at("soma", 0.5), mech.Synapse("Exp2Syn", name="a", **_EXP2SYN))
-                with self.assertRaisesRegex(
-                    ValueError, rf"solver '{name}' cannot advance a Cell with point synapses \(Exp2Syn\)"
-                ):
-                    cell.init_state()
+                cell.init_state()
+                cell.run(dt=0.025 * u.ms, duration=0.05 * u.ms)
+                self.assertTrue(np.all(np.isfinite(np.asarray(cell.V.value.to_decimal(u.mV)))))
 
 
 class DiscretizationTracksAMutatedMorphologyTest(unittest.TestCase):

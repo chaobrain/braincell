@@ -1105,8 +1105,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         cell, ``m_l`` the states of one), and a step costs ``O(M**3)`` per
         cell. Use ``"staggered"`` for large cells, and ``"staggered"``,
         ``"ind_exp_euler"`` or an explicit Runge-Kutta solver for cells with
-        many synapses. On a lumped cell they still reject point synapses at
-        :meth:`init_state` with ``ValueError``. ``"dhs_voltage"`` advances
+        many synapses. A lumped cell's block is one member with ``V``, its
+        gates and its point synapses. ``"dhs_voltage"`` advances
         ``V`` only. A callable is called as ``solver(cell)`` and owns the
         whole step. On a lumped cell an explicit Runge-Kutta solver (the
         default ``"ralston2"`` included) integrates the HH gates with ``V``;
@@ -1115,7 +1115,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         ``Cav1p2_*``, ``Cav1p3_*``, ``HCN1_*`` and ``Na_ZH2019_IO``), and
         :meth:`init_state` warns naming the gate. ``"exp_euler"`` (second
         order, about 20 times the cost per step) and ``"ind_exp_euler"``
-        (first order, about the cost of ``"ralston2"``) are stable on them.
+        (first order, about the cost of ``"ralston2"``) are stable on them,
+        with or without point synapses.
     subsolver : str or Callable or None
         Integrator for Markov channels and kinetic ions. Together with
         ``substeps=None``, ``None`` selects ``"backward_euler"``. A
@@ -2839,7 +2840,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._runtime_nodes_cache = self._build_runtime_node_views()
 
     def _check_solver_against_mechanisms(self) -> bool:
-        """Reject a solver that cannot advance this Cell's mechanisms.
+        """Whether the IndependentIntegration mechanisms advance after the solver.
 
         Returns
         -------
@@ -2850,26 +2851,11 @@ class Cell(_CellFacade, HHTypedNeuron):
             ``"dhs_voltage"`` (voltage only) and a user callable (which owns
             the whole step).
 
-        Raises
-        ------
-        ValueError
-            If ``exp_euler``, ``backward_euler`` or ``crank_nicolson`` meets a
-            point synapse on a lumped cell.
+        The block solvers advance point synapses on both kinds of cell: the
+        cable Cell and the lumped runtime place each synapse row in its
+        cell's block (``_diffeq_block_layout``, CELL-31b, CELL-31c).
         """
-        if not _is_generic_step(self._solver_fn):
-            return False
-        # A cable Cell places each synapse row in its cell's block
-        # (_diffeq_block_layout); the lumped runtime does not yet.
-        if self._is_lumped and any(self._solver_fn is get_integrator(name) for name in _BLOCK_SOLVERS):
-            synapses = sorted({type(synapse).__name__ for _, synapse in self._runtime.iter_synapse_layouts()})
-            if synapses:
-                raise ValueError(
-                    f"solver {self._solver_name!r} cannot advance a Cell with point synapses "
-                    f"({', '.join(synapses)}): it integrates all states as one block per cell, and "
-                    "synapse states have no CV axis. Use 'ind_exp_euler' or an explicit "
-                    "Runge-Kutta solver such as 'ralston2'."
-                )
-        return True
+        return _is_generic_step(self._solver_fn)
 
     def _register_synapse_ion_currents(self) -> None:
         """Add each ion-reading synapse's ion current to its ion (``_SynapseIonCurrent``)."""
@@ -4929,12 +4915,6 @@ def _resolve_solver(solver):
     if callable(solver):
         return getattr(solver, "__name__", type(solver).__name__), solver
     raise TypeError(f"solver must be str or callable, got {type(solver).__name__!s}.")
-
-
-#: Generic steps that merge every DiffEqState of a Cell into one array per
-#: cell (``diffeq_state_merging``, ``_diffeq_block_layout``) and solve it as a
-#: block; a lumped cell's runtime cannot merge its point synapses yet.
-_BLOCK_SOLVERS = ("exp_euler", "backward_euler", "crank_nicolson")
 
 
 def _is_generic_step(fn) -> bool:

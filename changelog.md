@@ -238,6 +238,26 @@
   - New rules subclass `braincell.ConnectionRule` and register with
     `braincell.mech.register_connection_rule`. Rows without a rule are
     unchanged.
+- **Event counts for synapses, and short-term depression** (CELL-12b). A
+  synapse that declares `ScalarEventInput(unit, aggregation="sum_count")`
+  receives, on each boundary and each row, the summed weight of its events as
+  before and their number as a keyword argument:
+  `apply_events(payload, V_post=None, *, count)`. Scheduled sources, the
+  Network's delayed and zero-delay delivery, a standalone Cell's live
+  connections and rows with a plasticity rule all count. The new
+  `braincell.synapse.ExpSynSTD(tau, e, U, tau_rec)` uses the count: an
+  exponential synapse with Tsodyks-Markram depression, whose resource `x`
+  recovers with `tau_rec`; `K` events of summed weight `W` on one boundary
+  add `(W/K) x (1 - (1-U)^K)` to `g` and leave `x (1-U)^K`, as `K` events in
+  a row would. With `w = 1 nS` and `U = 0.5`, two events add 0.75 nS in all
+  whether they arrive on one boundary or in quick succession (0.5, then 0.25
+  nS); `ExpSyn` adds 1 nS for each. With a plasticity rule on the rows, an
+  event adds the row's current weight times the released fraction.
+  - `register_synapse` raises `TypeError` for a `"sum_count"` class whose
+    `apply_events` does not take `count`; a reduction model and the
+    experimental scheduled-delivery adapter reject `"sum_count"` synapses
+    (`TypeError` at `init_state` and at `prepare_scheduled_delivery`).
+  - Only `"sum_count"` layouts get count buffers; other models run as before.
 - **The block solvers advance point synapses on cable and lumped `Cell`s**
   (CELL-31b, CELL-31c). `exp_euler`, `backward_euler` and `crank_nicolson`
   used to reject a `Cell` with a point synapse at `init_state`: a synapse

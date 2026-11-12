@@ -4380,12 +4380,18 @@ class Cell(_CellFacade, HHTypedNeuron):
         should already be present on each synapse before this method is called.
         """
         self._raise_if_not_initialized("_apply_runtime_synapse_events()")
+        event_counts = self._runtime.event_counts
         for layout, synapse in self._runtime.iter_synapse_layouts():
             if layout.id not in self._runtime.event_buffers:
                 continue
             payload = self._runtime.get_event_buffer(layout.id)
             args = (layout.gather_points(point_V),)
-            synapse.apply_events(payload, *args)
+            counts = event_counts.get(layout.id)
+            if counts is None:
+                synapse.apply_events(payload, *args)
+            else:
+                # A "sum_count" layout also receives each row's event count (CELL-12b).
+                synapse.apply_events(payload, *args, count=counts.value)
             self._runtime.clear_event_buffer(layout.id)
 
     def _prepare_runtime_synapse_inputs(self, point_V):
@@ -4442,6 +4448,9 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         output = _zeros_like_event_template(template)
         synapse_store = self._get_synapse_store()
+        # A "sum_count" layout also counts the arrivals (CELL-12b).
+        count_state = self._event_count_state(layout.id)
+        counts = None if count_state is None else jnp.zeros_like(output)
         for call, connection in self.connections._call_items(scheduled=scheduled_only):
             if call.plasticity is not None:
                 continue  # its rule delivers it (``advance_rules``)
@@ -4461,6 +4470,10 @@ class Cell(_CellFacade, HHTypedNeuron):
                 connection_weight = connection_weight[row_index]
             contribution = event_count * u.math.asarray(_connection_event_weight(template, connection_weight))
             output = output.at[local_index].add(contribution)
+            if counts is not None:
+                counts = counts.at[local_index].add(jnp.asarray(event_count, dtype=counts.dtype))
+        if counts is not None:
+            count_state.value = count_state.value + counts
         return _rewrap_event_template(template, output)
 
     def _apply_direct_live_connection_events(self) -> None:
@@ -4474,11 +4487,15 @@ class Cell(_CellFacade, HHTypedNeuron):
         t = self._resolve_t()
         layouts = self._event_layouts()
         drives = {}
+        # Per-row event counts of the "sum_count" layouts (CELL-12b).
+        layout_counts = {}
         event_runtime = self._event_runtime()
         for layout in layouts:
             if layout.id not in event_runtime.event_buffers:
                 continue
             drives[layout.id] = _zeros_like_event_template(event_runtime.get_event_buffer(layout.id))
+            if self._event_count_state(layout.id) is not None:
+                layout_counts[layout.id] = jnp.zeros_like(drives[layout.id])
 
         synapse_store = self._get_synapse_store()
         for connection in live_connections:
@@ -4491,6 +4508,12 @@ class Cell(_CellFacade, HHTypedNeuron):
             contribution = counts * u.math.asarray(_connection_event_weight(template, connection.weight))
             local_indices = synapse_store.runtime_rows(connection.synapse_id).astype(np.int32)
             drives[layout_id] = drives[layout_id].at[local_indices].add(contribution)
+            if layout_id in layout_counts:
+                layout_counts[layout_id] = (
+                    layout_counts[layout_id]
+                    .at[local_indices]
+                    .add(jnp.asarray(counts, dtype=layout_counts[layout_id].dtype))
+                )
 
         point_v = None if self._uses_reduction else self._point_voltage_for_mechanisms(self.V.value)
         for layout in layouts:
@@ -4498,10 +4521,19 @@ class Cell(_CellFacade, HHTypedNeuron):
                 continue
             template = event_runtime.get_event_buffer(layout.id)
             drive = _rewrap_event_template(template, drives[layout.id])
-            self._apply_synapse_layout_event_drive(layout.id, drive, point_v=point_v)
+            if layout.id in layout_counts:
+                self._apply_synapse_layout_event_drive(
+                    layout.id, drive, point_v=point_v, count=layout_counts[layout.id]
+                )
+            else:
+                self._apply_synapse_layout_event_drive(layout.id, drive, point_v=point_v)
 
-    def _apply_synapse_layout_event_drive(self, layout_id: int, drive, *, point_v=None) -> None:
-        """Apply one already-aggregated boundary payload to a runtime layout."""
+    def _apply_synapse_layout_event_drive(self, layout_id: int, drive, *, point_v=None, count=None) -> None:
+        """Apply one already-aggregated boundary payload to a runtime layout.
+
+        ``count`` is the per-row event count, given for a ``"sum_count"``
+        layout only (CELL-12b).
+        """
         if self._uses_reduction:
             current = self._reduction_input_runtime.get_event_buffer(layout_id)
             self._set_event_buffer(layout_id, current + _coerce_drive_like(drive, current))
@@ -4511,7 +4543,10 @@ class Cell(_CellFacade, HHTypedNeuron):
         if point_v is None:
             point_v = self._point_voltage_for_mechanisms(self.V.value)
         args = (layout.gather_points(point_v),)
-        synapse.apply_events(drive, *args)
+        if count is None:
+            synapse.apply_events(drive, *args)
+        else:
+            synapse.apply_events(drive, *args, count=count)
 
     def _event_runtime(self):
         """Return the detailed or reduced owner of packed event buffers."""
@@ -4533,12 +4568,27 @@ class Cell(_CellFacade, HHTypedNeuron):
     def _set_event_buffer(self, layout_id: int, value) -> None:
         self._event_runtime().event_buffers[int(layout_id)].value = value
 
-    def _write_event_arrival(self, layout_id: int, arrival) -> None:
-        """Merge one Network arrival with any event staged for this boundary."""
+    def _event_count_state(self, layout_id: int):
+        """The event-count buffer of a ``"sum_count"`` layout, else ``None`` (CELL-12b).
+
+        A reduction model has none: it rejects ``"sum_count"`` at ``init_state``.
+        """
+        if self._uses_reduction:
+            return None
+        return self._runtime.event_counts.get(int(layout_id))
+
+    def _write_event_arrival(self, layout_id: int, arrival, *, count=None) -> None:
+        """Merge one Network arrival with any event staged for this boundary.
+
+        ``count`` is the arrival's per-row event count, given for a
+        ``"sum_count"`` layout only (CELL-12b).
+        """
         if self._uses_reduction:
             current = self._reduction_input_runtime.get_event_buffer(layout_id)
             arrival = current + _coerce_drive_like(arrival, current)
         self._set_event_buffer(layout_id, arrival)
+        if count is not None:
+            self._event_count_state(layout_id).value = count
 
     def _update_runtime_synapses(self, point_V):
         """Advance runtime synapse dynamics.

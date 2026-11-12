@@ -51,8 +51,11 @@ Examples
 """
 
 import difflib
+import inspect
 from dataclasses import dataclass, field
 from typing import Callable, TypeVar
+
+from braincell.mech._event_contract import ScalarEventInput
 
 __all__ = [
     "MechanismEntry",
@@ -149,6 +152,8 @@ class MechanismRegistry:
             the same category.
         """
         _check_category(entry.category)
+        if entry.category == _CATEGORY_SYNAPSE:
+            _check_event_handler(entry.cls, entry.name)
         key = (entry.category, entry.name)
         for name in (entry.name, *entry.aliases):
             used = self._anonymous.get((entry.category, name))
@@ -265,6 +270,8 @@ class MechanismRegistry:
         known = self._anonymous_keys.get((category, cls))
         if known is not None:
             return known
+        if category == _CATEGORY_SYNAPSE:
+            _check_event_handler(cls, cls.__qualname__)
         base = f"{cls.__module__}.{cls.__qualname__}"
         candidates = (cls.__name__, base)
         key = next((name for name in candidates if not self.contains(category, name)), None)
@@ -485,6 +492,15 @@ def register_synapse(
     """Class decorator that registers a synapse class by name.
 
     See :func:`register_channel` for the parameter semantics.
+
+    Raises
+    ------
+    TypeError
+        If the class declares ``ScalarEventInput(..., aggregation="sum_count")``
+        and its ``apply_events`` does not accept the keyword argument
+        ``count``, which the runtime passes to it on every boundary (CELL-12b).
+        The same check runs when an unregistered class is used in a
+        :class:`~braincell.mech.Synapse` declaration.
     """
     return _make_decorator(_CATEGORY_SYNAPSE, name, aliases)
 
@@ -545,6 +561,29 @@ def _make_decorator(
         return cls
 
     return decorator
+
+
+def _check_event_handler(cls: type, name: str) -> None:
+    """Require ``apply_events(payload, V_post, *, count)`` of a ``"sum_count"`` synapse class.
+
+    The runtime calls it with ``count=`` on every boundary; a handler
+    without the keyword would fail only when a run is traced.
+    """
+    event_input = getattr(cls, "event_input", None)
+    if not (isinstance(event_input, ScalarEventInput) and event_input.aggregation == "sum_count"):
+        return
+    try:
+        signature = inspect.signature(cls.apply_events)
+    except (AttributeError, TypeError, ValueError):  # pragma: no cover - not a Python function
+        return
+    try:
+        signature.bind(None, None, None, count=None)
+    except TypeError:
+        raise TypeError(
+            f"Synapse {name!r} declares ScalarEventInput(aggregation='sum_count'), so the runtime passes each "
+            "row's event count to apply_events as the keyword argument count; define "
+            f"apply_events(self, payload, V_post=None, *, count). Its signature is {signature}."
+        ) from None
 
 
 def _check_category(category: str) -> None:

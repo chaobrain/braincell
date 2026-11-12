@@ -54,6 +54,7 @@ attachment. Ions are reached only indirectly, through
 """
 
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from typing import TYPE_CHECKING
 
 import braintools
@@ -182,6 +183,11 @@ class CellRuntimeState:
     #: keeps the single-CV shape ``pop_size + (1,)``; the lumped node reads the
     #: ``pop_size`` mirror, refreshed by ``_sync_runtime_node_param``.
     lumped_mirrors: dict | None = None
+    #: ``layout_id -> count buffer`` for the synapse layouts whose event input
+    #: is ``ScalarEventInput(aggregation="sum_count")``: one event count per
+    #: row, filled beside the payload in ``event_buffers`` (CELL-12b). Other
+    #: layouts have no entry.
+    event_counts: dict[int, object] = dataclass_field(default_factory=dict)
 
     @property
     def is_lumped(self) -> bool:
@@ -301,6 +307,7 @@ class CellRuntimeState:
         state_shapes: dict[tuple[int, str], tuple[int, ...]] = {}
         state_buffers: dict[tuple[int, str], np.ndarray] = {}
         event_buffers: dict[int, object] = {}
+        event_counts: dict[int, object] = {}
         layout_mechanisms: dict[int, object] = {}
         for entry in sorted(grouped.values(), key=lambda item: int(item["id"])):
             mechanism = entry["mechanism"]
@@ -362,6 +369,10 @@ class CellRuntimeState:
                     event_buffers[layout_spec.id] = brainstate.ShortTermState(
                         u.Quantity(np.zeros((len(point_ids),), dtype=float), event_input.unit)
                     )
+                    if event_input.aggregation == "sum_count":
+                        event_counts[layout_spec.id] = brainstate.ShortTermState(
+                            np.zeros((len(point_ids),), dtype=float)
+                        )
                 elif isinstance(event_input, TriggerEventInput):
                     event_buffers[layout_spec.id] = brainstate.ShortTermState(
                         np.zeros((len(point_ids),), dtype=np.int32)
@@ -557,6 +568,7 @@ class CellRuntimeState:
             state_shapes=state_shapes,
             state_buffers=state_buffers,
             event_buffers=event_buffers,
+            event_counts=event_counts,
             layout_mechanisms=layout_mechanisms,
             runtime_nodes=runtime_nodes,
             ions=ions,
@@ -767,9 +779,12 @@ class CellRuntimeState:
             raise KeyError(f"Synapse layout {layout_id!r} has no discrete event input.") from exc
 
     def clear_event_buffer(self, layout_id: int) -> None:
-        """Clear one synapse layout's pending event payload."""
+        """Clear one synapse layout's pending event payload, and its event counts if it counts."""
         buffer = self.get_event_buffer(layout_id)
         self.event_buffers[int(layout_id)].value = u.math.zeros_like(buffer)
+        counts = self.event_counts.get(int(layout_id))
+        if counts is not None:
+            counts.value = jnp.zeros_like(counts.value)
 
     def get_ion(self, name: str) -> object:
         return self.ions[self.resolve_ion_key(name)]

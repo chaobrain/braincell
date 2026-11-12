@@ -15,9 +15,11 @@
 
 from braincell.synapse.exponential import Exp2Syn, ExpSyn
 from braincell.synapse.gaba import GabaA_JE2011
+from braincell.synapse.short_term import ExpSynSTD
 
 __all__ = [
     "Exp2Syn",
     "ExpSyn",
+    "ExpSynSTD",
     "GabaA_JE2011",
 ]

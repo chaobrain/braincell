@@ -18,12 +18,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache, partial
 import hashlib
 from numbers import Integral
 from typing import Callable
 
 import brainstate
 import brainunit as u
+import jax
 import numpy as np
 
 from braincell._multi_compartment.synapses import SynapseView
@@ -751,18 +753,9 @@ def _conditional_sample(
         )
         side = "source"
     weights = _score(score, ctx, (len(unique), len(candidates)), side=side, positions=candidates)
-    sampled_by_fixed = []
-    for row, (endpoint, count) in enumerate(zip(unique.tolist(), counts.tolist())):
-        endpoint_id = source_data.id[int(endpoint)] if fixed_side == "source" else synapse_data.id[int(endpoint)]
-        sampled_by_fixed.append(
-            _sample(
-                candidates,
-                _score_row(weights, row),
-                count,
-                replace,
-                _derived_seed(seed, fixed_side, int(endpoint_id)),
-            )
-        )
+    ids = source_data.id if fixed_side == "source" else synapse_data.id
+    seeds = [_derived_seed(seed, fixed_side, int(ids[int(endpoint)])) for endpoint in unique.tolist()]
+    sampled_by_fixed = _sample_rows(candidates, weights, counts, replace, seeds)
     # Each fixed endpoint's rows take its partners in draw order. Its draws
     # come end to end in ``unique`` order, which is the order of the rows
     # sorted stably by endpoint, so one scatter places them all (CELL-18f).
@@ -836,6 +829,110 @@ def _sample(candidates, weights, count, replace, seed):
     else:
         probabilities = np.asarray(weights, dtype=float) / float(np.sum(weights))
     return np.asarray(rng.choice(candidates, size=count, replace=replace, p=probabilities), dtype=np.int64)
+
+
+# Elements of one compiled draw's (rows, candidates) probability block; bounds
+# the memory a draw takes however many endpoints and candidates there are.
+_DRAW_BLOCK = 1 << 22
+
+
+def _sample_rows(candidates, weights, counts, replace, seeds):
+    """:func:`_sample` for every row of ``weights`` (``None``: uniform), with its own seed.
+
+    Each row draws with the key ``brainstate.random.RandomState(seed).choice``
+    would use and through the same ``jax.random.choice``, vmapped over rows,
+    so every row gets what its own ``RandomState`` gives, bit for bit, from a
+    few compiled calls instead of one ``RandomState`` and call per row
+    (CELL-18h). Rows are grouped by a power-of-two draw width (see
+    :func:`_draw_width`) and split into blocks of at most ``_DRAW_BLOCK``
+    probabilities, padded to a power of two rows; both bound the compiled
+    shapes, and padded rows and draws beyond a row's count are dropped.
+    """
+    candidates = np.asarray(candidates, dtype=np.int64)
+    counts = np.asarray(counts, dtype=np.int64)
+    n = len(candidates)  # ``_score`` has checked that every row has positive support.
+    if isinstance(replace, np.bool_):
+        replace = bool(replace)
+    if not isinstance(replace, bool):
+        raise TypeError("replace flags must be bool values.")
+    widths = {}
+    for row, count in enumerate(counts.tolist()):
+        support = n if weights is None else int(np.count_nonzero(weights[row] > 0.0))
+        if not replace and count > support:
+            raise ValueError(
+                f"Sampling without replacement requires at least {count} positive candidates; got {support}."
+            )
+        if count > 0:
+            widths.setdefault(_draw_width(count, n, replace), []).append(row)
+    seeds = np.asarray(seeds, dtype=np.uint32)
+    block = 1 << max(0, (_DRAW_BLOCK // n).bit_length() - 1)
+    drawn = [np.asarray([], dtype=np.int64)] * len(counts)
+    for width, rows in widths.items():
+        for start in range(0, len(rows), block):
+            part = rows[start : start + block]
+            padded = part + [part[0]] * ((1 << (len(part) - 1).bit_length()) - len(part))
+            # As in ``_sample``: a uniform row is ``1 / n``, a scored one is normalized on its own.
+            if weights is None:
+                probabilities = np.full((len(padded), n), 1.0 / n, dtype=float)
+            else:
+                probabilities = np.stack(
+                    [np.asarray(weights[row], dtype=float) / float(np.sum(weights[row])) for row in padded]
+                )
+            values = np.asarray(
+                _choice_rows(seeds[padded], candidates, probabilities, count=width, replace=replace), dtype=np.int64
+            )
+            for position, row in enumerate(part):
+                drawn[row] = values[position, : counts[row]]
+    return drawn
+
+
+def _draw_width(count: int, n: int, replace: bool) -> int:
+    """How many draws to take for ``count``: the next power of two if a prefix of a wider draw is the same.
+
+    Without replacement ``jax.random.choice`` ranks one Gumbel draw per
+    candidate and keeps the top ``count``, so a wider top-k starts with the
+    same ``count``. With replacement it draws ``count`` uniforms, which are a
+    prefix of a longer draw only under the partitionable ``threefry2x32``
+    generator (it hashes each draw's index); otherwise the width is ``count``.
+    """
+    wide = 1 << (count - 1).bit_length()
+    if not replace:
+        return min(wide, n)
+    return wide if _prefix_draws_supported() else count
+
+
+def _prefix_draws_supported() -> bool:
+    """Whether ``k`` draws with replacement are the first ``k`` of a longer draw here."""
+    return _prefix_draws_check(
+        str(jax.config.jax_default_prng_impl),
+        bool(jax.config.jax_threefry_partitionable),
+        bool(jax.config.jax_enable_x64),
+    )
+
+
+@lru_cache(maxsize=None)
+def _prefix_draws_check(prng_impl: str, partitionable: bool, x64: bool) -> bool:
+    if prng_impl != "threefry2x32" or not partitionable:
+        return False
+    weights = np.linspace(1.0, 2.0, 1000)
+    short, long = _short_and_long_draws(jax.random.key(1), weights / np.sum(weights))
+    return bool(np.array_equal(np.asarray(short), np.asarray(long)[:37]))
+
+
+@jax.jit
+def _short_and_long_draws(key, p):
+    # One compiled call: checking eagerly compiles each operation of ``choice`` twice.
+    return jax.random.choice(key, 1000, shape=(37,), p=p), jax.random.choice(key, 1000, shape=(64,), p=p)
+
+
+@partial(jax.jit, static_argnames=("count", "replace"))
+def _choice_rows(seeds, candidates, probabilities, *, count, replace):
+    def draw(seed, p):
+        # ``RandomState(seed)`` holds ``key(seed)``; ``choice`` splits it and draws with the second key.
+        key = jax.random.split(jax.random.key(seed))[1]
+        return jax.random.choice(key, candidates, shape=(count,), replace=replace, p=p)
+
+    return jax.vmap(draw)(seeds, probabilities)
 
 
 def _degree_counts(value, ctx, size, seed):

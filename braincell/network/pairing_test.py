@@ -642,6 +642,73 @@ class ConditionalSampleTest(unittest.TestCase):
         self.assertEqual(messages[0], messages[1])
         self.assertIn("at least 5 positive candidates; got 4", messages[0])
 
+    def _assert_mixed_degrees_match_one_random_state_each(self) -> None:
+        from unittest import mock
+
+        from braincell.network import pairing
+        from braincell.network.event import EventSourceView
+
+        rng = np.random.default_rng(81)
+        cell, exp = _population(30)
+        synapses = cell.synapses[exp]
+        source = EventSourceView(NetStim(size=40, start=1.0 * u.ms), np.arange(40))
+        specs = {
+            "with replacement": pairing.by_source(rng.integers(0, 12, 40), seed=31),
+            "without replacement": pairing.by_source(rng.integers(1, 12, 40), replace=False, seed=32),
+            "scored, with replacement": pairing.by_source(
+                rng.integers(1, 7, 40), synapse_score=rng.random(30) + 0.1, seed=33
+            ),
+        }
+        for name, spec in specs.items():
+            with self.subTest(name):
+                actual = pairing.materialize_pairing(spec, source, synapses)
+                with mock.patch.object(pairing, "_conditional_sample", _reference_conditional_sample):
+                    expected = pairing.materialize_pairing(spec, source, synapses)
+                np.testing.assert_array_equal(actual.synapse_position, expected.synapse_position)
+
+    def test_draws_split_into_blocks_match_one_random_state_each(self) -> None:
+        # CELL-18h: a block of 64 probabilities holds two rows of 30 candidates,
+        # so each width's rows are drawn two at a time.
+        from unittest import mock
+
+        from braincell.network import pairing
+
+        with mock.patch.object(pairing, "_DRAW_BLOCK", 64):
+            self._assert_mixed_degrees_match_one_random_state_each()
+
+    def test_replace_flags_are_checked_as_in_one_draw(self) -> None:
+        from braincell.network import pairing
+
+        candidates = np.arange(5)
+        counts = np.asarray([2, 3])
+        drawn = pairing._sample_rows(candidates, None, counts, np.bool_(False), [7, 8])
+        for row, seed in enumerate((7, 8)):
+            np.testing.assert_array_equal(drawn[row], pairing._sample(candidates, None, counts[row], False, seed))
+        for sample in (
+            lambda: pairing._sample_rows(candidates, None, counts, 1, [7, 8]),
+            lambda: pairing._sample(candidates, None, 2, 1, 7),
+        ):
+            with self.assertRaisesRegex(TypeError, "replace flags must be bool values"):
+                sample()
+
+    def test_without_partitionable_threefry_draws_exactly_count(self) -> None:
+        # CELL-18h: with replacement a wider draw is not a prefix-preserving
+        # draw under other generator configurations, so each count draws itself.
+        import jax
+
+        from braincell.network import pairing
+
+        self.assertEqual(pairing._draw_width(5, 30, True), 8)
+        self.assertEqual(pairing._draw_width(5, 6, False), 6)
+        previous = jax.config.jax_threefry_partitionable
+        jax.config.update("jax_threefry_partitionable", False)
+        try:
+            self.assertEqual(pairing._draw_width(5, 30, True), 5)
+            self.assertEqual(pairing._draw_width(5, 30, False), 8)
+            self._assert_mixed_degrees_match_one_random_state_each()
+        finally:
+            jax.config.update("jax_threefry_partitionable", previous)
+
 
 if __name__ == "__main__":
     unittest.main()

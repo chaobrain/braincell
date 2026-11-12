@@ -29,6 +29,7 @@ from ._helpers import (
     build_main_config_payload,
     build_scan_template_payload,
     load_module,
+    requires_mechanisms,
     write_json,
 )
 
@@ -44,6 +45,7 @@ workflow_api = load_module(
 
 
 class WorkflowInputTest(unittest.TestCase):
+    @requires_mechanisms("testing")
     def test_load_workflow_inputs_reads_mapping_and_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -69,6 +71,7 @@ class WorkflowInputTest(unittest.TestCase):
         self.assertEqual(info["mapping"]["current"], "ik")
         self.assertEqual(info["mod_dir"], expected_mod_dir)
 
+    @requires_mechanisms("testing")
     def test_load_config_workflow_inputs_reads_declared_templates_and_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -93,6 +96,7 @@ class WorkflowInputTest(unittest.TestCase):
         self.assertEqual(info["n_templates"], 2)
         self.assertEqual(info["template_names"], ("smoke", "vinit"))
 
+    @requires_mechanisms("testing")
     def test_discover_batch_configs_discovers_one_record_per_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -118,6 +122,7 @@ class WorkflowInputTest(unittest.TestCase):
         self.assertEqual(records[0]["n_templates"], 2)
         self.assertEqual(records[0]["template_names"], ["smoke", "vinit"])
 
+    @requires_mechanisms("pc_ma2024")
     def test_repo_ma24_pc_config_dir_discovers_all_supported_examples(self) -> None:
         records = workflow_api.discover_batch_configs(CHANNEL_NO_CONC_ROOT / "configs" / "ma24_pc")
 
@@ -151,6 +156,7 @@ class WorkflowInputTest(unittest.TestCase):
         self.assertIn("hcn1_ma24_pc", records_by_name)
         self.assertEqual(records_by_name["hcn1_ma24_pc"]["n_templates"], 3)
 
+    @requires_mechanisms("bc_ma2025")
     def test_repo_ma25_bc_config_dir_discovers_all_supported_examples(self) -> None:
         records = workflow_api.discover_batch_configs(CHANNEL_NO_CONC_ROOT / "configs" / "ma25_bc")
 
@@ -178,6 +184,7 @@ class WorkflowInputTest(unittest.TestCase):
         self.assertIn("hcn1_ma25_bc", records_by_name)
         self.assertEqual(records_by_name["hcn1_ma25_bc"]["n_templates"], 3)
 
+    @requires_mechanisms("goc_ma2020")
     def test_repo_ma20_goc_config_dir_discovers_all_supported_examples(self) -> None:
         records = workflow_api.discover_batch_configs(CHANNEL_NO_CONC_ROOT / "configs" / "ma20_goc")
 
@@ -205,26 +212,7 @@ class WorkflowInputTest(unittest.TestCase):
         )
         self.assertEqual(records_by_name["hcn1_ma20_goc"]["n_templates"], 3)
 
-    def test_repo_su15_dcn_config_dir_discovers_all_supported_examples(self) -> None:
-        records = workflow_api.discover_batch_configs(CHANNEL_NO_CONC_ROOT / "configs" / "su15_dcn")
-
-        records_by_name = {record["config_name"]: record for record in records}
-        self.assertEqual(
-            set(records_by_name),
-            {
-                "cahva_su15_dcn",
-                "calva_su15_dcn",
-                "hcn_su15_dcn",
-                "naf_su15_dcn",
-                "nap_su15_dcn",
-                "fkdr_su15_dcn",
-                "skdr_su15_dcn",
-                "sk_su15_dcn",
-                "cal_su15_dcn",
-            },
-        )
-        self.assertEqual(records_by_name["hcn_su15_dcn"]["n_templates"], 3)
-
+    @requires_mechanisms("sc_ma2021")
     def test_repo_ri21_sc_config_dir_discovers_all_supported_examples(self) -> None:
         records = workflow_api.discover_batch_configs(CHANNEL_NO_CONC_ROOT / "configs" / "ri21_sc")
 
@@ -250,6 +238,7 @@ class WorkflowInputTest(unittest.TestCase):
         )
         self.assertEqual(records_by_name["hcn1_ri21_sc"]["n_templates"], 3)
 
+    @requires_mechanisms("dcn_su2015")
     def test_repo_su15_dcn_config_dir_discovers_all_supported_examples(self) -> None:
         records = workflow_api.discover_batch_configs(CHANNEL_NO_CONC_ROOT / "configs" / "su15_dcn")
 
@@ -289,6 +278,7 @@ class WorkflowRunSmokeTest(unittest.TestCase):
         )
         return config_path, template_path
 
+    @requires_mechanisms("testing")
     def test_run_load_and_plot_workflow_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             config_path, template_path = self._write_config_and_template(tmpdir)
@@ -348,6 +338,7 @@ class WorkflowRunSmokeTest(unittest.TestCase):
             overlay_fig.clf()
             error_fig.clf()
 
+    @requires_mechanisms("testing")
     def test_run_notebook_config_workflow_writes_parent_dir_and_template_children(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -389,6 +380,7 @@ class WorkflowRunSmokeTest(unittest.TestCase):
 
 
 class BatchWorkflowTest(WorkflowRunSmokeTest):
+    @requires_mechanisms("testing")
     def test_write_batch_summary_artifacts_writes_summary_tables(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

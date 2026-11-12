@@ -30,6 +30,7 @@ from ._helpers import (
     build_mapping_payload,
     build_scan_template_payload,
     load_module,
+    requires_mechanisms,
     write_json,
 )
 
@@ -77,6 +78,7 @@ class ExperimentSchemaTest(unittest.TestCase):
         self.assertEqual(len(config_suffixes), 88)
         self.assertEqual(config_suffixes, mod_suffixes | neuron_builtins)
 
+    @requires_mechanisms()
     def test_repo_all_configs_load_and_expand_templates(self) -> None:
         config_root = CHANNEL_NO_CONC_ROOT / "configs"
         for config_path in sorted(config_root.glob("*/*.json")):

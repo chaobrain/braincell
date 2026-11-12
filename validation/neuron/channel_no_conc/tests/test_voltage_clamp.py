@@ -31,7 +31,7 @@ from validation.neuron import _clamp
 from validation.neuron._tolerance import VOLTAGE_CLAMP_PROTOCOLS
 from validation.neuron.channel_no_conc.tolerances import TABLE
 
-from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, load_module
+from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, compile_hint, load_module, uncompiled_models
 
 os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
@@ -55,8 +55,8 @@ def _paths(config: str, protocol: str) -> tuple[Path, Path]:
 
 def _skip_unless_compiled(test: unittest.TestCase, config: str) -> None:
     case, _ = voltage_clamp.load_protocol(*_paths(config, "vc_steps"))
-    if not (Path(case.mod_dir) / "x86_64" / "libnrnmech.so").exists():
-        test.skipTest(f"NEURON mechanisms for {config} are not compiled into libnrnmech.so.")
+    if missing := uncompiled_models((case.mod_dir,)):
+        test.skipTest(compile_hint(missing))
 
 
 def _initialize_after_finitialize(h, segment, *, v_init_mV, dt_ms, celsius, concentrations=None):

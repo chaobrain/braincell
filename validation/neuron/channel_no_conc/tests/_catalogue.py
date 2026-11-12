@@ -32,7 +32,7 @@ import numpy as np
 from validation.neuron._tolerance import CURRENT_CLAMP_PROTOCOLS, T0_LIMITS, VOLTAGE_CLAMP_PROTOCOLS
 from validation.neuron.channel_no_conc.tolerances import NON_FINITE_REFERENCE, TABLE, VARIANTS, Variant
 
-from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, load_module
+from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, compile_hint, load_module, uncompiled_models
 
 experiment_schema = load_module(TEMPLATES_ROOT / "experiment_schema.py", "channel_no_conc_schema_for_catalogue")
 compare_module = load_module(TEMPLATES_ROOT / "compare.py", "channel_no_conc_compare_for_catalogue")
@@ -73,10 +73,9 @@ def current_clamp_error(config: str, protocol: str, channel_params: dict | None 
 
 
 def skip_unless_compiled(test: unittest.TestCase, configs: tuple[str, ...]) -> None:
-    mod_dirs = {Path(experiment_schema.load_model_config(config_path(config)).mod_dir) for config in configs}
-    missing = sorted(str(path) for path in mod_dirs if not (path / "x86_64" / "libnrnmech.so").exists())
+    missing = uncompiled_models(experiment_schema.load_model_config(config_path(config)).mod_dir for config in configs)
     if missing:
-        test.skipTest(f"NEURON mechanisms are not compiled: {missing}.")
+        test.skipTest(compile_hint(missing))
 
 
 class CatalogueAssertions:

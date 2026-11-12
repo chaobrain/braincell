@@ -1602,6 +1602,21 @@
   at roundoff (relative 1e-12 or less over 50 ms) and are closer to the
   exact implicit-Euler solution.
 
+- The `channel_no_conc` NEURON comparison suite skips the tests whose NEURON
+  mechanisms are not compiled, instead of failing them. Without compiled
+  mechanisms, 37 of its fast tests failed with `argument not a density
+  mechanism name` or `identity.mod_dir does not exist`. Each skip now names
+  the command that compiles the missing model, `python -m
+  validation.neuron._mechanisms <model> --kind channel`, and the suite's
+  older skips give the same message. With the eight channel models compiled,
+  as in CI, every test still runs.
+- The parameter-fitting example tests (`examples/optim/parameter_fitting`)
+  pass again. Since runtime geometry arrived (#157), `runtime.point_area` has
+  a population axis, but `models.py` still indexed its first axis with a
+  point id, so four tests failed with a shape error. The diagnostics test
+  took a 0.02 nA pulse as subthreshold, but its cell fires for pulses above
+  0.017 nA, also before #157, when the spike only came after the 10 ms run
+  ended. Its subthreshold protocol now uses 0.01 nA.
 - The README, the documentation home page and the File Formats pages no
   longer say braincell reads NeuroML2 (API-8). `braincell.io.NeuroMlReader`
   has been a placeholder since 0.1.0: `read()` raises `NotImplementedError`

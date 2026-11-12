@@ -15,6 +15,7 @@
 
 import json
 from pathlib import Path
+import unittest
 
 from validation.neuron._suite_loader import load_suite_module
 from validation.neuron._suite_loader import use_double_precision
@@ -26,8 +27,46 @@ CHANNEL_NO_CONC_ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES_ROOT = CHANNEL_NO_CONC_ROOT / "engine"
 
 from validation.neuron._paths import mechanism_build_dir
+from validation.neuron.cell._nrnmech import nrnmech_path
 
 MOD_VALIDATE_MOD_DIR = str(mechanism_build_dir("testing", "channel"))
+
+#: The models whose ``--kind channel`` builds the configurations point at
+#: (``configs/builtin`` uses the ``testing`` build).
+CHANNEL_MODELS = (
+    "bc_ma2025",
+    "dcn_su2015",
+    "goc_ma2020",
+    "grc_ma2020",
+    "io_zh2019",
+    "pc_ma2024",
+    "sc_ma2021",
+    "testing",
+)
+
+
+def uncompiled_models(mod_dirs) -> tuple[str, ...]:
+    """The models whose ``--kind channel`` build roots among ``mod_dirs`` hold no compiled library.
+
+    A build root is ``mechanism_build_dir(model, "channel")``, so its parent
+    directory names the model.
+    """
+    return tuple(sorted({Path(path).parent.name for path in mod_dirs if not nrnmech_path(Path(path) / "x86_64").is_file()}))
+
+
+def compile_hint(models) -> str:
+    """The skip message for ``models``, with the command that compiles each."""
+    commands = "; ".join(f"python -m validation.neuron._mechanisms {model} --kind channel" for model in models)
+    return f"NEURON channel mechanisms are not compiled for {', '.join(models)}; run {commands}"
+
+
+def requires_mechanisms(*models: str):
+    """Skip a test unless the ``--kind channel`` mechanisms of ``models`` are compiled.
+
+    With no ``models``, the test needs every model in :data:`CHANNEL_MODELS`.
+    """
+    missing = uncompiled_models(mechanism_build_dir(model, "channel") for model in models or CHANNEL_MODELS)
+    return unittest.skipIf(bool(missing), compile_hint(missing))
 
 
 def load_module(path: Path, name: str):

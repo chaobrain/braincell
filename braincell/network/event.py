@@ -391,8 +391,12 @@ class NetStim(EventSource):
     one, so the events are those of the full schedule. Entries that do not
     know when the run ends generate all ``number`` events, as for a small
     schedule: :attr:`event_times`, :attr:`events`, :meth:`event_count`
-    outside a run, ``Cell.run`` traced under ``jax.jit`` or ``jax.grad``,
-    and ``Network.prepare_run`` / ``Network.update``.
+    outside a run, and ``Cell.run`` traced under ``jax.jit`` or
+    ``jax.grad``. ``Network.prepare_run`` generates the events of the
+    ``Network.update`` calls that follow it as far as the step limit
+    (``2**31 - 1`` steps), which no loop of them passes: about
+    ``2**31 * dt / interval`` per source, 5.4 million at ``dt = 0.025 ms``
+    and ``interval = 10 ms``, however large ``number`` is.
 
     Examples
     --------
@@ -498,8 +502,10 @@ class NetStim(EventSource):
         ``dt = 0.025 ms`` land one step earlier in NEURON 9.0 than here.
 
         Inside ``Cell.run`` and ``Network.run`` it reads the events up to
-        the end of the run; elsewhere it generates every event (see the
-        class Notes). With a fixed ``delay`` and ``dt`` the arrival steps
+        the end of the run, and inside ``Network.update()`` up to the step
+        limit, as far as ``Network.prepare_run`` generated them; elsewhere
+        it generates every event (see the class Notes). With a fixed
+        ``delay`` and ``dt`` the arrival steps
         are computed once, when a compiled loop is traced, and each step
         looks its arrivals up in them.
 
@@ -1224,6 +1230,12 @@ class _ArrivalPlan:
     one binary search for the first arrival at that step, a read of at
     most ``window`` arrivals (the most that share any step), and one gather
     from groups to rows.
+
+    Arrivals past the step limit are clipped to it (:data:`_MAX_STEP`), so
+    a schedule that runs past it piles them on that step, the last of
+    ``steps``. ``window`` is taken over the steps before it, and
+    ``limit_count`` (one count per group) gives the arrivals at it, so that
+    they do not widen the read of every other step (CELL-56).
     """
 
     steps: np.ndarray
@@ -1232,6 +1244,7 @@ class _ArrivalPlan:
     row_group: np.ndarray
     n_groups: int
     shape: tuple[int, ...]
+    limit_count: np.ndarray | None = None
 
     @classmethod
     def build(cls, *, event_source, event_time_ms, source_index, t, delay, dt, one_dimensional=False):
@@ -1288,25 +1301,36 @@ class _ArrivalPlan:
                 return cls(np.zeros(0, np.int32), np.zeros(0, np.int32), 0, row_group, len(keys), shape)
         by_step = np.argsort(steps, kind="stable")
         steps, pair_group = steps[by_step], pair_group[by_step]
-        boundaries = np.flatnonzero(np.diff(steps) != 0)
-        window = int(np.max(np.diff(np.concatenate([[-1], boundaries, [n_pairs - 1]]))))
-        return cls(steps, pair_group, window, row_group, len(keys), shape)
+        before = int(np.searchsorted(steps, _MAX_STEP, side="left"))
+        limit_count = None
+        if before < n_pairs:
+            limit_count = np.bincount(pair_group[before:], minlength=len(keys))
+        window = 0
+        if before:
+            boundaries = np.flatnonzero(np.diff(steps[:before]) != 0)
+            window = int(np.max(np.diff(np.concatenate([[-1], boundaries, [before - 1]]))))
+        return cls(steps, pair_group, window, row_group, len(keys), shape, limit_count)
 
     def count(self, *, t, dt):
         """Arrivals at the step of ``t``, one count per row."""
         count_dtype = jax.dtypes.canonicalize_dtype(np.int64)
         current_step = _boundary_step(t, dt)
-        if self.window == 0:
+        if self.window == 0 and self.limit_count is None:
             return jnp.zeros(self.shape, dtype=count_dtype)
-        steps = jnp.asarray(self.steps)
-        # Unrolled: a compiled ``while`` costs a device round trip per
-        # iteration on GPU, where this search then took ~80 us per step.
-        first = jnp.searchsorted(steps, current_step, side="left", method="scan_unrolled")
-        position = first + jnp.arange(self.window)
-        within = jnp.minimum(position, self.steps.size - 1)
-        due = (position < self.steps.size) & (steps[within] == current_step)
         group_count = jnp.zeros(self.n_groups, dtype=count_dtype)
-        group_count = group_count.at[jnp.asarray(self.group)[within]].add(due.astype(count_dtype))
+        if self.window:
+            size = self.steps.size - (0 if self.limit_count is None else int(self.limit_count.sum()))
+            steps = jnp.asarray(self.steps[:size])
+            # Unrolled: a compiled ``while`` costs a device round trip per
+            # iteration on GPU, where this search then took ~80 us per step.
+            first = jnp.searchsorted(steps, current_step, side="left", method="scan_unrolled")
+            position = first + jnp.arange(self.window)
+            within = jnp.minimum(position, size - 1)
+            due = (position < size) & (steps[within] == current_step)
+            group_count = group_count.at[jnp.asarray(self.group[:size])[within]].add(due.astype(count_dtype))
+        if self.limit_count is not None:
+            at_limit = jnp.asarray(self.limit_count, dtype=count_dtype)
+            group_count = group_count + jnp.where(current_step == _MAX_STEP, at_limit, 0)
         return group_count[jnp.asarray(self.row_group)].reshape(self.shape)
 
 

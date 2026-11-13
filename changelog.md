@@ -903,8 +903,7 @@
   the first run, as `event_backend` is. The experimental `prepare_events`
   and `prepare_delivery` accept `EventSequence`, generate a `NetStim`'s
   events only up to the window, and no longer reject float32 windows past
-  `2**20` steps; `ScheduledDeliveryCell` leaves rule rows to their rule and
-  gives `"sum_count"` layouts their counts instead of raising `TypeError`.
+  `2**20` steps.
 - **`ConnectionView.record(name, state, *, period, frequency, start)`
   records a plasticity rule's state during a run** (CELL-12c): the dynamic
   weight `"w"`, `PairSTDP`'s traces `"x_pre"` and `"y_post"`, or any state
@@ -1218,6 +1217,23 @@
   ran before it: `reset_state` keeps the accepted sizes, a change of
   topology drops them. `"direct"`, the default path and `prepare_run` are
   unchanged.
+- **Synapse recordings build their rows in time linear in the synapses, and
+  `Network.prepare_run` no longer generates every NetStim event** (CELL-56).
+  A recording of synapse states or currents (`observe.synapse(...)`) read
+  each column of its synapse view once per row, and each read gathered the
+  whole view: the rows of 1e4 synapses took 26.5 s to build and those of
+  3e4 239 s on main `69a8072`; they now take 0.016 s and 0.051 s (1e6:
+  2.7 s). `prepare_run` generated all `number` events of each NetStim for
+  the `update()` calls after it; it now generates them as far as the step
+  limit (`2**31 - 1` steps), which no loop of `update()` calls passes:
+  about `2**31 * dt / interval` per source, 5.4 million at
+  `dt = 0.025 ms` and `interval = 10 ms`, whatever `number` is. At
+  `number=10**9` it ran out of memory, and now takes 0.09 s, with 0.68 s
+  for the first `update()`. Arrivals past the step limit, which are clipped
+  to it, are counted apart and no longer widen what each step reads: 2000
+  `update()` calls of a schedule that ran past it (two sources, 2**21
+  events every 250 ms, `dt = 0.025 ms`) took 16.6 s, and now 0.31 s. Rows,
+  their order, recorded values and delivered events are unchanged.
 
 ### Bug Fixes
 
@@ -2026,8 +2042,8 @@
   0.32 mV. A `delay` or `dt` that is traced (an argument of a `jax.jit`
   function) and a `t` the caller sets, as in a `Cell.update()` loop, are
   still rounded in the run precision. The experimental
-  `braincell.experimental.scheduled_events.prepare_events` and
-  `ScheduledDeliveryCell` round the same way.
+  `braincell.experimental.scheduled_events.prepare_events` rounds the same
+  way.
 - With a batch axis, a recording of a channel or ion state
   (`observe.channel(...).state(...)`, `observe.ion(...).state(...)`) and a
   density view's `get` (`cell[[0, 2]].channels.by_name("Na").get("m")`) take

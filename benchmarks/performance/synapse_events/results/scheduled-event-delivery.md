@@ -88,7 +88,7 @@ shared full 的 `input_scatter_fusion_2` 累积时间从 29.748 ms 降为 8.235 
 
 ## 复现与源码
 
-执行入口为 [delivery_benchmark.py](../delivery_benchmark.py)，命令、依赖、输出和进程限时见 [README](../README.md)。可调用实现为 [直接投递](../../../../braincell/experimental/scheduled_delivery.py) 与 [真实 Cell 适配器](../../../../braincell/experimental/scheduled_cell.py)。所有阶段保存 manifest、worker JSON/log 和源码快照；CSV/PNG/SVG、验证和 profiling 汇总位于被忽略的 `benchmarks/performance/synapse_events/artifacts/delivery/`。
+执行入口为 [delivery_benchmark.py](../delivery_benchmark.py)，命令、依赖、输出和进程限时见 [README](../README.md)。可调用实现为 [直接投递](../../../../braincell/experimental/scheduled_delivery.py) 与真实 Cell 适配器（此后已删除，CELL-67；所测版本见下文“测量源码标识”中的 SHA-256）。所有阶段保存 manifest、worker JSON/log 和源码快照；CSV/PNG/SVG、验证和 profiling 汇总位于被忽略的 `benchmarks/performance/synapse_events/artifacts/delivery/`。
 
 初始 micro 计时后，完整模型增加了不计时的目标输入轨迹核对；后续增加保守 full 默认与 profiling 开关。投递算法与 micro 计时函数保持一致，快照与 AST 核对记录保存在 verification.json。报告生成器默认在输入 artifacts 中重建数据表；本页及[已审阅数据表](scheduled-event-delivery-tables.md) 随 Git 维护，更新需审阅，不由默认报告命令覆盖。
 

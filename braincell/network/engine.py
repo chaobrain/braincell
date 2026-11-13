@@ -59,9 +59,9 @@ from braincell.network.delivery import (
     apply_immediate_events,
     create_delivery_state,
     delivery_blocks as build_delivery_blocks,
-    enqueue_future_events,
     make_delivery_op,
     normalize_event_backend,
+    record_source_events,
     resolve_event_backend,
     write_arrivals,
 )
@@ -1295,7 +1295,7 @@ class Network:
                                 if compiled.phase == "pre"
                             }
                         with jax.named_scope("braincell:network_run:write_arrivals"):
-                            write_arrivals(delivery_state, populations=self.populations)
+                            write_arrivals(delivery_blocks, delivery_state, populations=self.populations)
                         with jax.named_scope("braincell:network_run:prepare_inputs"):
                             _prepare_inputs()
                         with jax.named_scope("braincell:network_run:begin_cells"):
@@ -1323,8 +1323,8 @@ class Network:
                                 for name in ordered_population_names
                                 for _, view in event_sources[name]
                             )
-                        with jax.named_scope("braincell:network_run:enqueue_events"):
-                            enqueue_future_events(delivery_blocks, delivery_state)
+                        with jax.named_scope("braincell:network_run:record_source_events"):
+                            record_source_events(delivery_state)
                         with jax.named_scope("braincell:network_run:advance_delivery"):
                             advance_delivery_state(delivery_state)
                         return recording_snapshots + events
@@ -1751,10 +1751,7 @@ def _event_source_metadata(population: str, port: str, view) -> dict:
 
 
 def _reset_delivery_state(state) -> None:
-    """Clear persistent event queues at an explicit network reset boundary."""
-    for index in range(len(state.ring_buffers)):
-        state.ring_buffers[index].value = u.math.zeros_like(state.ring_buffers[index].value)
-        state.ring_cursors[index].value = np.asarray(0, dtype=np.int32)
-        count_ring = state.count_ring(index)
-        if count_ring is not None:
-            count_ring.value = jnp.zeros_like(count_ring.value)
+    """Clear the event histories at an explicit network reset boundary."""
+    for history, cursor in zip(state.histories, state.history_cursors):
+        history.value = jnp.zeros_like(history.value)
+        cursor.value = np.asarray(0, dtype=np.int32)

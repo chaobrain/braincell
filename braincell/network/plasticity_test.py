@@ -1442,7 +1442,9 @@ class PostDetectorTest(unittest.TestCase):
         def ruled(post):
             cell = _toy_cell()
             signals = None if post is None else {"post": post(cell)}
-            braincell.connect("c", source=_seq([1.0]), synapse=cell.synapses["s"], weight=W0, plasticity=_stdp(signals=signals))
+            braincell.connect(
+                "c", source=_seq([1.0]), synapse=cell.synapses["s"], weight=W0, plasticity=_stdp(signals=signals)
+            )
             cell.init_state()
             return cell
 

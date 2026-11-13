@@ -41,6 +41,15 @@ and adds them to its targets.
   layout (CELL-53): a sparse later window, such as the tail of a
   schedule, then runs in the storage an earlier window was accepted in.
 
+The plan of every event (``prepare_run``, CELL-65) reads all arrivals at
+once. It keeps the window form, steps ``[0, last arrival + 1)``, when
+that fits: for ``"direct"`` no more steps than record slots, for
+``"padded"`` the limits above. Otherwise it stores only the steps that
+have arrivals, in place of the window's first step, and each step finds
+its row among them by binary search; ``"padded"`` then checks its limits
+on those rows. A schedule that runs to the step limit thus takes memory
+in proportion to its events, not its span.
+
 The arrival steps are those of the default path (``(time + delay) / dt``
 rounded at float64 on the host, CELL-46), and the current step is the
 loop's integer step, so a plan delivers each event at the step the
@@ -537,7 +546,7 @@ class ScheduledPlans:
         return arrays
 
     def everything(self) -> tuple:
-        """Device arrays of plans covering every event, holding only the steps that have arrivals (CELL-65)."""
+        """Device arrays of plans covering every event: the window form within budget, else the steps with arrivals."""
         tokens = self._tokens()
         if self.full is not None and self.full[0] == tokens:
             return self.full[1]

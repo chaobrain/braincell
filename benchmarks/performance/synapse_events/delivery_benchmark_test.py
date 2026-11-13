@@ -78,11 +78,8 @@ class DeliveryBenchmarkTest(unittest.TestCase):
                 data = b.measure_full(case, methods=methods, repeat=1, warmup=0, control=control, validate_control=True)
                 reference = data["rows"][0]["validation"]
                 for row in data["rows"]:
-                    if control == "silent" and row["method"] == "padded":
-                        # prepare_run plans every event: the shifted ones need 8.2 slots per record here.
-                        self.assertEqual(row["status"], "not_applicable")
-                        self.assertGreater(row["padding_ratio"], 8)
-                        continue
+                    # prepare_run plans every event: the shifted ones would need 8.2 slots per record in the
+                    # window form, so the padded plan stores only the steps with arrivals (CELL-65).
                     self.assertEqual(row["status"], "ok")
                     self.assertEqual(row["validation"], reference)
                     self.assertTrue(row["validation"]["reset_reproducible"])
@@ -176,7 +173,9 @@ class DeliveryBenchmarkTest(unittest.TestCase):
                 replace(case, dt_ms=0.025), methods=("padded",), repeat=1, warmup=0, profile_dir=Path(tmp)
             )
         self.assertIn("unavailable", limited["rows"][0]["profile_status"])
-        self.assertEqual(limited["rows"][1]["status"], "not_applicable")
+        # Every event's plan exceeds the padding ratio in the window form; it stores the steps with arrivals.
+        self.assertEqual(limited["rows"][1]["status"], "ok")
+        self.assertLess(limited["rows"][1]["voltage_max_error_mV"], 1e-4)
 
     def test_profile_success_and_failure_are_separate_from_measurement(self):
         case = b.QueryCase(n=1, m=1, k=1, duration_ms=1, dt_ms=0.5, pattern="sync")
@@ -317,9 +316,9 @@ class RegressionCorrectnessTest(unittest.TestCase):
         "active": (20, 50, 11, None, False),
         "mixed": (20, 50, 11, None, True),
     }
-    #: Models whose ``padded`` plan exceeds the padding ratio, with the ratio
-    #: of the update entry's plan (every event) and of the run entry's window.
-    NOT_APPLICABLE = {"small": (39.9, 40.0), "long": (12.0, 12.0)}
+    #: Models whose ``padded`` run window exceeds the padding ratio, with the ratio. The update
+    #: entry's plan of every event stores only the steps with arrivals there and runs (CELL-65).
+    NOT_APPLICABLE = {"small": 40.0, "long": 12.0}
 
     def test_matrix(self):
         cases = b.cases_for("regression")
@@ -341,12 +340,12 @@ class RegressionCorrectnessTest(unittest.TestCase):
         with brainstate.environ.context(precision=precision):
             report = b.check_regression(name)
         self.assertEqual(report["steps"], 4000)
-        for entry, position in (("update", 0), ("run", 1)):
+        for entry in ("update", "run"):
             for method in ("direct", "padded"):
                 row = report[entry][method]
-                if method == "padded" and name in self.NOT_APPLICABLE:
+                if entry == "run" and method == "padded" and name in self.NOT_APPLICABLE:
                     self.assertEqual(row["status"], "not_applicable")
-                    self.assertAlmostEqual(row["padding_ratio"], self.NOT_APPLICABLE[name][position], places=1)
+                    self.assertAlmostEqual(row["padding_ratio"], self.NOT_APPLICABLE[name], places=1)
                     self.assertIn('scheduled_delivery="direct"', row["reason"])
                 else:
                     self.assertEqual(row["status"], "ok", (name, entry, method))
@@ -452,7 +451,8 @@ class RegressionMeasurementTest(unittest.TestCase):
             self.assertEqual(limited["status"], "not_applicable")
             self.assertEqual(limited["padding_ratio"], 40.0)
             self.assertGreater(limited["attempt_s"], 0)
-            limited = b.measure_regression(
+            # The update entry's plan of every event stores only the steps with arrivals and runs (CELL-65).
+            planned = b.measure_regression(
                 "small",
                 "padded",
                 "update",
@@ -461,7 +461,7 @@ class RegressionMeasurementTest(unittest.TestCase):
                 repeat=1,
                 case=replace(b.cases_for("regression")["small"], duration_ms=10.0),
             )
-            self.assertEqual(limited["status"], "not_applicable")
+            self.assertEqual(planned["status"], "ok")
         with self.assertRaises(ValueError):
             b.measure_regression("small", "bucket", "run")
         with self.assertRaises(ValueError):

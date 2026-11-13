@@ -76,7 +76,7 @@ CPU-only 时可以省略 `--gpu`。前两个驱动一次调用执行一套选定
 
 A/B 仅 production；C/D 的每个 worker 配对 production 与所选桶，候选由 case 固定，不额外传 `--methods`。选择全部六个 case 时，每设备每轮有六个进程、十条方法结果；这些数量不包含方法内部的首次执行、预热、计时与额外校验，运行前还须逐项确认。
 
-The candidates are built by `Network.prepare_run(scheduled_delivery=...)`, whose plan covers every event. The silent schedule moves every event past the run, so a `padded` plan over that schedule can exceed the padding limit; the method is then recorded as not applicable, as in the other phases.
+The candidates are built by `Network.prepare_run(scheduled_delivery=...)`, whose plan covers every event. The silent schedule moves every event past the run; when the window form of that plan would exceed the padding limit, the plan stores only the steps with arrivals (CELL-65), so `padded` runs here too. A `padded` plan that exceeds its limits even then is recorded as not applicable, as in the other phases.
 
 四组差值表示不同完整模型之间的整体变化。B−A 不是单独突触衰减耗时，D−C 也不是全部 event 时间。时钟检查采用最终量化步与半 dt 偏差界限；重复结果使用数值容差，不能将 float32 的逐位相等作为普遍保证。
 

@@ -590,7 +590,8 @@ class PaddingLimitTest(unittest.TestCase):
         net.prepare_run(dt=DT, scheduled_delivery="padded")
         (layout,) = net._scheduled_plans.preparation["layouts"]
         self.assertEqual(
-            (layout["records"], layout["stored_steps"], layout["n_steps"], layout["padding_ratio"]), (100, 100, 3781, 1.0)
+            (layout["records"], layout["stored_steps"], layout["n_steps"], layout["padding_ratio"]),
+            (100, 100, 3781, 1.0),
         )
         _assert_same(self, UpdatePathTest._update_values(net, cell, 4000), expected)
 

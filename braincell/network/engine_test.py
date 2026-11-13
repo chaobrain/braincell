@@ -773,25 +773,26 @@ def _cell_steps(cell, dt_ms, n_steps, rises):
 
 
 class NetworkHandOverTest(unittest.TestCase):
-    """CELL-57: a Cell that ran alone joins a Network, or leaves one, and each event arrives once.
+    """CELL-57, CELL-55: a Cell that ran alone joins a Network, or leaves one, and each event arrives once.
 
-    The boundary at the time a run on its own reached is prepared by that run,
-    with its window at its dt, and stays its own: the Network's first step does
-    not prepare it again. At another dt the Network's steps skip the events
-    that run took and deliver the others no earlier than its next boundary
-    (decision 1). A Network step consumes its boundary within the step, so a
-    Cell run after it starts at its own first boundary, skipping what the
-    Network took. The expected boundaries are worked out by hand in each test.
+    A run on its own and a Network step each prepare the boundary at the
+    step's start and consume it within the step. So the Network's first step
+    prepares the boundary at the time the Cell reached; at another dt it skips
+    the events the Cell's run took and delivers the others on its own grid,
+    none before that boundary, as in a Network run from t = 0. A Cell run
+    after a Network skips what the Network took in the same way. The expected
+    boundaries are worked out by hand in each test.
     """
 
-    #: Cell.run 10 x 0.025 ms (it prepares 0.25 ms with [0.2375, 0.2625)), then
-    #: the Network: at 0.025 ms the rest are on their steps (0.27 at 0.275 ms);
-    #: at 0.05 ms 0.27 ms (5.4 steps, the prepared 0.25 ms) acts at 0.3 ms.
-    #: main delivered 0.25 ms's window again: {0.225: 1, 0.25: 10, 0.275: 1,
-    #: 0.3: 1} and {0.225: 1, 0.25: 12, 0.3: 1} (7 at 0.05 ms), 13 and 14 of 8.
+    #: Cell.run 10 x 0.025 ms (its last boundary, 0.225 ms, takes [0.2125,
+    #: 0.2375)), then the Network: at 0.025 ms 0.25 ms takes [0.2375, 0.2625)
+    #: and the rest are on their steps (0.27 at 0.275 ms); at 0.05 ms 0.25 ms
+    #: takes [0.225, 0.275), 0.2385 to 0.27 ms. main bbb7b0a, where the Cell's
+    #: run prepared 0.25 ms at its end, put 0.27 ms (5.4 steps) at 0.3 ms at
+    #: 0.05 ms: {0.225: 1, 0.25: 5, 0.3: 2}.
     JOINS = {
         0.025: (10, {0.225: 1, 0.25: 5, 0.275: 1, 0.3: 1}),
-        0.05: (5, {0.225: 1, 0.25: 5, 0.3: 2}),
+        0.05: (5, {0.225: 1, 0.25: 6, 0.3: 1}),
     }
 
     @staticmethod
@@ -813,10 +814,12 @@ class NetworkHandOverTest(unittest.TestCase):
 
     def test_a_netstim_planned_across_a_join_arrives_once(self):
         # NetStim at 0.2255 + 0.013 k ms (k < 6): alone, 0.2255 ms acts at
-        # 0.225 ms, 0.2385 and 0.2515 ms at 0.25 ms. At 0.025 ms 0.2645 and
-        # 0.2775 ms are 10.58 and 11.1 steps (0.275 ms), 0.2905 ms 11.62 (0.3
-        # ms); at 0.05 ms all three act at 0.3 ms (5.29, 5.55, 5.81 steps).
-        expected = {0.025: {0.225: 1, 0.25: 2, 0.275: 2, 0.3: 1}, 0.05: {0.225: 1, 0.25: 2, 0.3: 3}}
+        # 0.225 ms. At 0.025 ms 0.2385 and 0.2515 ms act at 0.25 ms, 0.2645
+        # and 0.2775 ms (10.58 and 11.1 steps) at 0.275 ms, 0.2905 ms (11.62)
+        # at 0.3 ms; at 0.05 ms 0.2385, 0.2515 and 0.2645 ms (4.77, 5.03,
+        # 5.29 steps) at 0.25 ms, 0.2775 and 0.2905 ms (5.55, 5.81) at 0.3 ms.
+        # main: {0.225: 1, 0.25: 2, 0.3: 3} at 0.05 ms.
+        expected = {0.025: {0.225: 1, 0.25: 2, 0.275: 2, 0.3: 1}, 0.05: {0.225: 1, 0.25: 3, 0.3: 2}}
         for precision in (32, 64):
             for net_dt, rises_expected in expected.items():
                 for driver in ("run", "direct", "padded", "update"):
@@ -830,8 +833,8 @@ class NetworkHandOverTest(unittest.TestCase):
                         self.assertEqual(rises, rises_expected)
 
     def test_a_rule_updates_once_per_boundary_across_a_join(self):
-        # The Network's first step leaves the rule's boundary at 0.25 ms to the
-        # run that prepared it: the rule updates once there (main twice).
+        # The run alone updates the rule at its steps' boundaries, 0 to 0.225
+        # ms; the Network at its own, from 0.25 ms: once per boundary.
         for precision in (32, 64):
             for net_dt, (n_steps, expected) in self.JOINS.items():
                 with (
@@ -844,19 +847,19 @@ class NetworkHandOverTest(unittest.TestCase):
                     network = _join_network(cell, sources)
                     network.run(dt=net_dt * u.ms, duration=n_steps * net_dt * u.ms)
                     jax.effects_barrier()
-                    alone = [round(k * 0.025, 6) for k in range(11)]
-                    joined = [round(0.25 + k * net_dt, 6) for k in range(1, n_steps)]
+                    alone = [round(k * 0.025, 6) for k in range(10)]
+                    joined = [round(0.25 + k * net_dt, 6) for k in range(n_steps)]
                     self.assertEqual([round(t, 6) for t, _, _ in updates], alone + joined)
                     self.assertEqual({round(t, 6): int(n) for t, n, _ in updates if n}, expected)
                     self.assertEqual({round(t, 6): int(n) for t, _, n in updates if n}, expected)
 
-    def test_a_joined_cell_with_its_own_live_row_keeps_its_prepared_boundary(self):
+    def test_a_joined_cell_with_its_own_live_row_receives_each_event_once(self):
         # The Cell's own spike port feeds its synapse with a 1 ms delay: in the
-        # Network that row has a delay queue, whose write of the first step's
-        # (empty) arrivals replaced the boundary the run alone prepared. main:
-        # 8 of 8 at 0.025 ms (the second preparation stood in for it) and 9 of
-        # 8 at 0.05 ms; without the merge, 3 of 8. The Cell never spikes, so g
-        # counts the scheduled events, and an ExpSynSTD beside it their number.
+        # Network that row has a delay queue, which writes each step's (empty)
+        # arrivals into the synapse's buffer. Before CELL-57 that write
+        # replaced the boundary the run alone had prepared (3 of 8). The Cell
+        # never spikes, so g counts the scheduled events, and an ExpSynSTD
+        # beside it their number.
         for precision in (32, 64):
             for net_dt, (n_steps, expected) in self.JOINS.items():
                 with self.subTest(precision=precision, dt=net_dt), self._precision(precision):
@@ -927,8 +930,10 @@ class NetworkHandOverTest(unittest.TestCase):
                 self.assertEqual(rises, {0.25: 7, 0.3: 1})
 
     def test_a_network_of_fresh_cells_compiles_the_loop_it_did(self):
-        # Nothing to take over: one loop, keyed as before; after a join, the
-        # first run has its own loop and the next ones share one.
+        # Nothing to take over: one loop, keyed as before. After a join at
+        # another dt the runs share one loop, compiled for the hand-over: no
+        # boundary is left prepared, so the first run needs no loop of its own
+        # (main bbb7b0a: 2 loops).
         cell, sources = _counting_cell(_sequence())
         network = _join_network(cell, sources)
         for _ in range(3):
@@ -939,7 +944,7 @@ class NetworkHandOverTest(unittest.TestCase):
         network = _join_network(cell, sources)
         for _ in range(3):
             network.run(dt=_NET_DT, duration=2 * _NET_DT)
-        self.assertEqual(len(network._network_run_loop_cache), 2)
+        self.assertEqual(len(network._network_run_loop_cache), 1)
 
 
 def _resting_one_cv_cell(kind, solver, pop_size=2):

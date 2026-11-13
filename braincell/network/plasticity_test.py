@@ -1113,7 +1113,7 @@ class RecordRuleStateLoopTest(unittest.TestCase):
         self.assertEqual(_rec(samples, "sched_w", u.uS).max(), 0.0015)
 
     @_float64
-    def test_standalone_update_loop_reads_two_samples_ahead(self) -> None:
+    def test_standalone_update_loop_reads_the_next_sample(self) -> None:
         cell = _standalone_model()
         samples = cell.run(dt=DT, duration=16.0 * u.ms).samples
         np.testing.assert_allclose(_w(cell), [W_STANDALONE], rtol=RTOL)
@@ -1136,9 +1136,10 @@ class RecordRuleStateLoopTest(unittest.TestCase):
         with brainstate.environ.context(dt=DT):
             read = brainstate.transform.for_loop(step, u.math.arange(159) * DT)
         for state in STATES:
-            # rule_state after update j (from 0) is sample j + 2.
+            # rule_state after update j (from 0) is sample j + 1, as in a
+            # Network: update j runs the rule at its own boundary (CELL-55).
             np.testing.assert_allclose(
-                _decimal(read[state], _unit(state))[:158], _rec(samples, state, _unit(state))[2:], rtol=RTOL, atol=1e-15
+                _decimal(read[state], _unit(state)), _rec(samples, state, _unit(state))[1:], rtol=RTOL, atol=1e-15
             )
 
     @_float64
@@ -1211,11 +1212,11 @@ class RecordRuleStateLoopTest(unittest.TestCase):
             _assert_same_recordings(self, other.samples, one.samples, STATES)
 
     @_float64
-    def test_a_weight_set_between_runs_shows_when_it_is_delivered(self) -> None:
-        # The boundary at 5 ms ends the first run. A standalone Cell has
-        # prepared it before set(), so its event still carries 0.05 uS
-        # (CELL-55); a Network prepares it in the next run.
-        for driver, rows in (("cell", [0.05, 0.08]), ("network", [0.08, 0.08])):
+    def test_a_weight_set_between_runs_is_delivered_at_the_next_boundary(self) -> None:
+        # The boundary at 5 ms ends the first run; the next run prepares it,
+        # in either driver, so its event carries the weight set between them
+        # (CELL-55; a standalone Cell's carried 0.05 uS on main bbb7b0a).
+        for driver, rows in (("cell", [0.08, 0.08]), ("network", [0.08, 0.08])):
             cell = _toy_cell()
             if driver == "cell":
                 braincell.connect("c", source=_seq([5.0]), synapse=cell.synapses["s"], weight=W0, plasticity=_stdp())
@@ -1378,6 +1379,91 @@ class WeightSetBetweenRunsTest(unittest.TestCase):
                 expected = w_before[1:].copy()
                 expected[self.N1 - 1] = self._reference("sequence", {}, set_at=None)[1][self.N1]
                 np.testing.assert_allclose(w, expected, rtol=RTOL, atol=1e-15)
+
+
+class PostDetectorTest(unittest.TestCase):
+    """CELL-55: a rule's post detector with a threshold of its own reads the voltage before each step.
+
+    Each step runs the rule at its boundary when it starts, where a
+    ``VoltageCrossingSource`` post signal compares the voltage before the
+    step that ended there with the voltage after it. The toy Cell is at +40
+    mV in the steps that end at 3.0, 3.1 and 5.0 ms, so the -20 mV detector
+    crosses in the steps ending at 3.0 and 5.0 ms only: post events at
+    boundaries 30 and 50. The pre events at 1, 4 and 6 ms arrive at
+    boundaries 10, 40 and 60. Had the run loop not carried the voltage
+    before each step, the detector would compare every step with the
+    voltage before the run, and cross in the step ending at 3.1 ms too.
+    """
+
+    STEPS = 80
+
+    def _model(self, driver):
+        cell = _toy_cell(post_ms=[3.0, 3.1, 5.0])
+        detector = braincell.VoltageCrossingSource(cell, threshold=-20.0 * u.mV)
+        rule = _stdp(signals={"post": detector})
+        source = _seq([1.0, 4.0, 6.0])
+        if driver == "network":
+            owner = _network(source, cell, rule=rule)
+        else:
+            braincell.connect("c", source=source, synapse=cell.synapses["s"], weight=W0, plasticity=rule)
+            owner = cell
+        cell.connections["c"].record("w", "w")
+        return owner, cell
+
+    @_float64
+    def test_cell_run_and_network_give_the_host_rule(self) -> None:
+        boundaries = self.STEPS + 1
+        pre = np.zeros((boundaries, 1))
+        pre[[10, 40, 60]] = 1.0
+        post = np.zeros((boundaries, 1))
+        post[[30, 50]] = 1.0
+        w = _host_pair_stdp(pre, post, [0.05], A_plus=A_PLUS, A_minus=A_MINUS, tau=TAU, dt=0.1)[0][:, 0]
+        # The updates at the post events (30, 50) and the pre events after
+        # them (40, 60) change the weight (L97).
+        self.assertEqual(np.flatnonzero(np.diff(w)).tolist(), [30, 40, 50, 60])
+        # One run; and runs that end at the step of the first crossing, and at the step after it.
+        for driver, splits in (("network", (80,)), ("cell", (80,)), ("cell", (30, 1, 49))):
+            with self.subTest(driver=driver, splits=splits):
+                owner, cell = self._model(driver)
+                rows = []
+                for steps in splits:
+                    result = owner.run(dt=DT, duration=steps * DT)
+                    block = result.samples if driver == "cell" else result.samples["post"]
+                    rows.append(_rec(block, "w", u.uS)[:, 0])
+                np.testing.assert_allclose(np.concatenate(rows), w[:-1], rtol=RTOL, atol=1e-15)
+                np.testing.assert_allclose(_w(cell), w[-1:], rtol=RTOL, atol=1e-15)
+
+    def test_only_a_detector_that_reads_the_voltage_is_carried(self) -> None:
+        from braincell.network.plasticity import reads_voltage_before_step
+
+        def ruled(post):
+            cell = _toy_cell()
+            signals = None if post is None else {"post": post(cell)}
+            braincell.connect("c", source=_seq([1.0]), synapse=cell.synapses["s"], weight=W0, plasticity=_stdp(signals=signals))
+            cell.init_state()
+            return cell
+
+        plain = _toy_cell()
+        braincell.connect("c", source=_seq([1.0]), synapse=plain.synapses["s"], weight=W0)
+        plain.init_state()
+        cases = {
+            "no rule": (plain, False),
+            "the Cell's spike": (ruled(None), False),
+            # At the Cell's threshold, rising, the detector reads the Cell's spike.
+            "a detector at V_th": (ruled(lambda cell: braincell.VoltageCrossingSource(cell)), False),
+            "a teacher": (ruled(lambda cell: _seq([2.0])), False),
+            "a detector at -20 mV": (
+                ruled(lambda cell: braincell.VoltageCrossingSource(cell, threshold=-20.0 * u.mV)),
+                True,
+            ),
+            "a falling detector": (
+                ruled(lambda cell: braincell.VoltageCrossingSource(cell, direction="falling")),
+                True,
+            ),
+        }
+        for name, (cell, expected) in cases.items():
+            with self.subTest(post=name):
+                self.assertIs(reads_voltage_before_step(cell), expected)
 
 
 class RecordRuleStateFloat32Test(unittest.TestCase):

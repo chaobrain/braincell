@@ -2138,6 +2138,26 @@
   size, and a connected Cell its saved weights, on both kinds of Cell, as
   did a stiff-gate warning raised as an error on a lumped Cell. A
   successful `init_state` is unchanged.
+- `Exp2Syn`, `GabaA_JE2011` and the `SynapticKernelAccumulatorReduction`
+  kernel area run `tau1 / tau2 > 0.9999` as `tau1 = 0.9999 * tau2`, as the
+  INITIAL blocks of NEURON's `exp2syn.mod` and `gabaA_Cl.mod` do (CELL-62).
+  The peak-normalising factor lost about `eps / delta` of its precision as
+  `delta = 1 - tau1 / tau2` shrank, and `g = B - A` is the difference of two
+  states of about `e / delta` times the weight. The clamp is used in the
+  factor and in `A' = -A / tau1`, and the declared `tau1` is kept. On main
+  `00a84f0`, with `tau2 = 5 ms` and a weight `w` of 1e-3 uS:
+  - at `delta = 1e-5`, the conductance differed from NEURON 9.0.2 by
+    6.0e-5 w and V by 1.0e-3 mV; it is now 1.3e-10 w and 1.7e-9 mV;
+  - in float32, a `tau1` that rounds to `tau2` gave NaN states; they are now
+    finite, within 1.0e-2 w of the clamped kernel;
+  - for adjacent floats (`tau2 = 2 ms`), the kernel area was 8.0 ms; it is
+    now 5.4363 ms.
+
+  With the clamp, one event's conductance is within 4.2e-5 w of the
+  requested kernel, and the gradient with respect to `tau1` is zero there.
+  For `tau1 / tau2 <= 0.9999`, results and gradients are unchanged bit for
+  bit, and the float64 factor stays within 2.4e-12 of its closed form, as in
+  NEURON.
 - Each `NetStim` and `EventSequence` event is delivered once where a run
   continues one at another `dt`, and where a `Cell` that ran on its own
   joins a `Network` (CELL-57). A `Cell.run` ended by preparing the boundary

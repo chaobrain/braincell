@@ -47,7 +47,7 @@ import brainstate
 import brainunit as u
 import numpy as np
 
-__all__ = ["SCENARIOS", "Scenario", "run_braincell", "run_neuron"]
+__all__ = ["NEAR_EQUAL_SCENARIOS", "SCENARIOS", "Scenario", "run_braincell", "run_neuron"]
 
 DT_MS = 0.025
 LENGTH_UM = 20.0
@@ -107,6 +107,16 @@ SCENARIOS = (
     Scenario("Exp2Syn default 0.1/10", "Exp2Syn", {"tau1": 0.1, "tau2": 10.0, "e": 0.0}, (1.0, 6.0), 0.001, 60.0),
     Scenario("Exp2Syn near-equal 1/1.05", "Exp2Syn", {"tau1": 1.0, "tau2": 1.05, "e": 0.0}, (1.0, 2.0), 0.001, 30.0),
     Scenario("Exp2Syn inhibitory 1/20", "Exp2Syn", {"tau1": 1.0, "tau2": 20.0, "e": -80.0}, (1.0, 4.0), 0.003, 100.0),
+)
+
+# tau1 close to tau2 (CELL-62), delta = 1 - tau1 / tau2. NEURON's exp2syn.mod
+# runs tau1 / tau2 > 0.9999 as tau1 = 0.9999 tau2 in INITIAL, and BrainCell
+# does the same, so the 1e-5 scenario runs the delta = 1e-4 kernel on both
+# sides. Its states are about 3e4 times the weight, so V and the current keep
+# fewer digits than in SCENARIOS (see reference_test.py).
+NEAR_EQUAL_SCENARIOS = tuple(
+    Scenario(f"Exp2Syn delta {delta:g}", "Exp2Syn", {"tau1": 5.0 * (1.0 - delta), "tau2": 5.0, "e": 0.0}, (1.0, 11.0), 0.001, 40.0)
+    for delta in (1e-2, 1e-5)
 )
 
 

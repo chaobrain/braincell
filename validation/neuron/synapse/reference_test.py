@@ -28,7 +28,7 @@ import unittest
 
 import numpy as np
 
-from validation.neuron.synapse.reference import SCENARIOS, run_braincell, run_neuron
+from validation.neuron.synapse.reference import NEAR_EQUAL_SCENARIOS, SCENARIOS, run_braincell, run_neuron
 
 try:
     import neuron
@@ -103,6 +103,38 @@ class ExponentialSynapseNeuronTest(unittest.TestCase):
             np.testing.assert_allclose(-nrn["i_recorded_nA"][1:], expected, rtol=0.0, atol=1e-12)
 
         self._assert_each_scenario(check)
+
+
+class Exp2SynNearEqualNeuronTest(unittest.TestCase):
+    """``Exp2Syn`` with tau1 close to tau2 against NEURON's ``exp2syn`` (CELL-62).
+
+    NEURON sets tau1 = 0.9999 tau2 in INITIAL when tau1 / tau2 > 0.9999, and
+    BrainCell runs the same effective tau1. NEURON 9.0.2 gave at most 1.3e-13
+    uS, 1.7e-9 mV and 4.0e-12 nA (delta = 1e-5); before BrainCell clamped, the
+    conductance differed by 6.0e-8 uS and V by 1.0e-3 mV (main e693336). The
+    states are about 3e4 times the weight, hence the wider V and current limits
+    than ``ExponentialSynapseNeuronTest``.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        if neuron is None:
+            raise unittest.SkipTest("NEURON is not installed; the Exp2Syn NEURON comparison needs it.")
+        cls.braincell = run_braincell(NEAR_EQUAL_SCENARIOS)
+        cls.neuron = {scenario.name: run_neuron(scenario) for scenario in NEAR_EQUAL_SCENARIOS}
+
+    def test_conductance_voltage_and_current_agree(self):
+        for scenario in NEAR_EQUAL_SCENARIOS:
+            with self.subTest(scenario.name):
+                bc_trace, nrn_trace = self.braincell[scenario.name], self.neuron[scenario.name]
+                self.assertEqual(bc_trace["g_uS"].size, round(scenario.duration_ms / 0.025))
+                self.assertEqual(nrn_trace["g_uS"].size, bc_trace["g_uS"].size)
+                self.assertTrue(np.all(np.isfinite(bc_trace["g_uS"])))
+                self.assertGreater(np.ptp(nrn_trace["g_uS"]), 1e-4)
+                np.testing.assert_allclose(bc_trace["g_uS"], nrn_trace["g_uS"], rtol=0.0, atol=G_ATOL_US)
+                np.testing.assert_allclose(bc_trace["v_mV"], nrn_trace["v_mV"], rtol=0.0, atol=1e-8)
+                np.testing.assert_allclose(bc_trace["i_nA"], nrn_trace["i_nA"], rtol=0.0, atol=I_ATOL_NA)
+
 
 if __name__ == "__main__":
     unittest.main()

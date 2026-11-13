@@ -840,11 +840,12 @@ class Network:
             Backend for the sparse event operator.
         scheduled_delivery : {None, "direct", "padded"}, optional
             As in :meth:`run`. The plan :meth:`update` reads covers every
-            event, steps ``[0, last arrival + 1)`` of each synapse layout,
-            and is built once, here: a training loop of ``update()`` calls,
-            split over several ``for_loop`` calls or rerun after
-            :meth:`reset_state`, uses it throughout. Steps past the last
-            arrival receive nothing, as on the default path.
+            event it can deliver (see Notes), steps ``[0, last arrival + 1)``
+            of each synapse layout, and is built once, here: a training
+            loop of ``update()`` calls, split over several ``for_loop``
+            calls or rerun after :meth:`reset_state`, uses it throughout.
+            Steps past the last arrival receive nothing, as on the default
+            path.
 
         Returns
         -------
@@ -863,6 +864,12 @@ class Network:
 
         Notes
         -----
+        ``update()`` runs for as many steps as its caller loops, but no
+        further than the step limit, ``2**31 - 1`` steps. ``NetStim``
+        events are generated here as far as that limit, however large
+        ``number`` is: about ``2**31 * dt / interval`` per source, 5.4
+        million at ``dt = 0.025 ms`` and ``interval = 10 ms``.
+
         ``"direct"`` supports first-order reverse differentiation of the
         ``update()`` rollout (``jax.grad``, ``brainstate.transform.grad``)
         only; forward mode through it (``jax.jvp``, ``jacfwd``) raises
@@ -921,7 +928,8 @@ class Network:
         # update() runs for an unknown number of steps, but no further than
         # the step limit (each eager call checks it): as for a run of that
         # many steps, NetStim events up to one step past it cover every
-        # arrival update() delivers, and later events are not generated.
+        # arrival update() delivers, and later events are not generated
+        # (CELL-56).
         start_ms, join = self._start_clocks(
             setup.ordered_population_names, dt=dt, n_steps=0, prefix="Network.prepare_run(...)"
         )

@@ -26,6 +26,7 @@ import numpy as np
 
 from braincell.mech import ScalarEventInput
 from braincell.reduction.core import ReductionContext, ReductionInputs, ReductionModel, ReductionOutput
+from braincell.synapse.exponential import _effective_tau1
 
 __all__ = [
     "EventAccumulatorReduction",
@@ -213,7 +214,13 @@ class PayloadAccumulatorReduction(_AccumulatorReduction):
 
 
 class SynapticKernelAccumulatorReduction(_AccumulatorReduction):
-    """Accumulate type-aware analytic synaptic-kernel areas without synapse state."""
+    """Accumulate type-aware analytic synaptic-kernel areas without synapse state.
+
+    The unit-weight area is ``tau`` for ``ExpSyn`` and ``factor * (tau2 -
+    tau1)`` for the peak-normalised ``Exp2Syn``, computed once at
+    ``init_state`` from the declared parameters. Like ``Exp2Syn`` itself,
+    ``tau1 / tau2 > 0.9999`` uses ``tau1 = 0.9999 * tau2``.
+    """
 
     def __init__(self, *, alpha: float = 0.0, threshold=1.0 * u.uS * u.ms) -> None:
         super().__init__(alpha=alpha, threshold=threshold)
@@ -301,6 +308,9 @@ def _synaptic_kernel_area_ms(synapse) -> float:
         # init_state; tau1 == tau2 would divide by zero below.
         if tau1 >= tau2:
             raise ValueError("Exp2Syn requires tau1 < tau2.")
+        # Exp2Syn runs tau1 / tau2 > 0.9999 as tau1 = 0.9999 tau2 (NEURON's
+        # exp2syn.mod), so its conductance integrates to this kernel's area.
+        tau1 = _effective_tau1(tau1, tau2)
         t_peak = tau1 * tau2 / (tau2 - tau1) * np.log(tau2 / tau1)
         factor = 1.0 / (np.exp(-t_peak / tau2) - np.exp(-t_peak / tau1))
         return float(factor * (tau2 - tau1))

@@ -243,6 +243,24 @@ class GabaAModelTest(unittest.TestCase):
             cell.synapses["g"].set(P=-0.5)
         np.testing.assert_allclose(cell.synapses["g"].P, [0.18])
 
+    def test_tau1_close_to_tau2_runs_as_0_9999_tau2(self) -> None:
+        # CELL-62: gabaA_Cl.mod (ModelDB 148253) sets tau1 = 0.9999 tau2 in INITIAL
+        # when tau1 / tau2 > 0.9999, as exp2syn.mod does. Closed-form factor at
+        # r = 0.9999: 1 / (1e-4 * 0.9999**9999) = 27181.459132349482.
+        tau2 = 6.0
+        for tau1 in (tau2 * (1.0 - 1e-5), tau2 * (1.0 - 1e-12), float(np.nextafter(tau2, 0.0))):
+            with self.subTest(tau1=tau1), brainstate.environ.context(precision=64):
+                synapse = GabaA_JE2011(size=1, tau1=tau1 * u.ms, tau2=tau2 * u.ms)
+                synapse.init_state()
+                synapse.apply_events([1.0] * u.uS)
+                synapse.compute_derivative()
+                a = synapse.A.value.to_decimal(u.uS)
+                np.testing.assert_allclose(a, [27181.459132349482], rtol=1e-11)
+                np.testing.assert_allclose(synapse.B.value.to_decimal(u.uS), a, rtol=0.0)
+                np.testing.assert_allclose(
+                    synapse.A.derivative.to_decimal(u.uS / u.ms), -a / (0.9999 * tau2), rtol=1e-15
+                )
+
 
 class GabaACellTest(unittest.TestCase):
     """The Cell passes each row's chloride state and adds the chloride current to the ion."""

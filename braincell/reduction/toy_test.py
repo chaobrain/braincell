@@ -27,6 +27,7 @@ expected values below are worked out by hand from that rule.
 
 import unittest
 
+import brainstate
 import brainunit as u
 import jax.numpy as jnp
 import numpy as np
@@ -251,6 +252,21 @@ class SynapticKernelAccumulatorTest(_OutputAssertions):
         area = (kernel[:-1] + kernel[1:]).sum() * 1e-3 / 2.0 / kernel.max()
 
         np.testing.assert_allclose(area, _EXP2SYN_AREA_MS, rtol=1e-7)
+
+    def test_exp2syn_area_uses_tau1_0_9999_tau2_when_tau1_is_close_to_tau2(self) -> None:
+        # CELL-62: the kernel follows Exp2Syn, which runs tau1 / tau2 > 0.9999 as
+        # tau1 = 0.9999 tau2 (NEURON's exp2syn.mod). The peak-normalised area at
+        # r = tau1 / tau2 is tau2 r^(-r / (1 - r)): 2 * 0.9999**-9999 =
+        # 5.4362918264698964 ms for tau2 = 2 ms (mpmath). Adjacent floats gave 8.0 ms.
+        owner = _Owner((1,))
+        exp2 = _schema(synapse_type="Exp2Syn", synapse_id=[0], synapse_index=[0], population_index=[0])
+        for tau1 in (2.0 * (1.0 - 1e-5), 2.0 * (1.0 - 1e-12), float(np.nextafter(2.0, 0.0))):
+            with self.subTest(tau1=tau1), brainstate.environ.context(precision=64):
+                synapses = (_synapse(0, 0, "Exp2Syn", tau1=tau1 * u.ms, tau2=2.0 * u.ms),)
+                model = _KERNEL(threshold=100.0 * u.uS * u.ms)
+                model.init_state(_context(owner, exp2, synapses=synapses))
+                value = model.update(_inputs((exp2, [1.0] * u.uS))).values["value"]
+                np.testing.assert_allclose(np.asarray(value.to_decimal(u.uS * u.ms)), [5.4362918264698964], rtol=1e-11)
 
     def test_payload_is_scaled_by_the_kernel_area_of_each_type(self) -> None:
         owner = _Owner((2,))

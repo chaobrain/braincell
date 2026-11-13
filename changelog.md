@@ -2329,6 +2329,35 @@
   a `VoltageCrossingSource` with a threshold of its own carries the voltage
   before each step through the run loop: one more device copy per step on
   GPU.
+- A delayed event from a live source in a `Network` takes the connection
+  weight it arrives with, as in a standalone `Cell.run`, on live rows with
+  a plasticity rule, and in NEURON, whose `NetCon` weights an event at
+  delivery (CELL-69). The Network weighted each event when its source
+  fired and kept the weighted value until it arrived, so a
+  `ConnectionView.set(weight=...)` between two runs, or two `update()`
+  calls, missed the events still in their delay. On main `8bb8721`, in
+  float32 and float64, with `dt = 0.1 ms`, a Cell whose spikes in the steps
+  ending at 3.0, 4.8, 5.0 and 5.2 ms reach its own ExpSyn 0.1, 0.2 or
+  0.3 ms later, 50 steps, a weight set from 0.05 to 0.08 uS and 20 more
+  steps: the events sent before the change and arriving after it delivered
+  0.05 uS where `Cell.run` delivered 0.08 uS (at 5.0 ms with a delay of
+  0.1 ms, at 5.1 ms with 0.2 ms, at 5.0 and 5.2 ms with 0.3 ms), in
+  `Network.run`, in one-step runs and in `update()` loops. They now deliver
+  0.08 uS. For each target synapse layout, the Network now keeps the event
+  counts of the source members its delayed rows read over the longest
+  delay, weights them when they arrive, and sums them in the order the
+  queue of weighted events did. Runs that do not change a weight are
+  unchanged bit for bit on the machine that tested them, in float32 and
+  float64 and on both event backends. The delay buffer holds
+  `depth x source members` values where the queue held
+  `(depth + 1) x synapse rows`. In float64 with delays up to 80 steps, 1e6
+  rows from 1e6 sources onto 1e4 shared synapses take 624 MB (6.5 MB
+  before), and 1e6 rows from 900 sources onto 1e6 synapses take 0.58 MB
+  (648 MB before). The run loop copied the queue twice per step; it does
+  not copy the history. Per step on one CPU core (main `2da3f2b`), 1e6 rows
+  from 900 sources take 2.61 ms (5.27 ms before) onto 1e4 synapses and
+  41.9 ms (113.6 ms before) onto 1e6 synapses; 1e6 rows from 1e6 sources
+  onto 1e4 synapses take 50.0 ms (45.5 ms before).
 - A recording samples in whole steps of the grid from time 0, so a
   standalone `Cell.run` whose steps are off that grid samples where a
   scheduled event at the sample time acts, and a long run takes each sample

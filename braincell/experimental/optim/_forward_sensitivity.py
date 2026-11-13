@@ -33,6 +33,38 @@ import jax.numpy as jnp
 import numpy as np
 
 
+class OperatorInput(NamedTuple):
+    """The target's axial operator, traced as an explicit input of a step.
+
+    ``builder`` builds the operator leaves the solver reads from the states
+    listed in ``builder_trace``; ``value_indices`` locates each of those
+    states in the functional step's state values. The step was traced with
+    ``(step_data, operator_leaves)`` as its data, so a rollout builds the
+    operator once from its initial values and passes it to every step. The
+    geometry and the optimizer roots do not change within a rollout (the
+    engine keeps per-step building when the user's step writes them), so
+    the operator built from the initial values is the one every step would
+    build.
+    """
+
+    builder: brainstate.transform.StatefulFunction
+    builder_trace: brainstate.StateTraceStack
+    value_indices: tuple[int, ...]
+
+    def build(self, step_state_values):
+        """Return the operator leaves for ``step_state_values`` (functional-step order)."""
+        return self.build_from(self.select(step_state_values))
+
+    def select(self, step_state_values):
+        """The builder's inputs: the values of the states it reads, in its own order."""
+        return tuple(step_state_values[index] for index in self.value_indices)
+
+    def build_from(self, builder_values):
+        """Return the operator leaves for the builder's own input values."""
+        _new_values, leaves = self.builder.jaxpr_call(builder_values, None)
+        return leaves
+
+
 class FunctionalStep(NamedTuple):
     """A stateful step exposed as an explicit state-value transition."""
 
@@ -41,14 +73,46 @@ class FunctionalStep(NamedTuple):
     parameter_names: tuple[str, ...]
     parameter_states: tuple[brainstate.ParamState, ...]
     parameter_indices: tuple[int, ...]
+    operator: OperatorInput | None = None
 
     def state_values(self):
         """Return current values in the state order expected by ``jaxpr_call``."""
         return self.state_trace.get_state_values()
 
     def call(self, state_values, step_data):
-        """Evaluate the pure state-value transition without mutating model states."""
-        return self.function.jaxpr_call(state_values, step_data)
+        """Evaluate the pure state-value transition without mutating model states.
+
+        A step with an operator input builds the operator from
+        ``state_values`` here, once per call; rollouts build it once and use
+        :meth:`call_with_operator`.
+        """
+        if self.operator is None:
+            return self.function.jaxpr_call(state_values, step_data)
+        return self.call_with_operator(state_values, step_data, self.operator.build(state_values))
+
+    def call_with_operator(self, state_values, step_data, operator):
+        """Evaluate the transition with prebuilt operator leaves (``operator`` is ``None`` without one)."""
+        if self.operator is None:
+            return self.function.jaxpr_call(state_values, step_data)
+        return self.function.jaxpr_call(state_values, (step_data, operator))
+
+    def build_operator(self, state_values):
+        """The operator leaves for ``state_values``, or ``None`` for a step without an operator input."""
+        return None if self.operator is None else self.operator.build(state_values)
+
+    def build_operator_with_tangents(self, state_values, state_tangents):
+        """The operator leaves and their tangents along every direction of ``state_tangents``.
+
+        The rollout's operator depends on the parameters through the states
+        it is built from; its tangent is computed once here and passed with
+        the operator to every step, so forward sensitivity keeps that path.
+        """
+        if self.operator is None:
+            return None, None
+        # Linearize in the builder's inputs only: the other states (some
+        # integer or boolean) do not reach the operator.
+        operator, linear_map = jax.linearize(self.operator.build_from, self.operator.select(state_values))
+        return operator, jax.vmap(linear_map)(self.operator.select(state_tangents))
 
 
 class ForwardSensitivityResult(NamedTuple):
@@ -460,6 +524,8 @@ def forward_sensitivity_step(
     state_values,
     state_tangents,
     step_data,
+    operator=None,
+    operator_tangents=None,
 ):
     """Advance primal state and all forward parameter directions by one step.
 
@@ -481,6 +547,11 @@ def forward_sensitivity_step(
         local_gradient_contribution)``.
     """
 
+    if operator is not None:
+        return _forward_sensitivity_step_with_operator(
+            functional_step, state_values, state_tangents, step_data, operator, operator_tangents
+        )
+
     def transition(values):
         return functional_step.call(values, step_data)
 
@@ -499,6 +570,29 @@ def forward_sensitivity_step(
     return next_state_values, next_state_tangents, local_loss, local_gradient
 
 
+def _forward_sensitivity_step_with_operator(
+    functional_step, state_values, state_tangents, step_data, operator, operator_tangents
+):
+    """:func:`forward_sensitivity_step` with prebuilt operator leaves and their tangents."""
+
+    def transition(values, op):
+        return functional_step.call_with_operator(values, step_data, op)
+
+    if os.environ.get("BRAINCELL_RTRL_JVP_MODE", "linearize") == "direct":
+
+        def one_direction(tangent, operator_tangent):
+            return jax.jvp(transition, (state_values, operator), (tangent, operator_tangent))
+
+        (next_state_values, local_loss), (next_state_tangents, local_gradient) = jax.vmap(
+            one_direction,
+            out_axes=((None, None), (0, 0)),
+        )(state_tangents, operator_tangents)
+    else:
+        (next_state_values, local_loss), linear_map = jax.linearize(transition, state_values, operator)
+        next_state_tangents, local_gradient = jax.vmap(linear_map)(state_tangents, operator_tangents)
+    return next_state_values, next_state_tangents, local_loss, local_gradient
+
+
 def compact_forward_sensitivity_step(
     functional_step: FunctionalStep,
     projection: ActiveStateProjection,
@@ -506,17 +600,28 @@ def compact_forward_sensitivity_step(
     state_values,
     active_state_tangents,
     step_data,
+    operator=None,
+    operator_tangents=None,
 ):
     """Advance one step while carrying only selected active-state sensitivity."""
-
-    def transition(values):
-        return functional_step.call(values, step_data)
 
     full_state_tangents = projection.embed_tangents(
         state_values,
         active_state_tangents,
         parameter_coordinates,
     )
+    if operator is not None:
+        next_state_values, next_full_state_tangents, local_loss, local_gradient = (
+            _forward_sensitivity_step_with_operator(
+                functional_step, state_values, full_state_tangents, step_data, operator, operator_tangents
+            )
+        )
+        next_active_state_tangents = projection.extract_tangents(next_full_state_tangents)
+        return next_state_values, next_active_state_tangents, local_loss, local_gradient
+
+    def transition(values):
+        return functional_step.call(values, step_data)
+
     (next_state_values, local_loss), linear_map = jax.linearize(transition, state_values)
     next_full_state_tangents, local_gradient = jax.vmap(linear_map)(full_state_tangents)
     next_active_state_tangents = projection.extract_tangents(next_full_state_tangents)
@@ -551,6 +656,9 @@ def forward_sensitivity_rollout(
     direction_count = _direction_count(initial_state_tangents)
     gradient_dtype = _parameter_dtype(functional_step, initial_state_values)
     initial_gradient = jnp.zeros((direction_count,), dtype=gradient_dtype)
+    operator, operator_tangents = functional_step.build_operator_with_tangents(
+        initial_state_values, initial_state_tangents
+    )
 
     def scan_step(carry, data):
         state_values, state_tangents, gradient = carry
@@ -559,6 +667,8 @@ def forward_sensitivity_rollout(
             state_values,
             state_tangents,
             data,
+            operator,
+            operator_tangents,
         )
         gradient = gradient + local_gradient
         return (next_values, next_tangents, gradient), (loss, local_gradient, gradient)
@@ -596,6 +706,10 @@ def compact_forward_sensitivity_rollout(
         )
     gradient_dtype = _parameter_dtype(functional_step, initial_state_values)
     initial_gradient = jnp.zeros((parameter_coordinates.size,), dtype=gradient_dtype)
+    operator, operator_tangents = functional_step.build_operator_with_tangents(
+        initial_state_values,
+        projection.embed_tangents(initial_state_values, initial_active_state_tangents, parameter_coordinates),
+    )
 
     def scan_step(carry, data):
         state_values, active_state_tangents, gradient = carry
@@ -606,6 +720,8 @@ def compact_forward_sensitivity_rollout(
             state_values,
             active_state_tangents,
             data,
+            operator,
+            operator_tangents,
         )
         gradient = gradient + local_gradient
         return (next_values, next_tangents, gradient), (loss, local_gradient, gradient)
@@ -697,8 +813,10 @@ def initialize_compact_forward_sensitivity(
 def bptt_reference_loss(functional_step: FunctionalStep, initial_state_values, step_data):
     """Return the summed local loss for reverse-mode reference differentiation."""
 
+    operator = functional_step.build_operator(initial_state_values)
+
     def scan_step(state_values, data):
-        next_state_values, local_loss = functional_step.call(state_values, data)
+        next_state_values, local_loss = functional_step.call_with_operator(state_values, data, operator)
         return next_state_values, local_loss
 
     _, losses = brainstate.transform.scan(scan_step, initial_state_values, step_data)

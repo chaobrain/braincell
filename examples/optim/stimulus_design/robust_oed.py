@@ -38,6 +38,7 @@ import jax.numpy as jnp
 import numpy as np
 from scipy.stats import qmc
 
+from braincell.experimental.optim._forward_sensitivity import forward_sensitivity_step
 from braincell.experimental.optim.gradients import build_trajectory_value_and_grad
 from examples.optim.stimulus_design import dataset as dataset_module
 
@@ -123,15 +124,21 @@ class ObservationInformationEngine:
         tangents = jax.tree.map(lambda value: _scale_direction_tangent(value, factors), tangents)
         count = len(dataset_module.PARAMETER_NAMES)
         fim = jnp.zeros((self.current.shape[0], count, count), dtype=jnp.float64)
+        functional_step = self.engine._functional_step
+        # The cable's axial operator is built once, with its tangents, and
+        # passed to every step (OPT-14); the geometry does not change.
+        operator, operator_tangents = functional_step.build_operator_with_tangents(values, tangents)
 
         def scan_step(carry, time_ms):
             current_values, current_tangents, current_fim = carry
-
-            def transition(state_values):
-                return self.engine._functional_step.call(state_values, time_ms)
-
-            (next_values, _voltage), linear_map = jax.linearize(transition, current_values)
-            next_tangents, voltage_tangents = jax.vmap(linear_map)(current_tangents)
+            next_values, next_tangents, _voltage, voltage_tangents = forward_sensitivity_step(
+                functional_step,
+                current_values,
+                current_tangents,
+                time_ms,
+                operator,
+                operator_tangents,
+            )
             increment = jnp.einsum("kpc,lpc->pkl", voltage_tangents, voltage_tangents)
             return (next_values, next_tangents, current_fim + increment), None
 

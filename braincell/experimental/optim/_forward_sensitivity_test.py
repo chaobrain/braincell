@@ -15,7 +15,9 @@
 
 """Tests for the experimental exact forward-sensitivity core."""
 
+import os
 import unittest
+from unittest.mock import patch
 
 import braincell
 import brainstate
@@ -28,15 +30,18 @@ from braincell._compute._testing import _build_tree
 from braincell.filter import AllRegion, RootLocation
 
 from braincell.experimental.optim._forward_sensitivity import (
+    _align_state_values,
     bptt_reference_loss,
     build_stateful_step,
     forward_sensitivity_rollout,
+    forward_sensitivity_step,
     initialize_forward_sensitivity,
     inspect_state_sensitivity,
     initialized_bptt_reference_loss,
     seed_scalar_parameter_directions,
     select_parameter_derivatives,
 )
+from braincell.experimental.optim.gradients import build_rollout_value_and_grad
 
 
 def _leak_cell():
@@ -354,6 +359,56 @@ class ForwardSensitivityCoreTest(unittest.TestCase):
             vector_step = _functional_voltage_loss(vector_cell, example_target=jnp.asarray(-60.0))
             with self.assertRaisesRegex(ValueError, "not scalar"):
                 seed_scalar_parameter_directions(vector_step, vector_step.state_values())
+
+    def test_operator_input_steps_match_steps_that_build_their_own(self) -> None:
+        # OPT-14: an engine's step takes the axial operator as an input; a
+        # rollout builds it once (with its tangents) and passes it to every
+        # step. Each way of calling must give the transition of a step that
+        # builds the operator itself, in both JVP modes.
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            cell = braincell.Cell(_build_tree(), pop_size=(1,))
+            cell.paint(
+                AllRegion(),
+                braincell.mech.Channel("IL", name="leak", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+            )
+            cell.place(
+                RootLocation(0.5),
+                braincell.mech.CurrentClamp(delay=0.0 * u.ms, durations=1.0 * u.ms, amplitudes=0.05 * u.nA),
+            )
+            cell.init_state()
+            cell.geometry.Ra.trainable(braincell.trainable.scale(group_by="all", name="Ra"))
+            cell.reset_state()
+
+            def step(target_mv):
+                cell.update()
+                return jnp.mean((cell.V.value.to_decimal(u.mV) - target_mv) ** 2)
+
+            engine = build_rollout_value_and_grad(cell, step=step, method="rtrl").prepare(jnp.asarray(-60.0))
+            self.assertEqual(engine.axial_operator_mode, "rollout")
+            hoisted = engine._functional_step
+            plain = _functional_voltage_loss(cell, example_target=jnp.asarray(-60.0))
+            self.assertIsNone(plain.build_operator(plain.state_values()))
+            self.assertEqual(plain.build_operator_with_tangents(plain.state_values(), None), (None, None))
+            values, tangents = engine._initial_full_carry(tuple(s.value for s in engine.parameter_states.values()))
+            data = jnp.asarray(-61.0)
+
+            expected = hoisted.call(values, data)
+            operator = hoisted.build_operator(values)
+            for actual in (
+                hoisted.call_with_operator(values, data, operator),
+                plain.call_with_operator(_align_state_values(hoisted, plain, values), data, None),
+            ):
+                np.testing.assert_allclose(actual[1], expected[1], rtol=1e-12)
+
+            operator, operator_tangents = hoisted.build_operator_with_tangents(values, tangents)
+            self.assertGreater(max(float(np.max(np.abs(leaf))) for leaf in jax.tree.leaves(operator_tangents)), 0.0)
+            for mode in ("linearize", "direct"):
+                with self.subTest(mode=mode), patch.dict(os.environ, {"BRAINCELL_RTRL_JVP_MODE": mode}):
+                    built = forward_sensitivity_step(hoisted, values, tangents, data)
+                    given = forward_sensitivity_step(hoisted, values, tangents, data, operator, operator_tangents)
+                    self.assertNotEqual(float(given[3][0]), 0.0)
+                    np.testing.assert_allclose(given[2], built[2], rtol=1e-12)
+                    np.testing.assert_allclose(given[3], built[3], rtol=1e-12)
 
 
 if __name__ == "__main__":

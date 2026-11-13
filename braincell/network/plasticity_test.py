@@ -763,13 +763,15 @@ class RuleStateTest(unittest.TestCase):
 STATES = ("w", "x_pre", "y_post")
 
 
-def _host_pair_stdp(pre, post, w0, *, A_plus, A_minus, tau, dt, w_min=-np.inf, w_max=np.inf):
+def _host_pair_stdp(pre, post, w0, *, A_plus, A_minus, tau, dt, w_min=-np.inf, w_max=np.inf, set_at=None, w_set=None):
     """Float64 pair STDP on the host; row ``b`` is the state the update at boundary ``b`` receives.
 
     ``pre`` and ``post`` are ``(boundaries, rows)`` event counts. Each
     update decays both traces by ``exp(-dt / tau)``, adds
     ``A_plus * x_pre * post - A_minus * y_post * pre`` to the clipped
-    weight, then adds the counts to the traces. Returns ``(w, x_pre, y_post)``.
+    weight, then adds the counts to the traces. ``w_set`` replaces the
+    weight before the update at boundary ``set_at`` (``ConnectionView.set``
+    between two runs). Returns ``(w, x_pre, y_post)``.
     """
     boundaries, rows = pre.shape
     w = np.broadcast_to(np.asarray(w0, dtype=np.float64), (rows,)).copy()
@@ -778,6 +780,8 @@ def _host_pair_stdp(pre, post, w0, *, A_plus, A_minus, tau, dt, w_min=-np.inf, w
     decay = np.exp(-dt / tau)
     out = np.zeros((3, boundaries, rows))
     for b in range(boundaries):
+        if b == set_at:
+            w = np.broadcast_to(np.asarray(w_set, dtype=np.float64), (rows,)).copy()
         out[:, b] = w, x, y
         x, y = x * decay, y * decay
         w = np.clip(w + A_plus * x * post[b] - A_minus * y * pre[b], w_min, w_max)
@@ -1226,6 +1230,154 @@ class RecordRuleStateLoopTest(unittest.TestCase):
             w, g = _rec(samples, "w", u.uS)[:, 0], _g_of(samples)
             np.testing.assert_allclose(w[:2], rows, rtol=RTOL)
             np.testing.assert_allclose(g[1] - g[0], w[0], rtol=RTOL)
+
+
+class WeightSetBetweenRunsTest(unittest.TestCase):
+    """CELL-55: ``set(weight=)`` between two runs acts from the next run's first boundary, in either driver.
+
+    dt 0.1 ms; the first run ends at t_n = 5 ms (n = 50), where the weight
+    goes from 0.05 to 0.08 uS. The source's events at 2 ms and around t_n
+    (L94) arrive, rounded half up, at boundary 20; 49 (4.94 ms); 50 (4.95
+    ms, a tie, 4.96, 5.0 and 5.04 ms); 51 (5.05 ms, a tie, and 5.06 ms).
+    The toy target does not integrate its synapse, so g only accumulates:
+    the payload of boundary b is sample b + 1 minus sample b. The Cell
+    crosses threshold in the steps ending at 3 and 5 ms, its post events at
+    boundaries 30 and 50. A standalone Cell used to have prepared t_n, with
+    the old weight and the rule already run there, before ``set`` (main
+    34973d6: 4 x 0.05 uS at t_n, and the rule's update at t_n lost).
+    """
+
+    N1, N2 = 50, 20
+    W1 = 0.08
+    TIMES = (2.0, 4.94, 4.95, 4.96, 5.0, 5.04, 5.05, 5.06)
+    #: Arrivals per boundary, worked out by hand above.
+    COUNTS = {20: 1, 49: 1, 50: 4, 51: 2}
+
+    def _model(self, driver, *, source, delay, rule):
+        cell = _toy_cell(post_ms=[3.0, 5.0])
+        if source == "sequence":
+            model = _seq([t - delay for t in self.TIMES])
+        else:
+            # 4.94 + 0.03 k ms (k < 5): boundaries 49, 50 (4.97, 5.0, 5.03 ms) and 51 (5.06 ms).
+            model = braincell.NetStim(size=1, start=4.94 * u.ms, interval=0.03 * u.ms, number=5)
+        if driver == "cell":
+            braincell.connect(
+                "c", source=model, synapse=cell.synapses["s"], weight=W0, delay=delay * u.ms, plasticity=rule
+            )
+            owner = cell
+        else:
+            owner = _network(model, cell, delay=delay * u.ms, rule=rule)
+        if rule is not None:
+            cell.connections["c"].record("w", "w")
+        return owner, cell
+
+    def _counts(self, source):
+        if source == "sequence":
+            return self.COUNTS
+        return {49: 1, 50: 3, 51: 1}
+
+    def _reference(self, source, rule_kwargs, *, set_at=N1):
+        """Payload per boundary and ``w(t_b-)`` on the host, with the new weight from boundary ``set_at``.
+
+        One boundary more than the two runs step over: ``w(t_70-)`` is what
+        ``rule_state`` reads after them (the rule has run at t_69).
+        """
+        boundaries = self.N1 + self.N2 + 1
+        pre = np.zeros((boundaries, 1))
+        for b, n in self._counts(source).items():
+            pre[b] = n
+        if rule_kwargs is None:
+            w = np.where(np.arange(boundaries) < self.N1, 0.05, self.W1)[:, None]
+        else:
+            post = np.zeros((boundaries, 1))
+            post[[30, 50]] = 1.0
+            w = _host_pair_stdp(
+                pre,
+                post,
+                [0.05],
+                A_plus=A_PLUS,
+                A_minus=A_MINUS,
+                tau=TAU,
+                dt=0.1,
+                set_at=set_at,
+                w_set=[self.W1],
+                **rule_kwargs,
+            )[0]
+        return (pre * w)[:, 0], w[:, 0]
+
+    def _run_twice(self, owner, cell, driver):
+        samples, g_after = [], []
+        for steps in (self.N1, self.N2):
+            if samples:
+                cell.connections["c"].set(weight=self.W1 * u.uS)
+            result = owner.run(dt=DT, duration=steps * DT)
+            block = result.samples if driver == "cell" else result.samples["post"]
+            # One sample per step before reading jumps from them (L93).
+            self.assertEqual(block["g"].values.shape[0], steps)
+            samples.append(block)
+            g_after.append(float(_decimal(cell.synapses["s"].g, u.uS).reshape(-1)[0]))
+        return samples, g_after
+
+    @_float64
+    def test_both_drivers_deliver_the_new_weight_from_the_next_boundary(self) -> None:
+        cases = [
+            ("sequence", 0.0, None),
+            ("sequence", 0.3, None),
+            ("netstim", 0.0, None),
+            ("sequence", 0.0, {}),
+            ("sequence", 0.3, {}),
+            ("netstim", 0.0, {}),
+            # w_min binds at t_n only on the old weight: 0.04996 - 0.01945 < 0.035 < 0.08 - 0.01945.
+            ("sequence", 0.0, {"w_min": 0.035}),
+        ]
+        for source, delay, rule_kwargs in cases:
+            payload, w_before = self._reference(source, rule_kwargs)
+            rule = None if rule_kwargs is None else _stdp(**{k: v * u.uS for k, v in rule_kwargs.items()})
+            for driver in ("network", "cell"):
+                with self.subTest(source=source, delay=delay, rule=rule_kwargs, driver=driver):
+                    owner, cell = self._model(driver, source=source, delay=delay, rule=rule)
+                    samples, g_after = self._run_twice(owner, cell, driver)
+                    g = np.concatenate([_g_of(samples[0]), _g_of(samples[1]), [g_after[1]]])
+                    self.assertAlmostEqual(g_after[0], g[self.N1], delta=1e-15)
+                    np.testing.assert_allclose(np.diff(g), payload[:-1], rtol=RTOL, atol=1e-15)
+                    if rule is not None:
+                        rows = np.concatenate([_rec(block, "w", u.uS)[:, 0] for block in samples])
+                        np.testing.assert_allclose(rows, w_before[:-1], rtol=RTOL, atol=1e-15)
+                        np.testing.assert_allclose(_w(cell), w_before[-1:], rtol=RTOL, atol=1e-15)
+
+    @_float64
+    def test_an_update_loop_delivers_the_new_weight_from_the_next_boundary(self) -> None:
+        payload, w_before = self._reference("sequence", {})
+        for driver in ("network", "cell"):
+            with self.subTest(driver=driver):
+                owner, cell = self._model(driver, source="sequence", delay=0.0, rule=_stdp())
+                if driver == "network":
+                    owner.prepare_run(dt=DT)
+                else:
+                    cell.init_state()
+
+                def step(k):
+                    if driver == "network":
+                        owner.update()
+                    else:
+                        with brainstate.environ.context(t=k * DT):
+                            cell.update()
+                    return cell.synapses["s"].g.to_decimal(u.uS), cell.connections["c"].rule_state("w").to_decimal(u.uS)
+
+                read = []
+                with brainstate.environ.context(dt=DT):
+                    for first, steps in ((0, self.N1), (self.N1, self.N2)):
+                        if first:
+                            cell.connections["c"].set(weight=self.W1 * u.uS)
+                        read.append(brainstate.transform.for_loop(step, np.arange(first, first + steps)))
+                g = np.concatenate([[0.0], *(_decimal(part[0]).reshape(-1) for part in read)])
+                w = np.concatenate([_decimal(part[1]).reshape(-1) for part in read])
+                np.testing.assert_allclose(np.diff(g), payload[:-1], rtol=RTOL, atol=1e-15)
+                # After update k (from 0) the rule has run at boundary k: w(t_{k+1}-). The read
+                # after update n - 1 comes before set(), so it is w(t_n-) of the old weight.
+                expected = w_before[1:].copy()
+                expected[self.N1 - 1] = self._reference("sequence", {}, set_at=None)[1][self.N1]
+                np.testing.assert_allclose(w, expected, rtol=RTOL, atol=1e-15)
 
 
 class RecordRuleStateFloat32Test(unittest.TestCase):

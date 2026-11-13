@@ -272,7 +272,6 @@ class WindowTest(unittest.TestCase):
         np.testing.assert_array_equal(_ms(joined.time), _ms(whole.spikes.time))
 
 
-
 class Float32WindowTest(unittest.TestCase):
     def test_float32_segments_label_as_one_run(self):
         # 30000 steps (750 ms) in float32, where t = n dt has a few ulp of

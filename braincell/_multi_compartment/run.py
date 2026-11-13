@@ -524,7 +524,9 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
         start_time=start_time,
         stop_time=stop_time,
         dt=dt,
-        spikes=None if traced or plan.spike_port is None else plan.spike_port.series(rcell, times, stop_time, spike_rows),
+        spikes=None
+        if traced or plan.spike_port is None
+        else plan.spike_port.series(rcell, times, stop_time, spike_rows),
     )
 
 

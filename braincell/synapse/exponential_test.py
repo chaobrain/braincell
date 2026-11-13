@@ -419,5 +419,151 @@ class ExponentialSynapseParameterErrorTest(unittest.TestCase):
         np.testing.assert_array_equal(cell.synapses["t"].tau1.to_decimal(u.ms), [1.0])
 
 
+# CELL-62: NEURON's exp2syn.mod (INITIAL) runs tau1 / tau2 > 0.9999 as tau1 =
+# 0.9999 tau2. The closed-form factor at r = tau1 / tau2 is
+# 1 / ((1 - r) r^(r / (1 - r))); at r = 0.9999 it is 1 / (1e-4 * 0.9999**9999),
+# 27181.459132349482 (mpmath, 40 digits).
+_FACTOR_AT_RATIO_0_9999 = 27181.459132349482
+_NEAR_EQUAL_TAU2_MS = 5.0
+# delta = 1 - tau1 / tau2 of 1e-5, 1e-8, 1e-12 and adjacent floats.
+_NEAR_EQUAL_TAU1_MS = (
+    5.0 * (1.0 - 1e-5),
+    5.0 * (1.0 - 1e-8),
+    5.0 * (1.0 - 1e-12),
+    float(np.nextafter(5.0, 0.0)),
+)
+
+
+def _closed_form_factor(tau1, tau2):
+    """1 / ((1 - r) r^(r / (1 - r))) with delta = 1 - r and log1p, in float64.
+
+    Independent of the model's peak-time expression; accurate to a few ulp for
+    every delta in (0, 1).
+    """
+    delta = (tau2 - tau1) / tau2
+    return 1.0 / (delta * np.exp((tau1 / tau2) * np.log1p(-delta) / delta))
+
+
+def _clamped_conductance(tau1, tau2, steps, weight, n):
+    """Exact g on the step grid for the effective tau1 (sample k > s shows an event of step s)."""
+    tau1 = 0.9999 * tau2 if tau1 / tau2 > 0.9999 else tau1
+    factor = _closed_form_factor(tau1, tau2)
+    k = np.arange(n)
+    g = np.zeros(n)
+    for step in steps:
+        elapsed = (k[k > step] - step) * _DT_MS
+        g[k > step] += factor * weight * (np.exp(-elapsed / tau2) - np.exp(-elapsed / tau1))
+    return g
+
+
+def _run_exp2syn(tau1_ms, times_ms, weight_uS, duration_ms, precision):
+    """One reference cell driven by ``times_ms``; returns A and B in uS, one sample per step."""
+    with brainstate.environ.context(precision=precision):
+        network = braincell.Network("exp2syn_near_equal")
+        cell = _reference_cell("Exp2Syn", tau1=tau1_ms * u.ms, tau2=_NEAR_EQUAL_TAU2_MS * u.ms)
+        observe = braincell.observe.synapse(name="s")
+        cell.record("A", observe.state("A"))
+        cell.record("B", observe.state("B"))
+        post = network.add_population("post", cell)
+        source = network.add_population("events", braincell.EventSequence.from_times([np.asarray(times_ms) * u.ms]))
+        network.connect("drive", source=source, synapse=post.synapses["s"], weight=weight_uS * u.uS, delay=0.0 * u.ms)
+        samples = network.run(dt=_DT_MS * u.ms, duration=duration_ms * u.ms).samples["post"]
+    n = round(duration_ms / _DT_MS)
+    a, b = (np.asarray(samples[f].values.to_decimal(u.uS)).reshape(-1) for f in ("A", "B"))
+    assert a.size == b.size == n, (a.size, n)
+    return a, b
+
+
+class Exp2SynNearEqualTimeConstantTest(unittest.TestCase):
+    """tau1 close to tau2 runs as NEURON does: tau1 = 0.9999 tau2 once tau1 / tau2 > 0.9999 (CELL-62).
+
+    Without it the factor lost about eps / delta of its precision, ``g = B - A``
+    lost about eps * e / delta, and float32 runs whose tau1 and tau2 round to
+    the same float32 returned NaN.
+    """
+
+    def _event_states(self, model, tau1_ms):
+        with brainstate.environ.context(precision=64):
+            synapse = model(1, tau1=tau1_ms * u.ms, tau2=_NEAR_EQUAL_TAU2_MS * u.ms)
+            synapse.init_state()
+            synapse.apply_events([1.0] * u.uS)
+            synapse.compute_derivative()
+            return (
+                float(synapse.A.value.to_decimal(u.uS)[0]),
+                float(synapse.B.value.to_decimal(u.uS)[0]),
+                float(synapse.A.derivative.to_decimal(u.uS / u.ms)[0]),
+            )
+
+    def test_the_factor_and_the_rise_use_tau1_0_9999_tau2(self) -> None:
+        for tau1 in _NEAR_EQUAL_TAU1_MS:
+            with self.subTest(tau1=tau1):
+                a, b, a_rate = self._event_states(braincell.synapse.Exp2Syn, tau1)
+                np.testing.assert_allclose([a, b], _FACTOR_AT_RATIO_0_9999, rtol=1e-11)
+                np.testing.assert_allclose(a_rate, -a / (0.9999 * _NEAR_EQUAL_TAU2_MS), rtol=1e-15)
+
+    def test_a_ratio_of_0_9999_or_below_keeps_its_tau1(self) -> None:
+        for tau1 in (0.9999 * _NEAR_EQUAL_TAU2_MS, 0.999 * _NEAR_EQUAL_TAU2_MS, 0.5):
+            with self.subTest(tau1=tau1):
+                self.assertFalse(tau1 / _NEAR_EQUAL_TAU2_MS > 0.9999)
+                a, _, a_rate = self._event_states(braincell.synapse.Exp2Syn, tau1)
+                np.testing.assert_allclose(a, _closed_form_factor(tau1, _NEAR_EQUAL_TAU2_MS), rtol=1e-11)
+                self.assertEqual(a_rate, -a / tau1)
+
+    def test_float64_conductance_matches_the_clamped_kernel(self) -> None:
+        # Two events, weight 1e-3 uS. Before the fix the run followed the
+        # requested kernel and was 6.0e-8 uS off NEURON's (main e693336).
+        times, weight, duration = (1.0, 11.0), 1e-3, 40.0
+        a, b = _run_exp2syn(_NEAR_EQUAL_TAU1_MS[0], times, weight, duration, precision=64)
+        g = b - a
+        self.assertTrue(np.all(np.isfinite(g)))
+        expected = _clamped_conductance(
+            _NEAR_EQUAL_TAU1_MS[0], _NEAR_EQUAL_TAU2_MS, _event_steps(times), weight, g.size
+        )
+        self.assertGreater(np.ptp(expected), 1e-3)
+        np.testing.assert_allclose(g, expected, rtol=0.0, atol=1e-12)
+
+    def test_float32_run_with_tau1_equal_to_tau2_in_float32_stays_finite(self) -> None:
+        tau1 = 5.0 * (1.0 - 1e-8)
+        self.assertNotEqual(tau1, _NEAR_EQUAL_TAU2_MS)
+        self.assertEqual(np.float32(tau1), np.float32(_NEAR_EQUAL_TAU2_MS))
+        a, b = _run_exp2syn(tau1, (1.0,), 1e-3, 20.0, precision=32)
+        g = (b - a).astype(np.float64)
+        self.assertTrue(np.all(np.isfinite(a)) and np.all(np.isfinite(b)))
+        self.assertGreater(np.ptp(g), 0.0)
+        # float32 keeps about 6e-8 * F(0.9999) = 1.6e-3 of each state, relative to the weight.
+        self.assertLess(abs(g.max() / 1e-3 - 1.0), 3e-2)
+
+    def _gradient(self, tau1_ms, field):
+        """d(A + A') / dk after one 0.01 uS event, with ``field`` scaled by a trainable k = 1 (float64)."""
+        with brainstate.environ.context(precision=64):
+            cell = _reference_cell("Exp2Syn", tau1=tau1_ms * u.ms, tau2=_NEAR_EQUAL_TAU2_MS * u.ms)
+            cell.init_state()
+            synapse = cell.synapses["s"]
+            synapse.trainable(**{field: braincell.trainable.scale(name="k")})
+            cell.reset_state()
+            node = cell.runtime.get_runtime_node(synapse._store.layout_id("Exp2Syn"))
+
+            def observe():
+                cell.reset_state()
+                node.apply_events(0.01 * u.uS)
+                node.compute_derivative()
+                return node.A.value.to_decimal(u.uS).sum() + node.A.derivative.to_decimal(u.uS / u.ms).sum()
+
+            states = cell.trainables.parameters().states()
+            gradient = brainstate.transform.jit(brainstate.transform.grad(observe, grad_states=states))()["k"]
+        return float(gradient)
+
+    def test_gradient_follows_the_effective_tau1(self) -> None:
+        # Above the ratio the dynamics do not depend on tau1; A' = -A / (0.9999 k tau2)
+        # with A = 0.01 F(0.9999), so d(A + A') / dk = 0.01 F(0.9999) / (0.9999 tau2).
+        tau1 = _NEAR_EQUAL_TAU1_MS[0]
+        self.assertEqual(self._gradient(tau1, "tau1"), 0.0)
+        np.testing.assert_allclose(
+            self._gradient(tau1, "tau2"),
+            0.01 * _FACTOR_AT_RATIO_0_9999 / (0.9999 * _NEAR_EQUAL_TAU2_MS),
+            rtol=1e-11,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

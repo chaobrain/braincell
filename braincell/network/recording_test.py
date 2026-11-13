@@ -693,8 +693,7 @@ class MultiDimensionalPopulationTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        # One 20 ms run of each configuration and its twin, kept as NumPy
-        # arrays: no float64 program outlives this method (see conftest).
+        # One 20 ms run of each configuration and its twin, kept as NumPy arrays.
         cls.runs = {}
         with brainstate.environ.context(precision=64):
             for kind in ("lumped", "cable"):
@@ -717,8 +716,6 @@ class MultiDimensionalPopulationTest(unittest.TestCase):
                         "spike_source": np.asarray(result.spikes.source_id),
                         "spike_cv": np.asarray(result.spikes.metadata["cv_id"]),
                     }
-                    del cell, result
-        gc.collect()
 
     def setUp(self) -> None:
         self.enterContext(brainstate.environ.context(precision=64))

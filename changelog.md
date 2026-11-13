@@ -2440,6 +2440,18 @@
   within half a new step before the change is taken by both runs, and one
   midway between two steps of a run off the grid, followed by a run at a
   smaller `dt`, by neither.
+- A model can run at float32 while a float64 one is still alive in the same
+  process, and the reverse (OPT-17). Ions and channels that use the gas or
+  Faraday constant (every Nernst ion, the GHK flux, the calcium, chloride and
+  potassium concentration pools, `Kca1p1_MA2020_GoC`, `Kv1p5_MA2020_GrC`) raised
+  `JaxRuntimeError: RuntimeProgramInputMismatch` at the second model's
+  `init_state`, for example a float32 `Cell` with `CalciumDetailed` and
+  `CaT_HM1992` built while a float64 one that had run was kept. jaxlib 0.12
+  caches the device copy of a NumPy array per array object and hands it back
+  whatever `jax_enable_x64` is by then, and brainunit's `gas_constant` and
+  `faraday_constant` are shared 0-d arrays that a compiled program keeps;
+  braincell now holds them as NumPy scalars. Results are unchanged bit for bit
+  at both precisions on the machine that tested them.
 
 ### Documentation
 

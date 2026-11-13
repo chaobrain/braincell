@@ -20,6 +20,7 @@ import braintools
 import brainunit as u
 
 from braincell._base_ion import Ion
+from braincell._constants import FARADAY_CONSTANT
 from braincell._typing import Initializer, Size
 from braincell.mech import register_ion
 from braincell.ion._base import (
@@ -489,10 +490,11 @@ class CalciumDetailed(Calcium, DynamicNernstIon):
     Section 1's Faraday and gas constants, :math:`F = 96489\,
     \mathrm{C/mol}` and :math:`R = 8.31441\, \mathrm{J/(mol\, K)}`,
     are the paper's own literal values, quoted above for reference
-    only. The code instead uses the CODATA constants
-    ``u.faraday_constant`` and ``u.gas_constant`` (via
-    :attr:`~braincell.ion._base.DynamicNernstIon.E`), neither of
-    which is a constructor parameter.
+    only. The code instead uses the CODATA 2018 values,
+    :math:`F = 96485.33212\, \mathrm{C/mol}` and
+    :math:`R = 8.314462618\, \mathrm{J/(mol\, K)}`, as brainunit
+    defines them (via :attr:`~braincell.ion._base.DynamicNernstIon.E`),
+    neither of which is a constructor parameter.
 
     References
     ----------
@@ -542,7 +544,7 @@ class CalciumDetailed(Calcium, DynamicNernstIon):
     def derivative(self, Ci, V, total_current=None):
         _ = V
         total_current = self._drive_current(total_current)
-        drive = total_current / (2 * u.faraday_constant * self.d)
+        drive = total_current / (2 * FARADAY_CONSTANT * self.d)
         drive = u.math.maximum(drive, u.math.zeros_like(drive))
         return drive + (self.C_rest - Ci) / self.tau
 
@@ -2141,8 +2143,8 @@ class CdpStC_NoCAM_MA2020_GoC(Calcium, _ParvalbuminEquilibrium, _RadialShellGeom
     :class:`~braincell.ion._base.Source` drives ``Ci`` from the
     channel current supplied at each step:
     ``_ci_source_flux`` returns zero when no current is supplied, and
-    otherwise ``total_current * pi * diam_arc_mean / (2 *
-    faraday_constant)``. NEURON's raw GoC ``ica`` is efflux-positive,
+    otherwise ``total_current * pi * diam_arc_mean / (2 F)``, F the
+    Faraday constant. NEURON's raw GoC ``ica`` is efflux-positive,
     but BrainCell channel currents follow the repo-wide inward-positive
     convention, so a positive ``total_current`` here increases ``Ci``.
 
@@ -2624,8 +2626,8 @@ class CdpStC_MA2020_GoC(Calcium, _ParvalbuminEquilibrium, _RadialShellGeometry, 
     = True`` and one :class:`~braincell.ion._base.Source` drives
     ``Ci`` from the channel current supplied at each step:
     ``_ci_source_flux`` returns zero when no current is supplied, and
-    otherwise ``total_current * pi * diam_arc_mean / (2 *
-    faraday_constant)``. NEURON's raw GoC ``ica`` is efflux-positive,
+    otherwise ``total_current * pi * diam_arc_mean / (2 F)``, F the
+    Faraday constant. NEURON's raw GoC ``ica`` is efflux-positive,
     but BrainCell channel currents follow the repo-wide inward-positive
     convention, so a positive ``total_current`` here increases ``Ci``.
 

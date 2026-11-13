@@ -39,6 +39,7 @@ import brainstate
 import braintools
 import brainunit as u
 
+from braincell._constants import FARADAY_CONSTANT, GAS_CONSTANT
 from braincell.quad.protocol import IndependentIntegration
 from braincell.quad.protocol import state, hidden_state
 
@@ -118,7 +119,7 @@ def _nernst(*, Ci, Co, temp, valence):
     separate multiplicative term, and the logarithm's argument is
     extracellular over intracellular.
     """
-    return (u.gas_constant * temp / (valence * u.faraday_constant)) * u.math.log(Co / Ci)
+    return (GAS_CONSTANT * temp / (valence * FARADAY_CONSTANT)) * u.math.log(Co / Ci)
 
 
 def _nernst_of(owner):
@@ -533,7 +534,7 @@ def _shell_influx(ion, total_current):
     ``ion.d``. Not rectified, and the sign follows the valence: an inward
     current raises a cation's ``Ci`` and lowers an anion's.
     """
-    return ion._drive_current(total_current) / (ion.valence * u.faraday_constant * ion.d)
+    return ion._drive_current(total_current) / (ion.valence * FARADAY_CONSTANT * ion.d)
 
 
 class DynamicNernstIon(brainstate.mixin.Mixin):
@@ -1091,7 +1092,7 @@ class _RadialShellGeometry(brainstate.mixin.Mixin):
         """
         if total_current is None:
             return self.dsqvol * (0.0 * u.mM / u.ms)
-        return (total_current * self.parea) / (2.0 * u.faraday_constant)
+        return (total_current * self.parea) / (2.0 * FARADAY_CONSTANT)
 
     def _ion_init_state_hook(self, V, batch_size: int = None):
         """Seed the geometry, then initialize species as ``KineticIon`` does."""

@@ -24,7 +24,6 @@ break for ``import *`` users, and a name that stays in it after its module
 is deleted is an ``AttributeError`` at import time.
 """
 
-import gc
 import importlib
 import inspect
 import os
@@ -37,10 +36,6 @@ import types
 import unittest
 from unittest import mock
 
-import brainstate
-import jax
-import jax.numpy as jnp
-import numpy as np
 
 import braincell
 from braincell._testing import (
@@ -283,22 +278,6 @@ if __name__ == "__main__":
     unittest.main()
 
 
-#: Long-lived host constants, one per direction, like brainunit's
-#: ``gas_constant.mantissa`` that ``_nernst`` multiplies by a temperature.
-_CONSTANT_FOR_X64_THEN_X32 = np.array(8.31446262)
-_CONSTANT_FOR_X32_THEN_X64 = np.array(96485.33212)
-
-
-def _leave_a_dead_jaxpr_holding(constant) -> None:
-    # The jaxpr's literal keeps the constant's canonical form, at the current
-    # precision, alive; the cycle leaves it for the cyclic collector. Moving it
-    # to the oldest generation first means only a full collection frees it, as
-    # for a model a long test built.
-    cycle = [jax.make_jaxpr(lambda x: constant * x)(jnp.ones(2))]
-    cycle.append(cycle)
-    gc.collect()
-
-
 #: The API reference sources, beside the package in a checkout.
 _API_REFERENCE = pathlib.Path(braincell.__file__).resolve().parents[1] / "docs" / "apis"
 
@@ -344,36 +323,6 @@ class ApiReferenceCoverageTest(unittest.TestCase):
     def test_a_class_without_a_docstring_is_reported(self) -> None:
         with mock.patch.object(braincell.filter.LocsetExpr, "__doc__", None):
             self.assertEqual(_without_own_docstring(public_paths()), ["braincell.filter.LocsetExpr"])
-
-
-class PrecisionSwitchIsolationTest(unittest.TestCase):
-    """A test runs at its own precision whatever ran before it (OPT-12).
-
-    jaxlib reuses a numpy array's canonical form while it is alive, even
-    after ``jax_enable_x64`` changed; a dead jaxpr from an earlier test at the
-    other precision then fed a wrong-width buffer to a fresh program
-    (``RuntimeProgramInputMismatch``), so failures depended on test order. The
-    root ``conftest.py`` collects garbage around precision switches. Each pair
-    runs in name order, the first test leaving the garbage and the second
-    hitting it; the pairs fail without that ``conftest.py`` hook.
-    """
-
-    def test_1_x64_test_leaves_a_float64_literal(self) -> None:
-        with brainstate.environ.context(precision=64):
-            _leave_a_dead_jaxpr_holding(_CONSTANT_FOR_X64_THEN_X32)
-
-    def test_2_a_following_float32_test_gets_float32(self) -> None:
-        # The shape is unique to this test, so the multiply compiles afresh.
-        result = _CONSTANT_FOR_X64_THEN_X32 * jnp.ones((1, 7, 3))
-        self.assertEqual(result.dtype, jnp.float32)
-
-    def test_3_float32_test_leaves_a_float32_literal(self) -> None:
-        _leave_a_dead_jaxpr_holding(_CONSTANT_FOR_X32_THEN_X64)
-
-    def test_4_a_following_x64_test_gets_float64(self) -> None:
-        with brainstate.environ.context(precision=64):
-            result = _CONSTANT_FOR_X32_THEN_X64 * jnp.ones((1, 7, 4))
-            self.assertEqual(result.dtype, jnp.float64)
 
 
 class CollectionKeepsTheSessionPrecisionTest(unittest.TestCase):

@@ -26,6 +26,7 @@ import brainunit as u
 import jax
 import jax.numpy as jnp
 
+from braincell._constants import FARADAY_CONSTANT, GAS_CONSTANT
 from braincell._base_channel import Channel
 from braincell._misc import is_traced_value
 from braincell._typing import Size
@@ -126,11 +127,11 @@ def ghk_flux(V, ci, co, z, temp):
            The Journal of Physiology, 108(1), 37-77.
            doi:10.1113/jphysiol.1949.sp004310
     """
-    zeta = (z * u.faraday_constant * V) / (u.gas_constant * temp)
+    zeta = (z * FARADAY_CONSTANT * V) / (GAS_CONSTANT * temp)
     exp_term = u.math.exp(-zeta)
     numerator = ci - co * exp_term
-    small_branch = (z * u.faraday_constant) * numerator * (1 + zeta / 2)
-    regular_branch = (z * zeta * u.faraday_constant) * numerator / (1 - exp_term)
+    small_branch = (z * FARADAY_CONSTANT) * numerator * (1 + zeta / 2)
+    regular_branch = (z * zeta * FARADAY_CONSTANT) * numerator / (1 - exp_term)
     return u.math.where(u.math.abs(1 - exp_term) <= 1e-6, small_branch, regular_branch)
 
 

@@ -16,10 +16,6 @@
 """``GabaA_JE2011`` and the Cell path for synapses that read and write an ion."""
 
 import functools
-import json
-import os
-import subprocess
-import sys
 import unittest
 
 import brainstate
@@ -30,6 +26,7 @@ import braincell as bc
 from braincell import IonInfo
 from braincell._multi_compartment import currents
 from braincell.filter import RootLocation
+from braincell.ion._testing import run_float64
 from braincell.mech import register_synapse
 from braincell.synapse import Exp2Syn, GabaA_JE2011
 
@@ -109,8 +106,7 @@ def _legacy_trace():
 
 
 def _x64_report() -> dict:
-    """Float64 measurements, run in a fresh process by ``_float64_report`` (see ``ion/chloride_test.py``)."""
-    brainstate.environ.set(precision=64)
+    """Float64 measurements; ``_float64_report`` runs it at float64."""
     report = {
         "equivalence": {
             f"{solver}-{P}": _equivalence(solver, P, e)
@@ -187,12 +183,7 @@ def _x64_report() -> dict:
 
 @functools.cache
 def _float64_report() -> dict:
-    code = "import json; from braincell.synapse.gaba_test import _x64_report; print(json.dumps(_x64_report()))"
-    env = dict(os.environ, JAX_ENABLE_X64="1", JAX_PLATFORMS="cpu")
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
-    if result.returncode != 0:
-        raise AssertionError(result.stderr)
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    return run_float64(_x64_report)
 
 
 class GabaAModelTest(unittest.TestCase):

@@ -17,10 +17,6 @@
 
 import dataclasses
 import functools
-import json
-import os
-import subprocess
-import sys
 import unittest
 import warnings
 from unittest import mock
@@ -54,6 +50,7 @@ from braincell import (
 )
 from braincell._compute.state import CellRuntimeState
 from braincell._multi_compartment import cell as cell_module
+from braincell.ion._testing import run_float64
 from braincell.filter import (
     AllRegion,
     BranchSlice,
@@ -2296,7 +2293,7 @@ def _cahva_gates(cell):
 
 
 def _kinetic_integration_report() -> dict:
-    """The CELL-32 measurements; run in a float64 subprocess by :func:`_kinetic_integration_numbers`."""
+    """The CELL-32 measurements; :func:`_kinetic_integration_numbers` runs it at float64."""
 
     def run(order, solver, dt_ms):
         cell = _kinetic_calcium_cell(order, solver)
@@ -2331,19 +2328,7 @@ def _kinetic_integration_report() -> dict:
 
 @functools.cache
 def _kinetic_integration_numbers() -> dict:
-    # In a subprocess: in one process, a kinetic-ion Cell stepped under
-    # "integration" at one precision makes the next one fail at the other
-    # (JaxRuntimeError at init_state; on main too), which would break the
-    # float32 tests that follow.
-    code = (
-        "import json; from braincell._multi_compartment.cell_test import _kinetic_integration_report; "
-        "print(json.dumps(_kinetic_integration_report()))"
-    )
-    env = dict(os.environ, JAX_ENABLE_X64="1", JAX_PLATFORMS="cpu")
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
-    if result.returncode != 0:
-        raise AssertionError(result.stderr)
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    return run_float64(_kinetic_integration_report)
 
 
 def _soma_tree():
@@ -3375,7 +3360,7 @@ def _synapse_run(model, solver, dt_ms):
 
 
 def _gaba_block_solver_report() -> dict:
-    """CELL-31b on G; run in a float64 subprocess by :func:`_gaba_block_solver_numbers`.
+    """CELL-31b on G; :func:`_gaba_block_solver_numbers` runs it at float64.
 
     ``{"<solver>/<dt>": (max |V - reference| in mV, max |Ci - reference| in mM)}``
     against rk4 at dt = 0.00025 ms.
@@ -3396,18 +3381,7 @@ def _gaba_block_solver_report() -> dict:
 
 @functools.cache
 def _gaba_block_solver_numbers() -> dict:
-    # In a subprocess, as _kinetic_integration_numbers: in one process a
-    # Cldif_JE2011 Cell run at one precision makes the next one fail at the
-    # other (JaxRuntimeError at init_state; on main too).
-    code = (
-        "import json; from braincell._multi_compartment.cell_test import _gaba_block_solver_report; "
-        "print(json.dumps(_gaba_block_solver_report()))"
-    )
-    env = dict(os.environ, JAX_ENABLE_X64="1", JAX_PLATFORMS="cpu")
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
-    if result.returncode != 0:
-        raise AssertionError(result.stderr)
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    return run_float64(_gaba_block_solver_report)
 
 
 class CellBlockSolverPointSynapseTest(unittest.TestCase):

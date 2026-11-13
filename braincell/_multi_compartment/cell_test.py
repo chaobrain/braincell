@@ -2622,13 +2622,36 @@ class UpdateLiveConnectionTest(unittest.TestCase):
             self.assertEqual(int(np.count_nonzero(np.diff(np.r_[0.0, reference]) > 0.0)), 2)  # both events arrived
             np.testing.assert_allclose(updated, reference, rtol=1e-12, atol=0.0)
 
+    def test_a_network_member_routes_no_live_rows(self):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            cell = self._cell(0.1, 1)
+            net = braincell.Network("member")
+            net.add_population("cells", cell)
+            for step in range(3):
+                with brainstate.environ.context(dt=self.DT * u.ms, t=step * self.DT * u.ms):
+                    cell.update()  # its Network routes the rows
+            call = cell._get_connection_store()._calls[0]
+            self.assertEqual(call.name, "live")
+            self.assertIsNone(call.live_dt_ms)
+            self.assertIsNone(call.live_history)
+
+    def test_an_update_without_dt_is_refused_before_any_state_changes(self):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            cell = self._cell(0.1, 1)
+            before = self._fingerprint(cell)
+            with self.assertRaisesRegex(ValueError, "environ\\['dt'\\]"):
+                with brainstate.environ.context(t=0.0 * u.ms):
+                    cell.update()
+            self._assert_unchanged(before, self._fingerprint(cell))
+
 
 class UpdateLiveDynamicsTest(unittest.TestCase):
     """CELL-70: a live self connection with HH dynamics, ``update()`` loops against ``Cell.run``.
 
     A 1-CV cable (staggered) and a lumped Cell (rk4): HH1952 sodium and
     potassium, leak, a 0.1 nA clamp from 0.25 ms, an ExpSyn (tau 2 ms, e 0 mV)
-    driven by the Cell's own spike, weight 0.002 uS; dt 0.025 ms.
+    driven by the Cell's own spike, weight 0.002 uS; dt 0.025 ms. Both fire
+    in step 84 (from 0); the event shows in g after step 84 + k (k = 0, 4, 12).
     """
 
     DT = 0.025 * u.ms
@@ -2685,8 +2708,33 @@ class UpdateLiveDynamicsTest(unittest.TestCase):
             float(np.asarray(cell.synapses["syn"].g.to_decimal(u.uS)).ravel()[0]),
         )
 
+    def _reference(self, kind, delay, n):
+        """V and g after each of ``n`` steps of one recorded ``Cell.run``."""
+        cell = self._cell(kind, delay, record=True)
+        result = cell.run(dt=self.DT, duration=n * self.DT)
+        v = np.asarray(result.samples["v"].values.to_decimal(u.mV), dtype=np.float64).reshape(n, -1)[:, 0]
+        g = np.asarray(result.samples["g"].values.to_decimal(u.uS), dtype=np.float64).reshape(n, -1)[:, 0]
+        self.assertEqual(v.shape, (n,))  # one sample per step, taken at its start
+        reference = np.vstack([np.stack([v[1:], g[1:]], axis=1), self._read(cell)])
+        self.assertTrue(np.isfinite(reference).all())
+        self.assertGreater(np.ptp(reference[:, 0]), 50.0)  # it spikes
+        self.assertGreater(reference[-1, 1], 0.0)  # and its synapse received the event
+        return reference
+
+    def _eager_rows(self, cell, n):
+        rows = []
+        for step in range(n):
+            with brainstate.environ.context(dt=self.DT, t=step * self.DT):
+                cell.update()
+            rows.append(self._read(cell))
+        return np.asarray(rows)
+
+    @staticmethod
+    def _jumps(g):
+        return np.flatnonzero(np.diff(g) > 1e-3 * 0.002)
+
     def test_cable_and_lumped_update_loops_match_run(self):
-        n = 400
+        n = 120  # the first spike's events arrive by step 96
         for kind in ("cable", "lumped"):
             for delay in (0.0, 0.1, 0.3):
                 with (
@@ -2694,23 +2742,9 @@ class UpdateLiveDynamicsTest(unittest.TestCase):
                     jax.enable_x64(True),
                     brainstate.environ.context(precision=64),
                 ):
-                    ran = self._cell(kind, delay)
-                    reference = []
-                    for _ in range(n):
-                        ran.run(dt=self.DT, duration=self.DT)
-                        reference.append(self._read(ran))
-                    reference = np.asarray(reference)
-                    self.assertTrue(np.isfinite(reference).all())
-                    self.assertGreater(np.ptp(reference[:, 0]), 50.0)  # it spikes
-                    self.assertGreater(reference[-1, 1], 0.0)  # and its synapse received the event
-
-                    eager = self._cell(kind, delay)
-                    rows = []
-                    for step in range(n):
-                        with brainstate.environ.context(dt=self.DT, t=step * self.DT):
-                            eager.update()
-                        rows.append(self._read(eager))
-                    np.testing.assert_allclose(np.asarray(rows), reference, rtol=1e-12, atol=1e-15)
+                    reference = self._reference(kind, delay, n)
+                    eager = self._eager_rows(self._cell(kind, delay), n)
+                    np.testing.assert_allclose(eager, reference, rtol=1e-12, atol=1e-15)
 
                     looped = self._cell(kind, delay)
                     looped.connections.prepare_runtime(self.DT)
@@ -2728,6 +2762,21 @@ class UpdateLiveDynamicsTest(unittest.TestCase):
                     np.testing.assert_allclose(
                         np.stack([np.asarray(v), np.asarray(g)], axis=1), reference, rtol=1e-12, atol=1e-15
                     )
+
+    def test_float32_eager_update_loops_match_run(self):
+        n = 120  # the first spike's events arrive by step 96
+        for kind in ("cable", "lumped"):
+            for delay in (0.0, 0.1, 0.3):
+                with self.subTest(kind=kind, delay=delay), brainstate.environ.context(precision=32):
+                    reference = self._reference(kind, delay, n)
+                    rows = self._eager_rows(self._cell(kind, delay), n)
+                    jumps = self._jumps(reference[:, 1])
+                    self.assertGreater(jumps.size, 0)
+                    np.testing.assert_array_equal(self._jumps(rows[:, 1]), jumps)
+                    np.testing.assert_allclose(rows[:, 1], reference[:, 1], rtol=1e-5, atol=1e-9)
+                    # On the CPU the eager float32 ops round apart from the compiled run's from the
+                    # clamp's onset on, before any event: up to 2.5e-4 mV on the cable's upstroke.
+                    np.testing.assert_allclose(rows[:, 0], reference[:, 0], rtol=1e-5, atol=1e-3)
 
     def test_float32_long_update_loop_matches_one_run(self):
         # L77: 32010 steps, the clamp on for the whole run.
@@ -2755,6 +2804,7 @@ class UpdateLiveDynamicsTest(unittest.TestCase):
             self.assertEqual(v.shape, (n,))
             self.assertTrue(np.isfinite(v).all())
             self.assertGreater(int(spikes.sum()), 50)
+            self.assertEqual(int(spikes.sum()), len(result.spikes.source_id))
             np.testing.assert_array_equal(np.flatnonzero(np.diff(g) > 1e-3), np.flatnonzero(np.diff(g_ref) > 1e-3))
             np.testing.assert_allclose(v, v_ref, rtol=1e-6, atol=1e-6)
             np.testing.assert_allclose(g, g_ref, rtol=1e-6, atol=1e-9)

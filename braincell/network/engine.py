@@ -641,8 +641,14 @@ class Network:
           :class:`~braincell.network.scheduled.PaddingLimitError` before the
           run when the slots would take more than 256 MiB, or the steps
           times the needed width would exceed 8 times the records; it does
-          not fall back to another method. It differentiates as ordinary
-          JAX code, forward mode included.
+          not fall back to another method. The ratio is not checked for a
+          window whose slots take no more bytes than a padded plan this
+          Network already built for the same synapse layout, so the
+          sparse tail of a schedule runs in the storage an earlier window
+          was accepted in; whether a window passes thus depends on the
+          windows run before it (since initialization; :meth:`reset_state`
+          keeps them). It differentiates as ordinary JAX code, forward
+          mode included.
 
         Try ``"direct"`` when many scheduled rows have few arrivals per
         step, above all when rows share synapses, or when a source's

@@ -23,6 +23,7 @@ separately compiled diagnostic path.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+import dataclasses
 from typing import NamedTuple
 
 import brainstate
@@ -32,6 +33,7 @@ import jax.numpy as jnp
 
 from braincell.experimental.optim._forward_sensitivity import (
     FunctionalStep,
+    OperatorInput,
     ParameterCoordinates,
     _align_state_carry,
     build_parameter_coordinates,
@@ -154,6 +156,7 @@ class RolloutGradientEngine:
         self._parameter_coordinates: ParameterCoordinates | None = None
         self._initializer_values: object | None = None
         self._materialization_mode: str | None = None
+        self._axial_operator_mode: str | None = None
 
     @property
     def prepared(self) -> bool:
@@ -164,6 +167,11 @@ class RolloutGradientEngine:
     def materialization_mode(self) -> str | None:
         """Selected mapping schedule: ``rollout``, ``step``, or unprepared ``None``."""
         return self._materialization_mode
+
+    @property
+    def axial_operator_mode(self) -> str | None:
+        """Where the axial operator is built: once per ``rollout``, every ``step``, ``none``, or unprepared ``None``."""
+        return self._axial_operator_mode
 
     @property
     def parameter_names(self) -> tuple[str, ...]:
@@ -181,7 +189,12 @@ class RolloutGradientEngine:
         if self.prepared:
             return self
 
-        self._initializer_step, self._functional_step, self._materialization_mode = _prepare_steps(
+        (
+            self._initializer_step,
+            self._functional_step,
+            self._materialization_mode,
+            self._axial_operator_mode,
+        ) = _prepare_steps(
             self,
             example_step_data,
             require_scalar_output=True,
@@ -278,9 +291,10 @@ class RolloutGradientEngine:
 
         def objective(parameter_values, data):
             values = self._initial_primal_values(parameter_values)
+            operator = functional_step.build_operator(values)
 
             def scan_step(current_values, item):
-                next_values, local_loss = functional_step.call(current_values, item)
+                next_values, local_loss = functional_step.call_with_operator(current_values, item, operator)
                 return next_values, local_loss
 
             _, losses = jax.lax.scan(scan_step, values, data)
@@ -298,6 +312,7 @@ class RolloutGradientEngine:
         coordinates = self._parameter_coordinates
         values, tangents = self._initial_full_carry(roots)
         gradient = jnp.zeros((coordinates.size,), dtype=_coordinate_dtype(roots))
+        operator, operator_tangents = functional_step.build_operator_with_tangents(values, tangents)
 
         def scan_step(carry, item):
             current_values, current_tangents, current_gradient = carry
@@ -306,6 +321,8 @@ class RolloutGradientEngine:
                 current_values,
                 current_tangents,
                 item,
+                operator,
+                operator_tangents,
             )
             return (
                 next_values,
@@ -328,6 +345,7 @@ class RolloutGradientEngine:
         functional_step = self._functional_step
         coordinates = self._parameter_coordinates
         carry = self._initial_diagnostic_carry(roots)
+        hoisted = _diagnostic_operator(functional_step, carry)
         cursor = 0
         samples = []
 
@@ -337,6 +355,7 @@ class RolloutGradientEngine:
                 coordinates,
                 carry,
                 item,
+                hoisted,
             )
             return next_carry, None
 
@@ -350,6 +369,7 @@ class RolloutGradientEngine:
                 coordinates,
                 carry,
                 item,
+                hoisted,
             )
             samples.append(sample)
             cursor = sample_index + 1
@@ -371,12 +391,15 @@ class RolloutGradientEngine:
         functional_step = self._functional_step
         coordinates = self._parameter_coordinates
 
+        initial_carry = self._initial_diagnostic_carry(roots)
+        hoisted = _diagnostic_operator(functional_step, initial_carry)
+
         def scan_step(carry, item):
-            return _diagnostic_step(functional_step, coordinates, carry, item)
+            return _diagnostic_step(functional_step, coordinates, carry, item, hoisted)
 
         final_carry, samples = jax.lax.scan(
             scan_step,
-            self._initial_diagnostic_carry(roots),
+            initial_carry,
             step_data,
         )
         return _build_diagnostic_result(
@@ -448,6 +471,7 @@ class TrajectoryGradientEngine:
         self._parameter_coordinates: ParameterCoordinates | None = None
         self._initializer_values: object | None = None
         self._materialization_mode: str | None = None
+        self._axial_operator_mode: str | None = None
 
     @property
     def prepared(self) -> bool:
@@ -457,6 +481,11 @@ class TrajectoryGradientEngine:
     def materialization_mode(self) -> str | None:
         """Selected mapping schedule: ``rollout``, ``step``, or unprepared ``None``."""
         return self._materialization_mode
+
+    @property
+    def axial_operator_mode(self) -> str | None:
+        """Where the axial operator is built: once per ``rollout``, every ``step``, ``none``, or unprepared ``None``."""
+        return self._axial_operator_mode
 
     @property
     def parameter_names(self) -> tuple[str, ...]:
@@ -469,7 +498,12 @@ class TrajectoryGradientEngine:
         if self.prepared:
             return self
 
-        self._initializer_step, self._functional_step, self._materialization_mode = _prepare_steps(
+        (
+            self._initializer_step,
+            self._functional_step,
+            self._materialization_mode,
+            self._axial_operator_mode,
+        ) = _prepare_steps(
             self,
             example_step_data,
             require_scalar_output=False,
@@ -532,9 +566,10 @@ class TrajectoryGradientEngine:
 
     def _observation_rollout(self, roots, step_data):
         values = self._initial_primal_values(roots)
+        operator = self._functional_step.build_operator(values)
 
         def scan_step(current_values, item):
-            next_values, observation = self._functional_step.call(current_values, item)
+            next_values, observation = self._functional_step.call_with_operator(current_values, item, operator)
             return next_values, observation
 
         _, observations = jax.lax.scan(scan_step, values, step_data)
@@ -555,16 +590,15 @@ class TrajectoryGradientEngine:
         )
         values, tangents = self._initial_full_carry(roots)
         gradient = jnp.zeros((self._parameter_coordinates.size,), dtype=_coordinate_dtype(roots))
+        functional_step = self._functional_step
+        operator, operator_tangents = functional_step.build_operator_with_tangents(values, tangents)
 
         def scan_step(carry, inputs):
             current_values, current_tangents, current_gradient = carry
             item, learning_signal = inputs
-
-            def transition(state_values):
-                return self._functional_step.call(state_values, item)
-
-            (next_values, _observation), linear_map = jax.linearize(transition, current_values)
-            next_tangents, observation_tangents = jax.vmap(linear_map)(current_tangents)
+            next_values, next_tangents, _observation, observation_tangents = forward_sensitivity_step(
+                functional_step, current_values, current_tangents, item, operator, operator_tangents
+            )
             contribution = _contract_observation_tangents(observation_tangents, learning_signal)
             return (next_values, next_tangents, current_gradient + contribution), None
 
@@ -650,19 +684,153 @@ def _prepare_steps(engine, example_step_data, *, require_scalar_output):
         return jnp.asarray(0.0)
 
     initializer_step = build_stateful_step(initialize_and_zero, None, engine.parameter_states)
+
+    def materialized_step(data):
+        manager.materialize()
+        return engine.step(data)
+
+    base_step = unmapped_step if functional_step is not None else materialized_step
     if functional_step is None:
-
-        def materialized_step(data):
-            manager.materialize()
-            return engine.step(data)
-
         functional_step = build_stateful_step(
             materialized_step,
             example_step_data,
             engine.parameter_states,
             require_scalar_output=require_scalar_output,
         )
-    return initializer_step, functional_step, mode
+    hoisted, operator_mode = _operator_input_step(
+        engine,
+        base_step,
+        example_step_data,
+        materialize=mode == "step",
+        require_scalar_output=require_scalar_output,
+    )
+    if hoisted is not None:
+        functional_step = hoisted
+    return initializer_step, functional_step, mode, operator_mode
+
+
+def _split_operator(built):
+    """``(template, leaves)``: the array fields of a ``RunAxialOperator`` and the rest."""
+    if built.cv_operator is not None:
+        return ("cv", None, None), (built.cv_operator,)
+    source, cache = built.dhs
+    source_names = tuple(f.name for f in dataclasses.fields(source) if _is_array(getattr(source, f.name)))
+    cache_names = tuple(f.name for f in dataclasses.fields(cache) if _is_array(getattr(cache, f.name)))
+    leaves = tuple(getattr(source, n) for n in source_names) + tuple(getattr(cache, n) for n in cache_names)
+    return ("dhs", (source, source_names), (cache, cache_names)), leaves
+
+
+def _join_operator(template, leaves):
+    from braincell.quad._staggered import RunAxialOperator
+
+    kind, source_part, cache_part = template
+    if kind == "cv":
+        return RunAxialOperator(cv_operator=leaves[0])
+    (source, source_names), (cache, cache_names) = source_part, cache_part
+    k = len(source_names)
+    source = dataclasses.replace(source, **dict(zip(source_names, leaves[:k])))
+    cache = dataclasses.replace(cache, **dict(zip(cache_names, leaves[k:])))
+    return RunAxialOperator(dhs=(source, cache))
+
+
+def _is_array(value):
+    return isinstance(value, (jax.Array, u.Quantity))
+
+
+def _user_step_writes(engine, example_step_data, *, materialize):
+    """States the user's step writes, other than exact forwarding of the value it read."""
+    manager = engine.target.trainables
+    written_states = []
+
+    def probe(data):
+        for state in engine.parameter_states.values():
+            _ = state.value
+        if materialize:
+            manager.materialize()
+        with brainstate.StateTraceStack() as trace:
+            result = engine.step(data)
+        written = {id(state) for state in trace.get_write_states()}
+        for state, before in zip(trace.states, trace.original_state_values):
+            if id(state) not in written:
+                continue
+            after = state.value
+            unchanged = jax.tree.structure(before) == jax.tree.structure(after) and all(
+                a is b for a, b in zip(jax.tree.leaves(before), jax.tree.leaves(after))
+            )
+            if not unchanged:
+                written_states.append(state)
+        return result
+
+    brainstate.transform.StatefulFunction(probe, return_only_write=False).make_jaxpr(example_step_data)
+    return {id(state) for state in written_states}
+
+
+def _operator_input_step(engine, base_step, example_step_data, *, materialize, require_scalar_output):
+    """Re-trace ``base_step`` with the target's axial operator as an explicit input (OPT-13 prototype).
+
+    Returns ``(functional_step, mode)``. ``mode`` is ``"rollout"`` when the
+    operator is built once per rollout; ``"step"`` when the user's step
+    writes a state the operator is built from (or a root), so every step
+    must build its own; ``"none"`` when the target has no axial operator in
+    the solver's trace (a lumped Cell, a reduction model, a Network).
+    """
+    from braincell.quad._staggered import axial_operator_per_run
+
+    target = engine.target
+    runtime = getattr(target, "_runtime", None)
+    if runtime is None or not hasattr(runtime, "run_axial_operator") or getattr(runtime, "geometry", None) is None:
+        return None, "none"
+    manager = target.trainables
+    template = {}
+
+    def build(_):
+        for state in engine.parameter_states.values():
+            _ = state.value
+        if materialize:
+            # The step refreshes its runtime parameters, geometry included,
+            # before it builds the operator; build it from the same values.
+            manager.materialize()
+        with axial_operator_per_run(target):
+            built = runtime.run_axial_operator
+            if built is None:
+                return ()
+            template["value"], leaves = _split_operator(built)
+            return leaves
+
+    builder = brainstate.transform.StatefulFunction(build, return_only_write=False)
+    builder.make_jaxpr(None)
+    if "value" not in template:
+        return None, "none"
+    builder_trace = builder.get_state_trace(None)
+    builder_states = tuple(builder_trace.states)
+    guarded = {id(state) for state in builder_states} | {id(state) for state in engine.parameter_states.values()}
+    if _user_step_writes(engine, example_step_data, materialize=materialize) & guarded:
+        return None, "step"
+    _values, example_leaves = builder.jaxpr_call(builder_trace.get_state_values(), None)
+    operator_template = template["value"]
+
+    def step_with_operator(args):
+        data, leaves = args
+        for state in builder_states:
+            # Keep every state the operator is built from in the step's
+            # values, so a rollout can build it from them.
+            _ = state.value
+        previous = runtime.run_axial_operator
+        runtime.run_axial_operator = _join_operator(operator_template, leaves)
+        try:
+            return base_step(data)
+        finally:
+            runtime.run_axial_operator = previous
+
+    step = build_stateful_step(
+        step_with_operator,
+        (example_step_data, example_leaves),
+        engine.parameter_states,
+        require_scalar_output=require_scalar_output,
+    )
+    positions = {id(state): index for index, state in enumerate(step.state_trace.states)}
+    indices = tuple(positions[id(state)] for state in builder_states)
+    return step._replace(operator=OperatorInput(builder, builder_trace, indices)), "rollout"
 
 
 def build_rollout_value_and_grad(
@@ -794,15 +962,34 @@ def _contract_observation_tangents(observation_tangents, learning_signal):
     return total
 
 
-def _diagnostic_step(functional_step, coordinates, carry, step_data):
+def _diagnostic_operator(functional_step, carry):
+    """The rollout's operator, its tangents, and the pullback of an operator cotangent to the step's states.
+
+    ``None`` for a step without an operator input. The pullback maps the
+    local loss's operator cotangent to the states the operator is built
+    from, so the learning signal is the gradient a step that builds its own
+    operator would have.
+    """
+    if functional_step.operator is None:
+        return None
+    values, tangents = carry[0], carry[1]
+    operator, operator_tangents = functional_step.build_operator_with_tangents(values, tangents)
+    _operator, pullback = jax.vjp(functional_step.operator.build, values)
+    return operator, operator_tangents, pullback
+
+
+def _diagnostic_step(functional_step, coordinates, carry, step_data, hoisted=None):
     current_values, current_tangents, current_gradient, current_loss = carry
+    operator, operator_tangents, pullback = (None, None, None) if hoisted is None else hoisted
     next_values, next_tangents, local_loss, local_gradient = forward_sensitivity_step(
         functional_step,
         current_values,
         current_tangents,
         step_data,
+        operator,
+        operator_tangents,
     )
-    learning_signal = _local_loss_gradient(functional_step, current_values, step_data)
+    learning_signal = _local_loss_gradient(functional_step, current_values, step_data, operator, pullback)
     direct = _direct_parameter_gradient(coordinates, learning_signal)
     eligibility = _contract_sensitivity_learning_signal(
         current_tangents,
@@ -857,12 +1044,30 @@ def _build_diagnostic_result(coordinates, *, at, samples, final_carry, roots):
     )
 
 
-def _local_loss_gradient(functional_step, state_values, step_data):
-    def loss_only(values):
-        _next_values, local_loss = functional_step.call(values, step_data)
+def _local_loss_gradient(functional_step, state_values, step_data, operator=None, pullback=None):
+    if operator is None:
+
+        def loss_only(values):
+            _next_values, local_loss = functional_step.call(values, step_data)
+            return local_loss
+
+        return jax.grad(loss_only, allow_int=True)(state_values)
+
+    def loss_with_operator(values, op):
+        _next_values, local_loss = functional_step.call_with_operator(values, step_data, op)
         return local_loss
 
-    return jax.grad(loss_only, allow_int=True)(state_values)
+    state_signal, operator_signal = jax.grad(loss_with_operator, argnums=(0, 1), allow_int=True)(
+        state_values, operator
+    )
+    (through_operator,) = pullback(operator_signal)
+    return jax.tree.map(_add_cotangent, state_signal, through_operator)
+
+
+def _add_cotangent(left, right):
+    if getattr(left, "dtype", None) == jax.dtypes.float0:
+        return left
+    return left + right
 
 
 def _direct_parameter_gradient(coordinates, learning_signal):

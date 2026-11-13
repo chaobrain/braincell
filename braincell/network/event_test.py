@@ -972,9 +972,10 @@ class NetStimPrepareRunDurationTest(unittest.TestCase):
                 spikes = net.update()["post"]
                 return cell.synapses["s"].get("g").to_decimal(u.uS), cell.V.value.to_decimal(u.mV), spikes
 
-            g, v, spikes = (np.asarray(x).reshape(_DURATION_STEPS + 1) for x in brainstate.transform.for_loop(
-                step, jnp.arange(_DURATION_STEPS + 1)
-            ))
+            g, v, spikes = (
+                np.asarray(x).reshape(_DURATION_STEPS + 1)
+                for x in brainstate.transform.for_loop(step, jnp.arange(_DURATION_STEPS + 1))
+            )
             with self.assertRaisesRegex(ValueError, "at step 401: .* before step 400"):
                 net.update()
             net.reset_state()

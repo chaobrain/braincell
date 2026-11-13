@@ -450,11 +450,15 @@ class LumpedKineticIonTest(unittest.TestCase):
 
     def test_matches_the_cable_twin_under_staggered(self) -> None:
         # JAX 0.12 reuses a NumPy constant (here ``u.gas_constant``) that a live
-        # float32 program captured as a float32 buffer in a later float64 eager
-        # op, which fails with RuntimeProgramInputMismatch. Earlier tests' Cells
-        # hold such programs; free them and start the float64 run clean.
+        # program of one precision captured in a later eager op of the other,
+        # which fails with RuntimeProgramInputMismatch. Earlier tests' Cells
+        # hold float32 programs; free them and start the float64 run clean.
+        # This test's float64 Cells hold such programs too, and under unittest
+        # nothing else frees them before the float32 tests that follow (pytest's
+        # conftest hook does): collect them when the test ends (CELL-64).
         gc.collect()
         jax.clear_caches()
+        self.addCleanup(gc.collect)
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
             reference = {dt: _final_values(_kinetic_pool_cell("staggered"), dt) for dt in (0.005, 0.001)}
             for name in (None, "rk4", "ind_exp_euler", "exp_euler", "backward_euler"):

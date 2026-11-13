@@ -1906,6 +1906,52 @@ class NetworkSecondRunCompileTest(unittest.TestCase):
         self.assertEqual(counts[1:], [0, 0, 0])
         self.assertTrue(all(np.isfinite(g) and g > 0.0 for g in conductances))
 
+    def test_a_jitted_update_loop_after_prepare_run_with_a_duration_compiles_once(self):
+        # CELL-66: the stop is a constant of the user's trace, as are the
+        # events, not a State (L40). The duration covers the loop's two
+        # calls before reset_state() and the two after.
+        network, cell = self._network()
+        network.init_state()
+        network.prepare_run(dt=DT, duration=80 * DT)
+
+        def step(_):
+            network.update()
+            return cell.V.value
+
+        loop = brainstate.transform.jit(lambda: brainstate.transform.for_loop(step, np.arange(40)))
+        counts, conductances = [], []
+        for index in range(4):
+            if index == 2:
+                network.reset_state()
+            with loop_compiles() as names:
+                jax.block_until_ready(loop())
+            counts.append(names.count("jit(jaxpr_call)"))
+            conductances.append(_synapse_g(cell))
+        self.assertGreaterEqual(counts[0], 1)
+        self.assertEqual(counts[1:], [0, 0, 0])
+        self.assertTrue(all(np.isfinite(g) and g > 0.0 for g in conductances))
+        # A second prepare_run extends the duration; the loop compiled
+        # before it keeps the old stop, so its steps past it are NaN.
+        network.prepare_run(dt=DT, duration=80 * DT)
+        stale = np.asarray(u.get_mantissa(loop()))
+        self.assertTrue(np.all(np.isnan(stale)))
+        self.assertTrue(np.isnan(_synapse_g(cell)))
+        # A new trace runs the new duration, here 120 steps from t = 0
+        # (the stop is now step 160), past the old stop.
+        network.reset_state()
+        traced = brainstate.transform.jit(lambda: brainstate.transform.for_loop(step, np.arange(120)))
+        fresh, fresh_cell = self._network()
+        fresh.init_state()
+        fresh.prepare_run(dt=DT, duration=120 * DT)
+
+        def fresh_step(_):
+            fresh.update()
+            return fresh_cell.V.value
+
+        expected = np.asarray(u.get_mantissa(brainstate.transform.for_loop(fresh_step, np.arange(120))))
+        np.testing.assert_array_equal(np.asarray(u.get_mantissa(traced())), expected)
+        self.assertTrue(np.all(np.isfinite(expected)))
+
 
 class NetworkScheduleGrowthCompileTest(unittest.TestCase):
     """CELL-74: the default path compiles its loop once per doubling of a NetStim schedule."""

@@ -31,7 +31,10 @@ repos:
       - id: check-yaml
         exclude: *content_trees
       - id: check-merge-conflict
-        exclude: *content_trees
+        # Conflict markers are an error in any file, so no tree is excluded.
+        # Without --assume-in-merge the hook checks only while a merge is in
+        # progress, so a marker committed after a resolved merge would pass.
+        args: [--assume-in-merge]
       - id: debug-statements
         types: [python]
         exclude: *content_trees

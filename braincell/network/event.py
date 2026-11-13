@@ -1502,8 +1502,15 @@ def _source_bits(root, sources, columns):
 def _prepare_netstim_schedules(sources, *, until_ms: float | None) -> tuple:
     """Generate each NetStim's events up to ``until_ms`` and return a cache token.
 
-    Run entries call this before looking up their compiled loop: the loop
-    bakes in the generated schedule, so the token keys it.
+    Run entries call this before looking up their compiled loop. On the
+    default path ``event_count`` reads every generated arrival as a
+    constant when the loop is traced, so the token, each NetStim's
+    ``_schedule_key`` (seed and generated width), keys the loop: a run
+    that extends a schedule, to at least twice its width, traces the loop
+    again (CELL-74). Planned delivery passes the arrivals of planned rows
+    as loop arguments, and its key keeps only the NetStims that something
+    still reads at trace time, such as a plasticity rule
+    (:func:`~braincell.network.scheduled.loop_schedule_key`).
     """
     seen = set()
     keys = []

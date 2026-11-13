@@ -451,6 +451,57 @@ def cast_like(value, like):
     return jnp.asarray(value, dtype=dtype)
 
 
+def strong_state_values(module) -> None:
+    """Give each short-term State of ``module`` that holds a weak-typed JAX array a strong array of the same dtype.
+
+    A value built from a Python float, such as ``V`` from
+    ``V_init=-65.0 * u.mV`` or a synapse's initial ``0.0 * u.uS``, is a
+    weak-typed array; a compiled run loop writes these States back
+    strong-typed. ``jax.jit`` keys its cache on whether each argument is
+    weak, so without this the second run of a loop (``Cell.run``,
+    ``Network.run``, a jitted loop over ``update()``) compiled it again
+    (CELL-54). A weak float64 array met by a float32 one also computed in
+    float32, so the first run differed from the later ones.
+
+    Only :class:`brainstate.ShortTermState` values change, the ones a run
+    writes. Long-term States (parameters) pass through a run unchanged:
+    one given as a Python number comes out of the first run as a weak
+    array, and making it strong at ``reset_state()`` would change the key
+    again. The dtype stays the same; strong arrays, NumPy arrays and Python
+    numbers are left as they are, without a copy.
+
+    Examples
+    --------
+    >>> import brainstate
+    >>> import brainunit as u
+    >>> from braincell._misc import strong_state_values
+    >>> class Model(brainstate.nn.Module):
+    ...     def __init__(self):
+    ...         super().__init__()
+    ...         self.V = brainstate.ShortTermState(u.math.full((2,), -65.0 * u.mV))
+    >>> model = Model()
+    >>> bool(model.V.value.mantissa.aval.weak_type)
+    True
+    >>> strong_state_values(model)
+    >>> bool(model.V.value.mantissa.aval.weak_type), model.V.value.mantissa.dtype
+    (False, dtype('float32'))
+    """
+
+    def strong(leaf):
+        mantissa = leaf.mantissa if isinstance(leaf, u.Quantity) else leaf
+        if not isinstance(mantissa, jax.Array) or not mantissa.aval.weak_type:
+            return leaf
+        mantissa = mantissa.astype(mantissa.dtype)
+        return u.Quantity(mantissa, leaf.unit) if isinstance(leaf, u.Quantity) else mantissa
+
+    is_quantity = lambda value: isinstance(value, u.Quantity)  # noqa: E731
+    for state in brainstate.graph.states(module, brainstate.ShortTermState).values():
+        leaves, tree = jax.tree.flatten(state.value, is_leaf=is_quantity)
+        strong_leaves = [strong(leaf) for leaf in leaves]
+        if any(new is not old for new, old in zip(strong_leaves, leaves)):
+            state.value = jax.tree.unflatten(tree, strong_leaves)
+
+
 def _to_unit(param: object, name: str, unit: Any) -> np.ndarray:
     """Convert a quantity-like value to a NumPy array in the target unit."""
 

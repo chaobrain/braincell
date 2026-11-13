@@ -20,6 +20,7 @@ import unittest
 from dataclasses import dataclass
 from types import MappingProxyType
 
+import brainstate
 import brainunit as u
 import jax
 import jax.numpy as jnp
@@ -32,6 +33,7 @@ from braincell._misc import (
     register_result_pytree,
     require_name,
     scalar_decimal,
+    strong_state_values,
     validate_time_quantity,
 )
 
@@ -354,6 +356,64 @@ class RegisterResultPytreeTest(unittest.TestCase):
         self.assertEqual(float(total(self._result())), 16.0)
         self.assertEqual(float(total(self._result())), 16.0)
         self.assertEqual(len(traces), 1)
+
+
+def _weak(value) -> bool:
+    return isinstance(value, jax.Array) and bool(value.aval.weak_type)
+
+
+class _States(brainstate.nn.Module):
+    """Short-term States holding a weak Quantity, a weak/strong pair, and values that stay as given."""
+
+    def __init__(self):
+        super().__init__()
+        self.V = brainstate.ShortTermState(u.math.full((2, 3), -65.0 * u.mV))
+        self.pair = brainstate.ShortTermState({"weak": jnp.full((2,), 0.5), "strong": jnp.zeros(2, jnp.int32)})
+        self.strong = brainstate.ShortTermState(jnp.ones(3))
+        self.host = brainstate.ShortTermState(np.ones(3))
+        self.number = brainstate.ShortTermState(0.025)
+        self.parameter = brainstate.LongTermState(jnp.full((3,), 2.0))
+
+
+class StrongStateValuesTest(unittest.TestCase):
+    """CELL-54: weak-typed short-term arrays become strong; other values are kept as they are."""
+
+    def test_weak_arrays_become_strong_with_the_same_dtype_and_values(self) -> None:
+        for precision in (32, 64):
+            with (
+                self.subTest(precision=precision),
+                jax.enable_x64(precision == 64),
+                brainstate.environ.context(precision=precision),
+            ):
+                model = _States()
+                before = {"V": model.V.value, "pair": model.pair.value}
+                self.assertTrue(_weak(before["V"].mantissa) and _weak(before["pair"]["weak"]))
+                strong_state_values(model)
+                V, pair = model.V.value, model.pair.value
+                self.assertFalse(_weak(V.mantissa) or _weak(pair["weak"]))
+                self.assertEqual(V.unit, u.mV)
+                self.assertEqual(V.mantissa.dtype, before["V"].mantissa.dtype)
+                self.assertEqual(V.mantissa.dtype, np.dtype(f"float{precision}"))
+                np.testing.assert_array_equal(V.to_decimal(u.mV), before["V"].to_decimal(u.mV))
+                self.assertEqual(pair["weak"].dtype, before["pair"]["weak"].dtype)
+                np.testing.assert_array_equal(pair["weak"], before["pair"]["weak"])
+                self.assertIs(pair["strong"], before["pair"]["strong"])
+
+    def test_other_values_are_kept_without_a_copy(self) -> None:
+        # Strong arrays, NumPy arrays and Python numbers; a long-term State
+        # (a parameter, which a run passes through) keeps even a weak array.
+        model = _States()
+        names = ("strong", "host", "number", "parameter")
+        kept = {name: getattr(model, name).value for name in names}
+        strong_state_values(model)
+        for name in names:
+            with self.subTest(state=name):
+                self.assertIs(getattr(model, name).value, kept[name])
+        self.assertTrue(_weak(model.parameter.value))
+        pair, V = model.pair.value, model.V.value
+        strong_state_values(model)
+        self.assertIs(model.pair.value, pair)
+        self.assertIs(model.V.value, V)
 
 
 if __name__ == "__main__":

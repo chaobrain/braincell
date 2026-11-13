@@ -1295,6 +1295,26 @@
   1000-member 3-branch cable 0.44-0.94 of main. On CPU, XLA had already
   moved the solve out of the loop, and a step costs the same. A loop of
   `update()` calls written by the caller still builds it at every step.
+- **`Cell.run` builds the axial operator once per geometry, not once per
+  run** (CELL-52). A compiled `Cell.run` built the cable's axial operator
+  in its program at every run, from the traced geometry: the CV operator
+  with the LU factorization of its Schur complement for `rk4` and the other
+  generic solvers, the DHS coefficients for `"staggered"` and
+  `"dhs_voltage"`. When the geometry is concrete, the run now takes the
+  operator from the Cell's host caches and passes it to the compiled loop
+  as an argument. The caches are filled once by a compiled builder and
+  again only after the geometry changes. A run whose geometry is traced
+  (under `jax.grad` or `jax.jit`) builds it in the program as before.
+  Outputs and gradients are bitwise unchanged (CA1 and a 3-branch cable,
+  `rk4` and the default solver). On one CPU core (float64, main
+  `996e26d`), a 400-step CA1 `rk4` run took 103.6 ms and now takes
+  81.5 ms; over four sessions it took 0.72-0.83 of main's time. Steps cost
+  the same. The default solver and a 1000-member 3-branch cable, whose
+  build was already small, cost what they did. On GPU (RTX 3090) the same
+  CA1 run went from 58.7 to 49.6 ms. The first run of a process also
+  compiles the builder, 0.09-0.22 s: CA1 `rk4` went from 0.74 to 0.82 s,
+  the other models stay within 4%. `Network.run` still builds the operator
+  in its program.
 - **A sparse later window of a `"padded"` run no longer stops the run**
   (CELL-53). `scheduled_delivery="padded"` checks a window's 8 slots per
   record only when its plan takes more bytes than every padded plan the
@@ -1381,26 +1401,6 @@
   longer compile for each new number of spikes (see Breaking Changes). The
   rows, their order and their values are unchanged, and an `EventSequence`
   still filters its whole table once per run.
-- **`Cell.run` builds the axial operator once per geometry, not once per
-  run** (CELL-52). A compiled `Cell.run` built the cable's axial operator
-  in its program at every run, from the traced geometry: the CV operator
-  with the LU factorization of its Schur complement for `rk4` and the other
-  generic solvers, the DHS coefficients for `"staggered"` and
-  `"dhs_voltage"`. When the geometry is concrete, the run now takes the
-  operator from the Cell's host caches and passes it to the compiled loop
-  as an argument. The caches are filled once by a compiled builder and
-  again only after the geometry changes. A run whose geometry is traced
-  (under `jax.grad` or `jax.jit`) builds it in the program as before.
-  Outputs and gradients are bitwise unchanged (CA1 and a 3-branch cable,
-  `rk4` and the default solver). On one CPU core (float64, main
-  `996e26d`), a 400-step CA1 `rk4` run took 103.6 ms and now takes
-  81.5 ms; over four sessions it took 0.72-0.83 of main's time. Steps cost
-  the same. The default solver and a 1000-member 3-branch cable, whose
-  build was already small, cost what they did. On GPU (RTX 3090) the same
-  CA1 run went from 58.7 to 49.6 ms. The first run of a process also
-  compiles the builder, 0.09-0.22 s: CA1 `rk4` went from 0.74 to 0.82 s,
-  the other models stay within 4%. `Network.run` still builds the operator
-  in its program.
 
 ### Bug Fixes
 

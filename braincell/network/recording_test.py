@@ -13,8 +13,10 @@
 # limitations under the License.
 # ==============================================================================
 
+import dataclasses
 import gc
 import unittest
+from unittest import mock
 
 import brainstate
 import brainunit as u
@@ -24,7 +26,8 @@ import numpy as np
 
 import braincell
 from braincell._multi_compartment.selection_test import _GRID_SELECTIONS, _cell
-from braincell.filter import BranchSlice, RootLocation, at, branch_in
+from braincell._multi_compartment.synapses import _SynapseStore
+from braincell.filter import BranchSlice, LocsetMask, RootLocation, at, branch_in
 from braincell.morph._testing import make_tree_s, make_tree_t, make_tree_u
 from braincell.network.recording import EventSeries, RecordingRow, SampleBlock
 
@@ -910,6 +913,171 @@ class BatchChannelStateTest(unittest.TestCase):
                     for element in range(2):
                         np.testing.assert_allclose(got[:, element], references[element], rtol=1e-12, atol=0.0)
                         np.testing.assert_allclose(read[:, element], last[element], rtol=1e-12, atol=0.0)
+
+
+def _synapse_rows_cell(population_size, ampa, nmda):
+    """``_cell`` with ExpSyn ``ampa`` and Exp2Syn ``nmda`` at the ``(branch, x)`` columns given, on every member."""
+    cell = _cell(population_size)
+    cell.place(LocsetMask.from_columns(*ampa), braincell.mech.Synapse("ExpSyn", name="ampa", tau=2.0 * u.ms))
+    cell.place(
+        LocsetMask.from_columns(*nmda),
+        braincell.mech.Synapse("Exp2Syn", name="nmda", tau1=0.5 * u.ms, tau2=5.0 * u.ms),
+    )
+    return cell
+
+
+def _synapse_rows(cell) -> dict:
+    cell.init_state()
+    return {compiled.spec.name: compiled.schema.rows for compiled in cell._compiled_recordings(0.025 * u.ms)}
+
+
+def _row_by_row(cell, view, field: str) -> list:
+    """The rows of ``view`` as main built them before CELL-56: each column read once per row."""
+    rows = []
+    for index in range(len(view)):
+        cv_id = int(view.cv_id[index])
+        rows.append(
+            RecordingRow(
+                population_index=int(view.population_index[index]),
+                cv_id=cv_id,
+                point_id=int(view.point_id[index]),
+                branch_id=int(cell.cvs[cv_id].branch_id),
+                field=field,
+                unit=None,
+                mechanism_category="synapse",
+                mechanism_type=str(view.synapse_type[index]),
+                mechanism_name=str(view.name[index]),
+                synapse_id=int(view.id[index]),
+            )
+        )
+    return rows
+
+
+class SynapseRecordingRowsTest(unittest.TestCase):
+    """CELL-56: synapse recording rows read each view column once."""
+
+    def _row_lookups(self, per_member):
+        x = (np.arange(per_member) + 0.5) / per_member
+        cell = _synapse_rows_cell(3, (np.ones(per_member, dtype=int), x), ([0, 0], [0.25, 0.75]))
+        cell.record("g", braincell.observe.synapse(name="ampa").state("g"))
+        cell.record("i", braincell.observe.synapse().current(reduce="none"))
+        cell.record("i_sum", braincell.observe.synapse().current())
+        cell.init_state()
+        with mock.patch.object(
+            _SynapseStore, "row_indices", autospec=True, side_effect=_SynapseStore.row_indices
+        ) as lookups:
+            compiled = cell._compiled_recordings(0.025 * u.ms)
+        return lookups.call_count, [len(item.schema.rows) for item in compiled]
+
+    def test_row_lookups_do_not_grow_with_the_rows(self) -> None:
+        # On main 69a8072: 259 and 799 lookups, 5 per synapse row and 3 more.
+        few, few_rows = self._row_lookups(4)
+        many, many_rows = self._row_lookups(16)
+        # 3 members of 4 (16) ampa and 2 nmda; the sum has one row per member and CV.
+        self.assertEqual(few_rows, [12, 18, 12])
+        self.assertEqual(many_rows, [48, 54, 12])
+        self.assertEqual(many, few)
+
+    def test_rows_are_those_of_each_synapse_in_view_order(self) -> None:
+        for population_size, per_member in ((3, 7), (10, 10)):
+            k = np.arange(per_member)
+            branch, x, is_ampa = k % 2, ((k * 7) % 19 + 0.5) / 20.0, k % 3 != 2
+            cell = _synapse_rows_cell(population_size, (branch[is_ampa], x[is_ampa]), (branch[~is_ampa], x[~is_ampa]))
+            ids = cell.synapses.id[::3][::-1].tolist()
+            members = np.asarray([population_size - 1, 0, 1])
+            cell.record("g_name", braincell.observe.synapse(name="ampa").state("g"))
+            cell.dendrite.record("g_type", braincell.observe.synapse(type="ExpSyn").state("g"))
+            cell.record("g_ids", braincell.observe.synapse(ids=ids).state("g"))
+            cell[members].record("g_members", braincell.observe.synapse(name="ampa").state("g"))
+            cell.record("i_none", braincell.observe.synapse().current(reduce="none"))
+            cell.record("i_sum", braincell.observe.synapse().current())
+            cell.record("nmda_B", braincell.observe.synapse(name="nmda").state("B"))
+            rows = _synapse_rows(cell)
+
+            synapses = cell.synapses
+            dendrite_cvs = [cv.id for cv in cell.cvs if cv.branch_id == 1]
+            views = {
+                "g_name": (synapses.by_name("ampa"), "g"),
+                "g_type": (synapses[np.isin(synapses.cv_id, dendrite_cvs)].by_type("ExpSyn"), "g"),
+                "g_ids": (synapses[np.isin(synapses.id, ids)], "g"),
+                "g_members": (synapses[np.isin(synapses.population_index, members)].by_name("ampa"), "g"),
+                "i_none": (synapses, "current"),
+                "nmda_B": (synapses.by_name("nmda"), "B"),
+            }
+            with self.subTest(synapses=len(synapses)):
+                self.assertEqual(len(synapses), population_size * per_member)
+                for name, (view, field) in views.items():
+                    expected = _row_by_row(cell, view, field)
+                    self.assertGreater(len(expected), 0, name)
+                    # Compiling a recording sets the unit of its rows.
+                    self.assertEqual(len({str(row.unit) for row in rows[name]}), 1, name)
+                    got = [dataclasses.replace(row, unit=None) for row in rows[name]]
+                    self.assertEqual(got, expected, name)
+                    self.assertEqual(repr(got), repr(expected), name)
+                # The sum groups the rows of i_none by member and CV, in order.
+                groups = {}
+                for index, row in enumerate(rows["i_none"]):
+                    groups.setdefault((row.population_index, row.cv_id), []).append(index)
+                self.assertEqual(
+                    [(row.population_index, row.cv_id, row.contributor_ids) for row in rows["i_sum"]],
+                    [(member, cv, tuple(indices)) for (member, cv), indices in groups.items()],
+                )
+
+    def test_rows_of_mixed_types_a_scope_and_reversed_ids(self) -> None:
+        # Two members. CV 0 is the soma (branch 0); CVs 1-3 are the thirds of
+        # dend_a (branch 1). Placement order: ampa at dend_a 0.9, soma 0.5,
+        # dend_a 0.2, then nmda at dend_a 0.5, 0.1, i.e. CVs 3, 0, 1, 2, 1.
+        # A synapse sits at its CV's midpoint, so its point is that CV's
+        # middle node. Logical id = placement * 2 + member; the view lists
+        # member 0's synapses, then member 1's.
+        cell = _synapse_rows_cell(2, ([1, 0, 1], [0.9, 0.5, 0.2]), ([1, 1], [0.5, 0.1]))
+        cell.record("all", braincell.observe.synapse().current(reduce="none"))
+        cell.record("sum", braincell.observe.synapse().current())
+        cell.dendrite.record("dend_ampa", braincell.observe.synapse(type="ExpSyn").state("g"))
+        cell.record("ids", braincell.observe.synapse(ids=[9, 3, 6, 0]).state("g"))
+        rows = _synapse_rows(cell)
+        self.assertEqual(cell.node_tree.cv_to_mid_node_id.tolist(), [1, 3, 4, 5])
+
+        def columns(name):
+            return [
+                (row.synapse_id, row.population_index, row.cv_id, row.point_id, row.branch_id, row.mechanism_type)
+                for row in rows[name]
+            ]
+
+        per_member = [(3, 5, 1, "ExpSyn"), (0, 1, 0, "ExpSyn"), (1, 3, 1, "ExpSyn"),
+                      (2, 4, 1, "Exp2Syn"), (1, 3, 1, "Exp2Syn")]  # fmt: skip
+        self.assertEqual(
+            columns("all"),
+            [(placement * 2 + member, member, *site) for member in (0, 1) for placement, site in enumerate(per_member)],
+        )
+        self.assertEqual(
+            [row.mechanism_name for row in rows["all"]], ["ampa"] * 3 + ["nmda"] * 2 + ["ampa"] * 3 + ["nmda"] * 2
+        )
+        # The ampa synapses on dend_a: placements 0 and 2 of each member.
+        self.assertEqual(
+            columns("dend_ampa"),
+            [
+                (0, 0, 3, 5, 1, "ExpSyn"),
+                (4, 0, 1, 3, 1, "ExpSyn"),
+                (1, 1, 3, 5, 1, "ExpSyn"),
+                (5, 1, 1, 3, 1, "ExpSyn"),
+            ],
+        )
+        # Selected ids keep the view's order, not the order given.
+        self.assertEqual(
+            columns("ids"),
+            [
+                (0, 0, 3, 5, 1, "ExpSyn"),
+                (6, 0, 2, 4, 1, "Exp2Syn"),
+                (3, 1, 0, 1, 0, "ExpSyn"),
+                (9, 1, 1, 3, 1, "Exp2Syn"),
+            ],
+        )
+        self.assertEqual(
+            [(row.population_index, row.cv_id, row.point_id, row.contributor_ids) for row in rows["sum"]],
+            [(0, 3, 5, (0,)), (0, 0, 1, (1,)), (0, 1, 3, (2, 4)), (0, 2, 4, (3,)),
+             (1, 3, 5, (5,)), (1, 0, 1, (6,)), (1, 1, 3, (7, 9)), (1, 2, 4, (8,))],
+        )  # fmt: skip
 
 
 if __name__ == "__main__":

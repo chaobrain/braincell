@@ -14,6 +14,7 @@
 # ==============================================================================
 
 import contextlib
+import gc
 import json
 import os
 import subprocess
@@ -395,13 +396,6 @@ class NetStimLargeNumberTest(unittest.TestCase):
         np.testing.assert_array_equal(source._event_times_ms, expected)
         self.assertEqual(len(lazy().events), 1_200_000)
 
-        net = bc.Network("prepared")
-        stim = net.add_population("stim", NetStim(number=2_000_000, interval=1.0 * u.ms))
-        post = net.add_population("post", _exp_syn_cell())
-        net.connect("in", source=stim, synapse=post.synapses["syn"], weight=0.01 * u.uS)
-        net.prepare_run(dt=0.1 * u.ms)
-        self.assertTrue(stim.model._schedule_complete)
-
     def test_scheduled_sources_only_network_reads_events_up_to_the_end(self) -> None:
         net = bc.Network("sources")
         stim = net.add_population("stim", NetStim(number=10**9, interval=25.0 * u.ms))
@@ -423,6 +417,219 @@ class NetStimLargeNumberTest(unittest.TestCase):
             source._event_table(until_ms=1000.0).time.to_decimal(u.ms)[:8],
             reference.event_times.to_decimal(u.ms)[0],
         )
+
+
+#: dt of the update() horizon tests, and the time of the boundary one step past the step limit.
+_HORIZON_DT_MS = 0.5
+_HORIZON_MS = 2**31 * _HORIZON_DT_MS
+#: 2 * 2**21 entries: generated on demand (more than 2**20).
+_HORIZON_NUMBER = 2**21
+
+
+def _horizon_stim(noise=0.0, number=_HORIZON_NUMBER):
+    return NetStim(size=2, start=[1.0, 3.0] * u.ms, interval=1.0e4 * u.ms, number=number, noise=noise, seed=11)
+
+
+def _horizon_network(noise=0.0, number=_HORIZON_NUMBER):
+    """Two NetStim sources driving one ExpSyn: arrivals at 1.3 and 3.3 ms, then one per 10 s."""
+    cell = Cell.point(1, V_init=-65.0 * u.mV)
+    cell.place(at("soma", 0.5), bc.mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms, e=0.0 * u.mV))
+    net = bc.Network("horizon", seed=1)
+    post = net.add_population("post", cell)
+    stim = net.add_population("stim", _horizon_stim(noise, number))
+    net.connect(
+        "drive",
+        source=stim,
+        synapse=post.synapses["s"][np.zeros(2, dtype=int)],
+        weight=0.001 * u.uS,
+        delay=0.3 * u.ms,
+    )
+    return net, cell, stim.model
+
+
+def _updates_g(net, cell, n_steps) -> np.ndarray:
+    """``g`` before each of ``n_steps`` update() calls, in one ``for_loop``: the samples a run takes."""
+
+    def step(_):
+        g = cell.synapses["s"].get("g")
+        net.update()
+        return g
+
+    gs = brainstate.transform.for_loop(step, jnp.arange(n_steps))
+    return np.asarray(u.get_mantissa(gs)).reshape(n_steps, -1)
+
+
+def _run_g(net, n_steps) -> np.ndarray:
+    result = net.run(dt=_HORIZON_DT_MS * u.ms, duration=n_steps * _HORIZON_DT_MS * u.ms)
+    g = np.asarray(u.get_mantissa(result.samples["post"]["g"].values))
+    return g.reshape(g.shape[0], -1)
+
+
+def _horizon_run_g(n_steps) -> np.ndarray:
+    """``g`` of one ``n_steps`` run of a new ``_horizon_network``."""
+    net, cell, _ = _horizon_network()
+    cell.record("g", bc.observe.synapse(name="s").state("g"))
+    return _run_g(net, n_steps)
+
+
+class NetStimUpdateHorizonTest(unittest.TestCase):
+    """CELL-56: ``prepare_run`` generates NetStim events as far as the step limit, which ``update()`` never passes."""
+
+    def _plan_windows(self, run):
+        windows = []
+        build = _ArrivalPlan.build.__func__
+
+        def spy(cls, **kwargs):
+            plan = build(cls, **kwargs)
+            windows.append(plan.window)
+            return plan
+
+        with mock.patch.object(_ArrivalPlan, "build", classmethod(spy)):
+            run()
+        return windows
+
+    def test_prepare_run_generates_events_up_to_the_step_limit(self) -> None:
+        net, _, source = _horizon_network()
+        net.prepare_run(dt=_HORIZON_DT_MS * u.ms)
+        times = source._event_times_ms
+        width = times.shape[1]
+        # floor((H - start) / interval) + 1 = 107375 events of each source
+        # are at or before H, for both starts; on main every one of 2**21.
+        self.assertLess(width, _HORIZON_NUMBER)
+        self.assertTrue(np.all(times[:, 107374] <= _HORIZON_MS))
+        self.assertTrue(np.all(times[:, 107375] > _HORIZON_MS))
+        np.testing.assert_array_equal(times, _times(_horizon_stim())[:, :width])
+
+    def test_prepare_run_generates_a_train_that_ends_before_the_limit_in_full(self) -> None:
+        # Moved from test_entries_without_a_run_end_generate_every_event.
+        net = bc.Network("prepared")
+        stim = net.add_population("stim", NetStim(number=2_000_000, interval=1.0 * u.ms))
+        post = net.add_population("post", _exp_syn_cell())
+        net.connect("in", source=stim, synapse=post.synapses["syn"], weight=0.01 * u.uS)
+        net.prepare_run(dt=0.1 * u.ms)
+        self.assertTrue(stim.model._schedule_complete)
+
+    def test_update_reads_only_the_arrivals_of_one_step(self) -> None:
+        # On main 69a8072 the step limit, to which later arrivals are
+        # clipped, held 3979554 (noise 0) and 3979943 (noise 1) of them.
+        for noise in (0.0, 1.0):
+            with self.subTest(noise=noise):
+                net, _, _ = _horizon_network(noise)
+                net.prepare_run(dt=_HORIZON_DT_MS * u.ms)
+                windows = self._plan_windows(net.update)
+                self.assertEqual(len(windows), 1)
+                self.assertLessEqual(windows[0], 2)
+
+    def test_arrivals_past_the_step_limit_are_counted_apart(self) -> None:
+        far = (2**31 + 5) * _HORIZON_DT_MS
+        dt = _HORIZON_DT_MS * u.ms
+        plan = _ArrivalPlan.build(
+            event_source=np.asarray([0, 0, 0, 0, 1]),
+            event_time_ms=np.asarray([1.0, far, far + 3.0, far + 7.0, 2.0]),
+            source_index=np.asarray([0, 1, 0]),
+            t=0.0 * u.ms,
+            delay=0.0 * u.ms,
+            dt=dt,
+        )
+        # Steps 2 and 4, and three arrivals clipped to the limit.
+        np.testing.assert_array_equal(plan.steps, [2, 4, _MAX_STEP, _MAX_STEP, _MAX_STEP])
+        self.assertEqual(plan.window, 1)
+        t = 0.0 * u.ms
+        for step, expected in ((2, [1, 0, 1]), (3, [0, 0, 0]), (4, [0, 1, 0]), (_MAX_STEP, [3, 0, 3])):
+            with boundary_step(t, step):
+                np.testing.assert_array_equal(np.asarray(plan.count(t=t, dt=dt)), expected, err_msg=str(step))
+
+    def test_update_delivers_as_run(self) -> None:
+        def updates(precision):
+            with brainstate.environ.context(precision=precision):
+                net, cell, _ = _horizon_network()
+                net.prepare_run(dt=_HORIZON_DT_MS * u.ms)
+                return _updates_g(net, cell, 20), _horizon_run_g(20)
+
+        for precision in (64, 32):
+            with self.subTest(precision=precision):
+                g_update, g_run = updates(precision)
+                gc.collect()
+                self.assertEqual(g_run.shape, (20, 1))  # one sample per step (L93)
+                np.testing.assert_array_equal(g_update, g_run)
+                # Arrivals at 1.3 and 3.3 ms: boundaries floor(T / dt + 0.5) =
+                # 3 and 7, which act in the step there, seen in the next sample.
+                np.testing.assert_array_equal(np.flatnonzero(np.diff(g_update[:, 0]) > 0) + 1, [4, 8])
+
+    def test_update_after_a_run_and_after_reset_state_delivers_as_run(self) -> None:
+        expected = _horizon_run_g(20)
+        net, cell, source = _horizon_network()
+        cell.record("g", bc.observe.synapse(name="s").state("g"))
+        first = _run_g(net, 4)
+        net.prepare_run(dt=_HORIZON_DT_MS * u.ms)
+        width = source._event_times_ms.shape[1]
+        self.assertLess(width, _HORIZON_NUMBER)
+        np.testing.assert_array_equal(np.concatenate([first, _updates_g(net, cell, 16)]), expected)
+        net.reset_state()
+        np.testing.assert_array_equal(_updates_g(net, cell, 20), expected)
+        self.assertEqual(source._event_times_ms.shape[1], width)
+
+    def test_an_input_registered_after_prepare_run_keeps_the_schedule(self) -> None:
+        # The update loop is rebuilt for the input and traced again (L40),
+        # reading the events prepare_run generated.
+        def bias(V):
+            return u.Quantity(np.full(V.shape, 0.01), u.nA)
+
+        expected = _horizon_run_g(20)
+        twin, twin_cell, _ = _horizon_network()
+        twin.prepare_run(dt=_HORIZON_DT_MS * u.ms)
+        _updates_g(twin, twin_cell, 20)
+        net, cell, source = _horizon_network()
+        net.prepare_run(dt=_HORIZON_DT_MS * u.ms)
+        width = source._event_times_ms.shape[1]
+        before = _updates_g(net, cell, 6)
+        cell.add_current_input("bias", bias)
+        after = []
+        windows = self._plan_windows(lambda: after.append(_updates_g(net, cell, 14)))
+        self.assertEqual(len(windows), 1)
+        self.assertLessEqual(windows[0], 2)
+        self.assertEqual(source._event_times_ms.shape[1], width)
+        np.testing.assert_array_equal(np.concatenate([before, after[0]]), expected)
+        v, v_twin = (float(np.asarray(c.V.value.to_decimal(u.mV)).reshape(-1)[0]) for c in (cell, twin_cell))
+        self.assertGreater(v, v_twin)
+
+    def test_a_loop_reused_by_a_later_run_delivers_its_events(self) -> None:
+        # Loops are cached by step count and schedule width, not by the time
+        # they run to: the loop of one run serves a later one of as many
+        # steps, while the schedule is wide enough for it.
+        def network():
+            net = bc.Network("split", seed=1)
+            stim = net.add_population("stim", NetStim(number=10**9, interval=25.0 * u.ms, noise=1.0, seed=4))
+            post = net.add_population("post", _exp_syn_cell())
+            net.connect("in", source=stim, synapse=post.synapses["syn"], weight=0.01 * u.uS)
+            post.cell.record("g", bc.observe.synapse(name="syn").state("g"))
+            return net, stim.model
+
+        def jumps(g):
+            return (np.flatnonzero(np.diff(g.reshape(-1)) > 0) + 1).tolist()
+
+        net, source = network()
+        split, widths = [], []
+        for _ in range(3):
+            split.append(net.run(dt=0.1 * u.ms, duration=100.0 * u.ms).samples["post"]["g"].values.mantissa)
+            widths.append(source._event_times_ms.shape[1])
+        self.assertEqual(widths[1], widths[2])
+        whole, _ = network()
+        expected = jumps(
+            np.asarray(whole.run(dt=0.1 * u.ms, duration=300.0 * u.ms).samples["post"]["g"].values.mantissa)
+        )
+        self.assertGreater(len([step for step in expected if step >= 1000]), 2)
+        self.assertEqual(jumps(np.concatenate([np.asarray(g) for g in split])), expected)
+
+    def test_update_reusing_the_loop_of_a_one_step_run_delivers_its_events(self) -> None:
+        # Of a schedule generated in full, the loops of a one-step run and
+        # of update() are one.
+        net, cell, _ = _horizon_network(number=5)
+        cell.record("g", bc.observe.synapse(name="s").state("g"))
+        first = _run_g(net, 1)
+        net.prepare_run(dt=_HORIZON_DT_MS * u.ms)
+        self.assertEqual(len(net._network_run_loop_cache), 1)
+        np.testing.assert_array_equal(np.concatenate([first, _updates_g(net, cell, 19)]), _horizon_run_g(20))
 
 
 class NetStimDefaultSeedTest(unittest.TestCase):

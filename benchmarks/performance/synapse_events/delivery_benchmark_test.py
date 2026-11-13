@@ -558,7 +558,8 @@ class RegressionMeasurementTest(unittest.TestCase):
                 "--timeout",
                 "60",
             ]
-            with patch.object(b.subprocess, "run", side_effect=fake):
+            inherited = dict(XLA_FLAGS="--xla_dump_to=/tmp/dump")
+            with patch.object(b.subprocess, "run", side_effect=fake), patch.dict(b.os.environ, inherited):
                 self.assertEqual(b.main(argv), 0)
             manifest = json.loads((out / "manifest.json").read_text())
             rows = manifest["rows"]
@@ -571,7 +572,10 @@ class RegressionMeasurementTest(unittest.TestCase):
             self.assertEqual(cmd[:4], ["flock", "/tmp/lock", "timeout", "60"])
             self.assertEqual(cmd[4:7], ["taskset", "-c", "0,2"])
             self.assertIsNone(kwargs["timeout"])
-            self.assertIn("intra_op_parallelism_threads=1", kwargs["env"]["XLA_FLAGS"])
+            # XLA stops reading XLA_FLAGS at an item that is not an XLA flag, so every item is one.
+            flags = kwargs["env"]["XLA_FLAGS"].split()
+            self.assertEqual(flags, ["--xla_dump_to=/tmp/dump", "--xla_cpu_multi_thread_eigen=false"])
+            self.assertTrue(all(flag.startswith("--xla_") for flag in flags), flags)
             # Each (round, model, entry) runs all three methods, in a seeded order.
             for round_id in range(2):
                 for model in ("small", "active"):

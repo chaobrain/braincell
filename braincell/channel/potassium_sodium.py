@@ -23,6 +23,7 @@ import brainstate
 import braintools
 import brainunit as u
 
+from braincell._constants import FARADAY_CONSTANT, GAS_CONSTANT
 from braincell._base_channel import Channel, IonInfo
 from braincell._typing import ArrayLike, Initializer, Size
 from braincell.channel.potassium import Kv1p5_MA2024_PC
@@ -262,7 +263,7 @@ class Kv1p5_MA2020_GrC(Kv1p5_MA2024_PC):
         # ``z = (R*(celsius+273.15))/F`` with ``R`` in joule/degC and ``F`` in
         # coulombs is a number in volts; ``v - z*log(...)`` then reads it as
         # millivolts. Reproduce that, not the physical Nernst value.
-        z = (u.gas_constant * self.temp / u.faraday_constant).to_decimal(u.volt)
+        z = (GAS_CONSTANT * self.temp / FARADAY_CONSTANT).to_decimal(u.volt)
         e_no = z * u.math.log((Na.Co + K.Co) / (Na.Ci + K.Ci)) * u.mV
         ino = self.gnonspec * conductance * (e_no - V)
         return {"k": ik, "no": ino}

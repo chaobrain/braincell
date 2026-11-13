@@ -42,6 +42,7 @@ import braintools
 import brainunit as u
 import jax
 
+from braincell._constants import FARADAY_CONSTANT, GAS_CONSTANT
 from braincell._base_channel import IonInfo
 from braincell._typing import ArrayLike, Initializer, Size
 from braincell.channel._base import Gate, OhmicHH, OhmicMarkov, Transition, cached_q10_factor
@@ -1284,10 +1285,10 @@ class Kca1p1_MA2020_GoC(OhmicMarkov):
         return cached_q10_factor(self, "_phi_memo", self.q10_base, self.temp, _TEMP_REF_23C)
 
     def _alpha_factor(self, V):
-        return u.math.exp((self.Qo * u.faraday_constant * V) / (u.gas_constant * self.temp))
+        return u.math.exp((self.Qo * FARADAY_CONSTANT * V) / (GAS_CONSTANT * self.temp))
 
     def _beta_factor(self, V):
-        return u.math.exp((self.Qc * u.faraday_constant * V) / (u.gas_constant * self.temp))
+        return u.math.exp((self.Qc * FARADAY_CONSTANT * V) / (GAS_CONSTANT * self.temp))
 
     def c01(self, V, K: IonInfo, Ca: IonInfo):
         return 4 * (Ca.Ci / u.mM) * self.k1 * self.onoffrate * self._phi()

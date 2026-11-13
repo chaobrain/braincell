@@ -48,7 +48,10 @@ __all__ = [
 #: is generated in full at construction; a larger one on demand.
 _EAGER_SCHEDULE_ENTRIES = 1 << 20
 
-#: ``brainstate.environ`` key carrying the last event time a run can deliver.
+#: ``brainstate.environ`` key carrying the last event time a run can deliver:
+#: one step past the end of ``Cell.run`` or ``Network.run``, or of the steps
+#: ``Network.prepare_run`` prepared for ``Network.update`` (its ``duration``,
+#: or the step limit).
 _SCHEDULE_HORIZON_KEY = "_braincell_netstim_horizon_ms"
 
 #: ``brainstate.environ`` key carrying ``(t, step)``: the integer step of the
@@ -391,12 +394,18 @@ class NetStim(EventSource):
     one, so the events are those of the full schedule. Entries that do not
     know when the run ends generate all ``number`` events, as for a small
     schedule: :attr:`event_times`, :attr:`events`, :meth:`event_count`
-    outside a run, and ``Cell.run`` traced under ``jax.jit`` or
-    ``jax.grad``. ``Network.prepare_run`` generates the events of the
-    ``Network.update`` calls that follow it as far as the step limit
-    (``2**31 - 1`` steps), which no loop of them passes: about
-    ``2**31 * dt / interval`` per source, 5.4 million at ``dt = 0.025 ms``
-    and ``interval = 10 ms``, however large ``number`` is.
+    outside a run, ``Cell.run`` traced under ``jax.jit`` or ``jax.grad``,
+    and standalone ``Cell.update()``. Each event takes about 150 bytes
+    while a loop is traced, so ``number = 1e9`` raises ``MemoryError``
+    there even for ``size = 1``: give such a source a ``number`` that
+    covers the loop, or run it in a ``Network``.
+    ``Network.prepare_run`` generates the events of the ``Network.update``
+    calls that follow it as far as the step limit (``2**31 - 1`` steps),
+    which no loop of them passes: about ``2**31 * dt / interval`` per
+    source, 5.4 million at ``dt = 0.025 ms`` and ``interval = 10 ms``,
+    however large ``number`` is. ``Network.prepare_run(duration=...)``
+    generates them only for the duration, and ``Network.update`` refuses,
+    or turns to NaN, the steps after it.
 
     Examples
     --------

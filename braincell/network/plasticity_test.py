@@ -1066,7 +1066,10 @@ class RecordRuleStateRowsTest(unittest.TestCase):
         second = cell.run(dt=DT, duration=12.0 * u.ms).samples
         _assert_same_recordings(self, second, first, ("w", "only_removed"))
 
-    def test_only_a_cell_outside_a_network_keeps_a_copy(self) -> None:
+    def test_a_recording_keeps_no_copy_in_either_driver(self) -> None:
+        # Both drivers sample the state before they run the rule at a
+        # boundary (CELL-55); main bbb7b0a gave a Cell outside a Network a copy
+        # of each recorded state, 2 more states here.
         def count_states(*, record, in_network):
             cell = _toy_cell(post_ms=[10.0])
             if in_network:
@@ -1081,7 +1084,7 @@ class RecordRuleStateRowsTest(unittest.TestCase):
             return len(brainstate.graph.states(cell))
 
         alone = count_states(record=False, in_network=False)
-        self.assertEqual(count_states(record=True, in_network=False), alone + 2)
+        self.assertEqual(count_states(record=True, in_network=False), alone)
         in_network = count_states(record=False, in_network=True)
         self.assertEqual(count_states(record=True, in_network=True), in_network)
 

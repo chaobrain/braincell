@@ -3989,10 +3989,10 @@ class Cell(_CellFacade, HHTypedNeuron):
     def update(self, I_ext=None):
         """Advance the cell by one simulation step.
 
-        This method is the standalone cell-level step wrapper. It applies
-        already-prepared synaptic events, advances continuous membrane and
-        mechanism dynamics by one ``dt``, computes the spike output, and
-        prepares synaptic input for the next standalone step. It reads
+        This method is the standalone cell-level step wrapper. It prepares
+        and applies the synaptic events of the boundary it starts at,
+        advances continuous membrane and mechanism dynamics by one ``dt``,
+        and computes the spike output. It reads
         ``dt`` from ``brainstate.environ`` and ``t`` from the environment
         or, if unset, ``current_time``; it does not advance
         ``current_time``.
@@ -4040,12 +4040,13 @@ class Cell(_CellFacade, HHTypedNeuron):
         -----
         The standalone update order is:
 
-        1. Apply prepared runtime synapse events. The first step after
-           ``init_state()`` or ``reset_state()`` prepares them first, as
-           :meth:`run` does, so an event at the start time is delivered.
-        2. Advance voltage and mechanism dynamics through ``self.solver``.
-        3. Detect and store the current spike.
-        4. Prepare discrete event payloads for the next step.
+        1. Prepare the discrete event payloads of the boundary ``t``, and
+           run the connections' plasticity rules there, as each step of
+           :meth:`run` does; so an event at the start time is delivered, and
+           a weight set between two calls acts from the next one.
+        2. Apply them to the runtime synapses.
+        3. Advance voltage and mechanism dynamics through ``self.solver``.
+        4. Detect and store the current spike.
 
         In network execution, delayed event delivery is scheduled outside the
         cell. ``Network.run(...)`` writes arrivals into runtime state buffers
@@ -4123,7 +4124,6 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._begin_step()
         with brainstate.environ.context(_braincell_step_clamps_prepared=True):
             spk = self._update_dynamics(external)
-        self._prepare_next_synapse_inputs(t=self._resolve_t() + brainstate.environ.get_dt())
         return spk
 
     def add_current_input(self, key, inp, label=None):
@@ -4419,14 +4419,14 @@ class Cell(_CellFacade, HHTypedNeuron):
         return spk
 
     def _prepare_next_synapse_inputs(self, *, t=None, step=None):
-        """Prepare runtime synapse inputs for a later step.
+        """Prepare runtime synapse inputs for the step that starts at ``t``.
 
         Notes
         -----
-        This method projects the updated CV voltage to point space and
-        rebuilds the runtime synapse event payload. In standalone
-        ``Cell.update()``, the prepared input is consumed by the next call to
-        ``update``.
+        This method projects the CV voltage to point space and rebuilds the
+        runtime synapse event payload. Each step of ``Cell.run``,
+        ``update()`` and a Network prepares the boundary it starts at, then
+        consumes it (CELL-55).
 
         In network execution, delayed arrivals are written by the network
         delivery layer before this preparation phase.
@@ -4452,15 +4452,14 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._next_synapse_inputs_prepared.value = jnp.asarray(True)
 
     def _prepare_first_synapse_inputs(self, *, t, step=None) -> None:
-        """Prepare the inputs of the boundary ``t`` a run or ``update()`` starts at, unless a step did.
+        """Prepare the inputs of the boundary ``t`` an ``update()`` starts at, unless it is prepared.
 
-        Every ``Cell.run`` step and every ``update()`` prepares the boundary
-        that follows it, so a run or ``update()`` continuing either finds its
-        boundary prepared. Preparing it again would deliver each event on it
-        twice (CELL-34); only the first step after ``init_state`` or
-        ``reset_state`` prepares here, so an event at the start time is
-        delivered once whichever drives that step (CELL-35). The test is on a
-        state, not a Python flag, so it holds inside jitted loops.
+        Each ``Cell.run`` step and each ``update()`` prepares the boundary it
+        starts at and consumes it, so the boundary is prepared here at every
+        ``update()``, an event at the start time included (CELL-35, CELL-55).
+        The test guards against preparing a boundary twice, which would
+        deliver each event on it twice (CELL-34); it is on a state, not a
+        Python flag, so it holds inside jitted loops.
         """
         prepared = self._next_synapse_inputs_prepared.value
         if not is_traced_value(prepared):
@@ -4922,20 +4921,20 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         A scheduled event (``NetStim``, ``EventSequence``) acts on the
         step nearest its arrival, and is delivered once also when ``dt``
-        changes. A run ends by preparing the boundary at the time it
-        reached, with the events within half of its step: a run at another
-        ``dt`` keeps that boundary as it is, skips the events it took, and
-        delivers the others on its own steps, counted from the time reached
-        when that is not a multiple of the new ``dt``, but not on the step
-        at that time. So within half of the old step of the change an event
-        can act a step later or earlier than on the new grid: after 10
-        steps of 0.025 ms, at ``dt = 0.05 ms`` events at 0.265 and 0.27 ms
-        act at 0.3 ms, not 0.25 ms; after 5 steps of 0.05 ms, at
-        ``dt = 0.025 ms`` events at 0.2625 and 0.27 ms act at 0.25 ms, not
-        0.275 ms. A Cell run on its own after a Network at another ``dt``
-        skips the events the Network delivered in the same way. A traced
-        run (inside ``jax.jit``) has no host clock: it counts the arrivals
-        on the grid from time 0, without this hand-over.
+        changes. Each step prepares the boundary it starts at, so a run
+        took the events up to half of its step before the time it reached.
+        A run at another ``dt`` skips those and delivers the others on its
+        own steps, counted from the time reached when that is not a multiple
+        of the new ``dt``, none before that time: after 10 steps of
+        0.025 ms, at ``dt = 0.05 ms`` events at 0.265 and 0.27 ms act at
+        0.25 ms; after 5 steps of 0.05 ms, at ``dt = 0.025 ms`` events at
+        0.2625 and 0.27 ms act at 0.275 ms, and one at 0.23 ms, which the
+        new grid puts at 0.225 ms, at 0.25 ms. A Cell run on its own after a
+        Network at another ``dt`` skips the events the Network delivered in
+        the same way. An edit between two runs, such as
+        ``ConnectionView.set(weight=...)``, acts from the first step of the
+        next. A traced run (inside ``jax.jit``) has no host clock: it counts
+        the arrivals on the grid from time 0, without this hand-over.
 
         Raises
         ------

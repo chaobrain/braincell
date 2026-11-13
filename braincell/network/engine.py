@@ -601,22 +601,18 @@ class Network:
         precision, so a run split into segments, or into ``update()``
         calls, steps at the same times as one run, however long it is.
 
-        **Cells that ran on their own** (CELL-57). A ``Cell.run`` ends by
-        preparing the boundary at the time it reached, with the scheduled
-        events within half of its step. A Network the Cell then joins, at a
-        time on its ``dt`` grid, leaves that boundary as it is: its first
-        step does not prepare it again, so each event, and each plasticity
-        rule update, happens once. When the Cell ran at another ``dt``, the
-        Network's steps also skip the events that boundary took and deliver
-        the others no earlier than their second step: within half of the
-        Cell's step of the join an event can act a step later or earlier
-        than in a Network run from ``t = 0``. A Network step consumes its
-        boundary within the step, so a Cell that later runs on its own at
-        another ``dt`` skips what the Network delivered in the same way. The
-        first run after a join is compiled with its first step apart;
-        :meth:`prepare_run` after one compiles an ``update()`` that tests, on
-        every step, whether such a Cell's boundary is prepared.
-        :meth:`reset_state` forgets the join.
+        **Cells that ran on their own** (CELL-57, CELL-55). A step of
+        ``Cell.run``, like a Network step, prepares the boundary it starts
+        at and consumes it within the step, so a Cell's run took the
+        scheduled events up to half of its step before the time it reached.
+        A Network the Cell then joins, at a time on its ``dt`` grid,
+        prepares that time's boundary in its first step: each event, and
+        each plasticity rule update, happens once. When the Cell ran at
+        another ``dt``, the Network's steps skip the events the Cell's run
+        took and deliver the others on their own grid, none before the
+        join, as in a Network run from ``t = 0``. A Cell that later runs on
+        its own at another ``dt`` skips what the Network delivered in the
+        same way. :meth:`reset_state` forgets the join.
 
         **Scheduled delivery** (``scheduled_delivery``, CELL-9). The
         arrivals of the run's steps ``[n, n + steps)`` are planned on the

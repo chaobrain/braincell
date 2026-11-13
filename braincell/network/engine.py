@@ -653,13 +653,23 @@ class Network:
           keeps them). It differentiates as ordinary JAX code, forward
           mode included.
 
-        Try ``"direct"`` when many scheduled rows have few arrivals per
-        step, above all when rows share synapses, or when a source's
-        schedule is much longer than the run; ``"padded"`` within its
-        limits. Keep the default for small models: preparing a plan costs
-        more than it saves. The method is part of the runtime
-        configuration, fixed after the first run as ``event_backend`` is;
-        a first run that raised ``PaddingLimitError`` fixes nothing.
+        The default is ``None`` on every device; choose a method by
+        measuring. In ``benchmarks/performance/synapse_events`` (its
+        ``regression`` phase, on one CPU and one GPU, an RTX 3090) the
+        better method depended on the device:
+
+        - On the CPU, ``"direct"`` and ``"padded"`` were several times
+          faster when many scheduled rows have few arrivals per step and
+          share synapses, and ``"direct"`` helped when a source's schedule
+          is much longer than the run.
+        - On the GPU, ``"direct"`` was slower than the default for every
+          model measured, and ``"padded"``, within its limits, was 1.05 to
+          1.5 times faster.
+
+        Keep the default for small models: preparing a plan costs more than
+        it saves. The method is part of the runtime configuration, fixed
+        after the first run as ``event_backend`` is; a first run that raised
+        ``PaddingLimitError`` fixes nothing.
 
         Examples
         --------

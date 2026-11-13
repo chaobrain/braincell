@@ -173,7 +173,7 @@ def cases_for(suite, ns=(1, 10, 100), ms=(1, 10, 100)):
     return cases
 
 
-def build_workload(case, *, cell_type=None):
+def build_workload(case, *, cell_type=None, scheduled_delivery=None, prepare=True, recordings=()):
     """Construct and prepare the actual BrainCell workload.
 
     Parameters
@@ -182,6 +182,13 @@ def build_workload(case, *, cell_type=None):
         Validated experiment configuration.
     cell_type : type or None, optional
         Experimental Cell subclass; defaults to the production Cell.
+    scheduled_delivery : {None, "direct", "padded"}, optional
+        Passed to ``Network.prepare_run``; ``None`` is the default path.
+    prepare : bool, optional
+        Call ``Network.prepare_run`` (default); otherwise only
+        ``Network.init_state``, for a workload driven by ``Network.run``.
+    recordings : tuple of (str, object), optional
+        ``Cell.record(name, observable)`` calls made before initialization.
 
     Returns
     -------
@@ -256,9 +263,14 @@ def build_workload(case, *, cell_type=None):
                 weight=0.001 * u.uS,
                 delay=delay_ms[lo:hi] * u.ms,
             )
+    for name, observable in recordings:
+        cell.record(name, observable)
     build_seconds = time.perf_counter() - start
     start = time.perf_counter()
-    net.prepare_run(dt=case.dt_ms * u.ms, event_backend="scatter")
+    if prepare:
+        net.prepare_run(dt=case.dt_ms * u.ms, event_backend="scatter", scheduled_delivery=scheduled_delivery)
+    else:
+        net.init_state()
     states = tuple(brainstate.graph.states(cell).values())
     jax.block_until_ready(tuple(s.value for s in states))
     prepare_seconds = time.perf_counter() - start

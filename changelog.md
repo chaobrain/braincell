@@ -2119,6 +2119,12 @@
 
 ### Documentation
 
+- The `scheduled_delivery` advice in the `Network.run` docstring follows
+  the measurements of CELL-10 (the `regression` phase of
+  `benchmarks/performance/synapse_events`, on one CPU and one RTX 3090): on
+  the GPU `"direct"` was slower than the default for every model and
+  `"padded"`, within its limits, faster. The default stays `None` on every
+  device.
 - The NEURON comparison of heterogeneous `NetStim` sources
   (`validation/neuron/synapse/netstim_heterogeneous_compare.ipynb`) runs to
   the end and passes its 1e-5 mV tolerance (CELL-41). It set the `ExpSyn`

@@ -44,7 +44,7 @@ from braincell._misc import (
     same_time_quantity as _same_time_quantity,
     validate_time_quantity,
 )
-from braincell.network.recording import EventSeries, SampleBlock, concat_sample_blocks, step_end_times
+from braincell.network.recording import EventSeries, SampleBlock, concat_sample_blocks
 from braincell.quad._staggered import axial_operator_per_run
 
 if TYPE_CHECKING:
@@ -619,6 +619,8 @@ class _SpikePort:
             metadata["batch_index"], metadata["population_index"] = np.divmod(
                 np.arange(n_rows, dtype=np.int64), n_rows // batch_size
             )
+        from braincell.network.recording import step_end_times
+
         ends, unit = step_end_times(times, stop_time)
         return EventSeries(
             time=u.Quantity(ends[step], unit),

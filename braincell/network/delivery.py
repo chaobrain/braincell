@@ -426,11 +426,17 @@ def create_delivery_state(
     -----
     Each queue with delayed contacts keeps one history of the event counts
     of the source members those contacts read, as deep as its longest
-    delay in steps: ``depth x members`` values, where a queue of weighted
-    events held ``(depth + 1) x synapse rows``. A route with one delay per
-    contact (the scatter path) keeps only the members its delayed contacts
-    read; a route with one delay (the ``brainevent`` path) its whole
-    source.
+    delay in steps: ``depth x members`` values in the sources' event dtype,
+    where a queue of weighted events, before CELL-69, held
+    ``(depth + 1) x synapse rows``. A route with one delay per contact (the
+    scatter path) keeps only the members its delayed contacts read; a
+    route with one delay (the ``brainevent`` path) its whole source.
+
+    The history therefore grows with the distinct source members a target
+    synapse layout receives from, not with its synapse rows. In float64,
+    with delays up to 80 steps: 1e6 rows from 1e6 sources onto 1e4 shared
+    synapses keep 624 MB, where the weighted queue held 6.5 MB; 1e6 rows
+    from 900 sources onto 1e6 synapses keep 0.58 MB, where it held 648 MB.
     """
     if len(delivery_ops) != len(blocks):
         raise ValueError(

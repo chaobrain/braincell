@@ -105,6 +105,9 @@ def run_neuron() -> dict[int, dict]:
     from neuron import h
 
     h.load_file("stdrun.hoc")
+    # hh interpolates its rates on a 1 mV table; BrainCell evaluates them exactly.
+    usetable = h.usetable_hh
+    h.usetable_hh = 0
 
     def run(k):
         soma = h.Section(name="soma")
@@ -134,5 +137,8 @@ def run_neuron() -> dict[int, dict]:
         n_steps = round(DURATION_MS / DT_MS)
         return v[1 : n_steps + 1], g[:n_steps]
 
-    reference, _ = run(None)
-    return {k: _summary(*_with_reference(run(k), reference)) for k in DELAY_STEPS}
+    try:
+        reference, _ = run(None)
+        return {k: _summary(*_with_reference(run(k), reference)) for k in DELAY_STEPS}
+    finally:
+        h.usetable_hh = usetable

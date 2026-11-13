@@ -927,6 +927,31 @@
 
 ### Changes & Improvements
 
+- **`Cell.run` packs its spikes in blocks of steps on GPU** (CELL-49). On
+  GPU each step of the compiled loop launches its kernels one after
+  another. Packing each step's spike bits and writing them as a row added
+  two kernels to every step, and the packed grid was copied back whole
+  after the run. A run whose step count has a divisor between 8 and 32
+  now steps in blocks of the largest one, K. Each step ORs its spike bits
+  into one word per row, inside the kernel that steps the voltage, and
+  each block stores its words once, so a step launches the kernels of a
+  run without spike output. A grid of 1 MiB or more is compacted on the
+  device, and only its nonzero part is copied back. `RunResult.spikes` is
+  the same, element for element. On an RTX 3090 (float32, a
+  Hodgkin-Huxley point population, `rk4` or `ralston2`, with or without a
+  current clamp):
+  - 10,000 members over 10,000 steps take 0.83-0.93 of their former time,
+    1.06-1.29 times the engine stepped directly, where they took 1.25-1.41
+    times;
+  - 100,000 members over 5000 steps take 0.73-0.76 of their former time,
+    1.22-1.39 times the engine, where they took 1.64-1.91 times;
+  - 300 to 3000 members take 0.90-1.01 of their former time.
+
+  Other step counts (fewer than 8, or with no divisor in that range, such
+  as the prime 10,007) still pack at every step. 10,007 steps of 10,000
+  members take up to 1.12 times as long per step as 10,000 steps, which is
+  still less than before. The first call compiles for about 0.2 s longer.
+  On CPU the compiled program is the same as before.
 - **`Cell.run` spends less on each step on GPU** (CELL-39). Its compiled
   loop carried two states that every step rewrites before reading them:
   the flag that marks the next step's synapse inputs as prepared, and the

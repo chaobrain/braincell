@@ -269,6 +269,32 @@
   no deprecation period (0.3 allows breaking changes without one, a
   project-lead decision). Use `jnp.asarray(series.time.mantissa)` where a
   JAX array is needed.
+- **All spike times move one `dt` later** (CELL-80). A Cell's spike in the
+  step from `t_m` to `t_m + dt` was reported at `t_m`, the start of the step;
+  `RunResult.spikes` and `NetworkResult.events[population][port]` of a Cell
+  (the `"spike"` port, a reduction model's events, and a
+  `VoltageCrossingSource` port) now report it at `t_m + dt`, the end of the
+  step, as NEURON's `NetCon.record` does in fixed step. A Hodgkin-Huxley soma
+  that NEURON 9.0.2 stamps at 2.475, 18.8 and 34.925 ms was reported at 2.45,
+  18.775 and 34.9 ms on main `999a21e`; the times now agree within 1e-9 ms
+  (`validation/neuron/synapse/spike_times_test.py`). A reduction model driven
+  by NetStim events at 0.3, 1.3 and 2.3 ms (dt 0.1 ms) reports 0.4, 1.4 and
+  2.4 ms instead of 0.3, 1.3 and 2.3 ms. The reported time is now the one the
+  library uses for the spike: a plasticity rule pairs the post spike at it
+  (a `PairSTDP` weight change computed from the old reported time was 1.25e-3
+  off in relative terms), and replaying `RunResult.spikes` as an
+  `EventSequence` with the connection's delay acts in the same step as the
+  live connection instead of one step earlier. A run reports the spikes of
+  its own steps, so their times lie in `(start_time, stop_time]` instead of
+  `[start_time, stop_time)`: a crossing in a run's last step is reported by
+  that run at its `stop_time`, and split runs still concatenate to one run.
+  The time is the next entry of the run's time axis (or its `stop_time`), so
+  it equals `result.time[m + 1]` bit for bit. NetStim and EventSequence
+  events keep their own times, and the dynamics do not change. There is no
+  deprecation period (0.3 allows breaking changes without one, a
+  project-lead decision). To get the old values, subtract `dt` from the
+  times; an `update()` loop that labels the spikes of the step at `t` should
+  label them `t + dt`.
 
 ### New Features
 

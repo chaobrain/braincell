@@ -20,6 +20,13 @@ external event sources.
   w exp(-dt / tau) one sample later on both sides (within 1e-12 uS; zero
   delay is not compared, BrainCell adds it at the end of the step). Needs
   NEURON and skips without it.
+- `spike_times.py` and `spike_times_test.py`: the spike times of an HH soma
+  (one 20 um x 20 um compartment, 0.1, 0.2 and 0.3 nA from 0.25 ms, `dt`
+  0.025 ms, 50 ms) in `RunResult.spikes` and the Network's
+  `events["c"]["spike"]` against NEURON's `NetCon(v, None).record`: 3, 4 and
+  5 spikes on both sides, each within 1e-9 ms. Both stamp a crossing in the
+  step from t_m to t_{m+1} with t_{m+1}; NEURON's accumulated `t` sits about
+  1e-10 ms off the grid. Needs NEURON and skips without it.
 - `exp_syn_compare.ipynb`: plots one `ExpSyn` and one `Exp2Syn` case built
   with `reference.py`.
 - `hh_2x2_neuron_compare.ipynb`: synaptic transmission in a small HH network.

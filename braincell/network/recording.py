@@ -542,7 +542,7 @@ def _observable_rows_and_sampler(cell, spec: RecordingSpec):
 
             return rows, sample
         view = _selected_synapse_view(cell, spec.scope, observable.selector)
-        rows = tuple(_synapse_recording_row(cell, view, index, observable.field) for index in range(len(view)))
+        rows = _synapse_recording_rows(cell, view, observable.field)
 
         def sample():
             return _sample_synapse_field(view, observable.field)
@@ -685,7 +685,7 @@ def _current_rows_and_sampler(cell, scope, observable: _CurrentObservable):
         def raw_sample():
             return _sample_synapse_current(cell, view)
 
-        record_rows = tuple(_synapse_recording_row(cell, view, index, "current") for index in raw_rows)
+        record_rows = _synapse_recording_rows(cell, view, "current")
 
     if observable.reduce == "none":
         return record_rows, raw_sample
@@ -877,17 +877,37 @@ def _density_recording_row(cell, row, *, field: str) -> RecordingRow:
     )
 
 
-def _synapse_recording_row(cell, view, index: int, field: str) -> RecordingRow:
-    logical_id = int(view.id[index])
-    cv_id = int(view.cv_id[index])
-    spatial = _spatial_row(cell, (int(view.population_index[index]), cv_id), field=field)
-    return replace(
-        spatial,
-        point_id=int(view.point_id[index]),
-        mechanism_category="synapse",
-        mechanism_type=str(view.synapse_type[index]),
-        mechanism_name=str(view.name[index]),
-        synapse_id=logical_id,
+def _synapse_recording_rows(cell, view, field: str) -> tuple[RecordingRow, ...]:
+    """One row per synapse of ``view``, in view order.
+
+    Each view column gathers every row of the view, so each is read once
+    here: one read per row made building the rows quadratic in their number
+    (CELL-56). A row's site is its synapse's: its point, and the branch of
+    its CV.
+    """
+    branch_of_cv = [int(cv.branch_id) for cv in cell.cvs]
+    columns = zip(
+        view.id.tolist(),
+        view.population_index.tolist(),
+        view.cv_id.tolist(),
+        view.point_id.tolist(),
+        view.synapse_type.tolist(),
+        view.name.tolist(),
+    )
+    return tuple(
+        RecordingRow(
+            population_index=int(member),
+            cv_id=int(cv),
+            point_id=int(point),
+            branch_id=branch_of_cv[int(cv)],
+            field=field,
+            unit=None,
+            mechanism_category="synapse",
+            mechanism_type=str(synapse_type),
+            mechanism_name=str(name),
+            synapse_id=int(logical_id),
+        )
+        for logical_id, member, cv, point, synapse_type, name in columns
     )
 
 

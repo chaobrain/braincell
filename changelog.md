@@ -2483,6 +2483,20 @@
   `usetable_<mech>` or calling `disable_rate_table`. The ion pool comparisons
   now switch off the table of every mechanism they insert; none of their 25
   cases inserts one with a table, so their NEURON traces are unchanged.
+- The `Network.run` Notes explain when the compiled loop is traced again
+  (CELL-74). On the default path the loop holds the generated NetStim events
+  as constants. A NetStim with more than `2**20` events (`size` times
+  `max(number)`) generates them on demand. Each run that needs later events
+  at least doubles the schedule and compiles the loop again, so `k` runs of
+  one length compile it about `log2(k) + 1` times. With a million sources
+  such a run took 3.6 to 10 s on one CPU, against 1.7 s for a run that
+  reused the loop. `scheduled_delivery="direct"` passes the events of
+  planned rows as loop arguments, so their growth traces nothing; a NetStim
+  read by a plasticity rule still keys the loop. Two tests pin this
+  behaviour, which is unchanged. On main `36dd9cd`, 16 runs of 1 ms from a
+  NetStim firing every 0.1 ms compile at runs 1, 2, 3, 5 and 9, and not at
+  all after `reset_state`. A rule's source removed from the planned loop's
+  key would leave its row 21 of 80 conductance jumps.
 
 ### Deprecations
 

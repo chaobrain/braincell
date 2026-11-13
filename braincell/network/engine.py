@@ -680,6 +680,27 @@ class Network:
         after the first run as ``event_backend`` is; a first run that raised
         ``PaddingLimitError`` fixes nothing.
 
+        **Compiled loops** (CELL-74). A run with as many steps as an
+        earlier one reuses its compiled loop. On the default path
+        (``scheduled_delivery=None``) the loop holds the NetStim events
+        generated so far as constants. A NetStim with ``size`` times
+        ``max(number)`` at most ``2**20`` generates every event at
+        construction, so its events never change the loop. A larger one
+        generates them on demand: a run that needs later events first
+        extends the schedule to at least twice its width, then traces and
+        compiles the loop again, which reads every generated event. So
+        ``k`` runs of one length compile the loop about ``log2(k) + 1``
+        times; after :meth:`reset_state` the schedule keeps its width and
+        the runs compile nothing. The cost of an extension grows with the
+        generated events: with a million sources, on one CPU, the runs that
+        extended the schedule took 3.6 to 10 s and those that reused the
+        loop about 1.7 s. With ``scheduled_delivery`` the plans are
+        arguments of the loop, so a NetStim that only planned rows read
+        grows without tracing the loop again; ``"direct"`` is the path for
+        long continuations from large NetStims. A NetStim that a plasticity
+        rule reads, as its rows' source or its ``post`` signal, still keys
+        the loop: the rule reads its events when the loop is traced.
+
         Examples
         --------
         .. code-block:: python

@@ -903,8 +903,7 @@
   the first run, as `event_backend` is. The experimental `prepare_events`
   and `prepare_delivery` accept `EventSequence`, generate a `NetStim`'s
   events only up to the window, and no longer reject float32 windows past
-  `2**20` steps; `ScheduledDeliveryCell` leaves rule rows to their rule and
-  gives `"sum_count"` layouts their counts instead of raising `TypeError`.
+  `2**20` steps.
 - **`ConnectionView.record(name, state, *, period, frequency, start)`
   records a plasticity rule's state during a run** (CELL-12c): the dynamic
   weight `"w"`, `PairSTDP`'s traces `"x_pre"` and `"y_post"`, or any state
@@ -2028,8 +2027,8 @@
   0.32 mV. A `delay` or `dt` that is traced (an argument of a `jax.jit`
   function) and a `t` the caller sets, as in a `Cell.update()` loop, are
   still rounded in the run precision. The experimental
-  `braincell.experimental.scheduled_events.prepare_events` and
-  `ScheduledDeliveryCell` round the same way.
+  `braincell.experimental.scheduled_events.prepare_events` rounds the same
+  way.
 - With a batch axis, a recording of a channel or ion state
   (`observe.channel(...).state(...)`, `observe.ion(...).state(...)`) and a
   density view's `get` (`cell[[0, 2]].channels.by_name("Na").get("m")`) take

@@ -2689,7 +2689,11 @@ class UpdateLiveDynamicsTest(unittest.TestCase):
         n = 400
         for kind in ("cable", "lumped"):
             for delay in (0.0, 0.1, 0.3):
-                with self.subTest(kind=kind, delay=delay), jax.enable_x64(True), brainstate.environ.context(precision=64):
+                with (
+                    self.subTest(kind=kind, delay=delay),
+                    jax.enable_x64(True),
+                    brainstate.environ.context(precision=64),
+                ):
                     ran = self._cell(kind, delay)
                     reference = []
                     for _ in range(n):

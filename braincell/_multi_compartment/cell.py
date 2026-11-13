@@ -4937,6 +4937,14 @@ class Cell(_CellFacade, HHTypedNeuron):
         run (inside ``jax.jit``) has no host clock: it counts the arrivals
         on the grid from time 0, without this hand-over.
 
+        On GPU, a run whose step count has a divisor in [8, 32] packs the
+        spikes of its ``spikes`` result every K steps, K the largest such
+        divisor; other step counts (fewer than 8, or with no such divisor,
+        such as a prime above 32) pack them at every step, which launches
+        more kernels per step. The time per step can then jump with the
+        step count: 10007 steps take longer per step than 10000 (blocks of
+        25). The spikes are the same either way, and so is the run on CPU.
+
         Raises
         ------
         ValueError

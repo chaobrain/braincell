@@ -1099,8 +1099,9 @@ class Network:
             for name in setup.ordered_population_names:
                 cell = self.populations[name].cell
                 cell.V.value = u.math.where(past, u.math.nan * u.get_unit(cell.V.value), cell.V.value)
-        if is_traced_value(step) and stop is not None and _PROTO_GUARD == "nan_all":
+        if is_traced_value(step) and stop is not None and _PROTO_GUARD in ("nan_all", "nan_mul"):
             past = step >= stop
+            factor = jnp.where(past, jnp.nan, 1.0)
             for name in setup.ordered_population_names:
                 cell = self.populations[name].cell
                 poisoned = [st for st in brainstate.graph.states(cell).values() if isinstance(st, _DiffEqState)]
@@ -1110,7 +1111,9 @@ class Network:
                         continue
                     value = state.value
                     state.value = jax.tree.map(
-                        lambda leaf: u.math.where(past, u.math.nan * u.get_unit(leaf), leaf),
+                        (lambda leaf: leaf * factor.astype(u.math.asarray(leaf).dtype))
+                        if _PROTO_GUARD == "nan_mul"
+                        else (lambda leaf: u.math.where(past, u.math.nan * u.get_unit(leaf), leaf)),
                         value,
                         is_leaf=lambda x: isinstance(x, u.Quantity),
                     )

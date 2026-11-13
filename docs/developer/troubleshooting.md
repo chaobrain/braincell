@@ -59,6 +59,23 @@ python -m pip install ipywidgets "jupyterlab>=3"
 Use `vis3d(notebook=True, jupyter_backend="html")` and save the executed outputs so the published page includes the exported interactive HTML.
 See the [Vis API](../apis/vis.rst) for call parameters.
 
+(precision-switch)=
+## A model fails after switching precision
+
+jaxlib 0.12 caches the device copy of a host NumPy array per array object, and hands that copy back for as long as
+something holds it, whatever `jax_enable_x64` is by then. A compiled program that captured the array holds it. So a
+module-level NumPy array used by a float64 model that is still alive reaches a float32 operation as a float64 buffer
+(or the reverse), and JAX raises `JaxRuntimeError: INVALID_ARGUMENT: ... RuntimeProgramInputMismatch: ... expected
+parameter 0 of size 4 (f32[]) but got buffer with incompatible size 8 (f64[])`. `jax.clear_caches()` does not help while
+the model holds its program.
+
+braincell's own code does not pass such shared arrays to JAX: it holds the gas and Faraday constants as NumPy scalars,
+which jaxlib does not cache per object (before OPT-17, brainunit's `u.gas_constant` and `u.faraday_constant`
+triggered this in every Nernst ion and GHK channel). Your own mechanisms can still trigger it, for example one that
+multiplies by `u.faraday_constant` when models at both precisions live in one process. Use
+`u.Quantity(np.float64(u.faraday_constant.mantissa), unit=u.faraday_constant.unit)`, a Python float or an array made at
+the current precision instead, or delete the models of the other precision and call `gc.collect()` before switching.
+
 ## Modeling and numerical issues
 
 | Symptom | Where to look |
@@ -68,21 +85,5 @@ See the [Vis API](../apis/vis.rst) for call parameters.
 | Solver name or supported model does not match | [Integration](../concepts/integration.ipynb), [Integration API](../apis/integration.rst) |
 | Numerical divergence or disagreement with a reference | [Numerical acceptance](testing.md#accept-numerical-results) |
 | SWC/ASC reading fails | [IO API](../apis/io.rst) |
-
-### `RuntimeProgramInputMismatch` after switching precision
-
-jaxlib 0.12 caches the device copy of a host NumPy array per array object, and hands that copy back for as long as
-something holds it, whatever `jax_enable_x64` is by then. A compiled program that captured the array holds it. So a
-module-level NumPy array used by a float64 model that is still alive reaches a float32 operation as a float64 buffer
-(or the reverse), and JAX raises `JaxRuntimeError: INVALID_ARGUMENT: ... RuntimeProgramInputMismatch: ... expected
-parameter 0 of size 4 (f32[]) but got buffer with incompatible size 8 (f64[])`. `jax.clear_caches()` does not help
-while the model holds its program.
-
-braincell's own code does not pass such shared arrays to JAX: it holds the gas and Faraday constants as NumPy scalars,
-which jaxlib does not cache per object (before OPT-17, brainunit's `u.gas_constant` and `u.faraday_constant`
-triggered this in every Nernst ion and GHK channel). Your own mechanisms can still trigger it, for example one that
-multiplies by `u.faraday_constant` when models at both precisions live in one process. Use
-`u.Quantity(np.float64(u.faraday_constant.mantissa), unit=u.faraday_constant.unit)`, a Python float or an array made at
-the current precision instead, or delete the models of the other precision and call `gc.collect()` before switching.
 
 If the problem remains unresolved, open an [issue](https://github.com/chaobrain/braincell/issues) with a runnable reproduction and environment details.

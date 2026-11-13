@@ -1381,6 +1381,30 @@
   longer compile for each new number of spikes (see Breaking Changes). The
   rows, their order and their values are unchanged, and an `EventSequence`
   still filters its whole table once per run.
+- **The `experimental.optim` engines build a cable Cell's axial operator
+  once per scan** (OPT-14). The engines replay the step they traced at
+  `prepare`, and that step built the operator (the Schur LU of the generic
+  solvers, four per `rk4` step; the DHS coefficients of `staggered` and
+  `dhs_voltage`) at every step, inside the scan. Every scanning entry now
+  builds it once from its initial states and passes it to each step: rollout
+  and trajectory BPTT and RTRL, both `diagnose` paths,
+  `forward_sensitivity_rollout`, `compact_forward_sensitivity_rollout` and
+  `bptt_reference_loss`. RTRL linearizes the build once and carries its
+  tangent, and `diagnose` pulls the operator's share of the local gradient
+  back through the build. On the CA1 morphology (`rk4`, float64), with `Ra`
+  trainable, a step took 441-786 ms on one CPU core and 18-39 ms on an RTX
+  3090 on main `8bb8721`; it now takes 1.7-2.7 ms and 0.16-0.34 ms. With
+  sodium `g_max` trainable, the RTRL-type entries on GPU went from 15-23 to
+  0.19-0.27 ms per step; CPU steps are unchanged, since XLA already moved
+  those builds out of the loop. Each run now pays for one build, 15-23 ms on
+  GPU (measured on the `g_max` RTRL entries). The compiled scratch memory of
+  rollout RTRL with one `Ra` scale per CV (681 directions) fell from 70.8 to
+  18.9 GiB, and `prepare` takes 0.2-0.5 s longer. These are medians of 3
+  rounds on a loaded machine (load1 13-70). Gradients change only in the
+  last bits (Y cable: at most 6e-16 in float64, 8e-8 in float32). A step
+  that writes the geometry or an optimizer root keeps building the operator
+  at every step, with main's results; the new `axial_operator_mode` property
+  reports `"rollout"`, `"step"` or `"none"`.
 
 ### Bug Fixes
 

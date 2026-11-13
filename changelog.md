@@ -941,11 +941,11 @@
   Hodgkin-Huxley point population, `rk4` or `ralston2`, with or without a
   current clamp):
   - 10,000 members over 10,000 steps take 0.83-0.93 of their former time,
-    1.06-1.29 times the engine stepped directly, where they took 1.25-1.41
+    1.06-1.29 times the engine stepped directly, where they took 1.22-1.41
     times;
   - 100,000 members over 5000 steps take 0.73-0.76 of their former time,
     1.22-1.39 times the engine, where they took 1.64-1.91 times;
-  - 300 to 3000 members take 0.90-1.01 of their former time.
+  - 300 to 3000 members take 0.90-1.02 of their former time.
 
   Other step counts (fewer than 8, or with no divisor in that range, such
   as the prime 10,007) still pack at every step. 10,007 steps of 10,000

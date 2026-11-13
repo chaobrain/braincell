@@ -26,7 +26,7 @@ import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._misc import require_name as _require_name, scalar_decimal
+from braincell._misc import is_traced_value, require_name as _require_name, scalar_decimal
 from braincell._parameter_schema import RuntimeParameterState
 from braincell._multi_compartment.synapses import SynapseView, _cell_label
 from braincell._multi_compartment.lifecycle import DiscreteView
@@ -914,7 +914,10 @@ class ConnectionView(DiscreteView):
         for later calls: before ``update()`` runs under
         ``brainstate.transform.for_loop`` or ``jit``, call this once outside,
         or the traced call raises. A call at the ``dt`` the rows already have
-        does nothing; they keep it until :meth:`Cell.reset <braincell.Cell.reset>`.
+        does nothing. A call at another ``dt`` quantizes them again when none
+        of their delayed events is still to arrive, as after
+        :meth:`Cell.reset_state <braincell.Cell.reset_state>`; it is refused
+        while one is, so that none is lost or moved to another step.
 
         Parameters
         ----------
@@ -927,7 +930,9 @@ class ConnectionView(DiscreteView):
             For a plasticity rule on a live source, which runs only in a
             :class:`~braincell.Network`; raised before any row is prepared.
         ValueError
-            If ``dt`` is not positive, or the rows have another ``dt``.
+            If ``dt`` is not positive, or the rows have another ``dt`` and
+            one of their delayed events is still to arrive; raised before any
+            row is prepared.
 
         Examples
         --------
@@ -968,16 +973,23 @@ class ConnectionView(DiscreteView):
             >>> bool(g.max() > 0 * u.uS)
             True
         """
+        self._refuse_live_rules()
+        views = tuple(self._call_views(scheduled=False))
+        for view in views:
+            # Every row is checked before any is prepared (CELL-76).
+            view._check_live_dt(dt)
+        for view in views:
+            view._prepare_live_runtime(dt)
+
+    def _refuse_live_rules(self) -> None:
+        """Refuse a plasticity rule on a live source, before any live history is allocated."""
         for call, _ in self._call_items(scheduled=False):
             if call.plasticity is not None:
-                # Raised before any live history is allocated.
                 raise NotImplementedError(
                     f"Connection {call.name!r} has a plasticity rule on a live source, which runs only in a "
                     "braincell.Network: a standalone Cell.run delivers live events on another schedule. Add the "
                     "Cells to a Network and run that, or connect a scheduled source (EventSequence, NetStim)."
                 )
-        for view in self._call_views(scheduled=False):
-            view._prepare_live_runtime(dt)
 
     def _init_rules(self) -> dict | None:
         """Allocate the state of every plasticity rule (``Cell.init_state``).
@@ -1001,7 +1013,13 @@ class ConnectionView(DiscreteView):
     def _check_live_dt(self, dt) -> tuple[_ConnectionCall, bool]:
         """Refuse a ``dt`` this call cannot run at; return the call and whether it still needs preparing.
 
-        ``Cell.update`` checks every live call before it prepares any.
+        Its delays are quantized again at another ``dt`` only when no event
+        is in flight: every delay rounds to 0 steps, none of the last spikes
+        is still to arrive, or a ``reset_state()`` since zeroed the history
+        (CELL-76).
+        A traced call cannot read the history, so it keeps the ``dt``.
+        ``Cell.run`` and ``Cell.update`` check every live call before they
+        prepare any.
         """
         call = self._require_single_call("prepare runtime")
         dt_ms = scalar_decimal(dt, u.ms)
@@ -1009,11 +1027,26 @@ class ConnectionView(DiscreteView):
             raise ValueError("Connection runtime dt must be > 0 ms.")
         if call.live_dt_ms is None:
             return call, True
-        if not np.isclose(call.live_dt_ms, dt_ms):
-            raise ValueError(
-                "A live Connection cannot change dt while retaining delayed events; reset the target cell state first."
-            )
-        return call, False
+        if np.isclose(call.live_dt_ms, dt_ms):
+            return call, False
+        if call.live_history is not None:
+            history = call.live_history.value
+            if is_traced_value(history):
+                raise ValueError(
+                    f"Live connection {call.name!r} runs at dt = {call.live_dt_ms!r} ms and cannot change dt inside "
+                    "a traced call (jit, grad, brainstate.transform.for_loop); run once at the new dt outside it."
+                )
+            # Between steps, row ``j`` holds the spikes of ``j`` steps before the last one. A
+            # delay of ``k`` steps reads row ``k - 1`` at the end of a step: those of ``j >= k``
+            # have arrived.
+            steps = call.live_delay_steps
+            in_flight = np.arange(history.shape[0])[:, None] < steps[None, :]
+            if np.any(np.asarray(history)[in_flight]):
+                raise ValueError(
+                    f"Live connection {call.name!r} cannot change dt from {call.live_dt_ms!r} ms while delayed "
+                    "events are in flight; call reset_state() on the target Cell first, or keep its dt."
+                )
+        return call, True
 
     def _live_history_depth(self, dt) -> int:
         """The steps of history this call's delays need at ``dt`` (0: every delay rounds to 0 steps)."""
@@ -1030,7 +1063,13 @@ class ConnectionView(DiscreteView):
         call.live_dt_ms = dt_ms
         call.live_delay_steps = steps
         max_steps = int(np.max(steps, initial=0))
-        if max_steps > 0:
+        if call.live_history is not None:
+            # The history of an earlier dt holds no event in flight (_check_live_dt). The same
+            # state, so a compiled loop that holds it sees the new shape and traces again; a dt
+            # whose delays all round to 0 steps keeps it, zero and unread.
+            shape = (max_steps, len(self)) if max_steps else call.live_history.value.shape
+            call.live_history.value = jnp.zeros(shape)
+        elif max_steps > 0:
             call.live_history = brainstate.ShortTermState(jnp.zeros((max_steps, len(self))))
 
     def reset_runtime(self) -> None:

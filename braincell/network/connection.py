@@ -604,6 +604,18 @@ class ConnectionView(DiscreteView):
         ``reset_state`` returns to and the current dynamic weight
         (``rule_state("w")``).
 
+        An event already sent and still in its delay takes the weight it
+        arrives with, as NEURON's ``NetCon`` weights an event at delivery:
+        a ``set`` between two runs reaches the events in flight. To do so a
+        ``Network`` keeps, for each target synapse layout, the event counts
+        of the source members its delayed rows read over the longest delay
+        (``depth x members`` values) and weights them on arrival. Many
+        sources onto few shared synapses cost more than few onto many: in
+        float64, with delays up to 80 steps, 1e6 rows from 1e6 sources onto
+        1e4 synapses keep 624 MB (a queue of weighted events held 6.5 MB),
+        1e6 rows from 900 sources onto 1e6 synapses 0.58 MB (it held
+        648 MB).
+
         Raises
         ------
         ValueError

@@ -973,6 +973,19 @@
   members take up to 1.12 times as long per step as 10,000 steps, which is
   still less than before. The first call compiles for about 0.2 s longer.
   On CPU the compiled program is the same as before.
+- **A second run reuses its compiled loop** (CELL-54). `init_state()` and
+  `reset_state()` built `V`, `spike`, the channel gates and the synapse
+  states from Python numbers (such as `V_init=-65.0 * u.mV`), which JAX
+  types weakly; the compiled loop of a run writes them back strongly typed,
+  and `jax.jit` keys its cache on the difference. So the second `Cell.run`,
+  the second `Network.run` (with any `scheduled_delivery`) and the second
+  call of a loop over `update()` compiled with `brainstate.transform.jit`
+  compiled the loop again: on main `73136f6`, on CPU, 0.14 to 0.23 s for a
+  3-CV Hodgkin-Huxley cell, a point cell, and 10 cells driven by 1000
+  `NetStim` rows (0.8 to 0.9 s for the latter on one core). These States now start strongly typed, with the same
+  dtype, so the loop compiles once, and the first run after
+  `reset_state()` reuses it too. With parameters given as Python numbers
+  the results are the same bit for bit, in float32 and float64.
 - **`Cell.run` spends less on each step on GPU** (CELL-39). Its compiled
   loop carried two states that every step rewrites before reading them:
   the flag that marks the next step's synapse inputs as prepared, and the
@@ -2138,6 +2151,17 @@
   size, and a connected Cell its saved weights, on both kinds of Cell, as
   did a stiff-gate warning raised as an error on a lumped Cell. A
   successful `init_state` is unchanged.
+- At float64 precision, the first run after `init_state()` or
+  `reset_state()` computes in float64 when a parameter is a float32 array
+  (CELL-54). The gates were weakly typed float64 there, and JAX computes a
+  weakly typed float64 times a float32 array in float32; once a run had
+  written them back, later runs computed in float64. On main `73136f6`,
+  with `g_max=np.float32(120) * u.mS / u.cm**2` for the Na channel of a
+  3-CV Hodgkin-Huxley cable and 200 steps of 0.025 ms, `V` after the first
+  `Cell.run` was off from the float64 result by up to 8.4e-7 mV, after a
+  first loop of `update()` compiled with `brainstate.transform.jit` by
+  1.4e-6 mV, and after 200 eager `update()` calls by 4.2e-9 mV. Each run
+  now computes as the later runs did.
 - `Exp2Syn`, `GabaA_JE2011` and the `SynapticKernelAccumulatorReduction`
   kernel area run `tau1 / tau2 > 0.9999` as `tau1 = 0.9999 * tau2`, as the
   INITIAL blocks of NEURON's `exp2syn.mod` and `gabaA_Cl.mod` do (CELL-62).

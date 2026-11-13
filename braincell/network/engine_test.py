@@ -28,6 +28,7 @@ import numpy as np
 
 import braincell
 from braincell._random_test import default_key_data, drawn_seeds
+from braincell._multi_compartment.lifecycle_test import loop_compiles
 from braincell._multi_compartment.run_test import (
     DT,
     WEIGHT,
@@ -1840,6 +1841,68 @@ class NetworkAxialOperatorTest(unittest.TestCase):
                 network = Network("cable")
                 network.add_population("cells", hh_y_cable(solver))
                 self.assertEqual(axial_builds(lambda: network.run(dt=DT, duration=4 * DT)), (0, 1))
+
+
+class NetworkSecondRunCompileTest(unittest.TestCase):
+    """CELL-54: a Network's second run reuses its loop."""
+
+    @staticmethod
+    def _network():
+        # An event every 0.1 ms from 0.1 ms: each 1 ms window plans 9 or 10
+        # arrivals, so no path's arrays change shape between the runs.
+        cell, _ = make_event_cell()
+        network = Network("again")
+        source = network.add_population("stim", braincell.NetStim(start=0.1 * u.ms, interval=0.1 * u.ms, number=1000))
+        target = network.add_population("post", cell)
+        network.connect("drive", source=source, synapse=target.synapses["syn"], weight=WEIGHT)
+        return network, cell
+
+    def test_a_second_run_does_not_compile_the_loop_again(self):
+        # On main 29d6828 V, spike and the synapse's g were weak-typed after
+        # init_state() and reset_state() and strong after a run, which jit
+        # keys on: on every path the loop compiled at runs 1 and 2,
+        # [1, 1, 0, 0, 0].
+        for delivery in (None, "direct", "padded"):
+            with self.subTest(scheduled_delivery=delivery):
+                network, cell = self._network()
+                network.init_state()
+                options = {} if delivery is None else {"scheduled_delivery": delivery}
+                counts, conductances = [], []
+                for index in range(5):
+                    if index == 3:
+                        network.reset_state()
+                    with loop_compiles() as names:
+                        network.run(dt=DT, duration=40 * DT, **options)
+                    counts.append(names.count("jit(jaxpr_call)"))
+                    conductances.append(_synapse_g(cell))
+                self.assertGreaterEqual(counts[0], 1)
+                self.assertEqual(counts[1:], [0, 0, 0, 0])
+                self.assertTrue(all(np.isfinite(g) and g > 0.0 for g in conductances))
+
+    def test_a_jitted_update_loop_after_prepare_run_compiles_once(self):
+        # A loop of the user's own over update(), compiled with
+        # brainstate.transform.jit: twice after init_state(), twice after
+        # reset_state() (main 29d6828: [1, 1, 0, 0]).
+        network, cell = self._network()
+        network.init_state()
+        network.prepare_run(dt=DT)
+
+        def step(_):
+            network.update()
+            return cell.V.value
+
+        loop = brainstate.transform.jit(lambda: brainstate.transform.for_loop(step, np.arange(40)))
+        counts, conductances = [], []
+        for index in range(4):
+            if index == 2:
+                network.reset_state()
+            with loop_compiles() as names:
+                jax.block_until_ready(loop())
+            counts.append(names.count("jit(jaxpr_call)"))
+            conductances.append(_synapse_g(cell))
+        self.assertGreaterEqual(counts[0], 1)
+        self.assertEqual(counts[1:], [0, 0, 0])
+        self.assertTrue(all(np.isfinite(g) and g > 0.0 for g in conductances))
 
 
 if __name__ == "__main__":

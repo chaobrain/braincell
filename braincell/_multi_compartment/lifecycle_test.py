@@ -15,12 +15,16 @@
 
 """Declaration, discretization, parameter ownership and deinitialization."""
 
+import contextlib
+import logging
 import re
 import unittest
 from unittest.mock import patch
 
 import brainstate
 import brainunit as u
+import jax
+import jax.numpy as jnp
 import numpy as np
 
 import braincell as bc
@@ -432,6 +436,218 @@ class NetworkOwnedLifecycleTest(unittest.TestCase):
         new_net.add_population("p", new_cell)
         new_net.init_state()
         self.run_network(new_net)
+
+
+DT = 0.025 * u.ms
+
+
+@contextlib.contextmanager
+def loop_compiles():
+    """The names of the XLA compiles in the block, from ``jax_log_compiles`` (not printed).
+
+    ``brainstate.transform.jit`` compiles a loop as ``jit(jaxpr_call)``.
+    """
+    names = []
+
+    class Collect(logging.Handler):
+        def emit(self, record):
+            match = re.match(r"Finished XLA compilation of (\S+)", record.getMessage())
+            if match:
+                names.append(match.group(1))
+
+    logger = logging.getLogger("jax")
+    handler, propagate = Collect(), logger.propagate
+    logger.addHandler(handler)
+    logger.propagate = False
+    try:
+        with jax.log_compiles(True):
+            yield names
+    finally:
+        logger.removeHandler(handler)
+        logger.propagate = propagate
+
+
+def make_hh_cell(kind="cable", g_na=120.0):
+    """Two members with HH channels and a 0.1 nA clamp from 0.5 to 4.5 ms; V_init -65 mV.
+
+    ``"cable"``: one 60 um x 5 um soma in 3 CVs; ``"lumped"``:
+    ``Cell.point`` 20 um x 10 um. Parameters given as Python floats make
+    weak-typed initial arrays (V, spike, the gates).
+    """
+    if kind == "lumped":
+        cell = bc.Cell.point(2, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV)
+    else:
+        branch = bc.Branch.from_lengths(lengths=[60.0] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
+        cell = bc.Cell(bc.Morphology.from_root(branch), pop_size=2, cv_policy=bc.CVPerBranch(3), V_init=-65.0 * u.mV)
+    cell.paint(
+        AllRegion(),
+        bc.mech.Ion("SodiumFixed", E=50.0 * u.mV),
+        bc.mech.Ion("PotassiumFixed", E=-77.0 * u.mV),
+        bc.mech.Channel("Na_HH1952", name="na", g_max=g_na * u.mS / u.cm**2),
+        bc.mech.Channel("K_HH1952", name="k", g_max=36.0 * u.mS / u.cm**2),
+        bc.mech.Channel("IL", name="leak", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+    )
+    cell.place(RootLocation(0.5), bc.CurrentClamp(delay=0.5 * u.ms, durations=[4.0] * u.ms, amplitudes=[0.1] * u.nA))
+    return cell
+
+
+def weak_short_term_states(cell):
+    """Paths of the short-term States of ``cell`` that hold a weak-typed array."""
+    names = []
+    for path, state in brainstate.graph.states(cell, brainstate.ShortTermState).items():
+        leaves = jax.tree.leaves(state.value)
+        if any(isinstance(leaf, jax.Array) and leaf.aval.weak_type for leaf in leaves):
+            names.append(".".join(map(str, path)))
+    return names
+
+
+def state_shapes(cell):
+    """``{path: shape}`` of every State value of ``cell``."""
+    return {
+        ".".join(map(str, path)): tuple(np.shape(leaf) for leaf in jax.tree.leaves(state.value))
+        for path, state in brainstate.graph.states(cell).items()
+    }
+
+
+def strong_by_hand(cell):
+    """Replace each weak-typed array of the short-term States of ``cell`` by a strong one, through NumPy."""
+
+    def strong(leaf):
+        return jnp.asarray(np.asarray(leaf)) if isinstance(leaf, jax.Array) and leaf.aval.weak_type else leaf
+
+    for state in brainstate.graph.states(cell, brainstate.ShortTermState).values():
+        state.value = jax.tree.map(strong, state.value)
+
+
+def no_strong_state_values():
+    """The init_state() and reset_state() of before CELL-54: States are left as built."""
+    return patch.object(cell_module, "strong_state_values", lambda module: None, create=True)
+
+
+class SecondRunCompileTest(unittest.TestCase):
+    """CELL-54: init_state() and reset_state() leave strong-typed States, so a second run reuses the loop."""
+
+    def test_a_second_cell_run_does_not_compile_the_loop_again(self):
+        # On main 29d6828 V, spike and the gates were weak-typed after
+        # init_state() and reset_state(), and strong after a run, which jit
+        # keys on: the loop compiled at runs 1 and 2, [1, 1, 0, 0, 0].
+        for kind in ("cable", "lumped"):
+            with self.subTest(kind=kind):
+                cell = make_hh_cell(kind)
+                cell.init_state()
+                counts = []
+                for index in range(5):
+                    if index == 3:
+                        cell.reset_state()
+                    with loop_compiles() as names:
+                        cell.run(dt=DT, duration=40 * DT)
+                    counts.append(names.count("jit(jaxpr_call)"))
+                self.assertGreaterEqual(counts[0], 1)
+                self.assertEqual(counts[1:], [0, 0, 0, 0])
+
+    def test_a_jitted_update_loop_compiles_once(self):
+        # A loop of the user's own over update(), compiled with
+        # brainstate.transform.jit, called twice after init_state() and twice
+        # after reset_state() (main 29d6828: [1, 1, 0, 0]).
+        for kind in ("cable", "lumped"):
+            with self.subTest(kind=kind):
+                cell = make_hh_cell(kind)
+                cell.init_state()
+
+                def step(index, cell=cell):
+                    with brainstate.environ.context(t=index * DT, dt=DT):
+                        cell.update()
+                    return cell.V.value
+
+                loop = brainstate.transform.jit(lambda step=step: brainstate.transform.for_loop(step, np.arange(40)))
+                counts, voltages = [], []
+                for index in range(4):
+                    if index == 2:
+                        cell.reset_state()
+                    with loop_compiles() as names:
+                        voltages.append(np.asarray(loop().to_decimal(u.mV)))
+                    counts.append(names.count("jit(jaxpr_call)"))
+                self.assertGreaterEqual(counts[0], 1)
+                self.assertEqual(counts[1:], [0, 0, 0])
+                self.assertTrue(np.isfinite(voltages).all())
+                # The clamp (from 0.5 ms) depolarizes the cell; the loop after
+                # reset_state() repeats the first.
+                self.assertGreater(float(np.max(voltages[0])), -64.0)
+                np.testing.assert_array_equal(voltages[2], voltages[0])
+
+    def test_init_and_reset_with_a_batch_keep_the_axis_and_leave_no_weak_state(self):
+        for kind in ("cable", "lumped"):
+            with self.subTest(kind=kind):
+                before = make_hh_cell(kind)
+                with no_strong_state_values():
+                    before.init_state(batch_size=2)
+                cell = make_hh_cell(kind)
+                cell.init_state(batch_size=2)
+                self.assertEqual(cell.V.value.shape, (2, 2, 3) if kind == "cable" else (2, 2))
+                self.assertEqual(state_shapes(cell), state_shapes(before))
+                self.assertIn("V", weak_short_term_states(before))
+                self.assertEqual(weak_short_term_states(cell), [])
+                cell.run(dt=DT, duration=4 * DT)
+                cell.reset_state(batch_size=2)
+                self.assertEqual(state_shapes(cell), state_shapes(before))
+                self.assertEqual(weak_short_term_states(cell), [])
+
+    def test_a_float32_parameter_at_float64_computes_the_first_run_in_float64(self):
+        # On main 29d6828 the gates were weak-typed float64 after init_state()
+        # and reset_state(); met by the float32 g_max, the first run after
+        # each computed the Na conductance in float32, the runs after it in
+        # float64: V after run 1 was off by up to 8.4e-7 mV.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            finals = {}
+            for by_hand in (False, True):
+                cell = make_hh_cell(g_na=np.float32(120.0))
+                with no_strong_state_values() if by_hand else contextlib.nullcontext():
+                    cell.init_state()
+                    (g_max,) = [
+                        state.value
+                        for path, state in brainstate.graph.states(cell).items()
+                        if path[-2:] == ("na", "g_max")
+                    ]
+                    self.assertEqual(np.asarray(u.get_mantissa(g_max)).dtype, np.float32)
+                    finals[by_hand] = []
+                    for index in range(2):
+                        if index == 1:
+                            cell.reset_state()
+                        if by_hand:
+                            strong_by_hand(cell)
+                        cell.run(dt=DT, duration=200 * DT)
+                        finals[by_hand].append(final_voltage(cell))
+            for run, (voltage, expected) in enumerate(zip(finals[False], finals[True])):
+                with self.subTest(run=run):
+                    self.assertEqual(voltage.dtype, np.float64)
+                    self.assertTrue(np.isfinite(voltage).all())
+                    self.assertGreater(float(np.max(np.abs(voltage + 65.0))), 1.0)
+                    np.testing.assert_allclose(voltage, expected, rtol=1e-12, atol=0.0)
+
+    def test_python_float_parameters_give_the_numbers_of_before(self):
+        # With parameters given as Python floats, strong-typed States change
+        # only the cache key: the runs are those of before CELL-54.
+        for precision in (32, 64):
+            for kind in ("cable", "lumped"):
+                with (
+                    self.subTest(precision=precision, kind=kind),
+                    jax.enable_x64(precision == 64),
+                    brainstate.environ.context(precision=precision),
+                ):
+                    finals = {}
+                    for before in (False, True):
+                        cell = make_hh_cell(kind)
+                        with no_strong_state_values() if before else contextlib.nullcontext():
+                            cell.init_state()
+                            finals[before] = []
+                            for index in range(3):
+                                if index == 2:
+                                    cell.reset_state()
+                                cell.run(dt=DT, duration=120 * DT)
+                                finals[before].append(final_voltage(cell))
+                    self.assertTrue(np.isfinite(finals[False]).all())
+                    self.assertGreater(float(np.max(np.abs(np.asarray(finals[False]) + 65.0))), 1.0)
+                    np.testing.assert_allclose(finals[False], finals[True], rtol=1e-12, atol=0.0)
 
 
 if __name__ == "__main__":

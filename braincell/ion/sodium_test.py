@@ -22,6 +22,7 @@ import jax.numpy as jnp
 
 from braincell._base_ion import Ion
 from braincell._base_neuron import HHTypedNeuron
+from braincell._constants import FARADAY_CONSTANT, GAS_CONSTANT
 from braincell.channel.sodium import Na_TM1991
 from braincell.ion._base import InitNernstIon
 from braincell.ion._testing import V as _V, DynamicShellIonContractTests, FixedIonContractTests, run_float64
@@ -142,7 +143,7 @@ class SodiumInitNernstTest(unittest.TestCase):
 
         self.assertIsNone(na.E)
         na.init_state(V)
-        expected = u.gas_constant * na.temp / (na.valence * u.faraday_constant) * u.math.log(na.Co / na.Ci)
+        expected = GAS_CONSTANT * na.temp / (na.valence * FARADAY_CONSTANT) * u.math.log(na.Co / na.Ci)
         self.assertTrue(u.math.allclose(na.E.to_decimal(u.mV), expected.to_decimal(u.mV), atol=1e-6))
 
         first_E = na.E

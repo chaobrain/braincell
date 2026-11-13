@@ -79,8 +79,8 @@ from braincell.channel._testing import (
 
 def _cav3p1_nmodl_ghk_flux(V, ci, co, z, temp):
     faraday = 9.6485e4 * (u.coulomb / u.mol)
-    gas_constant = 8.3145 * (u.joule / (u.kelvin * u.mol))
-    zeta = (z * faraday * V) / (gas_constant * (temp + 0.04 * u.kelvin))
+    gas = 8.3145 * (u.joule / (u.kelvin * u.mol))
+    zeta = (z * faraday * V) / (gas * (temp + 0.04 * u.kelvin))
     exp_term = u.math.exp(-zeta)
     numerator = ci - co * exp_term
     small_branch = (z * faraday) * numerator * (1 + zeta / 2)

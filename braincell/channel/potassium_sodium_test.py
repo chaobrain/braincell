@@ -24,6 +24,7 @@ import numpy as np
 
 import braincell.channel as channel
 from braincell._base_channel import IonInfo
+from braincell._constants import FARADAY_CONSTANT, GAS_CONSTANT
 from braincell.channel.potassium import Kv1p5_MA2024_PC
 from braincell.channel.potassium_sodium import Kv1p5_MA2020_GrC, NaKPump_Ca1999
 from braincell.ion import NonSpecific, Potassium, Sodium
@@ -107,7 +108,7 @@ class Kv1p5MA20GrCTest(unittest.TestCase):
         voltage_factor = ch._voltage_factor(V)
         # The mod's ``z = R*(celsius + 273.15)/F`` is a number in volts that
         # its ``v - z*log(...)`` uses as millivolts.
-        z = (u.gas_constant * ch.temp / u.faraday_constant).to_decimal(u.volt)
+        z = (GAS_CONSTANT * ch.temp / FARADAY_CONSTANT).to_decimal(u.volt)
         eno = z * u.math.log((na.Co + k.Co) / (na.Ci + k.Ci)) * u.mV
         expected_no = ch.gnonspec * voltage_factor * conductance_factor * (eno - V)
         components = ch.current_components(V, k, na, no)

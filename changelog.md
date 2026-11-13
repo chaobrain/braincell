@@ -1221,6 +1221,23 @@
   ran before it: `reset_state` keeps the accepted sizes, a change of
   topology drops them. `"direct"`, the default path and `prepare_run` are
   unchanged.
+- **Synapse recordings build their rows in time linear in the synapses, and
+  `Network.prepare_run` no longer generates every NetStim event** (CELL-56).
+  A recording of synapse states or currents (`observe.synapse(...)`) read
+  each column of its synapse view once per row, and each read gathered the
+  whole view: the rows of 1e4 synapses took 26.5 s to build and those of
+  3e4 239 s on main `69a8072`; they now take 0.016 s and 0.051 s (1e6:
+  2.7 s). `prepare_run` generated all `number` events of each NetStim for
+  the `update()` calls after it; it now generates them as far as the step
+  limit (`2**31 - 1` steps), which no loop of `update()` calls passes:
+  about `2**31 * dt / interval` per source, 5.4 million at
+  `dt = 0.025 ms` and `interval = 10 ms`, whatever `number` is. At
+  `number=10**9` it ran out of memory, and now takes 0.09 s, with 0.68 s
+  for the first `update()`. Arrivals past the step limit, which are clipped
+  to it, are counted apart and no longer widen what each step reads: 2000
+  `update()` calls of a schedule that ran past it (two sources, 2**21
+  events every 250 ms, `dt = 0.025 ms`) took 16.6 s, and now 0.31 s. Rows,
+  their order, recorded values and delivered events are unchanged.
 
 ### Bug Fixes
 

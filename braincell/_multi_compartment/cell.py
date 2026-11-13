@@ -63,6 +63,7 @@ from braincell._deprecation import removed_member
 from braincell._misc import (
     is_traced_value,
     scalar_decimal,
+    strong_state_values,
     profiler_call_name as _call_name,
     profiler_scope_name as _scope_name,
 )
@@ -2798,6 +2799,9 @@ class Cell(_CellFacade, HHTypedNeuron):
             self._take_morphology_snapshot()
             self._init_runtime(batch_size)
             self._connection_rules = self.connections._init_rules()
+            # A run loop writes its States strong-typed; start them so, or
+            # the second run compiles the loop again (CELL-54).
+            strong_state_values(self)
         except BaseException:
             self._restore_attributes(attributes)
             raise
@@ -4779,6 +4783,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             self._pending_reduction_inputs = self._reduction_input_runtime.take_inputs()
             self._next_synapse_inputs_prepared.value = jnp.asarray(False)
             self._reset_clock()
+            strong_state_values(self)  # as in init_state (CELL-54)
             return
         if self._is_lumped:
             if self.trainables.bindings():
@@ -4794,6 +4799,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                 jnp.zeros_like(self._step_clamp_components.value.mantissa), u.nA
             )
             self._reset_clock()
+            strong_state_values(self)  # as in init_state (CELL-54)
             return
         if self.trainables.bindings():
             self.trainables.materialize()
@@ -4816,6 +4822,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             for path, channel in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
                 args = self._runtime_node_phase_args(path, channel, self.V.value)
                 channel.reset_state(*args, batch_size=batch_size)
+        strong_state_values(self)  # as in init_state (CELL-54)
 
     # ------------------------------------------------------------------
     # Inspection forwards (runtime-only)

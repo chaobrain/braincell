@@ -973,6 +973,19 @@
   members take up to 1.12 times as long per step as 10,000 steps, which is
   still less than before. The first call compiles for about 0.2 s longer.
   On CPU the compiled program is the same as before.
+- **A second run reuses its compiled loop** (CELL-54). `init_state()` and
+  `reset_state()` built `V`, `spike`, the channel gates and the synapse
+  states from Python numbers (such as `V_init=-65.0 * u.mV`), which JAX
+  types weakly; the compiled loop of a run writes them back strongly typed,
+  and `jax.jit` keys its cache on the difference. So the second `Cell.run`,
+  the second `Network.run` (with any `scheduled_delivery`) and the second
+  call of a loop over `update()` compiled with `brainstate.transform.jit`
+  compiled the loop again: on main `73136f6`, on CPU, 0.14 to 0.23 s for a
+  3-CV Hodgkin-Huxley cell, a point cell, and 10 cells driven by 1000
+  `NetStim` rows (0.8 to 0.9 s for the latter on one core). These States now start strongly typed, with the same
+  dtype, so the loop compiles once, and the first run after
+  `reset_state()` reuses it too. With parameters given as Python numbers
+  the results are the same bit for bit, in float32 and float64.
 - **`Cell.run` spends less on each step on GPU** (CELL-39). Its compiled
   loop carried two states that every step rewrites before reading them:
   the flag that marks the next step's synapse inputs as prepared, and the
@@ -1284,6 +1297,29 @@
   `update()` calls of a schedule that ran past it (two sources, 2**21
   events every 250 ms, `dt = 0.025 ms`) took 16.6 s, and now 0.31 s. Rows,
   their order, recorded values and delivered events are unchanged.
+- **The `"direct"` and `"padded"` plans of `Network.prepare_run` take memory
+  in proportion to the events, not to the last arrival step** (CELL-65).
+  The plan that the `update()` calls read stored every step up to the last
+  arrival. For an unlimited train
+  (`NetStim(number=10**9, interval=10 ms)`, `dt = 0.025 ms`), whose events
+  now reach the step limit, `prepare_run` ran out of memory on main
+  `eea3fa8` (16 GiB for 2**31 steps) under either method. It now completes
+  in 1.5 s, with a 110 MB (`"direct"`) or 64 MB (`"padded"`) plan, and 400
+  `update()` calls match the default path bitwise. A plan within the
+  method's budget keeps that form: for `"direct"`, no more steps than
+  record slots; for `"padded"`, its limits. Beyond the budget the plan
+  stores only the steps with arrivals, and each `update()` finds its step
+  by binary search. Every arrival is now read at once. Preparing 1e6
+  events 0.1 ms apart took 38.3 s and now takes 0.5 s; 1e6 events 10 ms
+  apart took 29.5 s and a 1.6 GB `"direct"` plan, and now take 0.9 s and
+  16 MB. A `"padded"` `prepare_run` used to raise `PaddingLimitError` for
+  any sparse schedule. It now runs, and its limits are checked on the
+  steps it stores. The search costs each `update()` step on one CPU core:
+  for 1e6 events 10 ms apart, `"direct"` went from 0.31 to 1.02 us, and
+  `"padded"` now takes 0.035 us. A dense schedule followed by one late
+  event (span 4e6 steps) went from 1.01 to 0.59 us under `"direct"`;
+  plans within budget cost what they did. Run windows, their plans and the
+  default path are unchanged, and so are the delivered steps and values.
 
 ### Bug Fixes
 
@@ -2138,6 +2174,37 @@
   size, and a connected Cell its saved weights, on both kinds of Cell, as
   did a stiff-gate warning raised as an error on a lumped Cell. A
   successful `init_state` is unchanged.
+- At float64 precision, the first run after `init_state()` or
+  `reset_state()` computes in float64 when a parameter is a float32 array
+  (CELL-54). The gates were weakly typed float64 there, and JAX computes a
+  weakly typed float64 times a float32 array in float32; once a run had
+  written them back, later runs computed in float64. On main `73136f6`,
+  with `g_max=np.float32(120) * u.mS / u.cm**2` for the Na channel of a
+  3-CV Hodgkin-Huxley cable and 200 steps of 0.025 ms, `V` after the first
+  `Cell.run` was off from the float64 result by up to 8.4e-7 mV, after a
+  first loop of `update()` compiled with `brainstate.transform.jit` by
+  1.4e-6 mV, and after 200 eager `update()` calls by 4.2e-9 mV. Each run
+  now computes as the later runs did.
+- `Exp2Syn`, `GabaA_JE2011` and the `SynapticKernelAccumulatorReduction`
+  kernel area run `tau1 / tau2 > 0.9999` as `tau1 = 0.9999 * tau2`, as the
+  INITIAL blocks of NEURON's `exp2syn.mod` and `gabaA_Cl.mod` do (CELL-62).
+  The peak-normalising factor lost about `eps / delta` of its precision as
+  `delta = 1 - tau1 / tau2` shrank, and `g = B - A` is the difference of two
+  states of about `e / delta` times the weight. The clamp is used in the
+  factor and in `A' = -A / tau1`, and the declared `tau1` is kept. On main
+  `00a84f0`, with `tau2 = 5 ms` and a weight `w` of 1e-3 uS:
+  - at `delta = 1e-5`, the conductance differed from NEURON 9.0.2 by
+    6.0e-5 w and V by 1.0e-3 mV; it is now 1.3e-10 w and 1.7e-9 mV;
+  - in float32, a `tau1` that rounds to `tau2` gave NaN states; they are now
+    finite, within 1.0e-2 w of the clamped kernel;
+  - for adjacent floats (`tau2 = 2 ms`), the kernel area was 8.0 ms; it is
+    now 5.4363 ms.
+
+  With the clamp, one event's conductance is within 4.2e-5 w of the
+  requested kernel, and the gradient with respect to `tau1` is zero there.
+  For `tau1 / tau2 <= 0.9999`, results and gradients are unchanged bit for
+  bit, and the float64 factor stays within 2.4e-12 of its closed form, as in
+  NEURON.
 - Each `NetStim` and `EventSequence` event is delivered once where a run
   continues one at another `dt`, and where a `Cell` that ran on its own
   joins a `Network` (CELL-57). A `Cell.run` ended by preparing the boundary

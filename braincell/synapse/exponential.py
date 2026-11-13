@@ -38,6 +38,31 @@ __all__ = [
     'Exp2Syn',
 ]
 
+#: Above this ``tau1 / tau2``, tau1 runs as this times tau2, as in the INITIAL
+#: block of NEURON's ``exp2syn.mod`` (and ``gabaA_Cl.mod``).
+_TAU_RATIO_LIMIT = 0.9999
+
+
+def _effective_tau1(tau1, tau2):
+    """Return the rise time constant the dynamics use: ``tau1``, or ``0.9999 * tau2`` where ``tau1 / tau2 > 0.9999``.
+
+    NEURON's ``exp2syn.mod`` sets ``tau1 = 0.9999*tau2`` in INITIAL when
+    ``tau1/tau2 > 0.9999``. Python and numpy scalars keep their own
+    arithmetic; arrays and tracers go through ``where``, which passes an
+    unclamped ``tau1`` through bit for bit.
+    """
+    clamped = tau1 / tau2 > _TAU_RATIO_LIMIT
+    if isinstance(clamped, (bool, np.bool_)):
+        return _TAU_RATIO_LIMIT * tau2 if clamped else tau1
+    return u.math.where(clamped, _TAU_RATIO_LIMIT * tau2, tau1)
+
+
+def _peak_factor(tau1, tau2):
+    """Return ``1 / max_t (exp(-t / tau2) - exp(-t / tau1))``, the expression of ``exp2syn.mod``."""
+    tp = (tau1 * tau2) / (tau2 - tau1) * u.math.log(tau2 / tau1)
+    factor = -u.math.exp(-(tp / tau1)) + u.math.exp(-(tp / tau2))
+    return 1.0 / factor
+
 
 @register_synapse("ExpSyn")
 class ExpSyn(Synapse):
@@ -107,11 +132,28 @@ class Exp2Syn(Synapse):
     name : str or None, optional
         Runtime node name.
     tau1 : brainstate.typing.ArrayLike or callable, optional
-        Positive rise time constant, default 0.1 ms.
+        Positive rise time constant, default 0.1 ms. Where ``tau1 / tau2 >
+        0.9999`` the dynamics use ``0.9999 * tau2`` (see Notes); the declared
+        value is kept.
     tau2 : brainstate.typing.ArrayLike or callable, optional
         Decay time constant greater than tau1, default 10 ms.
     e : brainstate.typing.ArrayLike or callable, optional
         Reversal voltage, default 0 mV.
+
+    Notes
+    -----
+    ``factor = 1 / max_t (exp(-t / tau2) - exp(-t / tau1))`` makes an event of
+    weight ``w`` peak at ``g = w``. As ``tau1`` approaches ``tau2`` the
+    expression loses about ``eps / delta`` of its precision (``delta = 1 -
+    tau1 / tau2``), and ``g = B - A`` subtracts two states of about ``e w /
+    delta``. Like the INITIAL block of ``exp2syn.mod``, ``tau1 / tau2 >
+    0.9999`` therefore runs as ``tau1 = 0.9999 * tau2``, in the factor and in
+    ``A' = -A / tau1``: one event's conductance is then the ``delta = 1e-4``
+    kernel, within ``4.2e-5 w`` of the requested one, and the gradient with
+    respect to ``tau1`` is zero there. For ``delta >= 1e-4`` the float64 factor is within
+    ``2.4e-12`` of its closed form, the same expression and error as NEURON.
+    ``validation/neuron/synapse/reference_test.py`` compares both regimes with
+    NEURON's ``Exp2Syn``: within ``1e-12 uS`` at ``delta = 1e-2`` and ``1e-5``.
     """
 
     root_type = HHTypedNeuron
@@ -158,9 +200,7 @@ class Exp2Syn(Synapse):
             raise ValueError("Exp2Syn requires tau1 < tau2.")
 
     def _compute_factor(self):
-        tp = (self.tau1 * self.tau2) / (self.tau2 - self.tau1) * u.math.log(self.tau2 / self.tau1)
-        factor = -u.math.exp(-(tp / self.tau1)) + u.math.exp(-(tp / self.tau2))
-        return 1.0 / factor
+        return _peak_factor(_effective_tau1(self.tau1, self.tau2), self.tau2)
 
     @property
     def g(self):
@@ -175,7 +215,7 @@ class Exp2Syn(Synapse):
 
     def compute_derivative(self, V_post=None):
         _ = V_post
-        self.A.derivative = -self.A.value / self.tau1
+        self.A.derivative = -self.A.value / _effective_tau1(self.tau1, self.tau2)
         self.B.derivative = -self.B.value / self.tau2
 
     def current(self, V_post):

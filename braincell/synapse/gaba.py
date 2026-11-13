@@ -24,6 +24,7 @@ from braincell._typing import Initializer, Size
 from braincell.ion._base import _nernst
 from braincell.ion.chloride import Chloride
 from braincell.mech import ScalarEventInput, StateSpec, positive, register_synapse
+from braincell.synapse.exponential import _effective_tau1, _peak_factor
 
 __all__ = ['GabaA_JE2011']
 
@@ -63,7 +64,9 @@ class GabaA_JE2011(Synapse):
         Runtime node name.
     tau1 : brainstate.typing.ArrayLike or callable, optional
         Positive rise time constant, default 0.5 ms (the published hoc; the
-        ``.mod`` default is 0.1 ms).
+        ``.mod`` default is 0.1 ms). Where ``tau1 / tau2 > 0.9999`` the
+        dynamics use ``0.9999 * tau2``, as the ``.mod`` INITIAL block and
+        :class:`~braincell.synapse.Exp2Syn` do; the declared value is kept.
     tau2 : brainstate.typing.ArrayLike or callable, optional
         Decay time constant greater than ``tau1``, default 6 ms (the hoc;
         the ``.mod`` default is 10 ms).
@@ -87,6 +90,10 @@ class GabaA_JE2011(Synapse):
 
     Notes
     -----
+    The factor and the ``tau1 / tau2 > 0.9999`` clamp are those of
+    :class:`~braincell.synapse.Exp2Syn` (see its Notes for the precision near
+    ``tau1 = tau2``).
+
     Chloride does not diffuse between CVs in BrainCell (see
     :class:`~braincell.ion.Cldif_JE2011`), so the accumulation near a
     synapse on a multi-CV dendrite is larger than in the published model.
@@ -158,15 +165,13 @@ class GabaA_JE2011(Synapse):
     def apply_events(self, payload, V_post=None):
         _ = V_post
         self.event_input.validate_payload(payload)
-        tp = (self.tau1 * self.tau2) / (self.tau2 - self.tau1) * u.math.log(self.tau2 / self.tau1)
-        factor = -u.math.exp(-(tp / self.tau1)) + u.math.exp(-(tp / self.tau2))
-        delta = payload * (1.0 / factor)
+        delta = payload * _peak_factor(_effective_tau1(self.tau1, self.tau2), self.tau2)
         self.A.value = self.A.value + delta
         self.B.value = self.B.value + delta
 
     def compute_derivative(self, V_post=None):
         _ = V_post
-        self.A.derivative = -self.A.value / self.tau1
+        self.A.derivative = -self.A.value / _effective_tau1(self.tau1, self.tau2)
         self.B.derivative = -self.B.value / self.tau2
 
     def ion_current(self, V_post, ion_info):

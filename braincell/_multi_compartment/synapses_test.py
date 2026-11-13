@@ -487,11 +487,155 @@ def _reference_store(cell, declared):
     return rows, expected, sites, columns, type_rows, local_by_id
 
 
+def _declare_per_member_forms(n):
+    """Tree S with ``n`` members and three declarations with one location list per member (CELL-51).
+
+    ``"p"``: the CELL-44 model, one shared ``at("soma", 0.5)`` per member and
+    ``tau`` given per member as an ``(n,)`` array. ``"q"``: one, two or one
+    locations per member (``m % 3``) -- a shared expression, a resolved
+    mask with a repeated site, and an expression built per member -- with
+    ``tau`` flat over all of them. ``"r"``: the same lists, ``tau`` per
+    member ``(n, 1)`` in another unit and ``U`` ragged, one value per
+    location. Returns the cell, the per-member lists and the declared values
+    as in :func:`_declare_every_parameter_form`.
+    """
+    cell = Cell(make_tree_s(), pop_size=(n,))
+    member = np.arange(n)
+    soma = at("soma", 0.5)
+    pair = LocsetMask.from_columns(np.zeros(2, dtype=int), np.full(2, 0.2))
+    lists = [soma if m % 3 == 0 else pair if m % 3 == 1 else at("dend", 0.75) for m in range(n)]
+    counts = np.asarray([2 if m % 3 == 1 else 1 for m in range(n)])
+    tau_p = 1.0 + 0.001 * member
+    tau_q = 2.0 + 1e-4 * np.arange(int(counts.sum()))
+    tau_r = (2500.0 + 0.5 * member).reshape(n, 1)
+    U_r = [np.asarray([0.25, 0.75]) if m % 3 == 1 else 0.5 + 0.0001 * m for m in range(n)]
+    Synapse = braincell.mech.Synapse
+    cell.place([soma] * n, Synapse("ExpSyn", name="p", tau=tau_p * u.ms))
+    cell.place(lists, Synapse("ExpSyn", name="q", tau=tau_q * u.ms, e=-5.0 * u.mV))
+    cell.place(lists, Synapse("ExpSynSTD", name="r", tau=tau_r * u.us, U=U_r))
+    declared = {
+        "p": {"tau": lambda m, k, i: u.Quantity(tau_p[m], u.ms)},
+        "q": {"tau": lambda m, k, i: u.Quantity(tau_q[i], u.ms), "e": lambda m, k, i: -5.0 * u.mV},
+        "r": {
+            "tau": lambda m, k, i: u.Quantity(tau_r[m, 0], u.us),
+            "U": lambda m, k, i: np.float64(U_r[m][k] if m % 3 == 1 else U_r[m]),
+        },
+    }
+    return cell, lists, counts, declared
+
+
+class PerMemberPlaceTest(unittest.TestCase):
+    """CELL-51: one location list per member places, stores and fails as before, element by element."""
+
+    def _check(self, n):
+        cell, lists, counts, declared = _declare_per_member_forms(n)
+        # Each declaration adds one place rule per member, in member order,
+        # holding that member's own Synapse with its own values.
+        rules = cell.place_rules
+        self.assertEqual(len(rules), 3 * n)
+        origins = cell._synapse_origins
+        sources = {}
+        flat_q = 0
+        for index, rule in enumerate(rules):
+            call, m = divmod(index, n)
+            name = "pqr"[call]
+            with self.subTest(rule=index):
+                self.assertEqual(rule.population_indices, (m,))
+                self.assertFalse(rule.aligned)
+                self.assertEqual(rule.locset, at("soma", 0.5) if call == 0 else lists[m])
+                self.assertEqual(rule.origin.split(":")[0], "synapses_test.py")
+                (mechanism,) = rule.mechanisms
+                self.assertEqual((mechanism.synapse_type, mechanism.instance_name), (
+                    "ExpSynSTD" if name == "r" else "ExpSyn", name))
+                source = origins[id(mechanism)]
+                self.assertIs(sources.setdefault(name, source), source)
+                self.assertIsNot(source, mechanism)
+                params = mechanism.params
+                if name == "p":
+                    self.assertEqual(float(params["tau"].to_decimal(u.ms)), 1.0 + 0.001 * m)
+                elif name == "q":
+                    got = np.atleast_1d(np.asarray(params["tau"].to_decimal(u.ms)))
+                    np.testing.assert_array_equal(got, 2.0 + 1e-4 * np.arange(flat_q, flat_q + counts[m]))
+                    flat_q += counts[m]
+                else:
+                    self.assertEqual(np.asarray(params["tau"].to_decimal(u.us)).item(), 2500.0 + 0.5 * m)
+        self.assertEqual(len({id(source) for source in sources.values()}), 3)
+        # Placements: rule by rule, location by location, ids in that order.
+        placements = [p for p in cell.point_placements if isinstance(p.mechanism, braincell.mech.Synapse)]
+        expected = []
+        for call in range(3):
+            for m in range(n):
+                sites = [("soma", 0.5)] if call == 0 or m % 3 == 0 else [("dend", 0.2)] * 2 if m % 3 == 1 else [
+                    ("dend", 0.75)]
+                expected.extend((call * n + m, m, branch, x) for branch, x in sites)
+        self.assertEqual(
+            [(p._rule_index, p.population_index, p.branch_name, float(p.branch_x)) for p in placements], expected
+        )
+        self.assertEqual([p.id for p in placements], list(range(len(expected))))
+        store = SynapseStoreBuildTest._check_store_matches_reference(self, n, cell=cell, declared=declared)[0]
+        self.assertEqual(len(store.id), len(expected))
+        return cell
+
+    def test_ten_members(self):
+        cell = self._check(10)
+        # Member 1 has its two "q" synapses at the same site: repeats 0 and 1.
+        store = _SynapseStore(cell)
+        rows = (store.name == "q") & (store.population_index == 1)
+        np.testing.assert_array_equal(store.repeat_index[rows], [0, 1])
+
+    def test_a_thousand_members(self):
+        self._check(1000)
+
+    def test_rejected_declarations_raise_as_before_and_leave_the_rules(self):
+        Synapse = braincell.mech.Synapse
+        soma = at("soma", 0.5)
+        cases = (
+            (lambda n: ([soma] * (n - 1), Synapse("ExpSyn", name="s")), ValueError,
+             r"^Per-cell locset rows must match the selected population size, got 2 rows for 3 cells\.$"),
+            (lambda n: ([soma, "soma", soma], Synapse("ExpSyn", name="s")), TypeError,
+             r"^Each per-cell location row must be a LocsetExpr or LocsetMask\.$"),
+            (lambda n: ([soma] * n, braincell.mech.CurrentClamp(amplitudes=(0.1 * u.nA,), durations=(1.0 * u.ms,))),
+             TypeError, r"^Per-cell locset sequences currently support Synapse point mechanisms only\.$"),
+            (lambda n: ([soma] * n, Synapse("ExpSyn", name="s", tau=[1.0, 2.0] * u.ms)), ValueError,
+             r"^Synapse parameter 'tau' with shape \(2,\) cannot broadcast to per-cell location lengths \(1, 1, 1\)\.$"),
+            (lambda n: ([soma] * n, Synapse("ExpSyn", name="s", tau=[[1.0], [2.0, 3.0], [4.0]] * u.ms)), ValueError,
+             r"^Synapse parameter 'tau' row 1 must be scalar or shape \(1,\), got \(2,\)\.$"),
+        )
+        for declare, error, message in cases:
+            with self.subTest(message=message):
+                cell = Cell(make_tree_s(), pop_size=(3,))
+                cell.place(soma, Synapse("ExpSyn", name="before"))
+                before = cell.place_rules
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", FutureWarning)
+                    with self.assertRaisesRegex(error, message):
+                        cell.place(*declare(3))
+                self.assertIs(cell.place_rules, before)
+        with self.assertRaisesRegex(ValueError, r"^Per-cell locset placement requires one-dimensional pop_size; got \(2, 2\)\.$"):
+            Cell(make_tree_s(), pop_size=(2, 2)).place([soma] * 4, Synapse("ExpSyn", name="s"))
+
+    def test_an_invalid_member_value_warns_at_declaration_and_raises_at_the_build(self):
+        # The value of member 1 is not finite: the declaration warns (it
+        # raises from braincell 0.4) and the store build names the row.
+        cell = Cell(make_tree_s(), pop_size=(3,))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cell.place([at("soma", 0.5)] * 3, braincell.mech.Synapse("ExpSyn", name="s", tau=[1.0, np.nan, 3.0] * u.ms))
+        messages = [str(w.message) for w in caught if issubclass(w.category, FutureWarning)]
+        self.assertEqual(len(messages), 2, messages)
+        self.assertTrue(all("must contain only finite values" in m for m in messages), messages)
+        with self.assertRaisesRegex(
+            ValueError, r"^Synapse 's' \(ExpSyn\) parameter 'tau' must contain only finite values; got nan ms\. Placed on "
+        ):
+            _SynapseStore(cell)
+
+
 class SynapseStoreBuildTest(unittest.TestCase):
     """CELL-38: the store matches its row-by-row construction, element by element and in order."""
 
-    def _check_store_matches_reference(self, n):
-        cell, declared = _declare_every_parameter_form(n)
+    def _check_store_matches_reference(self, n, *, cell=None, declared=None):
+        if cell is None:
+            cell, declared = _declare_every_parameter_form(n)
         store = _SynapseStore(cell)
         rows, expected, sites, columns, type_rows, local_by_id = _reference_store(cell, declared)
 

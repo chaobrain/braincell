@@ -257,6 +257,18 @@
   to start every Cell from `t = 0` (after `Network.init_state()` if one is not
   initialized), or run the Cells on their own to the same time before adding
   them.
+- **The event times of a Cell's ports in `Network.run` results are a numpy
+  array** (CELL-68). `result.events[name][port].time.mantissa` of a Cell
+  population was a weakly typed JAX array; it is now a read-only numpy array
+  of the dtype of `result.time` (float32 or float64), with the same values
+  and unit, as the times of NetStim and EventSequence ports already were.
+  The JAX gather that built it compiled again for each new number of events:
+  6, 6 and 5 XLA programs in the first three runs of a Hodgkin-Huxley point
+  Cell on main `34d3e23` (7, 7 and 6 in float64); it now compiles none. A
+  write into the array raises `ValueError` instead of `TypeError`. There is
+  no deprecation period (0.3 allows breaking changes without one, a
+  project-lead decision). Use `jnp.asarray(series.time.mantissa)` where a
+  JAX array is needed.
 
 ### New Features
 
@@ -1320,6 +1332,21 @@
   event (span 4e6 steps) went from 1.01 to 0.59 us under `"direct"`;
   plans within budget cost what they did. Run windows, their plans and the
   default path are unchanged, and so are the delivered steps and values.
+- **`Network.run` reads only its window's NetStim events for the result
+  table** (CELL-68). Each run built `result.events` from a table of every
+  NetStim event generated so far, so its cost grew with the schedule, not
+  with the run. For 100 sources with 1e6 generated events, a cache-hit run
+  of 2000 steps (`dt = 0.025 ms`, 500 events) took 26.2 ms on main
+  `34d3e23`, 18.1 ms of it in the table; it now takes 6.7 ms, 0.56 ms in
+  the table. With 1e7 events the run went from 210 to 7.0 ms. Each source's
+  window is now found by binary search in its row of generated events. On
+  the regression model (a 1e6-event schedule), a 2000-step run went from
+  23.9 to 9.3 ms on the default path and from 22.0 to 7.7 ms with
+  `scheduled_delivery="direct"`. These are medians of 21 runs in each of 3
+  rounds, on one CPU core with single-threaded XLA. A Cell's spike ports no
+  longer compile for each new number of spikes (see Breaking Changes). The
+  rows, their order and their values are unchanged, and an `EventSequence`
+  still filters its whole table once per run.
 
 ### Bug Fixes
 

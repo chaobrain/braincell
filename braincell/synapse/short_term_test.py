@@ -496,7 +496,9 @@ class NoCountUnchangedTest(unittest.TestCase):
         kinds = {layout.id: layout.kind for layout, _ in runtime.iter_synapse_layouts()}
         self.assertEqual({kinds[key] for key in runtime.event_counts}, {"synapse:ExpSynSTD"})
         (state,) = net._delivery_state_cache.values()
-        counted = {state.queue_keys[index][1] for index in range(len(state.queue_keys)) if state.count_dtype(index) is not None}
+        counted = {
+            state.queue_keys[index][1] for index in range(len(state.queue_keys)) if state.count_dtype(index) is not None
+        }
         self.assertEqual({kinds[key] for key in counted}, {"synapse:ExpSynSTD"})
 
         plain = braincell.Network("plain")

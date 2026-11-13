@@ -1284,6 +1284,29 @@
   `update()` calls of a schedule that ran past it (two sources, 2**21
   events every 250 ms, `dt = 0.025 ms`) took 16.6 s, and now 0.31 s. Rows,
   their order, recorded values and delivered events are unchanged.
+- **The `"direct"` and `"padded"` plans of `Network.prepare_run` take memory
+  in proportion to the events, not to the last arrival step** (CELL-65).
+  The plan that the `update()` calls read stored every step up to the last
+  arrival. For an unlimited train
+  (`NetStim(number=10**9, interval=10 ms)`, `dt = 0.025 ms`), whose events
+  now reach the step limit, `prepare_run` ran out of memory on main
+  `eea3fa8` (16 GiB for 2**31 steps) under either method. It now completes
+  in 1.5 s, with a 110 MB (`"direct"`) or 64 MB (`"padded"`) plan, and 400
+  `update()` calls match the default path bitwise. A plan within the
+  method's budget keeps that form: for `"direct"`, no more steps than
+  record slots; for `"padded"`, its limits. Beyond the budget the plan
+  stores only the steps with arrivals, and each `update()` finds its step
+  by binary search. Every arrival is now read at once. Preparing 1e6
+  events 0.1 ms apart took 38.3 s and now takes 0.5 s; 1e6 events 10 ms
+  apart took 29.5 s and a 1.6 GB `"direct"` plan, and now take 0.9 s and
+  16 MB. A `"padded"` `prepare_run` used to raise `PaddingLimitError` for
+  any sparse schedule. It now runs, and its limits are checked on the
+  steps it stores. The search costs each `update()` step on one CPU core:
+  for 1e6 events 10 ms apart, `"direct"` went from 0.31 to 1.02 us, and
+  `"padded"` now takes 0.035 us. A dense schedule followed by one late
+  event (span 4e6 steps) went from 1.01 to 0.59 us under `"direct"`;
+  plans within budget cost what they did. Run windows, their plans and the
+  default path are unchanged, and so are the delivered steps and values.
 
 ### Bug Fixes
 

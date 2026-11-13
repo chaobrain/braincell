@@ -40,6 +40,8 @@ The lifecycle has two phases:
 convenience. Subsequent ``run`` calls never re-initialize.
 """
 
+import contextlib
+import gc
 import operator
 import warnings
 import weakref
@@ -1749,27 +1751,30 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         # Members often share one locset object, or equal expressions: each
         # distinct one is evaluated, checked and given its origin once
-        # (CELL-51).
-        lengths = _resolved_locset_lengths(locsets, self._morpho)
-        per_mechanism_rows = tuple(_split_synapse_rows(mechanism, lengths=lengths) for mechanism in mechanisms)
-        row_mechanisms = tuple(zip(*per_mechanism_rows)) if mechanisms else ((),) * len(locsets)
-        incoming = normalize_per_member_place_rules(
-            locsets,
-            row_mechanisms,
-            population_indices=tuple(int(index) for index in population_indices),
-            morpho=self._morpho,
-        )
-        for source, rows in zip(mechanisms, per_mechanism_rows):
-            self._synapse_origins.update((id(materialized), source) for materialized in rows)
-        previous_rules = self._place_rules
-        self._place_rules = merge_place_rules(previous_rules, incoming)
-        try:
-            self.discretize()
-            if self._is_lumped:
-                self._check_lumped_sites()
-        except Exception:
-            self._place_rules = previous_rules
-            raise
+        # (CELL-51). The objects built per member hold no reference cycle,
+        # so the cyclic collector, whose passes would walk all of them again
+        # and again, is paused while they are built.
+        with _cyclic_gc_paused():
+            lengths = _resolved_locset_lengths(locsets, self._morpho)
+            per_mechanism_rows = tuple(_split_synapse_rows(mechanism, lengths=lengths) for mechanism in mechanisms)
+            row_mechanisms = tuple(zip(*per_mechanism_rows)) if mechanisms else ((),) * len(locsets)
+            incoming = normalize_per_member_place_rules(
+                locsets,
+                row_mechanisms,
+                population_indices=tuple(int(index) for index in population_indices),
+                morpho=self._morpho,
+            )
+            for source, rows in zip(mechanisms, per_mechanism_rows):
+                self._synapse_origins.update((id(materialized), source) for materialized in rows)
+            previous_rules = self._place_rules
+            self._place_rules = merge_place_rules(previous_rules, incoming)
+            try:
+                self.discretize()
+                if self._is_lumped:
+                    self._check_lumped_sites()
+            except Exception:
+                self._place_rules = previous_rules
+                raise
 
     def _set_runtime_voltage_parameters(self, scope, parameters) -> None:
         self._raise_if_not_initialized(
@@ -5043,6 +5048,25 @@ def _resolved_locset_length(locset, morpho: Morphology) -> int:
     if isinstance(locset, LocsetExpr):
         return len(locset.evaluate(morpho))
     return len(locset)
+
+
+@contextlib.contextmanager
+def _cyclic_gc_paused():
+    """Pause Python's cyclic garbage collector in the block, as it was before after it.
+
+    For a block that builds many long-lived objects without reference
+    cycles, such as the per-member rules of :meth:`Cell.place` with one
+    location list per member: each collector pass walks every object
+    built so far, and the number of passes grows with the objects
+    (CELL-51). Reference counting still frees everything else.
+    """
+    enabled = gc.isenabled()
+    gc.disable()
+    try:
+        yield
+    finally:
+        if enabled:
+            gc.enable()
 
 
 def _resolved_locset_lengths(locsets, morpho: Morphology) -> tuple[int, ...]:

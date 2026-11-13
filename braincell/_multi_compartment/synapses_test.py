@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+import gc
 import unittest
 import warnings
 from collections import Counter
@@ -614,6 +615,25 @@ class PerMemberPlaceTest(unittest.TestCase):
                 self.assertIs(cell.place_rules, before)
         with self.assertRaisesRegex(ValueError, r"^Per-cell locset placement requires one-dimensional pop_size; got \(2, 2\)\.$"):
             Cell(make_tree_s(), pop_size=(2, 2)).place([soma] * 4, Synapse("ExpSyn", name="s"))
+
+    def test_place_leaves_the_garbage_collector_as_it_found_it(self):
+        # The cyclic collector is paused only while the per-member rules are
+        # built, and back as it was after a place that succeeds or raises.
+        soma = at("soma", 0.5)
+        Synapse = braincell.mech.Synapse
+        was_enabled = gc.isenabled()
+        try:
+            for enabled in (True, False):
+                (gc.enable if enabled else gc.disable)()
+                cell = Cell(make_tree_s(), pop_size=(3,))
+                cell.place([soma] * 3, Synapse("ExpSyn", name="s", tau=[1.0, 2.0, 3.0] * u.ms))
+                self.assertIs(gc.isenabled(), enabled)
+                with self.assertRaises(ValueError):
+                    cell.place([soma] * 3, Synapse("ExpSyn", name="t", tau=[1.0, 2.0] * u.ms))
+                self.assertIs(gc.isenabled(), enabled)
+                self.assertEqual(len(cell.place_rules), 3)
+        finally:
+            (gc.enable if was_enabled else gc.disable)()
 
     def test_an_invalid_member_value_warns_at_declaration_and_raises_at_the_build(self):
         # The value of member 1 is not finite: the declaration warns (it

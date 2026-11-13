@@ -693,8 +693,8 @@ class Network:
         times; after :meth:`reset_state` the schedule keeps its width and
         the runs compile nothing. The cost of an extension grows with the
         generated events: with a million sources, on one CPU, the runs that
-        extended the schedule took 3.6 to 10 s and those that reused the
-        loop about 1.7 s. With ``scheduled_delivery`` the plans are
+        extended the schedule took 3.1 to 5.5 s and those that reused the
+        loop 0.6 to 0.9 s. With ``scheduled_delivery`` the plans are
         arguments of the loop, so a NetStim that only planned rows read
         grows without tracing the loop again; ``"direct"`` is the path for
         long continuations from large NetStims. A NetStim that a plasticity

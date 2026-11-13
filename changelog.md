@@ -2489,8 +2489,8 @@
   `max(number)`) generates them on demand. Each run that needs later events
   at least doubles the schedule and compiles the loop again, so `k` runs of
   one length compile it about `log2(k) + 1` times. With a million sources
-  such a run took 3.6 to 10 s on one CPU, against 1.7 s for a run that
-  reused the loop. `scheduled_delivery="direct"` passes the events of
+  such a run took 3.1 to 5.5 s on one CPU, against 0.6 to 0.9 s for a run
+  that reused the loop. `scheduled_delivery="direct"` passes the events of
   planned rows as loop arguments, so their growth traces nothing; a NetStim
   read by a plasticity rule still keys the loop. Two tests pin this
   behaviour, which is unchanged. On main `36dd9cd`, 16 runs of 1 ms from a

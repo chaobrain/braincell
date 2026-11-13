@@ -1618,7 +1618,6 @@ def main(argv=None):
         Path(__file__),
         ROOT / "braincell/experimental/scheduled_events.py",
         ROOT / "braincell/experimental/scheduled_delivery.py",
-        ROOT / "braincell/experimental/scheduled_cell.py",
         ROOT / "benchmarks/performance/synapse_events/query_benchmark.py",
         ROOT / "benchmarks/performance/synapse_events/benchmark.py",
         ROOT / "braincell/_multi_compartment/cell.py",

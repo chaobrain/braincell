@@ -655,8 +655,10 @@ class Network:
           sparse tail of a schedule runs in the storage an earlier window
           was accepted in; whether a window passes thus depends on the
           windows run before it (since initialization; :meth:`reset_state`
-          keeps them). It differentiates as ordinary JAX code, forward
-          mode included.
+          keeps them). The plan :meth:`prepare_run` builds is checked on
+          the steps it stores, which are only those with arrivals when
+          the window form would not fit. It differentiates as ordinary
+          JAX code, forward mode included.
 
         The default is ``None`` on every device; choose a method by
         measuring. In ``benchmarks/performance/synapse_events`` (its
@@ -864,12 +866,17 @@ class Network:
             Backend for the sparse event operator.
         scheduled_delivery : {None, "direct", "padded"}, optional
             As in :meth:`run`. The plan :meth:`update` reads covers every
-            event it can deliver (see Notes), steps ``[0, last arrival + 1)``
-            of each synapse layout, and is built once, here: a training
-            loop of ``update()`` calls, split over several ``for_loop``
-            calls or rerun after :meth:`reset_state`, uses it throughout.
-            Steps past the last arrival receive nothing, as on the default
-            path.
+            event it can deliver (see Notes), and is built once, here: a
+            training loop of ``update()`` calls, split over several
+            ``for_loop`` calls or rerun after :meth:`reset_state`, uses it
+            throughout. Each synapse layout stores steps ``[0, last
+            arrival + 1)``, as a run's window does, when that fits the
+            method's budget (``"direct"``: no more steps than record slots;
+            ``"padded"``: the limits in :meth:`run`). Otherwise it stores
+            only the steps with arrivals, and each ``update()`` finds its
+            step among them by binary search, so a schedule that reaches
+            the step limit takes memory in proportion to its events. Steps
+            without arrivals receive nothing, as on the default path.
 
         Returns
         -------

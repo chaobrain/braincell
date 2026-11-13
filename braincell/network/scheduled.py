@@ -349,58 +349,76 @@ def _power_of_two(value: int) -> int:
     return 1 << max(int(value) - 1, 0).bit_length()
 
 
-def _compress(steps: np.ndarray, rows: np.ndarray, start: int, n_steps: int | None):
-    """Records ``(step, row)`` in step-then-row order with multiplicities, and the per-step counts.
-
-    The counts are those of the steps ``[start, start + n_steps)``; with
-    ``n_steps=None``, of the steps that have records only, which are
-    returned last (``None`` otherwise).
-    """
+def _compress(steps: np.ndarray, rows: np.ndarray):
+    """Records ``(step, row)`` in step-then-row order with multiplicities; the steps that have records and their counts."""
     if steps.size == 0:
         empty = np.zeros(0, dtype=np.int64)
-        if n_steps is None:
-            return empty, empty, empty, empty, empty
-        return empty, empty, empty, np.zeros(n_steps, dtype=np.int64), None
+        return empty, empty, empty, empty, empty
     order = np.lexsort((rows, steps))
     steps, rows = steps[order], rows[order]
     begins = np.flatnonzero(np.r_[True, (np.diff(steps) != 0) | (np.diff(rows) != 0)])
     multiplicity = np.diff(np.r_[begins, steps.size])
     record_steps = steps[begins]
-    if n_steps is None:
-        firsts = np.flatnonzero(np.r_[True, np.diff(record_steps) != 0])
-        per_step = np.diff(np.r_[firsts, record_steps.size])
-        return record_steps, rows[begins], multiplicity, per_step, record_steps[firsts]
-    per_step = np.bincount(record_steps - start, minlength=n_steps)
-    return record_steps, rows[begins], multiplicity, per_step, None
+    firsts = np.flatnonzero(np.r_[True, np.diff(record_steps) != 0])
+    return record_steps, rows[begins], multiplicity, record_steps[firsts], np.diff(np.r_[firsts, record_steps.size])
+
+
+def _padded_limits(n_rows: int, width: int, records: int, n_targets: int, n_held: int = 1):
+    """``(bytes, ratio)`` of a ``"padded"`` plan of ``n_rows`` stored steps, by its limits' definitions."""
+    nbytes = (2 * n_rows * _power_of_two(width) + n_targets + n_held) * 4
+    return nbytes, (n_rows * width / records if records else 1.0)
+
+
+def _window_fits(method, span: int, width: int, records: int, n_targets: int, accepted_bytes: int) -> bool:
+    """Whether a plan of every event may store every step to its last arrival, as the window ``[0, span)`` does.
+
+    It may when that costs no more than its records do (CELL-65): for
+    ``"padded"`` when the window passes the limits, for ``"direct"`` when it
+    has no more steps than record slots.
+    """
+    if method == "direct":
+        return span + 1 <= _power_of_two(records + BLOCK_SIZE)
+    nbytes, ratio = _padded_limits(span, width, records, n_targets)
+    return nbytes <= MAX_BYTES and (ratio <= MAX_PADDING_RATIO or nbytes <= accepted_bytes)
 
 
 def _layout_arrays(method, route, steps, rows, start, n_steps, accepted_bytes=0):
     """Host arrays of one layout's plan for the steps ``[start, start + n_steps)``, and its statistics.
 
-    ``n_steps=None`` stores only the steps that have arrivals (the plan
-    of every event, CELL-65): the last array then holds those steps, in
-    order, in place of ``start``. ``accepted_bytes`` is the largest
-    ``"padded"`` plan built for the layout before: a plan no larger has
-    no ratio limit.
+    ``n_steps=None`` plans every event, from step 0 (``prepare_run``). Its
+    steps are those to the last arrival, as for a window, when that costs
+    no more than its records (:func:`_window_fits`); else, so that the
+    plan grows with the events and not with the steps they span, only the
+    steps that have arrivals, in order, which take the place of ``start``
+    as the last array (CELL-65). ``accepted_bytes`` is the largest
+    ``"padded"`` plan built for the layout before: a plan no larger has no
+    ratio limit.
     """
-    record_steps, record_rows, multiplicity, per_step, stored_steps = _compress(steps, rows, start, n_steps)
+    record_steps, record_rows, multiplicity, held, per_held = _compress(steps, rows)
     records = int(record_rows.size)
-    width = max(1, int(per_step.max(initial=0)))
+    width = max(1, int(per_held.max(initial=0)))
     stats = {"arrivals": int(steps.size), "records": records, "width": width}
     if records + BLOCK_SIZE >= _INT32_MAX:
         raise ValueError(f"scheduled_delivery plan of {records} records exceeds int32 indexing.")
     targets = route.targets
-    if stored_steps is None:
-        rows_of_plan = n_steps
+    every = n_steps is None
+    if every:
+        n_steps = int(held[-1]) + 1 if held.size else 1
+    stats["n_steps"] = n_steps
+    if not (every and held.size) or _window_fits(method, n_steps, width, records, targets.size, accepted_bytes):
+        n_rows = n_steps
+        per_step = np.zeros(n_steps, dtype=np.int64)
+        per_step[held - start] = per_held
         slot = record_steps - start
         last = np.asarray(start, dtype=np.int32)
         steps_text = f"steps [{start}, {start + n_steps})"
     else:
-        rows_of_plan = int(stored_steps.size)
-        slot = np.repeat(np.arange(rows_of_plan, dtype=np.int64), per_step)
-        last = stored_steps.astype(np.int32)
-        steps_text = f"{rows_of_plan} steps with arrivals"
-    stats["stored_steps"] = rows_of_plan
+        n_rows = int(held.size)
+        per_step = per_held
+        slot = np.repeat(np.arange(n_rows, dtype=np.int64), per_held)
+        last = held.astype(np.int32)
+        steps_text = f"{n_rows} steps with arrivals of [0, {n_steps})"
+    stats["stored_steps"] = n_rows
     if method == "direct":
         capacity = _power_of_two(records + BLOCK_SIZE)
         ids = np.zeros(capacity, dtype=np.int32)
@@ -411,8 +429,7 @@ def _layout_arrays(method, route, steps, rows, start, n_steps, accepted_bytes=0)
         arrays = (ids, counts, offsets, targets, last)
     else:
         stored = _power_of_two(width)
-        nbytes = (2 * rows_of_plan * stored + targets.size + last.size) * 4
-        ratio = rows_of_plan * width / records if records else 1.0
+        nbytes, ratio = _padded_limits(n_rows, width, records, targets.size, last.size)
         stats.update(stored_width=stored, padding_ratio=ratio)
         if nbytes > MAX_BYTES or (ratio > MAX_PADDING_RATIO and nbytes > accepted_bytes):
             raise PaddingLimitError(
@@ -420,8 +437,8 @@ def _layout_arrays(method, route, steps, rows, start, n_steps, accepted_bytes=0)
                 f"{steps_text} of population {route.population!r} (limits {MAX_BYTES} bytes, "
                 f'ratio {MAX_PADDING_RATIO:g}); use scheduled_delivery="direct", which has no such limit.'
             )
-        ids = np.zeros((rows_of_plan, stored), dtype=np.int32)
-        counts = np.zeros((rows_of_plan, stored), dtype=np.int32)
+        ids = np.zeros((n_rows, stored), dtype=np.int32)
+        counts = np.zeros((n_rows, stored), dtype=np.int32)
         offsets = np.concatenate([[0], np.cumsum(per_step)])
         lane = np.arange(records) - offsets[slot]
         ids[slot, lane] = record_rows
@@ -537,10 +554,8 @@ def _build_plans(plans: ScheduledPlans, start: int, n_steps: int | None) -> tupl
         steps, rows = plans._route_records(route, start, None if n_steps is None else start + n_steps)
         accepted = plans.accepted.get((route.population, route.layout_id), 0)
         arrays, layout_stats = _layout_arrays(plans.method, route, steps, rows, start, n_steps, accepted)
-        # The steps a plan of every event spans, to its last arrival.
-        span = (int(steps.max()) + 1 if steps.size else 1) if n_steps is None else n_steps
         host.append(arrays)
-        stats.append(dict(layout_stats, population=route.population, layout_id=route.layout_id, n_steps=span))
+        stats.append(dict(layout_stats, population=route.population, layout_id=route.layout_id))
     if plans.method == "padded":
         # Every layout is planned: only now does the run take these plans.
         for item in stats:
@@ -627,8 +642,6 @@ def _direct_op(n_targets: int, block_size: int):
         n_steps = offsets.shape[0] - 1
         size = targets.shape[0] if transpose else n_targets
         if start.ndim:
-            if n_steps == 0:  # a plan of every event, which has none
-                return jnp.zeros(size, dtype=values.dtype)
             index, inside = _stored_row(start, step)
         else:
             local = step - start
@@ -674,8 +687,6 @@ def _padded(n_targets: int, arrays, step, values):
     connections, multiplicity, targets, start = arrays
     n_steps = connections.shape[0]
     if start.ndim:
-        if n_steps == 0:  # a plan of every event, which has none
-            return jnp.zeros(n_targets, dtype=values.dtype)
         index, inside = _stored_row(start, step)
     else:
         local = step - start

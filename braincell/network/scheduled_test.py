@@ -42,7 +42,7 @@ import numpy as np
 
 import braincell as bc
 from braincell.experimental.scheduled_delivery import PaddingLimitError as ExperimentalPaddingLimitError
-from braincell.filter import AllRegion, LocsetMask
+from braincell.filter import AllRegion, LocsetMask, at
 from braincell.network import scheduled
 from braincell.network.scheduled import METHODS, PaddingLimitError
 
@@ -503,7 +503,7 @@ class RuleAndCountTest(unittest.TestCase):
                     _assert_same(self, got, reference)
 
 
-def _overflow_model():
+def _overflow_model(interval_ms=10.0, number=10):
     """1 cell, 10 independent ExpSyn, one event every 10 ms per source: at most one record per step."""
     branch = bc.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
     cell = bc.Cell(bc.Morphology.from_root(branch), cv_policy=bc.CVPerBranch(1), pop_size=1, V_init=-65.0 * u.mV)
@@ -515,7 +515,7 @@ def _overflow_model():
     net = bc.Network("overflow", seed=1)
     post = net.add_population("post", cell)
     stim = net.add_population(
-        "stim", bc.NetStim(size=10, start=0.5 * np.arange(10) * u.ms, interval=10.0 * u.ms, number=10)
+        "stim", bc.NetStim(size=10, start=0.5 * np.arange(10) * u.ms, interval=interval_ms * u.ms, number=number)
     )
     net.connect("drive", source=stim, synapse=post.synapses["exp"][np.arange(10)], weight=0.002 * u.uS)
     cell.record("v", "V")
@@ -578,11 +578,21 @@ class PaddingLimitTest(unittest.TestCase):
 
     @_float64
     def test_prepare_run_plans_every_event(self):
+        """Its plan holds only the 100 steps with arrivals: one slot per record (CELL-65).
+
+        On main 6629a87 it held the 3781 steps to the last arrival, 37.8
+        slots per record, and ``prepare_run`` raised.
+        """
+        reference, cell = _overflow_model()
+        reference.prepare_run(dt=DT)
+        expected = UpdatePathTest._update_values(reference, cell, 4000)
         net, cell = _overflow_model()
-        with self.assertRaises(PaddingLimitError):
-            net.prepare_run(dt=DT, scheduled_delivery="padded")
-        self.assertIsNone(net._runtime_config)
-        net.prepare_run(dt=DT, scheduled_delivery="direct")
+        net.prepare_run(dt=DT, scheduled_delivery="padded")
+        (layout,) = net._scheduled_plans.preparation["layouts"]
+        self.assertEqual(
+            (layout["records"], layout["stored_steps"], layout["n_steps"], layout["padding_ratio"]), (100, 100, 3781, 1.0)
+        )
+        _assert_same(self, UpdatePathTest._update_values(net, cell, 4000), expected)
 
     @_float64
     def test_sparse_event_sequence(self):
@@ -850,11 +860,153 @@ class UpdatePathTest(unittest.TestCase):
         self._check(run_first=300, steps=700)
 
     @_float64
+    def test_a_schedule_far_longer_than_the_loops(self):
+        """The dense schedule and one more event at 100 s, 4e6 steps on (CELL-65).
+
+        On main 6629a87 the plan of every event held every step to it, and
+        ``"padded"`` raised (``PaddingLimitError``, 6.54e3 slots per record).
+        """
+        self._check(source=_sequence((*DENSE_MS, 1.0e5)), steps=1000)
+
+    @_float64
+    def test_a_schedule_without_events(self):
+        out = self._check(source=bc.NetStim(size=SIZE, number=0), steps=100)
+        self.assertEqual(np.max(np.abs(out[None][0]["g"])), 0.0)
+
+    @_float64
     def test_steps_after_the_last_arrival(self):
         """The sparse schedule's last arrival is near step 88: later steps read no record."""
         out = self._check(source=_sequence(SPARSE_MS), steps=200)
         self.assertGreater(np.max(out[None][0]["g"]), 0.0)
         self.assertEqual(out[None][0]["g"].shape[0], 200)
+
+
+#: The step limit model (CELL-56): ``prepare_run`` generates the events up to 2**31 steps of 0.5 ms.
+LIMIT_DT = 0.5 * u.ms
+
+
+def _limit_model():
+    """``NetStim(size=2, start=[1, 3] ms, interval=1e4 ms, number=2**21)`` into one ExpSyn, delay 0.3 ms.
+
+    At dt 0.5 ms ``prepare_run`` generates the 107 375 events of each
+    source up to 2**31 steps; event k arrives at step 2.6 + 2e4 k and 6.6 +
+    2e4 k, rounded to 3 + 2e4 k and 7 + 2e4 k, the last ones at
+    2 147 480 003 and 2 147 480 007.
+    """
+    cell = bc.Cell.point(1, V_init=-65.0 * u.mV)
+    cell.place(at("soma", 0.5), bc.mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms, e=0.0 * u.mV))
+    net = bc.Network("limit", seed=1)
+    post = net.add_population("post", cell)
+    stim = net.add_population(
+        "stim", bc.NetStim(size=2, start=[1.0, 3.0] * u.ms, interval=1.0e4 * u.ms, number=2**21, seed=11)
+    )
+    net.connect("drive", source=stim, synapse=post.synapses["exp"][[0, 0]], weight=0.001 * u.uS, delay=0.3 * u.ms)
+    return net, cell
+
+
+class EveryEventPlanTest(unittest.TestCase):
+    """CELL-65: the plan of ``prepare_run`` holds the steps with arrivals, not every step to the last one."""
+
+    @staticmethod
+    def _plan(method, **model):
+        net, _ = _overflow_model(**model)
+        with mock.patch.object(
+            scheduled._ScheduleArrivals, "_steps", autospec=True, side_effect=scheduled._ScheduleArrivals._steps
+        ) as reads:
+            net.prepare_run(dt=DT, scheduled_delivery=method)
+        (layout,) = net._scheduled_plans.preparation["layouts"]
+        (arrays,) = net._prepared_plans
+        return [np.shape(array) for array in arrays], layout, reads.call_count
+
+    def test_the_plan_grows_with_the_events_not_the_steps(self):
+        # 10 sources of 10 events, 0.5 ms apart: 100 records on 100 steps. An
+        # interval 1000 times longer spans 1000 times the steps. On main
+        # 6629a87 "direct" stored an offset per step (3782 and 3600182) and
+        # "padded" raised (37.8 slots per record).
+        for method in METHODS:
+            with self.subTest(method=method):
+                short, short_layout, _ = self._plan(method)
+                long, long_layout, _ = self._plan(method, interval_ms=1.0e4)
+                self.assertEqual(short, long)
+                self.assertEqual((short_layout["n_steps"], long_layout["n_steps"]), (3781, 3600181))
+                for layout in (short_layout, long_layout):
+                    self.assertEqual((layout["records"], layout["stored_steps"]), (100, 100))
+                limit = scheduled._power_of_two(100 + scheduled.BLOCK_SIZE)
+                self.assertLessEqual(max(max(shape, default=1) for shape in long), limit)
+                # Twice the events: twice the steps stored.
+                _, more, _ = self._plan(method, number=20)
+                self.assertEqual((more["records"], more["stored_steps"]), (200, 200))
+
+    def test_a_plan_within_budget_stores_every_step_as_a_window(self):
+        # Model M: 3730 records whose steps span [0, 3679), within either budget.
+        for method in METHODS:
+            with self.subTest(method=method):
+                net, _ = _model()
+                net.prepare_run(dt=DT, scheduled_delivery=method)
+                (layout,) = net._scheduled_plans.preparation["layouts"]
+                self.assertEqual((layout["records"], layout["n_steps"]), (3730, 3679))
+                self.assertEqual(layout["stored_steps"], 3679)
+                (full,) = net._prepared_plans
+                (window,) = net._scheduled_plans.window(0, 3679)
+                for got, expected in zip(full, window, strict=True):
+                    np.testing.assert_array_equal(np.asarray(got), np.asarray(expected))
+
+    def test_where_a_plan_of_every_event_stops_storing_every_step(self):
+        route = mock.Mock(targets=np.zeros(1, dtype=np.int32), population="post")
+
+        def stored(method, steps, accepted=0):
+            steps = np.asarray(steps, dtype=np.int64)
+            _, stats = scheduled._layout_arrays(method, route, steps, np.zeros_like(steps), 0, None, accepted)
+            return stats["stored_steps"], stats["n_steps"]
+
+        # "direct": no more steps than its 256 record slots (1 record + 128, a power of two).
+        self.assertEqual(stored("direct", [254]), (255, 255))
+        self.assertEqual(stored("direct", [255]), (1, 256))
+        # "padded": the window [0, span) within the limits, 8 slots per record at most.
+        self.assertEqual(stored("padded", [*range(9), 79]), (80, 80))
+        self.assertEqual(stored("padded", [*range(9), 80]), (10, 81))
+        # ... or no larger than a plan accepted before (CELL-53): (2 * 81 + 1 + 1) * 4 bytes.
+        self.assertEqual(stored("padded", [*range(9), 80], accepted=656), (81, 81))
+        self.assertEqual(stored("padded", [*range(9), 80], accepted=655), (10, 81))
+
+    def test_every_arrival_is_read_in_one_pass(self):
+        # On main 6629a87 a pass per event of the longest row: 10 and 1000.
+        for number in (10, 1000):
+            with self.subTest(number=number):
+                _, layout, reads = self._plan("direct", number=number)
+                self.assertEqual(layout["records"], 10 * number)
+                self.assertEqual(reads, 1)
+
+    @_float64
+    def test_a_schedule_to_the_step_limit(self):
+        last = 2 * (3 + 107374 * 10**4) + 1  # 2 147 480 007
+        values = jnp.asarray([0.25, 0.5])
+        for method in METHODS:
+            with self.subTest(method=method):
+                net, cell = _limit_model()
+                net.prepare_run(dt=LIMIT_DT, scheduled_delivery=method)
+                (layout,) = net._scheduled_plans.preparation["layouts"]
+                self.assertEqual(
+                    (layout["records"], layout["stored_steps"], layout["n_steps"]), (214750, 214750, last + 1)
+                )
+                # The rows' arrays and one int32 per stored step: no array of the span.
+                self.assertLess(layout["array_bytes"], 32 * 214750)
+                plans = net._scheduled_plans
+                (route,) = plans.routes
+                full = scheduled._LayoutInput(method, route, net._prepared_plans[0])
+                for start in (0, 1073740000, 2147480000, 2**31 - 65):
+                    steps = np.arange(start, start + 64)
+                    expected = np.where(steps % 20000 == 3, 0.25, np.where(steps % 20000 == 7, 0.5, 0.0))
+                    expected[steps > last] = 0.0
+                    window = scheduled._LayoutInput(method, route, plans.window(start, 64)[0])
+                    for plan in (full, window):
+                        got = jax.lax.map(lambda step: plan._deliver(values, step), jnp.asarray(steps, jnp.int32))
+                        np.testing.assert_array_equal(np.asarray(got)[:, 0], expected, err_msg=f"{method} {start}")
+                g = UpdatePathTest._update_values(net, cell, 20)["g"]
+                reference, cell = _limit_model()
+                reference.prepare_run(dt=LIMIT_DT)
+                np.testing.assert_array_equal(g, UpdatePathTest._update_values(reference, cell, 20)["g"])
+                self.assertGreater(g[3, 0], 0.0)
 
 
 class ForwardModeTest(unittest.TestCase):

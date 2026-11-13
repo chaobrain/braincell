@@ -2247,6 +2247,34 @@
   For `tau1 / tau2 <= 0.9999`, results and gradients are unchanged bit for
   bit, and the float64 factor stays within 2.4e-12 of its closed form, as in
   NEURON.
+- A standalone loop of `Cell.update()` calls delivers the events of the
+  Cell's live connections (from its `event_outputs` to its synapses) as
+  `Cell.run` does (CELL-70). `update()` never routed them. On main
+  `b437df8`, in float32 and float64, with `dt = 0.1 ms` and 30 steps, a
+  Cell whose spikes reach its own synapse 0, 0.1 or 0.3 ms later delivered
+  none of its 6, 5 or 5 events, in a Python loop, under
+  `brainstate.transform.for_loop` and under `jit`, where 30 one-step
+  `Cell.run` calls delivered them all; a 10-step `Cell.run` between two
+  loops of 10 `update()` calls delivered only the events of its own spikes
+  (2 of 6, 1 of 5); an HH cable and a lumped HH Cell that fire once never
+  drove their synapse. Each `update()` now quantizes the live delays at its
+  `dt`, routes the spike of its step after the step, and keeps the delayed
+  events in the history `Cell.run` uses, so loops and runs hand the events
+  in flight to each other: the loops deliver every event at the step a run
+  does, within 1e-12 of the one-step runs in float64, and a float32 loop of
+  32010 steps follows one run within 1e-6. Two calls that ran wrong
+  without a word are now refused, before any state changes. A traced
+  `update()` (inside `for_loop` or `jit`) before a live connection with a
+  delay of a step or more has its history raises `RuntimeError`: a history
+  created inside the trace would not outlive it, and the delayed events
+  would be lost. Call
+  `cell.connections.prepare_runtime(dt)` once before, or `update()` or
+  `run()` once outside it. And an `update()` at another `dt` than its live
+  connections have raises `ValueError`, as `Cell.run` does. A plasticity
+  rule on a live source, which runs only in a `Network`, is refused at the
+  start of `update()` (`NotImplementedError`, as before), no longer after
+  the scheduled rows' events of the step were written. A Cell without live
+  connections steps as before.
 - Each `NetStim` and `EventSequence` event is delivered once where a run
   continues one at another `dt`, and where a `Cell` that ran on its own
   joins a `Network` (CELL-57). A `Cell.run` ended by preparing the boundary
@@ -2483,6 +2511,20 @@
   `usetable_<mech>` or calling `disable_rate_table`. The ion pool comparisons
   now switch off the table of every mechanism they insert; none of their 25
   cases inserts one with a table, so their NEURON traces are unchanged.
+- The `Network.run` Notes explain when the compiled loop is traced again
+  (CELL-74). On the default path the loop holds the generated NetStim events
+  as constants. A NetStim with more than `2**20` events (`size` times
+  `max(number)`) generates them on demand. Each run that needs later events
+  at least doubles the schedule and compiles the loop again, so `k` runs of
+  one length compile it about `log2(k) + 1` times. With a million sources
+  such a run took 3.1 to 5.5 s on one CPU, against 0.6 to 0.9 s for a run
+  that reused the loop. `scheduled_delivery="direct"` passes the events of
+  planned rows as loop arguments, so their growth traces nothing; a NetStim
+  read by a plasticity rule still keys the loop. Two tests pin this
+  behaviour, which is unchanged. On main `36dd9cd`, 16 runs of 1 ms from a
+  NetStim firing every 0.1 ms compile at runs 1, 2, 3, 5 and 9, and not at
+  all after `reset_state`. A rule's source removed from the planned loop's
+  key would leave its row 21 of 80 conductance jumps.
 
 ### Deprecations
 

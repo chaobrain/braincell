@@ -1906,6 +1906,57 @@ class NetworkSecondRunCompileTest(unittest.TestCase):
         self.assertTrue(all(np.isfinite(g) and g > 0.0 for g in conductances))
 
 
+class NetworkScheduleGrowthCompileTest(unittest.TestCase):
+    """CELL-74: the default path compiles its loop once per doubling of a NetStim schedule."""
+
+    @staticmethod
+    def _network():
+        # 2**21 events: too many to generate at construction, so the
+        # schedule grows with the runs.
+        cell, _ = make_event_cell()
+        network = Network("grow")
+        stim = braincell.NetStim(start=0.1 * u.ms, interval=0.1 * u.ms, number=2**21)
+        source = network.add_population("stim", stim)
+        target = network.add_population("post", cell)
+        network.connect("drive", source=source, synapse=target.synapses["syn"], weight=WEIGHT)
+        return network, stim
+
+    def test_runs_of_one_length_compile_once_per_doubling(self):
+        # The loop holds the generated events as constants, and the
+        # schedule's width keys it. Run k (1 ms) generates up to
+        # until = k ms + dt: width max(floor((until - 0.1) / 0.1) + 2,
+        # 2 * width) whenever the last event is not past until. This pins
+        # the behaviour of main 36dd9cd.
+        network, stim = self._network()
+        self.assertFalse(stim._schedule_complete)
+        counts, widths, parts = [], [], []
+        for index in range(32):
+            if index == 16:
+                network.reset_state()
+            with loop_compiles() as names:
+                result = network.run(dt=DT, duration=40 * DT)
+            g = np.asarray(u.get_mantissa(result.samples["post"]["g"].values))
+            self.assertEqual(g.shape[0], 40)
+            parts.append(g)
+            counts.append(names.count("jit(jaxpr_call)"))
+            widths.append(stim._event_times_ms.shape[1])
+        self.assertEqual(widths[:16], [11, 22, 44, 44] + [88] * 4 + [176] * 8)
+        self.assertEqual(widths[16:], [176] * 16)
+        # Each width change at least doubles the schedule and compiles the
+        # loop: 4 = log2(16) times after the first run; none after reset_state.
+        self.assertGreaterEqual(counts[0], 1)
+        self.assertEqual(counts[1:16], [1, 1, 0, 1, 0, 0, 0, 1] + [0] * 7)
+        self.assertEqual(counts[16:], [0] * 16)
+
+        split = np.concatenate(parts[:16])
+        self.assertTrue(np.all(np.isfinite(split)))
+        self.assertGreater(np.count_nonzero(np.diff(split, axis=0)), 0)
+        whole, _ = self._network()
+        once = np.asarray(u.get_mantissa(whole.run(dt=DT, duration=640 * DT).samples["post"]["g"].values))
+        np.testing.assert_array_equal(split, once)
+        np.testing.assert_array_equal(np.concatenate(parts[16:]), once)
+
+
 class NetworkLongRunSampleTest(unittest.TestCase):
     """CELL-59a: a Network run samples in whole steps, however long the Network has run."""
 

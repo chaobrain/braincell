@@ -325,15 +325,19 @@ class RuleBinding:
 
     # -- the boundary -----------------------------------------------------
 
-    def _live_arrivals(self, source):
-        """Arrivals of a live call at this boundary, from its sources' count history (Network only)."""
-        live = self._live
-        if live is None:
+    def _require_live_plan(self):
+        """The live plan a Network prepared; a standalone Cell has none, and is refused."""
+        if self._live is None:
             raise NotImplementedError(
                 f"Connection rule {self.declaration.rule_type!r} on a live source runs only in a braincell.Network: "
                 "a standalone Cell delivers live events on another schedule. Add the Cells to a Network and "
                 "run that, or connect a scheduled source (EventSequence, NetStim)."
             )
+        return self._live
+
+    def _live_arrivals(self, source):
+        """Arrivals of a live call at this boundary, from its sources' count history (Network only)."""
+        live = self._require_live_plan()
         current = jnp.asarray(source.current_event_count(live.columns), dtype=brainstate.environ.dftype())
         if "history" not in self.runtime:
             return live.per_row(current)

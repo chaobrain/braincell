@@ -43,7 +43,7 @@ import numpy as np
 import braincell as bc
 from braincell.experimental.scheduled_delivery import PaddingLimitError as ExperimentalPaddingLimitError
 from braincell.filter import AllRegion, LocsetMask, at
-from braincell.network import scheduled
+from braincell.network import engine, scheduled
 from braincell.network.scheduled import METHODS, PaddingLimitError
 
 DT = 0.025 * u.ms
@@ -341,6 +341,56 @@ class CacheTest(unittest.TestCase):
         cell.record("v", "V")
         cell.record("g", bc.observe.synapse(name="exp").state("g"))
         return net, cell
+
+    @staticmethod
+    def _plain_and_ruled():
+        """Synapse 0 takes a plain row from NetStim ``plain``, synapse 1 a PairSTDP row from NetStim ``ruled``."""
+        branch = bc.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+        cell = bc.Cell(bc.Morphology.from_root(branch), cv_policy=bc.CVPerBranch(1), pop_size=1, V_init=-65.0 * u.mV)
+        cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+        cell.place(LocsetMask.from_columns([0, 0], [0.5, 0.5]), bc.mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms))
+        net = bc.Network("rule", seed=1)
+        post = net.add_population("post", cell)
+        # Generated on demand (number 10**9): the 10 ms runs double both schedules twice.
+        plain = net.add_population("plain", bc.NetStim(size=1, start=0.3 * u.ms, interval=0.5 * u.ms, number=10**9))
+        ruled = net.add_population("ruled", bc.NetStim(size=1, start=0.2 * u.ms, interval=0.5 * u.ms, number=10**9))
+        net.connect("drive", source=plain, synapse=post.synapses["exp"][[0]], weight=0.001 * u.uS)
+        net.connect("learn", source=ruled, synapse=post.synapses["exp"][[1]], weight=0.001 * u.uS, plasticity=_rule())
+        cell.record("g", bc.observe.synapse(name="exp").state("g"))
+        return net
+
+    def _four_runs(self, method):
+        """Per-step g of four 10 ms runs, and the loop traces of each run."""
+        net = self._plain_and_ruled()
+        extra = {} if method is None else {"scheduled_delivery": method}
+        builds, traces = self._counting()
+        parts, counts = [], []
+        with builds, traces as traced:
+            for _ in range(4):
+                before = traced.call_count
+                g = np.asarray(u.get_mantissa(net.run(dt=DT, duration=400 * DT, **extra).samples["post"]["g"].values))
+                self.assertEqual(g.shape[0], 400)
+                parts.append(g.reshape(400, 2))
+                counts.append(traced.call_count - before)
+        return np.concatenate(parts), counts
+
+    @_float64
+    def test_a_netstim_read_by_a_rule_keys_the_planned_loop(self):
+        """The rule reads its source's events when the loop is traced, so that schedule keys the loop (L40)."""
+        reference, _ = self._four_runs(None)
+        self.assertTrue(np.all(np.isfinite(reference)))
+        self.assertEqual(np.count_nonzero(np.diff(reference, axis=0) > 0, axis=0).tolist(), [80, 80])
+        got, traces = self._four_runs("direct")
+        # Both schedules double in runs 2 and 3; the rule row's source traces the loop again.
+        self.assertEqual(traces, [1, 1, 1, 0])
+        np.testing.assert_array_equal(got, reference)
+        # Were the rule row's source out of the key, the loop of run 1 would keep its 21 events.
+        with mock.patch.object(engine, "loop_schedule_key", lambda populations, plans: ()):
+            dropped, traces = self._four_runs("direct")
+        self.assertEqual(traces, [1, 0, 0, 0])
+        np.testing.assert_array_equal(dropped[:, 0], reference[:, 0])
+        self.assertEqual(np.count_nonzero(np.diff(dropped[:, 1]) > 0), 21)
+        self.assertFalse(np.array_equal(dropped[:, 1], reference[:, 1]))
 
 
 #: Records of the 40-step (1 ms) windows of :meth:`WindowSlotsTest._model`, by hand. Window ``w`` takes

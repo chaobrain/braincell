@@ -763,13 +763,15 @@ class RuleStateTest(unittest.TestCase):
 STATES = ("w", "x_pre", "y_post")
 
 
-def _host_pair_stdp(pre, post, w0, *, A_plus, A_minus, tau, dt, w_min=-np.inf, w_max=np.inf):
+def _host_pair_stdp(pre, post, w0, *, A_plus, A_minus, tau, dt, w_min=-np.inf, w_max=np.inf, set_at=None, w_set=None):
     """Float64 pair STDP on the host; row ``b`` is the state the update at boundary ``b`` receives.
 
     ``pre`` and ``post`` are ``(boundaries, rows)`` event counts. Each
     update decays both traces by ``exp(-dt / tau)``, adds
     ``A_plus * x_pre * post - A_minus * y_post * pre`` to the clipped
-    weight, then adds the counts to the traces. Returns ``(w, x_pre, y_post)``.
+    weight, then adds the counts to the traces. ``w_set`` replaces the
+    weight before the update at boundary ``set_at`` (``ConnectionView.set``
+    between two runs). Returns ``(w, x_pre, y_post)``.
     """
     boundaries, rows = pre.shape
     w = np.broadcast_to(np.asarray(w0, dtype=np.float64), (rows,)).copy()
@@ -778,6 +780,8 @@ def _host_pair_stdp(pre, post, w0, *, A_plus, A_minus, tau, dt, w_min=-np.inf, w
     decay = np.exp(-dt / tau)
     out = np.zeros((3, boundaries, rows))
     for b in range(boundaries):
+        if b == set_at:
+            w = np.broadcast_to(np.asarray(w_set, dtype=np.float64), (rows,)).copy()
         out[:, b] = w, x, y
         x, y = x * decay, y * decay
         w = np.clip(w + A_plus * x * post[b] - A_minus * y * pre[b], w_min, w_max)
@@ -1062,7 +1066,10 @@ class RecordRuleStateRowsTest(unittest.TestCase):
         second = cell.run(dt=DT, duration=12.0 * u.ms).samples
         _assert_same_recordings(self, second, first, ("w", "only_removed"))
 
-    def test_only_a_cell_outside_a_network_keeps_a_copy(self) -> None:
+    def test_a_recording_keeps_no_copy_in_either_driver(self) -> None:
+        # Both drivers sample the state before they run the rule at a
+        # boundary (CELL-55); main bbb7b0a gave a Cell outside a Network a copy
+        # of each recorded state, 2 more states here.
         def count_states(*, record, in_network):
             cell = _toy_cell(post_ms=[10.0])
             if in_network:
@@ -1077,7 +1084,7 @@ class RecordRuleStateRowsTest(unittest.TestCase):
             return len(brainstate.graph.states(cell))
 
         alone = count_states(record=False, in_network=False)
-        self.assertEqual(count_states(record=True, in_network=False), alone + 2)
+        self.assertEqual(count_states(record=True, in_network=False), alone)
         in_network = count_states(record=False, in_network=True)
         self.assertEqual(count_states(record=True, in_network=True), in_network)
 
@@ -1109,7 +1116,7 @@ class RecordRuleStateLoopTest(unittest.TestCase):
         self.assertEqual(_rec(samples, "sched_w", u.uS).max(), 0.0015)
 
     @_float64
-    def test_standalone_update_loop_reads_two_samples_ahead(self) -> None:
+    def test_standalone_update_loop_reads_the_next_sample(self) -> None:
         cell = _standalone_model()
         samples = cell.run(dt=DT, duration=16.0 * u.ms).samples
         np.testing.assert_allclose(_w(cell), [W_STANDALONE], rtol=RTOL)
@@ -1132,9 +1139,10 @@ class RecordRuleStateLoopTest(unittest.TestCase):
         with brainstate.environ.context(dt=DT):
             read = brainstate.transform.for_loop(step, u.math.arange(159) * DT)
         for state in STATES:
-            # rule_state after update j (from 0) is sample j + 2.
+            # rule_state after update j (from 0) is sample j + 1, as in a
+            # Network: update j runs the rule at its own boundary (CELL-55).
             np.testing.assert_allclose(
-                _decimal(read[state], _unit(state))[:158], _rec(samples, state, _unit(state))[2:], rtol=RTOL, atol=1e-15
+                _decimal(read[state], _unit(state)), _rec(samples, state, _unit(state))[1:], rtol=RTOL, atol=1e-15
             )
 
     @_float64
@@ -1207,11 +1215,11 @@ class RecordRuleStateLoopTest(unittest.TestCase):
             _assert_same_recordings(self, other.samples, one.samples, STATES)
 
     @_float64
-    def test_a_weight_set_between_runs_shows_when_it_is_delivered(self) -> None:
-        # The boundary at 5 ms ends the first run. A standalone Cell has
-        # prepared it before set(), so its event still carries 0.05 uS
-        # (CELL-55); a Network prepares it in the next run.
-        for driver, rows in (("cell", [0.05, 0.08]), ("network", [0.08, 0.08])):
+    def test_a_weight_set_between_runs_is_delivered_at_the_next_boundary(self) -> None:
+        # The boundary at 5 ms ends the first run; the next run prepares it,
+        # in either driver, so its event carries the weight set between them
+        # (CELL-55; a standalone Cell's carried 0.05 uS on main bbb7b0a).
+        for driver, rows in (("cell", [0.08, 0.08]), ("network", [0.08, 0.08])):
             cell = _toy_cell()
             if driver == "cell":
                 braincell.connect("c", source=_seq([5.0]), synapse=cell.synapses["s"], weight=W0, plasticity=_stdp())
@@ -1226,6 +1234,241 @@ class RecordRuleStateLoopTest(unittest.TestCase):
             w, g = _rec(samples, "w", u.uS)[:, 0], _g_of(samples)
             np.testing.assert_allclose(w[:2], rows, rtol=RTOL)
             np.testing.assert_allclose(g[1] - g[0], w[0], rtol=RTOL)
+
+
+class WeightSetBetweenRunsTest(unittest.TestCase):
+    """CELL-55: ``set(weight=)`` between two runs acts from the next run's first boundary, in either driver.
+
+    dt 0.1 ms; the first run ends at t_n = 5 ms (n = 50), where the weight
+    goes from 0.05 to 0.08 uS. The source's events at 2 ms and around t_n
+    (L94) arrive, rounded half up, at boundary 20; 49 (4.94 ms); 50 (4.95
+    ms, a tie, 4.96, 5.0 and 5.04 ms); 51 (5.05 ms, a tie, and 5.06 ms).
+    The toy target does not integrate its synapse, so g only accumulates:
+    the payload of boundary b is sample b + 1 minus sample b. The Cell
+    crosses threshold in the steps ending at 3 and 5 ms, its post events at
+    boundaries 30 and 50. A standalone Cell used to have prepared t_n, with
+    the old weight and the rule already run there, before ``set`` (main
+    34973d6: 4 x 0.05 uS at t_n, and the rule's update at t_n lost).
+    """
+
+    N1, N2 = 50, 20
+    W1 = 0.08
+    TIMES = (2.0, 4.94, 4.95, 4.96, 5.0, 5.04, 5.05, 5.06)
+    #: Arrivals per boundary, worked out by hand above.
+    COUNTS = {20: 1, 49: 1, 50: 4, 51: 2}
+
+    def _model(self, driver, *, source, delay, rule):
+        cell = _toy_cell(post_ms=[3.0, 5.0])
+        if source == "sequence":
+            model = _seq([t - delay for t in self.TIMES])
+        else:
+            # 4.94 + 0.03 k ms (k < 5): boundaries 49, 50 (4.97, 5.0, 5.03 ms) and 51 (5.06 ms).
+            model = braincell.NetStim(size=1, start=4.94 * u.ms, interval=0.03 * u.ms, number=5)
+        if driver == "cell":
+            braincell.connect(
+                "c", source=model, synapse=cell.synapses["s"], weight=W0, delay=delay * u.ms, plasticity=rule
+            )
+            owner = cell
+        else:
+            owner = _network(model, cell, delay=delay * u.ms, rule=rule)
+        if rule is not None:
+            cell.connections["c"].record("w", "w")
+        return owner, cell
+
+    def _counts(self, source):
+        if source == "sequence":
+            return self.COUNTS
+        return {49: 1, 50: 3, 51: 1}
+
+    def _reference(self, source, rule_kwargs, *, set_at=N1):
+        """Payload per boundary and ``w(t_b-)`` on the host, with the new weight from boundary ``set_at``.
+
+        One boundary more than the two runs step over: ``w(t_70-)`` is what
+        ``rule_state`` reads after them (the rule has run at t_69).
+        """
+        boundaries = self.N1 + self.N2 + 1
+        pre = np.zeros((boundaries, 1))
+        for b, n in self._counts(source).items():
+            pre[b] = n
+        if rule_kwargs is None:
+            w = np.where(np.arange(boundaries) < self.N1, 0.05, self.W1)[:, None]
+        else:
+            post = np.zeros((boundaries, 1))
+            post[[30, 50]] = 1.0
+            w = _host_pair_stdp(
+                pre,
+                post,
+                [0.05],
+                A_plus=A_PLUS,
+                A_minus=A_MINUS,
+                tau=TAU,
+                dt=0.1,
+                set_at=set_at,
+                w_set=[self.W1],
+                **rule_kwargs,
+            )[0]
+        return (pre * w)[:, 0], w[:, 0]
+
+    def _run_twice(self, owner, cell, driver):
+        samples, g_after = [], []
+        for steps in (self.N1, self.N2):
+            if samples:
+                cell.connections["c"].set(weight=self.W1 * u.uS)
+            result = owner.run(dt=DT, duration=steps * DT)
+            block = result.samples if driver == "cell" else result.samples["post"]
+            # One sample per step before reading jumps from them (L93).
+            self.assertEqual(block["g"].values.shape[0], steps)
+            samples.append(block)
+            g_after.append(float(_decimal(cell.synapses["s"].g, u.uS).reshape(-1)[0]))
+        return samples, g_after
+
+    @_float64
+    def test_both_drivers_deliver_the_new_weight_from_the_next_boundary(self) -> None:
+        cases = [
+            ("sequence", 0.0, None),
+            ("sequence", 0.3, None),
+            ("netstim", 0.0, None),
+            ("sequence", 0.0, {}),
+            ("sequence", 0.3, {}),
+            ("netstim", 0.0, {}),
+            # w_min binds at t_n only on the old weight: 0.04996 - 0.01945 < 0.035 < 0.08 - 0.01945.
+            ("sequence", 0.0, {"w_min": 0.035}),
+        ]
+        for source, delay, rule_kwargs in cases:
+            payload, w_before = self._reference(source, rule_kwargs)
+            rule = None if rule_kwargs is None else _stdp(**{k: v * u.uS for k, v in rule_kwargs.items()})
+            for driver in ("network", "cell"):
+                with self.subTest(source=source, delay=delay, rule=rule_kwargs, driver=driver):
+                    owner, cell = self._model(driver, source=source, delay=delay, rule=rule)
+                    samples, g_after = self._run_twice(owner, cell, driver)
+                    g = np.concatenate([_g_of(samples[0]), _g_of(samples[1]), [g_after[1]]])
+                    self.assertAlmostEqual(g_after[0], g[self.N1], delta=1e-15)
+                    np.testing.assert_allclose(np.diff(g), payload[:-1], rtol=RTOL, atol=1e-15)
+                    if rule is not None:
+                        rows = np.concatenate([_rec(block, "w", u.uS)[:, 0] for block in samples])
+                        np.testing.assert_allclose(rows, w_before[:-1], rtol=RTOL, atol=1e-15)
+                        np.testing.assert_allclose(_w(cell), w_before[-1:], rtol=RTOL, atol=1e-15)
+
+    @_float64
+    def test_an_update_loop_delivers_the_new_weight_from_the_next_boundary(self) -> None:
+        payload, w_before = self._reference("sequence", {})
+        for driver in ("network", "cell"):
+            with self.subTest(driver=driver):
+                owner, cell = self._model(driver, source="sequence", delay=0.0, rule=_stdp())
+                if driver == "network":
+                    owner.prepare_run(dt=DT)
+                else:
+                    cell.init_state()
+
+                def step(k):
+                    if driver == "network":
+                        owner.update()
+                    else:
+                        with brainstate.environ.context(t=k * DT):
+                            cell.update()
+                    return cell.synapses["s"].g.to_decimal(u.uS), cell.connections["c"].rule_state("w").to_decimal(u.uS)
+
+                read = []
+                with brainstate.environ.context(dt=DT):
+                    for first, steps in ((0, self.N1), (self.N1, self.N2)):
+                        if first:
+                            cell.connections["c"].set(weight=self.W1 * u.uS)
+                        read.append(brainstate.transform.for_loop(step, np.arange(first, first + steps)))
+                g = np.concatenate([[0.0], *(_decimal(part[0]).reshape(-1) for part in read)])
+                w = np.concatenate([_decimal(part[1]).reshape(-1) for part in read])
+                np.testing.assert_allclose(np.diff(g), payload[:-1], rtol=RTOL, atol=1e-15)
+                # After update k (from 0) the rule has run at boundary k: w(t_{k+1}-). The read
+                # after update n - 1 comes before set(), so it is w(t_n-) of the old weight.
+                expected = w_before[1:].copy()
+                expected[self.N1 - 1] = self._reference("sequence", {}, set_at=None)[1][self.N1]
+                np.testing.assert_allclose(w, expected, rtol=RTOL, atol=1e-15)
+
+
+class PostDetectorTest(unittest.TestCase):
+    """CELL-55: a rule's post detector with a threshold of its own reads the voltage before each step.
+
+    Each step runs the rule at its boundary when it starts, where a
+    ``VoltageCrossingSource`` post signal compares the voltage before the
+    step that ended there with the voltage after it. The toy Cell is at +40
+    mV in the steps that end at 3.0, 3.1 and 5.0 ms, so the -20 mV detector
+    crosses in the steps ending at 3.0 and 5.0 ms only: post events at
+    boundaries 30 and 50. The pre events at 1, 4 and 6 ms arrive at
+    boundaries 10, 40 and 60. Had the run loop not carried the voltage
+    before each step, the detector would compare every step with the
+    voltage before the run, and cross in the step ending at 3.1 ms too.
+    """
+
+    STEPS = 80
+
+    def _model(self, driver):
+        cell = _toy_cell(post_ms=[3.0, 3.1, 5.0])
+        detector = braincell.VoltageCrossingSource(cell, threshold=-20.0 * u.mV)
+        rule = _stdp(signals={"post": detector})
+        source = _seq([1.0, 4.0, 6.0])
+        if driver == "network":
+            owner = _network(source, cell, rule=rule)
+        else:
+            braincell.connect("c", source=source, synapse=cell.synapses["s"], weight=W0, plasticity=rule)
+            owner = cell
+        cell.connections["c"].record("w", "w")
+        return owner, cell
+
+    @_float64
+    def test_cell_run_and_network_give_the_host_rule(self) -> None:
+        boundaries = self.STEPS + 1
+        pre = np.zeros((boundaries, 1))
+        pre[[10, 40, 60]] = 1.0
+        post = np.zeros((boundaries, 1))
+        post[[30, 50]] = 1.0
+        w = _host_pair_stdp(pre, post, [0.05], A_plus=A_PLUS, A_minus=A_MINUS, tau=TAU, dt=0.1)[0][:, 0]
+        # The updates at the post events (30, 50) and the pre events after
+        # them (40, 60) change the weight (L97).
+        self.assertEqual(np.flatnonzero(np.diff(w)).tolist(), [30, 40, 50, 60])
+        # One run; and runs that end at the step of the first crossing, and at the step after it.
+        for driver, splits in (("network", (80,)), ("cell", (80,)), ("cell", (30, 1, 49))):
+            with self.subTest(driver=driver, splits=splits):
+                owner, cell = self._model(driver)
+                rows = []
+                for steps in splits:
+                    result = owner.run(dt=DT, duration=steps * DT)
+                    block = result.samples if driver == "cell" else result.samples["post"]
+                    rows.append(_rec(block, "w", u.uS)[:, 0])
+                np.testing.assert_allclose(np.concatenate(rows), w[:-1], rtol=RTOL, atol=1e-15)
+                np.testing.assert_allclose(_w(cell), w[-1:], rtol=RTOL, atol=1e-15)
+
+    def test_only_a_detector_that_reads_the_voltage_is_carried(self) -> None:
+        from braincell.network.plasticity import reads_voltage_before_step
+
+        def ruled(post):
+            cell = _toy_cell()
+            signals = None if post is None else {"post": post(cell)}
+            braincell.connect(
+                "c", source=_seq([1.0]), synapse=cell.synapses["s"], weight=W0, plasticity=_stdp(signals=signals)
+            )
+            cell.init_state()
+            return cell
+
+        plain = _toy_cell()
+        braincell.connect("c", source=_seq([1.0]), synapse=plain.synapses["s"], weight=W0)
+        plain.init_state()
+        cases = {
+            "no rule": (plain, False),
+            "the Cell's spike": (ruled(None), False),
+            # At the Cell's threshold, rising, the detector reads the Cell's spike.
+            "a detector at V_th": (ruled(lambda cell: braincell.VoltageCrossingSource(cell)), False),
+            "a teacher": (ruled(lambda cell: _seq([2.0])), False),
+            "a detector at -20 mV": (
+                ruled(lambda cell: braincell.VoltageCrossingSource(cell, threshold=-20.0 * u.mV)),
+                True,
+            ),
+            "a falling detector": (
+                ruled(lambda cell: braincell.VoltageCrossingSource(cell, direction="falling")),
+                True,
+            ),
+        }
+        for name, (cell, expected) in cases.items():
+            with self.subTest(post=name):
+                self.assertIs(reads_voltage_before_step(cell), expected)
 
 
 class RecordRuleStateFloat32Test(unittest.TestCase):

@@ -936,18 +936,15 @@
   `RunResult.samples` and `NetworkResult.samples` like any recording.
   Sample `k` is the state just before the update at the boundary `time[k]`,
   so the `"w"` sample is the weight that the events arriving there carry,
-  and a `Network` and a standalone `Cell.run` give the same samples; the
-  docstring gives how `rule_state` relates to them in each. A view may take
-  rows of several `connect` calls whose state has one dimension. The rows'
-  `RecordingRow` names the connect call and the rule, and two new fields,
-  `connection_id` and `source_index`, give the connection row and its pre
-  endpoint (`None` on other rows). A Cell outside a `Network` keeps a copy
-  of each recorded state from before the latest update, one more state in
-  its state tree; a `Network` keeps none, and a Cell it initialized raises
-  `RuntimeError` in `Cell.run` once that `Network` is gone (call `reset()`
-  and `init_state()`). Declare the recording before `init_state()`, as
-  other recordings; a view without a rule raises `TypeError`, an unknown
-  state `KeyError`.
+  and a `Network` and a standalone `Cell.run` give the same samples;
+  `rule_state` read before the `k`-th step (from 0) of either is sample
+  `k` (CELL-55). A view may take rows of several `connect` calls whose
+  state has one dimension. The rows' `RecordingRow` names the connect call
+  and the rule, and two new fields, `connection_id` and `source_index`,
+  give the connection row and its pre endpoint (`None` on other rows). The
+  recording keeps no copy of the state. Declare the recording before
+  `init_state()`, as other recordings; a view without a rule raises
+  `TypeError`, an unknown state `KeyError`.
 
 ### Changes & Improvements
 
@@ -1521,27 +1518,28 @@
   projections do, or use `run`.
 
 - A `Cell.run` that continues an earlier `run` or `update()` no longer
-  delivers the events on its first step twice (CELL-34). Each step prepares
+  delivers the events on its first step twice (CELL-34). Each step prepared
   the synaptic input of the next boundary, and `run` prepared its first
   boundary again on top of it. Splitting a run at an event time doubled that
   event: an ExpSyn (tau 2 ms) driven by `NetStim(start=1 ms, number=1)` at
   0.005 uS had g = 0.006065 uS at 2 ms after two 1 ms runs, instead of the
   0.003033 uS of one 2 ms run. Bound synapse inputs and reduced cells were
-  affected in the same way; every solver was. `run` now prepares its first
-  boundary only when no step has run since `init_state` or `reset_state`, and a
+  affected in the same way; every solver was. Each step now prepares the
+  boundary it starts at, once (CELL-55), and a
   split run matches one run to 1e-12. One run is bit-identical to before.
   `Network.run` was not affected.
 
 - The first `Cell.update()` after `init_state()` or `reset_state()` now
   delivers the events at the start time, as `Cell.run` does (CELL-35). `run`
-  prepares the synaptic input of its first boundary when no step has, but
+  prepared the synaptic input of its first boundary when no step had, but
   `update()` only prepared the boundary after its step, so an `update()` loop
   never delivered an event at t = 0: one 600 um x 0.5 um CV with an ExpSyn
   (tau 2 ms) driven by `NetStim(start=0 ms, number=1)` at 0.005 uS stayed at
   g = 0 and -65 mV, where `run` gives g = 0.001839 uS and -56.89 mV at 2 ms.
   Bound synapse inputs missed their first boundary in the same way, and so
   did the synapses of a lumped Cell (`Cell.point`).
-  `update()` now prepares that boundary under the same condition as `run`, so
+  `update()` now prepares the boundary it starts at, as each step of `run`
+  does (CELL-55), so
   an `update()` loop matches `run` to 1e-12 and neither delivers an event
   twice when one continues the other. Loops whose events all fall after the
   first step are bit-identical to before.
@@ -2142,7 +2140,7 @@
   successful `init_state` is unchanged.
 - Each `NetStim` and `EventSequence` event is delivered once where a run
   continues one at another `dt`, and where a `Cell` that ran on its own
-  joins a `Network` (CELL-57). A `Cell.run` ends by preparing the boundary
+  joins a `Network` (CELL-57). A `Cell.run` ended by preparing the boundary
   at the time it reached, with the events within half of its step; the run
   after it took that boundary for its own at the new `dt`, and a Network
   prepared it again. On main `8aa8e77`, in float32 and float64: after 10
@@ -2152,19 +2150,48 @@
   0.25 ms prepared that boundary again, delivering its events twice (13 of
   8 at `dt = 0.025 ms`, 14 of 8 at 0.05 ms), and ran a plasticity rule's
   update there twice; a Cell run on its own after a Network at another `dt`
-  delivered an event twice (9 of 8) or lost it (7 of 8). The boundary now
-  stays the earlier run's: the later run, or the Network's first step,
-  leaves it as it is, skips the events it took, and delivers the others on
-  its own steps, no earlier than the next one. Every event arrives once, and
-  a rule updates once per boundary. Within half of the old step of the
-  change an event can act a step later or earlier than on the new grid
-  from the start: at `dt = 0.05 ms` after 10 steps of 0.025 ms, events at
-  0.265 and 0.27 ms act at 0.3 ms, not 0.25 ms; at `dt = 0.025 ms` after
-  5 steps of 0.05 ms, those at 0.2625 and 0.27 ms act at 0.25 ms, not
-  0.275 ms. Runs that keep `dt`, and Networks whose Cells did not run on
-  their own, are unchanged bit for bit. The first Network run after such a
-  join compiles a loop of its own. A traced `Cell.run` (inside `jax.jit`)
-  still counts its arrivals from time 0, without the hand-over.
+  delivered an event twice (9 of 8) or lost it (7 of 8). Each step now
+  prepares the boundary it starts at (CELL-55): the later run, or the
+  Network's first step, prepares the boundary at the time reached, skips
+  the events the earlier run took, and delivers the others on its own
+  grid, none before that time, as on that grid from the start. Every event
+  arrives once, and a rule updates once per boundary: at `dt = 0.05 ms`
+  after 10 steps of 0.025 ms, events at 0.265 and 0.27 ms act at 0.25 ms;
+  at `dt = 0.025 ms` after 5 steps of 0.05 ms, those at 0.2625 and 0.27 ms
+  act at 0.275 ms. Runs that keep `dt`, and Networks whose Cells did not
+  run on their own, are unchanged bit for bit. A traced `Cell.run` (inside
+  `jax.jit`) still counts its arrivals from time 0, without the hand-over.
+- A `ConnectionView.set(weight=...)` between two standalone `Cell.run`
+  calls, or two `update()` calls, acts from the first boundary of the next,
+  as in a `Network` (CELL-55). Each step of `Cell.run` and `update()`
+  prepared the boundary after it, so the last step of a run delivered the
+  next run's first boundary with the old weight, and ran a plasticity
+  rule's update there, before the `set`, which then overwrote that update.
+  On main `bbb7b0a`, in float32 and float64, with 50 steps of 0.1 ms, a
+  weight set from 0.05 to 0.08 uS and 20 more steps: the 4 `EventSequence`
+  events at 5 ms delivered 0.2 uS instead of a `Network`'s 0.32 uS (a
+  `NetStim`'s 3, 0.15 instead of 0.24 uS); with `PairSTDP` the 20 `"w"`
+  samples of the second run differed, and `rule_state("w")` after it was
+  0.0401979 uS instead of 0.0207520 uS. Each step now prepares the
+  boundary it starts at, as a Network step does, and so does each
+  `update()`. Three behaviours follow. Where a run changes `dt`, or a Cell
+  joins a Network at another `dt`, the events within half of the old step
+  act on the new grid: after 10 steps of 0.025 ms, steps of 0.05 ms put
+  the events from 0.2375 to 0.3 ms 4 at 0.25 ms and 2 at 0.3 ms (main 2
+  and 4); after 5 steps of 0.05 ms, steps of 0.025 ms put those from 0.23
+  to 0.3 ms 2 at 0.25 ms, 3 at 0.275 ms and 1 at 0.3 ms (main 4, 1 and 1);
+  the first Network run after such a join no longer compiles a loop of its
+  own. `rule_state` read after the `j`-th `update()` (from 0) of a
+  standalone Cell is sample `j + 1` of a run, and after a run of `n` steps
+  sample `n` of a longer run, as in a `Network` (main: `j + 2` and
+  `n + 1`). And a Cell no longer keeps a copy of each recorded rule state,
+  so a Cell that a `Network` initialized records rule states in `Cell.run`
+  once that `Network` is gone, where it raised `RuntimeError`. Runs that
+  neither set a weight nor change `dt` are unchanged bit for bit on the
+  machine that tested them. A Cell whose rule reads, as its `post` signal,
+  a `VoltageCrossingSource` with a threshold of its own carries the voltage
+  before each step through the run loop: one more device copy per step on
+  GPU.
 
 ### Documentation
 

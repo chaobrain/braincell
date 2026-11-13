@@ -1135,26 +1135,41 @@ class RecordRuleStateRejectionTest(unittest.TestCase):
             other.record("w", observable)
         self.assertEqual(dict(other.recordings), {})
 
-    def test_cell_run_on_a_cell_its_gone_network_initialized_raises_runtime_error(self) -> None:
-        cell = _rule_cell()
-        net = Network("gone")
-        source = net.add_population("pre", _times([0.0]))
-        net.add_population("post", cell)
-        net.connect("c", source=source, synapse=cell.synapses["s"], weight=0.05 * u.uS, plasticity=_rule())
-        cell.connections["c"].record("w", "w")
-        net.run(dt=0.1 * u.ms, duration=1.0 * u.ms)
-        del net, source
-        gc.collect()
-        self.assertIsNone(cell.network_owner)
-        # The Network's Cell keeps no copy of the state before each update.
-        with self.assertRaisesRegex(
-            RuntimeError, r"a Network initialized this Cell. Call reset\(\) and init_state\(\)"
-        ):
-            cell.run(dt=0.1 * u.ms, duration=1.0 * u.ms)
-        cell.reset()
-        cell.init_state()
-        w = cell.run(dt=0.1 * u.ms, duration=1.0 * u.ms).samples["w"].values
-        np.testing.assert_allclose(w.to_decimal(u.uS), np.full((10, 1), 0.05), rtol=1e-6)
+    def test_cell_run_on_a_cell_its_gone_network_initialized_records_as_the_network_would(self) -> None:
+        # Neither driver keeps a copy of the rule state (CELL-55), so a Cell
+        # run on its own once the Network that initialized it is gone records
+        # what the Network would have; main bbb7b0a raised RuntimeError.
+        def model():
+            cell = _rule_cell()
+            net = Network("gone")
+            source = net.add_population("pre", _times([0.3, 0.7, 1.3, 1.6]))
+            net.add_population("post", cell)
+            rule = _rule(signals={"post": _times([0.5, 1.4])})
+            net.connect("c", source=source, synapse=cell.synapses["s"], weight=0.05 * u.uS, plasticity=rule)
+            cell.connections["c"].record("w", "w")
+            return net, cell, source
+
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            net, cell, source = model()
+            first = net.run(dt=0.1 * u.ms, duration=1.0 * u.ms).samples["post"]["w"].values
+            del net, source
+            gc.collect()
+            self.assertIsNone(cell.network_owner)
+            second = cell.run(dt=0.1 * u.ms, duration=1.0 * u.ms).samples["w"].values
+            whole_net, whole_cell, _ = model()
+            whole = whole_net.run(dt=0.1 * u.ms, duration=2.0 * u.ms).samples["post"]["w"].values
+            w = np.concatenate([first.to_decimal(u.uS), second.to_decimal(u.uS)])
+            want = np.asarray(whole.to_decimal(u.uS))
+            # The weight changes in each run (L97): at 0.5, 0.7, 1.3 and 1.4 ms.
+            self.assertGreater(np.ptp(want[:10]), 0.0)
+            self.assertGreater(np.ptp(want[10:]), 0.0)
+            np.testing.assert_allclose(w, want, rtol=1e-12, atol=1e-15)
+            np.testing.assert_allclose(
+                cell.connections["c"].rule_state("w").to_decimal(u.uS),
+                whole_cell.connections["c"].rule_state("w").to_decimal(u.uS),
+                rtol=1e-12,
+                atol=1e-15,
+            )
 
     def test_batches_and_live_rows_on_cell_run_are_still_rejected(self) -> None:
         self.ruled.record("w", "w")

@@ -24,6 +24,7 @@ the clock advances once after the scan.
 
 import contextlib
 import functools
+import os
 import warnings
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -45,7 +46,13 @@ from braincell._misc import (
     validate_time_quantity,
 )
 from braincell.network.recording import EventSeries, SampleBlock, concat_sample_blocks
-from braincell.quad._staggered import axial_operator_per_run
+from braincell.quad._staggered import (
+    axial_operator_arrays,
+    axial_operator_per_run,
+    given_axial_operator,
+    host_axial_operator,
+    with_axial_operator_arrays,
+)
 
 if TYPE_CHECKING:
     from braincell._multi_compartment.cell import Cell
@@ -448,8 +455,14 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     )
 
     compiled_recordings = rcell._compiled_recordings(dt)
+    # CELL-52 prototype: the operator of a concrete geometry, from the runtime caches.
+    host = None if _PROTO_OPERATOR == "main" else host_axial_operator(rcell)
+    operator_mode = None if host is None else _PROTO_OPERATOR
+    if host is not None:
+        rcell._runtime.cell52_template = host
     plan = _cached_run_plan(
         rcell,
+        operator_mode=operator_mode,
         dt=dt,
         n_steps=n_steps,
         compiled_recordings=compiled_recordings,
@@ -466,7 +479,10 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     values = rcell._take_value_inputs()
     try:
         with brainstate.environ.context(dt=dt), _schedule_horizon(until_ms):
-            times, start_time, stop_time, recorded, spike_rows = plan.loop(values)
+            if operator_mode == "arg":
+                times, start_time, stop_time, recorded, spike_rows = plan.loop(values, axial_operator_arrays(host))
+            else:
+                times, start_time, stop_time, recorded, spike_rows = plan.loop(values)
     except BaseException:
         rcell._restore_value_inputs(values)
         raise
@@ -715,6 +731,11 @@ class _RunPlan:
     spike_port: _SpikePort | None = None
 
 
+#: CELL-52 prototype: "main" (built in the program), "arg" (P2: host-built, a loop argument),
+#: "const" (P1: host-built, a constant of the trace).
+_PROTO_OPERATOR = os.environ.get("BRAINCELL_CELL52_OPERATOR", "arg")
+
+
 def _cached_run_plan(
     rcell: "Cell",
     *,
@@ -726,6 +747,7 @@ def _cached_run_plan(
     arrival_origin: tuple[float, int] | None = None,
     handover=None,
     spike_path: tuple[bool, bool] | None = None,
+    operator_mode: str | None = None,
 ) -> _RunPlan:
     """Return the persistent plan for one run shape.
 
@@ -758,6 +780,7 @@ def _cached_run_plan(
         arrival_origin,
         handover,
         spike_path,
+        operator_mode,
     )
     cached = cache.get(key)
     if cached is None:
@@ -780,6 +803,7 @@ def _cached_run_plan(
                 spike_port=spike_port,
                 arrival_origin=arrival_origin,
                 handover=handover,
+                operator_mode=operator_mode,
             ),
             fixed_schedules=fixed_schedules,
             schedule_issues=_differentiable_schedule_issues(compiled_recordings, dt=dt, n_steps=n_steps),
@@ -800,6 +824,7 @@ def _make_run_loop(
     spike_port: _SpikePort | None = None,
     arrival_origin: tuple[float, int] | None = None,
     handover=None,
+    operator_mode: str | None = None,
 ):
     """Create the jitted stateful run loop for a fixed observer layout.
 
@@ -945,6 +970,21 @@ def _make_run_loop(
                 recorded.append((values[index], None))
         return times, start_t, stop_t, tuple(recorded), spike_rows
 
+    if operator_mode == "arg":
+
+        def _given_loop(values, arrays):
+            built = with_axial_operator_arrays(rcell._runtime.cell52_template, arrays)
+            with given_axial_operator(rcell, built):
+                return _run_loop(values)
+
+        return brainstate.transform.jit(_given_loop)
+    if operator_mode == "const":
+
+        def _const_loop(values):
+            with given_axial_operator(rcell, rcell._runtime.cell52_template):
+                return _run_loop(values)
+
+        return brainstate.transform.jit(_const_loop)
     return brainstate.transform.jit(axial_operator_before_steps(_run_loop, (rcell,)))
 
 

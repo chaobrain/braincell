@@ -30,7 +30,7 @@ import contextlib
 import functools
 import operator
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import brainstate
 import brainunit as u
@@ -518,6 +518,71 @@ def _geometry_is_traced(runtime) -> bool:
 def _built_for_run(target) -> RunAxialOperator | None:
     """The operator :func:`axial_operator_per_run` built for ``target``, or ``None`` outside the block."""
     return getattr(getattr(target, "_runtime", None), "run_axial_operator", None)
+
+
+def _has_axial_operator(target) -> bool:
+    return not (getattr(target, "_is_lumped", False) or getattr(target, "_uses_reduction", False))
+
+
+def host_axial_operator(target) -> RunAxialOperator | None:
+    """``target``'s axial operator from its concrete geometry, kept in the runtime caches (CELL-52 prototype).
+
+    ``None`` when the target has no axial operator, before ``init_state``,
+    or when the geometry is traced (a run under ``jax.grad``): then the run
+    builds it in the program, as before.
+    """
+    runtime = getattr(target, "_runtime", None)
+    if runtime is None or getattr(runtime, "geometry", None) is None or not _has_axial_operator(target):
+        return None
+    if _geometry_is_traced(runtime):
+        return None
+    node_tree = target.node_tree
+    scheduling = target.node_scheduling(algorithm="dhs")
+    if target.solver_name in _DHS_SOLVERS:
+        source = _get_dhs_static_source(target, node_tree=node_tree, scheduling=scheduling)
+        return RunAxialOperator(dhs=(source, _get_dhs_static_cache(target, source)))
+    source = runtime.axial_operator_source
+    if source is None:
+        source = _reduce_cv_axial_operator(target, node_tree=node_tree, scheduling=scheduling)
+        runtime.axial_operator_source = source
+    return RunAxialOperator(cv_operator=source)
+
+
+_DHS_SOURCE_ARRAYS = ("row_capacitance_uF", "point_capacitance_uF", "diag_ms_inv", "lowers_ms_inv", "uppers_ms_inv")
+_DHS_CACHE_ARRAYS = ("diag_ms_inv", "lowers_ms_inv", "uppers_ms_inv")
+
+
+def axial_operator_arrays(built: RunAxialOperator) -> tuple:
+    """The arrays of ``built``: the arguments a compiled run takes in its place."""
+    if built.dhs is not None:
+        source, cache = built.dhs
+        return tuple(getattr(source, name) for name in _DHS_SOURCE_ARRAYS) + tuple(
+            getattr(cache, name) for name in _DHS_CACHE_ARRAYS
+        )
+    return (built.cv_operator,)
+
+
+def with_axial_operator_arrays(built: RunAxialOperator, arrays) -> RunAxialOperator:
+    """``built`` with its arrays replaced by ``arrays`` (:func:`axial_operator_arrays`), its static parts kept."""
+    if built.dhs is not None:
+        source, cache = built.dhs
+        n = len(_DHS_SOURCE_ARRAYS)
+        source = replace(source, **dict(zip(_DHS_SOURCE_ARRAYS, arrays[:n], strict=True)))
+        cache = replace(cache, **dict(zip(_DHS_CACHE_ARRAYS, arrays[n:], strict=True)))
+        return RunAxialOperator(dhs=(source, cache))
+    return RunAxialOperator(cv_operator=arrays[0])
+
+
+@contextlib.contextmanager
+def given_axial_operator(target, built: RunAxialOperator):
+    """Install ``built`` (its arrays traced arguments of the loop) as ``target``'s operator for the steps."""
+    runtime = target._runtime
+    previous = runtime.run_axial_operator
+    runtime.run_axial_operator = built
+    try:
+        yield
+    finally:
+        runtime.run_axial_operator = previous
 
 
 @contextlib.contextmanager

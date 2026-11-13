@@ -184,7 +184,8 @@ class NetworkRuntimeTest(unittest.TestCase):
         result = network.run(dt=0.1 * u.ms, duration=0.6 * u.ms)
         conductance = np.asarray(result.samples["post"]["g"].values.to_decimal(u.uS))
         self.assertEqual(int(np.flatnonzero(conductance[:, 0] > 0.0)[0]), 1)
-        self.assertEqual(int(np.flatnonzero(conductance[:, 1] > 0.0)[0]), 4)
+        # 3 delay steps: one sample after the delay-0 row's, as NEURON (CELL-75).
+        self.assertEqual(int(np.flatnonzero(conductance[:, 1] > 0.0)[0]), 5)
 
     def test_split_run_preserves_events_in_flight(self) -> None:
         continuous = make_runtime_network(delay=0.3 * u.ms).run(dt=0.1 * u.ms, duration=0.7 * u.ms)

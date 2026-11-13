@@ -12,6 +12,14 @@ external event sources.
   NEURON (built-in mechanisms only, no `nrnivmodl`) and skips without it;
   it is not run by CI yet. Run it with
   `pytest -q validation/neuron/synapse/reference_test.py`.
+- `netcon_delay.py` and `netcon_delay_test.py`: an HH soma whose spike
+  drives its own `ExpSyn` through a `Network` connection, against NEURON's
+  `NetCon` with delays of 0, 1, 2, 3, 4 and 12 steps (`dt` 0.025 ms). Each
+  side's V first differs from the unconnected soma in step m + 1 + k after
+  its own crossing step m, and the recorded g is 0 at t_{m+1+k} and
+  w exp(-dt / tau) one sample later on both sides (within 1e-12 uS; zero
+  delay is not compared, BrainCell adds it at the end of the step). Needs
+  NEURON and skips without it.
 - `exp_syn_compare.ipynb`: plots one `ExpSyn` and one `Exp2Syn` case built
   with `reference.py`.
 - `hh_2x2_neuron_compare.ipynb`: synaptic transmission in a small HH network.

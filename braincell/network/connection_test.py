@@ -356,9 +356,10 @@ class ConnectionTest(unittest.TestCase):
 
         np.testing.assert_allclose(split_g, continuous.traces["post"]["g"].to_decimal(u.uS), rtol=1e-6)
         first_nonzero = int(np.flatnonzero(np.asarray(continuous.traces["post"]["g"].to_decimal(u.uS)))[0])
-        # A recording samples before each step: the event delivered on the
-        # step that starts at 0.3 ms first shows one sample later.
-        self.assertAlmostEqual(float(continuous.time[first_nonzero - 1].to_decimal(u.ms)), 0.3)
+        # A recording samples before each step: the spike of step 0 with 3
+        # delay steps is delivered on the step that starts at 0.4 ms, which
+        # NEURON's NetCon delivers at, and first shows one sample later (CELL-75).
+        self.assertAlmostEqual(float(continuous.time[first_nonzero - 1].to_decimal(u.ms)), 0.4)
 
     def test_live_source_delay_history_supports_zero_and_multiple_steps(self) -> None:
         pre, _ = _population(1)

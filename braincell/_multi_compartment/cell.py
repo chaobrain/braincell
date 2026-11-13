@@ -4094,6 +4094,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         :meth:`cell.connections.prepare_runtime(dt) <braincell.ConnectionView.prepare_runtime>`
         once before, or ``update()`` or :meth:`run` once outside it.
 
+        A ``NetStim`` source of the Cell's connections generates all its
+        ``number`` events when ``update()`` first reads it, about 150 bytes
+        each: give it a ``number`` that covers the loop, or drive the Cell
+        from a ``Network``, whose ``prepare_run(duration=...)`` generates
+        only the events of the steps it prepares.
+
         In network execution, delayed event delivery is scheduled outside the
         cell. ``Network.run(...)`` writes arrivals into runtime state buffers
         before calling the corresponding internal cell phases.

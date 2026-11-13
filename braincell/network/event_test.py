@@ -38,6 +38,7 @@ from braincell.network.event import (
     EventSourceView,
     VoltageCrossingSource,
     _ArrivalPlan,
+    _estimated_width,
     _resolve_cell_location_cv,
     _round_half_up_steps,
     arrival_origin,
@@ -818,6 +819,229 @@ class NetStimUpdateHorizonTest(unittest.TestCase):
         net.prepare_run(dt=_HORIZON_DT_MS * u.ms)
         self.assertEqual(len(net._network_run_loop_cache), 1)
         np.testing.assert_array_equal(np.concatenate([first, _updates_g(net, cell, 19)]), _horizon_run_g(20))
+
+
+#: The prepare_run(duration=...) model (CELL-66): 100 sources, one train each from 1 + 0.37 i ms every 10 ms.
+_DURATION_SIZE = 100
+_DURATION_DT = 0.025 * u.ms
+_DURATION_STEPS = 400
+
+
+def _duration_network(number=10**9, noise=0.0, *, size=_DURATION_SIZE, interval=10.0 * u.ms, weight=0.001 * u.uS):
+    """``size`` NetStim sources driving one ExpSyn (e = 0 mV) of a leaky point Cell."""
+    cell = Cell.point(1, V_init=-65.0 * u.mV)
+    cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    cell.place(at("soma", 0.5), bc.mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms, e=0.0 * u.mV))
+    net = bc.Network("duration", seed=1)
+    post = net.add_population("post", cell)
+    source = NetStim(
+        size=size,
+        start=(1.0 + 0.37 * np.arange(size)) * u.ms,
+        interval=interval,
+        number=number,
+        noise=noise,
+        seed=11,
+    )
+    stim = net.add_population("stim", source)
+    net.connect(
+        "drive", source=stim, synapse=post.synapses["s"][np.zeros(size, dtype=int)], weight=weight, delay=0.3 * u.ms
+    )
+    return net, cell, source
+
+
+def _duration_g(net, cell, n_steps, *, first_eager=True) -> np.ndarray:
+    """``g`` after each of ``n_steps`` update() calls: the first eager, the others in one ``for_loop``."""
+    gs = []
+    if first_eager:
+        net.update()
+        gs.append(np.asarray(cell.synapses["s"].get("g").to_decimal(u.uS)).reshape(1))
+        n_steps -= 1
+
+    def step(_):
+        net.update()
+        return cell.synapses["s"].get("g").to_decimal(u.uS)
+
+    if n_steps:
+        gs.append(np.asarray(brainstate.transform.for_loop(step, jnp.arange(n_steps))).reshape(-1))
+    return np.concatenate(gs)
+
+
+def _network_states(net) -> dict:
+    """Every State of every Cell of ``net``, by path, copied to the host."""
+    states = {}
+    for name, population in net._cell_populations().items():
+        for path, state in brainstate.graph.states(population.cell).items():
+            leaves = jax.tree.leaves(state.value, is_leaf=lambda x: isinstance(x, u.Quantity))
+            states[(name, path)] = [np.array(u.get_mantissa(leaf)) for leaf in leaves]
+    return states
+
+
+class NetStimPrepareRunDurationTest(unittest.TestCase):
+    """CELL-66: ``prepare_run(duration=...)`` generates the NetStim events of its steps only, and guards the rest."""
+
+    def assert_same_states(self, before, after):
+        self.assertEqual(before.keys(), after.keys())
+        for key in before:
+            self.assertEqual(len(before[key]), len(after[key]), key)
+            for a, b in zip(before[key], after[key], strict=True):
+                np.testing.assert_array_equal(a, b, err_msg=str(key))
+
+    def test_a_large_population_generates_only_the_events_of_the_duration(self) -> None:
+        # On main 8bb8721 prepare_run takes no duration (TypeError); on
+        # e5ad6ed it generated 5368711 columns of each source, and size 100
+        # raised MemoryError under a 24 GiB address limit.
+        with _float64():
+            net, cell, source = _duration_network()
+            net.prepare_run(dt=_DURATION_DT, duration=_DURATION_STEPS * _DURATION_DT)
+            self.assertLessEqual(source._event_times_ms.shape[1], 4)
+            g = _duration_g(net, cell, _DURATION_STEPS)
+            # A finite train holding every event up to the end, generated in full at construction.
+            full, full_cell, full_source = _duration_network(number=3)
+            self.assertTrue(full_source._schedule_complete)
+            full.prepare_run(dt=_DURATION_DT)
+            expected = _duration_g(full, full_cell, _DURATION_STEPS)
+        self.assertEqual(g.shape, (_DURATION_STEPS,))  # L93
+        self.assertTrue(np.all(np.isfinite(g)))
+        # Sources 0 to 23 start before 10 ms - 0.3 ms: one arrival each.
+        self.assertEqual(int(np.sum(np.diff(g) > 0)), 24)
+        np.testing.assert_allclose(g, expected, rtol=1e-12, atol=0.0)
+
+    def test_a_large_noisy_population_delivers_as_a_finite_one(self) -> None:
+        with _float64():
+            net, cell, source = _duration_network(noise=1.0)
+            net.prepare_run(dt=_DURATION_DT, duration=_DURATION_STEPS * _DURATION_DT)
+            g = _duration_g(net, cell, _DURATION_STEPS)
+            until_ms = (_DURATION_STEPS + 1) * 0.025
+            number = _estimated_width(source, until_ms)
+            full, full_cell, full_source = _duration_network(number=number, noise=1.0)
+            self.assertTrue(full_source._schedule_complete)
+            # Every source has an event past the end: the finite train holds all those of the run.
+            self.assertTrue(np.all(full_source._event_times_ms[:, number - 1] > until_ms))
+            self.assertLess(number, 64)
+            full.prepare_run(dt=_DURATION_DT)
+            expected = _duration_g(full, full_cell, _DURATION_STEPS)
+        self.assertEqual(g.shape, (_DURATION_STEPS,))
+        self.assertTrue(np.all(np.isfinite(g)))
+        self.assertEqual(int(np.sum(np.diff(g) > 0)), 8)
+        np.testing.assert_allclose(g, expected, rtol=1e-12, atol=0.0)
+
+    def test_an_eager_update_past_the_duration_raises_before_any_change(self) -> None:
+        duration = _DURATION_STEPS * _DURATION_DT
+        with _float64():
+            net, cell, source = _duration_network()
+            net.prepare_run(dt=_DURATION_DT, duration=duration)
+            first = _duration_g(net, cell, _DURATION_STEPS)
+            before = _network_states(net)
+            prepared = (net._prepared_run, net._prepared_plans, net._prepared_until_ms)
+            times = np.array(source._event_times_ms)
+            with self.assertRaises(ValueError) as caught:
+                net.update()
+            self.assert_same_states(before, _network_states(net))
+            self.assertIs(net._prepared_run, prepared[0])
+            self.assertIs(net._prepared_plans, prepared[1])
+            self.assertEqual(net._prepared_until_ms, prepared[2])
+            np.testing.assert_array_equal(source._event_times_ms, times)
+            message = str(caught.exception)
+            for part in ("at step 400", "before step 400", "prepare_run(..., duration=...)", "reset_state()"):
+                self.assertIn(part, message)
+            # As the message says: reset_state() runs the same steps again,
+            net.reset_state()
+            again = _duration_g(net, cell, _DURATION_STEPS)
+            # and a second prepare_run continues for its duration.
+            net.prepare_run(dt=_DURATION_DT, duration=duration)
+            further = _duration_g(net, cell, _DURATION_STEPS)
+            whole, whole_cell, _ = _duration_network()
+            whole.prepare_run(dt=_DURATION_DT, duration=2 * duration)
+            expected = _duration_g(whole, whole_cell, 2 * _DURATION_STEPS)
+        np.testing.assert_array_equal(again, first)
+        # 51 arrivals in 10-20 ms: the second of sources 0-23 and the first
+        # of 24-50; source i + 27 arrives 0.01 ms before the second of i,
+        # in its step 14 times of 24.
+        self.assertEqual(int(np.sum(np.diff(further) > 0)), 37)
+        np.testing.assert_array_equal(np.concatenate([again, further]), expected)
+
+    def test_a_compiled_loop_past_the_duration_turns_nan(self) -> None:
+        with _float64():
+            reference, reference_cell, _ = _duration_network()
+            reference.prepare_run(dt=_DURATION_DT, duration=_DURATION_STEPS * _DURATION_DT)
+            expected = _duration_g(reference, reference_cell, _DURATION_STEPS)
+            net, cell, _ = _duration_network()
+            net.prepare_run(dt=_DURATION_DT, duration=_DURATION_STEPS * _DURATION_DT)
+
+            def step(_):
+                spikes = net.update()["post"]
+                return cell.synapses["s"].get("g").to_decimal(u.uS), cell.V.value.to_decimal(u.mV), spikes
+
+            g, v, spikes = (
+                np.asarray(x).reshape(_DURATION_STEPS + 1)
+                for x in brainstate.transform.for_loop(step, jnp.arange(_DURATION_STEPS + 1))
+            )
+            with self.assertRaisesRegex(ValueError, "at step 401: .* before step 400"):
+                net.update()
+            net.reset_state()
+            again = _duration_g(net, cell, _DURATION_STEPS, first_eager=False)
+        np.testing.assert_array_equal(g[:-1], expected)
+        self.assertTrue(np.all(np.isfinite(v[:-1])) and np.all(np.isfinite(spikes[:-1])))
+        self.assertTrue(np.isnan(g[-1]) and np.isnan(v[-1]) and np.isnan(spikes[-1]))
+        np.testing.assert_array_equal(again, expected)
+
+    def test_the_gradient_is_unchanged_within_the_duration_and_nan_past_it(self) -> None:
+        def gradient(net, cell, n_steps):
+            params = net.trainables.parameters().states()
+
+            def loss():
+                net.reset_state()
+                v = brainstate.transform.for_loop(
+                    lambda _: (net.update(), cell.V.value.to_decimal(u.mV))[1], jnp.arange(n_steps)
+                )
+                return jnp.sum(v)
+
+            grads, value = brainstate.transform.grad(loss, grad_states=params, return_value=True)()
+            return float(np.asarray(jax.tree.leaves(grads)[0]).reshape(-1)[0]), float(value)
+
+        def network(duration):
+            net, cell, _ = _duration_network(size=3, interval=2.0 * u.ms, weight=0.01 * u.uS)
+            net.init_state()
+            cell.synapses["s"].trainable(tau=bc.trainable.scale(name="f"))
+            net.prepare_run(dt=_DURATION_DT, **({} if duration is None else {"duration": duration}))
+            return net, cell
+
+        with _float64():
+            grad, value = gradient(*network(None), _DURATION_STEPS)
+            net, cell = network(_DURATION_STEPS * _DURATION_DT)
+            within = gradient(net, cell, _DURATION_STEPS)
+            past = gradient(net, cell, _DURATION_STEPS + 1)
+        self.assertTrue(np.isfinite(grad) and grad != 0.0)
+        np.testing.assert_allclose(within, (grad, value), rtol=1e-12, atol=0.0)
+        self.assertTrue(np.isnan(past[0]) and np.isnan(past[1]))
+
+    def test_a_bad_duration_raises_before_any_change(self) -> None:
+        net, cell, source = _duration_network()
+        net.prepare_run(dt=_DURATION_DT, duration=_DURATION_STEPS * _DURATION_DT)
+        _duration_g(net, cell, 10)
+        before = _network_states(net)
+        prepared = net._prepared_run
+        width = source._event_times_ms.shape[1]
+        for duration, error, pattern in (
+            (10.01 * u.ms, ValueError, "integer multiple of dt"),
+            (0.0 * u.ms, ValueError, "duration must be > 0"),
+            (-1.0 * u.ms, ValueError, "duration must be > 0"),
+            (10.0, TypeError, "duration"),
+        ):
+            with self.subTest(duration=duration):
+                with self.assertRaisesRegex(error, pattern):
+                    net.prepare_run(dt=_DURATION_DT, duration=duration)
+                self.assert_same_states(before, _network_states(net))
+                self.assertIs(net._prepared_run, prepared)
+                self.assertEqual(net._prepared_stop_step, _DURATION_STEPS)
+                self.assertEqual(source._event_times_ms.shape[1], width)
+        cell._clock_step.value = np.int32(2**31 - 10)
+        before = _network_states(net)
+        with self.assertRaisesRegex(ValueError, "2147483647"):
+            net.prepare_run(dt=_DURATION_DT, duration=10 * _DURATION_DT)
+        self.assert_same_states(before, _network_states(net))
+        self.assertIs(net._prepared_run, prepared)
+        self.assertEqual(net._prepared_stop_step, _DURATION_STEPS)
 
 
 class NetStimDefaultSeedTest(unittest.TestCase):

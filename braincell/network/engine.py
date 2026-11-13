@@ -1187,8 +1187,7 @@ class Network:
         factor = jnp.where(past, jnp.nan, 1.0)
 
         def poison(leaf):
-            if not jnp.issubdtype(leaf.dtype, jnp.inexact):
-                return leaf
+            # Integration states and spikes are floating point.
             return leaf * factor.astype(leaf.dtype)
 
         for name in names:

@@ -402,7 +402,8 @@ def raster_plot(
 ):
     elements = np.where(spikes > 0.)
     index = elements[1]
-    time = times[elements[0]]
+    # The spike of the step from t to t + dt is at t + dt, as `Cell.run` reports it.
+    time = times[elements[0]] + brainstate.environ.get_dt()
     ax.plot(time, index, marker + color, markersize=markersize)
     if xlabel:
         ax.set_xlabel(xlabel)

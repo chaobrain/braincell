@@ -39,8 +39,9 @@ consume its events. Every read at a boundary sees the state before it:
   step, which reads the dynamic weight; the rule has not run for that
   boundary yet, so it reads ``w(t_n-)`` too.
 - ``post`` is the events of the member that owns each row's synapse:
-  a live source's events of step ``m`` are at ``t_{m + 1}``, a scheduled
-  source's at the boundary its events round to.
+  a live source's events of step ``m`` are at ``t_{m + 1}``, the time
+  ``RunResult.spikes`` and ``NetworkResult.events`` report for them
+  (CELL-80), a scheduled source's at the boundary its events round to.
 
 Live rule rows need the Network's step and delay quantization, so they run
 in a Network only; a standalone ``Cell.run`` raises for them.

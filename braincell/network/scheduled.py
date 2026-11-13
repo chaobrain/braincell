@@ -30,7 +30,10 @@ and adds them to its targets.
 - ``"direct"`` stores the records in step order with one offset per
   step and reads only the current step's records, in blocks of
   :data:`BLOCK_SIZE`. Its reverse derivative is a ``custom_vjp``, so it
-  supports first-order reverse differentiation only.
+  supports first-order reverse differentiation only. A window keeps the
+  record slots of the largest plan the Network built for windows of its
+  length, so a later window whose records fit reuses the compiled loop;
+  one that needs more takes twice its records plus a block (CELL-73).
 - ``"padded"`` stores a ``(steps, width)`` matrix, ``width`` being the
   most records any step has, rounded up to a power of two, and reads one
   row of it per step with ordinary JAX operations. It raises
@@ -391,7 +394,7 @@ def _window_fits(method, span: int, width: int, records: int, n_targets: int, ac
     return nbytes <= MAX_BYTES and (ratio <= MAX_PADDING_RATIO or nbytes <= accepted_bytes)
 
 
-def _layout_arrays(method, route, steps, rows, start, n_steps, accepted_bytes=0):
+def _layout_arrays(method, route, steps, rows, start, n_steps, accepted_bytes=0, slots=0):
     """Host arrays of one layout's plan for the steps ``[start, start + n_steps)``, and its statistics.
 
     ``n_steps=None`` plans every event, from step 0 (``prepare_run``). Its
@@ -401,7 +404,12 @@ def _layout_arrays(method, route, steps, rows, start, n_steps, accepted_bytes=0)
     steps that have arrivals, in order, which take the place of ``start``
     as the last array (CELL-65). ``accepted_bytes`` is the largest
     ``"padded"`` plan built for the layout before: a plan no larger has no
-    ratio limit.
+    ratio limit. ``slots`` are the record slots of the largest ``"direct"``
+    window plan built for the layout and this window length: a window
+    whose records and one block fit in them keeps them, so that it has
+    the shape, and reuses the compiled loop, of the windows before it;
+    otherwise it takes twice its records plus a block, so that a later
+    window with up to twice as many records fits (CELL-73).
     """
     record_steps, record_rows, multiplicity, held, per_held = _compress(steps, rows)
     records = int(record_rows.size)
@@ -429,7 +437,13 @@ def _layout_arrays(method, route, steps, rows, start, n_steps, accepted_bytes=0)
         steps_text = f"{n_rows} steps with arrivals of [0, {n_steps})"
     stats["stored_steps"] = n_rows
     if method == "direct":
-        capacity = _power_of_two(records + BLOCK_SIZE)
+        if every:
+            capacity = _power_of_two(records + BLOCK_SIZE)
+        elif records + BLOCK_SIZE <= slots:
+            capacity = slots
+        else:
+            capacity = 2 * records + BLOCK_SIZE
+        stats["slots"] = capacity
         ids = np.zeros(capacity, dtype=np.int32)
         ids[:records] = record_rows
         counts = np.zeros(capacity, dtype=np.int32)
@@ -476,6 +490,8 @@ class ScheduledPlans:
     tables: dict = field(default_factory=dict)
     #: ``(population, layout id)`` -> bytes of the largest ``"padded"`` plan built for it (CELL-53).
     accepted: dict = field(default_factory=dict)
+    #: ``(population, layout id, window steps)`` -> record slots of its largest ``"direct"`` window plan (CELL-73).
+    slots: dict = field(default_factory=dict)
     windows: collections.OrderedDict = field(default_factory=collections.OrderedDict)
     full: tuple | None = None
     #: Statistics of the plan built last: preparation time, records, bytes.
@@ -562,14 +578,17 @@ def _build_plans(plans: ScheduledPlans, start: int, n_steps: int | None) -> tupl
     for route in plans.routes:
         steps, rows = plans._route_records(route, start, None if n_steps is None else start + n_steps)
         accepted = plans.accepted.get((route.population, route.layout_id), 0)
-        arrays, layout_stats = _layout_arrays(plans.method, route, steps, rows, start, n_steps, accepted)
+        slots = plans.slots.get((route.population, route.layout_id, n_steps), 0)
+        arrays, layout_stats = _layout_arrays(plans.method, route, steps, rows, start, n_steps, accepted, slots)
         host.append(arrays)
         stats.append(dict(layout_stats, population=route.population, layout_id=route.layout_id))
-    if plans.method == "padded":
-        # Every layout is planned: only now does the run take these plans.
-        for item in stats:
-            key = (item["population"], item["layout_id"])
+    # Every layout is planned: only now does the run take these plans.
+    for item in stats:
+        key = (item["population"], item["layout_id"])
+        if plans.method == "padded":
             plans.accepted[key] = max(plans.accepted.get(key, 0), item["array_bytes"])
+        elif n_steps is not None:
+            plans.slots[key + (n_steps,)] = item["slots"]
     built = time.perf_counter()
     arrays = tuple(tuple(jnp.asarray(array, dtype=jnp.int32) for array in layout) for layout in host)
     jax.block_until_ready(arrays)

@@ -896,15 +896,15 @@
   supports first-order reverse differentiation only; `"padded"` rounds
   its per-step width up to a power of two and raises
   `PaddingLimitError` (a `ValueError`) before the run when its storage
-  would exceed 256 MiB or 8 slots per record. Rows with a rule keep the
-  rule's path, `"sum_count"` layouts receive their counts, and live
-  sources keep the delay queues. The method is fixed after the first run,
-  as `event_backend` is. The experimental `prepare_events` and
-  `prepare_delivery` accept `EventSequence`, generate a `NetStim`'s events
-  only up to the window, and no longer reject float32 windows past
-  `2**20` steps; `ScheduledDeliveryCell` leaves rule rows to their rule
-  and gives `"sum_count"` layouts their counts instead of raising
-  `TypeError`.
+  would exceed 256 MiB or 8 slots per record (the latter only for a window
+  larger than every plan already accepted for its layout, CELL-53). Rows
+  with a rule keep the rule's path, `"sum_count"` layouts receive their
+  counts, and live sources keep the delay queues. The method is fixed after
+  the first run, as `event_backend` is. The experimental `prepare_events`
+  and `prepare_delivery` accept `EventSequence`, generate a `NetStim`'s
+  events only up to the window, and no longer reject float32 windows past
+  `2**20` steps; `ScheduledDeliveryCell` leaves rule rows to their rule and
+  gives `"sum_count"` layouts their counts instead of raising `TypeError`.
 - **`ConnectionView.record(name, state, *, period, frequency, start)`
   records a plasticity rule's state during a run** (CELL-12c): the dynamic
   weight `"w"`, `PairSTDP`'s traces `"x_pre"` and `"y_post"`, or any state
@@ -1230,6 +1230,22 @@
   1000-member 3-branch cable 0.44-0.94 of main. On CPU, XLA had already
   moved the solve out of the loop, and a step costs the same. A loop of
   `update()` calls written by the caller still builds it at every step.
+- **A sparse later window of a `"padded"` run no longer stops the run**
+  (CELL-53). `scheduled_delivery="padded"` checks a window's 8 slots per
+  record only when its plan takes more bytes than every padded plan the
+  Network already accepted for the same synapse layout; the 256 MiB limit
+  holds for every window. A run in windows whose later windows hold only the
+  tail of a schedule raised `PaddingLimitError` at the first such window,
+  after the earlier ones had run: on main `e43d794`, `NetStim` sources with
+  `number=11` and 10 ms intervals in 100 ms windows (float32) raised at the
+  second window at 1e3, 1e4, 1e5 and 1e6 rows (29.2, 15.3, 10.6 and 9.5
+  slots per record, in the bytes of the first window). Every window now
+  runs, with the results of the default path (bitwise on that model on CPU).
+  The first window, and a window larger than every accepted plan, is checked
+  as before, so whether a window passes depends on the windows the Network
+  ran before it: `reset_state` keeps the accepted sizes, a change of
+  topology drops them. `"direct"`, the default path and `prepare_run` are
+  unchanged.
 
 ### Bug Fixes
 
@@ -2111,6 +2127,12 @@
 
 ### Documentation
 
+- The `scheduled_delivery` advice in the `Network.run` docstring follows
+  the measurements of CELL-10 (the `regression` phase of
+  `benchmarks/performance/synapse_events`, on one CPU and one RTX 3090): on
+  the GPU `"direct"` was slower than the default for every model and
+  `"padded"`, within its limits, faster. The default stays `None` on every
+  device.
 - The NEURON comparison of heterogeneous `NetStim` sources
   (`validation/neuron/synapse/netstim_heterogeneous_compare.ipynb`) runs to
   the end and passes its 1e-5 mV tolerance (CELL-41). It set the `ExpSyn`

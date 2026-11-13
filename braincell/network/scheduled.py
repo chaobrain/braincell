@@ -36,7 +36,10 @@ and adds them to its targets.
   row of it per step with ordinary JAX operations. It raises
   :class:`PaddingLimitError` when the matrix would take more than
   :data:`MAX_BYTES`, or more than :data:`MAX_PADDING_RATIO` times the
-  slots the records need.
+  slots the records need. The ratio is not checked for a window whose
+  plan takes no more bytes than one the Network already built for the
+  layout (CELL-53): a sparse later window, such as the tail of a
+  schedule, then runs in the storage an earlier window was accepted in.
 
 The arrival steps are those of the default path (``(time + delay) / dt``
 rounded at float64 on the host, CELL-46), and the current step is the
@@ -88,7 +91,9 @@ class PaddingLimitError(ValueError):
     """A ``"padded"`` plan would exceed its byte or padding-ratio limit.
 
     Nothing is truncated and no other method is chosen instead: the run
-    raises before it starts. ``"direct"`` has no such limit.
+    raises before it starts. ``"direct"`` has no such limit. A window whose
+    plan is no larger than one the Network already built for the same
+    layout is not held to the ratio, only to the bytes.
     """
 
 
@@ -338,8 +343,12 @@ def _compress(steps: np.ndarray, rows: np.ndarray, start: int, n_steps: int):
     return record_steps, rows[begins], multiplicity, per_step
 
 
-def _layout_arrays(method, route, steps, rows, start, n_steps):
-    """Host arrays of one layout's plan for the steps ``[start, start + n_steps)``, and its statistics."""
+def _layout_arrays(method, route, steps, rows, start, n_steps, accepted_bytes=0):
+    """Host arrays of one layout's plan for the steps ``[start, start + n_steps)``, and its statistics.
+
+    ``accepted_bytes`` is the largest ``"padded"`` plan built for the
+    layout before: a plan no larger has no ratio limit.
+    """
     record_steps, record_rows, multiplicity, per_step = _compress(steps, rows, start, n_steps)
     records = int(record_rows.size)
     width = max(1, int(per_step.max(initial=0)))
@@ -361,7 +370,7 @@ def _layout_arrays(method, route, steps, rows, start, n_steps):
         nbytes = (2 * n_steps * stored + targets.size + 1) * 4
         ratio = n_steps * width / records if records else 1.0
         stats.update(stored_width=stored, padding_ratio=ratio)
-        if nbytes > MAX_BYTES or ratio > MAX_PADDING_RATIO:
+        if nbytes > MAX_BYTES or (ratio > MAX_PADDING_RATIO and nbytes > accepted_bytes):
             raise PaddingLimitError(
                 f'scheduled_delivery="padded" needs {nbytes} bytes and {ratio:.3g} slots per record for the '
                 f"steps [{start}, {start + n_steps}) of population {route.population!r} (limits {MAX_BYTES} bytes, "
@@ -395,6 +404,8 @@ class ScheduledPlans:
     groups: dict = field(default_factory=dict)
     #: ``(population, layout, call id)`` -> ``(schedule token, arrivals)``.
     tables: dict = field(default_factory=dict)
+    #: ``(population, layout id)`` -> bytes of the largest ``"padded"`` plan built for it (CELL-53).
+    accepted: dict = field(default_factory=dict)
     windows: collections.OrderedDict = field(default_factory=collections.OrderedDict)
     full: tuple | None = None
     #: Statistics of the plan built last: preparation time, records, bytes.
@@ -483,9 +494,15 @@ def _build_plans(plans: ScheduledPlans, start: int, n_steps: int | None) -> tupl
         else:
             span = n_steps
             steps, rows = plans._route_records(route, start, start + span)
-        arrays, layout_stats = _layout_arrays(plans.method, route, steps, rows, start, span)
+        accepted = plans.accepted.get((route.population, route.layout_id), 0)
+        arrays, layout_stats = _layout_arrays(plans.method, route, steps, rows, start, span, accepted)
         host.append(arrays)
         stats.append(dict(layout_stats, population=route.population, layout_id=route.layout_id, n_steps=span))
+    if plans.method == "padded":
+        # Every layout is planned: only now does the run take these plans.
+        for item in stats:
+            key = (item["population"], item["layout_id"])
+            plans.accepted[key] = max(plans.accepted.get(key, 0), item["array_bytes"])
     built = time.perf_counter()
     arrays = tuple(tuple(jnp.asarray(array, dtype=jnp.int32) for array in layout) for layout in host)
     jax.block_until_ready(arrays)

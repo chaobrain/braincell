@@ -874,6 +874,7 @@ class Network:
         event_backend="auto",
         brainevent_backend="jax_raw",
         scheduled_delivery=None,
+        duration=None,
     ):
         """Prepare static routing and queues outside a differentiated rollout.
 
@@ -957,6 +958,9 @@ class Network:
             (400, 1, 1)
         """
         validate_time_quantity(dt, name="dt", prefix="Network.prepare_run")
+        if duration is not None:
+            validate_time_quantity(duration, name="duration", prefix="Network.prepare_run")
+            n_prepared = _duration_steps(duration, dt)
         event_backend = normalize_event_backend(event_backend)
         scheduled_delivery = normalize_scheduled_delivery(scheduled_delivery, prefix="Network.prepare_run(...)")
         self._reject_different_times(dt, prefix="Network.prepare_run(...)")
@@ -990,7 +994,13 @@ class Network:
             setup.ordered_population_names, dt=dt, n_steps=0, prefix="Network.prepare_run(...)"
         )
         _, step, _ = self.populations[setup.ordered_population_names[0]].cell._clock_host()
-        until_ms = start_ms + (MAX_STEPS - int(step) + 1) * scalar_decimal(dt, u.ms)
+        if duration is None:
+            stop_step = None
+            until_ms = start_ms + (MAX_STEPS - int(step) + 1) * scalar_decimal(dt, u.ms)
+        else:
+            check_step_limit(step, n_prepared, dt=dt, prefix="Network.prepare_run(...)")
+            stop_step = int(step) + n_prepared
+            until_ms = start_ms + (n_prepared + 1) * scalar_decimal(dt, u.ms)
         schedule_key = self._prepare_netstim_schedules(until_ms=until_ms)
         plans = None
         if scheduled_delivery is not None:
@@ -1011,6 +1021,7 @@ class Network:
         self._prepared_run = (setup, cached, dt, join)
         self._prepared_plans = plans
         self._prepared_until_ms = until_ms
+        self._prepared_stop_step = stop_step
         return self
 
     def update(self):
@@ -1062,10 +1073,15 @@ class Network:
             )
             self._prepared_run = (setup, cached, dt, join)
         step = self.populations[setup.ordered_population_names[0]].cell._clock_step.value
+        stop = getattr(self, "_prepared_stop_step", None)
         if not is_traced_value(step):
             # Inside a compiled loop the count is a tracer: checking it would
             # cost a host round trip per step.
             check_step_limit(step, 1, dt=dt, prefix="Network.update()")
+            if stop is not None and int(step) >= stop:
+                raise ValueError(_past_duration_message(int(step), stop))
+        elif stop is not None and _PROTO_GUARD == "error_if":
+            brainstate.transform.jit_error_if(step >= stop, _raise_past_duration, step, stop)
         self.trainables.materialize()
         values = self._take_value_inputs(setup.ordered_population_names)
         try:
@@ -1078,6 +1094,25 @@ class Network:
         except BaseException:
             self._restore_value_inputs(values)
             raise
+        if is_traced_value(step) and stop is not None and _PROTO_GUARD == "nan":
+            past = step >= stop
+            for name in setup.ordered_population_names:
+                cell = self.populations[name].cell
+                cell.V.value = u.math.where(past, u.math.nan * u.get_unit(cell.V.value), cell.V.value)
+        if is_traced_value(step) and stop is not None and _PROTO_GUARD == "nan_all":
+            past = step >= stop
+            for name in setup.ordered_population_names:
+                cell = self.populations[name].cell
+                poisoned = [st for st in brainstate.graph.states(cell).values() if isinstance(st, _DiffEqState)]
+                poisoned.append(cell.spike)
+                for state in poisoned:
+                    if state is None:
+                        continue
+                    value = state.value
+                    state.value = jax.tree.map(
+                        lambda leaf: u.math.where(past, u.math.nan * u.get_unit(leaf), leaf), value,
+                        is_leaf=lambda x: isinstance(x, u.Quantity),
+                    )
         return {name: self.populations[name].cell.spike.value for name in setup.ordered_population_names}
 
     def _take_value_inputs(self, names) -> dict:
@@ -1705,6 +1740,24 @@ class Network:
             stop_time=stop_t,
             dt=dt,
         )
+
+
+#: Prototype (CELL-66): the guard of a compiled update() loop past prepare_run(duration=...).
+from braincell.quad.protocol import DiffEqState as _DiffEqState  # noqa: E402
+
+_PROTO_GUARD = "error_if"
+
+
+def _past_duration_message(step, stop):
+    return (
+        f"Network.update() at step {int(step)}: prepare_run(duration=...) prepared {int(stop)} steps "
+        "(the NetStim events after them were not generated); call prepare_run(..., duration=...) "
+        "again with a longer duration, or reset_state() to start again from t = 0."
+    )
+
+
+def _raise_past_duration(step, stop):
+    raise ValueError(_past_duration_message(step, stop))
 
 
 def _reject_batch_size(batch_size) -> None:

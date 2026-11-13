@@ -4042,6 +4042,9 @@ class Cell(_CellFacade, HHTypedNeuron):
         object
             Spike value produced by the transition from the previous membrane
             voltage to the updated membrane voltage, shaped like ``V.value``.
+            A spike of the step from ``t`` to ``t + dt`` has time
+            ``t + dt``, as in :meth:`run`'s ``spikes`` (CELL-80): label a
+            loop's spikes with the step's end, not its start.
 
         Raises
         ------

@@ -299,11 +299,15 @@ class NetworkResult:
         is what :meth:`braincell.network.Network.run` populates for every
         :func:`braincell.observe` recording.
     events : dict
-        ``population_name -> {port_name: EventSeries}`` mapping.
+        ``population_name -> {port_name: EventSeries}`` mapping: the events
+        of the segment's steps. A Cell's event of the step from ``t_m`` to
+        ``t_{m+1}`` is at ``t_{m+1}``, in ``(start_time, stop_time]``; a
+        NetStim's or an EventSequence's, at its own time in
+        ``[start_time, stop_time)``.
     start_time : brainunit.Quantity or None
-        Inclusive start of the segment.
+        Inclusive start of the segment's samples.
     stop_time : brainunit.Quantity or None
-        Exclusive end of the segment.
+        Exclusive end of the segment's samples.
     dt : brainunit.Quantity or None
         Fixed step the segment was run with. :meth:`concat` requires it.
 

@@ -44,7 +44,7 @@ from braincell._misc import (
     same_time_quantity as _same_time_quantity,
     validate_time_quantity,
 )
-from braincell.network.recording import EventSeries, SampleBlock, concat_sample_blocks
+from braincell.network.recording import EventSeries, SampleBlock, concat_sample_blocks, step_end_times
 from braincell.quad._staggered import axial_operator_per_run
 
 if TYPE_CHECKING:
@@ -247,9 +247,11 @@ class RunResult:
         Recording-name → regular samples of each :meth:`Cell.record`
         recording.
     start_time, stop_time, dt : brainunit.Quantity or None
-        Segment bounds ``[start_time, stop_time)`` and the fixed step.
+        Segment bounds ``[start_time, stop_time)`` of the samples and the
+        fixed step.
     spikes : EventSeries or None
-        Spikes of the Cell's ``"spike"`` port in the segment, in the format
+        Spikes of the Cell's ``"spike"`` port in the segment's steps, at
+        times in ``(start_time, stop_time]``, in the format
         of ``NetworkResult.events[population]["spike"]`` for the same Cell
         in a Network (whose metadata also holds ``"population"``). ``None``
         when the run is traced (``jax.jit``, ``jax.grad``): the number of
@@ -259,9 +261,16 @@ class RunResult:
     -----
     The ``"spike"`` port is ``cell.spike`` at the CV holding the root
     branch midpoint (the one CV of a lumped Cell, or a reduction model's
-    event). A step from ``t_k`` to ``t_k + dt`` gives an event at ``t_k``
-    when ``V(t_k) < V_th <= V(t_k + dt)`` for the default ``spk_fun``;
-    voltage staying above ``V_th`` gives no further event. ``count`` is 1
+    event). A step from ``t_k`` to ``t_k + dt`` gives an event at
+    ``t_k + dt``, the end of the step, when ``V(t_k) < V_th <= V(t_k + dt)``
+    for the default ``spk_fun``, as NEURON's ``NetCon.record`` in fixed
+    step (CELL-80; ``validation/neuron/synapse/spike_times_test.py``);
+    voltage staying above ``V_th`` gives no further event. A crossing in a
+    run's last step is reported by that run, at its ``stop_time``, so
+    contiguous runs neither drop nor repeat an event. The time is the one
+    a delayed connection and a plasticity rule take for the spike: the
+    spikes replayed as an ``EventSequence`` with the connection's delay act
+    in the same step as the live connection. ``count`` is 1
     per crossing (a reduction model's event value). Rows are sorted by
     time, then ``source_id``.
 
@@ -515,7 +524,7 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
         start_time=start_time,
         stop_time=stop_time,
         dt=dt,
-        spikes=None if traced or plan.spike_port is None else plan.spike_port.series(rcell, times, spike_rows),
+        spikes=None if traced or plan.spike_port is None else plan.spike_port.series(rcell, times, stop_time, spike_rows),
     )
 
 
@@ -585,9 +594,11 @@ class _SpikePort:
             spike = spike[..., self.cv_id]
         return (spike.reshape(-1) != 0).astype(jnp.uint32)
 
-    def series(self, rcell: "Cell", times, rows) -> EventSeries:
+    def series(self, rcell: "Cell", times, stop_time, rows) -> EventSeries:
         """Sparse rows in the format of ``NetworkResult.events[population]["spike"]``.
 
+        A step's events take the step's end time (:func:`step_end_times`
+        of the loop's ``times`` and ``stop_time``).
         ``rows`` is the loop's spike output: the steps' port values, or
         their packed grid, or ``(grid, count, groups, bytes)`` when
         ``capacity`` is set (:func:`_compact_spike_rows`).
@@ -608,8 +619,9 @@ class _SpikePort:
             metadata["batch_index"], metadata["population_index"] = np.divmod(
                 np.arange(n_rows, dtype=np.int64), n_rows // batch_size
             )
+        ends, unit = step_end_times(times, stop_time)
         return EventSeries(
-            time=u.Quantity(np.asarray(u.get_mantissa(times))[step], u.get_unit(times)),
+            time=u.Quantity(ends[step], unit),
             source_id=source_id,
             count=count,
             metadata=metadata,

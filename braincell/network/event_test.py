@@ -557,7 +557,7 @@ class ResultEventsTest(unittest.TestCase):
     def test_result_events_compile_nothing(self) -> None:
         # Runs of a length no other test uses: on the device, each new spike count compiled a gather.
         net = bc.Network("compiles", seed=1)
-        post = net.add_population("post", _hh_points())
+        net.add_population("post", _hh_points())
         stim = net.add_population("stim", NetStim(size=2, start=[0.5, 1.5] * u.ms, interval=2.0 * u.ms, number=10**9))
         net.add_population("sequence", EventSequence.from_times([np.asarray([0.25, 3.0]) * u.ms] * 2))
         net.add_population("other", _exp_syn_cell())

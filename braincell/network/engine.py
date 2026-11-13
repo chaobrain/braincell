@@ -1118,7 +1118,7 @@ class Network:
         # A delivery op is only ever indexed for a block with a scalar delay,
         # which is exactly what grouping by delay produces. Without grouping
         # every block carries a per-contact delay vector and the vector path
-        # in enqueue_future_events/apply_immediate_events runs instead -- so
+        # in write_arrivals/apply_immediate_events runs instead -- so
         # building the ops there would materialize two device index arrays per
         # block, and close over the block, for something never called. The two
         # cannot disagree: both read grouped_by_delay.

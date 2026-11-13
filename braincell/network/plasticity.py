@@ -31,8 +31,8 @@ consume its events. Every read at a boundary sees the state before it:
   steps arrives at ``t_{m + max(k, 1)}``.
 - A row with a scheduled source, or a live source and ``k >= 1``, delivers
   ``n * w(t_n-)`` here (and ``n`` to a ``"sum_count"`` synapse's event
-  count, CELL-12b), not through the Network's weighted delay ring: a
-  live call keeps a history of its sources' spike counts instead, one
+  count, CELL-12b), not through the Network's delayed delivery: a
+  live call keeps its own history of its sources' spike counts, one
   column per distinct source (fan-out rows share it). A live row with
   ``k = 0`` keeps the Network's immediate path, at the end of the detection
   step, which reads the dynamic weight; the rule has not run for that

@@ -19,9 +19,10 @@ This module owns the step-time path that moves population spikes into
 postsynaptic synapse event buffers. The input is a lowered
 ``ConnectionBlock`` table, where each row is already a materialized synaptic
 contact. The delivery layer preserves per-contact delays for scatter routing,
-allocates one persistent ring per target synapse layout, writes due arrivals,
-and enqueues newly generated events into future slots. Backends may group
-contacts internally without changing queue ownership.
+keeps one history of source event counts per target synapse layout, writes
+due arrivals weighted with the weight at delivery, and records the events of
+each step into the history. Backends may group contacts internally without
+changing queue ownership.
 
 The module does not define synapse models and does not perform topology
 lowering. Synapse layout binding, default weight lookup, and delay
@@ -221,7 +222,7 @@ def delivery_blocks(
     Notes
     -----
     Delay grouping is an operator-lowering choice only. Every returned block
-    targeting the same synapse layout writes one shared ring buffer.
+    targeting the same synapse layout writes one shared queue.
 
     Without grouping, consecutive blocks of one queue (the blocks for one
     ``(post_population, layout_id)``, in order) become one route when they
@@ -370,8 +371,8 @@ def zero_arrival(block: ConnectionBlock):
 def zeros_like(value, *, shape: tuple[int, ...]):
     """Return zeros of ``shape`` carrying ``value``'s dtype and unit.
 
-    Every buffer in this module -- arrival vectors, ring-buffer queues, and
-    the scatter accumulator inside a delivery op -- is shaped from an event
+    Every weighted buffer in this module -- arrival vectors and the scatter
+    accumulator inside a delivery op -- is shaped from an event
     payload that may or may not be a :mod:`brainunit` quantity.
 
     Parameters

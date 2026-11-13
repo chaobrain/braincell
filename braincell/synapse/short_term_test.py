@@ -478,9 +478,9 @@ class CounterExampleTest(unittest.TestCase):
 
 
 class NoCountUnchangedTest(unittest.TestCase):
-    """Acceptance 6 (in part): only "sum_count" layouts get count buffers and count rings."""
+    """Acceptance 6 (in part): only "sum_count" layouts get count buffers and count their delayed arrivals."""
 
-    def test_count_buffers_and_rings_exist_for_sum_count_layouts_only(self) -> None:
+    def test_count_buffers_and_counted_queues_exist_for_sum_count_layouts_only(self) -> None:
         cell = Cell(make_soma_tree(), cv_policy=CVPerBranch(), pop_size=(1,), V_init=-65.0 * u.mV)
         cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="plain", tau=2.0 * u.ms))
         cell.place(at("soma", 0.5), _std())
@@ -496,7 +496,7 @@ class NoCountUnchangedTest(unittest.TestCase):
         kinds = {layout.id: layout.kind for layout, _ in runtime.iter_synapse_layouts()}
         self.assertEqual({kinds[key] for key in runtime.event_counts}, {"synapse:ExpSynSTD"})
         (state,) = net._delivery_state_cache.values()
-        counted = {state.queue_keys[index][1] for index in range(len(state.queue_keys)) if state.count_ring(index)}
+        counted = {state.queue_keys[index][1] for index in range(len(state.queue_keys)) if state.count_dtype(index) is not None}
         self.assertEqual({kinds[key] for key in counted}, {"synapse:ExpSynSTD"})
 
         plain = braincell.Network("plain")
@@ -514,7 +514,7 @@ class NoCountUnchangedTest(unittest.TestCase):
         plain.run(dt=DT, duration=1.0 * u.ms)
         self.assertEqual(plain_cell.runtime.event_counts, {})
         (state,) = plain._delivery_state_cache.values()
-        self.assertEqual(state.count_rings, ())
+        self.assertEqual(state.count_dtypes, ())
 
 
 # ---------------------------------------------------------------- ExpSynSTP (CELL-12e)

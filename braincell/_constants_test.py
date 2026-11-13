@@ -89,8 +89,7 @@ class LibraryCodeAvoidsSharedConstantsTest(unittest.TestCase):
         offenders = {
             str(path.relative_to(_PACKAGE)): hits
             for path in sources
-            if path.name != "_constants.py"
-            and (hits := shared_constant_references(path.read_text(encoding="utf-8")))
+            if path.name != "_constants.py" and (hits := shared_constant_references(path.read_text(encoding="utf-8")))
         }
         self.assertEqual(offenders, {}, "use braincell._constants.GAS_CONSTANT / FARADAY_CONSTANT")
 
@@ -100,7 +99,8 @@ class LibraryCodeAvoidsSharedConstantsTest(unittest.TestCase):
             "a = bu.gas_constant\nb = brainunit.faraday_constant\nc = bu.mV\n"
         )
         self.assertEqual(
-            shared_constant_references(source), ["3: faraday_constant", "4: bu.gas_constant", "5: brainunit.faraday_constant"]
+            shared_constant_references(source),
+            ["3: faraday_constant", "4: bu.gas_constant", "5: brainunit.faraday_constant"],
         )
 
 

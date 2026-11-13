@@ -403,9 +403,7 @@ class IonTemplateTest(unittest.TestCase):
         info = ion.pack_info()
 
         self.assertTrue(u.math.allclose(info.Ci, ion.Ci.value, atol=1e-12 * u.mM))
-        expected_E = (GAS_CONSTANT * ion.temp / (ion.valence * FARADAY_CONSTANT)) * u.math.log(
-            ion.Co / ion.Ci.value
-        )
+        expected_E = (GAS_CONSTANT * ion.temp / (ion.valence * FARADAY_CONSTANT)) * u.math.log(ion.Co / ion.Ci.value)
         self.assertTrue(u.math.allclose(info.E.to_decimal(u.mV), expected_E.to_decimal(u.mV), atol=1e-6))
 
     def test_kinetic_ion_species_initializers_override_declared_inits(self) -> None:

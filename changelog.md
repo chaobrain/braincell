@@ -2439,7 +2439,10 @@
   `NetStim`), a Network without live rows and a standalone `Cell.run` are
   unchanged bit for bit on the machine that tested them. The delivery
   history of a queue with delayed rows, and the history of rule rows, hold
-  one more row (the longest delay plus one): TIMING_PLACEHOLDER
+  one more row (the longest delay plus one): in float64, 20 sources with a
+  1 ms delay at `dt = 0.025 ms` take 6560 bytes (6400 before), and 1e5
+  sources with a delay of one step, the largest relative growth, take
+  1.6 MB (0.8 MB before). The reads per step are unchanged.
 - A recording samples in whole steps of the grid from time 0, so a
   standalone `Cell.run` whose steps are off that grid samples where a
   scheduled event at the sample time acts, and a long run takes each sample

@@ -102,13 +102,16 @@ class _QueuePlan:
     With one delay per contact (the scatter path), ``lags``, ``columns_read``,
     ``weight_index`` and ``targets`` list the delayed contacts in the order a
     queue of weighted events summed them: longest delay first, then by route
-    and by contact. A contact with ``k`` delay steps reads history row
-    ``(cursor + depth - k) % depth`` (``lags`` holds ``depth - k``), column
+    and by contact. ``depth`` is the longest delay in steps plus one: a
+    contact with ``k`` delay steps reads, at the start of step ``m + k +
+    1``, the events counted at the end of step ``m``, history row
+    ``(cursor + depth - 1 - k) % depth`` (``lags`` holds ``depth - 1 - k``,
+    CELL-75), column
     ``columns_read``, the weight ``concatenate(route weights)[weight_index]``
     (``None``: in order), and adds to synapse row ``targets``.
 
     With one delay per route (the ``brainevent`` path), ``scalar`` lists
-    ``(block index, depth - k, first column, size)`` longest delay first;
+    ``(block index, depth - 1 - k, first column, size)`` longest delay first;
     each route reads its source's whole row.
     """
 
@@ -133,7 +136,8 @@ class DeliveryState:
         One event history per queue with delayed contacts, ``None`` for
         the others: shape ``(depth, width)``, the counts of the source
         members its delayed contacts read at the last ``depth`` boundaries,
-        ``depth`` being the queue's longest delay in steps (CELL-69).
+        ``depth`` being the queue's longest delay in steps plus one
+        (CELL-69, CELL-75).
     history_cursors : tuple
         Per-queue history row the current step writes, ``None`` for a
         queue without a history.
@@ -425,18 +429,19 @@ def create_delivery_state(
     Notes
     -----
     Each queue with delayed contacts keeps one history of the event counts
-    of the source members those contacts read, as deep as its longest
-    delay in steps: ``depth x members`` values in the sources' event dtype,
-    where a queue of weighted events, before CELL-69, held
-    ``(depth + 1) x synapse rows``. A route with one delay per contact (the
+    of the source members those contacts read, one row deeper than its
+    longest delay in steps (CELL-75): ``depth x members`` values in the
+    sources' event dtype, where a queue of weighted events, before CELL-69,
+    held ``depth x synapse rows``. A route with one delay per contact (the
     scatter path) keeps only the members its delayed contacts read; a
     route with one delay (the ``brainevent`` path) its whole source.
 
     The history therefore grows with the distinct source members a target
     synapse layout receives from, not with its synapse rows. In float64,
-    with delays up to 80 steps: 1e6 rows from 1e6 sources onto 1e4 shared
-    synapses keep 624 MB, where the weighted queue held 6.5 MB; 1e6 rows
-    from 900 sources onto 1e6 synapses keep 0.58 MB, where it held 648 MB.
+    with delays up to 80 steps (81 rows): 1e6 rows from 1e6 sources onto
+    1e4 shared synapses keep 632 MB, where the weighted queue held 6.5 MB;
+    1e6 rows from 900 sources onto 1e6 synapses keep 0.59 MB, where it held
+    648 MB.
     """
     if len(delivery_ops) != len(blocks):
         raise ValueError(
@@ -502,7 +507,8 @@ def _queue_plan(parts: list[tuple[int, np.ndarray, np.ndarray | None]], blocks) 
     """The history columns of one queue and its delayed contacts in the order a queue of weighted events summed them."""
     if not parts:
         return _QueuePlan()
-    depth = max(int(np.max(delay)) for _, delay, _ in parts)
+    # A contact of k steps reads the events of k + 1 boundaries before (CELL-75).
+    depth = max(int(np.max(delay)) for _, delay, _ in parts) + 1
     sources: list = []
     reads: list[list[np.ndarray]] = []
     whole: list[bool] = []
@@ -530,7 +536,7 @@ def _queue_plan(parts: list[tuple[int, np.ndarray, np.ndarray | None]], blocks) 
         scalar = []
         for block_index, delay, _ in parts:
             position = index_of[id(blocks[block_index].source.event_source)]
-            scalar.append((block_index, depth - int(delay), int(starts[position]), int(columns[position].size)))
+            scalar.append((block_index, depth - 1 - int(delay), int(starts[position]), int(columns[position].size)))
         # Stable: routes of one delay keep their order.
         scalar.sort(key=lambda item: item[1])
         return _QueuePlan(depth=depth, sources=tuple(sources), columns=columns, scalar=tuple(scalar))
@@ -555,7 +561,7 @@ def _queue_plan(parts: list[tuple[int, np.ndarray, np.ndarray | None]], blocks) 
         columns=columns,
         weight_blocks=tuple(weight_blocks),
         weight_index=None if np.array_equal(weight_index, np.arange(offset)) else weight_index.astype(np.int32),
-        lags=(depth - delays[order]).astype(np.int32),
+        lags=(depth - 1 - delays[order]).astype(np.int32),
         columns_read=np.concatenate(read)[order].astype(np.int32),
         targets=np.concatenate(targets)[order].astype(np.int32),
     )
@@ -664,9 +670,10 @@ def write_arrivals(
     Notes
     -----
     A contact with ``k >= 1`` delay steps delivers at the start of step
-    ``m + k`` the events its source counted at the end of step ``m``,
+    ``m + k + 1`` the events its source counted at the end of step ``m``,
     weighted with the weight at delivery, as NEURON's ``NetCon`` does
-    (CELL-69). The arrivals of one queue are summed in the order a queue of
+    (CELL-69): the dynamics first see the event in step ``m + 1 + k``, as
+    in ``Cell.run`` and NEURON (CELL-75). The arrivals of one queue are summed in the order a queue of
     weighted events summed them: longest delay first, then by route and by
     contact. Every queue writes its target's event buffer each step.
     """

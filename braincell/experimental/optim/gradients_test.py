@@ -32,7 +32,8 @@ from braincell._compute._testing import _build_tree
 from braincell._base_channel import IonChannel
 from braincell._parameter_schema import RuntimeParameterState
 from braincell.trainable._manager import ParameterBinding, TrainableManager, _TargetRow
-from braincell.filter import AllRegion
+from braincell.filter import AllRegion, RootLocation
+from braincell.experimental.optim import _forward_sensitivity as fs
 from braincell.experimental.optim.gradients import (
     TrajectoryGradientResult,
     build_rollout_value_and_grad,
@@ -719,6 +720,478 @@ class TrajectoryGradientEngineTest(unittest.TestCase):
             bptt.gradients["na.vsh.factor"],
             rtol=1e-9,
             atol=1e-10,
+        )
+
+
+# OPT-14: the axial operator is built once per rollout. The Y cable model, its
+# targets and the central-difference values below are those of the OPT-14
+# acceptance; the central differences were taken on the BPTT loss of main
+# before the change (h = 1e-5, float64).
+_Y_DT = 0.025 * u.ms
+_Y_STEPS = 32
+_RA_CENTRAL_DIFFERENCE = {
+    ("rk4", "rollout"): 47.71863224065,
+    ("default", "rollout"): 46.28899805681,
+    ("rk4", "trajectory"): 1.491207257520,
+    ("default", "trajectory"): 1.446531189275,
+}
+_ROLLOUT_ENTRIES = ("rollout bptt", "rollout rtrl", "diagnose(at=None)", "diagnose(at=(1,2))", "bptt_reference_loss")
+_ROLLOUT_ENTRIES += ("forward_sensitivity_rollout", "compact_forward_sensitivity_rollout")
+_TRAJECTORY_ENTRIES = ("trajectory bptt", "trajectory rtrl")
+_ENTRIES = _ROLLOUT_ENTRIES + _TRAJECTORY_ENTRIES
+_DIAGNOSE_ENTRIES = ("diagnose(at=None)", "diagnose(at=(1,2))")
+_TWO_PASS_ENTRIES = ("trajectory rtrl",) + _DIAGNOSE_ENTRIES
+
+
+def _y_cable_cell(solver="rk4", field="Ra", *, record=False):
+    """The Y cable of the OPT-14 acceptance, with ``Ra`` or the sodium ``g_max`` trainable."""
+    morphology = braincell.Morphology.from_root(
+        braincell.Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="dendrite"),
+        name="trunk",
+    )
+    for name in ("left", "right"):
+        morphology.attach(
+            parent="trunk",
+            child_branch=braincell.Branch.from_lengths(
+                lengths=[100.0] * u.um, radii=[0.5, 0.5] * u.um, type="dendrite"
+            ),
+            child_name=name,
+        )
+    options = {} if solver == "default" else {"solver": solver}
+    cell = braincell.Cell(
+        morphology,
+        cv_policy=braincell.CVPerBranch(),
+        pop_size=2,
+        V_init=-65.0 * u.mV,
+        **options,
+    )
+    cell.paint(
+        braincell.mech.Ion("SodiumFixed", E=50.0 * u.mV),
+        braincell.mech.Ion("PotassiumFixed", E=-77.0 * u.mV),
+        braincell.mech.Channel("Na_HH1952", name="na", g_max=120.0 * u.mS / u.cm**2),
+        braincell.mech.Channel("K_HH1952", name="k", g_max=36.0 * u.mS / u.cm**2),
+        braincell.mech.Channel("IL", name="leak", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+    )
+    cell.place(
+        RootLocation(0.5),
+        braincell.mech.CurrentClamp(delay=0.0 * u.ms, durations=50.0 * u.ms, amplitudes=0.1 * u.nA),
+    )
+    if record:
+        cell.record("v", "V")
+    cell.init_state()
+    source = braincell.trainable.scale(group_by="all", name=field)
+    if field == "g_max":
+        cell.channels["na"].trainable(g_max=source)
+    else:
+        cell.geometry.Ra.trainable(source)
+    cell.reset_state()
+    return cell
+
+
+def _y_targets(steps=_Y_STEPS, dtype=jnp.float64):
+    return jnp.linspace(-64.0, -60.0, steps).astype(dtype)
+
+
+def _rollout_step(cell):
+    def step(target_mv):
+        cell.update()
+        return jnp.mean((cell.V.value.to_decimal(u.mV) - target_mv) ** 2)
+
+    return step
+
+
+def _observation_step(cell):
+    def step(_target_mv):
+        cell.update()
+        return cell.V.value.to_decimal(u.mV)
+
+    return step
+
+
+def _trajectory_loss(observations, targets):
+    return jnp.mean((observations - targets[:, None, None]) ** 2)
+
+
+def _y_entries(cell, example):
+    """Every scanning entry of the engines, as ``(roots, data) -> (loss, gradient of the one root)``."""
+    rollout_bptt = build_rollout_value_and_grad(cell, step=_rollout_step(cell), method="bptt").prepare(example)
+    rollout_rtrl = build_rollout_value_and_grad(cell, step=_rollout_step(cell), method="rtrl").prepare(example)
+    trajectory = {
+        method: build_trajectory_value_and_grad(
+            cell, step=_observation_step(cell), loss=_trajectory_loss, method=method
+        ).prepare(example)
+        for method in ("bptt", "rtrl")
+    }
+    name = rollout_rtrl.parameter_names[0]
+
+    def gradient(result):
+        return u.get_mantissa(result.gradients[name])
+
+    def node(kind):
+        layout = next(layout for layout in cell.layouts if layout.kind == kind)
+        return cell.runtime.get_runtime_node(layout.id)
+
+    def selection(label, state):
+        return fs.ActiveStateSelection(label, state, tuple(range(int(np.size(u.get_mantissa(state.value))))))
+
+    sodium, potassium = node("channel:Na_HH1952"), node("channel:K_HH1952")
+    projection = fs.build_active_state_projection(
+        rollout_rtrl._functional_step,
+        [
+            selection("V", cell.V),
+            selection("m", sodium.p),
+            selection("h", sodium.q),
+            selection("n", potassium.p),
+        ],
+    )
+
+    def forward(roots, data):
+        values, tangents = rollout_rtrl._initial_full_carry(roots)
+        result = fs.forward_sensitivity_rollout(rollout_rtrl._functional_step, values, tangents, data)
+        return jnp.sum(result.losses), result.final_gradient[0]
+
+    def compact(roots, data):
+        values, tangents = rollout_rtrl._initial_full_carry(roots)
+        result = fs.compact_forward_sensitivity_rollout(
+            rollout_rtrl._functional_step,
+            projection,
+            rollout_rtrl._parameter_coordinates,
+            values,
+            projection.extract_tangents(tangents),
+            data,
+        )
+        return jnp.sum(result.losses), result.final_gradient[0]
+
+    def reference(roots, data):
+        def objective(parameter_values):
+            initial = rollout_bptt._initial_primal_values(parameter_values)
+            return fs.bptt_reference_loss(rollout_bptt._functional_step, initial, data)
+
+        loss, gradients = jax.value_and_grad(objective)(roots)
+        return loss, u.get_mantissa(gradients[0])
+
+    def wrap(method, *extra):
+        def entry(roots, data):
+            result = method(roots, data, *extra)
+            return result.loss, gradient(result)
+
+        return entry
+
+    entries = {
+        "rollout bptt": wrap(rollout_bptt._bptt),
+        "rollout rtrl": wrap(rollout_rtrl._rtrl),
+        "trajectory bptt": wrap(trajectory["bptt"]._bptt),
+        "trajectory rtrl": wrap(trajectory["rtrl"]._rtrl_two_pass),
+        "diagnose(at=None)": lambda roots, data: _diagnose_all(rollout_rtrl, gradient, roots, data),
+        "diagnose(at=(1,2))": wrap(rollout_rtrl._rtrl_diagnostic, (1, 2)),
+        "forward_sensitivity_rollout": forward,
+        "compact_forward_sensitivity_rollout": compact,
+        "bptt_reference_loss": reference,
+    }
+    engines = (rollout_bptt, rollout_rtrl, trajectory["bptt"], trajectory["rtrl"])
+    roots = tuple(state.value for state in rollout_rtrl.parameter_states.values())
+    return entries, engines, roots
+
+
+def _diagnose_all(engine, gradient, roots, data):
+    result = engine._rtrl_diagnostic_all(roots, data, length=data.shape[0])
+    return result.loss, gradient(result)
+
+
+def _scalar(value):
+    return float(np.asarray(value).reshape(-1)[0])
+
+
+def _operator_builds(closed, cell):
+    """Count the operator builds in a jaxpr: Schur LUs and ``(n_point, n_point)`` scatter-adds, in or outside loops."""
+    n_point = cell._runtime.n_point
+    n_alg = n_point - cell.n_cv
+    counts = {"lu": {"loop": 0, "outside": 0}, "scatter": {"loop": 0, "outside": 0}, "scatter per loop": []}
+
+    def inner(eqn):
+        for value in eqn.params.values():
+            for item in value if isinstance(value, (tuple, list)) else (value,):
+                if isinstance(item, jax.extend.core.ClosedJaxpr):
+                    yield item.jaxpr
+                elif isinstance(item, jax.extend.core.Jaxpr):
+                    yield item
+
+    def walk(jaxpr, looped):
+        where = "loop" if looped else "outside"
+        for eqn in jaxpr.eqns:
+            name = eqn.primitive.name
+            if name == "lu" and tuple(eqn.invars[0].aval.shape[-2:]) == (n_alg, n_alg):
+                counts["lu"][where] += 1
+            if name == "scatter-add" and tuple(eqn.outvars[0].aval.shape[-2:]) == (n_point, n_point):
+                counts["scatter"][where] += 1
+                if looped:
+                    counts["scatter per loop"][-1] += 1
+            enters_loop = not looped and name in ("scan", "while")
+            if enters_loop:
+                counts["scatter per loop"].append(0)
+            for sub in inner(eqn):
+                walk(sub, looped or enters_loop)
+
+    walk(closed.jaxpr, False)
+    return counts
+
+
+def _per_step_operator(engine, functional_step, *args, **kwargs):
+    """Stand-in for ``_axial_operator_step`` that keeps per-step building (the fallback path)."""
+    return functional_step, "step"
+
+
+class AxialOperatorPerRolloutTest(unittest.TestCase):
+    """OPT-14: every scanning entry builds the axial operator once per rollout."""
+
+    def test_entries_build_the_axial_operator_once_per_rollout(self) -> None:
+        # rk4 assembles its operator with 4 scatter-adds and factors the
+        # Schur complement once; staggered (DHS) assembles with scatter-adds
+        # only. The diagnose pullback keeps the transposed assembly in each
+        # loop body (4 scatter-adds for rk4, 3 for staggered), never an LU.
+        pullback_scatters = {"rk4": 4, "default": 3}
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            for solver in ("rk4", "default"):
+                for field in ("Ra", "g_max"):
+                    cell = _y_cable_cell(solver, field)
+                    entries, _engines, roots = _y_entries(cell, _y_targets()[0])
+                    for label, entry in entries.items():
+                        with self.subTest(solver=solver, field=field, entry=label):
+                            counts = _operator_builds(jax.make_jaxpr(entry)(roots, _y_targets(4)), cell)
+                            self.assertEqual(counts["lu"]["loop"], 0, counts)
+                            if label in _DIAGNOSE_ENTRIES:
+                                self.assertLessEqual(max(counts["scatter per loop"]), pullback_scatters[solver], counts)
+                            else:
+                                self.assertEqual(counts["scatter"]["loop"], 0, counts)
+                            builds = 2 if label in _TWO_PASS_ENTRIES else 1
+                            if solver == "rk4":
+                                self.assertEqual(counts["lu"]["outside"], builds, counts)
+                            else:
+                                self.assertGreater(counts["scatter"]["outside"], 0, counts)
+
+    def test_other_solvers_build_once_per_rollout(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            for solver in ("ralston2", "exp_euler", "dhs_voltage"):
+                cell = _y_cable_cell(solver, "Ra")
+                entries, _engines, roots = _y_entries(cell, _y_targets()[0])
+                for label in ("rollout bptt", "rollout rtrl"):
+                    with self.subTest(solver=solver, entry=label):
+                        counts = _operator_builds(jax.make_jaxpr(entries[label])(roots, _y_targets(4)), cell)
+                        self.assertEqual(counts["lu"]["loop"], 0, counts)
+                        self.assertEqual(counts["scatter"]["loop"], 0, counts)
+                        self.assertGreater(counts["lu"]["outside"] + counts["scatter"]["outside"], 0, counts)
+
+    def test_ra_gradients_match_central_differences(self) -> None:
+        # The geometry reaches the loss only through the operator, so an
+        # operator taken as a constant (without its tangent or pullback)
+        # gives a zero gradient in every RTRL-type entry.
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            for solver in ("rk4", "default"):
+                cell = _y_cable_cell(solver, "Ra")
+                entries, _engines, roots = _y_entries(cell, _y_targets()[0])
+                for label, entry in entries.items():
+                    family = "trajectory" if label in _TRAJECTORY_ENTRIES else "rollout"
+                    with self.subTest(solver=solver, entry=label):
+                        _loss, value = jax.jit(entry)(roots, _y_targets())
+                        np.testing.assert_allclose(_scalar(value), _RA_CENTRAL_DIFFERENCE[(solver, family)], rtol=1e-7)
+
+    def test_hoisted_operator_matches_per_step_building(self) -> None:
+        # One entry per code path: the BPTT scan (build_operator), the RTRL
+        # scans (build_operator_with_tangents, full and compact), the
+        # two-pass trajectory RTRL and the diagnose pullback.
+        entries = {
+            64: (
+                "rollout bptt",
+                "rollout rtrl",
+                "trajectory rtrl",
+                "diagnose(at=None)",
+                "compact_forward_sensitivity_rollout",
+            ),
+            32: ("rollout bptt", "rollout rtrl"),
+        }
+        precisions = ((64, jnp.float64, 1e-12), (32, jnp.float32, 1e-5))
+        for precision, dtype, rtol in precisions:
+            with jax.enable_x64(precision == 64), brainstate.environ.context(dt=_Y_DT, precision=precision):
+                for solver in ("rk4", "default"):
+                    for field in ("Ra", "g_max"):
+                        targets = _y_targets(dtype=dtype)
+                        cell = _y_cable_cell(solver, field)
+                        hoisted, _engines, roots = _y_entries(cell, targets[0])
+                        with patch(
+                            "braincell.experimental.optim.gradients._axial_operator_step",
+                            side_effect=_per_step_operator,
+                        ):
+                            per_step, reference_engines, _roots = _y_entries(cell, targets[0])
+                        for engine in reference_engines:
+                            self.assertEqual(engine.axial_operator_mode, "step")
+                        for label in entries[precision]:
+                            with self.subTest(precision=precision, solver=solver, field=field, entry=label):
+                                loss, value = jax.jit(hoisted[label])(roots, targets)
+                                expected_loss, expected = jax.jit(per_step[label])(roots, targets)
+                                self.assertTrue(np.isfinite(_scalar(expected)))
+                                # The compact entry's g_max gradient is zero on both paths:
+                                # its active states omit the materialized g_max buffer (OPT-16).
+                                if not (field == "g_max" and label == "compact_forward_sensitivity_rollout"):
+                                    self.assertNotEqual(_scalar(expected), 0.0)
+                                np.testing.assert_allclose(_scalar(loss), _scalar(expected_loss), rtol=rtol)
+                                np.testing.assert_allclose(_scalar(value), _scalar(expected), rtol=rtol)
+
+    def test_diagnose_pulls_the_operator_signal_back_to_geometry(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            for solver in ("rk4", "default"):
+                with self.subTest(solver=solver):
+                    cell = _y_cable_cell(solver, "Ra")
+                    targets = _y_targets()
+                    engine = build_rollout_value_and_grad(cell, step=_rollout_step(cell), method="rtrl")
+                    hoisted = jax.jit(lambda data: engine.diagnose(data))(targets)
+                    with patch(
+                        "braincell.experimental.optim.gradients._axial_operator_step",
+                        side_effect=_per_step_operator,
+                    ):
+                        reference_engine = build_rollout_value_and_grad(
+                            cell, step=_rollout_step(cell), method="rtrl"
+                        ).prepare(targets[0])
+                    reference = jax.jit(lambda data: reference_engine.diagnose(data))(targets)
+                    self.assertEqual(engine.axial_operator_mode, "rollout")
+                    self.assertGreater(float(np.max(np.abs(hoisted.local_gradients))), 1.0)
+                    self.assertLessEqual(float(np.max(np.abs(hoisted.decomposition_residual))), 1e-12)
+                    for field in ("sensitivity", "learning_signal"):
+                        actual, expected = getattr(hoisted, field), getattr(reference, field)
+                        self.assertEqual(jax.tree.structure(actual), jax.tree.structure(expected))
+                        for left, right in zip(jax.tree.leaves(actual), jax.tree.leaves(expected)):
+                            self.assertEqual((left.shape, left.dtype), (right.shape, right.dtype))
+                            if left.dtype != jax.dtypes.float0:
+                                np.testing.assert_allclose(left, right, rtol=1e-9, atol=1e-12)
+
+
+class AxialOperatorFallbackTest(unittest.TestCase):
+    """OPT-14: the engines keep per-step building when the user's step changes what the operator is built from."""
+
+    # Loss and gradient of main before the change, where every step builds
+    # its own operator (Y cable, rk4, 32 steps, float64).
+    _MAIN_LOSS = {
+        "writes Ra state": 36.533851298229550,
+        "writes Ra root": 35.802536339646899,
+        "writes g_max root": 35.731227058675792,
+        "calls materialize": 35.726706283725434,
+    }
+    _FIELD = {
+        "writes Ra state": "g_max",
+        "writes Ra root": "Ra",
+        "writes g_max root": "g_max",
+        "calls materialize": "Ra",
+        "plain Ra": "Ra",
+        "plain g_max": "g_max",
+    }
+
+    @staticmethod
+    def _engine(case, method):
+        cell = _y_cable_cell("rk4", AxialOperatorFallbackTest._FIELD[case])
+        counter = brainstate.ShortTermState(jnp.zeros(()))
+        ra_state = cell._runtime.geometry["Ra"]
+        ra_initial = ra_state.value
+        root = next(iter(cell.trainables.parameters().states().values()))
+
+        def step(target_mv):
+            counter.value = counter.value + 1.0
+            if case == "writes Ra state":
+                ra_state.value = ra_initial * (1.0 + 1e-3 * counter.value)
+            elif case in ("writes Ra root", "writes g_max root"):
+                root.value = root.value * 1.0001
+            elif case == "calls materialize":
+                cell.trainables.materialize()
+            cell.update()
+            return jnp.mean((cell.V.value.to_decimal(u.mV) - target_mv) ** 2)
+
+        def initializer():
+            counter.value = jnp.zeros(())
+            cell.reset_state()
+
+        return build_rollout_value_and_grad(cell, step=step, method=method, initializer=initializer)
+
+    def test_steps_that_change_operator_inputs_build_every_step(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            targets = _y_targets()
+            for case, main_loss in self._MAIN_LOSS.items():
+                results = {}
+                for method in ("bptt", "rtrl"):
+                    with self.subTest(case=case, method=method):
+                        engine = self._engine(case, method)
+                        self.assertIsNone(engine.axial_operator_mode)
+                        result = engine(targets)
+                        self.assertEqual(engine.axial_operator_mode, "step")
+                        np.testing.assert_allclose(float(result.loss), main_loss, rtol=1e-12)
+                        results[method] = _scalar(u.get_mantissa(next(iter(result.gradients.values()))))
+                np.testing.assert_allclose(results["rtrl"], results["bptt"], rtol=1e-12)
+
+    def test_plain_steps_build_once_per_rollout(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            for case in ("plain Ra", "plain g_max"):
+                with self.subTest(case=case):
+                    engine = self._engine(case, "rtrl")
+                    result = engine(_y_targets())
+                    self.assertEqual(engine.axial_operator_mode, "rollout")
+                    np.testing.assert_allclose(float(result.loss), 35.726706283725434, rtol=1e-12)
+
+    def test_undetected_geometry_write_would_change_the_loss(self) -> None:
+        # Counter-example for the detection: if the user's Ra write went
+        # unnoticed, the hoisted operator would keep the initial Ra.
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            with patch("braincell.experimental.optim.gradients._changed_writes", return_value=[]):
+                engine = self._engine("writes Ra state", "bptt")
+                result = engine(_y_targets())
+            self.assertEqual(engine.axial_operator_mode, "rollout")
+            np.testing.assert_allclose(float(result.loss), 35.726706283725434, rtol=1e-12)
+            self.assertGreater(abs(float(result.loss) - self._MAIN_LOSS["writes Ra state"]), 0.5)
+
+    def test_targets_without_axial_operator_report_none(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            lumped = braincell.Cell.point(2, V_init=-65.0 * u.mV, solver="rk4")
+            lumped.paint(braincell.mech.Channel("IL", name="leak", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV))
+            lumped.init_state()
+            lumped.channels["leak"].trainable(g_max=braincell.trainable.scale(group_by="all", name="leak"))
+            lumped.reset_state()
+            engine = build_rollout_value_and_grad(lumped, step=_rollout_step(lumped), method="rtrl")
+            engine(_y_targets(4))
+            self.assertEqual(engine.axial_operator_mode, "none")
+
+            cell = _y_cable_cell("rk4", "Ra")
+            network = braincell.Network("net")
+            network.add_population("y", cell)
+            network.init_state()
+            network.prepare_run(dt=_Y_DT)
+
+            def network_step(target_mv):
+                network.update()
+                return jnp.mean((cell.V.value.to_decimal(u.mV) - target_mv) ** 2)
+
+            engine = build_rollout_value_and_grad(network, step=network_step, method="rtrl")
+            self.assertIsNone(engine.axial_operator_mode)
+            result = engine(_y_targets(8))
+            self.assertEqual(engine.axial_operator_mode, "none")
+            self.assertTrue(np.isfinite(float(result.loss)))
+
+    def test_engine_leaves_the_cell_runs_unchanged(self) -> None:
+        # L40: the step was traced with its operator installed on the
+        # runtime; nothing the Cell's own runs reuse may keep that trace.
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            expected = _y_cable_cell("rk4", "Ra", record=True).run(dt=_Y_DT, duration=20 * _Y_DT)
+            cell = _y_cable_cell("rk4", "Ra", record=True)
+            engine = build_rollout_value_and_grad(cell, step=_rollout_step(cell), method="rtrl")
+            first = engine(_y_targets(16))
+            self.assertEqual(engine.axial_operator_mode, "rollout")
+            self.assertIsNone(cell._runtime.run_axial_operator)
+            cell.reset_state()
+            actual = cell.run(dt=_Y_DT, duration=20 * _Y_DT)
+            second = engine(_y_targets(16))
+        voltage = np.asarray(u.get_mantissa(actual.traces["v"]))
+        self.assertTrue(np.all(np.isfinite(voltage)) and np.ptp(voltage) > 0.0)
+        np.testing.assert_allclose(voltage, np.asarray(u.get_mantissa(expected.traces["v"])), rtol=1e-12)
+        np.testing.assert_allclose(float(second.loss), float(first.loss), rtol=1e-12)
+        np.testing.assert_allclose(
+            np.asarray(u.get_mantissa(second.gradients["Ra"])),
+            np.asarray(u.get_mantissa(first.gradients["Ra"])),
+            rtol=1e-12,
         )
 
 

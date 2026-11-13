@@ -34,13 +34,17 @@ import numpy as np
 
 
 class OperatorInput(NamedTuple):
-    """The target's axial operator, traced as an explicit input of a step (OPT-13 prototype).
+    """The target's axial operator, traced as an explicit input of a step.
 
     ``builder`` builds the operator leaves the solver reads from the states
     listed in ``builder_trace``; ``value_indices`` locates each of those
     states in the functional step's state values. The step was traced with
     ``(step_data, operator_leaves)`` as its data, so a rollout builds the
-    operator once from its initial values and passes it to every step.
+    operator once from its initial values and passes it to every step. The
+    geometry and the optimizer roots do not change within a rollout (the
+    engine keeps per-step building when the user's step writes them), so
+    the operator built from the initial values is the one every step would
+    build.
     """
 
     builder: brainstate.transform.StatefulFunction

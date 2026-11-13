@@ -170,7 +170,14 @@ class RolloutGradientEngine:
 
     @property
     def axial_operator_mode(self) -> str | None:
-        """Where the axial operator is built: once per ``rollout``, every ``step``, ``none``, or unprepared ``None``."""
+        """Where a cable target's axial operator is built, or ``None`` before :meth:`prepare`.
+
+        ``"rollout"``: once per scan, from the initial state values, and
+        passed to every step (RTRL passes its tangent too). ``"step"``: at
+        every step, because the step writes a state the operator is built
+        from or an optimizer root. ``"none"``: there is no operator to hoist
+        (a lumped Cell, a reduction model, a ``Network``).
+        """
         return self._axial_operator_mode
 
     @property
@@ -484,7 +491,14 @@ class TrajectoryGradientEngine:
 
     @property
     def axial_operator_mode(self) -> str | None:
-        """Where the axial operator is built: once per ``rollout``, every ``step``, ``none``, or unprepared ``None``."""
+        """Where a cable target's axial operator is built, or ``None`` before :meth:`prepare`.
+
+        ``"rollout"``: once per scan, from the initial state values, and
+        passed to every step (RTRL passes its tangent too). ``"step"``: at
+        every step, because the step writes a state the operator is built
+        from or an optimizer root. ``"none"``: there is no operator to hoist
+        (a lumped Cell, a reduction model, a ``Network``).
+        """
         return self._axial_operator_mode
 
     @property
@@ -614,26 +628,37 @@ class TrajectoryGradientEngine:
 
 
 def _prepare_steps(engine, example_step_data, *, require_scalar_output):
-    """Hoist state-backed mappings only when their dependencies stay invariant.
+    """Hoist state-backed mappings and the axial operator only when their dependencies stay invariant.
 
     Explicit root reads keep optimizer coordinates in the functional state
     trace even when the transition now reads only physical parameter buffers.
     The initializer's differentiated outputs carry those buffers and their
     sensitivities into both BPTT and exact RTRL.
+
+    Returns ``(initializer_step, functional_step, materialization_mode,
+    axial_operator_mode)``; see :func:`_axial_operator_step` for the last.
     """
     manager = engine.target.trainables
     inspect_states = getattr(manager, "_rollout_materialization_states", None)
     guarded_states = None if inspect_states is None else inspect_states()
     functional_step = None
     mode = "step"
+    # The states the user's step changed in the last trace of a base step
+    # below; the axial operator's fallback reads the one the engine keeps.
+    user_writes = []
 
     def read_roots():
         for state in engine.parameter_states.values():
             _ = state.value
 
+    def traced_user_step(data):
+        with brainstate.StateTraceStack() as trace:
+            result = engine.step(data)
+        user_writes[:] = _changed_writes(trace)
+        return result
+
     if guarded_states is not None:
         direct_reads = manager._rollout_direct_reads()
-        step_writes = []
         protected = {id(state) for state in guarded_states}
 
         def unmapped_step(data):
@@ -643,22 +668,7 @@ def _prepare_steps(engine, example_step_data, *, require_scalar_output):
             # Inspect writes made by the user's transition separately from the
             # identity forwarding above. Forwarding is safe only if the user
             # does not change these roots or physical buffers inside the step.
-            with brainstate.StateTraceStack() as trace:
-                result = engine.step(data)
-            written = {id(state) for state in trace.get_write_states()}
-            for state, before in zip(trace.states, trace.original_state_values):
-                if id(state) not in written or id(state) not in protected:
-                    continue
-                after = state.value
-                # Nested stateful channel calls can restore exactly the same
-                # parameter leaf while marking it written. Permit only exact
-                # tracer forwarding, never a numeric equality comparison.
-                unchanged = jax.tree.structure(before) == jax.tree.structure(after) and all(
-                    a is b for a, b in zip(jax.tree.leaves(before), jax.tree.leaves(after))
-                )
-                if not unchanged:
-                    step_writes.append(state)
-            return result
+            return traced_user_step(data)
 
         candidate = build_stateful_step(
             unmapped_step,
@@ -666,7 +676,7 @@ def _prepare_steps(engine, example_step_data, *, require_scalar_output):
             engine.parameter_states,
             require_scalar_output=require_scalar_output,
         )
-        if not any(id(state) in protected for state in step_writes):
+        if not any(id(state) in protected for state in user_writes):
             functional_step = candidate
             mode = "rollout"
 
@@ -687,101 +697,135 @@ def _prepare_steps(engine, example_step_data, *, require_scalar_output):
 
     def materialized_step(data):
         manager.materialize()
-        return engine.step(data)
+        return traced_user_step(data)
 
-    base_step = unmapped_step if functional_step is not None else materialized_step
     if functional_step is None:
+        base_step = materialized_step
         functional_step = build_stateful_step(
             materialized_step,
             example_step_data,
             engine.parameter_states,
             require_scalar_output=require_scalar_output,
         )
-    hoisted, operator_mode = _operator_input_step(
+    else:
+        base_step = unmapped_step
+    written = {id(state) for state in user_writes}
+    functional_step, operator_mode = _axial_operator_step(
         engine,
+        functional_step,
         base_step,
         example_step_data,
+        user_writes=written,
         materialize=mode == "step",
         require_scalar_output=require_scalar_output,
     )
-    if hoisted is not None:
-        functional_step = hoisted
     return initializer_step, functional_step, mode, operator_mode
 
 
-def _split_operator(built):
-    """``(template, leaves)``: the array fields of a ``RunAxialOperator`` and the rest."""
-    if built.cv_operator is not None:
-        return ("cv", None, None), (built.cv_operator,)
-    source, cache = built.dhs
-    source_names = tuple(f.name for f in dataclasses.fields(source) if _is_array(getattr(source, f.name)))
-    cache_names = tuple(f.name for f in dataclasses.fields(cache) if _is_array(getattr(cache, f.name)))
-    leaves = tuple(getattr(source, n) for n in source_names) + tuple(getattr(cache, n) for n in cache_names)
-    return ("dhs", (source, source_names), (cache, cache_names)), leaves
+def _changed_writes(trace):
+    """The states ``trace`` wrote with a new value.
+
+    Nested stateful channel calls can restore exactly the same leaf while
+    marking a state written. Permit only exact tracer forwarding, never a
+    numeric equality comparison.
+    """
+    written = {id(state) for state in trace.get_write_states()}
+    changed = []
+    for state, before in zip(trace.states, trace.original_state_values):
+        if id(state) not in written:
+            continue
+        after = state.value
+        unchanged = jax.tree.structure(before) == jax.tree.structure(after) and all(
+            a is b for a, b in zip(jax.tree.leaves(before), jax.tree.leaves(after))
+        )
+        if not unchanged:
+            changed.append(state)
+    return changed
 
 
-def _join_operator(template, leaves):
-    from braincell.quad._staggered import RunAxialOperator
+class _OperatorLayout(NamedTuple):
+    """Which fields of a :class:`RunAxialOperator` are traced arrays, and the static rest.
 
-    kind, source_part, cache_part = template
-    if kind == "cv":
-        return RunAxialOperator(cv_operator=leaves[0])
-    (source, source_names), (cache, cache_names) = source_part, cache_part
-    k = len(source_names)
-    source = dataclasses.replace(source, **dict(zip(source_names, leaves[:k])))
-    cache = dataclasses.replace(cache, **dict(zip(cache_names, leaves[k:])))
-    return RunAxialOperator(dhs=(source, cache))
+    The traced fields become the operator leaves a step takes as input; the
+    others (index tables, sizes, dtypes) are fixed by the morphology and
+    kept as they were built.
+    """
 
+    kind: str
+    source: object = None
+    source_fields: tuple[str, ...] = ()
+    cache: object = None
+    cache_fields: tuple[str, ...] = ()
 
-def _is_array(value):
-    return isinstance(value, (jax.Array, u.Quantity))
+    @classmethod
+    def split(cls, built):
+        """``(layout, leaves)`` for a built ``RunAxialOperator``."""
+        if built.cv_operator is not None:
+            return cls("cv"), (built.cv_operator,)
+        source, cache = built.dhs
+        source_fields = _traced_fields(source)
+        cache_fields = _traced_fields(cache)
+        leaves = tuple(getattr(source, name) for name in source_fields)
+        leaves += tuple(getattr(cache, name) for name in cache_fields)
+        return cls("dhs", source, source_fields, cache, cache_fields), leaves
 
+    def join(self, leaves):
+        """The ``RunAxialOperator`` with ``leaves`` in place of the traced fields."""
+        from braincell.quad._staggered import RunAxialOperator
 
-def _user_step_writes(engine, example_step_data, *, materialize):
-    """States the user's step writes, other than exact forwarding of the value it read."""
-    manager = engine.target.trainables
-    written_states = []
-
-    def probe(data):
-        for state in engine.parameter_states.values():
-            _ = state.value
-        if materialize:
-            manager.materialize()
-        with brainstate.StateTraceStack() as trace:
-            result = engine.step(data)
-        written = {id(state) for state in trace.get_write_states()}
-        for state, before in zip(trace.states, trace.original_state_values):
-            if id(state) not in written:
-                continue
-            after = state.value
-            unchanged = jax.tree.structure(before) == jax.tree.structure(after) and all(
-                a is b for a, b in zip(jax.tree.leaves(before), jax.tree.leaves(after))
-            )
-            if not unchanged:
-                written_states.append(state)
-        return result
-
-    brainstate.transform.StatefulFunction(probe, return_only_write=False).make_jaxpr(example_step_data)
-    return {id(state) for state in written_states}
+        if self.kind == "cv":
+            return RunAxialOperator(cv_operator=leaves[0])
+        count = len(self.source_fields)
+        source = dataclasses.replace(self.source, **dict(zip(self.source_fields, leaves[:count])))
+        cache = dataclasses.replace(self.cache, **dict(zip(self.cache_fields, leaves[count:])))
+        return RunAxialOperator(dhs=(source, cache))
 
 
-def _operator_input_step(engine, base_step, example_step_data, *, materialize, require_scalar_output):
-    """Re-trace ``base_step`` with the target's axial operator as an explicit input (OPT-13 prototype).
+def _traced_fields(record):
+    """Names of the dataclass fields of ``record`` that hold a JAX array anywhere in their tree."""
+    return tuple(
+        field.name
+        for field in dataclasses.fields(record)
+        if any(isinstance(leaf, jax.Array) for leaf in jax.tree.leaves(getattr(record, field.name)))
+    )
 
-    Returns ``(functional_step, mode)``. ``mode`` is ``"rollout"`` when the
-    operator is built once per rollout; ``"step"`` when the user's step
-    writes a state the operator is built from (or a root), so every step
-    must build its own; ``"none"`` when the target has no axial operator in
-    the solver's trace (a lumped Cell, a reduction model, a Network).
+
+def _axial_operator_step(
+    engine,
+    functional_step,
+    base_step,
+    example_step_data,
+    *,
+    user_writes,
+    materialize,
+    require_scalar_output,
+):
+    """Retrace ``base_step`` with the target's axial operator as an explicit input.
+
+    Returns ``(functional_step, axial_operator_mode)``:
+
+    - ``"rollout"``: the step takes the operator leaves with its data, so a
+      rollout builds the operator once, from its initial state values.
+    - ``"step"``: the user's step changes a state the operator is built
+      from, or an optimizer root, so every step builds its own; the step is
+      returned unchanged.
+    - ``"none"``: the target builds no axial operator (a lumped Cell, one
+      running a reduction model, a Network); the step is returned unchanged.
+
+    ``user_writes`` holds the ids of the states the user's step changed when
+    ``functional_step`` was traced. While the step is traced its runtime
+    holds that trace's operator leaves; they are restored on exit, and the
+    runtime's host caches are written only for concrete geometry, so no
+    cache keeps them.
     """
     from braincell.quad._staggered import axial_operator_per_run
 
     target = engine.target
     runtime = getattr(target, "_runtime", None)
-    if runtime is None or not hasattr(runtime, "run_axial_operator") or getattr(runtime, "geometry", None) is None:
-        return None, "none"
+    if getattr(runtime, "geometry", None) is None or not hasattr(runtime, "run_axial_operator"):
+        return functional_step, "none"
     manager = target.trainables
-    template = {}
+    layouts = []
 
     def build(_):
         for state in engine.parameter_states.values():
@@ -794,20 +838,24 @@ def _operator_input_step(engine, base_step, example_step_data, *, materialize, r
             built = runtime.run_axial_operator
             if built is None:
                 return ()
-            template["value"], leaves = _split_operator(built)
+            layout, leaves = _OperatorLayout.split(built)
+            layouts.append(layout)
             return leaves
 
     builder = brainstate.transform.StatefulFunction(build, return_only_write=False)
     builder.make_jaxpr(None)
-    if "value" not in template:
-        return None, "none"
+    if not layouts:
+        return functional_step, "none"
     builder_trace = builder.get_state_trace(None)
     builder_states = tuple(builder_trace.states)
     guarded = {id(state) for state in builder_states} | {id(state) for state in engine.parameter_states.values()}
-    if _user_step_writes(engine, example_step_data, materialize=materialize) & guarded:
-        return None, "step"
-    _values, example_leaves = builder.jaxpr_call(builder_trace.get_state_values(), None)
-    operator_template = template["value"]
+    if user_writes & guarded:
+        return functional_step, "step"
+    layout = layouts[0]
+    example_leaves = jax.tree.map(
+        lambda leaf: jnp.zeros(leaf.shape, leaf.dtype),
+        jax.eval_shape(lambda values: builder.jaxpr_call(values, None)[1], builder_trace.get_state_values()),
+    )
 
     def step_with_operator(args):
         data, leaves = args
@@ -816,7 +864,7 @@ def _operator_input_step(engine, base_step, example_step_data, *, materialize, r
             # values, so a rollout can build it from them.
             _ = state.value
         previous = runtime.run_axial_operator
-        runtime.run_axial_operator = _join_operator(operator_template, leaves)
+        runtime.run_axial_operator = layout.join(leaves)
         try:
             return base_step(data)
         finally:

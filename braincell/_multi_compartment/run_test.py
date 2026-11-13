@@ -1106,9 +1106,12 @@ def _step_loop_rewrites(cell):
     writes over the carry; on GPU each such carry costs a copy per step
     (CELL-39). Returns ``(position, value)`` pairs.
     """
-    (plan,) = cell._run_loop_cache.values()
+    ((key, plan),) = cell._run_loop_cache.items()
+    args = (cell._take_value_inputs(),)
+    if key[-1]:  # the loop takes the axial operator first (CELL-52)
+        args = ((_staggered.host_axial_operator(cell)[1],), *args)
     with brainstate.environ.context(dt=DT):
-        lines = plan.loop.lower(cell._take_value_inputs()).as_text().splitlines()
+        lines = plan.loop.lower(*args).as_text().splitlines()
     start = max(
         (index for index, line in enumerate(lines) if "stablehlo.while(" in line),
         key=lambda index: lines[index].count("%iterArg"),

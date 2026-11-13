@@ -867,6 +867,26 @@ class UpdatePathTest(unittest.TestCase):
         ``"padded"`` raised (``PaddingLimitError``, 6.54e3 slots per record).
         """
         self._check(source=_sequence((*DENSE_MS, 1.0e5)), steps=1000)
+        # The plan holds only its steps with arrivals; a run between loops reuses it.
+        self._check(source=_sequence((*DENSE_MS, 1.0e5)), run_first=300, steps=700)
+
+    @_float64
+    def test_a_run_before_prepare_run_and_a_schedule_far_longer(self):
+        # CELL-56 (d) with the plan of the steps with arrivals: 4 steps run, then the update() loops.
+        out = {}
+        for method in (None, *METHODS):
+            net, cell = _model(source=_sequence((*DENSE_MS, 1.0e5)))
+            extra = {} if method is None else {"scheduled_delivery": method}
+            head = _values(net.run(dt=DT, duration=4 * DT, **extra), cell)
+            net.prepare_run(dt=DT, **extra)
+            if method is not None:
+                (layout,) = net._scheduled_plans.preparation["layouts"]
+                self.assertLess(layout["stored_steps"], layout["n_steps"])
+            out[method] = (head, self._update_values(net, cell, 996))
+        self.assertGreater(np.max(out[None][1]["g"]), 0.0)
+        for method in METHODS:
+            for got, reference in zip(out[method], out[None]):
+                _assert_same(self, got, reference)
 
     @_float64
     def test_a_schedule_without_events(self):
@@ -885,7 +905,7 @@ class UpdatePathTest(unittest.TestCase):
 LIMIT_DT = 0.5 * u.ms
 
 
-def _limit_model():
+def _limit_model(noise=0.0):
     """``NetStim(size=2, start=[1, 3] ms, interval=1e4 ms, number=2**21)`` into one ExpSyn, delay 0.3 ms.
 
     At dt 0.5 ms ``prepare_run`` generates the 107 375 events of each
@@ -898,7 +918,8 @@ def _limit_model():
     net = bc.Network("limit", seed=1)
     post = net.add_population("post", cell)
     stim = net.add_population(
-        "stim", bc.NetStim(size=2, start=[1.0, 3.0] * u.ms, interval=1.0e4 * u.ms, number=2**21, seed=11)
+        "stim",
+        bc.NetStim(size=2, start=[1.0, 3.0] * u.ms, interval=1.0e4 * u.ms, number=2**21, noise=noise, seed=11),
     )
     net.connect("drive", source=stim, synapse=post.synapses["exp"][[0, 0]], weight=0.001 * u.uS, delay=0.3 * u.ms)
     return net, cell
@@ -986,8 +1007,10 @@ class EveryEventPlanTest(unittest.TestCase):
                 net, cell = _limit_model()
                 net.prepare_run(dt=LIMIT_DT, scheduled_delivery=method)
                 (layout,) = net._scheduled_plans.preparation["layouts"]
+                # The events past the limit, clipped to it, are not planned: one record per stored step.
                 self.assertEqual(
-                    (layout["records"], layout["stored_steps"], layout["n_steps"]), (214750, 214750, last + 1)
+                    (layout["records"], layout["stored_steps"], layout["n_steps"], layout["width"]),
+                    (214750, 214750, last + 1, 1),
                 )
                 # The rows' arrays and one int32 per stored step: no array of the span.
                 self.assertLess(layout["array_bytes"], 32 * 214750)
@@ -1007,6 +1030,20 @@ class EveryEventPlanTest(unittest.TestCase):
                 reference.prepare_run(dt=LIMIT_DT)
                 np.testing.assert_array_equal(g, UpdatePathTest._update_values(reference, cell, 20)["g"])
                 self.assertGreater(g[3, 0], 0.0)
+
+    def test_a_noisy_schedule_to_the_step_limit(self):
+        # As CELL-56's sentinel test: no step past the limit is stored, and no step holds the clipped arrivals.
+        for method in METHODS:
+            with self.subTest(method=method):
+                net, _ = _limit_model(noise=1.0)
+                net.prepare_run(dt=LIMIT_DT, scheduled_delivery=method)
+                (layout,) = net._scheduled_plans.preparation["layouts"]
+                self.assertLessEqual(layout["width"], 2)
+                self.assertLess(layout["stored_steps"], layout["n_steps"])
+                self.assertLess(layout["n_steps"], 2**31)
+                steps = np.asarray(net._prepared_plans[0][-1])
+                self.assertEqual(steps.shape, (layout["stored_steps"],))
+                self.assertTrue(np.all(np.diff(steps) > 0))
 
 
 class ForwardModeTest(unittest.TestCase):

@@ -1392,19 +1392,21 @@
   `bptt_reference_loss`. RTRL linearizes the build once and carries its
   tangent, and `diagnose` pulls the operator's share of the local gradient
   back through the build. On the CA1 morphology (`rk4`, float64), with `Ra`
-  trainable, a step took 441-786 ms on one CPU core and 18-39 ms on an RTX
-  3090 on main `8bb8721`; it now takes 1.7-2.7 ms and 0.16-0.34 ms. With
+  trainable, a step took 230-377 ms on one CPU core and 18-39 ms on an RTX
+  3090 on main `8bb8721`; it now takes 0.59-1.09 ms and 0.16-0.34 ms. With
   sodium `g_max` trainable, the RTRL-type entries on GPU went from 15-23 to
   0.19-0.27 ms per step; CPU steps are unchanged, since XLA already moved
-  those builds out of the loop. Each run now pays for one build, 15-23 ms on
-  GPU (measured on the `g_max` RTRL entries). The compiled scratch memory of
-  rollout RTRL with one `Ra` scale per CV (681 directions) fell from 70.8 to
-  18.9 GiB, and `prepare` takes 0.2-0.5 s longer. These are medians of 3
-  rounds on a loaded machine (load1 13-70). Gradients change only in the
-  last bits (Y cable: at most 6e-16 in float64, 8e-8 in float32). A step
-  that writes the geometry or an optimizer root keeps building the operator
-  at every step, with main's results; the new `axial_operator_mode` property
-  reports `"rollout"`, `"step"` or `"none"`.
+  those builds out of the loop. Each run now pays for one build: the fixed
+  cost of a CPU run with `Ra` went from 28-54 to 84-129 ms, and on GPU a
+  build costs 15-23 ms (measured on the `g_max` RTRL entries). The compiled
+  scratch memory of rollout RTRL with one `Ra` scale per CV (681 directions)
+  fell from 70.8 to 18.9 GiB, and `prepare` takes 0.5-0.65 s longer with
+  `Ra` and 0.11 s with `g_max`. These are medians of 3 rounds; the CPU rows
+  ran at load1 1-9, the GPU rows under load (14-70). Gradients change only
+  in the last bits (Y cable: at most 6e-16 in float64, 8e-8 in float32). A
+  step that writes the geometry or an optimizer root keeps building the
+  operator at every step, with main's results; the new `axial_operator_mode`
+  property reports `"rollout"`, `"step"` or `"none"`.
 
 ### Bug Fixes
 

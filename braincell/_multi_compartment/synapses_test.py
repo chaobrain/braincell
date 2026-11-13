@@ -552,7 +552,8 @@ class PerMemberPlaceTest(unittest.TestCase):
                 self.assertIsNot(source, mechanism)
                 params = mechanism.params
                 if name == "p":
-                    self.assertEqual(float(params["tau"].to_decimal(u.ms)), 1.0 + 0.001 * m)
+                    # An (n,) array over one location per member: a (1,) row.
+                    np.testing.assert_array_equal(np.asarray(params["tau"].to_decimal(u.ms)), [1.0 + 0.001 * m])
                 elif name == "q":
                     got = np.atleast_1d(np.asarray(params["tau"].to_decimal(u.ms)))
                     np.testing.assert_array_equal(got, 2.0 + 1e-4 * np.arange(flat_q, flat_q + counts[m]))
@@ -565,7 +566,7 @@ class PerMemberPlaceTest(unittest.TestCase):
         expected = []
         for call in range(3):
             for m in range(n):
-                sites = [("soma", 0.5)] if call == 0 or m % 3 == 0 else [("dend", 0.2)] * 2 if m % 3 == 1 else [
+                sites = [("soma", 0.5)] if call == 0 or m % 3 == 0 else [("soma", 0.2)] * 2 if m % 3 == 1 else [
                     ("dend", 0.75)]
                 expected.extend((call * n + m, m, branch, x) for branch, x in sites)
         self.assertEqual(
@@ -598,7 +599,7 @@ class PerMemberPlaceTest(unittest.TestCase):
              TypeError, r"^Per-cell locset sequences currently support Synapse point mechanisms only\.$"),
             (lambda n: ([soma] * n, Synapse("ExpSyn", name="s", tau=[1.0, 2.0] * u.ms)), ValueError,
              r"^Synapse parameter 'tau' with shape \(2,\) cannot broadcast to per-cell location lengths \(1, 1, 1\)\.$"),
-            (lambda n: ([soma] * n, Synapse("ExpSyn", name="s", tau=[[1.0], [2.0, 3.0], [4.0]] * u.ms)), ValueError,
+            (lambda n: ([soma] * n, Synapse("ExpSyn", name="s", tau=(1.0 * u.ms, [2.0, 3.0] * u.ms, 4.0 * u.ms))), ValueError,
              r"^Synapse parameter 'tau' row 1 must be scalar or shape \(1,\), got \(2,\)\.$"),
         )
         for declare, error, message in cases:

@@ -543,7 +543,17 @@ def host_axial_operator(target) -> RunAxialOperator | None:
         return RunAxialOperator(dhs=(source, _get_dhs_static_cache(target, source)))
     source = runtime.axial_operator_source
     if source is None:
-        source = _reduce_cv_axial_operator(target, node_tree=node_tree, scheduling=scheduling)
+        if os.environ.get("BRAINCELL_CELL52_HOST_BUILD", "eager") == "jit":
+            # One compiled program per runtime instead of one dispatch per operation.
+            builder = getattr(runtime, "cell52_builder", None)
+            if builder is None:
+                builder = brainstate.transform.jit(
+                    lambda: _reduce_cv_axial_operator(target, node_tree=node_tree, scheduling=scheduling)
+                )
+                runtime.cell52_builder = builder
+            source = builder()
+        else:
+            source = _reduce_cv_axial_operator(target, node_tree=node_tree, scheduling=scheduling)
         runtime.axial_operator_source = source
     return RunAxialOperator(cv_operator=source)
 

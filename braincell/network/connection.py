@@ -904,6 +904,70 @@ class ConnectionView(DiscreteView):
         return call.source.event_count(self.source_index, t=t, delay=self.delay, dt=dt)
 
     def prepare_runtime(self, dt) -> None:
+        """Quantize the delays of the live rows at ``dt`` and allocate their delay history.
+
+        :meth:`Cell.run <braincell.Cell.run>` does this at its start, and
+        each :meth:`Cell.update <braincell.Cell.update>` call before its step;
+        a spike of a step with a delay of ``k`` steps (``delay / dt``, rounded
+        half up) then reaches its synapse at the end of the ``k``-th step
+        after it. The history is a state, which a traced call cannot create
+        for later calls: before ``update()`` runs under
+        ``brainstate.transform.for_loop`` or ``jit``, call this once outside,
+        or the traced call raises. A call at the ``dt`` the rows already have
+        does nothing; they keep it until :meth:`Cell.reset <braincell.Cell.reset>`.
+
+        Parameters
+        ----------
+        dt : Quantity
+            The step the Cell runs at, e.g. ``0.025 * u.ms``.
+
+        Raises
+        ------
+        NotImplementedError
+            For a plasticity rule on a live source, which runs only in a
+            :class:`~braincell.Network`; raised before any row is prepared.
+        ValueError
+            If ``dt`` is not positive, or the rows have another ``dt``.
+
+        Examples
+        --------
+        A point cell whose spikes reach its own synapse 0.5 ms later, driven
+        by a compiled ``update()`` loop:
+
+        .. code-block:: python
+
+            >>> import brainstate
+            >>> import brainunit as u
+            >>> import braincell as bc
+            >>> cell = bc.Cell.point(1, length=20 * u.um, radius=10 * u.um, V_init=-65 * u.mV)
+            >>> cell = cell.paint(
+            ...     bc.mech.Ion("SodiumFixed", E=50 * u.mV),
+            ...     bc.mech.Ion("PotassiumFixed", E=-77 * u.mV),
+            ...     bc.mech.Channel("Na_HH1952"),
+            ...     bc.mech.Channel("K_HH1952"),
+            ...     bc.mech.Channel("IL"),
+            ... )
+            >>> cell = cell.place(bc.mech.CurrentClamp(delay=0 * u.ms, durations=5 * u.ms, amplitudes=0.1 * u.nA))
+            >>> cell = cell.place(bc.mech.Synapse("ExpSyn", name="syn", tau=2 * u.ms, e=0 * u.mV))
+            >>> _ = bc.connect(
+            ...     "self",
+            ...     source=cell.event_outputs["spike"],
+            ...     synapse=cell.synapses["syn"],
+            ...     weight=0.002 * u.uS,
+            ...     delay=0.5 * u.ms,
+            ... )
+            >>> cell.init_state()
+            >>> cell.connections.prepare_runtime(0.025 * u.ms)
+            >>> def step(t):
+            ...     with brainstate.environ.context(t=t):
+            ...         cell.update()
+            ...         return cell.synapses["syn"].g
+            >>> with brainstate.environ.context(dt=0.025 * u.ms):
+            ...     times = u.math.arange(0.0 * u.ms, 5.0 * u.ms, 0.025 * u.ms)
+            ...     g = brainstate.transform.for_loop(step, times)
+            >>> bool(g.max() > 0 * u.uS)
+            True
+        """
         for call, _ in self._call_items(scheduled=False):
             if call.plasticity is not None:
                 # Raised before any live history is allocated.
@@ -934,18 +998,33 @@ class ConnectionView(DiscreteView):
         for call in self._store.rule_calls():
             call.plasticity.prepare_network(call, dt=dt, delay_quantization=delay_quantization)
 
-    def _prepare_live_runtime(self, dt) -> None:
+    def _check_live_dt(self, dt) -> tuple[_ConnectionCall, bool]:
+        """Refuse a ``dt`` this call cannot run at; return the call and whether it still needs preparing.
+
+        ``Cell.update`` checks every live call before it prepares any.
+        """
         call = self._require_single_call("prepare runtime")
         dt_ms = scalar_decimal(dt, u.ms)
         if dt_ms <= 0.0:
             raise ValueError("Connection runtime dt must be > 0 ms.")
-        if call.live_dt_ms is not None:
-            if not np.isclose(call.live_dt_ms, dt_ms):
-                raise ValueError(
-                    "A live Connection cannot change dt while retaining delayed events; "
-                    "reset the target cell state first."
-                )
+        if call.live_dt_ms is None:
+            return call, True
+        if not np.isclose(call.live_dt_ms, dt_ms):
+            raise ValueError(
+                "A live Connection cannot change dt while retaining delayed events; reset the target cell state first."
+            )
+        return call, False
+
+    def _live_history_depth(self, dt) -> int:
+        """The steps of history this call's delays need at ``dt`` (0: every delay rounds to 0 steps)."""
+        delay_ms = np.asarray(self.delay.to_decimal(u.ms), dtype=float)
+        return int(np.max(_round_half_up_steps(delay_ms / scalar_decimal(dt, u.ms)), initial=0))
+
+    def _prepare_live_runtime(self, dt) -> None:
+        call, unprepared = self._check_live_dt(dt)
+        if not unprepared:
             return
+        dt_ms = scalar_decimal(dt, u.ms)
         delay_ms = np.asarray(self.delay.to_decimal(u.ms), dtype=float)
         steps = _round_half_up_steps(delay_ms / dt_ms).astype(np.int32)
         call.live_dt_ms = dt_ms

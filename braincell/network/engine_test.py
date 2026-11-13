@@ -851,6 +851,22 @@ class NetworkSameTimeTest(unittest.TestCase):
                     for cell, _ in cells:
                         np.testing.assert_array_equal(cell._clock_step.value, 3)
 
+    def test_a_network_that_ran_runs_again(self):
+        # float32: 1000 steps of 100 ms alone (100000 ms), and the same then
+        # one of 0.025 ms (100000.025 ms). Their clocks count other dt, and
+        # one step is within 4·eps·1e5 ms (0.0477 ms): they join, on the
+        # first's clock, the run precision's limit. The second Cell keeps
+        # the float64 time it reached beside the shared clock; the members'
+        # equal clock states still let the next run start.
+        with brainstate.environ.context(precision=32):
+            cells = [_late_cell(_AT_100000), _late_cell(_AT_100000 + ((DT, 1),))]
+            network = _apart_network(*cells)
+            network.run(dt=DT, duration=4 * DT)
+            network.run(dt=DT, duration=4 * DT)
+            for cell, _ in cells:
+                np.testing.assert_array_equal(cell._clock_origin.value.to_decimal(u.ms), 100000.0)
+                np.testing.assert_array_equal(cell._clock_step.value, 8)
+
     def test_the_ways_out_of_the_refusal(self):
         for precision, context in self._contexts():
             with self.subTest(precision=precision), context:

@@ -1411,20 +1411,24 @@ class Network:
         Cell that ran on its own to another time would run from the first
         Cell's, skipping or repeating the difference (CELL-60: 100000.5 ms
         ran from 100000 ms, 20 steps of 0.025 ms back, and took again an
-        event it had taken). :func:`_same_time` compares each Cell with the
-        first; a Cell not yet initialized is at 0. Only Cells that ran on
-        their own before joining can disagree: a member cannot run on its
-        own, and a run or :meth:`prepare_run` gives the members one clock.
+        event it had taken). A Cell whose clock states equal the first's is
+        at its time: a run or :meth:`prepare_run` gives the members one
+        clock, and a member cannot run on its own, so only Cells that ran
+        on their own before joining can differ. :func:`_same_time` compares
+        those with the first; a Cell not yet initialized is at 0.
         """
         populations = list(self._cell_populations().items())
         if len(populations) < 2:
             return
         dt_ms = scalar_decimal(dt, u.ms)
         (first, first_population), *others = populations
-        first_clock = _host_clock(first_population.cell)
+        first_states, first_clock = _host_clock(first_population.cell)
         for name, population in others:
-            clock = _host_clock(population.cell)
-            if _same_time(first_clock, clock, dt_ms):
+            states, clock = _host_clock(population.cell)
+            # Equal states step together, whatever float64 values the Cells
+            # kept beside them (each keeps the time it reached when a run
+            # here changes its dt).
+            if states == first_states or _same_time(first_clock, clock, dt_ms):
                 continue
             times = tuple(origin + step * clock_dt for origin, step, clock_dt in (first_clock, clock))
             shown = tuple(f"{time:.9g}" for time in times)
@@ -1684,15 +1688,17 @@ def _reject_batch_size(batch_size) -> None:
         )
 
 
-def _host_clock(cell) -> tuple[float, int, float]:
-    """``(origin in ms, step, dt in ms)`` of the Cell's clock on the host, at float64 where it kept them so.
+def _host_clock(cell) -> tuple[tuple[float, int, float], tuple[float, int, float]]:
+    """The Cell's clock on the host, ``(origin in ms, step, dt in ms)``, as its states hold it and at float64.
 
-    The values of ``_float64_clock``; ``(0, 0, 0)``, the clock
-    ``init_state`` sets, before ``init_state``.
+    The second is ``_float64_clock``'s: at float64 where the Cell kept
+    the values so. Before ``init_state`` both are ``(0, 0, 0)``, the clock
+    ``init_state`` sets.
     """
     if not getattr(cell, "_initialized", False):
-        return 0.0, 0, 0.0
-    return _float64_clock(cell, cell._clock_host())
+        return (0.0, 0, 0.0), (0.0, 0, 0.0)
+    states = cell._clock_host()
+    return states, _float64_clock(cell, states)
 
 
 def _same_time(first, other, dt_ms: float) -> bool:

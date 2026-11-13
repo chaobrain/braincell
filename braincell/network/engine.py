@@ -74,6 +74,7 @@ from braincell.network.scheduled import (
     scheduled_inputs,
 )
 from braincell.mech import Synapse
+from braincell.quad.protocol import DiffEqState
 
 
 @dataclass(frozen=True)
@@ -192,6 +193,9 @@ class Network:
         self._prepared_run = None
         # The NetStim horizon of update(): its events up to one step past the step limit (CELL-56).
         self._prepared_until_ms: float | None = None
+        # The step update() may not reach: prepare_run(duration=...) generated
+        # no NetStim events for it (CELL-66). None without a duration.
+        self._prepared_stop_step: int | None = None
         # Planned scheduled delivery (CELL-9): the plans, and those prepare_run made for update().
         self._scheduled_plans: ScheduledPlans | None = None
         self._prepared_plans = None
@@ -876,6 +880,7 @@ class Network:
         event_backend="auto",
         brainevent_backend="jax_raw",
         scheduled_delivery=None,
+        duration=None,
     ):
         """Prepare static routing and queues outside a differentiated rollout.
 
@@ -902,6 +907,13 @@ class Network:
             step among them by binary search, so a schedule that reaches
             the step limit takes memory in proportion to its events. Steps
             without arrivals receive nothing, as on the default path.
+        duration : brainunit.Quantity, optional
+            How long the :meth:`update` calls that follow run: an integer
+            multiple of ``dt``, ``n`` steps from the time reached. ``NetStim``
+            events are then generated only for those steps, and
+            :meth:`update` refuses, or turns to NaN, the steps after them
+            (see Notes). ``None`` (default) prepares every step up to the
+            step limit.
 
         Returns
         -------
@@ -915,17 +927,50 @@ class Network:
             ``PaddingLimitError`` if a ``"padded"`` plan exceeds its limits;
             or if the Cells would start off the ``dt`` grid, or are not at
             one ``current_time``, as in :meth:`run`, before anything has
-            changed.
+            changed. Also if ``duration`` is not a positive integer multiple
+            of ``dt``, or the steps it adds would pass the step limit,
+            before anything has changed.
+        TypeError
+            If ``duration`` has no time unit.
         RuntimeError
             If the configuration differs from an earlier run's.
 
         Notes
         -----
-        ``update()`` runs for as many steps as its caller loops, but no
-        further than the step limit, ``2**31 - 1`` steps. ``NetStim``
-        events are generated here as far as that limit, however large
-        ``number`` is: about ``2**31 * dt / interval`` per source, 5.4
-        million at ``dt = 0.025 ms`` and ``interval = 10 ms``.
+        Without ``duration``, ``update()`` runs for as many steps as its
+        caller loops, but no further than the step limit, ``2**31 - 1``
+        steps. ``NetStim`` events are generated here as far as that limit,
+        however large ``number`` is: about ``2**31 * dt / interval`` per
+        source, 5.4 million at ``dt = 0.025 ms`` and ``interval = 10 ms``,
+        about 150 bytes each while a loop is traced. A large population of
+        such sources (``number = 1e9``, as NEURON writes an unlimited train)
+        then runs out of memory: give ``duration``.
+
+        With ``duration`` of ``n`` steps, prepared at step ``k`` (``k = 0``
+        on a new or reset network), the events are generated up to one step
+        past step ``k + n``, so memory follows the duration. Step ``k + n``
+        is the *stop*: ``update()`` delivers the events of the steps before
+        it, and the steps from it on have none. So
+
+        - an eager ``update()`` at or after the stop raises ``ValueError``,
+          naming the stop, before anything changes;
+        - inside a compiled loop (``brainstate.transform.for_loop``,
+          ``jit``) the step is not known on the host, and a step at or
+          after the stop multiplies every Cell's membrane and mechanism
+          states and its spikes by NaN. The states, the spikes, a loss
+          computed from them and its gradient are all NaN from that step on:
+          **a training loss or gradient that turns NaN after a fixed number
+          of steps means the loop ran past the stop.** The steps before it
+          are those of a ``prepare_run`` without ``duration``, bit for bit.
+
+        To run further, call ``prepare_run(dt=..., duration=...)`` again:
+        the new duration counts from the time reached, and extends the
+        events. :meth:`reset_state` returns to ``t = 0`` and keeps the
+        stop, so the same steps run again. A function the caller compiled
+        (``jax.jit``, a ``for_loop`` traced once) holds the stop and events
+        it was traced with: after a second ``prepare_run`` trace it again,
+        or its steps past the old stop are NaN. :meth:`run` does not use
+        ``duration`` and generates its own events.
 
         ``"direct"`` supports first-order reverse differentiation of the
         ``update()`` rollout (``jax.grad``, ``brainstate.transform.grad``)
@@ -957,8 +1002,32 @@ class Network:
             >>> spikes = brainstate.transform.for_loop(lambda _: net.update()["post"], jnp.arange(400))
             >>> spikes.shape
             (400, 1, 1)
+
+        An unlimited Poisson background, prepared for 10 ms:
+
+        .. code-block:: python
+
+            >>> cell = braincell.Cell(
+            ...     braincell.Morphology.from_soma(length=20.0 * u.um, radius=10.0 * u.um), pop_size=1
+            ... )
+            >>> _ = cell.place(at("soma", 0.5), braincell.mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms))
+            >>> net = braincell.Network("background", seed=1)
+            >>> post = net.add_population("post", cell)
+            >>> noise = net.add_population(
+            ...     "noise",
+            ...     braincell.NetStim(size=100, interval=10.0 * u.ms, number=10**9, noise=1.0, seed=3),
+            ... )
+            >>> _ = net.connect("drive", source=noise, synapse=post.synapses["s"], weight=0.001 * u.uS)
+            >>> _ = net.prepare_run(dt=0.025 * u.ms, duration=10.0 * u.ms)
+            >>> spikes = brainstate.transform.for_loop(lambda _: net.update()["post"], jnp.arange(400))
+            >>> bool(u.math.isfinite(post.cell.V.value).all())
+            True
         """
         validate_time_quantity(dt, name="dt", prefix="Network.prepare_run")
+        n_prepared = 0
+        if duration is not None:
+            validate_time_quantity(duration, name="duration", prefix="Network.prepare_run")
+            n_prepared = _duration_steps(duration, dt)
         event_backend = normalize_event_backend(event_backend)
         scheduled_delivery = normalize_scheduled_delivery(scheduled_delivery, prefix="Network.prepare_run(...)")
         self._reject_different_times(dt, prefix="Network.prepare_run(...)")
@@ -983,16 +1052,22 @@ class Network:
             event_backend=event_backend,
             brainevent_backend=brainevent_backend,
         )
-        # update() runs for an unknown number of steps, but no further than
-        # the step limit (each eager call checks it): as for a run of that
-        # many steps, NetStim events up to one step past it cover every
-        # arrival update() delivers, and later events are not generated
-        # (CELL-56).
+        # Without a duration, update() runs for an unknown number of steps,
+        # but no further than the step limit (each eager call checks it): as
+        # for a run of that many steps, NetStim events up to one step past it
+        # cover every arrival update() delivers, and later events are not
+        # generated (CELL-56). With one, they cover its n steps, which end at
+        # the stop update() checks (CELL-66).
         start_ms, join = self._start_clocks(
-            setup.ordered_population_names, dt=dt, n_steps=0, prefix="Network.prepare_run(...)"
+            setup.ordered_population_names, dt=dt, n_steps=n_prepared, prefix="Network.prepare_run(...)"
         )
         _, step, _ = self.populations[setup.ordered_population_names[0]].cell._clock_host()
-        until_ms = start_ms + (MAX_STEPS - int(step) + 1) * scalar_decimal(dt, u.ms)
+        if duration is None:
+            stop_step = None
+            until_ms = start_ms + (MAX_STEPS - int(step) + 1) * scalar_decimal(dt, u.ms)
+        else:
+            stop_step = int(step) + n_prepared
+            until_ms = start_ms + (n_prepared + 1) * scalar_decimal(dt, u.ms)
         schedule_key = self._prepare_netstim_schedules(until_ms=until_ms)
         plans = None
         if scheduled_delivery is not None:
@@ -1013,6 +1088,7 @@ class Network:
         self._prepared_run = (setup, cached, dt, join)
         self._prepared_plans = plans
         self._prepared_until_ms = until_ms
+        self._prepared_stop_step = stop_step
         return self
 
     def update(self):
@@ -1030,9 +1106,12 @@ class Network:
             If :meth:`prepare_run` has not been called outside tracing.
         ValueError
             If called eagerly with the step count at its limit,
-            ``2**31 - 1``. Inside a compiled loop the count is not
+            ``2**31 - 1``, or at or after the stop of
+            ``prepare_run(duration=...)``, before anything has changed; the
+            message names the stop. Inside a compiled loop the count is not
             checked, as that would cost a host round trip per step: keep
-            such a loop within the limit (14.9 h at ``dt = 0.025 ms``).
+            such a loop within the limit (14.9 h at ``dt = 0.025 ms``) and
+            the duration (see Notes).
 
         Notes
         -----
@@ -1042,12 +1121,29 @@ class Network:
         The step starts at ``t = n·dt`` and advances the step count ``n``
         by one, as in :meth:`run`: a loop of ``update()`` calls steps at the
         times of one ``run``.
+
+        After ``prepare_run(duration=...)``, a step of a compiled loop at or
+        after the stop multiplies every Cell's dynamic states and spikes by
+        NaN, so they, a loss computed from them and its gradient are NaN
+        from that step on; the earlier steps are unchanged. If a loss or
+        gradient turns NaN after a fixed number of steps, the loop ran past
+        the duration: prepare a longer one. A NaN spike compares false, so
+        a boolean reading (``spike > 0``) shows no spike there rather than
+        NaN; check the membrane potential or the float spikes.
         """
         from braincell.network.event import _schedule_horizon
 
         if self._prepared_run is None:
             raise RuntimeError("Call Network.prepare_run() before update().")
         setup, cached, dt, join = self._prepared_run
+        step = self.populations[setup.ordered_population_names[0]].cell._clock_step.value
+        stop = self._prepared_stop_step
+        if not is_traced_value(step):
+            # Inside a compiled loop the count is a tracer: checking it would
+            # cost a host round trip per step.
+            check_step_limit(step, 1, dt=dt, prefix="Network.update()")
+            if stop is not None and int(step) >= stop:
+                raise ValueError(_past_duration_message(int(step), stop))
         if cached.runner is None:
             # A Cell registered an input since the loop was traced, or
             # reset_state() dropped the hand-overs it was traced with.
@@ -1063,11 +1159,6 @@ class Network:
                 delivery_state=cached.delivery_state,
             )
             self._prepared_run = (setup, cached, dt, join)
-        step = self.populations[setup.ordered_population_names[0]].cell._clock_step.value
-        if not is_traced_value(step):
-            # Inside a compiled loop the count is a tracer: checking it would
-            # cost a host round trip per step.
-            check_step_limit(step, 1, dt=dt, prefix="Network.update()")
         self.trainables.materialize()
         values = self._take_value_inputs(setup.ordered_population_names)
         try:
@@ -1080,7 +1171,33 @@ class Network:
         except BaseException:
             self._restore_value_inputs(values)
             raise
+        if stop is not None and is_traced_value(step):
+            self._poison_past_stop(setup.ordered_population_names, step >= stop)
         return {name: self.populations[name].cell.spike.value for name in setup.ordered_population_names}
+
+    def _poison_past_stop(self, names, past) -> None:
+        """Multiply the Cells' dynamic states and spikes by NaN on a step past the prepared ones.
+
+        A step of a compiled ``update()`` loop at or after the stop of
+        ``prepare_run(duration=...)`` lacks the NetStim events that were not
+        generated. Raising there would cost a host round trip per step, and
+        setting NaN with ``where`` would leave the gradient finite; a factor
+        ``where(past, nan, 1)`` makes the states, the loss and its gradient
+        NaN from that step on, and leaves the others unchanged bit for bit
+        (CELL-66).
+        """
+        factor = jnp.where(past, jnp.nan, 1.0)
+
+        def poison(leaf):
+            # Integration states and spikes are floating point.
+            return leaf * factor.astype(leaf.dtype)
+
+        for name in names:
+            cell = self.populations[name].cell
+            states = [state for state in brainstate.graph.states(cell).values() if isinstance(state, DiffEqState)]
+            states.append(cell.spike)
+            for state in states:
+                state.value = jax.tree.map(poison, state.value, is_leaf=lambda x: isinstance(x, u.Quantity))
 
     def _take_value_inputs(self, names) -> dict:
         """Take the value inputs of the Cells named ``names`` for one call of a compiled loop.
@@ -1707,6 +1824,15 @@ class Network:
             stop_time=stop_t,
             dt=dt,
         )
+
+
+def _past_duration_message(step: int, stop: int) -> str:
+    """The error of an eager ``Network.update()`` at or past the stop of ``prepare_run(duration=...)``."""
+    return (
+        f"Network.update() at step {step}: prepare_run(duration=...) prepared the steps before step {stop} "
+        "and generated no NetStim events after them; call prepare_run(..., duration=...) again with a "
+        "duration that covers the steps to run, or reset_state() to start again from t = 0."
+    )
 
 
 def _reject_batch_size(batch_size) -> None:

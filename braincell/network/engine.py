@@ -43,7 +43,7 @@ from braincell._multi_compartment.run import (
     _float64_clock,
     _keep_started_clock,
     _kept_handover,
-    _recording_time_mask,
+    _sample_rows,
     axial_operator_before_steps,
     check_step_limit,
     host_clock_start,
@@ -100,20 +100,18 @@ class _CachedRunLoop:
 class _Join:
     """What the Cells of a run take over from the runs before it (CELL-57).
 
-    ``prepared`` names the Cells whose boundary at the start is prepared, by
-    a run on their own: it is theirs, and the Network's first step does not
-    prepare it again. ``handovers`` holds ``(name, ArrivalHandover)`` for
-    the Cells that ran at another ``dt`` before, whose arrival steps keep
-    what those runs took. Both are empty for Cells that only the Network
-    ran.
+    ``handovers`` holds ``(name, ArrivalHandover)`` for the Cells that ran
+    at another ``dt`` before, whose arrival steps keep what those runs took;
+    it is empty for Cells that only the Network ran, or ran at its ``dt``.
+    A run on its own leaves no boundary prepared (CELL-55), so the
+    Network's first step prepares the boundary it starts at for every Cell.
     """
 
-    prepared: tuple[str, ...] = ()
     handovers: tuple = ()
 
     @property
     def key(self) -> tuple:
-        return () if not (self.prepared or self.handovers) else (self.prepared, self.handovers)
+        return self.handovers
 
 
 class Network:
@@ -514,9 +512,9 @@ class Network:
             for population in self._cell_populations().values():
                 population.cell._set_clock(0.0 * u.ms, 0, dt)
             if join.key:
-                # From t = 0 no earlier run took any event or prepared a
-                # boundary: update() builds its loop, and the plan, again
-                # without them (CELL-57).
+                # From t = 0 no earlier run took any event: update() builds
+                # its loop, and the plan, again without the hand-overs
+                # (CELL-57).
                 cached = _CachedRunLoop(runner=None, delivery_state=cached.delivery_state)
                 self._prepared_run = (setup, cached, dt, _Join())
                 if self._prepared_plans is not None:
@@ -640,7 +638,11 @@ class Network:
 
         - ``"direct"`` stores the records in step order with one offset per
           step and reads the current step's: storage grows with the
-          records, the steps and the rows. It is reverse-differentiable to
+          records, the steps and the rows. A window keeps the record slots
+          of the largest window of its length the Network planned, so a
+          later one whose records fit reuses the compiled loop; a window
+          that needs more takes twice its records plus 128 slots and
+          traces the loop again. It is reverse-differentiable to
           first order only: forward mode (``jax.jvp``, ``jacfwd``) through it
           raises ``TypeError`` when traced.
         - ``"padded"`` stores ``steps x width`` slots, ``width`` being the
@@ -655,8 +657,10 @@ class Network:
           sparse tail of a schedule runs in the storage an earlier window
           was accepted in; whether a window passes thus depends on the
           windows run before it (since initialization; :meth:`reset_state`
-          keeps them). It differentiates as ordinary JAX code, forward
-          mode included.
+          keeps them). The plan :meth:`prepare_run` builds is checked on
+          the steps it stores, which are only those with arrivals when
+          the window form would not fit. It differentiates as ordinary
+          JAX code, forward mode included.
 
         The default is ``None`` on every device; choose a method by
         measuring. In ``benchmarks/performance/synapse_events`` (its
@@ -675,6 +679,27 @@ class Network:
         it saves. The method is part of the runtime configuration, fixed
         after the first run as ``event_backend`` is; a first run that raised
         ``PaddingLimitError`` fixes nothing.
+
+        **Compiled loops** (CELL-74). A run with as many steps as an
+        earlier one reuses its compiled loop. On the default path
+        (``scheduled_delivery=None``) the loop holds the NetStim events
+        generated so far as constants. A NetStim with ``size`` times
+        ``max(number)`` at most ``2**20`` generates every event at
+        construction, so its events never change the loop. A larger one
+        generates them on demand: a run that needs later events first
+        extends the schedule to at least twice its width, then traces and
+        compiles the loop again, which reads every generated event. So
+        ``k`` runs of one length compile the loop about ``log2(k) + 1``
+        times; after :meth:`reset_state` the schedule keeps its width and
+        the runs compile nothing. The cost of an extension grows with the
+        generated events: with a million sources, on one CPU, the runs that
+        extended the schedule took 3.1 to 5.5 s and those that reused the
+        loop 0.6 to 0.9 s. With ``scheduled_delivery`` the plans are
+        arguments of the loop, so a NetStim that only planned rows read
+        grows without tracing the loop again; ``"direct"`` is the path for
+        long continuations from large NetStims. A NetStim that a plasticity
+        rule reads, as its rows' source or its ``post`` signal, still keys
+        the loop: the rule reads its events when the loop is traced.
 
         Examples
         --------
@@ -739,6 +764,9 @@ class Network:
         start_ms, join = self._start_clocks(ordered_population_names, dt=dt, n_steps=n_steps, prefix="Network.run(...)")
         n_recording = setup.n_recording
         n_event = setup.n_event
+        # The step of the grid from time 0 the run starts at, on which its
+        # schedules sample and its scheduled events arrive (CELL-46, CELL-59a).
+        start_step = self._grid_start_step(ordered_population_names, dt)
         # NetStim events up to one step past the end cover every arrival the
         # loop delivers; later events are not generated.
         until_ms = start_ms + (n_steps + 1) * scalar_decimal(dt, u.ms)
@@ -746,7 +774,6 @@ class Network:
         plans = None
         if scheduled_delivery is not None:
             # The plans of the window [step, step + n_steps), before the loop (CELL-9).
-            start_step = self._grid_start_step(ordered_population_names, dt)
             plans, schedule_key = self._scheduled_arrays(
                 scheduled_delivery,
                 dt=dt,
@@ -790,9 +817,9 @@ class Network:
             for compiled in setup.compiled_recordings[population_name]:
                 values = recording_values[recording_index]
                 recording_index += 1
-                mask = _recording_time_mask(times, compiled.schema)
-                selected = values[mask]
-                first_time = None if not np.any(mask) else times[int(np.flatnonzero(mask)[0])]
+                rows = _sample_rows(start_step, n_steps, compiled.schema, dt)
+                selected = values[rows.start : rows.stop : rows.step]
+                first_time = times[rows[0]] if rows else None
                 samples[population_name][compiled.spec.name] = SampleBlock(
                     values=selected,
                     schema=compiled.schema,
@@ -862,12 +889,17 @@ class Network:
             Backend for the sparse event operator.
         scheduled_delivery : {None, "direct", "padded"}, optional
             As in :meth:`run`. The plan :meth:`update` reads covers every
-            event it can deliver (see Notes), steps ``[0, last arrival + 1)``
-            of each synapse layout, and is built once, here: a training
-            loop of ``update()`` calls, split over several ``for_loop``
-            calls or rerun after :meth:`reset_state`, uses it throughout.
-            Steps past the last arrival receive nothing, as on the default
-            path.
+            event it can deliver (see Notes), and is built once, here: a
+            training loop of ``update()`` calls, split over several
+            ``for_loop`` calls or rerun after :meth:`reset_state`, uses it
+            throughout. Each synapse layout stores steps ``[0, last
+            arrival + 1)``, as a run's window does, when that fits the
+            method's budget (``"direct"``: no more steps than record slots;
+            ``"padded"``: the limits in :meth:`run`). Otherwise it stores
+            only the steps with arrivals, and each ``update()`` finds its
+            step among them by binary search, so a schedule that reaches
+            the step limit takes memory in proportion to its events. Steps
+            without arrivals receive nothing, as on the default path.
 
         Returns
         -------
@@ -974,7 +1006,6 @@ class Network:
             schedule_key=schedule_key,
             scheduled_delivery=scheduled_delivery,
             join=join,
-            update=True,
         )
         self.trainables.materialize()
         self._prepared_run = (setup, cached, dt, join)
@@ -1026,7 +1057,6 @@ class Network:
                     delivery_state=cached.delivery_state,
                     scheduled_delivery=self._runtime_config[-1],
                     join=join,
-                    update=True,
                 ),
                 delivery_state=cached.delivery_state,
             )
@@ -1177,7 +1207,6 @@ class Network:
         schedule_key: tuple = (),
         scheduled_delivery: str | None = None,
         join: _Join = _Join(),
-        update: bool = False,
     ) -> _CachedRunLoop:
         key = (
             setup_key,
@@ -1188,7 +1217,7 @@ class Network:
         if scheduled_delivery is not None:
             key = key + (scheduled_delivery,)
         if join.key:
-            key = key + (join.key, update)
+            key = key + (join.key,)
         cached = self._network_run_loop_cache.get(key)
         if cached is None:
             delivery_state = self._delivery_state_cache.get(setup_key)
@@ -1207,7 +1236,6 @@ class Network:
                     delivery_state=delivery_state,
                     scheduled_delivery=scheduled_delivery,
                     join=join,
-                    update=update,
                 ),
                 delivery_state=delivery_state,
             )
@@ -1232,7 +1260,6 @@ class Network:
         delivery_state,
         scheduled_delivery: str | None = None,
         join: _Join = _Join(),
-        update: bool = False,
     ):
         """Create a persistent jitted scan of ``n_steps`` steps for one network run shape.
 
@@ -1247,10 +1274,9 @@ class Network:
 
         ``join`` (:class:`_Join`) holds what the Cells take over from their
         runs before (CELL-57): the arrival steps of each Cell keep its
-        hand-over, and the first step does not prepare the boundaries that
-        are already prepared. A run's loop takes that step before its scan;
-        the loop of ``update()`` (``update``), which runs one step per call,
-        prepares those Cells' boundaries only while they are not prepared.
+        hand-over. Every step prepares the boundary it starts at for every
+        Cell, the first included (CELL-55), so the loop of ``update()``,
+        which runs one step per call, is the loop of a one-step run.
         """
         from braincell.network.event import boundary_step, grid_step, handed_over
 
@@ -1260,30 +1286,11 @@ class Network:
         event_sources = setup.event_sources
         cells = tuple(self.populations[name].cell for name in ordered_population_names)
         handovers = dict(join.handovers)
-        prepared = frozenset(join.prepared)
-        first_apart = bool(prepared) and not update
 
-        def _prepare_inputs(t, s, first: bool) -> None:
+        def _prepare_inputs() -> None:
             for name in ordered_population_names:
-                cell = self.populations[name].cell
                 with handed_over(handovers.get(name)):
-                    if name not in prepared:
-                        cell._prepare_next_synapse_inputs()
-                    elif not first_apart:
-                        cell._prepare_first_synapse_inputs(t=t, step=s)
-                    elif not first:
-                        cell._prepare_next_synapse_inputs()
-
-        def _scan(step, *over):
-            if not first_apart:
-                return brainstate.transform.for_loop(step, *over)
-            # The first step, which leaves the prepared boundaries to the
-            # runs that prepared them, before the scan of the others.
-            first = step(*(item[0] for item in over), first=True)
-            if n_steps == 1:
-                return jax.tree.map(lambda value: value[None], first)
-            rest = brainstate.transform.for_loop(step, *(item[1:] for item in over))
-            return jax.tree.map(lambda head, tail: jnp.concatenate([head[None], tail]), first, rest)
+                    self.populations[name].cell._prepare_next_synapse_inputs()
 
         def _run_loop(values):
             origin = cells[0]._clock_origin.value
@@ -1294,7 +1301,7 @@ class Network:
             grid = grid_step(origin, step, dt) + jnp.arange(n_steps, dtype=jnp.int32)
             with brainstate.environ.context(dt=dt):
 
-                def _step(t, s, first=False):
+                def _step(t, s):
                     with brainstate.environ.context(t=t), boundary_step(t, s):
                         with jax.named_scope("braincell:network_run:prepare_clamps"):
                             for name in ordered_population_names:
@@ -1311,7 +1318,7 @@ class Network:
                         with jax.named_scope("braincell:network_run:write_arrivals"):
                             write_arrivals(delivery_state, populations=self.populations)
                         with jax.named_scope("braincell:network_run:prepare_inputs"):
-                            _prepare_inputs(t, s, first)
+                            _prepare_inputs()
                         with jax.named_scope("braincell:network_run:begin_cells"):
                             for name in ordered_population_names:
                                 self.populations[name].cell._begin_step()
@@ -1345,17 +1352,19 @@ class Network:
 
                 if values:
 
-                    def _step_with_values(index, t, s, first=False):
+                    def _step_with_values(index, t, s):
                         # The value inputs act on the first step only.
                         with contextlib.ExitStack() as stack:
                             for name, taken in values.items():
                                 cell = self.populations[name].cell
                                 stack.enter_context(cell._value_input_step(taken, first=index == 0))
-                            return _step(t, s, first)
+                            return _step(t, s)
 
-                    samples_over_time = _scan(_step_with_values, jnp.arange(times.shape[0]), times, grid)
+                    samples_over_time = brainstate.transform.for_loop(
+                        _step_with_values, jnp.arange(times.shape[0]), times, grid
+                    )
                 else:
-                    samples_over_time = _scan(_step, times, grid)
+                    samples_over_time = brainstate.transform.for_loop(_step, times, grid)
 
             end_step = (step + n_steps).astype(jnp.int32)
             for cell in cells:
@@ -1502,21 +1511,19 @@ class Network:
         The usual call, on clocks already shared and counting ``dt``, only
         reads them on the host.
 
-        The :class:`_Join` names the Cells whose boundary at the start a run
-        on their own prepared, and holds the hand-over of each Cell that
-        ran at another ``dt`` (CELL-57). A Cell whose clock changes ``dt``
-        here keeps its float64 time, ``dt`` and hand-over beside the new
-        clock, as ``Cell.run`` does, for a later run on its own.
+        The :class:`_Join` holds the hand-over of each Cell that ran at
+        another ``dt`` (CELL-57). A run on its own leaves no boundary
+        prepared (CELL-55), so the hand-over starts at the time reached. A
+        Cell whose clock changes ``dt`` here keeps its float64 time, ``dt``
+        and hand-over beside the new clock, as ``Cell.run`` does, for a
+        later run on its own.
         """
         cells = [self.populations[name].cell for name in names]
         clocks = [cell._clock_host() for cell in cells]
         origin_ms, step, counts_dt = host_clock_start(clocks[0], dt)
         check_step_limit(step, n_steps, dt=dt, prefix=prefix)
-        flags = [bool(np.asarray(cell._next_synapse_inputs_prepared.value)) for cell in cells]
         if not counts_dt:
-            handovers = [
-                _dt_change_handover(cell, clock, dt, prepared=flag) for cell, clock, flag in zip(cells, clocks, flags)
-            ]
+            handovers = [_dt_change_handover(cell, clock, dt, prepared=False) for cell, clock in zip(cells, clocks)]
             reached = [
                 origin64 + step64 * dt64
                 for origin64, step64, dt64 in (_float64_clock(cell, clock) for cell, clock in zip(cells, clocks))
@@ -1534,7 +1541,6 @@ class Network:
                 for cell in cells[1:]:
                     cell._set_clock(first._clock_origin.value, first._clock_step.value, first._clock_dt.value)
         join = _Join(
-            prepared=tuple(name for name, flag in zip(names, flags) if flag),
             handovers=tuple((name, handover) for name, handover in zip(names, handovers) if handover is not None),
         )
         return origin_ms + step * scalar_decimal(dt, u.ms), join
@@ -1627,25 +1633,27 @@ class Network:
         events = {}
         start_ms = scalar_decimal(start_t, u.ms)
         stop_ms = scalar_decimal(stop_t, u.ms)
+        host_times = None
         event_index = 0
         for name, population in self.populations.items():
             if population.kind != "cell":
                 if population.kind == "netstim":
-                    table = population.model._event_table(until_ms=stop_ms)
+                    # Only the window's events: not a table of every generated one.
+                    source_id, event_ms = population.model._window_events(start_ms, stop_ms)
                 else:
                     table = population.model.events
-                event_ms = np.asarray(table.time.to_decimal(u.ms), dtype=float)
-                selected = (event_ms >= start_ms) & (event_ms < stop_ms)
-                selected_rows = np.flatnonzero(selected)
-                if selected_rows.size:
-                    order = np.lexsort((table.source_index[selected_rows], event_ms[selected_rows]))
-                    selected_rows = selected_rows[order]
+                    event_ms = np.asarray(table.time.to_decimal(u.ms), dtype=float)
+                    selected_rows = np.flatnonzero((event_ms >= start_ms) & (event_ms < stop_ms))
+                    source_id, event_ms = table.source_index[selected_rows], event_ms[selected_rows]
+                if source_id.size:
+                    order = np.lexsort((source_id, event_ms))
+                    source_id, event_ms = source_id[order], event_ms[order]
                 port = "spike" if population.kind == "netstim" else "event"
-                count = np.ones(int(selected_rows.size), dtype=np.int64)
+                count = np.ones(int(source_id.size), dtype=np.int64)
                 events[name] = {
                     port: EventSeries(
-                        time=table.time[selected_rows],
-                        source_id=table.source_index[selected_rows],
+                        time=u.Quantity(event_ms, u.ms),
+                        source_id=source_id,
                         count=count,
                         metadata={"population": name, "port": port},
                     )
@@ -1657,8 +1665,11 @@ class Network:
                 values = np.asarray(event_values[event_index])
                 event_index += 1
                 time_index, source_id = np.nonzero(values)
+                if host_times is None:
+                    # On the host: indexing the device times compiles a gather for each new event count.
+                    host_times = np.asarray(u.get_mantissa(times))
                 events[name][port] = EventSeries(
-                    time=times[time_index],
+                    time=u.Quantity(host_times[time_index], u.get_unit(times)),
                     source_id=source_id,
                     count=np.asarray(values[time_index, source_id], dtype=np.int64),
                     metadata=_event_source_metadata(name, port, view),

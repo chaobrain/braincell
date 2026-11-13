@@ -28,6 +28,7 @@ import numpy as np
 
 import braincell
 from braincell._random_test import default_key_data, drawn_seeds
+from braincell._multi_compartment.lifecycle_test import loop_compiles
 from braincell._multi_compartment.run_test import (
     DT,
     WEIGHT,
@@ -37,6 +38,7 @@ from braincell._multi_compartment.run_test import (
     assert_same_trajectory,
     axial_builds,
     hh_y_cable,
+    long_run_cell,
     make_event_cell,
     split_steps,
     update_loop_voltage,
@@ -1840,6 +1842,140 @@ class NetworkAxialOperatorTest(unittest.TestCase):
                 network = Network("cable")
                 network.add_population("cells", hh_y_cable(solver))
                 self.assertEqual(axial_builds(lambda: network.run(dt=DT, duration=4 * DT)), (0, 1))
+
+
+class NetworkSecondRunCompileTest(unittest.TestCase):
+    """CELL-54: a Network's second run reuses its loop."""
+
+    @staticmethod
+    def _network():
+        # An event every 0.1 ms from 0.1 ms: each 1 ms window plans 9 or 10
+        # arrivals, so no path's arrays change shape between the runs.
+        cell, _ = make_event_cell()
+        network = Network("again")
+        source = network.add_population("stim", braincell.NetStim(start=0.1 * u.ms, interval=0.1 * u.ms, number=1000))
+        target = network.add_population("post", cell)
+        network.connect("drive", source=source, synapse=target.synapses["syn"], weight=WEIGHT)
+        return network, cell
+
+    def test_a_second_run_does_not_compile_the_loop_again(self):
+        # On main 29d6828 V, spike and the synapse's g were weak-typed after
+        # init_state() and reset_state() and strong after a run, which jit
+        # keys on: on every path the loop compiled at runs 1 and 2,
+        # [1, 1, 0, 0, 0].
+        for delivery in (None, "direct", "padded"):
+            with self.subTest(scheduled_delivery=delivery):
+                network, cell = self._network()
+                network.init_state()
+                options = {} if delivery is None else {"scheduled_delivery": delivery}
+                counts, conductances = [], []
+                for index in range(5):
+                    if index == 3:
+                        network.reset_state()
+                    with loop_compiles() as names:
+                        network.run(dt=DT, duration=40 * DT, **options)
+                    counts.append(names.count("jit(jaxpr_call)"))
+                    conductances.append(_synapse_g(cell))
+                self.assertGreaterEqual(counts[0], 1)
+                self.assertEqual(counts[1:], [0, 0, 0, 0])
+                self.assertTrue(all(np.isfinite(g) and g > 0.0 for g in conductances))
+
+    def test_a_jitted_update_loop_after_prepare_run_compiles_once(self):
+        # A loop of the user's own over update(), compiled with
+        # brainstate.transform.jit: twice after init_state(), twice after
+        # reset_state() (main 29d6828: [1, 1, 0, 0]).
+        network, cell = self._network()
+        network.init_state()
+        network.prepare_run(dt=DT)
+
+        def step(_):
+            network.update()
+            return cell.V.value
+
+        loop = brainstate.transform.jit(lambda: brainstate.transform.for_loop(step, np.arange(40)))
+        counts, conductances = [], []
+        for index in range(4):
+            if index == 2:
+                network.reset_state()
+            with loop_compiles() as names:
+                jax.block_until_ready(loop())
+            counts.append(names.count("jit(jaxpr_call)"))
+            conductances.append(_synapse_g(cell))
+        self.assertGreaterEqual(counts[0], 1)
+        self.assertEqual(counts[1:], [0, 0, 0])
+        self.assertTrue(all(np.isfinite(g) and g > 0.0 for g in conductances))
+
+
+class NetworkScheduleGrowthCompileTest(unittest.TestCase):
+    """CELL-74: the default path compiles its loop once per doubling of a NetStim schedule."""
+
+    @staticmethod
+    def _network():
+        # 2**21 events: too many to generate at construction, so the
+        # schedule grows with the runs.
+        cell, _ = make_event_cell()
+        network = Network("grow")
+        stim = braincell.NetStim(start=0.1 * u.ms, interval=0.1 * u.ms, number=2**21)
+        source = network.add_population("stim", stim)
+        target = network.add_population("post", cell)
+        network.connect("drive", source=source, synapse=target.synapses["syn"], weight=WEIGHT)
+        return network, stim
+
+    def test_runs_of_one_length_compile_once_per_doubling(self):
+        # The loop holds the generated events as constants, and the
+        # schedule's width keys it. Run k (1 ms) generates up to
+        # until = k ms + dt: width max(floor((until - 0.1) / 0.1) + 2,
+        # 2 * width) whenever the last event is not past until. This pins
+        # the behaviour of main 36dd9cd.
+        network, stim = self._network()
+        self.assertFalse(stim._schedule_complete)
+        counts, widths, parts = [], [], []
+        for index in range(32):
+            if index == 16:
+                network.reset_state()
+            with loop_compiles() as names:
+                result = network.run(dt=DT, duration=40 * DT)
+            g = np.asarray(u.get_mantissa(result.samples["post"]["g"].values))
+            self.assertEqual(g.shape[0], 40)
+            parts.append(g)
+            counts.append(names.count("jit(jaxpr_call)"))
+            widths.append(stim._event_times_ms.shape[1])
+        self.assertEqual(widths[:16], [11, 22, 44, 44] + [88] * 4 + [176] * 8)
+        self.assertEqual(widths[16:], [176] * 16)
+        # Each width change at least doubles the schedule and compiles the
+        # loop: 4 = log2(16) times after the first run; none after reset_state.
+        self.assertGreaterEqual(counts[0], 1)
+        self.assertEqual(counts[1:16], [1, 1, 0, 1, 0, 0, 0, 1] + [0] * 7)
+        self.assertEqual(counts[16:], [0] * 16)
+
+        split = np.concatenate(parts[:16])
+        self.assertTrue(np.all(np.isfinite(split)))
+        self.assertGreater(np.count_nonzero(np.diff(split, axis=0)), 0)
+        whole, _ = self._network()
+        once = np.asarray(u.get_mantissa(whole.run(dt=DT, duration=640 * DT).samples["post"]["g"].values))
+        np.testing.assert_array_equal(split, once)
+        np.testing.assert_array_equal(np.concatenate(parts[16:]), once)
+
+
+class NetworkLongRunSampleTest(unittest.TestCase):
+    """CELL-59a: a Network run samples in whole steps, however long the Network has run."""
+
+    def test_a_long_run_takes_each_sample_once(self):
+        # On main 73136f6 the float time mask took extra samples from about
+        # 1e6 steps on: 500002 and 250002 in 1e6 steps in float64 (510938 and
+        # 255471 in float32), and 21 and 16 in the 21 steps after them, for
+        # 500000, 250000, 11 and 6.
+        for precision in (32, 64):
+            with self.subTest(precision=precision), brainstate.environ.context(precision=precision):
+                cell = long_run_cell()
+                network = Network("long")
+                network.add_population("post", cell)
+                long = network.run(dt=DT, duration=1_000_000 * DT)
+                self.assertEqual(cell._clock_host()[1], 1_000_000)
+                self.assertEqual([long.samples["post"][n].values.shape[0] for n in ("p2", "p4")], [500_000, 250_000])
+                short = network.run(dt=DT, duration=21 * DT)
+                self.assertEqual(cell._clock_host()[1], 1_000_021)
+                self.assertEqual([short.samples["post"][n].values.shape[0] for n in ("p2", "p4")], [11, 6])
 
 
 if __name__ == "__main__":

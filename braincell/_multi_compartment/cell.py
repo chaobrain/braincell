@@ -63,6 +63,7 @@ from braincell._deprecation import removed_member
 from braincell._misc import (
     is_traced_value,
     scalar_decimal,
+    strong_state_values,
     profiler_call_name as _call_name,
     profiler_scope_name as _scope_name,
 )
@@ -371,7 +372,11 @@ class _CellFacade:
         period, frequency : Quantity, optional
             Mutually exclusive regular sampling interval declarations.
         start : Quantity, optional
-            Global schedule start. Defaults to ``0 ms``.
+            Global schedule start. Defaults to ``0 ms``. The schedule
+            samples at ``start + j·period`` from ``t = 0``, counted in steps
+            of the run's ``dt``; a run whose steps are off that grid takes
+            each sample on the step where a scheduled event at its time
+            acts, as :meth:`Cell.run` describes.
 
         Returns
         -------
@@ -2798,6 +2803,9 @@ class Cell(_CellFacade, HHTypedNeuron):
             self._take_morphology_snapshot()
             self._init_runtime(batch_size)
             self._connection_rules = self.connections._init_rules()
+            # A run loop writes its States strong-typed; start them so, or
+            # the second run compiles the loop again (CELL-54).
+            strong_state_values(self)
         except BaseException:
             self._restore_attributes(attributes)
             raise
@@ -4024,14 +4032,19 @@ class Cell(_CellFacade, HHTypedNeuron):
         Raises
         ------
         RuntimeError
-            Before ``init_state()``.
+            Before ``init_state()``; or when traced before a live connection
+            with a delay of a step or more has its history (see Notes).
         ValueError
-            If ``brainstate.environ['dt']`` is not set, or ``I_ext`` does not
-            broadcast to ``V.value.shape``.
+            If ``brainstate.environ['dt']`` is not set, ``I_ext`` does not
+            broadcast to ``V.value.shape``, or the live connections have
+            another ``dt``, which :meth:`run` refuses as well.
         TypeError
             If ``I_ext`` is given to a cable Cell: inject current there
             with a placed :class:`~braincell.mech.CurrentClamp` or
             :class:`~braincell.mech.FunctionClamp`.
+        NotImplementedError
+            For a plasticity rule on a live source, which runs only in a
+            :class:`~braincell.Network`.
         UnitMismatchError
             If ``I_ext`` is neither a current nor a current density; also if
             a registered current input returns another unit.
@@ -4047,6 +4060,19 @@ class Cell(_CellFacade, HHTypedNeuron):
         2. Apply them to the runtime synapses.
         3. Advance voltage and mechanism dynamics through ``self.solver``.
         4. Detect and store the current spike.
+        5. Route that spike through the Cell's live connections (from its
+           ``event_outputs`` to its synapses), as each step of :meth:`run`
+           does: with a delay of ``k`` steps (``delay / dt``, rounded half
+           up), it reaches its synapse at the end of the ``k``-th step after
+           this one, ``k = 0`` at the end of this one. A loop of ``update()``
+           calls and :meth:`run` hand the events in flight to each other.
+
+        The first call at a ``dt`` quantizes the live delays and allocates
+        their history, a state. A traced call (``brainstate.transform.for_loop``,
+        ``jit``) cannot create a state for later calls, so it raises unless
+        that history exists: call
+        :meth:`cell.connections.prepare_runtime(dt) <braincell.ConnectionView.prepare_runtime>`
+        once before, or ``update()`` or :meth:`run` once outside it.
 
         In network execution, delayed event delivery is scheduled outside the
         cell. ``Network.run(...)`` writes arrivals into runtime state buffers
@@ -4119,12 +4145,61 @@ class Cell(_CellFacade, HHTypedNeuron):
             external = as_current_density(
                 I_ext, area=self._lumped_runtime.area, shape=tuple(self.V.value.shape), what="I_ext"
             )
+        live = self._standalone_live_rows()
+        if live:
+            # Before any state changes, so a refused call leaves the cell as it was.
+            self._prepare_update_live_rows(live)
         self._prepare_first_synapse_inputs(t=self._resolve_t())
         self._prepare_step_clamps()
         self._begin_step()
         with brainstate.environ.context(_braincell_step_clamps_prepared=True):
             spk = self._update_dynamics(external)
+        if live:
+            # Each step of run() routes them here, after the step (CELL-70).
+            self._apply_direct_live_connection_events(live)
         return spk
+
+    def _standalone_live_rows(self) -> tuple:
+        """The live connection views that this ``update()`` routes, as each step of ``run()`` does.
+
+        A Network routes the live rows of its Cells, so a member routes none
+        here. A plasticity rule on a live source runs only in a Network; it
+        is refused here, before any state changes. A Cell whose sources are
+        all scheduled returns at once, without grouping its rows.
+        """
+        store = self._get_connection_store()
+        if all(call.source.is_scheduled for call in store._calls):
+            return ()
+        items = self.connections._call_items(scheduled=False)
+        for call, _ in items:
+            binding = call.plasticity
+            if binding is not None and binding.states is not None:
+                binding._require_live_plan()
+        if self.network_owner is not None:
+            return ()
+        return tuple(view for call, view in items if call.plasticity is None)
+
+    def _prepare_update_live_rows(self, live) -> None:
+        """Quantize the live rows' delays at this ``dt`` and allocate their history, as ``run()`` does.
+
+        Every row is checked before any is prepared, so a refused call leaves
+        the cell as it was.
+        """
+        dt = brainstate.environ.get("dt", None)
+        if dt is None:
+            raise ValueError("Cell.update(...) requires brainstate.environ['dt'] to be set.")
+        traced = is_traced_value(self.V.value)
+        for view in live:
+            call, unprepared = view._check_live_dt(dt)
+            if traced and unprepared and view._live_history_depth(dt) > 0:
+                raise RuntimeError(
+                    f"Cell.update() is traced (brainstate.transform.for_loop, jit) before live connection "
+                    f"{call.name!r} has the history of its delayed events; a history created inside the trace "
+                    "would not outlive it. Call cell.connections.prepare_runtime(dt) once before the compiled "
+                    "function, or call update() or run() once outside it at this dt."
+                )
+        for view in live:
+            view._prepare_live_runtime(dt)
 
     def add_current_input(self, key, inp, label=None):
         """Register a current input, the entry brainpy projections use.
@@ -4590,9 +4665,10 @@ class Cell(_CellFacade, HHTypedNeuron):
             count_state.value = count_state.value + counts
         return _rewrap_event_template(template, output)
 
-    def _apply_direct_live_connection_events(self) -> None:
+    def _apply_direct_live_connection_events(self, live_connections=None) -> None:
         """Route live direct sources and run target handlers at this boundary."""
-        live_connections = self.connections._call_views(scheduled=False)
+        if live_connections is None:
+            live_connections = self.connections._call_views(scheduled=False)
         if not live_connections:
             return
         dt = brainstate.environ.get("dt", None)
@@ -4779,6 +4855,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             self._pending_reduction_inputs = self._reduction_input_runtime.take_inputs()
             self._next_synapse_inputs_prepared.value = jnp.asarray(False)
             self._reset_clock()
+            strong_state_values(self)  # as in init_state (CELL-54)
             return
         if self._is_lumped:
             if self.trainables.bindings():
@@ -4794,6 +4871,7 @@ class Cell(_CellFacade, HHTypedNeuron):
                 jnp.zeros_like(self._step_clamp_components.value.mantissa), u.nA
             )
             self._reset_clock()
+            strong_state_values(self)  # as in init_state (CELL-54)
             return
         if self.trainables.bindings():
             self.trainables.materialize()
@@ -4816,6 +4894,7 @@ class Cell(_CellFacade, HHTypedNeuron):
             for path, channel in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
                 args = self._runtime_node_phase_args(path, channel, self.V.value)
                 channel.reset_state(*args, batch_size=batch_size)
+        strong_state_values(self)  # as in init_state (CELL-54)
 
     # ------------------------------------------------------------------
     # Inspection forwards (runtime-only)
@@ -4935,6 +5014,21 @@ class Cell(_CellFacade, HHTypedNeuron):
         ``ConnectionView.set(weight=...)``, acts from the first step of the
         next. A traced run (inside ``jax.jit``) has no host clock: it counts
         the arrivals on the grid from time 0, without this hand-over.
+
+        A recording samples at ``start + j·period`` from time 0
+        (:meth:`record`), counted in whole steps, so a run of any length
+        takes each sample once. A run whose steps are off that grid takes
+        each sample on the step where a scheduled event at its time acts,
+        the later step at a tie: after 3 steps of 0.025 ms, at
+        ``dt = 0.05 ms`` the samples of ``period=0.1 ms`` at 0.1, 0.2, …
+        ms are taken at 0.125, 0.225, … ms. Each run takes the samples of
+        its own steps only, so where ``dt`` changes a sample time can be
+        taken twice or not at all: after 5 steps of 0.025 ms with
+        ``period=0.1 ms``, the run takes 0 and 0.1 ms and a run at
+        ``dt = 0.05 ms`` after it takes 0.1 ms again, at 0.125 ms; after 3
+        steps of 0.025 ms and 2 of 0.05 ms with ``period=0.05 ms``, neither
+        those runs nor one at ``dt = 0.025 ms`` after them takes 0.15 ms,
+        midway between the steps at 0.125 and 0.175 ms.
 
         On GPU, a run whose step count has a divisor in [8, 32] packs the
         spikes of its ``spikes`` result every K steps, K the largest such

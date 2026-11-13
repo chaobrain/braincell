@@ -394,7 +394,10 @@ class EventSeries:
     Attributes
     ----------
     time : brainunit.Quantity
-        ``(n_events,)`` event times.
+        ``(n_events,)`` event times. An event a Cell emits in the step from
+        ``t_m`` to ``t_{m+1}`` has time ``t_{m+1}``, the end of that step,
+        as NEURON's ``NetCon.record``; a NetStim's or an EventSequence's
+        events keep their own times.
     source_id : numpy.ndarray
         ``(n_events,)`` int64 source rows; for a Cell output they index the
         row-aligned arrays in ``metadata``.
@@ -430,6 +433,22 @@ class EventSeries:
             "metadata",
             MappingProxyType({key: _freeze_array(value) for key, value in self.metadata.items()}),
         )
+
+
+def step_end_times(times, stop_time) -> tuple[np.ndarray, object]:
+    """The end time of each step of a run, on the host: ``times[1:]`` and then ``stop_time``.
+
+    ``times`` holds the steps' start times and ``stop_time`` the run's end,
+    both from the run loop. An event of the step from ``t_m`` to
+    ``t_{m+1}`` is labelled with entry ``m``, ``t_{m+1}``: the same value as
+    ``times[m + 1]``, or as the next run's ``start_time`` after the last
+    step, so the labels of contiguous runs join without a gap (CELL-80).
+    Returns the mantissas and their unit.
+    """
+    unit = u.get_unit(times)
+    starts = np.asarray(u.get_mantissa(times))
+    stop = np.asarray(u.get_mantissa(u.Quantity(stop_time).in_unit(unit)), dtype=starts.dtype).reshape(1)
+    return np.concatenate([starts[1:], stop]), unit
 
 
 register_result_pytree(SampleBlock, ("values", "segment_start", "segment_stop", "first_time"), static=("schema",))

@@ -96,7 +96,8 @@ with brainstate.environ.context(dt=0.1 * u.ms):
 
 # visualization
 t_indices, n_indices = u.math.where(spikes)
-plt.scatter(times[t_indices], n_indices, s=1)
+# The spike of the step from t to t + dt is at t + dt, as `Cell.run` reports it.
+plt.scatter(times[t_indices] + 0.1 * u.ms, n_indices, s=1)
 plt.xlabel('Time (ms)')
 plt.ylabel('Neuron index')
 plt.show()

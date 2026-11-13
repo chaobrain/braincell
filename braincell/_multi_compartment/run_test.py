@@ -852,6 +852,10 @@ def _ms(series):
     return np.asarray(series.time.to_decimal(u.ms))
 
 
+def _ms_scalar(time):
+    return float(np.asarray(u.Quantity(time).to_decimal(u.ms)))
+
+
 def assert_same_events(actual, expected):
     """Event rows equal: integer columns exactly, times to rtol 1e-12."""
     np.testing.assert_array_equal(actual.source_id, expected.source_id)
@@ -882,12 +886,14 @@ class RunSpikesTest(unittest.TestCase):
 
     def test_spikes_match_network_events(self):
         cases = {
-            "lumped": (lambda: _hh_cell("lumped"), {}, ([3.175, 4.525, 19.425], [2, 1, 2])),
-            "cable": (lambda: _hh_cell("cable"), {}, ([3.875, 6.325], [2, 1])),
+            "lumped": (lambda: _hh_cell("lumped"), {}, ([3.2, 4.55, 19.45], [2, 1, 2])),
+            "cable": (lambda: _hh_cell("cable"), {}, ([3.9, 6.35], [2, 1])),
+            # The NetStim's events at 0.3, 1.3 and 2.3 ms act in the steps
+            # from there; the model's events of those steps are at their ends.
             "reduction": (
                 _reduced_cell,
                 dict(dt=0.1 * u.ms, duration=4.0 * u.ms, stim=_netstim),
-                ([0.3, 1.3, 2.3], [0, 0, 0]),
+                ([0.4, 1.4, 2.4], [0, 0, 0]),
             ),
         }
         for name, (build, options, (times, ids)) in cases.items():
@@ -897,7 +903,7 @@ class RunSpikesTest(unittest.TestCase):
                 self.assertEqual(dict(alone.metadata).keys(), {"port", "cv_id"})
                 self.assertEqual(alone.metadata["port"], events.metadata["port"])
                 np.testing.assert_array_equal(alone.metadata["cv_id"], events.metadata["cv_id"])
-                # This machine's values (2b02a98); the comparison above is the contract.
+                # This machine's values (2b02a98, one step later from CELL-80); the comparison above is the contract.
                 np.testing.assert_allclose(_ms(alone), times, rtol=1e-9)
                 np.testing.assert_array_equal(alone.source_id, ids)
                 np.testing.assert_array_equal(alone.count, np.ones(len(ids)))
@@ -915,7 +921,8 @@ class RunSpikesTest(unittest.TestCase):
                     (column,) = [i for i, row in enumerate(rows) if row.population_index == member]
                     crossed = np.flatnonzero((v[:-1, column] < V_th) & (v[1:, column] >= V_th))
                     spikes = result.spikes
-                    np.testing.assert_allclose(_ms(spikes)[spikes.source_id == member], t[crossed], rtol=1e-12)
+                    # The event of the step from t[j] to t[j + 1] is at t[j + 1] (CELL-80).
+                    np.testing.assert_array_equal(_ms(spikes)[spikes.source_id == member], t[crossed + 1])
                     self.assertLessEqual(len(crossed), 3)
                 self.assertGreater(len(result.spikes.source_id), 0)
 
@@ -933,7 +940,7 @@ class RunSpikesTest(unittest.TestCase):
         order = np.lexsort((np.asarray(rows)[column], step))
         spikes = result.spikes
         np.testing.assert_array_equal(spikes.source_id, np.asarray(rows)[column][order])
-        np.testing.assert_allclose(_ms(spikes), np.asarray(result.time.to_decimal(u.ms))[step[order]], rtol=1e-12)
+        np.testing.assert_array_equal(_ms(spikes), np.asarray(result.time.to_decimal(u.ms))[step[order] + 1])
         self.assertGreater(len(set(spikes.source_id.tolist()) & set(range(16, 20))), 0)
 
     def test_a_lower_threshold_fires_earlier(self):
@@ -979,11 +986,19 @@ class RunSpikesTest(unittest.TestCase):
         for kind in ("lumped", "cable"):
             with self.subTest(kind):
                 whole = _hh_cell(kind).run(dt=DT, duration=self.DURATION)
-                first_step = int(round(_ms(whole.spikes)[0] / 0.025))
+                # The first spike is at the end of its step: step m ends at t_{m+1}.
+                m = int(round(_ms(whole.spikes)[0] / 0.025)) - 1
+                # Split after step m: its spike belongs to the first run, at its stop time (CELL-80).
                 cell = _hh_cell(kind)
-                parts = (cell.run(dt=DT, duration=first_step * DT), cell.run(dt=DT, duration=(800 - first_step) * DT))
+                parts = (cell.run(dt=DT, duration=(m + 1) * DT), cell.run(dt=DT, duration=(799 - m) * DT))
+                np.testing.assert_array_equal(_ms(parts[0].spikes), [_ms_scalar(parts[0].stop_time)])
+                self.assertGreater(_ms(parts[1].spikes)[0], _ms_scalar(parts[0].stop_time))
+                assert_same_events(RunResult.concat(parts).spikes, whole.spikes)
+                # Split before step m: the second run's first step has it, at the first run's end plus dt.
+                cell = _hh_cell(kind)
+                parts = (cell.run(dt=DT, duration=m * DT), cell.run(dt=DT, duration=(800 - m) * DT))
                 self.assertEqual(len(parts[0].spikes.source_id), 0)
-                np.testing.assert_allclose(_ms(parts[1].spikes)[0], first_step * 0.025, rtol=1e-12)
+                np.testing.assert_array_equal(_ms(parts[1].spikes)[0], np.asarray(parts[1].time.to_decimal(u.ms))[1])
                 assert_same_events(RunResult.concat(parts).spikes, whole.spikes)
 
     def test_concat_without_spikes_in_a_part_has_none(self):
@@ -1317,7 +1332,8 @@ class SpikeOutputPathTest(unittest.TestCase):
     def test_a_quarter_of_the_high_firing_rows_spike_at_every_step(self):
         with _spike_path("per step"):
             spikes = _high_firing_cell().run(dt=DT, duration=64 * DT).spikes
-        per_step = np.bincount(np.rint(_ms(spikes) / 0.025).astype(int), minlength=64)
+        # A step's spikes are at its end: step m at (m + 1) dt (CELL-80).
+        per_step = np.bincount(np.rint(_ms(spikes) / 0.025).astype(int) - 1, minlength=64)
         np.testing.assert_array_equal(per_step[2:], np.full(62, 25))
 
     def test_step_counts_with_and_without_a_block_size(self):
@@ -1373,7 +1389,7 @@ class SpikeOutputPathTest(unittest.TestCase):
             return cell
 
         (expected,), ports = self.assert_paths_match(reduced, _segments((40, 0.1 * u.ms)))
-        np.testing.assert_allclose(_ms(expected.spikes), [0.3, 1.3, 2.3], rtol=1e-9)
+        np.testing.assert_allclose(_ms(expected.spikes), [0.4, 1.4, 2.4], rtol=1e-9)
         # A reduction model's event counts are not packed: each step stores them.
         for name in SPIKE_PATHS:
             (port,) = ports[name]

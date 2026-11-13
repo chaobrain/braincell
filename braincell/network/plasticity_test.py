@@ -216,8 +216,9 @@ class DelayTest(unittest.TestCase):
 
     @_float64
     def test_live_arrivals_and_first_conductance_samples(self) -> None:
-        # The source crosses in step 20 (its EventSeries time is 2.0 ms), so
-        # its events arrive at 2.1, 2.2 and 2.4 ms: t_{m+1+k}, as NEURON (CELL-75).
+        # The source crosses in step 20 (its EventSeries time is 2.1 ms, the
+        # step's end, CELL-80), so its events arrive at 2.1, 2.2 and 2.4 ms:
+        # t_{m+1+k}, the event time plus the delay, as NEURON (CELL-75).
         at_2_1 = _reference(A_PLUS * np.exp(-7.9 / TAU), 0.006736800392)
         at_2_2 = _reference(A_PLUS * np.exp(-7.8 / TAU), 0.006770568745)
         at_2_4 = _reference(A_PLUS * np.exp(-7.6 / TAU), 0.006838614092)
@@ -230,7 +231,7 @@ class DelayTest(unittest.TestCase):
                     net = _network(_live_pre([2.1]), cell, delay=delay_ms * u.ms, rule=rule)
                     result = net.run(dt=DT, duration=12.0 * u.ms)
                     np.testing.assert_allclose(
-                        np.asarray(result.events["pre"]["spike"].time.to_decimal(u.ms)), [2.0], rtol=RTOL
+                        np.asarray(result.events["pre"]["spike"].time.to_decimal(u.ms)), [2.1], rtol=RTOL
                     )
                     firsts.append(int(np.flatnonzero(_g(result)[:, 0] > 0)[0]))
                     if rule is not None:

@@ -50,7 +50,7 @@ from braincell._multi_compartment.run import (
 )
 from braincell._multi_compartment.synapses import SynapseView
 from braincell.network.connection import NetworkConnections, PairingSpec, _UNSET, _connect_with_pairing_seed
-from braincell.network.recording import EventSeries, SampleBlock
+from braincell.network.recording import EventSeries, SampleBlock, step_end_times
 
 from braincell.network.core import NetworkResult, Population
 from braincell.network.delivery import (
@@ -567,8 +567,11 @@ class Network:
         Returns
         -------
         NetworkResult
-            Samples and events of the half-open segment
-            ``[start_time, stop_time)``.
+            Samples of the half-open segment ``[start_time, stop_time)``;
+            the events of its steps: a Cell's, emitted in the step from
+            ``t_m`` to ``t_{m+1}``, at ``t_{m+1}``, in
+            ``(start_time, stop_time]`` (CELL-80), and a NetStim's or an
+            EventSequence's at their own times in ``[start_time, stop_time)``.
 
         Raises
         ------
@@ -1095,8 +1098,10 @@ class Network:
         Returns
         -------
         dict
-            Floating spike arrays keyed by Cell population name. Continuous
-            observations remain available on each Cell's runtime states.
+            Floating spike arrays keyed by Cell population name: this
+            step's, from ``t`` to ``t + dt``, whose time is ``t + dt`` (as
+            in :meth:`run`'s events). Continuous observations remain
+            available on each Cell's runtime states.
 
         Raises
         ------
@@ -1784,9 +1789,10 @@ class Network:
                 time_index, source_id = np.nonzero(values)
                 if host_times is None:
                     # On the host: indexing the device times compiles a gather for each new event count.
-                    host_times = np.asarray(u.get_mantissa(times))
+                    # A step's events take its end time, t_{m+1} (CELL-80).
+                    host_times, unit = step_end_times(times, stop_t)
                 events[name][port] = EventSeries(
-                    time=u.Quantity(host_times[time_index], u.get_unit(times)),
+                    time=u.Quantity(host_times[time_index], unit),
                     source_id=source_id,
                     count=np.asarray(values[time_index, source_id], dtype=np.int64),
                     metadata=_event_source_metadata(name, port, view),

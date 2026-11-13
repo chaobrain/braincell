@@ -59,9 +59,9 @@ from braincell.network.delivery import (
     apply_immediate_events,
     create_delivery_state,
     delivery_blocks as build_delivery_blocks,
-    enqueue_future_events,
     make_delivery_op,
     normalize_event_backend,
+    record_source_events,
     resolve_event_backend,
     write_arrivals,
 )
@@ -680,6 +680,27 @@ class Network:
         after the first run as ``event_backend`` is; a first run that raised
         ``PaddingLimitError`` fixes nothing.
 
+        **Compiled loops** (CELL-74). A run with as many steps as an
+        earlier one reuses its compiled loop. On the default path
+        (``scheduled_delivery=None``) the loop holds the NetStim events
+        generated so far as constants. A NetStim with ``size`` times
+        ``max(number)`` at most ``2**20`` generates every event at
+        construction, so its events never change the loop. A larger one
+        generates them on demand: a run that needs later events first
+        extends the schedule to at least twice its width, then traces and
+        compiles the loop again, which reads every generated event. So
+        ``k`` runs of one length compile the loop about ``log2(k) + 1``
+        times; after :meth:`reset_state` the schedule keeps its width and
+        the runs compile nothing. The cost of an extension grows with the
+        generated events: with a million sources, on one CPU, the runs that
+        extended the schedule took 3.1 to 5.5 s and those that reused the
+        loop 0.6 to 0.9 s. With ``scheduled_delivery`` the plans are
+        arguments of the loop, so a NetStim that only planned rows read
+        grows without tracing the loop again; ``"direct"`` is the path for
+        long continuations from large NetStims. A NetStim that a plasticity
+        rule reads, as its rows' source or its ``post`` signal, still keys
+        the loop: the rule reads its events when the loop is traced.
+
         Examples
         --------
         .. code-block:: python
@@ -1118,7 +1139,7 @@ class Network:
         # A delivery op is only ever indexed for a block with a scalar delay,
         # which is exactly what grouping by delay produces. Without grouping
         # every block carries a per-contact delay vector and the vector path
-        # in enqueue_future_events/apply_immediate_events runs instead -- so
+        # in write_arrivals/apply_immediate_events runs instead -- so
         # building the ops there would materialize two device index arrays per
         # block, and close over the block, for something never called. The two
         # cannot disagree: both read grouped_by_delay.
@@ -1295,7 +1316,7 @@ class Network:
                                 if compiled.phase == "pre"
                             }
                         with jax.named_scope("braincell:network_run:write_arrivals"):
-                            write_arrivals(delivery_state, populations=self.populations)
+                            write_arrivals(delivery_blocks, delivery_state, populations=self.populations)
                         with jax.named_scope("braincell:network_run:prepare_inputs"):
                             _prepare_inputs()
                         with jax.named_scope("braincell:network_run:begin_cells"):
@@ -1323,8 +1344,8 @@ class Network:
                                 for name in ordered_population_names
                                 for _, view in event_sources[name]
                             )
-                        with jax.named_scope("braincell:network_run:enqueue_events"):
-                            enqueue_future_events(delivery_blocks, delivery_state)
+                        with jax.named_scope("braincell:network_run:record_source_events"):
+                            record_source_events(delivery_state)
                         with jax.named_scope("braincell:network_run:advance_delivery"):
                             advance_delivery_state(delivery_state)
                         return recording_snapshots + events
@@ -1751,10 +1772,8 @@ def _event_source_metadata(population: str, port: str, view) -> dict:
 
 
 def _reset_delivery_state(state) -> None:
-    """Clear persistent event queues at an explicit network reset boundary."""
-    for index in range(len(state.ring_buffers)):
-        state.ring_buffers[index].value = u.math.zeros_like(state.ring_buffers[index].value)
-        state.ring_cursors[index].value = np.asarray(0, dtype=np.int32)
-        count_ring = state.count_ring(index)
-        if count_ring is not None:
-            count_ring.value = jnp.zeros_like(count_ring.value)
+    """Clear the event histories at an explicit network reset boundary."""
+    for history, cursor in zip(state.histories, state.history_cursors):
+        if history is not None:
+            history.value = jnp.zeros_like(history.value)
+            cursor.value = np.asarray(0, dtype=np.int32)

@@ -158,9 +158,11 @@ class BidirectionalTest(unittest.TestCase):
             np.testing.assert_array_equal(sensitivity[0, directions], 0.0)
             self.assertGreater(np.linalg.norm(sensitivity[1:, directions]), 1e-10)
         delivery = experiment.network._prepared_run[1].delivery_state
-        for queue in delivery.ring_buffers:
-            sensitivity = diagnostic.sensitivity[states[id(queue)]]
-            self.assertGreater(np.linalg.norm(np.asarray(sensitivity.mantissa)), 1e-10)
+        histories = [history for history in delivery.histories if history is not None]
+        self.assertTrue(histories)
+        for history in histories:
+            sensitivity = diagnostic.sensitivity[states[id(history)]]
+            self.assertGreater(np.linalg.norm(np.asarray(sensitivity)), 1e-10)
         roots = tuple(state.value for state in engine.parameter_states.values())
         shapes = tuple(np.shape(x) for x in jax.tree.leaves(engine._initial_full_carry(roots)))
         brainstate.transform.jit(engine)(target[:100])

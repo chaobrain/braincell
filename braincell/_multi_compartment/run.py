@@ -424,12 +424,14 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     _validate_time_quantity(dt, name="dt")
     _validate_time_quantity(duration, name="duration")
     n_steps = _duration_steps(duration, dt)
-    rcell.connections.prepare_runtime(dt)
+    clock = rcell._clock_host()
+    rcell.connections._refuse_live_rules()
+    live = tuple(rcell.connections._call_views(scheduled=False))
+    rcell._prepare_live_rows(live, dt, action="run", traced=clock is None)
 
     # A scheduled source needs its events up to the last step's next-input
     # boundary, ``stop``; one more step bounds every rounding. A traced start
     # leaves the end unknown, so such a run generates every event.
-    clock = rcell._clock_host()
     until_ms = None
     arrival_origin = None
     handover = None

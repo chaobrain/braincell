@@ -26,7 +26,7 @@ import brainunit as u
 import jax.numpy as jnp
 import numpy as np
 
-from braincell._misc import require_name as _require_name, scalar_decimal
+from braincell._misc import is_traced_value, require_name as _require_name, scalar_decimal
 from braincell._parameter_schema import RuntimeParameterState
 from braincell._multi_compartment.synapses import SynapseView, _cell_label
 from braincell._multi_compartment.lifecycle import DiscreteView
@@ -604,6 +604,18 @@ class ConnectionView(DiscreteView):
         ``reset_state`` returns to and the current dynamic weight
         (``rule_state("w")``).
 
+        An event already sent and still in its delay takes the weight it
+        arrives with, as NEURON's ``NetCon`` weights an event at delivery:
+        a ``set`` between two runs reaches the events in flight. To do so a
+        ``Network`` keeps, for each target synapse layout, the event counts
+        of the source members its delayed rows read over the longest delay
+        (``depth x members`` values) and weights them on arrival. Many
+        sources onto few shared synapses cost more than few onto many: in
+        float64, with delays up to 80 steps, 1e6 rows from 1e6 sources onto
+        1e4 synapses keep 624 MB (a queue of weighted events held 6.5 MB),
+        1e6 rows from 900 sources onto 1e6 synapses 0.58 MB (it held
+        648 MB).
+
         Raises
         ------
         ValueError
@@ -904,16 +916,92 @@ class ConnectionView(DiscreteView):
         return call.source.event_count(self.source_index, t=t, delay=self.delay, dt=dt)
 
     def prepare_runtime(self, dt) -> None:
+        """Quantize the delays of the live rows at ``dt`` and allocate their delay history.
+
+        :meth:`Cell.run <braincell.Cell.run>` does this at its start, and
+        each :meth:`Cell.update <braincell.Cell.update>` call before its step;
+        a spike of a step with a delay of ``k`` steps (``delay / dt``, rounded
+        half up) then reaches its synapse at the end of the ``k``-th step
+        after it. The history is a state, which a traced call cannot create
+        for later calls: before ``update()`` runs under
+        ``brainstate.transform.for_loop`` or ``jit``, call this once outside,
+        or the traced call raises. A call at the ``dt`` the rows already have
+        does nothing. A call at another ``dt`` quantizes them again when none
+        of their delayed events is still to arrive, as after
+        :meth:`Cell.reset_state <braincell.Cell.reset_state>`; it is refused
+        while one is, so that none is lost or moved to another step.
+
+        Parameters
+        ----------
+        dt : Quantity
+            The step the Cell runs at, e.g. ``0.025 * u.ms``.
+
+        Raises
+        ------
+        NotImplementedError
+            For a plasticity rule on a live source, which runs only in a
+            :class:`~braincell.Network`; raised before any row is prepared.
+        ValueError
+            If ``dt`` is not positive, or the rows have another ``dt`` and
+            one of their delayed events is still to arrive; raised before any
+            row is prepared.
+
+        Examples
+        --------
+        A point cell whose spikes reach its own synapse 0.5 ms later, driven
+        by a compiled ``update()`` loop:
+
+        .. code-block:: python
+
+            >>> import brainstate
+            >>> import brainunit as u
+            >>> import braincell as bc
+            >>> cell = bc.Cell.point(1, length=20 * u.um, radius=10 * u.um, V_init=-65 * u.mV)
+            >>> cell = cell.paint(
+            ...     bc.mech.Ion("SodiumFixed", E=50 * u.mV),
+            ...     bc.mech.Ion("PotassiumFixed", E=-77 * u.mV),
+            ...     bc.mech.Channel("Na_HH1952"),
+            ...     bc.mech.Channel("K_HH1952"),
+            ...     bc.mech.Channel("IL"),
+            ... )
+            >>> cell = cell.place(bc.mech.CurrentClamp(delay=0 * u.ms, durations=5 * u.ms, amplitudes=0.1 * u.nA))
+            >>> cell = cell.place(bc.mech.Synapse("ExpSyn", name="syn", tau=2 * u.ms, e=0 * u.mV))
+            >>> _ = bc.connect(
+            ...     "self",
+            ...     source=cell.event_outputs["spike"],
+            ...     synapse=cell.synapses["syn"],
+            ...     weight=0.002 * u.uS,
+            ...     delay=0.5 * u.ms,
+            ... )
+            >>> cell.init_state()
+            >>> cell.connections.prepare_runtime(0.025 * u.ms)
+            >>> def step(t):
+            ...     with brainstate.environ.context(t=t):
+            ...         cell.update()
+            ...         return cell.synapses["syn"].g
+            >>> with brainstate.environ.context(dt=0.025 * u.ms):
+            ...     times = u.math.arange(0.0 * u.ms, 5.0 * u.ms, 0.025 * u.ms)
+            ...     g = brainstate.transform.for_loop(step, times)
+            >>> bool(g.max() > 0 * u.uS)
+            True
+        """
+        self._refuse_live_rules()
+        views = tuple(self._call_views(scheduled=False))
+        for view in views:
+            # Every row is checked before any is prepared (CELL-76).
+            view._check_live_dt(dt)
+        for view in views:
+            view._prepare_live_runtime(dt)
+
+    def _refuse_live_rules(self) -> None:
+        """Refuse a plasticity rule on a live source, before any live history is allocated."""
         for call, _ in self._call_items(scheduled=False):
             if call.plasticity is not None:
-                # Raised before any live history is allocated.
                 raise NotImplementedError(
                     f"Connection {call.name!r} has a plasticity rule on a live source, which runs only in a "
                     "braincell.Network: a standalone Cell.run delivers live events on another schedule. Add the "
                     "Cells to a Network and run that, or connect a scheduled source (EventSequence, NetStim)."
                 )
-        for view in self._call_views(scheduled=False):
-            view._prepare_live_runtime(dt)
 
     def _init_rules(self) -> dict | None:
         """Allocate the state of every plasticity rule (``Cell.init_state``).
@@ -934,24 +1022,66 @@ class ConnectionView(DiscreteView):
         for call in self._store.rule_calls():
             call.plasticity.prepare_network(call, dt=dt, delay_quantization=delay_quantization)
 
-    def _prepare_live_runtime(self, dt) -> None:
+    def _check_live_dt(self, dt) -> tuple[_ConnectionCall, bool]:
+        """Refuse a ``dt`` this call cannot run at; return the call and whether it still needs preparing.
+
+        Its delays are quantized again at another ``dt`` only when no event
+        is in flight: every delay rounds to 0 steps, none of the last spikes
+        is still to arrive, or a ``reset_state()`` since zeroed the history
+        (CELL-76).
+        A traced call cannot read the history, so it keeps the ``dt``.
+        ``Cell.run`` and ``Cell.update`` check every live call before they
+        prepare any.
+        """
         call = self._require_single_call("prepare runtime")
         dt_ms = scalar_decimal(dt, u.ms)
         if dt_ms <= 0.0:
             raise ValueError("Connection runtime dt must be > 0 ms.")
-        if call.live_dt_ms is not None:
-            if not np.isclose(call.live_dt_ms, dt_ms):
+        if call.live_dt_ms is None:
+            return call, True
+        if np.isclose(call.live_dt_ms, dt_ms):
+            return call, False
+        if call.live_history is not None:
+            history = call.live_history.value
+            if is_traced_value(history):
                 raise ValueError(
-                    "A live Connection cannot change dt while retaining delayed events; "
-                    "reset the target cell state first."
+                    f"Live connection {call.name!r} runs at dt = {call.live_dt_ms!r} ms and cannot change dt inside "
+                    "a traced call (jit, grad, brainstate.transform.for_loop); run once at the new dt outside it."
                 )
+            # Between steps, row ``j`` holds the spikes of ``j`` steps before the last one. A
+            # delay of ``k`` steps reads row ``k - 1`` at the end of a step: those of ``j >= k``
+            # have arrived.
+            steps = call.live_delay_steps
+            in_flight = np.arange(history.shape[0])[:, None] < steps[None, :]
+            if np.any(np.asarray(history)[in_flight]):
+                raise ValueError(
+                    f"Live connection {call.name!r} cannot change dt from {call.live_dt_ms!r} ms while delayed "
+                    "events are in flight; call reset_state() on the target Cell first, or keep its dt."
+                )
+        return call, True
+
+    def _live_history_depth(self, dt) -> int:
+        """The steps of history this call's delays need at ``dt`` (0: every delay rounds to 0 steps)."""
+        delay_ms = np.asarray(self.delay.to_decimal(u.ms), dtype=float)
+        return int(np.max(_round_half_up_steps(delay_ms / scalar_decimal(dt, u.ms)), initial=0))
+
+    def _prepare_live_runtime(self, dt) -> None:
+        call, unprepared = self._check_live_dt(dt)
+        if not unprepared:
             return
+        dt_ms = scalar_decimal(dt, u.ms)
         delay_ms = np.asarray(self.delay.to_decimal(u.ms), dtype=float)
         steps = _round_half_up_steps(delay_ms / dt_ms).astype(np.int32)
         call.live_dt_ms = dt_ms
         call.live_delay_steps = steps
         max_steps = int(np.max(steps, initial=0))
-        if max_steps > 0:
+        if call.live_history is not None:
+            # The history of an earlier dt holds no event in flight (_check_live_dt). The same
+            # state, so a compiled loop that holds it sees the new shape and traces again; a dt
+            # whose delays all round to 0 steps keeps it, zero and unread.
+            shape = (max_steps, len(self)) if max_steps else call.live_history.value.shape
+            call.live_history.value = jnp.zeros(shape)
+        elif max_steps > 0:
             call.live_history = brainstate.ShortTermState(jnp.zeros((max_steps, len(self))))
 
     def reset_runtime(self) -> None:

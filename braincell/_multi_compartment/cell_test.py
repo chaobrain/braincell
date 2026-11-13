@@ -1714,6 +1714,32 @@ class TestCellLifecycle(unittest.TestCase):
         cell.run(dt=0.1 * u.ms, duration=0.4 * u.ms)
         self.assertEqual(len(cell._run_loop_cache), 2)
 
+    def test_a_cable_cell_returns_to_an_earlier_dt(self):
+        """CELL-76: the third run failed while brainstate sorted the cache keys (``None`` against a hand-over)."""
+
+        def returning_cell():
+            cell = _hh_cell((1,), calcium=False)
+            cell.place(
+                at("soma", 0.5), mech.CurrentClamp(delay=0.05 * u.ms, durations=1.0 * u.ms, amplitudes=0.1 * u.nA)
+            )
+            cell.init_state()
+            return cell
+
+        for segments in (((0.025, 8), (0.05, 4), (0.025, 8)), ((0.025, 8), (0.03, 1), (0.025, 8))):
+            with self.subTest(segments=segments):
+                cell, fresh = returning_cell(), returning_cell()
+                for dt, n in segments:
+                    cell.run(dt=dt * u.ms, duration=n * dt * u.ms)
+                    fresh._run_loop_cache.clear()  # each segment of the reference compiles its own loop
+                    fresh.run(dt=dt * u.ms, duration=n * dt * u.ms)
+                self.assertEqual(len(cell._run_loop_cache), 3)  # the keys are unchanged: the return is a new shape
+                states, reference = brainstate.graph.states(cell), brainstate.graph.states(fresh)
+                self.assertEqual(states.keys(), reference.keys())
+                for path, state in states.items():
+                    for leaf, other in zip(jax.tree.leaves(state.value), jax.tree.leaves(reference[path].value)):
+                        np.testing.assert_array_equal(np.asarray(leaf), np.asarray(other), err_msg=str(path))
+                self.assertGreater(float(np.max(np.asarray(cell.V.value.to_decimal(u.mV)))), -64.0)  # the clamp acted
+
     def test_reset_clears_run_loop_cache(self):
         cell = _cell_with_recording()
         cell.init_state()
@@ -2318,6 +2344,600 @@ def _kinetic_integration_numbers() -> dict:
     if result.returncode != 0:
         raise AssertionError(result.stderr)
     return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+def _soma_tree():
+    """A single 20 um soma branch named ``soma``."""
+    soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+    return Morphology.from_root(soma, name="soma")
+
+
+class UpdateLiveConnectionTest(unittest.TestCase):
+    """CELL-70: an ``update()`` loop delivers live connection events as ``Cell.run`` does.
+
+    Two members, each with its own ExpSyn and a connection from its own spike
+    port. The solver sets a member's V to +40 mV in its spike steps and to
+    -65 mV otherwise and integrates nothing, so g only grows: by 0.05 uS per
+    live event and by 0.01 uS per scheduled one. A spike of step ``m`` with a
+    delay of ``k`` steps shows in g read after step ``m + k``, as in
+    ``Cell.run``. The spike steps put the arrivals on the last step before and
+    the first step after the segment boundaries 10 and 20, and on the first
+    and last steps; the scheduled events arrive within half a step of the
+    boundaries on both sides.
+    """
+
+    DT = 0.1
+    N = 30
+    W = 0.05
+    W_SCHEDULED = 0.01
+    # Half-up arrival steps 0, 9, 10, 10, 20, 20, 21, 29.
+    SCHEDULED_MS = (0.0, 0.94, 0.96, 1.04, 1.96, 2.04, 2.06, 2.9)
+    SCHEDULED_STEPS = (0, 9, 10, 10, 20, 20, 21, 29)
+    DELAYS = ((0.0, 0), (0.1, 1), (0.3, 3))
+
+    @staticmethod
+    def _spike_steps(k):
+        return (np.array([0, 9 - k, 19 - k]), np.array([10 - k, 20 - k, 29]))
+
+    def _cell(self, delay_ms, k, *, record=False, init=True, spike_steps=None, scheduled=True):
+        spike_steps = self._spike_steps(k) if spike_steps is None else spike_steps
+        dt = self.DT
+
+        def solver(cell):
+            t = brainstate.environ.get("t").to_decimal(u.ms)
+            hits = jnp.stack([jnp.any(jnp.abs(t - steps * dt) < 0.5 * dt) for steps in spike_steps])
+            V = cell.V.value
+            hits = jnp.reshape(hits, (2,) + (1,) * (V.ndim - 1))
+            cell.V.value = u.math.where(hits, 40.0, -65.0) * u.mV + 0.0 * V
+
+        cell = Cell(
+            _soma_tree(), cv_policy=CVPerBranch(), pop_size=(2,), V_init=-65.0 * u.mV, V_th=0.0 * u.mV, solver=solver
+        )
+        cell.place(at("soma", 0.5), mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms))
+        if record:
+            cell.record("g", braincell.observe.synapse(name="s").state("g"))
+        braincell.connect(
+            "live",
+            source=cell.event_outputs["spike"],
+            synapse=cell.synapses["s"],
+            weight=self.W * u.uS,
+            delay=delay_ms * u.ms,
+        )
+        if scheduled:
+            braincell.connect(
+                "scheduled",
+                source=braincell.EventSequence.from_times([np.asarray(self.SCHEDULED_MS) * u.ms]),
+                synapse=cell.synapses["s"][[0]],
+                weight=self.W_SCHEDULED * u.uS,
+            )
+        if init:
+            cell.init_state()
+        return cell
+
+    def _expected(self, k):
+        """g of both members after each step, summed by hand from the arrival steps."""
+        increments = np.zeros((self.N, 2))
+        for member, steps in enumerate(self._spike_steps(k)):
+            for m in steps:
+                if m + k < self.N:
+                    increments[m + k, member] += self.W
+        for step in self.SCHEDULED_STEPS:
+            increments[step, 0] += self.W_SCHEDULED
+        return np.cumsum(increments, axis=0)
+
+    @staticmethod
+    def _g(cell):
+        return np.asarray(cell.synapses["s"].g.to_decimal(u.uS), dtype=np.float64).reshape(2)
+
+    def _eager(self, cell, first, last):
+        rows = []
+        for step in range(first, last):
+            with brainstate.environ.context(dt=self.DT * u.ms, t=step * self.DT * u.ms):
+                cell.update()
+            rows.append(self._g(cell))
+        return rows
+
+    def _loop(self, cell, first, last):
+        def body(step):
+            with brainstate.environ.context(t=step * self.DT * u.ms):
+                cell.update()
+            return cell.synapses["s"].g.to_decimal(u.uS).reshape(2)
+
+        with brainstate.environ.context(dt=self.DT * u.ms):
+            rows = np.asarray(brainstate.transform.for_loop(body, jnp.arange(first, last)), dtype=np.float64)
+        self.assertEqual(rows.shape, (last - first, 2))
+        np.testing.assert_array_equal(rows[-1], self._g(cell))
+        return list(rows)
+
+    def _jit(self, cell, first, last):
+        @brainstate.transform.jit
+        def one_step(t):
+            with brainstate.environ.context(dt=self.DT * u.ms, t=t):
+                return cell.update()
+
+        rows = []
+        for step in range(first, last):
+            one_step(step * self.DT * u.ms)
+            rows.append(self._g(cell))
+        return rows
+
+    def _one_step_runs(self, cell):
+        rows = []
+        for _ in range(self.N):
+            cell.run(dt=self.DT * u.ms, duration=self.DT * u.ms)
+            rows.append(self._g(cell))
+        return np.asarray(rows)
+
+    def _assert_rows(self, rows, expected, bits, msg=""):
+        rows = np.asarray(rows)
+        self.assertEqual(rows.shape, (self.N, 2), msg)  # one row per step, read after it
+        np.testing.assert_allclose(rows, expected, rtol=1e-12 if bits == 64 else 1e-6, atol=0.0, err_msg=msg)
+
+    def _check_drivers(self, bits):
+        for delay, k in self.DELAYS:
+            with jax.enable_x64(bits == 64), brainstate.environ.context(precision=bits):
+                expected = self._expected(k)
+                ran = self._one_step_runs(self._cell(delay, k))
+                self._assert_rows(ran, expected, bits, "Cell.run")
+                for name, driver in (("eager", self._eager), ("for_loop", self._loop), ("jit", self._jit)):
+                    with self.subTest(precision=bits, delay=delay, driver=name):
+                        cell = self._cell(delay, k)
+                        if k > 0 and name != "eager":
+                            # The delay history is a state: it must exist before the trace.
+                            cell.connections.prepare_runtime(self.DT * u.ms)
+                        rows = np.asarray(driver(cell, 0, self.N))
+                        self._assert_rows(rows, expected, bits, name)
+                        np.testing.assert_allclose(rows, ran, rtol=1e-12, atol=0.0, err_msg=name)
+
+    def test_update_loops_deliver_live_events_as_run_does_float64(self):
+        self._check_drivers(64)
+
+    def test_update_loops_deliver_live_events_as_run_does_float32(self):
+        self._check_drivers(32)
+
+    def test_update_run_update_segments_hand_over_the_events_in_flight(self):
+        for bits in (32, 64):
+            for delay, k in self.DELAYS:
+                for name in ("eager", "for_loop"):
+                    with (
+                        self.subTest(precision=bits, delay=delay, driver=name),
+                        jax.enable_x64(bits == 64),
+                        brainstate.environ.context(precision=bits),
+                    ):
+                        segment = self._eager if name == "eager" else self._loop
+                        cell = self._cell(delay, k, record=True)
+                        if name == "for_loop":
+                            cell.connections.prepare_runtime(self.DT * u.ms)
+                        rows = segment(cell, 0, 10)
+                        cell._set_current_time(10 * self.DT * u.ms)
+                        result = cell.run(dt=self.DT * u.ms, duration=10 * self.DT * u.ms)
+                        samples = np.asarray(result.samples["g"].values.to_decimal(u.uS), dtype=np.float64)
+                        self.assertEqual(samples.size, 20)  # one sample per step and member
+                        samples = samples.reshape(10, 2)
+                        # Sampled at each step start: sample 0 is g after step 9.
+                        np.testing.assert_array_equal(samples[0], rows[-1])
+                        rows += [*samples[1:], self._g(cell)]
+                        rows += segment(cell, 20, 30)  # for_loop: the second trace of this Cell
+                        self._assert_rows(rows, self._expected(k), bits, name)
+
+    @staticmethod
+    def _fingerprint(cell):
+        states = {
+            str(path): [np.asarray(leaf).copy() for leaf in jax.tree.leaves(state.value)]
+            for path, state in brainstate.graph.states(cell).items()
+        }
+        buffers = {
+            key: np.asarray(u.get_mantissa(cell._runtime.get_event_buffer(key))).copy()
+            for key in cell._runtime.event_buffers
+        }
+        calls = tuple(
+            (
+                call.name,
+                call.live_history is None,
+                None if call.live_delay_steps is None else tuple(call.live_delay_steps.tolist()),
+                call.live_dt_ms,
+            )
+            for call in cell._get_connection_store()._calls
+        )
+        histories = tuple(
+            None if call.live_history is None else np.asarray(call.live_history.value).copy()
+            for call in cell._get_connection_store()._calls
+        )
+        return states, buffers, calls, histories
+
+    def _assert_unchanged(self, before, after):
+        self.assertEqual(before[2], after[2])
+        for history, other in zip(before[3], after[3]):
+            np.testing.assert_array_equal(history, other, err_msg="live history")
+        self.assertEqual(before[0].keys(), after[0].keys())
+        for key, leaves in before[0].items():
+            for leaf, other in zip(leaves, after[0][key]):
+                np.testing.assert_array_equal(leaf, other, err_msg=key)
+        self.assertEqual(before[1].keys(), after[1].keys())
+        for key, buffer in before[1].items():
+            np.testing.assert_array_equal(buffer, after[1][key], err_msg=f"event buffer {key}")
+
+    def test_a_traced_update_needs_the_delay_history_first(self):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            cell = self._cell(0.1, 1)
+            before = self._fingerprint(cell)
+            with self.assertRaises(RuntimeError) as caught:
+                self._loop(cell, 0, self.N)
+            self._assert_unchanged(before, self._fingerprint(cell))
+            self.assertIn("prepare_runtime", str(caught.exception))
+            # The way out the message gives; the loop is then accepted.
+            cell.connections.prepare_runtime(self.DT * u.ms)
+            self._assert_rows(self._loop(cell, 0, self.N), self._expected(1), 64)
+
+    def test_a_refused_traced_update_prepares_no_connection(self):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            cell = Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=(1,), V_init=-65.0 * u.mV)
+            cell.place(at("soma", 0.5), mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms))
+            for name, delay in (("now", 0.0), ("later", 0.1)):
+                braincell.connect(
+                    name,
+                    source=cell.event_outputs["spike"],
+                    synapse=cell.synapses["s"],
+                    weight=self.W * u.uS,
+                    delay=delay * u.ms,
+                )
+            cell.init_state()
+            before = self._fingerprint(cell)
+            with self.assertRaisesRegex(RuntimeError, "'later'"):
+                with brainstate.environ.context(dt=self.DT * u.ms):
+                    brainstate.transform.for_loop(lambda step: cell.update(), jnp.arange(3))
+            self._assert_unchanged(before, self._fingerprint(cell))
+            self.assertTrue(all(call.live_dt_ms is None for call in cell._get_connection_store()._calls))
+
+    def _jit_run(self, cell, dt, n):
+        return brainstate.transform.jit(lambda: cell.run(dt=dt * u.ms, duration=n * dt * u.ms) and None)
+
+    def test_a_traced_run_needs_the_delay_history_first(self):
+        """CELL-76: created in the trace, the history would die with it, and the events in flight at its end."""
+        for delay, k in self.DELAYS:
+            with self.subTest(delay=delay), jax.enable_x64(True), brainstate.environ.context(precision=64):
+                cell = self._cell(delay, k)
+                run = self._jit_run(cell, self.DT, 10)
+                if k > 0:
+                    before = self._fingerprint(cell)
+                    with self.assertRaisesRegex(RuntimeError, r"Cell\.run\(\) is traced") as caught:
+                        run()
+                    self._assert_unchanged(before, self._fingerprint(cell))
+                    self.assertIn("prepare_runtime(dt)", str(caught.exception))
+                    # The way out the message gives; the same function is then accepted.
+                    cell.connections.prepare_runtime(self.DT * u.ms)
+                eager = self._cell(delay, k)
+                rows, reference = [], []
+                for _ in range(3):  # arrivals on both sides of the call boundaries 10 and 20
+                    run()
+                    eager.run(dt=self.DT * u.ms, duration=10 * self.DT * u.ms)
+                    rows.append(self._g(cell))
+                    reference.append(self._g(eager))
+                np.testing.assert_allclose(rows, self._expected(k)[[9, 19, 29]], rtol=1e-12, atol=0.0)
+                np.testing.assert_array_equal(rows, reference)
+                self._assert_unchanged(self._fingerprint(eager), self._fingerprint(cell))
+
+    def test_a_traced_run_keeps_the_dt_of_the_history(self):
+        """CELL-76: inside a trace the history cannot be read; a run at the new dt outside it is the way out."""
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            cell = self._cell(0.3, 3)
+            cell.run(dt=self.DT * u.ms, duration=5 * self.DT * u.ms)  # the step-0 events arrived in step 3
+            run = self._jit_run(cell, 0.05, 10)
+            before = self._fingerprint(cell)
+            with self.assertRaisesRegex(ValueError, "cannot change dt inside a traced call"):
+                run()
+            self._assert_unchanged(before, self._fingerprint(cell))
+            cell.run(dt=0.05 * u.ms, duration=10 * 0.05 * u.ms)
+            run()
+            reference = self._cell(0.3, 3)
+            for dt, n in ((self.DT, 5), (0.05, 10), (0.05, 10)):
+                reference.run(dt=dt * u.ms, duration=n * dt * u.ms)
+            self._assert_unchanged(self._fingerprint(reference), self._fingerprint(cell))
+
+    def test_a_new_dt_is_accepted_when_no_event_is_in_flight(self):
+        """CELL-76: the delays are quantized again at the new dt; an event that arrived does not count."""
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            cell = self._cell(0.0, 0)  # no history
+            cell.run(dt=self.DT * u.ms, duration=3 * self.DT * u.ms)
+            cell.run(dt=0.05 * u.ms, duration=4 * 0.05 * u.ms)
+            self.assertEqual(cell._get_connection_store()._calls[0].live_dt_ms, 0.05)
+            # Member 0 (1 step) spikes at 0 and 1.1 ms, member 1 (3 steps) at 1.3 ms.
+            cell = self._cell(
+                np.array([0.1, 0.3]), None, spike_steps=(np.array([0, 11]), np.array([13])), scheduled=False
+            )
+            call = cell._get_connection_store()._calls[0]
+            # Back at 0.1 ms with the first run's step count: the loop cache holds two keys that differ
+            # first at the hand-over (test_a_cable_cell_returns_to_an_earlier_dt).
+            expected = ([0.05, 0.0], [0.05, 0.0], [0.05, 0.0], [0.10, 0.05])
+            segments = ((self.DT, 2, [1, 3]), (0.05, 16, [2, 6]), (self.DT, 2, [1, 3]), (self.DT, 5, [1, 3]))
+            for (dt, n, steps), g in zip(segments, expected):
+                with self.subTest(dt=dt, steps=n):
+                    if dt == 0.05:
+                        # Member 0's event arrived in step 1 and is still in the history, which is 3 deep.
+                        self.assertTrue(np.asarray(call.live_history.value).any())
+                    cell.run(dt=dt * u.ms, duration=n * dt * u.ms)
+                    self.assertEqual(call.live_delay_steps.tolist(), steps)
+                    self.assertEqual(call.live_history.value.shape, (max(steps), 2))
+                    np.testing.assert_allclose(self._g(cell), g, rtol=1e-12, atol=0.0)
+
+    def test_a_new_dt_is_refused_while_an_event_is_in_flight(self):
+        """CELL-76: refused as run refuses it, until reset_state(); then as a fresh Cell at the new dt."""
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            cell = self._cell(0.1, 1)
+            self._eager(cell, 0, 1)  # member 0 spikes in step 0; it arrives in step 1
+            before = self._fingerprint(cell)
+            for name, refused in (
+                ("update", lambda: self._update_at(cell, 0.05, 0.1)),
+                ("run", lambda: cell.run(dt=0.05 * u.ms, duration=0.05 * u.ms)),
+                ("prepare_runtime", lambda: cell.connections.prepare_runtime(0.05 * u.ms)),
+            ):
+                with self.subTest(name), self.assertRaisesRegex(ValueError, "in flight; call reset_state"):
+                    refused()
+                self._assert_unchanged(before, self._fingerprint(cell))
+            cell.reset_state()
+            cell.run(dt=0.05 * u.ms, duration=20 * 0.05 * u.ms)
+            fresh = self._cell(0.1, 1)
+            fresh.run(dt=0.05 * u.ms, duration=20 * 0.05 * u.ms)
+            self._assert_unchanged(self._fingerprint(fresh), self._fingerprint(cell))
+
+    @staticmethod
+    def _update_at(cell, dt, t):
+        with brainstate.environ.context(dt=dt * u.ms, t=t * u.ms):
+            cell.update()
+
+    def test_a_live_rule_row_is_refused_before_any_state_changes(self):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            cell = Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=(1,), V_init=-65.0 * u.mV)
+            cell.place(at("soma", 0.5), mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms))
+            braincell.connect(
+                "scheduled",
+                source=braincell.EventSequence.from_times([np.array([0.0]) * u.ms]),
+                synapse=cell.synapses["s"],
+                weight=0.05 * u.uS,
+            )
+            braincell.connect(
+                "rule",
+                source=cell.event_outputs["spike"],
+                synapse=cell.synapses["s"],
+                weight=0.05 * u.uS,
+                plasticity=mech.ConnectionRule(
+                    "PairSTDP", A_plus=0.01 * u.uS, A_minus=0.0105 * u.uS, tau_plus=20.0 * u.ms, tau_minus=20.0 * u.ms
+                ),
+            )
+            cell.init_state()
+            before = self._fingerprint(cell)
+            with self.assertRaises(NotImplementedError) as caught:
+                with brainstate.environ.context(dt=self.DT * u.ms, t=0.0 * u.ms):
+                    cell.update()
+            # The scheduled payload at 0 ms is not in the event buffer (it was 0.05 uS).
+            self._assert_unchanged(before, self._fingerprint(cell))
+            self.assertIn("Network", str(caught.exception))
+
+    def test_a_cell_without_live_rows_prepares_no_history(self):
+        def scheduled_only():
+            cell = Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=(1,), V_init=-65.0 * u.mV)
+            cell.place(at("soma", 0.5), mech.Synapse("ExpSyn", name="s", tau=2.0 * u.ms))
+            braincell.connect(
+                "scheduled",
+                source=braincell.EventSequence.from_times([np.array([0.0, 0.2]) * u.ms]),
+                synapse=cell.synapses["s"],
+                weight=0.05 * u.uS,
+            )
+            cell.init_state()
+            return cell
+
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            cell, ran = scheduled_only(), scheduled_only()
+            rows = []
+            for step in range(4):
+                with brainstate.environ.context(dt=self.DT * u.ms, t=step * self.DT * u.ms):
+                    cell.update()
+                ran.run(dt=self.DT * u.ms, duration=self.DT * u.ms)
+                rows.append((cell.synapses["s"].g.to_decimal(u.uS), ran.synapses["s"].g.to_decimal(u.uS)))
+            self.assertIsNone(cell._get_connection_store()._calls[0].live_dt_ms)
+            self.assertIsNone(cell._get_connection_store()._calls[0].live_history)
+            updated, reference = (np.asarray(x, dtype=np.float64).ravel() for x in zip(*rows))
+            self.assertEqual(int(np.count_nonzero(np.diff(np.r_[0.0, reference]) > 0.0)), 2)  # both events arrived
+            np.testing.assert_allclose(updated, reference, rtol=1e-12, atol=0.0)
+
+    def test_a_network_member_refuses_update(self):
+        """CELL-76: its Network steps it; Network.update() is the way out the message gives."""
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            nets = []
+            for name in ("member", "twin"):
+                cell = self._cell(0.1, 1, init=False, scheduled=False)
+                net = braincell.Network(name)
+                net.add_population("cells", cell)
+                net.init_state()
+                nets.append((net, cell))
+            (net, cell), (twin, twin_cell) = nets
+            before = self._fingerprint(cell)
+            with self.assertRaisesRegex(RuntimeError, r"Network 'member'; use Network\.update\(\) instead"):
+                self._update_at(cell, self.DT, 0.0)
+            self._assert_unchanged(before, self._fingerprint(cell))
+            net.prepare_run(dt=self.DT * u.ms)
+            rows = []
+            with brainstate.environ.context(dt=self.DT * u.ms):
+                for _ in range(self.N):
+                    net.update()
+                    rows.append(self._g(cell))
+            twin.run(dt=self.DT * u.ms, duration=self.N * self.DT * u.ms)
+            np.testing.assert_array_equal(rows[-1], self._g(twin_cell))
+            self._assert_unchanged(self._fingerprint(twin_cell), self._fingerprint(cell))
+
+    def test_an_update_without_dt_is_refused_before_any_state_changes(self):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            cell = self._cell(0.1, 1)
+            before = self._fingerprint(cell)
+            with self.assertRaisesRegex(ValueError, "environ\\['dt'\\]"):
+                with brainstate.environ.context(t=0.0 * u.ms):
+                    cell.update()
+            self._assert_unchanged(before, self._fingerprint(cell))
+
+
+class UpdateLiveDynamicsTest(unittest.TestCase):
+    """CELL-70: a live self connection with HH dynamics, ``update()`` loops against ``Cell.run``.
+
+    A 1-CV cable (staggered) and a lumped Cell (rk4): HH1952 sodium and
+    potassium, leak, a 0.1 nA clamp from 0.25 ms, an ExpSyn (tau 2 ms, e 0 mV)
+    driven by the Cell's own spike, weight 0.002 uS; dt 0.025 ms. Both fire
+    in step 84 (from 0); the event shows in g after step 84 + k (k = 0, 4, 12).
+    """
+
+    DT = 0.025 * u.ms
+
+    @staticmethod
+    def _channels():
+        return (
+            mech.Ion("SodiumFixed", name="sodium", E=50.0 * u.mV),
+            mech.Ion("PotassiumFixed", E=-77.0 * u.mV),
+            mech.Channel("IL", name="leak"),
+            mech.Channel("Na_HH1952", name="na"),
+            mech.Channel("K_HH1952", name="k"),
+        )
+
+    def _cell(self, kind, delay_ms, *, clamp_ms=8.0, record=False):
+        clamp = mech.CurrentClamp(delay=0.25 * u.ms, durations=clamp_ms * u.ms, amplitudes=0.1 * u.nA)
+        synapse = mech.Synapse("ExpSyn", name="syn", tau=2.0 * u.ms, e=0.0 * u.mV)
+        if kind == "cable":
+            branch = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+            cell = Cell(Morphology.from_root(branch), cv_policy=CVPerBranch(1), V_init=-65.0 * u.mV, solver="staggered")
+            cell.paint(
+                AllRegion(),
+                mech.CableProperty(
+                    resting_potential=-65.0 * u.mV,
+                    membrane_capacitance=1.0 * u.uF / u.cm**2,
+                    axial_resistivity=100.0 * u.ohm * u.cm,
+                ),
+                *self._channels(),
+            )
+            cell.place(RootLocation(0.5), clamp)
+            cell.place(RootLocation(0.5), synapse)
+        else:
+            cell = Cell.point(1, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, solver="rk4")
+            cell.paint(AllRegion(), *self._channels())
+            cell.place(clamp)
+            cell.place(synapse)
+        if record:
+            cell.record("v", braincell.observe.state("V"))
+            cell.record("g", braincell.observe.synapse(name="syn").state("g"))
+        braincell.connect(
+            "self",
+            source=cell.event_outputs["spike"],
+            synapse=cell.synapses["syn"],
+            weight=0.002 * u.uS,
+            delay=delay_ms * u.ms,
+        )
+        cell.init_state()
+        return cell
+
+    @staticmethod
+    def _read(cell):
+        return (
+            float(np.asarray(cell.V.value.to_decimal(u.mV)).ravel()[0]),
+            float(np.asarray(cell.synapses["syn"].g.to_decimal(u.uS)).ravel()[0]),
+        )
+
+    def _reference(self, kind, delay, n):
+        """V and g after each of ``n`` steps of one recorded ``Cell.run``."""
+        cell = self._cell(kind, delay, record=True)
+        result = cell.run(dt=self.DT, duration=n * self.DT)
+        v = np.asarray(result.samples["v"].values.to_decimal(u.mV), dtype=np.float64).reshape(n, -1)[:, 0]
+        g = np.asarray(result.samples["g"].values.to_decimal(u.uS), dtype=np.float64).reshape(n, -1)[:, 0]
+        self.assertEqual(v.shape, (n,))  # one sample per step, taken at its start
+        reference = np.vstack([np.stack([v[1:], g[1:]], axis=1), self._read(cell)])
+        self.assertTrue(np.isfinite(reference).all())
+        self.assertGreater(np.ptp(reference[:, 0]), 50.0)  # it spikes
+        self.assertGreater(reference[-1, 1], 0.0)  # and its synapse received the event
+        return reference
+
+    def _eager_rows(self, cell, n):
+        rows = []
+        for step in range(n):
+            with brainstate.environ.context(dt=self.DT, t=step * self.DT):
+                cell.update()
+            rows.append(self._read(cell))
+        return np.asarray(rows)
+
+    @staticmethod
+    def _jumps(g):
+        return np.flatnonzero(np.diff(g) > 1e-3 * 0.002)
+
+    def test_cable_and_lumped_update_loops_match_run(self):
+        n = 120  # the first spike's events arrive by step 96
+        for kind in ("cable", "lumped"):
+            for delay in (0.0, 0.1, 0.3):
+                with (
+                    self.subTest(kind=kind, delay=delay),
+                    jax.enable_x64(True),
+                    brainstate.environ.context(precision=64),
+                ):
+                    reference = self._reference(kind, delay, n)
+                    eager = self._eager_rows(self._cell(kind, delay), n)
+                    np.testing.assert_allclose(eager, reference, rtol=1e-12, atol=1e-15)
+
+                    looped = self._cell(kind, delay)
+                    looped.connections.prepare_runtime(self.DT)
+
+                    def body(step, cell=looped):
+                        with brainstate.environ.context(t=step * self.DT):
+                            cell.update()
+                        return (
+                            cell.V.value.to_decimal(u.mV).ravel()[0],
+                            cell.synapses["syn"].g.to_decimal(u.uS).ravel()[0],
+                        )
+
+                    with brainstate.environ.context(dt=self.DT):
+                        v, g = brainstate.transform.for_loop(body, jnp.arange(n))
+                    np.testing.assert_allclose(
+                        np.stack([np.asarray(v), np.asarray(g)], axis=1), reference, rtol=1e-12, atol=1e-15
+                    )
+
+    def test_float32_eager_update_loops_match_run(self):
+        n = 120  # the first spike's events arrive by step 96
+        for kind in ("cable", "lumped"):
+            for delay in (0.0, 0.1, 0.3):
+                with self.subTest(kind=kind, delay=delay), brainstate.environ.context(precision=32):
+                    reference = self._reference(kind, delay, n)
+                    rows = self._eager_rows(self._cell(kind, delay), n)
+                    jumps = self._jumps(reference[:, 1])
+                    self.assertGreater(jumps.size, 0)
+                    np.testing.assert_array_equal(self._jumps(rows[:, 1]), jumps)
+                    np.testing.assert_allclose(rows[:, 1], reference[:, 1], rtol=1e-5, atol=1e-9)
+                    # On the CPU the eager float32 ops round apart from the compiled run's from step 21
+                    # on, before any spike: up to 2.5e-4 mV on the cable's upstroke.
+                    np.testing.assert_allclose(rows[:, 0], reference[:, 0], rtol=1e-5, atol=1e-3)
+
+    def test_float32_long_update_loop_matches_one_run(self):
+        # L77: 32010 steps, the clamp on for the whole run.
+        n = 32010
+        with brainstate.environ.context(precision=32):
+            ran = self._cell("cable", 0.1, clamp_ms=1e6, record=True)
+            result = ran.run(dt=self.DT, duration=n * self.DT)
+            v_ref = np.asarray(result.samples["v"].values.to_decimal(u.mV)).reshape(n, -1)[:, 0]
+            g_ref = np.asarray(result.samples["g"].values.to_decimal(u.uS)).reshape(n, -1)[:, 0]
+            looped = self._cell("cable", 0.1, clamp_ms=1e6)
+            looped.connections.prepare_runtime(self.DT)
+
+            def body(step):
+                with brainstate.environ.context(t=step * self.DT):
+                    # Read at the step start, as the recordings are.
+                    sample = (
+                        looped.V.value.to_decimal(u.mV).ravel()[0],
+                        looped.synapses["syn"].g.to_decimal(u.uS).ravel()[0],
+                    )
+                    looped.update()
+                return (*sample, looped.spike.value.sum())
+
+            with brainstate.environ.context(dt=self.DT):
+                v, g, spikes = (np.asarray(x) for x in brainstate.transform.for_loop(body, jnp.arange(n)))
+            self.assertEqual(v.shape, (n,))
+            self.assertTrue(np.isfinite(v).all())
+            self.assertGreater(int(spikes.sum()), 50)
+            self.assertEqual(int(spikes.sum()), len(result.spikes.source_id))
+            np.testing.assert_array_equal(np.flatnonzero(np.diff(g) > 1e-3), np.flatnonzero(np.diff(g_ref) > 1e-3))
+            np.testing.assert_allclose(v, v_ref, rtol=1e-6, atol=1e-6)
+            np.testing.assert_allclose(g, g_ref, rtol=1e-6, atol=1e-9)
 
 
 class IntegrationOrderAdvancesKineticIonChannelsTest(unittest.TestCase):

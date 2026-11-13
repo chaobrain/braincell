@@ -145,6 +145,20 @@ class AxialOperatorCache:
     operator: object
 
 
+class _RunLoopCache(dict):
+    """The compiled loops of :meth:`Cell.run`, by run shape (``run._cached_run_plan``).
+
+    A plain ``dict`` attribute is a pytree node that brainstate's graph walk
+    (``Cell.nodes``, ``brainstate.graph.states``) sorts by key, and two keys
+    that differ first where one holds ``None`` and the other an
+    ``ArrivalHandover`` or an arrival origin cannot be compared: a cable Cell
+    that returned to an earlier ``dt`` failed in its next step (CELL-76). A
+    subclass is a leaf there. The keys are unchanged.
+    """
+
+    __slots__ = ()
+
+
 @dataclass(frozen=True)
 class RuntimeIonBinding(DiscreteView):
     """One runtime ion seen through a CV or node inspection view."""
@@ -1335,7 +1349,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._clock_step = brainstate.ShortTermState(jnp.asarray(0, dtype=jnp.int32))
         self._clock_dt = brainstate.ShortTermState(0.0 * u.ms)
         self._node_scheduling_cache: dict[tuple[str, int], object] = {}
-        self._run_loop_cache: dict[tuple[object, ...], object] = {}
+        self._run_loop_cache: dict[tuple[object, ...], object] = _RunLoopCache()
 
         self._runtime: CellRuntimeState | None = None
         self._lumped_runtime = None
@@ -4036,14 +4050,24 @@ class Cell(_CellFacade, HHTypedNeuron):
         Raises
         ------
         RuntimeError
-            Before ``init_state()``.
+            For a Cell in a :class:`~braincell.Network`, which steps its
+            Cells together and delivers their connections: use
+            ``Network.update()`` after ``Network.prepare_run()``. Before
+            ``init_state()``; or when traced before a live connection with a
+            delay of a step or more has its history (see Notes).
         ValueError
-            If ``brainstate.environ['dt']`` is not set, or ``I_ext`` does not
-            broadcast to ``V.value.shape``.
+            If ``brainstate.environ['dt']`` is not set, ``I_ext`` does not
+            broadcast to ``V.value.shape``, or the live connections ran at
+            another ``dt`` and :meth:`run` would refuse this one too: while
+            one of their delayed events is still to arrive (call
+            :meth:`reset_state` first), or inside a traced call.
         TypeError
             If ``I_ext`` is given to a cable Cell: inject current there
             with a placed :class:`~braincell.mech.CurrentClamp` or
             :class:`~braincell.mech.FunctionClamp`.
+        NotImplementedError
+            For a plasticity rule on a live source, which runs only in a
+            :class:`~braincell.Network`.
         UnitMismatchError
             If ``I_ext`` is neither a current nor a current density; also if
             a registered current input returns another unit.
@@ -4059,10 +4083,28 @@ class Cell(_CellFacade, HHTypedNeuron):
         2. Apply them to the runtime synapses.
         3. Advance voltage and mechanism dynamics through ``self.solver``.
         4. Detect and store the current spike.
+        5. Route that spike through the Cell's live connections (from its
+           ``event_outputs`` to its synapses), as each step of :meth:`run`
+           does: with a delay of ``k`` steps (``delay / dt``, rounded half
+           up), it reaches its synapse at the end of the ``k``-th step after
+           this one, ``k = 0`` at the end of this one. A loop of ``update()``
+           calls and :meth:`run` hand the events in flight to each other.
+
+        The first call at a ``dt`` quantizes the live delays and allocates
+        their history, a state; a call at another ``dt`` quantizes them again
+        when none of their events is still to arrive. A traced call
+        (``brainstate.transform.for_loop``, ``jit``) cannot create a state for later calls, so it raises unless
+        that history exists: call
+        :meth:`cell.connections.prepare_runtime(dt) <braincell.ConnectionView.prepare_runtime>`
+        once before, or ``update()`` or :meth:`run` once outside it.
 
         In network execution, delayed event delivery is scheduled outside the
         cell. ``Network.run(...)`` writes arrivals into runtime state buffers
         before calling the corresponding internal cell phases.
+
+        A Cell in a :class:`~braincell.Network` steps with the Network, which
+        delivers its connections: ``update()`` on it raises; use
+        ``Network.update()``.
 
         Calling the cell, ``cell(I_ext)``, runs its ``before_updates``
         (e.g. the synapse of a ``brainpy.state.AlignPostProj``) and then
@@ -4124,6 +4166,8 @@ class Cell(_CellFacade, HHTypedNeuron):
                 "cell.place(locset, braincell.mech.CurrentClamp(...)) or "
                 "braincell.mech.FunctionClamp(fn=...); after init_state(), call reset() before placing it."
             )
+        # A Network steps its Cells together and delivers their connections (CELL-76).
+        self._raise_if_network_owned("update()")
         self._raise_if_not_initialized("update()")
         # Checked before any state changes, so a bad input leaves the cell as it was.
         external = None
@@ -4131,12 +4175,61 @@ class Cell(_CellFacade, HHTypedNeuron):
             external = as_current_density(
                 I_ext, area=self._lumped_runtime.area, shape=tuple(self.V.value.shape), what="I_ext"
             )
+        live = self._standalone_live_rows()
+        if live:
+            # Before any state changes, so a refused call leaves the cell as it was.
+            dt = brainstate.environ.get("dt", None)
+            if dt is None:
+                raise ValueError("Cell.update(...) requires brainstate.environ['dt'] to be set.")
+            # A reduction model has no V; its clock is a state as well.
+            probe = self._clock_step.value if self._uses_reduction else self.V.value
+            self._prepare_live_rows(live, dt, action="update", traced=is_traced_value(probe))
         self._prepare_first_synapse_inputs(t=self._resolve_t())
         self._prepare_step_clamps()
         self._begin_step()
         with brainstate.environ.context(_braincell_step_clamps_prepared=True):
             spk = self._update_dynamics(external)
+        if live:
+            # Each step of run() routes them here, after the step (CELL-70).
+            self._apply_direct_live_connection_events(live)
         return spk
+
+    def _standalone_live_rows(self) -> tuple:
+        """The live connection views that this ``update()`` routes, as each step of ``run()`` does.
+
+        A plasticity rule on a live source runs only in a Network; it is
+        refused here, before any state changes. A Cell whose sources are all
+        scheduled returns at once, without grouping its rows.
+        """
+        store = self._get_connection_store()
+        if all(call.source.is_scheduled for call in store._calls):
+            return ()
+        items = self.connections._call_items(scheduled=False)
+        for call, _ in items:
+            binding = call.plasticity
+            if binding is not None and binding.states is not None:
+                binding._require_live_plan()
+        return tuple(view for call, view in items if call.plasticity is None)
+
+    def _prepare_live_rows(self, live, dt, *, action: str, traced: bool) -> None:
+        """Quantize the live rows' delays at ``dt`` and allocate their history, for ``run()`` or ``update()``.
+
+        Every row is checked before any is prepared, so a refused call leaves
+        the cell as it was. A traced call cannot create the history for later
+        calls: allocated inside the trace, it would die with it, and the
+        events in flight at the end of the call with it (CELL-76).
+        """
+        for view in live:
+            call, unprepared = view._check_live_dt(dt)
+            if traced and unprepared and call.live_history is None and view._live_history_depth(dt) > 0:
+                raise RuntimeError(
+                    f"Cell.{action}() is traced (jit, grad, brainstate.transform.for_loop) before live connection "
+                    f"{call.name!r} has the history of its delayed events; a history created inside the trace "
+                    "would not outlive it. Call cell.connections.prepare_runtime(dt) once before the traced "
+                    "function, or call update() or run() once outside it at this dt."
+                )
+        for view in live:
+            view._prepare_live_runtime(dt)
 
     def add_current_input(self, key, inp, label=None):
         """Register a current input, the entry brainpy projections use.
@@ -4602,9 +4695,10 @@ class Cell(_CellFacade, HHTypedNeuron):
             count_state.value = count_state.value + counts
         return _rewrap_event_template(template, output)
 
-    def _apply_direct_live_connection_events(self) -> None:
+    def _apply_direct_live_connection_events(self, live_connections=None) -> None:
         """Route live direct sources and run target handlers at this boundary."""
-        live_connections = self.connections._call_views(scheduled=False)
+        if live_connections is None:
+            live_connections = self.connections._call_views(scheduled=False)
         if not live_connections:
             return
         dt = brainstate.environ.get("dt", None)
@@ -4976,9 +5070,20 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         Raises
         ------
+        RuntimeError
+            For a Cell in a :class:`~braincell.Network`; or when traced
+            (inside ``jax.jit``, ``grad``) before a live connection with a
+            delay of a step or more has the history of its events: created
+            in the trace, it would not outlive it, and the events in flight
+            at the end of the call would be lost. Call
+            :meth:`cell.connections.prepare_runtime(dt) <braincell.ConnectionView.prepare_runtime>`
+            once before, or ``run`` once outside it at this ``dt``.
         ValueError
             If the run would take the step count past ``2**31 - 1`` (14.9 h
-            at ``dt = 0.025 ms``); checked when ``run`` is not traced.
+            at ``dt = 0.025 ms``); checked when ``run`` is not traced. Also
+            at another ``dt`` than the live connections ran at while one of
+            their delayed events is still to arrive (call
+            :meth:`reset_state` first), or inside a traced run.
 
         Warns
         -----

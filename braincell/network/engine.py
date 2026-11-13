@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import warnings
 from dataclasses import dataclass
 
@@ -382,7 +383,8 @@ class Network:
             raise TypeError("Synapse connections require both target and locations.")
         target_scope, target_cell = self._resolve_registered_target(target)
         previous_rules = target_cell._place_rules
-        previous_origins = dict(target_cell._synapse_origins)
+        # A copy of the same type: the Cell's mapping stays one leaf to the graph walk (CELL-51).
+        previous_origins = copy.copy(target_cell._synapse_origins)
         previous_ids = set(target_cell.synapses.id.tolist())
         try:
             target_scope.place(locations, synapse)

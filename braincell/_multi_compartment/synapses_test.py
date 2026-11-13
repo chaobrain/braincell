@@ -616,6 +616,19 @@ class PerMemberPlaceTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, r"^Per-cell locset placement requires one-dimensional pop_size; got \(2, 2\)\.$"):
             Cell(make_tree_s(), pop_size=(2, 2)).place([soma] * 4, Synapse("ExpSyn", name="s"))
 
+    def test_the_graph_walk_does_not_visit_each_member(self):
+        # The per-member rules and the map back to their declarations are one
+        # value each to brainstate's graph walk, not one per member.
+        cell, _, _, _ = _declare_per_member_forms(300)
+        for phase in ("place", "init_state"):
+            if phase == "init_state":
+                cell.init_state()
+            with self.subTest(phase=phase):
+                leaves = list(brainstate.graph.iter_leaf(cell))
+                self.assertLess(len(leaves), 300, phase)
+                kinds = {type(leaf).__name__ for _, leaf in leaves}
+                self.assertFalse(kinds & {"PlaceRule", "Synapse"}, kinds)
+
     def test_place_leaves_the_garbage_collector_as_it_found_it(self):
         # The cyclic collector is paused only while the per-member rules are
         # built, and back as it was after a place that succeeds or raises.

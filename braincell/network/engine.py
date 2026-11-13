@@ -35,6 +35,7 @@ from braincell._misc import (
     validate_time_quantity,
 )
 from braincell._multi_compartment.run import (
+    MAX_STEPS,
     _arrival_origin,
     _dt_change_handover,
     _duration_steps,
@@ -189,6 +190,8 @@ class Network:
 
         self.trainables = NetworkTrainables(self)
         self._prepared_run = None
+        # The NetStim horizon of update(): its events up to one step past the step limit (CELL-56).
+        self._prepared_until_ms: float | None = None
         # Planned scheduled delivery (CELL-9): the plans, and those prepare_run made for update().
         self._scheduled_plans: ScheduledPlans | None = None
         self._prepared_plans = None
@@ -915,12 +918,16 @@ class Network:
             event_backend=event_backend,
             brainevent_backend=brainevent_backend,
         )
-        # update() runs for an unknown number of steps: each eager call checks
-        # the step limit, and every event is generated.
-        _, join = self._start_clocks(
+        # update() runs for an unknown number of steps, but no further than
+        # the step limit (each eager call checks it): as for a run of that
+        # many steps, NetStim events up to one step past it cover every
+        # arrival update() delivers, and later events are not generated.
+        start_ms, join = self._start_clocks(
             setup.ordered_population_names, dt=dt, n_steps=0, prefix="Network.prepare_run(...)"
         )
-        schedule_key = self._prepare_netstim_schedules(until_ms=None)
+        _, step, _ = self.populations[setup.ordered_population_names[0]].cell._clock_host()
+        until_ms = start_ms + (MAX_STEPS - int(step) + 1) * scalar_decimal(dt, u.ms)
+        schedule_key = self._prepare_netstim_schedules(until_ms=until_ms)
         plans = None
         if scheduled_delivery is not None:
             # One plan of every event, for every update() (CELL-9).
@@ -940,6 +947,7 @@ class Network:
         self.trainables.materialize()
         self._prepared_run = (setup, cached, dt, join)
         self._prepared_plans = plans
+        self._prepared_until_ms = until_ms
         return self
 
     def update(self):
@@ -970,6 +978,8 @@ class Network:
         by one, as in :meth:`run`: a loop of ``update()`` calls steps at the
         times of one ``run``.
         """
+        from braincell.network.event import _schedule_horizon
+
         if self._prepared_run is None:
             raise RuntimeError("Call Network.prepare_run() before update().")
         setup, cached, dt, join = self._prepared_run
@@ -997,10 +1007,12 @@ class Network:
         self.trainables.materialize()
         values = self._take_value_inputs(setup.ordered_population_names)
         try:
-            if self._prepared_plans is None:
-                cached.runner(values)
-            else:
-                cached.runner(values, self._prepared_plans)
+            # A trace of the step reads the NetStim events prepare_run generated.
+            with _schedule_horizon(self._prepared_until_ms):
+                if self._prepared_plans is None:
+                    cached.runner(values)
+                else:
+                    cached.runner(values, self._prepared_plans)
         except BaseException:
             self._restore_value_inputs(values)
             raise

@@ -516,12 +516,20 @@ class NetStim(EventSource):
         a ``jax.jit`` function) has no host value; its arrivals are then
         rounded in the run precision too.
         """
-        self._ensure_schedule(until_ms=brainstate.environ.get(_SCHEDULE_HORIZON_KEY, None))
+        horizon = brainstate.environ.get(_SCHEDULE_HORIZON_KEY, None)
+        self._ensure_schedule(until_ms=horizon)
         source_index = np.asarray(source_index, dtype=np.int32)
         event_source, event_column = np.nonzero(self._event_mask)
+        event_time_ms = self._event_times_ms[event_source, event_column]
+        if horizon is not None:
+            # Events after the horizon arrive after the last boundary the run
+            # reaches. Past the step limit their steps are clipped to one,
+            # whose arrivals every step would read (CELL-56).
+            due = event_time_ms <= horizon
+            event_source, event_time_ms = event_source[due], event_time_ms[due]
         plan = _ArrivalPlan.build(
             event_source=event_source,
-            event_time_ms=self._event_times_ms[event_source, event_column],
+            event_time_ms=event_time_ms,
             # Index as the matrix below does: negative entries wrap, others raise.
             source_index=np.arange(self.size)[source_index],
             t=t,

@@ -1355,7 +1355,7 @@ def _launch_regression_worker(args, device, model, entry, method, out, stem):
     )
     if args.single_thread:
         env["XLA_FLAGS"] = (
-            env.get("XLA_FLAGS", "") + " --xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1"
+            env.get("XLA_FLAGS", "") + " --xla_cpu_multi_thread_eigen=false"
         ).strip()
     cmd = [
         args.python,

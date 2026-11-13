@@ -1608,25 +1608,27 @@ class Network:
         events = {}
         start_ms = scalar_decimal(start_t, u.ms)
         stop_ms = scalar_decimal(stop_t, u.ms)
+        host_times = None
         event_index = 0
         for name, population in self.populations.items():
             if population.kind != "cell":
                 if population.kind == "netstim":
-                    table = population.model._event_table(until_ms=stop_ms)
+                    # Only the window's events: not a table of every generated one.
+                    source_id, event_ms = population.model._window_events(start_ms, stop_ms)
                 else:
                     table = population.model.events
-                event_ms = np.asarray(table.time.to_decimal(u.ms), dtype=float)
-                selected = (event_ms >= start_ms) & (event_ms < stop_ms)
-                selected_rows = np.flatnonzero(selected)
-                if selected_rows.size:
-                    order = np.lexsort((table.source_index[selected_rows], event_ms[selected_rows]))
-                    selected_rows = selected_rows[order]
+                    event_ms = np.asarray(table.time.to_decimal(u.ms), dtype=float)
+                    selected_rows = np.flatnonzero((event_ms >= start_ms) & (event_ms < stop_ms))
+                    source_id, event_ms = table.source_index[selected_rows], event_ms[selected_rows]
+                if source_id.size:
+                    order = np.lexsort((source_id, event_ms))
+                    source_id, event_ms = source_id[order], event_ms[order]
                 port = "spike" if population.kind == "netstim" else "event"
-                count = np.ones(int(selected_rows.size), dtype=np.int64)
+                count = np.ones(int(source_id.size), dtype=np.int64)
                 events[name] = {
                     port: EventSeries(
-                        time=table.time[selected_rows],
-                        source_id=table.source_index[selected_rows],
+                        time=u.Quantity(event_ms, u.ms),
+                        source_id=source_id,
                         count=count,
                         metadata={"population": name, "port": port},
                     )
@@ -1638,8 +1640,11 @@ class Network:
                 values = np.asarray(event_values[event_index])
                 event_index += 1
                 time_index, source_id = np.nonzero(values)
+                if host_times is None:
+                    # On the host: indexing the device times compiles a gather for each new event count.
+                    host_times = np.asarray(u.get_mantissa(times))
                 events[name][port] = EventSeries(
-                    time=times[time_index],
+                    time=u.Quantity(host_times[time_index], u.get_unit(times)),
                     source_id=source_id,
                     count=np.asarray(values[time_index, source_id], dtype=np.int64),
                     metadata=_event_source_metadata(name, port, view),

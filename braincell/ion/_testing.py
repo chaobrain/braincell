@@ -34,10 +34,8 @@ suite by declaring those attributes rather than by copying the methods.
 """
 
 import json
-import os
-import subprocess
-import sys
 
+import brainstate
 import brainunit as u
 import jax.numpy as jnp
 import numpy as np
@@ -193,18 +191,15 @@ class FixedIonContractTests:
             ion.register_external_current("ext", external)
 
 
-def run_float64(code: str):
-    """Run ``code`` in a fresh float64 process; return the JSON its last line prints.
+def run_float64(report):
+    """Return ``report()`` computed at float64, as the JSON values it prints.
 
-    After a float32 ``Cell.run``, switching to x64 in the same process can
-    feed a float32 device copy of brainunit's constants to a float64
-    program, so float64 checks run in a child process.
+    Runs in this process under ``brainstate.environ.context(precision=64)``.
+    The values go through JSON, as when these checks ran in a child process,
+    so tuples come back as lists and NumPy scalars as floats.
     """
-    env = dict(os.environ, JAX_ENABLE_X64="1", JAX_PLATFORMS="cpu")
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
-    if result.returncode != 0:
-        raise AssertionError(result.stderr)
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    with brainstate.environ.context(precision=64):
+        return json.loads(json.dumps(report()))
 
 
 def shell_ion_rates(name: str) -> list:
@@ -262,10 +257,7 @@ class DynamicShellIonContractTests:
         )
 
     def test_rate_is_one_over_zFd_in_any_current_unit(self):
-        rates = run_float64(
-            "import json; from braincell.ion._testing import shell_ion_rates; "
-            f"print(json.dumps(shell_ion_rates({self.ION_CLASS.__name__!r})))"
-        )
+        rates = run_float64(lambda: shell_ion_rates(self.ION_CLASS.__name__))
         # 1 uA/cm2 / (F * 1 um), z = 1.
         np.testing.assert_allclose(rates[:3], [1.036427e-4] * 3, rtol=1e-6)
         self.assertEqual(rates[3], 0.0)

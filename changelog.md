@@ -957,6 +957,25 @@
   recording keeps no copy of the state. Declare the recording before
   `init_state()`, as other recordings; a view without a rule raises
   `TypeError`, an unknown state `KeyError`.
+- **`Network.prepare_run(..., duration=...)`** prepares the `update()`
+  calls that follow for `n = duration / dt` steps (CELL-66). Without it
+  (the default, unchanged) `prepare_run` generates each `NetStim`'s events
+  as far as the step limit, about `2**31 * dt / interval` per source, so a
+  large population with an unlimited train (`number=1e9`, as in NEURON)
+  ran out of memory: on main e5ad6ed 100 such sources at `dt = 0.025 ms`
+  and `interval = 10 ms` raised `MemoryError` under a 24 GiB address limit
+  (about 77 GB extrapolated); with `duration=10 * u.ms` they take 861 MB,
+  0.24 s to the first `update()`. The steps within the duration are those
+  of a `prepare_run` without it, bit for bit. The first step after them is the
+  stop: an eager `update()` there raises `ValueError` naming it, before
+  anything changes, and in a compiled loop a step at or past it multiplies
+  every Cell's dynamic states and spikes by NaN, so the loss and its
+  gradient turn NaN rather than silently missing the events.
+  `prepare_run` again continues for a new duration, and `reset_state`
+  runs the same steps again; a loop compiled before a second
+  `prepare_run` keeps the old stop. Standalone `Cell.update()` and
+  `Cell.run` traced under `jax.jit` still generate every event (docs
+  only).
 
 ### Changes & Improvements
 

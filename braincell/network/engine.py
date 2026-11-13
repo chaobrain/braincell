@@ -43,7 +43,7 @@ from braincell._multi_compartment.run import (
     _float64_clock,
     _keep_started_clock,
     _kept_handover,
-    _recording_time_mask,
+    _sample_rows,
     axial_operator_before_steps,
     check_step_limit,
     host_clock_start,
@@ -739,6 +739,9 @@ class Network:
         start_ms, join = self._start_clocks(ordered_population_names, dt=dt, n_steps=n_steps, prefix="Network.run(...)")
         n_recording = setup.n_recording
         n_event = setup.n_event
+        # The step of the grid from time 0 the run starts at, on which its
+        # schedules sample and its scheduled events arrive (CELL-46, CELL-59a).
+        start_step = self._grid_start_step(ordered_population_names, dt)
         # NetStim events up to one step past the end cover every arrival the
         # loop delivers; later events are not generated.
         until_ms = start_ms + (n_steps + 1) * scalar_decimal(dt, u.ms)
@@ -746,7 +749,6 @@ class Network:
         plans = None
         if scheduled_delivery is not None:
             # The plans of the window [step, step + n_steps), before the loop (CELL-9).
-            start_step = self._grid_start_step(ordered_population_names, dt)
             plans, schedule_key = self._scheduled_arrays(
                 scheduled_delivery,
                 dt=dt,
@@ -790,9 +792,9 @@ class Network:
             for compiled in setup.compiled_recordings[population_name]:
                 values = recording_values[recording_index]
                 recording_index += 1
-                mask = _recording_time_mask(times, compiled.schema)
-                selected = values[mask]
-                first_time = None if not np.any(mask) else times[int(np.flatnonzero(mask)[0])]
+                rows = _sample_rows(start_step, n_steps, compiled.schema, dt)
+                selected = values[rows.start : rows.stop : rows.step]
+                first_time = times[rows[0]] if rows else None
                 samples[population_name][compiled.spec.name] = SampleBlock(
                     values=selected,
                     schema=compiled.schema,

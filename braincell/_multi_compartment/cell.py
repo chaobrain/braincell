@@ -372,7 +372,11 @@ class _CellFacade:
         period, frequency : Quantity, optional
             Mutually exclusive regular sampling interval declarations.
         start : Quantity, optional
-            Global schedule start. Defaults to ``0 ms``.
+            Global schedule start. Defaults to ``0 ms``. The schedule
+            samples at ``start + j·period`` from ``t = 0``, counted in steps
+            of the run's ``dt``; a run whose steps are off that grid takes
+            each sample on the step where a scheduled event at its time
+            acts, as :meth:`Cell.run` describes.
 
         Returns
         -------
@@ -4942,6 +4946,21 @@ class Cell(_CellFacade, HHTypedNeuron):
         ``ConnectionView.set(weight=...)``, acts from the first step of the
         next. A traced run (inside ``jax.jit``) has no host clock: it counts
         the arrivals on the grid from time 0, without this hand-over.
+
+        A recording samples at ``start + j·period`` from time 0
+        (:meth:`record`), counted in whole steps, so a run of any length
+        takes each sample once. A run whose steps are off that grid takes
+        each sample on the step where a scheduled event at its time acts,
+        the later step at a tie: after 3 steps of 0.025 ms, at
+        ``dt = 0.05 ms`` the samples of ``period=0.1 ms`` at 0.1, 0.2, …
+        ms are taken at 0.125, 0.225, … ms. Each run takes the samples of
+        its own steps only, so where ``dt`` changes a sample time can be
+        taken twice or not at all: after 5 steps of 0.025 ms with
+        ``period=0.1 ms``, the run takes 0 and 0.1 ms and a run at
+        ``dt = 0.05 ms`` after it takes 0.1 ms again, at 0.125 ms; after 3
+        steps of 0.025 ms and 2 of 0.05 ms with ``period=0.05 ms``, neither
+        those runs nor one at ``dt = 0.025 ms`` after them takes 0.15 ms,
+        midway between the steps at 0.125 and 0.175 ms.
 
         On GPU, a run whose step count has a divisor in [8, 32] packs the
         spikes of its ``spikes`` result every K steps, K the largest such

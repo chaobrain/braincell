@@ -38,6 +38,7 @@ from braincell._multi_compartment.run_test import (
     assert_same_trajectory,
     axial_builds,
     hh_y_cable,
+    long_run_cell,
     make_event_cell,
     split_steps,
     update_loop_voltage,
@@ -1903,6 +1904,27 @@ class NetworkSecondRunCompileTest(unittest.TestCase):
         self.assertGreaterEqual(counts[0], 1)
         self.assertEqual(counts[1:], [0, 0, 0])
         self.assertTrue(all(np.isfinite(g) and g > 0.0 for g in conductances))
+
+
+class NetworkLongRunSampleTest(unittest.TestCase):
+    """CELL-59a: a Network run samples in whole steps, however long the Network has run."""
+
+    def test_a_long_run_takes_each_sample_once(self):
+        # On main 73136f6 the float time mask took extra samples from about
+        # 1e6 steps on: 500002 and 250002 in 1e6 steps in float64 (510938 and
+        # 255471 in float32), and 21 and 16 in the 21 steps after them, for
+        # 500000, 250000, 11 and 6.
+        for precision in (32, 64):
+            with self.subTest(precision=precision), brainstate.environ.context(precision=precision):
+                cell = long_run_cell()
+                network = Network("long")
+                network.add_population("post", cell)
+                long = network.run(dt=DT, duration=1_000_000 * DT)
+                self.assertEqual(cell._clock_host()[1], 1_000_000)
+                self.assertEqual([long.samples["post"][n].values.shape[0] for n in ("p2", "p4")], [500_000, 250_000])
+                short = network.run(dt=DT, duration=21 * DT)
+                self.assertEqual(cell._clock_host()[1], 1_000_021)
+                self.assertEqual([short.samples["post"][n].values.shape[0] for n in ("p2", "p4")], [11, 6])
 
 
 if __name__ == "__main__":

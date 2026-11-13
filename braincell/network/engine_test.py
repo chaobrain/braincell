@@ -777,19 +777,22 @@ class NetworkSameTimeTest(unittest.TestCase):
                             self._assert_refused(network, [cell for cell, _ in cells], entries[entry], message)
 
     def test_times_that_agree_to_the_run_precision_join_on_the_first_clock(self):
-        # float32: 32010 steps of 0.025 ms reach 800.25 ms at float64 in the
-        # eager run, which keeps its clock at float64, and 32010 times the
-        # float32 0.025 (0.025000000372529) = 800.2500119 ms in a jitted one,
-        # which keeps none (L77). float64: 12 steps of 0.025 ms reach
-        # 0.30000000000000004 ms, 4 steps of 0.075 ms 0.3 ms, 1 ulp apart.
+        # 32010 steps of 0.025 ms, eager and jitted (L77). The eager run
+        # keeps its clock at float64; a jitted one keeps none, so in float32
+        # its dt is the float32 0.025 (0.025000000372529), another dt: the
+        # times, 800.25 and 800.2500119 ms, agree to the run precision. In
+        # float64 both count 0.025 from 0 and have counted the same step.
+        # float64, 12 steps of 0.025 ms (0.30000000000000004 ms) and 4 of
+        # 0.075 ms (0.3 ms): 1 ulp apart.
         cases = (
-            ("float32", brainstate.environ.context(precision=32), ((DT, 32010),), 32010),
-            ("float64", _float64(), ((0.075 * u.ms, 4),), 12),
+            ("float32, jitted", brainstate.environ.context(precision=32), ((DT, 32010),), True, 32010),
+            ("float64, jitted", _float64(), ((DT, 32010),), True, 32010),
+            ("float64, 1 ulp", _float64(), ((0.075 * u.ms, 4),), False, 12),
         )
-        for precision, context, second, step in cases:
-            with self.subTest(precision=precision), context:
+        for label, context, second, jitted, step in cases:
+            with self.subTest(case=label), context:
                 first_cell = _late_cell(((DT, step),))
-                second_cell = _late_cell(second, jitted=precision == "float32")
+                second_cell = _late_cell(second, jitted=jitted)
                 network = _apart_network(first_cell, second_cell)
                 network.run(dt=DT, duration=4 * DT)
                 for cell, _ in (first_cell, second_cell):
@@ -819,6 +822,34 @@ class NetworkSameTimeTest(unittest.TestCase):
                 cells = [_late_cell(at), _late_cell(at + ((refused * u.ms, 1),))]
                 message = rf"'c0' is at t = 800\.25 ms and population 'c1' at t = {re.escape(shown)} ms"
                 self._assert_refused(_apart_network(*cells), [cell for cell, _ in cells], run, message)
+
+    def test_clocks_counting_one_dt_compare_their_steps(self):
+        # 1000 steps of 100 ms alone, then 1 or 2 of 0.025 ms: both clocks
+        # count 0.025 ms from 100000 ms, at steps 1 and 2. 999 steps of 100
+        # ms and 4002 of 0.025 ms: from 99900 ms, also on the grid, at step
+        # 4002, 100000.05 ms. One step of 0.025 ms is within 4·eps·1e5 ms
+        # in float32 (0.0477 ms), but these clocks counted different steps.
+        after = lambda origin, steps: ((100.0 * u.ms, origin), (DT, steps))  # noqa: E731
+        run = lambda network: network.run(dt=DT, duration=DT)  # noqa: E731
+        refused = (
+            ("same origin", after(1000, 1), after(1000, 2), ("100000.025", "100000.05")),
+            ("origins on the grid", after(1000, 1), after(999, 4002), ("100000.025", "100000.05")),
+        )
+        for precision, context in self._contexts():
+            with context:
+                for label, first, second, times in refused:
+                    with self.subTest(precision=precision, case=label):
+                        cells = [_late_cell(first), _late_cell(second)]
+                        message = (
+                            rf"'c0' is at t = {re.escape(times[0])} ms and population 'c1' at "
+                            rf"t = {re.escape(times[1])} ms"
+                        )
+                        self._assert_refused(_apart_network(*cells), [cell for cell, _ in cells], run, message)
+                with self.subTest(precision=precision, case="the same step from origins on the grid"):
+                    cells = [_late_cell(after(1000, 2)), _late_cell(after(999, 4002))]
+                    run(_apart_network(*cells))
+                    for cell, _ in cells:
+                        np.testing.assert_array_equal(cell._clock_step.value, 3)
 
     def test_the_ways_out_of_the_refusal(self):
         for precision, context in self._contexts():

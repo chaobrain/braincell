@@ -638,7 +638,11 @@ class Network:
 
         - ``"direct"`` stores the records in step order with one offset per
           step and reads the current step's: storage grows with the
-          records, the steps and the rows. It is reverse-differentiable to
+          records, the steps and the rows. A window keeps the record slots
+          of the largest window of its length the Network planned, so a
+          later one whose records fit reuses the compiled loop; a window
+          that needs more takes twice its records plus 128 slots and
+          traces the loop again. It is reverse-differentiable to
           first order only: forward mode (``jax.jvp``, ``jacfwd``) through it
           raises ``TypeError`` when traced.
         - ``"padded"`` stores ``steps x width`` slots, ``width`` being the

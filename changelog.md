@@ -1292,6 +1292,21 @@
   ran before it: `reset_state` keeps the accepted sizes, a change of
   topology drops them. `"direct"`, the default path and `prepare_run` are
   unchanged.
+- **Consecutive `"direct"` run windows share one compiled loop when their
+  records differ** (CELL-73). A `Network.run(scheduled_delivery="direct")`
+  window plan held its records plus 128, rounded up to a power of two, in
+  slots whose number is a shape of the compiled loop, so a window whose
+  records crossed a power of two traced the loop again. Windows of one
+  length now keep the slots of the largest plan the Network built for them;
+  a window that needs more takes twice its records plus 128. On main
+  `84378a3`, 1000 `NetStim` rows (one event every 10 ms, 10 ms windows)
+  whose first window held 892 records traced the loop again at the second
+  (1000 records in 2048 slots), and the tail of a 3-event schedule (108,
+  then 0 records) twice more; none of them does now. A window plan holds at
+  most twice its records plus 128 slots of 8 bytes, against just under
+  twice its records plus 256 before: for that model at 1e6 rows, 18.4 MB in
+  place of 12.4 MB. The delivered steps and values are unchanged, and so
+  are `"padded"` windows and the plans of `prepare_run`.
 - **Synapse recordings build their rows in time linear in the synapses, and
   `Network.prepare_run` no longer generates every NetStim event** (CELL-56).
   A recording of synapse states or currents (`observe.synapse(...)`) read

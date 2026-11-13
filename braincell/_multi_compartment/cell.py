@@ -82,6 +82,7 @@ from braincell._discretization.mechanism import (
     missing_branch_name,
     moved_index_message,
     normalize_paint_rules,
+    normalize_per_member_place_rules,
     normalize_place_rule,
 )
 from braincell._discretization.policy import CompositeByTypePolicy, CVPerBranch, CVPerBranchList, CVPolicy, Lumped
@@ -1353,7 +1354,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._synapse_store_cache: _SynapseStore | None = None
         self._clamp_store_cache: _ClampStore | None = None
         self._spike_event_source_cache: _CellSpikeSource | None = None
-        self._synapse_origins: dict[int, SynapsePlacement] = {}
+        self._synapse_origins: dict[int, SynapsePlacement] = _SynapseOrigins()
         self._connection_store_cache = None
         self._connection_weight_declarations = ()
         # ``{connect name: states}`` of the plasticity rules while initialized,
@@ -1746,24 +1747,22 @@ class Cell(_CellFacade, HHTypedNeuron):
         if any(not isinstance(mechanism, SynapsePlacement) for mechanism in mechanisms):
             raise TypeError("Per-cell locset sequences currently support Synapse point mechanisms only.")
 
-        lengths = tuple(_resolved_locset_length(locset, self._morpho) for locset in locsets)
+        # Members often share one locset object, or equal expressions: each
+        # distinct one is evaluated, checked and given its origin once
+        # (CELL-51).
+        lengths = _resolved_locset_lengths(locsets, self._morpho)
         per_mechanism_rows = tuple(_split_synapse_rows(mechanism, lengths=lengths) for mechanism in mechanisms)
-        incoming = []
-        for row, (population_index, locset) in enumerate(zip(population_indices, locsets)):
-            row_mechanisms = tuple(rows[row] for rows in per_mechanism_rows)
-            for source, materialized in zip(mechanisms, row_mechanisms):
-                self._synapse_origins[id(materialized)] = source
-            incoming.append(
-                normalize_place_rule(
-                    locset,
-                    row_mechanisms,
-                    population_indices=(int(population_index),),
-                    aligned=False,
-                    morpho=self._morpho,
-                )
-            )
+        row_mechanisms = tuple(zip(*per_mechanism_rows)) if mechanisms else ((),) * len(locsets)
+        incoming = normalize_per_member_place_rules(
+            locsets,
+            row_mechanisms,
+            population_indices=tuple(int(index) for index in population_indices),
+            morpho=self._morpho,
+        )
+        for source, rows in zip(mechanisms, per_mechanism_rows):
+            self._synapse_origins.update((id(materialized), source) for materialized in rows)
         previous_rules = self._place_rules
-        self._place_rules = merge_place_rules(previous_rules, tuple(incoming))
+        self._place_rules = merge_place_rules(previous_rules, incoming)
         try:
             self.discretize()
             if self._is_lumped:
@@ -5023,6 +5022,15 @@ def _cv_policy_index_basis(policy: CVPolicy, morpho: Morphology) -> tuple[Morpho
     return (morpho, morpho.revision) if _lists_branch_indices(policy) else None
 
 
+class _SynapseOrigins(dict):
+    """``id(per-member Synapse) -> the declaration it was split from``; one leaf to pytree flattening (CELL-51).
+
+    A ``dict`` subclass is not a registered pytree, so brainstate's graph
+    walks over a Cell take the mapping as one value instead of visiting one
+    entry per member.
+    """
+
+
 def _is_per_cell_locset_sequence(value) -> bool:
     """Return whether ``value`` is the public sequence-of-locsets form."""
     if isinstance(value, (LocsetExpr, LocsetMask, LocsetBatch, str, bytes)):
@@ -5037,6 +5045,30 @@ def _resolved_locset_length(locset, morpho: Morphology) -> int:
     return len(locset)
 
 
+def _resolved_locset_lengths(locsets, morpho: Morphology) -> tuple[int, ...]:
+    """:func:`_resolved_locset_length` of each locset, each distinct one resolved once.
+
+    An expression is looked up by value (equal expressions evaluate to the
+    same points on one morphology), anything else by identity. The first
+    locset that fails raises, as resolving them in order does.
+    """
+    lengths: dict[object, int] = {}
+    out = []
+    for locset in locsets:
+        key = id(locset)
+        if isinstance(locset, LocsetExpr):
+            try:
+                hash(locset)
+                key = locset
+            except TypeError:
+                pass
+        length = lengths.get(key)
+        if length is None:
+            length = lengths[key] = _resolved_locset_length(locset, morpho)
+        out.append(length)
+    return tuple(out)
+
+
 def _split_synapse_rows(
     mechanism: SynapsePlacement,
     *,
@@ -5047,13 +5079,15 @@ def _split_synapse_rows(
         name: _split_synapse_parameter_rows(value, lengths=lengths, name=name)
         for name, value in mechanism.params.items()
     }
+    # Each row's value is a part of the declaration's: when the declaration
+    # passed its check, so does every row, which is not checked again
+    # (CELL-51). Otherwise each row is checked, and warns, on its own.
+    checked = mechanism._values_are_checked()
+    names = tuple(parameter_rows)
+    columns = tuple(parameter_rows.values())
     return tuple(
-        SynapsePlacement(
-            mechanism.synapse_type,
-            name=mechanism.name,
-            **{name: rows[row] for name, rows in parameter_rows.items()},
-        )
-        for row in range(len(lengths))
+        mechanism._with_params(dict(zip(names, values)), checked=checked)
+        for values in (zip(*columns) if columns else ((),) * len(lengths))
     )
 
 

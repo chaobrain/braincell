@@ -4087,18 +4087,20 @@ class Cell(_CellFacade, HHTypedNeuron):
            calls and :meth:`run` hand the events in flight to each other.
 
         The first call at a ``dt`` quantizes the live delays and allocates
-        their history, a state. A traced call (``brainstate.transform.for_loop``,
-        ``jit``) cannot create a state for later calls, so it raises unless
+        their history, a state; a call at another ``dt`` quantizes them again
+        when none of their events is still to arrive. A traced call
+        (``brainstate.transform.for_loop``, ``jit``) cannot create a state for later calls, so it raises unless
         that history exists: call
         :meth:`cell.connections.prepare_runtime(dt) <braincell.ConnectionView.prepare_runtime>`
-        once before, or ``update()`` or :meth:`run` once outside it. A call
-        at another ``dt`` quantizes the delays again when none of their
-        events is still to arrive.
+        once before, or ``update()`` or :meth:`run` once outside it.
 
-        A Cell in a :class:`~braincell.Network` steps with the Network:
-        ``Network.update()`` and ``Network.run(...)`` deliver the events of
-        its connections before calling the corresponding internal cell
-        phases, and ``update()`` on the Cell raises.
+        In network execution, delayed event delivery is scheduled outside the
+        cell. ``Network.run(...)`` writes arrivals into runtime state buffers
+        before calling the corresponding internal cell phases.
+
+        A Cell in a :class:`~braincell.Network` steps with the Network, which
+        delivers its connections: ``update()`` on it raises; use
+        ``Network.update()``.
 
         Calling the cell, ``cell(I_ext)``, runs its ``before_updates``
         (e.g. the synapse of a ``brainpy.state.AlignPostProj``) and then

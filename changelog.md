@@ -257,6 +257,18 @@
   to start every Cell from `t = 0` (after `Network.init_state()` if one is not
   initialized), or run the Cells on their own to the same time before adding
   them.
+- **The event times of a Cell's ports in `Network.run` results are a numpy
+  array** (CELL-68). `result.events[name][port].time.mantissa` of a Cell
+  population was a weakly typed JAX array; it is now a read-only numpy array
+  of the dtype of `result.time` (float32 or float64), with the same values
+  and unit, as the times of NetStim and EventSequence ports already were.
+  The JAX gather that built it compiled again for each new number of events:
+  6, 6 and 5 XLA programs in the first three runs of a Hodgkin-Huxley point
+  Cell on main `34d3e23` (7, 7 and 6 in float64); it now compiles none. A
+  write into the array raises `ValueError` instead of `TypeError`. There is
+  no deprecation period (0.3 allows breaking changes without one, a
+  project-lead decision). Use `jnp.asarray(series.time.mantissa)` where a
+  JAX array is needed.
 
 ### New Features
 
@@ -1280,6 +1292,21 @@
   ran before it: `reset_state` keeps the accepted sizes, a change of
   topology drops them. `"direct"`, the default path and `prepare_run` are
   unchanged.
+- **Consecutive `"direct"` run windows share one compiled loop when their
+  records differ** (CELL-73). A `Network.run(scheduled_delivery="direct")`
+  window plan held its records plus 128, rounded up to a power of two, in
+  slots whose number is a shape of the compiled loop, so a window whose
+  records crossed a power of two traced the loop again. Windows of one
+  length now keep the slots of the largest plan the Network built for them;
+  a window that needs more takes twice its records plus 128. On main
+  `84378a3`, 1000 `NetStim` rows (one event every 10 ms, 10 ms windows)
+  whose first window held 892 records traced the loop again at the second
+  (1000 records in 2048 slots), and the tail of a 3-event schedule (108,
+  then 0 records) twice more; none of them does now. A window plan holds at
+  most twice its records plus 128 slots of 8 bytes, against just under
+  twice its records plus 256 before: for that model at 1e6 rows, 18.4 MB in
+  place of 12.4 MB. The delivered steps and values are unchanged, and so
+  are `"padded"` windows and the plans of `prepare_run`.
 - **Synapse recordings build their rows in time linear in the synapses, and
   `Network.prepare_run` no longer generates every NetStim event** (CELL-56).
   A recording of synapse states or currents (`observe.synapse(...)`) read
@@ -1320,6 +1347,21 @@
   event (span 4e6 steps) went from 1.01 to 0.59 us under `"direct"`;
   plans within budget cost what they did. Run windows, their plans and the
   default path are unchanged, and so are the delivered steps and values.
+- **`Network.run` reads only its window's NetStim events for the result
+  table** (CELL-68). Each run built `result.events` from a table of every
+  NetStim event generated so far, so its cost grew with the schedule, not
+  with the run. For 100 sources with 1e6 generated events, a cache-hit run
+  of 2000 steps (`dt = 0.025 ms`, 500 events) took 26.2 ms on main
+  `34d3e23`, 18.1 ms of it in the table; it now takes 6.7 ms, 0.56 ms in
+  the table. With 1e7 events the run went from 210 to 7.0 ms. Each source's
+  window is now found by binary search in its row of generated events. On
+  the regression model (a 1e6-event schedule), a 2000-step run went from
+  23.9 to 9.3 ms on the default path and from 22.0 to 7.7 ms with
+  `scheduled_delivery="direct"`. These are medians of 21 runs in each of 3
+  rounds, on one CPU core with single-threaded XLA. A Cell's spike ports no
+  longer compile for each new number of spikes (see Breaking Changes). The
+  rows, their order and their values are unchanged, and an `EventSequence`
+  still filters its whole table once per run.
 
 ### Bug Fixes
 
@@ -2287,6 +2329,28 @@
   a `VoltageCrossingSource` with a threshold of its own carries the voltage
   before each step through the run loop: one more device copy per step on
   GPU.
+- A recording samples in whole steps of the grid from time 0, so a
+  standalone `Cell.run` whose steps are off that grid samples where a
+  scheduled event at the sample time acts, and a long run takes each sample
+  once (CELL-59a). A run at a `dt` the time reached is not a multiple of
+  steps from that time (CELL-48). Its samples were picked by one of two
+  rules, both wrong there: a schedule with `start` 0 whose period divides
+  the step count rounded the origin half to even, and the others matched
+  float times, which took none. On main `73136f6`, in float32 and float64,
+  after 3 steps of 0.025 ms, at `dt = 0.05 ms` with `period=0.1 ms`, 21
+  steps took no sample and 22 steps took them from 0.075 ms; both now take
+  the samples of 0.1, 0.2, ... ms at 0.125, 0.225, ... ms, where an event at
+  each time acts (10 and 11 samples). With `start=0.2 ms` they took none
+  and now take 18 and 19, from 0.225 ms. The float match also took extra
+  samples on the grid once a run had gone about 1e6 steps: at
+  `dt = 0.025 ms`, a 1e6-step `Network.run` took 500,002 samples of
+  `period=0.05 ms` in float64 and 510,938 in float32, for 500,000, and the
+  21 steps after it took 21, for 11. Each sample is now taken once. Runs on
+  the grid sample as before, bit for bit on the machine that tested them.
+  Where `dt` changes, each run samples its own steps only: a sample time
+  within half a new step before the change is taken by both runs, and one
+  midway between two steps of a run off the grid, followed by a run at a
+  smaller `dt`, by neither.
 
 ### Documentation
 
@@ -2447,6 +2511,20 @@
   `usetable_<mech>` or calling `disable_rate_table`. The ion pool comparisons
   now switch off the table of every mechanism they insert; none of their 25
   cases inserts one with a table, so their NEURON traces are unchanged.
+- The `Network.run` Notes explain when the compiled loop is traced again
+  (CELL-74). On the default path the loop holds the generated NetStim events
+  as constants. A NetStim with more than `2**20` events (`size` times
+  `max(number)`) generates them on demand. Each run that needs later events
+  at least doubles the schedule and compiles the loop again, so `k` runs of
+  one length compile it about `log2(k) + 1` times. With a million sources
+  such a run took 3.1 to 5.5 s on one CPU, against 0.6 to 0.9 s for a run
+  that reused the loop. `scheduled_delivery="direct"` passes the events of
+  planned rows as loop arguments, so their growth traces nothing; a NetStim
+  read by a plasticity rule still keys the loop. Two tests pin this
+  behaviour, which is unchanged. On main `36dd9cd`, 16 runs of 1 ms from a
+  NetStim firing every 0.1 ms compile at runs 1, 2, 3, 5 and 9, and not at
+  all after `reset_state`. A rule's source removed from the planned loop's
+  key would leave its row 21 of 80 conductance jumps.
 
 ### Deprecations
 

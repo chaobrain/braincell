@@ -43,7 +43,7 @@ import numpy as np
 import braincell as bc
 from braincell.experimental.scheduled_delivery import PaddingLimitError as ExperimentalPaddingLimitError
 from braincell.filter import AllRegion, LocsetMask, at
-from braincell.network import scheduled
+from braincell.network import engine, scheduled
 from braincell.network.scheduled import METHODS, PaddingLimitError
 
 DT = 0.025 * u.ms
@@ -341,6 +341,157 @@ class CacheTest(unittest.TestCase):
         cell.record("v", "V")
         cell.record("g", bc.observe.synapse(name="exp").state("g"))
         return net, cell
+
+    @staticmethod
+    def _plain_and_ruled():
+        """Synapse 0 takes a plain row from NetStim ``plain``, synapse 1 a PairSTDP row from NetStim ``ruled``."""
+        branch = bc.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+        cell = bc.Cell(bc.Morphology.from_root(branch), cv_policy=bc.CVPerBranch(1), pop_size=1, V_init=-65.0 * u.mV)
+        cell.paint(AllRegion(), bc.mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+        cell.place(LocsetMask.from_columns([0, 0], [0.5, 0.5]), bc.mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms))
+        net = bc.Network("rule", seed=1)
+        post = net.add_population("post", cell)
+        # Generated on demand (number 10**9): the 10 ms runs double both schedules twice.
+        plain = net.add_population("plain", bc.NetStim(size=1, start=0.3 * u.ms, interval=0.5 * u.ms, number=10**9))
+        ruled = net.add_population("ruled", bc.NetStim(size=1, start=0.2 * u.ms, interval=0.5 * u.ms, number=10**9))
+        net.connect("drive", source=plain, synapse=post.synapses["exp"][[0]], weight=0.001 * u.uS)
+        net.connect("learn", source=ruled, synapse=post.synapses["exp"][[1]], weight=0.001 * u.uS, plasticity=_rule())
+        cell.record("g", bc.observe.synapse(name="exp").state("g"))
+        return net
+
+    def _four_runs(self, method):
+        """Per-step g of four 10 ms runs, and the loop traces of each run."""
+        net = self._plain_and_ruled()
+        extra = {} if method is None else {"scheduled_delivery": method}
+        builds, traces = self._counting()
+        parts, counts = [], []
+        with builds, traces as traced:
+            for _ in range(4):
+                before = traced.call_count
+                g = np.asarray(u.get_mantissa(net.run(dt=DT, duration=400 * DT, **extra).samples["post"]["g"].values))
+                self.assertEqual(g.shape[0], 400)
+                parts.append(g.reshape(400, 2))
+                counts.append(traced.call_count - before)
+        return np.concatenate(parts), counts
+
+    @_float64
+    def test_a_netstim_read_by_a_rule_keys_the_planned_loop(self):
+        """The rule reads its source's events when the loop is traced, so that schedule keys the loop (L40)."""
+        reference, _ = self._four_runs(None)
+        self.assertTrue(np.all(np.isfinite(reference)))
+        self.assertEqual(np.count_nonzero(np.diff(reference, axis=0) > 0, axis=0).tolist(), [80, 80])
+        got, traces = self._four_runs("direct")
+        # Both schedules double in runs 2 and 3; the rule row's source traces the loop again.
+        self.assertEqual(traces, [1, 1, 1, 0])
+        np.testing.assert_array_equal(got, reference)
+        # Were the rule row's source out of the key, the loop of run 1 would keep its 21 events.
+        with mock.patch.object(engine, "loop_schedule_key", lambda populations, plans: ()):
+            dropped, traces = self._four_runs("direct")
+        self.assertEqual(traces, [1, 0, 0, 0])
+        np.testing.assert_array_equal(dropped[:, 0], reference[:, 0])
+        self.assertEqual(np.count_nonzero(np.diff(dropped[:, 1]) > 0), 21)
+        self.assertFalse(np.array_equal(dropped[:, 1], reference[:, 1]))
+
+
+#: Records of the 40-step (1 ms) windows of :meth:`WindowSlotsTest._model`, by hand. Window ``w`` takes
+#: the arrivals in ``[w - 0.0125, w + 0.9875)`` ms; source ``i`` starts at ``(i + 0.25) / 1000`` ms and the
+#: delay is 0.15 ms, so window 0 takes sources 0..837 (start below 0.8375 ms), windows 1-4 one event of
+#: every source, window 5 the fifth event of sources 838..999, and windows 6 and 7 none.
+SLOT_RECORDS = (838, 1000, 1000, 1000, 1000, 162, 0, 0)
+#: Slots of every such window: twice the first window's records plus a block. On main ``84378a3`` they
+#: followed each window, ``_power_of_two(records + 128)``: 1024, 2048, ..., 512, 128.
+SLOTS = 2 * 838 + scheduled.BLOCK_SIZE
+
+
+class WindowSlotsTest(unittest.TestCase):
+    """CELL-73: "direct" windows of one length keep the record slots, and the compiled loop, of the largest."""
+
+    ROWS, WINDOW = 1000, 40
+
+    def _model(self):
+        branch = bc.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+        cell = bc.Cell(bc.Morphology.from_root(branch), cv_policy=bc.CVPerBranch(1), pop_size=1, V_init=-65.0 * u.mV)
+        # One synapse per row, so that the default path's sums are the plan's (see the module docstring).
+        cell.place(
+            LocsetMask.from_columns(np.zeros(self.ROWS, dtype=int), np.full(self.ROWS, 0.5)),
+            bc.mech.Synapse("ExpSyn", name="exp", tau=2.0 * u.ms),
+        )
+        net = bc.Network("slots", seed=1)
+        post = net.add_population("post", cell)
+        start = (np.arange(self.ROWS) + 0.25) / self.ROWS * u.ms
+        stim = net.add_population("stim", bc.NetStim(size=self.ROWS, start=start, interval=1.0 * u.ms, number=5))
+        net.connect(
+            "drive",
+            source=stim,
+            synapse=post.synapses["exp"][np.arange(self.ROWS)],
+            weight=0.001 * u.uS,
+            delay=0.15 * u.ms,
+        )
+        cell.record("g", bc.observe.synapse(name="exp").state("g"))
+        return net, cell
+
+    def _runs(self, net, lengths, method):
+        """Run windows of ``lengths`` steps; per run the g samples, the plan's slots, its records if built, its traces."""
+        traces = mock.patch.object(
+            scheduled._LayoutInput, "deliver", autospec=True, side_effect=scheduled._LayoutInput.deliver
+        )
+        builds = mock.patch.object(scheduled, "_build_plans", wraps=scheduled._build_plans)
+        extra = {} if method is None else {"scheduled_delivery": method}
+        out = []
+        with traces as traced, builds as built:
+            for steps in lengths:
+                before = (traced.call_count, built.call_count)
+                result = net.run(dt=DT, duration=steps * DT, **extra)
+                g = np.asarray(u.get_mantissa(result.samples["post"]["g"].values))
+                self.assertEqual(g.shape[0], steps)  # one sample per step
+                if method is None:
+                    out.append((g, None, None, None))
+                    continue
+                plans = net._scheduled_plans
+                ids = plans.windows[next(reversed(plans.windows))][0][0]
+                records = plans.preparation["layouts"][0]["records"] if built.call_count > before[1] else None
+                out.append((g, ids.shape, records, traced.call_count - before[0]))
+        return out
+
+    def _check(self, rtol=RTOL):
+        lengths = (self.WINDOW,) * len(SLOT_RECORDS)
+        ref_net, _ = self._model()
+        reference = np.concatenate([run[0] for run in self._runs(ref_net, lengths, None)])
+        self.assertTrue(np.all(np.isfinite(reference)))
+        self.assertGreater(np.count_nonzero(np.diff(reference, axis=0)), 0)
+        net, _ = self._model()
+        first = self._runs(net, lengths, "direct")
+        # The cache keeps four windows, so after reset_state each of the eight is built again.
+        net.reset_state()
+        again = self._runs(net, lengths, "direct")
+        self.assertEqual([run[2] for run in first], list(SLOT_RECORDS))
+        self.assertEqual([run[2] for run in again], list(SLOT_RECORDS))
+        # The first window traces the loop and no later one retraces it (main: 1, 1, 0, 0, 0, 1, 1, 0, then
+        # 0 after reset_state): every window has one shape.
+        self.assertEqual([run[3] for run in first + again], [1] + [0] * 15)
+        self.assertEqual({run[1] for run in first + again}, {(SLOTS,)})
+        self.assertEqual(net._scheduled_plans.slots, {("post", net._scheduled_plans.routes[0].layout_id, 40): SLOTS})
+        for runs in (first, again):
+            _assert_same(self, {"g": np.concatenate([run[0] for run in runs])}, {"g": reference}, rtol=rtol)
+
+    @_float64
+    def test_windows_of_one_length_share_one_loop(self):
+        self._check()
+
+    def test_float32(self):
+        with brainstate.environ.context(precision=32):
+            self._check(rtol=1e-6)
+
+    @_float64
+    def test_each_window_length_keeps_its_own_slots(self):
+        """A longer window's slots do not reach the shorter windows, whose loop it would retrace."""
+        net, _ = self._model()
+        runs = self._runs(net, (40, 40, 400, 40), "direct")
+        # [2, 12) ms: three events of sources 0..837 and four of 838..999; [12, 13) ms: none.
+        self.assertEqual([run[2] for run in runs], [838, 1000, 838 * 3 + 162 * 4, 0])
+        # main: 1, 1, 1, 1 (the first 1000 records took 2048 slots, the empty window 128).
+        self.assertEqual([run[3] for run in runs], [1, 0, 1, 0])
+        self.assertEqual([run[1] for run in runs], [(SLOTS,), (SLOTS,), (2 * 3162 + 128,), (SLOTS,)])
 
 
 class ArrivalsTest(unittest.TestCase):
@@ -970,8 +1121,17 @@ class EveryEventPlanTest(unittest.TestCase):
                 self.assertEqual(layout["stored_steps"], 3679)
                 (full,) = net._prepared_plans
                 (window,) = net._scheduled_plans.window(0, 3679)
+                full, window = [np.asarray(x) for x in full], [np.asarray(x) for x in window]
+                if method == "direct":
+                    # The same records in other slots: the plan of every event has the power of two
+                    # above its records and a block, a window twice its records and a block (CELL-73).
+                    self.assertEqual((full[0].shape, window[0].shape), ((4096,), (2 * 3730 + 128,)))
+                    for index in (0, 1):
+                        np.testing.assert_array_equal(full[index][:3730], window[index][:3730])
+                        self.assertFalse(full[index][3730:].any() or window[index][3730:].any())
+                    full, window = full[2:], window[2:]
                 for got, expected in zip(full, window, strict=True):
-                    np.testing.assert_array_equal(np.asarray(got), np.asarray(expected))
+                    np.testing.assert_array_equal(got, expected)
 
     def test_where_a_plan_of_every_event_stops_storing_every_step(self):
         route = mock.Mock(targets=np.zeros(1, dtype=np.int32), population="post")

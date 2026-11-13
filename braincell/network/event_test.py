@@ -419,6 +419,194 @@ class NetStimLargeNumberTest(unittest.TestCase):
         )
 
 
+#: dt of the result-event tests and their run lengths in steps: the window bounds are exact in float32.
+_WINDOW_DT_MS = 0.125
+_WINDOW_STEPS = (8, 8, 8, 1, 7, 8, 1000)
+#: Event starts on window bounds (0 to 5 ms) and half a step either side of them.
+_WINDOW_STARTS_MS = np.asarray([0.0, 1.0, 0.9375, 1.0625, 0.5, 2.0, 3.9375, 4.0625, 3.125, 5.0])
+
+
+class _CountingTimes(np.ndarray):
+    """Event times that count the elements read through indexing."""
+
+    reads = 0
+
+    def __getitem__(self, index):
+        result = np.asarray(super().__getitem__(index))
+        _CountingTimes.reads += result.size
+        return result
+
+
+def _window_stim(noise):
+    """Ten sources every 1 ms, numbers 0 to ``10**9``; sources 2, 5 and 8 have ``noise``."""
+    return NetStim(
+        size=10,
+        start=_WINDOW_STARTS_MS * u.ms,
+        interval=1.0 * u.ms,
+        number=np.asarray([0, 1, 3, 50, 10**9, 7, 10**9, 2, 10**9, 40]),
+        noise=np.where(np.arange(10) % 3 == 2, noise, 0.0),
+        seed=5,
+    )
+
+
+def _events_in(table, start_ms, stop_ms):
+    """Sources and times of the rows of ``table`` in ``[start_ms, stop_ms)``, by time, then source."""
+    time_ms = np.asarray(table.time.to_decimal(u.ms))
+    rows = np.flatnonzero((time_ms >= start_ms) & (time_ms < stop_ms))
+    rows = rows[np.lexsort((table.source_index[rows], time_ms[rows]))]
+    return table.source_index[rows], time_ms[rows]
+
+
+def _hh_points():
+    """Three HH point Cells clamped from 1 ms at 0, 0.2 and 0.4 nA: the last two fire repetitively."""
+    cell = Cell.point(3, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV)
+    cell.paint(
+        bc.mech.Ion("SodiumFixed", E=50.0 * u.mV),
+        bc.mech.Ion("PotassiumFixed", E=-77.0 * u.mV),
+        bc.mech.Channel("Na_HH1952", g_max=120.0 * u.mS / u.cm**2),
+        bc.mech.Channel("K_HH1952", g_max=36.0 * u.mS / u.cm**2),
+        bc.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+    )
+    amplitudes = np.asarray([0.0, 0.2, 0.4]) * u.nA
+    cell.place(RootLocation(0.5), bc.mech.CurrentClamp(delay=1.0 * u.ms, durations=1.0e3 * u.ms, amplitudes=amplitudes))
+    return cell
+
+
+class ResultEventsTest(unittest.TestCase):
+    """``Network.run`` reports the events of its window, reading only those and compiling nothing (CELL-68)."""
+
+    def assert_series(self, series, source, time_ms) -> None:
+        self.assertIs(type(series.time.mantissa), np.ndarray)
+        self.assertEqual(series.time.mantissa.dtype, np.float64)
+        self.assertEqual(series.time.unit, u.ms)
+        np.testing.assert_array_equal(series.time.mantissa, time_ms)
+        self.assertEqual(series.source_id.dtype, np.int64)
+        np.testing.assert_array_equal(series.source_id, source)
+        np.testing.assert_array_equal(series.count, np.ones(len(source), dtype=np.int64))
+
+    def test_run_events_are_the_generated_events_of_the_window(self) -> None:
+        # The EventSequence holds the periodic sources' events generated up to 50 ms, shuffled.
+        periodic = _window_stim(0.0)._event_table(until_ms=50.0)
+        order = np.random.default_rng(2).permutation(len(periodic))
+        sequence_table = EventTable(source_index=periodic.source_index[order], time=periodic.time[order])
+        for bits in (32, 64):
+            for noise in (0.0, 0.5):
+                with self.subTest(bits=bits, noise=noise), _precision(bits):
+                    net = bc.Network("window_events")
+                    stim = net.add_population("stim", _window_stim(noise))
+                    sequence = net.add_population("sequence", EventSequence(size=10, events=sequence_table))
+                    post = net.add_population("post", _exp_syn_cell())
+                    rows = np.zeros(10, dtype=int)
+                    net.connect("in", source=stim, synapse=post.synapses["syn"][rows], weight=0.01 * u.uS)
+                    net.connect("seq", source=sequence, synapse=post.synapses["syn"][rows], weight=0.01 * u.uS)
+                    on_start = on_stop = 0
+                    for steps in _WINDOW_STEPS:
+                        result = net.run(dt=_WINDOW_DT_MS * u.ms, duration=steps * _WINDOW_DT_MS * u.ms)
+                        start_ms = float(result.start_time.to_decimal(u.ms))
+                        stop_ms = float(result.stop_time.to_decimal(u.ms))
+                        table = stim.model._event_table(until_ms=stop_ms)
+                        self.assert_series(result.events["stim"]["spike"], *_events_in(table, start_ms, stop_ms))
+                        self.assert_series(
+                            result.events["sequence"]["event"], *_events_in(sequence_table, start_ms, stop_ms)
+                        )
+                        table_ms = np.asarray(table.time.to_decimal(u.ms))
+                        on_start += int(np.count_nonzero(table_ms == start_ms))
+                        on_stop += int(np.count_nonzero(table_ms == stop_ms))
+                    # Generated events on a window's start (in it) and on its stop (in the next): sources 1,
+                    # 5 (four), 8 and 9 when periodic, 1 and 9 when sources 5 and 8 are noisy.
+                    self.assertEqual((on_start, on_stop), (2, 2) if noise else (7, 7))
+
+    def test_run_events_read_the_window_not_the_schedule(self) -> None:
+        # 2 sources x 2**19 events, generated in full when built; a 100-step window holds about 200.
+        dt = 0.5 * u.ms
+        for cells in (False, True):
+            with self.subTest(cells=cells):
+                net = bc.Network("window_reads")
+                stim = net.add_population(
+                    "stim", NetStim(size=2, start=[1.0, 3.0] * u.ms, interval=0.5 * u.ms, number=2**19)
+                )
+                model = stim.model
+                self.assertTrue(model._schedule_complete)
+                if cells:
+                    post = net.add_population("post", _exp_syn_cell())
+                    net.connect("in", source=stim, synapse=post.synapses["syn"][[0, 0]], weight=0.01 * u.uS)
+                reads = []
+                result_events = net._result_events
+
+                def counted(**kwargs):
+                    times = model._event_times_ms
+                    object.__setattr__(model, "_event_times_ms", times.view(_CountingTimes))
+                    _CountingTimes.reads = 0
+                    try:
+                        return result_events(**kwargs)
+                    finally:
+                        object.__setattr__(model, "_event_times_ms", times)
+                        reads.append(_CountingTimes.reads)
+
+                net._result_events = counted
+                sizes = [
+                    len(net.run(dt=dt, duration=steps * dt).events["stim"]["spike"].source_id)
+                    for steps in (100, 100, 1000, 1, 100)
+                ]
+                self.assertEqual(sizes, [192, 200, 2000, 2, 200])
+                # Two bisections per source of at most log2(2**19) + 1 reads each, then one read per event;
+                # a table of every event reads 2**20.
+                for read, size in zip(reads, sizes, strict=True):
+                    self.assertLessEqual(read, size + 2 * model.size * 20)
+
+    def test_result_events_compile_nothing(self) -> None:
+        # Runs of a length no other test uses: on the device, each new spike count compiled a gather.
+        net = bc.Network("compiles", seed=1)
+        net.add_population("post", _hh_points())
+        stim = net.add_population("stim", NetStim(size=2, start=[0.5, 1.5] * u.ms, interval=2.0 * u.ms, number=10**9))
+        net.add_population("sequence", EventSequence.from_times([np.asarray([0.25, 3.0]) * u.ms] * 2))
+        net.add_population("other", _exp_syn_cell())
+        net.connect("in", source=stim, synapse=net.populations["other"].synapses["syn"][[0, 0]], weight=0.01 * u.uS)
+        compiles = []
+
+        def listener(event, duration, **kwargs):
+            if event == "/jax/core/compile/backend_compile_duration":
+                compiles[-1] += 1
+
+        result_events = net._result_events
+
+        def counted(**kwargs):
+            compiles.append(0)
+            jax.monitoring.register_event_duration_secs_listener(listener)
+            try:
+                return result_events(**kwargs)
+            finally:
+                jax.monitoring.unregister_event_duration_listener(listener)
+
+        net._result_events = counted
+        dt = 0.025 * u.ms
+        results = [net.run(dt=dt, duration=steps * dt) for steps in (333, 333, 666, 999)]
+        self.assertEqual(compiles, [0, 0, 0, 0])
+        for result in results:
+            spikes = result.events["post"]["spike"]
+            step_ms = np.asarray(u.get_mantissa(result.time))
+            self.assertGreater(len(spikes.source_id), 0)
+            # Host arrays, like a standalone Cell.run's spikes: the steps' times, in the run's dtype.
+            self.assertIs(type(spikes.time.mantissa), np.ndarray)
+            self.assertEqual(spikes.time.mantissa.dtype, step_ms.dtype)
+            self.assertEqual(spikes.time.unit, u.get_unit(result.time))
+            self.assertTrue(np.all(np.isin(spikes.time.mantissa, step_ms)))
+
+    def test_first_at_or_after_is_a_left_search_of_each_prefix(self) -> None:
+        from braincell.network.event import _first_at_or_after
+
+        rng = np.random.default_rng(3)
+        times = np.sort(rng.integers(0, 20, (50, 33)).astype(float), axis=1)
+        valid = rng.integers(0, 34, 50)
+        valid[:2] = (0, 33)
+        # Entries past a row's prefix are not events: not in order, and never read.
+        times[np.arange(33) >= valid[:, None]] = -1.0
+        for value in (-1.0, 0.0, 5.0, 5.5, 19.0, 20.0):
+            expected = [np.searchsorted(row[:n], value, side="left") for row, n in zip(times, valid, strict=True)]
+            np.testing.assert_array_equal(_first_at_or_after(times, valid, value), expected)
+        np.testing.assert_array_equal(_first_at_or_after(np.empty((3, 0)), np.zeros(3, dtype=np.int64), 1.0), 0)
+
+
 #: dt of the update() horizon tests, and the time of the boundary one step past the step limit.
 _HORIZON_DT_MS = 0.5
 _HORIZON_MS = 2**31 * _HORIZON_DT_MS

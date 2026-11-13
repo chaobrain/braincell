@@ -43,7 +43,7 @@ from braincell._multi_compartment.run import (
     _float64_clock,
     _keep_started_clock,
     _kept_handover,
-    _recording_time_mask,
+    _sample_rows,
     axial_operator_before_steps,
     check_step_limit,
     host_clock_start,
@@ -638,7 +638,11 @@ class Network:
 
         - ``"direct"`` stores the records in step order with one offset per
           step and reads the current step's: storage grows with the
-          records, the steps and the rows. It is reverse-differentiable to
+          records, the steps and the rows. A window keeps the record slots
+          of the largest window of its length the Network planned, so a
+          later one whose records fit reuses the compiled loop; a window
+          that needs more takes twice its records plus 128 slots and
+          traces the loop again. It is reverse-differentiable to
           first order only: forward mode (``jax.jvp``, ``jacfwd``) through it
           raises ``TypeError`` when traced.
         - ``"padded"`` stores ``steps x width`` slots, ``width`` being the
@@ -675,6 +679,27 @@ class Network:
         it saves. The method is part of the runtime configuration, fixed
         after the first run as ``event_backend`` is; a first run that raised
         ``PaddingLimitError`` fixes nothing.
+
+        **Compiled loops** (CELL-74). A run with as many steps as an
+        earlier one reuses its compiled loop. On the default path
+        (``scheduled_delivery=None``) the loop holds the NetStim events
+        generated so far as constants. A NetStim with ``size`` times
+        ``max(number)`` at most ``2**20`` generates every event at
+        construction, so its events never change the loop. A larger one
+        generates them on demand: a run that needs later events first
+        extends the schedule to at least twice its width, then traces and
+        compiles the loop again, which reads every generated event. So
+        ``k`` runs of one length compile the loop about ``log2(k) + 1``
+        times; after :meth:`reset_state` the schedule keeps its width and
+        the runs compile nothing. The cost of an extension grows with the
+        generated events: with a million sources, on one CPU, the runs that
+        extended the schedule took 3.1 to 5.5 s and those that reused the
+        loop 0.6 to 0.9 s. With ``scheduled_delivery`` the plans are
+        arguments of the loop, so a NetStim that only planned rows read
+        grows without tracing the loop again; ``"direct"`` is the path for
+        long continuations from large NetStims. A NetStim that a plasticity
+        rule reads, as its rows' source or its ``post`` signal, still keys
+        the loop: the rule reads its events when the loop is traced.
 
         Examples
         --------
@@ -739,6 +764,9 @@ class Network:
         start_ms, join = self._start_clocks(ordered_population_names, dt=dt, n_steps=n_steps, prefix="Network.run(...)")
         n_recording = setup.n_recording
         n_event = setup.n_event
+        # The step of the grid from time 0 the run starts at, on which its
+        # schedules sample and its scheduled events arrive (CELL-46, CELL-59a).
+        start_step = self._grid_start_step(ordered_population_names, dt)
         # NetStim events up to one step past the end cover every arrival the
         # loop delivers; later events are not generated.
         until_ms = start_ms + (n_steps + 1) * scalar_decimal(dt, u.ms)
@@ -746,7 +774,6 @@ class Network:
         plans = None
         if scheduled_delivery is not None:
             # The plans of the window [step, step + n_steps), before the loop (CELL-9).
-            start_step = self._grid_start_step(ordered_population_names, dt)
             plans, schedule_key = self._scheduled_arrays(
                 scheduled_delivery,
                 dt=dt,
@@ -790,9 +817,9 @@ class Network:
             for compiled in setup.compiled_recordings[population_name]:
                 values = recording_values[recording_index]
                 recording_index += 1
-                mask = _recording_time_mask(times, compiled.schema)
-                selected = values[mask]
-                first_time = None if not np.any(mask) else times[int(np.flatnonzero(mask)[0])]
+                rows = _sample_rows(start_step, n_steps, compiled.schema, dt)
+                selected = values[rows.start : rows.stop : rows.step]
+                first_time = times[rows[0]] if rows else None
                 samples[population_name][compiled.spec.name] = SampleBlock(
                     values=selected,
                     schema=compiled.schema,
@@ -1606,25 +1633,27 @@ class Network:
         events = {}
         start_ms = scalar_decimal(start_t, u.ms)
         stop_ms = scalar_decimal(stop_t, u.ms)
+        host_times = None
         event_index = 0
         for name, population in self.populations.items():
             if population.kind != "cell":
                 if population.kind == "netstim":
-                    table = population.model._event_table(until_ms=stop_ms)
+                    # Only the window's events: not a table of every generated one.
+                    source_id, event_ms = population.model._window_events(start_ms, stop_ms)
                 else:
                     table = population.model.events
-                event_ms = np.asarray(table.time.to_decimal(u.ms), dtype=float)
-                selected = (event_ms >= start_ms) & (event_ms < stop_ms)
-                selected_rows = np.flatnonzero(selected)
-                if selected_rows.size:
-                    order = np.lexsort((table.source_index[selected_rows], event_ms[selected_rows]))
-                    selected_rows = selected_rows[order]
+                    event_ms = np.asarray(table.time.to_decimal(u.ms), dtype=float)
+                    selected_rows = np.flatnonzero((event_ms >= start_ms) & (event_ms < stop_ms))
+                    source_id, event_ms = table.source_index[selected_rows], event_ms[selected_rows]
+                if source_id.size:
+                    order = np.lexsort((source_id, event_ms))
+                    source_id, event_ms = source_id[order], event_ms[order]
                 port = "spike" if population.kind == "netstim" else "event"
-                count = np.ones(int(selected_rows.size), dtype=np.int64)
+                count = np.ones(int(source_id.size), dtype=np.int64)
                 events[name] = {
                     port: EventSeries(
-                        time=table.time[selected_rows],
-                        source_id=table.source_index[selected_rows],
+                        time=u.Quantity(event_ms, u.ms),
+                        source_id=source_id,
                         count=count,
                         metadata={"population": name, "port": port},
                     )
@@ -1636,8 +1665,11 @@ class Network:
                 values = np.asarray(event_values[event_index])
                 event_index += 1
                 time_index, source_id = np.nonzero(values)
+                if host_times is None:
+                    # On the host: indexing the device times compiles a gather for each new event count.
+                    host_times = np.asarray(u.get_mantissa(times))
                 events[name][port] = EventSeries(
-                    time=times[time_index],
+                    time=u.Quantity(host_times[time_index], u.get_unit(times)),
                     source_id=source_id,
                     count=np.asarray(values[time_index, source_id], dtype=np.int64),
                     metadata=_event_source_metadata(name, port, view),

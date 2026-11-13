@@ -495,11 +495,13 @@ _NET_DT = 2 * DT
 _NET_STEPS = 22
 
 
-def _late_network(segments):
-    """A Cell run alone for ``segments`` (``(dt, steps)`` pairs), then a Network of it and its EventSequence.
+def _late_cell(segments, *, jitted=False):
+    """``(cell, source)``: a Cell and its EventSequence, the Cell run alone for ``segments`` (``(dt, steps)`` pairs).
 
     The Cell is a passive 1-CV cell at rest whose ExpSyn (tau 1e9 ms,
-    e = rest) gains 1 uS per arrival of ``_LATE_EVENTS``; ``(network, cell)``.
+    e = rest) gains 1 uS per arrival of ``_LATE_EVENTS``. ``segments=None``
+    leaves it uninitialized; ``jitted`` runs each segment inside
+    ``brainstate.transform.jit``.
     """
     branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
     cell = braincell.Cell(
@@ -511,9 +513,23 @@ def _late_network(segments):
     cell.record("V", "V")
     source = braincell.EventSequence.from_times([np.asarray(_LATE_EVENTS) * u.ms])
     braincell.connect("c", source=source, synapse=cell.synapses["s"], weight=1.0 * u.uS)
+    if segments is None:
+        return cell, source
     cell.init_state()
     for dt, steps in segments:
-        cell.run(dt=dt, duration=steps * dt)
+        if jitted:
+            brainstate.transform.jit(lambda: cell.run(dt=dt, duration=steps * dt).stop_time)()
+        else:
+            cell.run(dt=dt, duration=steps * dt)
+    return cell, source
+
+
+def _late_network(segments):
+    """A Cell run alone for ``segments`` (``(dt, steps)`` pairs), then a Network of it and its EventSequence.
+
+    The Cell is ``_late_cell``'s; ``(network, cell)``.
+    """
+    cell, source = _late_cell(segments)
     network = Network("late")
     network.add_population("post", cell)
     network.add_population("stim", source)
@@ -684,6 +700,204 @@ class NetworkOffGridStartTest(unittest.TestCase):
             network.prepare_run(dt=2 * _NET_DT)
 
 
+def _apart_network(*cells):
+    """A Network of ``_late_cell`` pairs ``(cell, source)``, as populations ``c0``, ``c1``, … and ``s0``, ``s1``, …."""
+    network = Network("apart")
+    for index, (cell, source) in enumerate(cells):
+        network.add_population(f"c{index}", cell)
+        network.add_population(f"s{index}", source)
+    return network
+
+
+def _apart_state(network, cells) -> dict:
+    """``_late_state`` of each Cell (only that it is not initialized, for one that is not) and of the Network."""
+    state = {
+        "initialized": network._initialized,
+        "runtime config": network._runtime_config,
+        "setups": len(network._run_setup_cache),
+        "loops": len(network._network_run_loop_cache),
+        "prepared run": network._prepared_run,
+        "plans": network._scheduled_plans,
+    }
+    for index, cell in enumerate(cells):
+        state[f"c{index} initialized"] = cell._initialized
+        if cell._initialized:
+            state.update({f"c{index} {key}": value for key, value in _late_state(network, cell).items()})
+    return state
+
+
+#: CELL-60: 1000 steps of 100 ms alone reach 100000 ms; one more of 0.5 ms, 100000.5 ms.
+_AT_100000 = ((100.0 * u.ms, 1000),)
+_AT_100000_5 = ((100.0 * u.ms, 1000), (0.5 * u.ms, 1))
+
+
+class NetworkSameTimeTest(unittest.TestCase):
+    """CELL-60: Cells at different times, beyond the run precision, cannot run together; within it they join."""
+
+    def _contexts(self):
+        return (("float32", brainstate.environ.context(precision=32)), ("float64", _float64()))
+
+    def _assert_refused(self, network, cells, call, message):
+        """``call(network)`` raises ``ValueError`` matching ``message``, and every state is as it was."""
+        before = _apart_state(network, cells)
+        with self.assertRaises(ValueError) as caught:
+            call(network)
+        after = _apart_state(network, cells)
+        for key, value in before.items():
+            np.testing.assert_array_equal(after[key], value, err_msg=key)
+        self.assertRegex(str(caught.exception), message)
+
+    def test_cells_at_different_times_are_refused_before_anything_changes(self):
+        # main ran 100000 and 100000.5 ms together: the second Cell went back
+        # to the first's clock, 20 steps of 0.025 ms, and took again an event
+        # it had taken. With a Cell not yet initialized, main raised after
+        # initializing it and fixing the configuration.
+        entries = {
+            "run": lambda network: network.run(dt=DT, duration=4 * DT),
+            "prepare_run": lambda network: network.prepare_run(dt=DT),
+            "direct": lambda network: network.run(dt=DT, duration=4 * DT, scheduled_delivery="direct"),
+        }
+        cases = (
+            ("100000 ms first", (_AT_100000, _AT_100000_5), ("100000", "100000.5"), tuple(entries)),
+            ("100000.5 ms first", (_AT_100000_5, _AT_100000), ("100000.5", "100000"), ("run",)),
+            ("a new Cell first", (None, ((DT, 12),)), ("0", "0.3"), ("run", "prepare_run")),
+        )
+        for precision, context in self._contexts():
+            with context:
+                for label, histories, times, names in cases:
+                    for entry in names:
+                        with self.subTest(precision=precision, case=label, entry=entry):
+                            cells = [_late_cell(segments) for segments in histories]
+                            network = _apart_network(*cells)
+                            message = (
+                                r"requires its Cell populations at the same current_time: population 'c0' is at "
+                                rf"t = {re.escape(times[0])} ms and population 'c1' at t = {re.escape(times[1])} ms\."
+                                r".*Network\.reset_state\(\).*before adding them"
+                            )
+                            self._assert_refused(network, [cell for cell, _ in cells], entries[entry], message)
+
+    def test_times_that_agree_to_the_run_precision_join_on_the_first_clock(self):
+        # 32010 steps of 0.025 ms, eager and jitted (L77). The eager run
+        # keeps its clock at float64; a jitted one keeps none, so in float32
+        # its dt is the float32 0.025 (0.025000000372529), another dt: the
+        # times, 800.25 and 800.2500119 ms, agree to the run precision. In
+        # float64 both count 0.025 from 0 and have counted the same step.
+        # float64, 12 steps of 0.025 ms (0.30000000000000004 ms) and 4 of
+        # 0.075 ms (0.3 ms): 1 ulp apart.
+        cases = (
+            ("float32, jitted", brainstate.environ.context(precision=32), ((DT, 32010),), True, 32010),
+            ("float64, jitted", _float64(), ((DT, 32010),), True, 32010),
+            ("float64, 1 ulp", _float64(), ((0.075 * u.ms, 4),), False, 12),
+        )
+        for label, context, second, jitted, step in cases:
+            with self.subTest(case=label), context:
+                first_cell = _late_cell(((DT, step),))
+                second_cell = _late_cell(second, jitted=jitted)
+                network = _apart_network(first_cell, second_cell)
+                network.run(dt=DT, duration=4 * DT)
+                for cell, _ in (first_cell, second_cell):
+                    np.testing.assert_array_equal(cell._clock_step.value, step + 4)
+                    np.testing.assert_array_equal(cell._clock_dt.value.mantissa, first_cell[0]._clock_dt.value.mantissa)
+                    np.testing.assert_array_equal(cell._clock_origin.value.mantissa, 0.0)
+
+    def test_the_tolerance_is_four_eps_of_the_time(self):
+        # At 800.25 ms (3201 steps of 0.25 ms alone) 4·eps·800.25 ms is
+        # 3.8158e-4 ms in float32 (eps 2**-23) and 7.1078e-13 ms in float64
+        # (eps 2**-52), by hand: one more step of 3e-4 or 5e-13 ms joins, one
+        # of 5e-4 or 1e-12 ms is refused (main ran them all).
+        at = ((0.25 * u.ms, 3201),)
+        cases = (
+            ("float32", brainstate.environ.context(precision=32), 3e-4, 5e-4, "800.2505"),
+            ("float64", _float64(), 5e-13, 1e-12, "800.250000000001"),
+        )
+        run = lambda network: network.run(dt=DT, duration=DT)  # noqa: E731
+        for precision, context, joins, refused, shown in cases:
+            with self.subTest(precision=precision), context:
+                cells = [_late_cell(at), _late_cell(at + ((joins * u.ms, 1),))]
+                run(_apart_network(*cells))
+                # Both count from the first's 800.25 ms, at the Network dt.
+                for cell, _ in cells:
+                    np.testing.assert_array_equal(cell._clock_origin.value.to_decimal(u.ms), 800.25)
+                    np.testing.assert_array_equal(cell._clock_step.value, 1)
+                cells = [_late_cell(at), _late_cell(at + ((refused * u.ms, 1),))]
+                message = rf"'c0' is at t = 800\.25 ms and population 'c1' at t = {re.escape(shown)} ms"
+                self._assert_refused(_apart_network(*cells), [cell for cell, _ in cells], run, message)
+
+    def test_clocks_counting_one_dt_compare_their_steps(self):
+        # 1000 steps of 100 ms alone, then 1 or 2 of 0.025 ms: both clocks
+        # count 0.025 ms from 100000 ms, at steps 1 and 2. 999 steps of 100
+        # ms and 4002 of 0.025 ms: from 99900 ms, also on the grid, at step
+        # 4002, 100000.05 ms. One step of 0.025 ms is within 4·eps·1e5 ms
+        # in float32 (0.0477 ms), but these clocks counted different steps.
+        after = lambda origin, steps: ((100.0 * u.ms, origin), (DT, steps))  # noqa: E731
+        run = lambda network: network.run(dt=DT, duration=DT)  # noqa: E731
+        refused = (
+            ("same origin", after(1000, 1), after(1000, 2), ("100000.025", "100000.05")),
+            ("origins on the grid", after(1000, 1), after(999, 4002), ("100000.025", "100000.05")),
+        )
+        for precision, context in self._contexts():
+            with context:
+                for label, first, second, times in refused:
+                    with self.subTest(precision=precision, case=label):
+                        cells = [_late_cell(first), _late_cell(second)]
+                        message = (
+                            rf"'c0' is at t = {re.escape(times[0])} ms and population 'c1' at "
+                            rf"t = {re.escape(times[1])} ms"
+                        )
+                        self._assert_refused(_apart_network(*cells), [cell for cell, _ in cells], run, message)
+                with self.subTest(precision=precision, case="the same step from origins on the grid"):
+                    cells = [_late_cell(after(1000, 2)), _late_cell(after(999, 4002))]
+                    run(_apart_network(*cells))
+                    for cell, _ in cells:
+                        np.testing.assert_array_equal(cell._clock_step.value, 3)
+
+    def test_a_network_that_ran_runs_again(self):
+        # float32: 1000 steps of 100 ms alone (100000 ms), and the same then
+        # one of 0.025 ms (100000.025 ms). Their clocks count other dt, and
+        # one step is within 4·eps·1e5 ms (0.0477 ms): they join, on the
+        # first's clock, the run precision's limit. The second Cell keeps
+        # the float64 time it reached beside the shared clock; the members'
+        # equal clock states still let the next run start.
+        with brainstate.environ.context(precision=32):
+            cells = [_late_cell(_AT_100000), _late_cell(_AT_100000 + ((DT, 1),))]
+            network = _apart_network(*cells)
+            network.run(dt=DT, duration=4 * DT)
+            network.run(dt=DT, duration=4 * DT)
+            for cell, _ in cells:
+                np.testing.assert_array_equal(cell._clock_origin.value.to_decimal(u.ms), 100000.0)
+                np.testing.assert_array_equal(cell._clock_step.value, 8)
+
+    def test_the_ways_out_of_the_refusal(self):
+        for precision, context in self._contexts():
+            with self.subTest(precision=precision), context:
+                # Network.reset_state() starts every Cell from t = 0.
+                cells = [_late_cell(_AT_100000), _late_cell(_AT_100000_5)]
+                network = _apart_network(*cells)
+                with self.assertRaisesRegex(ValueError, "same current_time"):
+                    network.run(dt=DT, duration=4 * DT)
+                network.reset_state()
+                network.run(dt=DT, duration=4 * DT)
+                for cell, _ in cells:
+                    np.testing.assert_array_equal(cell._clock_step.value, 4)
+                # A Cell not yet initialized: Network.init_state() first.
+                cells = [_late_cell(None), _late_cell(((DT, 12),))]
+                network = _apart_network(*cells)
+                with self.assertRaisesRegex(ValueError, "same current_time"):
+                    network.run(dt=DT, duration=4 * DT)
+                network.init_state()
+                network.reset_state()
+                network.run(dt=DT, duration=4 * DT)
+                for cell, _ in cells:
+                    np.testing.assert_array_equal(cell._clock_step.value, 4)
+                # Or run the earlier Cell on its own to the later one's time.
+                cells = [_late_cell(_AT_100000 + ((0.5 * u.ms, 1),)), _late_cell(_AT_100000_5)]
+                _apart_network(*cells).run(dt=DT, duration=4 * DT)
+                for cell, _ in cells:
+                    np.testing.assert_array_equal(
+                        cell.current_time.to_decimal(u.ms), cells[0][0].current_time.to_decimal(u.ms)
+                    )
+
+
 #: CELL-57: events in the half steps of 0.025 and 0.05 ms on both sides of 0.25 ms (L94).
 _NEAR_EVENTS = (0.2255, 0.2385, 0.245, 0.25, 0.255, 0.2615, 0.27, 0.3)
 
@@ -773,25 +987,26 @@ def _cell_steps(cell, dt_ms, n_steps, rises):
 
 
 class NetworkHandOverTest(unittest.TestCase):
-    """CELL-57: a Cell that ran alone joins a Network, or leaves one, and each event arrives once.
+    """CELL-57, CELL-55: a Cell that ran alone joins a Network, or leaves one, and each event arrives once.
 
-    The boundary at the time a run on its own reached is prepared by that run,
-    with its window at its dt, and stays its own: the Network's first step does
-    not prepare it again. At another dt the Network's steps skip the events
-    that run took and deliver the others no earlier than its next boundary
-    (decision 1). A Network step consumes its boundary within the step, so a
-    Cell run after it starts at its own first boundary, skipping what the
-    Network took. The expected boundaries are worked out by hand in each test.
+    A run on its own and a Network step each prepare the boundary at the
+    step's start and consume it within the step. So the Network's first step
+    prepares the boundary at the time the Cell reached; at another dt it skips
+    the events the Cell's run took and delivers the others on its own grid,
+    none before that boundary, as in a Network run from t = 0. A Cell run
+    after a Network skips what the Network took in the same way. The expected
+    boundaries are worked out by hand in each test.
     """
 
-    #: Cell.run 10 x 0.025 ms (it prepares 0.25 ms with [0.2375, 0.2625)), then
-    #: the Network: at 0.025 ms the rest are on their steps (0.27 at 0.275 ms);
-    #: at 0.05 ms 0.27 ms (5.4 steps, the prepared 0.25 ms) acts at 0.3 ms.
-    #: main delivered 0.25 ms's window again: {0.225: 1, 0.25: 10, 0.275: 1,
-    #: 0.3: 1} and {0.225: 1, 0.25: 12, 0.3: 1} (7 at 0.05 ms), 13 and 14 of 8.
+    #: Cell.run 10 x 0.025 ms (its last boundary, 0.225 ms, takes [0.2125,
+    #: 0.2375)), then the Network: at 0.025 ms 0.25 ms takes [0.2375, 0.2625)
+    #: and the rest are on their steps (0.27 at 0.275 ms); at 0.05 ms 0.25 ms
+    #: takes [0.225, 0.275), 0.2385 to 0.27 ms. main bbb7b0a, where the Cell's
+    #: run prepared 0.25 ms at its end, put 0.27 ms (5.4 steps) at 0.3 ms at
+    #: 0.05 ms: {0.225: 1, 0.25: 5, 0.3: 2}.
     JOINS = {
         0.025: (10, {0.225: 1, 0.25: 5, 0.275: 1, 0.3: 1}),
-        0.05: (5, {0.225: 1, 0.25: 5, 0.3: 2}),
+        0.05: (5, {0.225: 1, 0.25: 6, 0.3: 1}),
     }
 
     @staticmethod
@@ -813,10 +1028,12 @@ class NetworkHandOverTest(unittest.TestCase):
 
     def test_a_netstim_planned_across_a_join_arrives_once(self):
         # NetStim at 0.2255 + 0.013 k ms (k < 6): alone, 0.2255 ms acts at
-        # 0.225 ms, 0.2385 and 0.2515 ms at 0.25 ms. At 0.025 ms 0.2645 and
-        # 0.2775 ms are 10.58 and 11.1 steps (0.275 ms), 0.2905 ms 11.62 (0.3
-        # ms); at 0.05 ms all three act at 0.3 ms (5.29, 5.55, 5.81 steps).
-        expected = {0.025: {0.225: 1, 0.25: 2, 0.275: 2, 0.3: 1}, 0.05: {0.225: 1, 0.25: 2, 0.3: 3}}
+        # 0.225 ms. At 0.025 ms 0.2385 and 0.2515 ms act at 0.25 ms, 0.2645
+        # and 0.2775 ms (10.58 and 11.1 steps) at 0.275 ms, 0.2905 ms (11.62)
+        # at 0.3 ms; at 0.05 ms 0.2385, 0.2515 and 0.2645 ms (4.77, 5.03,
+        # 5.29 steps) at 0.25 ms, 0.2775 and 0.2905 ms (5.55, 5.81) at 0.3 ms.
+        # main: {0.225: 1, 0.25: 2, 0.3: 3} at 0.05 ms.
+        expected = {0.025: {0.225: 1, 0.25: 2, 0.275: 2, 0.3: 1}, 0.05: {0.225: 1, 0.25: 3, 0.3: 2}}
         for precision in (32, 64):
             for net_dt, rises_expected in expected.items():
                 for driver in ("run", "direct", "padded", "update"):
@@ -830,8 +1047,8 @@ class NetworkHandOverTest(unittest.TestCase):
                         self.assertEqual(rises, rises_expected)
 
     def test_a_rule_updates_once_per_boundary_across_a_join(self):
-        # The Network's first step leaves the rule's boundary at 0.25 ms to the
-        # run that prepared it: the rule updates once there (main twice).
+        # The run alone updates the rule at its steps' boundaries, 0 to 0.225
+        # ms; the Network at its own, from 0.25 ms: once per boundary.
         for precision in (32, 64):
             for net_dt, (n_steps, expected) in self.JOINS.items():
                 with (
@@ -844,19 +1061,19 @@ class NetworkHandOverTest(unittest.TestCase):
                     network = _join_network(cell, sources)
                     network.run(dt=net_dt * u.ms, duration=n_steps * net_dt * u.ms)
                     jax.effects_barrier()
-                    alone = [round(k * 0.025, 6) for k in range(11)]
-                    joined = [round(0.25 + k * net_dt, 6) for k in range(1, n_steps)]
+                    alone = [round(k * 0.025, 6) for k in range(10)]
+                    joined = [round(0.25 + k * net_dt, 6) for k in range(n_steps)]
                     self.assertEqual([round(t, 6) for t, _, _ in updates], alone + joined)
                     self.assertEqual({round(t, 6): int(n) for t, n, _ in updates if n}, expected)
                     self.assertEqual({round(t, 6): int(n) for t, _, n in updates if n}, expected)
 
-    def test_a_joined_cell_with_its_own_live_row_keeps_its_prepared_boundary(self):
+    def test_a_joined_cell_with_its_own_live_row_receives_each_event_once(self):
         # The Cell's own spike port feeds its synapse with a 1 ms delay: in the
-        # Network that row has a delay queue, whose write of the first step's
-        # (empty) arrivals replaced the boundary the run alone prepared. main:
-        # 8 of 8 at 0.025 ms (the second preparation stood in for it) and 9 of
-        # 8 at 0.05 ms; without the merge, 3 of 8. The Cell never spikes, so g
-        # counts the scheduled events, and an ExpSynSTD beside it their number.
+        # Network that row has a delay queue, which writes each step's (empty)
+        # arrivals into the synapse's buffer. Before CELL-57 that write
+        # replaced the boundary the run alone had prepared (3 of 8). The Cell
+        # never spikes, so g counts the scheduled events, and an ExpSynSTD
+        # beside it their number.
         for precision in (32, 64):
             for net_dt, (n_steps, expected) in self.JOINS.items():
                 with self.subTest(precision=precision, dt=net_dt), self._precision(precision):
@@ -927,8 +1144,10 @@ class NetworkHandOverTest(unittest.TestCase):
                 self.assertEqual(rises, {0.25: 7, 0.3: 1})
 
     def test_a_network_of_fresh_cells_compiles_the_loop_it_did(self):
-        # Nothing to take over: one loop, keyed as before; after a join, the
-        # first run has its own loop and the next ones share one.
+        # Nothing to take over: one loop, keyed as before. After a join at
+        # another dt the runs share one loop, compiled for the hand-over: no
+        # boundary is left prepared, so the first run needs no loop of its own
+        # (main bbb7b0a: 2 loops).
         cell, sources = _counting_cell(_sequence())
         network = _join_network(cell, sources)
         for _ in range(3):
@@ -939,7 +1158,7 @@ class NetworkHandOverTest(unittest.TestCase):
         network = _join_network(cell, sources)
         for _ in range(3):
             network.run(dt=_NET_DT, duration=2 * _NET_DT)
-        self.assertEqual(len(network._network_run_loop_cache), 2)
+        self.assertEqual(len(network._network_run_loop_cache), 1)
 
 
 def _resting_one_cv_cell(kind, solver, pop_size=2):

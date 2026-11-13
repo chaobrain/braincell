@@ -759,39 +759,19 @@ class ConnectionView(DiscreteView):
     def _rule_state_sampler(self, name: str):
         """A recording sampler of the rule state ``name`` of these rows, before each boundary's update.
 
-        A Cell prepares a boundary's inputs, and so runs its rules, either
-        before a step samples its recordings (``Cell.run`` prepares the next
-        boundary at the end of each step) or after (``Network`` prepares it
-        within the step). The sampler reads the state the rule's update got
-        at the boundary of the step: the copy a Cell outside a Network keeps
-        for a recorded state while that boundary is prepared, and the state
-        itself otherwise.
-
-        Raises
-        ------
-        RuntimeError
-            When sampled on a Cell outside a Network that a Network
-            initialized: it has no copy.
+        A step, in a ``Network`` or in ``Cell.run``, samples it before it
+        prepares the boundary it starts at, which runs the rules there
+        (CELL-55): the sampler reads the state the rule's update receives at
+        that boundary.
         """
         groups = self._rule_groups() if len(self) else []
-        cell = self.cell
         size = len(self)
 
         def sample():
             if not groups:
                 return jnp.zeros((0,), dtype=brainstate.environ.dftype())
-            if cell.network_owner is None and any(name not in call.plasticity.before for call, _, _ in groups):
-                raise RuntimeError(
-                    f"Cell.run cannot record rule state {name!r}: a Network initialized this Cell. Call reset() "
-                    "and init_state() first."
-                )
-            prepared = cell._next_synapse_inputs_prepared.value
             return _join_rule_pieces(
-                [
-                    (positions, call.plasticity.value_before_boundary(name, prepared), offsets)
-                    for call, positions, offsets in groups
-                ],
-                size,
+                [(positions, call.plasticity.value(name), offsets) for call, positions, offsets in groups], size
             )
 
         return sample
@@ -832,15 +812,11 @@ class ConnectionView(DiscreteView):
         just before ``time[k]``.
 
         A ``Network`` and a standalone ``Cell.run`` record the same samples,
-        but ``rule_state`` reads the state itself, which the two update at
-        different points of a step. In a ``Network``, ``rule_state`` read
-        before the ``k``-th ``update()`` (from 0) is sample ``k``. A
-        standalone Cell updates the next boundary at the end of each step:
-        ``rule_state`` read after its ``j``-th ``update()`` is sample
-        ``j + 2``, and after a ``run`` of ``n`` steps it is the sample a
-        longer run takes at step ``n + 1``. For this, a Cell outside a
-        Network keeps a copy of each recorded state from before the latest
-        update, one more state in its state tree.
+        and ``rule_state`` reads the same state in both: each step updates
+        the rule at the boundary it starts at. ``rule_state`` read before
+        the ``k``-th ``update()`` (from 0), of a ``Network`` or of the Cell,
+        is sample ``k``; after a ``run`` of ``n`` steps it is the sample a
+        longer run takes at step ``n``.
 
         Each row of the schema (``samples[name].schema.rows``) gives its
         synapse's site and ``synapse_id``, ``mechanism_category``
@@ -851,9 +827,7 @@ class ConnectionView(DiscreteView):
         Raises
         ------
         RuntimeError
-            After the target Cell's ``init_state()``; and at ``Cell.run``, on
-            a Cell that a Network initialized, once that Network is gone:
-            call ``reset()`` and ``init_state()`` first.
+            After the target Cell's ``init_state()``.
         TypeError
             If a row comes from a ``connect`` call without a rule, or the
             rows' ``state`` differs in dimension between their calls.
@@ -950,28 +924,10 @@ class ConnectionView(DiscreteView):
             ``{connect name: states}`` for the Cell to keep, so that its state
             tree holds them; ``None`` without a rule.
         """
-        # Only Cell.run samples a step after running the rules at its boundary
-        # (it prepares the next boundary at the end of a step), so only a Cell
-        # outside a Network keeps the state before each update.
-        recorded = self._recorded_rule_states() if self.cell.network_owner is None else {}
         rules = {}
         for call in self._store.rule_calls():
-            rules[call.name] = call.plasticity.init(self.cell, call, self._store, recorded=recorded.get(call.id, ()))
+            rules[call.name] = call.plasticity.init(self.cell, call, self._store)
         return rules or None
-
-    def _recorded_rule_states(self) -> dict[int, tuple[str, ...]]:
-        """``{connect id: state names}`` that the Cell's recordings record (``ConnectionView.record``)."""
-        from braincell.network.recording import _RuleStateObservable
-
-        recorded: dict[int, dict[str, None]] = {}
-        for spec in self.cell._recording_specs.values():
-            observable = spec.observable
-            if not isinstance(observable, _RuleStateObservable):
-                continue
-            ids = self._store.active_ids(observable.row_ids)
-            for call_id in np.unique(self._store.connect_id[self._store.rows(ids)]).tolist():
-                recorded.setdefault(int(call_id), {})[observable.field] = None
-        return {call_id: tuple(names) for call_id, names in recorded.items()}
 
     def _prepare_rules(self, dt, *, delay_quantization: str) -> None:
         """Prepare the live plasticity rows for a Network run setup."""

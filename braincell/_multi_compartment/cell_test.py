@@ -2045,11 +2045,11 @@ class CellIonChannelUpdateOrderTest(unittest.TestCase):
 
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.1 * u.ms):
             cell.update()
-            # The first update after init_state prepares its own boundary
-            # first (CELL-35); the next, eager, finds it prepared.
+            # Each update prepares the boundary it starts at, then steps
+            # (CELL-55); it leaves the next boundary to the next update.
             cell.update()
 
-        self.assertEqual(calls, ["prepare", "solver", "integration", "prepare", "solver", "integration", "prepare"])
+        self.assertEqual(calls, ["prepare", "solver", "integration", "prepare", "solver", "integration"])
 
     def test_integration_phase_integrates_dependent_runtime_synapse(self):
         from unittest.mock import patch

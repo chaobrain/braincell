@@ -37,6 +37,7 @@ from braincell._misc import (
 from braincell._multi_compartment.run import (
     MAX_STEPS,
     _arrival_origin,
+    _arrival_origin_ms,
     _dt_change_handover,
     _duration_steps,
     _float64_clock,
@@ -579,7 +580,15 @@ class Network:
             0.075 ms, 1.5 steps of 0.05 ms) cannot start a Network, whose
             recordings and scheduled events assume the grid; nothing has
             changed. Call :meth:`reset_state`, or run the Cell on its own to
-            a multiple of ``dt`` before adding it.
+            a multiple of ``dt`` before adding it. Also if Cells that ran on
+            their own are not at one ``current_time`` (a Network steps them
+            on one clock): clocks counting the same ``dt`` from one grid
+            must have counted the same step; other clocks must agree to
+            within ``4·eps·max(dt, |t|)`` of the run precision, which in
+            float32 passes one step of 0.025 ms from 52.4 s on. Nothing has
+            changed; call :meth:`reset_state` (after :meth:`init_state` if a
+            Cell is not initialized), or run the Cells on their own to the
+            same time before adding them.
         PaddingLimitError
             A ``ValueError``, if a ``"padded"`` plan would exceed its limits
             (Notes); nothing has run.
@@ -604,22 +613,18 @@ class Network:
         precision, so a run split into segments, or into ``update()``
         calls, steps at the same times as one run, however long it is.
 
-        **Cells that ran on their own** (CELL-57). A ``Cell.run`` ends by
-        preparing the boundary at the time it reached, with the scheduled
-        events within half of its step. A Network the Cell then joins, at a
-        time on its ``dt`` grid, leaves that boundary as it is: its first
-        step does not prepare it again, so each event, and each plasticity
-        rule update, happens once. When the Cell ran at another ``dt``, the
-        Network's steps also skip the events that boundary took and deliver
-        the others no earlier than their second step: within half of the
-        Cell's step of the join an event can act a step later or earlier
-        than in a Network run from ``t = 0``. A Network step consumes its
-        boundary within the step, so a Cell that later runs on its own at
-        another ``dt`` skips what the Network delivered in the same way. The
-        first run after a join is compiled with its first step apart;
-        :meth:`prepare_run` after one compiles an ``update()`` that tests, on
-        every step, whether such a Cell's boundary is prepared.
-        :meth:`reset_state` forgets the join.
+        **Cells that ran on their own** (CELL-57, CELL-55). A step of
+        ``Cell.run``, like a Network step, prepares the boundary it starts
+        at and consumes it within the step, so a Cell's run took the
+        scheduled events up to half of its step before the time it reached.
+        A Network the Cell then joins, at a time on its ``dt`` grid,
+        prepares that time's boundary in its first step: each event, and
+        each plasticity rule update, happens once. When the Cell ran at
+        another ``dt``, the Network's steps skip the events the Cell's run
+        took and deliver the others on their own grid, none before the
+        join, as in a Network run from ``t = 0``. A Cell that later runs on
+        its own at another ``dt`` skips what the Network delivered in the
+        same way. :meth:`reset_state` forgets the join.
 
         **Scheduled delivery** (``scheduled_delivery``, CELL-9). The
         arrivals of the run's steps ``[n, n + steps)`` are planned on the
@@ -701,6 +706,7 @@ class Network:
         scheduled_delivery = normalize_scheduled_delivery(scheduled_delivery, prefix="Network.run(...)")
         if not self.populations:
             raise ValueError("Network.run(...) requires at least one population.")
+        self._reject_different_times(dt, prefix="Network.run(...)")
         self._reject_off_grid_start(dt, prefix="Network.run(...)")
         self.init_state()
         if not self._cell_populations():
@@ -873,8 +879,9 @@ class Network:
         ValueError
             If ``scheduled_delivery`` is not one of its values; or
             ``PaddingLimitError`` if a ``"padded"`` plan exceeds its limits;
-            or if the Cells would start off the ``dt`` grid, as in
-            :meth:`run`, before anything has changed.
+            or if the Cells would start off the ``dt`` grid, or are not at
+            one ``current_time``, as in :meth:`run`, before anything has
+            changed.
         RuntimeError
             If the configuration differs from an earlier run's.
 
@@ -920,6 +927,7 @@ class Network:
         validate_time_quantity(dt, name="dt", prefix="Network.prepare_run")
         event_backend = normalize_event_backend(event_backend)
         scheduled_delivery = normalize_scheduled_delivery(scheduled_delivery, prefix="Network.prepare_run(...)")
+        self._reject_different_times(dt, prefix="Network.prepare_run(...)")
         self._reject_off_grid_start(dt, prefix="Network.prepare_run(...)")
         self.init_state()
         if not self._cell_populations():
@@ -1412,6 +1420,44 @@ class Network:
             until_ms=until_ms,
         )
 
+    def _reject_different_times(self, dt, *, prefix: str) -> None:
+        """Raise ``ValueError``, before changing anything, if the Cells are not at one time.
+
+        The Cells take the clock of the first (:meth:`_start_clocks`): a
+        Cell that ran on its own to another time would run from the first
+        Cell's, skipping or repeating the difference (CELL-60: 100000.5 ms
+        ran from 100000 ms, 20 steps of 0.025 ms back, and took again an
+        event it had taken). A Cell whose clock states equal the first's is
+        at its time: a run or :meth:`prepare_run` gives the members one
+        clock, and a member cannot run on its own, so only Cells that ran
+        on their own before joining can differ. :func:`_same_time` compares
+        those with the first; a Cell not yet initialized is at 0.
+        """
+        populations = list(self._cell_populations().items())
+        if len(populations) < 2:
+            return
+        dt_ms = scalar_decimal(dt, u.ms)
+        (first, first_population), *others = populations
+        first_states, first_clock = _host_clock(first_population.cell)
+        for name, population in others:
+            states, clock = _host_clock(population.cell)
+            # Equal states step together, whatever float64 values the Cells
+            # kept beside them (each keeps the time it reached when a run
+            # here changes its dt).
+            if states == first_states or _same_time(first_clock, clock, dt_ms):
+                continue
+            times = tuple(origin + step * clock_dt for origin, step, clock_dt in (first_clock, clock))
+            shown = tuple(f"{time:.9g}" for time in times)
+            if shown[0] == shown[1]:
+                shown = tuple(repr(time) for time in times)
+            raise ValueError(
+                f"{prefix} requires its Cell populations at the same current_time: population {first!r} is at "
+                f"t = {shown[0]} ms and population {name!r} at t = {shown[1]} ms. The Cells step on one clock, "
+                f"the first population's, so {name!r} would skip or repeat the difference. Call "
+                "Network.reset_state() to start them all from t = 0 (after Network.init_state() if one is not "
+                "initialized yet), or run the Cells on their own to the same time before adding them."
+            )
+
     def _reject_off_grid_start(self, dt, *, prefix: str) -> None:
         """Raise ``ValueError``, before changing anything, if the Network would start off the ``dt`` grid from ``t = 0``.
 
@@ -1447,8 +1493,9 @@ class Network:
     def _start_clocks(self, names: tuple[str, ...], *, dt, n_steps: int, prefix: str) -> tuple[float, _Join]:
         """Give the Cells named ``names`` one clock counting steps of ``dt``; return its time in ms and the join.
 
-        The Cells must be at the same ``current_time``. They take the clock
-        of the first, counting from its time if it last ran at another
+        The Cells are at one ``current_time``, to within the run precision
+        (:meth:`_reject_different_times` checked it at the entry). They take
+        the clock of the first, counting from its time if it last ran at another
         ``dt`` (``Cell._clock_start``); the run loop reads it from the
         first and advances them all. Raises ``ValueError``, before changing
         any clock, when ``n_steps`` more steps would pass the step limit.
@@ -1463,9 +1510,6 @@ class Network:
         """
         cells = [self.populations[name].cell for name in names]
         clocks = [cell._clock_host() for cell in cells]
-        times = [origin + step * clock_dt for origin, step, clock_dt in clocks]
-        if not np.allclose(times[1:], times[0]):
-            raise ValueError("Network populations must have the same current_time.")
         origin_ms, step, counts_dt = host_clock_start(clocks[0], dt)
         check_step_limit(step, n_steps, dt=dt, prefix=prefix)
         flags = [bool(np.asarray(cell._next_synapse_inputs_prepared.value)) for cell in cells]
@@ -1658,6 +1702,44 @@ def _reject_batch_size(batch_size) -> None:
         raise NotImplementedError(
             "Network batch execution is not implemented yet; use Cell batch execution for same-topology batches."
         )
+
+
+def _host_clock(cell) -> tuple[tuple[float, int, float], tuple[float, int, float]]:
+    """The Cell's clock on the host, ``(origin in ms, step, dt in ms)``, as its states hold it and at float64.
+
+    The second is ``_float64_clock``'s: at float64 where the Cell kept
+    the values so. Before ``init_state`` both are ``(0, 0, 0)``, the clock
+    ``init_state`` sets.
+    """
+    if not getattr(cell, "_initialized", False):
+        return (0.0, 0, 0.0), (0.0, 0, 0.0)
+    states = cell._clock_host()
+    return states, _float64_clock(cell, states)
+
+
+def _same_time(first, other, dt_ms: float) -> bool:
+    """Whether two host clocks (:func:`_host_clock`) are at one time, for a Network stepping at ``dt_ms``.
+
+    Clocks that count the same ``dt`` (equal at float64) from the same
+    origin, or from origins both on that ``dt``'s grid, are at one time
+    when they have counted the same step from ``t = 0``: integers, exact
+    at any time. Other clocks, whose histories differ (another ``dt``, an
+    origin between steps, a run inside ``jax.jit``, which keeps no float64
+    values), agree when their times differ by at most
+    ``4·eps·max(dt, |t|)`` of the run precision, the basis of the ``dt``
+    grid check (:meth:`Network._reject_off_grid_start`). That bound grows
+    with ``t``: in float32 it passes one step of 0.025 ms from 52.4 s on,
+    as the grid check does.
+    """
+    (origin_a, step_a, dt_a), (origin_b, step_b, dt_b) = first, other
+    if dt_a == dt_b:
+        if origin_a == origin_b:
+            return step_a == step_b
+        if dt_a > 0 and _arrival_origin_ms(origin_a, dt_a) is None and _arrival_origin_ms(origin_b, dt_b) is None:
+            return int(np.rint(origin_a / dt_a)) + step_a == int(np.rint(origin_b / dt_b)) + step_b
+    time_a, time_b = origin_a + step_a * dt_a, origin_b + step_b * dt_b
+    eps = float(np.finfo(brainstate.environ.dftype()).eps)
+    return abs(time_a - time_b) <= 4.0 * eps * max(dt_ms, abs(time_a), abs(time_b))
 
 
 def _event_source_metadata(population: str, port: str, view) -> dict:

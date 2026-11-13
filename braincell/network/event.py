@@ -808,6 +808,15 @@ class VoltageCrossingSource(EventSource):
         return self.cells
 
     @property
+    def _reads_previous_voltage(self) -> bool:
+        """Whether :meth:`current_event_count` compares the voltage before a step with the voltage after it.
+
+        A rising detector at the Cell's threshold, with the Cell's spike
+        function, reads the Cell's spike instead.
+        """
+        return not (self._uses_cell_threshold and self.direction == "rising" and self.spk_fun is None)
+
+    @property
     def cv_id(self) -> np.ndarray:
         """Return the containing CV for each source endpoint."""
         # A detector is a continuous location declaration, not a saved CV View.
@@ -870,7 +879,7 @@ class VoltageCrossingSource(EventSource):
             index = (cv_id,)
         else:
             index = (population_index, cv_id)
-        if self._uses_cell_threshold and self.direction == "rising" and self.spk_fun is None:
+        if not self._reads_previous_voltage:
             return self.cells.spike.value[index]
 
         threshold = self.cells.V_th[index] if self._uses_cell_threshold else self._threshold.value[source_index]
@@ -1111,9 +1120,9 @@ def _host_ms(value):
 class ArrivalHandover(NamedTuple):
     """What a run at a new ``dt`` takes over from the runs before it (CELL-57).
 
-    A Cell's run ends by preparing the boundary at the time it reached, with
-    the events of that boundary's window at its own ``dt``; a Network step
-    prepares and consumes its boundary within the step. The run that
+    A step of a Cell's run, like a Network step, prepares and consumes the
+    boundary it starts at, with the events of that boundary's window at its
+    own ``dt`` (CELL-55). The run that
     follows at another ``dt`` keeps what they took: an event whose arrival
     step, counted in steps of ``taken_dt_ms`` from ``taken_origin_ms`` (the
     boundary numbered ``taken_origin_step`` there, CELL-48), is at most

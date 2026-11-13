@@ -154,9 +154,10 @@ def _dt_change_handover(rcell: "Cell", clock, dt, prepared: bool | None = None):
 
     ``clock`` is ``Cell._clock_host()`` and ``prepared`` the Cell's
     prepared-boundary flag, read here when ``None``. The run before took
-    the events of its boundaries up to the time reached, and of the
-    boundary there too when it prepared it, as a ``Cell.run`` does at its
-    end (a Network step consumes its boundary within the step). They count
+    the events of its boundaries before the time reached, and of the
+    boundary there too when it prepared it; a ``Cell.run`` or Network step
+    prepares and consumes the boundary it starts at (CELL-55), so neither
+    leaves it prepared. They count
     on that run's grid (:func:`_arrival_origin`), at its float64 ``dt``.
     Of what it took and what the runs before it took (the hand-over it
     kept), the one with the later edge holds. The new run's first boundary
@@ -400,11 +401,12 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     scheduled events count from it too, at float64, so each event acts on
     the step nearest it on the run's own grid instead of the grid from time
     0 (CELL-48); the program for such a run is compiled for its origin. A
-    run at another ``dt`` keeps the boundary the run before prepared and
-    skips the events it took (:func:`_dt_change_handover`, CELL-57); its
-    program is compiled for that hand-over, which the segments that follow
-    at that ``dt`` keep. A traced run has no host clock and keeps the grid
-    from time 0.
+    run at another ``dt`` prepares the boundary at the time reached, as each
+    step prepares the one it starts at (CELL-55), and skips the events the
+    runs before took (:func:`_dt_change_handover`, CELL-57); its program is
+    compiled for that hand-over, which the segments that follow at that
+    ``dt`` keep. A traced run has no host clock and keeps the grid from
+    time 0.
     """
     from braincell.network.event import _prepare_netstim_schedules, _schedule_horizon
 
@@ -803,6 +805,7 @@ def _make_run_loop(
     (:func:`_dt_change_handover`).
     """
     from braincell.network.event import arrival_origin as arrivals_from, boundary_step, grid_step, handed_over
+    from braincell.network.plasticity import reads_voltage_before_step
 
     n_recordings = len(compiled_recordings)
     period_steps = tuple(_recording_steps(compiled.schema.period, dt) for compiled in compiled_recordings)
@@ -823,7 +826,6 @@ def _make_run_loop(
                 # arrivals, from its step (CELL-48).
                 first = (step + origin_step).astype(jnp.int32)
             grid = first + jnp.arange(n_steps, dtype=jnp.int32)
-            rcell._prepare_first_synapse_inputs(t=start_t, step=first)
 
             def _step(t, s):
                 with brainstate.environ.context(t=t), boundary_step(t, s):
@@ -835,6 +837,12 @@ def _make_run_loop(
                             for index, item in enumerate(compiled_recordings)
                             if item.phase == "pre"
                         }
+                    # The step prepares the boundary it starts at, as a
+                    # Network step does, so an edit between runs (a weight
+                    # set, a new dt) acts from the next run's first boundary
+                    # (CELL-55).
+                    with jax.named_scope("braincell:cell_run:prepare_synapse_inputs"):
+                        rcell._prepare_next_synapse_inputs(t=t, step=s)
                     with jax.named_scope("braincell:cell_run:begin_step"):
                         rcell._begin_step()
                     with jax.named_scope("braincell:cell_run:update_dynamics"):
@@ -842,8 +850,6 @@ def _make_run_loop(
                             rcell._update_dynamics()
                     with jax.named_scope("braincell:cell_run:route_live_connections"):
                         rcell._apply_direct_live_connection_events()
-                    with jax.named_scope("braincell:cell_run:prepare_next_synapse_inputs"):
-                        rcell._prepare_next_synapse_inputs(t=t + brainstate.environ.get_dt(), step=s + 1)
                     with jax.named_scope("braincell:cell_run:sample_outputs"):
                         recording_snapshot = tuple(
                             pre_recording_snapshot[index] if item.phase == "pre" else item.sample()
@@ -857,17 +863,18 @@ def _make_run_loop(
                 return recording_snapshot + spikes
 
             prepared = rcell._next_synapse_inputs_prepared
-            previous_V = getattr(rcell, "_event_previous_V", None)
+            previous_V = None if reads_voltage_before_step(rcell) else getattr(rcell, "_event_previous_V", None)
 
             def _carried_step(index, t, s):
                 # Two states are rewritten by every step before anything reads
                 # them, so the loop need not carry them from step to step; on
                 # GPU each carried rewrite costs a device copy per step
                 # (CELL-39). The prepared-boundary flag ends every step as it
-                # began, true: ``_prepare_first_synapse_inputs`` set it and
-                # each step prepares the boundary after it. The voltage before
-                # the step (read by VoltageCrossingSource within the step)
-                # leaves the loop from its last step only.
+                # began, false: each step prepares its boundary and consumes
+                # it. The voltage before the step, which a VoltageCrossingSource
+                # reads within the step, leaves the loop from its last step
+                # only; a rule's post detector reads it at the next step's
+                # boundary, so the loop then carries it (CELL-55).
                 flag = prepared.value
                 previous = None if previous_V is None else previous_V.value
                 outputs = _step(t, s)

@@ -55,6 +55,19 @@ __all__ = ["RunResult", "run"]
 #: The most steps a clock counts: its step count is an int32 (CELL-45).
 MAX_STEPS = 2**31 - 1
 
+# The spike output paths of a run (CELL-49). ``None`` chooses by the
+# platform of the Cell's spike state: on GPU a run packs the bits every K
+# steps and copies a large grid back compacted. A bool forces the choice
+# on any backend; the tests force both paths on CPU.
+_BLOCKED_SPIKE_OUTPUT: bool | None = None
+_COMPACT_SPIKE_COPY: bool | None = None
+#: The block sizes a blocked run takes the largest divisor of its step count from.
+_BLOCK_STEPS = range(32, 7, -1)
+#: A compacted copy has room for one in this many of the grid's 4-byte groups.
+_COMPACT_CAPACITY_DIVISOR = 64
+#: Smaller grids are copied back whole, which is faster below about 1 MB on GPU.
+_COMPACT_MIN_BYTES = 1 << 20
+
 
 def host_clock_start(clock, dt) -> tuple[float, int, bool]:
     """``(origin in ms, step, counts dt)`` a run at ``dt`` starts from, on the host, from ``Cell._clock_host()``.
@@ -365,11 +378,20 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     Each call dispatches one cached, jitted program: the step loop, the
     segment start / stop times and the selection of fixed-schedule samples
     all run inside it. Python work per call is limited to argument checks,
-    the cache lookup, turning the step-by-step spike bits into sparse rows
-    (one host pass over ``n_steps * n_rows / 8`` bytes) and wrapping the
-    outputs, so short repeated runs are not dominated by eager array
-    operations. A traced run (inside ``jax.jit`` or ``jax.grad``) cannot
-    build sparse rows and uses a loop without the spike output.
+    the cache lookup, turning the packed spike bits into sparse rows (one
+    host pass over ``n_steps * n_rows / 8`` bytes, or over the nonzero part
+    of them) and wrapping the outputs, so short repeated runs are not
+    dominated by eager array operations. A traced run (inside ``jax.jit``
+    or ``jax.grad``) cannot build sparse rows and uses a loop without the
+    spike output.
+
+    On GPU, where each step of the compiled loop costs a launch of its
+    kernels, a run whose step count has a divisor in [8, 32] steps in
+    blocks of the largest one, K: each step ORs its spike bits into one
+    word per row, and each block stores its words once (``_SpikePort``).
+    Other step counts pack the bits at every step, as on CPU. A grid of
+    1 MiB or more is compacted on the device, so only its nonzero 4-byte
+    groups are copied back (CELL-49).
 
     The geometry is fixed for the run, so the program builds the axial
     operator once, before the steps; each step reads it.
@@ -422,6 +444,7 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
         with_spikes=with_spikes,
         arrival_origin=arrival_origin,
         handover=handover,
+        spike_path=_spike_output_path(rcell) if with_spikes else None,
     )
 
     # Value inputs are arguments of the compiled loop, which applies them to
@@ -490,16 +513,35 @@ class _SpikePort:
     lumped spikes are 0 or 1 (the Heaviside forward of ``spk_fun``), so each
     step packs them eight rows to a byte; a reduction model's event is kept
     as it is, since it may count several events in one step.
+
+    ``block_steps`` is K when the loop packs every K steps instead
+    (:meth:`read_bits`); ``capacity`` is the number of nonzero 4-byte
+    groups of the packed grid the loop copies back compacted
+    (:func:`_compact_spike_rows`), or ``None`` to copy it whole.
     """
 
     cv_id: int
     packed: bool
+    block_steps: int | None = None
+    capacity: int | None = None
 
     @classmethod
-    def of(cls, rcell: "Cell") -> "_SpikePort":
+    def of(cls, rcell: "Cell", *, n_steps: int, path: tuple[bool, bool]) -> "_SpikePort":
+        """The port of ``rcell`` for a run of ``n_steps`` on ``path`` (:func:`_spike_output_path`)."""
+        packed = not rcell._uses_reduction
+        block_steps = capacity = None
+        if packed:
+            blocked, compact = path
+            if blocked:
+                block_steps = next((k for k in _BLOCK_STEPS if n_steps % k == 0), None)
+            n_bytes = n_steps * -(-_spike_rows(rcell) // 8)
+            if compact and n_bytes >= _COMPACT_MIN_BYTES:
+                capacity = max(1, -(-n_bytes // 4) // _COMPACT_CAPACITY_DIVISOR)
         return cls(
             cv_id=int(rcell._get_spike_event_source().cv_id),
-            packed=not rcell._uses_reduction,
+            packed=packed,
+            block_steps=block_steps,
+            capacity=capacity,
         )
 
     def read(self, rcell: "Cell"):
@@ -515,23 +557,34 @@ class _SpikePort:
         spike = jax.lax.optimization_barrier(spike)
         return jnp.packbits(spike.reshape(-1) != 0)
 
+    def read_bits(self, rcell: "Cell"):
+        """This step's spike bit of each row, as a ``uint32`` 0 or 1, inside a blocked loop.
+
+        The loop ORs it into the row's word, which fuses into the kernel
+        that steps the voltage, so no kernel is left to keep the old voltage
+        alive and :meth:`read` needs no barrier here (CELL-49).
+        """
+        spike = rcell.spike.value
+        if not rcell._is_lumped:
+            spike = spike[..., self.cv_id]
+        return (spike.reshape(-1) != 0).astype(jnp.uint32)
+
     def series(self, rcell: "Cell", times, rows) -> EventSeries:
-        """Sparse rows in the format of ``NetworkResult.events[population]["spike"]``."""
-        rows = np.asarray(rows)
+        """Sparse rows in the format of ``NetworkResult.events[population]["spike"]``.
+
+        ``rows`` is the loop's spike output: the steps' port values, or
+        their packed grid, or ``(grid, count, groups, bytes)`` when
+        ``capacity`` is set (:func:`_compact_spike_rows`).
+        """
         if rcell._uses_reduction:
-            values = rows.reshape(rows.shape[0], -1)
+            values = np.asarray(rows)
+            values = values.reshape(values.shape[0], -1)
             step, source_id = np.nonzero(values)
             count = values[step, source_id]
             n_rows = values.shape[1]
         else:
-            shape = rcell.spike.value.shape
-            n_rows = int(np.prod(shape if rcell._is_lumped else shape[:-1], dtype=np.int64))
-            # Only the nonzero bytes are expanded to their eight rows. NumPy
-            # finds the nonzero entries of a flat boolean array several times
-            # faster than those of a 2-D byte array (CELL-39).
-            step, byte = np.divmod(np.flatnonzero(rows != 0), rows.shape[1])
-            hit, bit = np.nonzero(np.unpackbits(rows[step, byte][:, None], axis=1))
-            step, source_id = step[hit], byte[hit] * 8 + bit
+            n_rows = _spike_rows(rcell)
+            step, source_id = self._packed_events(rows)
             count = np.ones(source_id.shape, dtype=np.int64)
         metadata = {"port": "spike", "cv_id": np.full(n_rows, self.cv_id, dtype=np.int64)}
         batch_size = rcell._runtime_batch_size
@@ -545,6 +598,94 @@ class _SpikePort:
             count=count,
             metadata=metadata,
         )
+
+    def _packed_events(self, rows):
+        """``(step, source_id)`` of the set bits of the loop's packed grid, in the grid's C order."""
+        if self.capacity is not None:
+            rows, count, groups, values = rows
+            count = int(count)
+            if count <= self.capacity:
+                return _compacted_grid_events(np.asarray(groups)[:count], np.asarray(values)[:count], rows.shape[1])
+        return _grid_events(np.asarray(rows))
+
+
+def _spike_rows(rcell: "Cell") -> int:
+    """The number of rows of a detailed or lumped Cell's spike port: its members, times its batch."""
+    shape = rcell.spike.value.shape
+    return int(np.prod(shape if rcell._is_lumped else shape[:-1], dtype=np.int64))
+
+
+def _grid_events(rows):
+    """``(step, row)`` of the set bits of the packed grid ``rows``, a ``(steps, bytes)`` array, in C order."""
+    # Only the nonzero bytes are expanded to their eight rows. NumPy finds
+    # the nonzero entries of a flat boolean array several times faster than
+    # those of a 2-D byte array (CELL-39).
+    flat = np.flatnonzero(rows != 0)
+    return _set_bits(flat, rows.reshape(-1)[flat], rows.shape[1])
+
+
+def _compacted_grid_events(groups, values, n_bytes: int):
+    """:func:`_grid_events` of a grid of ``n_bytes`` columns from its nonzero 4-byte ``groups`` and their ``values``."""
+    group, offset = np.nonzero(values)
+    flat = groups[group].astype(np.int64) * 4 + offset
+    return _set_bits(flat, values[group, offset], n_bytes)
+
+
+def _set_bits(flat, values, n_bytes: int):
+    """``(step, row)`` of the set bits of the bytes ``values`` at C-order positions ``flat`` of a packed grid."""
+    step, byte = np.divmod(flat, n_bytes)
+    hit, bit = np.nonzero(np.unpackbits(values[:, None], axis=1))
+    return step[hit], byte[hit] * 8 + bit
+
+
+def _on_gpu(value) -> bool:
+    """Whether the array (or Quantity) ``value`` lives on a GPU."""
+    devices = getattr(u.get_mantissa(value), "devices", None)
+    return devices is not None and any(device.platform == "gpu" for device in devices())
+
+
+def _spike_output_path(rcell: "Cell") -> tuple[bool, bool]:
+    """``(blocked, compact)``: whether a run of ``rcell`` may pack its spikes in blocks and copy them compacted.
+
+    Both on GPU and neither elsewhere, unless the module switches force
+    them; a reduction model's port is not packed and takes neither.
+    """
+    on_gpu = False
+    if None in (_BLOCKED_SPIKE_OUTPUT, _COMPACT_SPIKE_COPY) and not rcell._uses_reduction:
+        on_gpu = _on_gpu(rcell.spike.value)
+    blocked = on_gpu if _BLOCKED_SPIKE_OUTPUT is None else bool(_BLOCKED_SPIKE_OUTPUT)
+    compact = on_gpu if _COMPACT_SPIKE_COPY is None else bool(_COMPACT_SPIKE_COPY)
+    return blocked, compact
+
+
+def _words_to_rows(words, block_steps: int):
+    """The ``(blocks, rows)`` words of a blocked loop as its ``(steps, ceil(rows / 8))`` packed grid.
+
+    Bit ``j`` of a row's word is the row's spike at step ``j`` of the
+    block; each step's bytes are ``jnp.packbits`` of its rows, as a loop
+    that packs at every step stacks them.
+    """
+    bits = (words[:, None, :] >> jnp.arange(block_steps, dtype=jnp.uint32)[:, None]) & jnp.uint32(1)
+    packed = jnp.packbits(bits, axis=-1)
+    return packed.reshape((-1, packed.shape[-1]))
+
+
+def _compact_spike_rows(rows, capacity: int):
+    """``(count, groups, values)``: the nonzero 4-byte groups of the packed grid ``rows``, on the device.
+
+    The grid's bytes in C order make groups of four, the last padded with
+    zeros. ``groups`` holds the indices of the first ``capacity`` nonzero
+    groups in order and ``values`` their bytes; ``count`` is how many there
+    are, so a count above ``capacity`` means the grid is to be copied whole.
+    """
+    flat = rows.reshape(-1)
+    n_groups = -(-flat.shape[0] // 4)
+    groups = jnp.pad(flat, (0, 4 * n_groups - flat.shape[0])).reshape((n_groups, 4))
+    nonzero = jnp.any(groups != 0, axis=1)
+    position = jnp.cumsum(nonzero, dtype=jnp.int32)
+    slot = jnp.where(nonzero, position - 1, capacity)
+    index = jnp.zeros(capacity, jnp.int32).at[slot].set(jnp.arange(n_groups, dtype=jnp.int32), mode="drop")
+    return position[-1], index, groups[index]
 
 
 @dataclass(frozen=True)
@@ -568,6 +709,7 @@ def _cached_run_plan(
     with_spikes: bool = True,
     arrival_origin: tuple[float, int] | None = None,
     handover=None,
+    spike_path: tuple[bool, bool] | None = None,
 ) -> _RunPlan:
     """Return the persistent plan for one run shape.
 
@@ -585,7 +727,9 @@ def _cached_run_plan(
     steps; it is ``None`` unless the run changed ``dt`` off the new grid,
     and stays the same over the segments that follow at that ``dt``. So is
     ``handover`` (:func:`_dt_change_handover`), ``None`` unless a run at
-    another ``dt`` came before.
+    another ``dt`` came before. ``spike_path`` (:func:`_spike_output_path`)
+    selects how the loop packs the spikes and copies them back; ``None`` is
+    neither way.
     """
     cache = rcell._run_loop_cache
     key = (
@@ -597,6 +741,7 @@ def _cached_run_plan(
         bool(with_spikes),
         arrival_origin,
         handover,
+        spike_path,
     )
     cached = cache.get(key)
     if cached is None:
@@ -606,7 +751,9 @@ def _cached_run_plan(
         unaligned = tuple(
             compiled for compiled in compiled_recordings if n_steps % _recording_steps(compiled.schema.period, dt) != 0
         )
-        spike_port = _SpikePort.of(rcell) if with_spikes else None
+        spike_port = None
+        if with_spikes:
+            spike_port = _SpikePort.of(rcell, n_steps=n_steps, path=spike_path or (False, False))
         cached = _RunPlan(
             loop=_make_run_loop(
                 rcell,
@@ -644,7 +791,11 @@ def _make_run_loop(
     on its first step, and returns
     ``(times, start_time, stop_time, recorded, spike_rows)``;
     ``spike_rows`` stacks ``spike_port.read`` over the steps, or is ``None``
-    without a port.
+    without a port. With ``spike_port.block_steps``, K, the loop runs blocks
+    of K steps: the recordings and each block's words of spike bits are
+    buffers carried through both loops and written in place, and the words
+    become the same packed grid after the loop. With ``spike_port.capacity``
+    the grid comes with its compacted copy (:func:`_compact_spike_rows`).
     ``recorded`` holds one ``(values, first_time)`` pair per recording: the
     selected samples for a fixed-shape schedule, or every step's values and
     ``None`` for a variable-length one (selected eagerly by the caller).
@@ -659,6 +810,7 @@ def _make_run_loop(
     n_recordings = len(compiled_recordings)
     period_steps = tuple(_recording_steps(compiled.schema.period, dt) for compiled in compiled_recordings)
     origin_ms, origin_step = (None, 0) if arrival_origin is None else arrival_origin
+    block_steps = None if spike_port is None else spike_port.block_steps
 
     def _run_loop(values):
         with brainstate.environ.context(dt=dt), arrivals_from(origin_ms, origin_step), handed_over(handover):
@@ -706,7 +858,8 @@ def _make_run_loop(
                     spikes = ()
                     if spike_port is not None:
                         with jax.named_scope("braincell:cell_run:sample_spikes"):
-                            spikes = (spike_port.read(rcell),)
+                            read = spike_port.read if block_steps is None else spike_port.read_bits
+                            spikes = (read(rcell),)
                 return recording_snapshot + spikes
 
             prepared = rcell._next_synapse_inputs_prepared
@@ -730,16 +883,24 @@ def _make_run_loop(
                     previous_V.value = u.math.where(index == n_steps - 1, previous_V.value, previous)
                 return outputs
 
+            step_fn = _carried_step
             if any(values):
 
-                def _step_with_values(index, t, s):
+                def step_fn(index, t, s):
                     # The value inputs act on the first step only.
                     with rcell._value_input_step(values, first=index == 0):
                         return _carried_step(index, t, s)
 
-                traces_over_time = brainstate.transform.for_loop(_step_with_values, jnp.arange(n_steps), times, grid)
+            if block_steps is None:
+                traces_over_time = brainstate.transform.for_loop(step_fn, jnp.arange(n_steps), times, grid)
             else:
-                traces_over_time = brainstate.transform.for_loop(_carried_step, jnp.arange(n_steps), times, grid)
+                # The buffers take the shapes of the recordings' samples,
+                # read once here; the reads are dead code after tracing.
+                with brainstate.environ.context(t=start_t), boundary_step(start_t, first):
+                    samples = tuple(item.sample() for item in compiled_recordings)
+                traces_over_time = _blocked_loop(
+                    step_fn, samples, times, grid, block_steps=block_steps, n_rows=_spike_rows(rcell)
+                )
             stop_t = origin + (step + n_steps) * dt
             rcell._set_clock(origin, step + n_steps, dt)
 
@@ -753,6 +914,8 @@ def _make_run_loop(
         if spike_port is not None:
             spike_rows = values[-1]
             values = values[:-1]
+            if spike_port.capacity is not None:
+                spike_rows = (spike_rows,) + _compact_spike_rows(spike_rows, spike_port.capacity)
         recorded = []
         for index, fixed in enumerate(fixed_schedules):
             if fixed:
@@ -765,6 +928,47 @@ def _make_run_loop(
         return times, start_t, stop_t, tuple(recorded), spike_rows
 
     return brainstate.transform.jit(axial_operator_before_steps(_run_loop, (rcell,)))
+
+
+def _blocked_loop(step_fn, samples, times, grid, *, block_steps: int, n_rows: int):
+    """``step_fn(index, t, s)``'s recordings and packed spike grid over the steps, in blocks of ``block_steps``.
+
+    ``step_fn`` returns a step's samples followed by its spike bits, one
+    for each of ``n_rows`` (``_SpikePort.read_bits``); ``samples`` are
+    samples of the same shapes.
+    An outer loop over the blocks runs an inner loop over a block's steps.
+    Both carry the recordings, ``(steps, ...)`` buffers each step writes its
+    samples into at its step, and the ``(blocks, rows)`` words each block
+    writes its word of each row into once; each step ORs its bit into bit
+    ``j`` of the row's word, ``j`` its step in the block. On GPU each step
+    then launches the kernels of a loop without spike output: in place,
+    ``dynamic_update_index_in_dim`` adds none (``.at[].set`` would check
+    its index with one more), and nothing is stacked or copied per block.
+    Returns the recordings and the grid of :func:`_words_to_rows`.
+    """
+    n_steps = times.shape[0]
+    n_blocks = n_steps // block_steps
+
+    def write(buffers, values, at):
+        return jax.tree.map(lambda b, v: jax.lax.dynamic_update_index_in_dim(b, v, at, 0), buffers, values)
+
+    def in_block(carry, x):
+        buffers, word = carry
+        index, t, s = x
+        *values, bit = step_fn(index, t, s)
+        word = word | (bit << (index % block_steps).astype(jnp.uint32))
+        return (write(buffers, tuple(values), index), word), None
+
+    def over_blocks(carry, x):
+        buffers, words = carry
+        (buffers, word), _ = brainstate.transform.scan(in_block, (buffers, jnp.zeros_like(words[0])), x)
+        return (buffers, write(words, word, x[0][0] // block_steps)), None
+
+    buffers = jax.tree.map(lambda a: jnp.zeros((n_steps,) + jnp.shape(a), jnp.result_type(a)), samples)
+    words = jnp.zeros((n_blocks, n_rows), jnp.uint32)
+    blocks = tuple(a.reshape((n_blocks, block_steps)) for a in (jnp.arange(n_steps), times, grid))
+    (buffers, words), _ = brainstate.transform.scan(over_blocks, (buffers, words), blocks)
+    return buffers + (_words_to_rows(words, block_steps),)
 
 
 def axial_operator_before_steps(loop, cells):

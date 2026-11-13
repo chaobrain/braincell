@@ -1753,5 +1753,6 @@ def _event_source_metadata(population: str, port: str, view) -> dict:
 def _reset_delivery_state(state) -> None:
     """Clear the event histories at an explicit network reset boundary."""
     for history, cursor in zip(state.histories, state.history_cursors):
-        history.value = jnp.zeros_like(history.value)
-        cursor.value = np.asarray(0, dtype=np.int32)
+        if history is not None:
+            history.value = jnp.zeros_like(history.value)
+            cursor.value = np.asarray(0, dtype=np.int32)

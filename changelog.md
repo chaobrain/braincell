@@ -232,6 +232,31 @@
   without one, a project-lead decision): the rejected runs never gave correct
   results. Call `Network.reset_state()` to start from `t = 0`, or run the
   Cell on its own to a multiple of the Network's `dt` before adding it.
+- **Cells that ran on their own to different times cannot run in one
+  Network** (CELL-60). A Network steps all its Cells on the first Cell's
+  clock. Two Cells run alone at 0.025 ms to 100000 ms and 100000.5 ms ran
+  together without error, and the second went back to the first's clock:
+  after 24 steps both stood at step 4,000,024, so the second had lost 20
+  steps (0.5 ms), and an `EventSequence` event it had already taken alone, at
+  100000.05 ms, was delivered to it again (main `bbb7b0a`, float32 and
+  float64, `Network.run`, `prepare_run` with `update()`, and
+  `scheduled_delivery="direct"` alike). One step apart, at 100000 and
+  100000.025 ms, they also ran. The old check, `np.allclose` with a relative
+  tolerance of 1e-5, passed any difference up to about `t·1e-5` and raised
+  only after initializing the Cells and fixing the run configuration.
+  `Network.run` and `Network.prepare_run` now raise `ValueError` ("... requires
+  its Cell populations at the same current_time: population 'a' is at
+  t = 100000 ms and population 'b' at t = 100000.5 ms ...") before anything
+  changes. Clocks that count the same `dt` from one grid must have counted the
+  same step. Other clocks, from different histories (another `dt`, or a run
+  inside `jax.jit`, which keeps no float64 clock), must agree to within
+  `4·eps·max(dt, |t|)` of the run precision, as in the off-grid check above;
+  in float32 that bound passes one step of 0.025 ms from 52.4 s on. Cells at
+  one time join as before, with bitwise the same results. There is no
+  deprecation period, as for the off-grid check. Call `Network.reset_state()`
+  to start every Cell from `t = 0` (after `Network.init_state()` if one is not
+  initialized), or run the Cells on their own to the same time before adding
+  them.
 
 ### New Features
 

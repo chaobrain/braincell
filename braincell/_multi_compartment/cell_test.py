@@ -2774,8 +2774,8 @@ class UpdateLiveDynamicsTest(unittest.TestCase):
                     self.assertGreater(jumps.size, 0)
                     np.testing.assert_array_equal(self._jumps(rows[:, 1]), jumps)
                     np.testing.assert_allclose(rows[:, 1], reference[:, 1], rtol=1e-5, atol=1e-9)
-                    # On the CPU the eager float32 ops round apart from the compiled run's from the
-                    # clamp's onset on, before any event: up to 2.5e-4 mV on the cable's upstroke.
+                    # On the CPU the eager float32 ops round apart from the compiled run's from step 21
+                    # on, before any spike: up to 2.5e-4 mV on the cable's upstroke.
                     np.testing.assert_allclose(rows[:, 0], reference[:, 0], rtol=1e-5, atol=1e-3)
 
     def test_float32_long_update_loop_matches_one_run(self):

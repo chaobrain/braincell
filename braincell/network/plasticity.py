@@ -28,7 +28,8 @@ consume its events. Every read at a boundary sees the state before it:
 - ``pre`` is each row's arrivals at the boundary, the events its synapse
   receives there. A scheduled source counts them as the Cell does for any
   scheduled row. A live source detected in step ``m`` with a delay of ``k``
-  steps arrives at ``t_{m + max(k, 1)}``.
+  steps arrives at ``t_{m + 1 + k}``, as in ``Cell.run`` and NEURON
+  (CELL-75).
 - A row with a scheduled source, or a live source and ``k >= 1``, delivers
   ``n * w(t_n-)`` here (and ``n`` to a ``"sum_count"`` synapse's event
   count, CELL-12b), not through the Network's delayed delivery: a
@@ -210,8 +211,8 @@ class _LivePlan:
 
     A spike detected in step ``m`` is the source's current count at the
     boundary ``t_{m+1}``; with ``k`` delay steps it arrives at
-    ``t_{m+max(k,1)}``, so a row reads the count written ``max(k-1, 0)``
-    boundaries ago. The history keeps one column per distinct source: at
+    ``t_{m+1+k}``, so a row reads the count written ``k`` boundaries ago
+    (CELL-75). The history keeps one column per distinct source: at
     ``1e5`` rows from ``1e3`` sources a step costs as much as without a rule,
     where one column per row cost 2.8 times as much (CELL-12a).
     """
@@ -219,7 +220,7 @@ class _LivePlan:
     __slots__ = ("lag", "uniform_lag", "depth", "columns", "slot", "deliver")
 
     def __init__(self, steps, plan) -> None:
-        lag = np.maximum(steps - 1, 0).astype(np.int32)
+        lag = np.asarray(steps, dtype=np.int32)
         if plan.active is not None:
             lag = np.where(plan.active, lag, 0).astype(np.int32)
         columns, slot = np.unique(plan.source_index, return_inverse=True)

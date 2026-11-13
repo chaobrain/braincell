@@ -217,10 +217,11 @@ class DelayTest(unittest.TestCase):
     @_float64
     def test_live_arrivals_and_first_conductance_samples(self) -> None:
         # The source crosses in step 20 (its EventSeries time is 2.0 ms), so
-        # its events arrive at 2.1, 2.1 and 2.3 ms.
+        # its events arrive at 2.1, 2.2 and 2.4 ms: t_{m+1+k}, as NEURON (CELL-75).
         at_2_1 = _reference(A_PLUS * np.exp(-7.9 / TAU), 0.006736800392)
-        at_2_3 = _reference(A_PLUS * np.exp(-7.7 / TAU), 0.006804506362)
-        expected = {0.0: (at_2_1, 21), 0.1: (at_2_1, 22), 0.3: (at_2_3, 24)}
+        at_2_2 = _reference(A_PLUS * np.exp(-7.8 / TAU), 0.006770568745)
+        at_2_4 = _reference(A_PLUS * np.exp(-7.6 / TAU), 0.006838614092)
+        expected = {0.0: (at_2_1, 21), 0.1: (at_2_2, 23), 0.3: (at_2_4, 25)}
         for delay_ms, (dw, first) in expected.items():
             with self.subTest(delay_ms=delay_ms):
                 firsts = []
@@ -238,13 +239,13 @@ class DelayTest(unittest.TestCase):
 
     @_float64
     def test_two_step_live_delay_reads_its_arrival_and_delivers_once(self) -> None:
-        # Spikes in steps 20 and 22 arrive at 2.2 and 2.4 ms, each with w0,
-        # once: as without a rule.
+        # Spikes in steps 20 and 22 arrive at 2.3 and 2.5 ms (CELL-75), each
+        # with w0, once: as without a rule.
         for rule in (_stdp(A_plus=0.0 * u.uS), None):
             with self.subTest(rule=rule is not None):
                 net = _network(_live_pre([2.1, 2.3]), _toy_cell(), delay=0.2 * u.ms, rule=rule)
                 g = _g(net.run(dt=DT, duration=3.0 * u.ms))[:, 0]
-                np.testing.assert_allclose(g[[22, 23, 24, 25]], [0.0, 0.05, 0.05, 0.1], rtol=RTOL)
+                np.testing.assert_allclose(g[[23, 24, 25, 26]], [0.0, 0.05, 0.05, 0.1], rtol=RTOL)
 
 
 class FanOutTest(unittest.TestCase):
@@ -257,9 +258,9 @@ class FanOutTest(unittest.TestCase):
         # The zero-delay row stays on the Network's immediate path, whose
         # brainevent operator reads the dynamic weight too.
         cases = {
-            ("heterogeneous", "scatter"): ([0.0, 0.1, 0.3, 0.5], [2.1, 2.1, 2.3, 2.5], [21, 22, 24, 26]),
-            ("heterogeneous", "brainevent"): ([0.0, 0.1, 0.3, 0.5], [2.1, 2.1, 2.3, 2.5], [21, 22, 24, 26]),
-            ("uniform", "scatter"): ([0.3] * 4, [2.3] * 4, [24] * 4),
+            ("heterogeneous", "scatter"): ([0.0, 0.1, 0.3, 0.5], [2.1, 2.2, 2.4, 2.6], [21, 23, 25, 27]),
+            ("heterogeneous", "brainevent"): ([0.0, 0.1, 0.3, 0.5], [2.1, 2.2, 2.4, 2.6], [21, 23, 25, 27]),
+            ("uniform", "scatter"): ([0.3] * 4, [2.4] * 4, [25] * 4),
         }
         for (label, backend), (delay_ms, arrival_ms, first) in cases.items():
             with self.subTest(label=label, backend=backend):
@@ -303,7 +304,7 @@ class FanOutTest(unittest.TestCase):
         g = _g(net.run(dt=DT, duration=12.0 * u.ms))
         np.testing.assert_allclose(g[-1], [0.05, 0.0, 0.05], rtol=RTOL)
         np.testing.assert_array_equal(cell.connections["c"].id, [0, 2])
-        np.testing.assert_allclose(_w(cell) - 0.05, [A_PLUS * np.exp(-7.7 / TAU)] * 2, rtol=RTOL)
+        np.testing.assert_allclose(_w(cell) - 0.05, [A_PLUS * np.exp(-7.6 / TAU)] * 2, rtol=RTOL)
 
 
 class OrderTest(unittest.TestCase):
@@ -901,10 +902,12 @@ class RecordRuleStateTest(unittest.TestCase):
     @_float64
     def test_live_arrivals_with_their_delays(self) -> None:
         # The source crosses threshold in the step ending at 2.1 ms (detected at step 20).
-        late = _reference(A_PLUS * np.exp(-7.9 / TAU), 0.006736800392)
-        later = _reference(A_PLUS * np.exp(-7.7 / TAU), 0.006804506362)
-        # delay, first x_pre row, first g row (a zero delay acts at the end of the detecting step), change of w
-        for delay, first_x, first_g, change in ((0.0, 22, 21, late), (0.1, 22, 22, late), (0.3, 24, 24, later)):
+        at_2_1 = _reference(A_PLUS * np.exp(-7.9 / TAU), 0.006736800392)
+        at_2_2 = _reference(A_PLUS * np.exp(-7.8 / TAU), 0.006770568745)
+        at_2_4 = _reference(A_PLUS * np.exp(-7.6 / TAU), 0.006838614092)
+        # delay, first x_pre row, first g row (a zero delay acts at the end of the detecting step), change of w;
+        # a delay of k steps arrives at t_{m+1+k} (CELL-75)
+        for delay, first_x, first_g, change in ((0.0, 22, 21, at_2_1), (0.1, 23, 23, at_2_2), (0.3, 25, 25, at_2_4)):
             post = _toy_cell(post_ms=[10.0])
             net = _network(_live_pre([2.1]), post, delay=delay * u.ms, rule=_stdp())
             post.connections["c"].record("w", "w")

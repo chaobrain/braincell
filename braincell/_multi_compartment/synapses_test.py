@@ -546,8 +546,9 @@ class PerMemberPlaceTest(unittest.TestCase):
                 self.assertEqual(rule.locset, at("soma", 0.5) if call == 0 else lists[m])
                 self.assertEqual(rule.origin.split(":")[0], "synapses_test.py")
                 (mechanism,) = rule.mechanisms
-                self.assertEqual((mechanism.synapse_type, mechanism.instance_name), (
-                    "ExpSynSTD" if name == "r" else "ExpSyn", name))
+                self.assertEqual(
+                    (mechanism.synapse_type, mechanism.instance_name), ("ExpSynSTD" if name == "r" else "ExpSyn", name)
+                )
                 source = origins[id(mechanism)]
                 self.assertIs(sources.setdefault(name, source), source)
                 self.assertIsNot(source, mechanism)
@@ -567,8 +568,13 @@ class PerMemberPlaceTest(unittest.TestCase):
         expected = []
         for call in range(3):
             for m in range(n):
-                sites = [("soma", 0.5)] if call == 0 or m % 3 == 0 else [("soma", 0.2)] * 2 if m % 3 == 1 else [
-                    ("dend", 0.75)]
+                sites = (
+                    [("soma", 0.5)]
+                    if call == 0 or m % 3 == 0
+                    else [("soma", 0.2)] * 2
+                    if m % 3 == 1
+                    else [("dend", 0.75)]
+                )
                 expected.extend((call * n + m, m, branch, x) for branch, x in sites)
         self.assertEqual(
             [(p._rule_index, p.population_index, p.branch_name, float(p.branch_x)) for p in placements], expected
@@ -592,16 +598,31 @@ class PerMemberPlaceTest(unittest.TestCase):
         Synapse = braincell.mech.Synapse
         soma = at("soma", 0.5)
         cases = (
-            (lambda n: ([soma] * (n - 1), Synapse("ExpSyn", name="s")), ValueError,
-             r"^Per-cell locset rows must match the selected population size, got 2 rows for 3 cells\.$"),
-            (lambda n: ([soma, "soma", soma], Synapse("ExpSyn", name="s")), TypeError,
-             r"^Each per-cell location row must be a LocsetExpr or LocsetMask\.$"),
-            (lambda n: ([soma] * n, braincell.mech.CurrentClamp(amplitudes=(0.1 * u.nA,), durations=(1.0 * u.ms,))),
-             TypeError, r"^Per-cell locset sequences currently support Synapse point mechanisms only\.$"),
-            (lambda n: ([soma] * n, Synapse("ExpSyn", name="s", tau=[1.0, 2.0] * u.ms)), ValueError,
-             r"^Synapse parameter 'tau' with shape \(2,\) cannot broadcast to per-cell location lengths \(1, 1, 1\)\.$"),
-            (lambda n: ([soma] * n, Synapse("ExpSyn", name="s", tau=(1.0 * u.ms, [2.0, 3.0] * u.ms, 4.0 * u.ms))), ValueError,
-             r"^Synapse parameter 'tau' row 1 must be scalar or shape \(1,\), got \(2,\)\.$"),
+            (
+                lambda n: ([soma] * (n - 1), Synapse("ExpSyn", name="s")),
+                ValueError,
+                r"^Per-cell locset rows must match the selected population size, got 2 rows for 3 cells\.$",
+            ),
+            (
+                lambda n: ([soma, "soma", soma], Synapse("ExpSyn", name="s")),
+                TypeError,
+                r"^Each per-cell location row must be a LocsetExpr or LocsetMask\.$",
+            ),
+            (
+                lambda n: ([soma] * n, braincell.mech.CurrentClamp(amplitudes=(0.1 * u.nA,), durations=(1.0 * u.ms,))),
+                TypeError,
+                r"^Per-cell locset sequences currently support Synapse point mechanisms only\.$",
+            ),
+            (
+                lambda n: ([soma] * n, Synapse("ExpSyn", name="s", tau=[1.0, 2.0] * u.ms)),
+                ValueError,
+                r"^Synapse parameter 'tau' with shape \(2,\) cannot broadcast to per-cell location lengths \(1, 1, 1\)\.$",
+            ),
+            (
+                lambda n: ([soma] * n, Synapse("ExpSyn", name="s", tau=(1.0 * u.ms, [2.0, 3.0] * u.ms, 4.0 * u.ms))),
+                ValueError,
+                r"^Synapse parameter 'tau' row 1 must be scalar or shape \(1,\), got \(2,\)\.$",
+            ),
         )
         for declare, error, message in cases:
             with self.subTest(message=message):
@@ -613,7 +634,9 @@ class PerMemberPlaceTest(unittest.TestCase):
                     with self.assertRaisesRegex(error, message):
                         cell.place(*declare(3))
                 self.assertIs(cell.place_rules, before)
-        with self.assertRaisesRegex(ValueError, r"^Per-cell locset placement requires one-dimensional pop_size; got \(2, 2\)\.$"):
+        with self.assertRaisesRegex(
+            ValueError, r"^Per-cell locset placement requires one-dimensional pop_size; got \(2, 2\)\.$"
+        ):
             Cell(make_tree_s(), pop_size=(2, 2)).place([soma] * 4, Synapse("ExpSyn", name="s"))
 
     def test_the_graph_walk_does_not_visit_each_member(self):
@@ -659,7 +682,8 @@ class PerMemberPlaceTest(unittest.TestCase):
         self.assertEqual(len(messages), 2, messages)
         self.assertTrue(all("must contain only finite values" in m for m in messages), messages)
         with self.assertRaisesRegex(
-            ValueError, r"^Synapse 's' \(ExpSyn\) parameter 'tau' must contain only finite values; got nan ms\. Placed on "
+            ValueError,
+            r"^Synapse 's' \(ExpSyn\) parameter 'tau' must contain only finite values; got nan ms\. Placed on ",
         ):
             _SynapseStore(cell)
 

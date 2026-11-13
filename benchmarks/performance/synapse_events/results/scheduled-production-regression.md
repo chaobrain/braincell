@@ -76,7 +76,7 @@ The protocol was fixed before any timing ran. Each device has 3 rounds × 6 mode
 | CPU supplementary | `8f00f9c` | 06:15–08:17 | large, long, mixed; adds the sibling rule, 4 retries | 54: 48 ok, 6 not applicable | 122 | 11 |
 | GPU mini | `1bc87cf` | 08:17–08:20 | round 0 of shared `update` and active `run` | 6 ok | 7 | 0 |
 
-A first GPU run at `7722084` was stopped after 9 workers and is not used. Its GPU re-run trigger counted any other process on the device, and every worker found another project's idle 258 MiB context there. The two supplementary passes were agreed with the coordinator after the protocol runs.
+A first GPU run at `7722084` was stopped after 9 workers and is not used. Its GPU re-run trigger counted any other process on the device, and every worker found another project's idle 258 MiB context there. The two supplementary passes were planned after the protocol runs, from their flagged and failed rows, before either was timed.
 
 ## Correctness
 

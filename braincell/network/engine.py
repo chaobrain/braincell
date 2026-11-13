@@ -1110,7 +1110,8 @@ class Network:
                         continue
                     value = state.value
                     state.value = jax.tree.map(
-                        lambda leaf: u.math.where(past, u.math.nan * u.get_unit(leaf), leaf), value,
+                        lambda leaf: u.math.where(past, u.math.nan * u.get_unit(leaf), leaf),
+                        value,
                         is_leaf=lambda x: isinstance(x, u.Quantity),
                     )
         return {name: self.populations[name].cell.spike.value for name in setup.ordered_population_names}

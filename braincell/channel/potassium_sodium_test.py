@@ -167,9 +167,6 @@ _DENSITY = u.mA / u.cm**2
 
 def _x64_pump_values() -> dict:
     """Float64 pump currents (mA/cm2) at ``Ci_Na`` 4 mM and at ``Ci_Na = km``."""
-    import brainstate
-
-    brainstate.environ.set(precision=64)
     pump = NaKPump_Ca1999(1, imax=_IMAX)
     V, k = voltage([-60.0]), k_info()
     parts = pump.current_components(V, na_info(1, Ci=4.0), k)
@@ -191,16 +188,12 @@ def _x64_one_step_cell_report() -> dict:
     The variants: dynamic ions (``SodiumDetailed``, ``PotassiumDetailed``,
     ``d`` = 1 um, ``nai`` 4 mM), fixed ions, both on a lumped Cell (``dV``
     only: a lumped Cell records the voltage alone), and three wrong pumps
-    registered here (a child process): the stoichiometry swapped (``na -2``,
+    registered here and unregistered at the end: the stoichiometry swapped (``na -2``,
     ``k +3``), a ``current`` that returns the sodium part only, and no
     potassium component. ``I`` is the recorded channel current at t = 0.
     """
-    import brainstate
-
     import braincell as bc
-    from braincell.mech import CableProperty, Channel, Ion, register_channel
-
-    brainstate.environ.set(precision=64)
+    from braincell.mech import CableProperty, Channel, Ion, get_registry, register_channel
 
     @register_channel("NaKPump_Ca1999_Swapped")
     class Swapped(NaKPump_Ca1999):
@@ -260,15 +253,19 @@ def _x64_one_step_cell_report() -> dict:
             report.append(float(np.reshape(result.samples["pump"].values.to_decimal(_DENSITY), -1)[0]))
         return report
 
-    return {
-        "dynamic": step(dynamic),
-        "fixed": step(fixed),
-        "lumped_fixed": step(fixed, lumped=True),
-        "lumped_dynamic": step(dynamic, lumped=True),
-        "swapped": step(dynamic, "NaKPump_Ca1999_Swapped"),
-        "sodium_only": step(dynamic, "NaKPump_Ca1999_SodiumOnly"),
-        "no_potassium": step(dynamic, "NaKPump_Ca1999_NoPotassium"),
-    }
+    try:
+        return {
+            "dynamic": step(dynamic),
+            "fixed": step(fixed),
+            "lumped_fixed": step(fixed, lumped=True),
+            "lumped_dynamic": step(dynamic, lumped=True),
+            "swapped": step(dynamic, "NaKPump_Ca1999_Swapped"),
+            "sodium_only": step(dynamic, "NaKPump_Ca1999_SodiumOnly"),
+            "no_potassium": step(dynamic, "NaKPump_Ca1999_NoPotassium"),
+        }
+    finally:
+        for name in ("NaKPump_Ca1999_Swapped", "NaKPump_Ca1999_SodiumOnly", "NaKPump_Ca1999_NoPotassium"):
+            get_registry().unregister("channel", name)
 
 
 # One step of the dynamic-ion Cell, by hand (F = 96485.33212331001 C/mol,
@@ -296,10 +293,7 @@ class NaKPumpCa1999Test(unittest.TestCase):
         self.assertEqual(pump.states, {})
 
     def test_components_at_4_mM_and_half_activation_at_km(self) -> None:
-        values = run_float64(
-            "import json; from braincell.channel.potassium_sodium_test import _x64_pump_values; "
-            "print(json.dumps(_x64_pump_values()))"
-        )
+        values = run_float64(_x64_pump_values)
         self.assertEqual(values["keys"], ["k", "na"])
         # 0.012 / (1 + 2.5 ** 1.5) = 2.4228489e-3 mA/cm2 outward.
         np.testing.assert_allclose(
@@ -317,14 +311,11 @@ class NaKPumpCa1999Test(unittest.TestCase):
 
 
 class NaKPumpCa1999CellTest(unittest.TestCase):
-    """One float64 Cell step per variant, all run in one child process."""
+    """One float64 Cell step per variant, all run once for the class."""
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.cell = run_float64(
-            "import json; from braincell.channel.potassium_sodium_test import _x64_one_step_cell_report; "
-            "print(json.dumps(_x64_one_step_cell_report()))"
-        )
+        cls.cell = run_float64(_x64_one_step_cell_report)
 
     def test_one_step_in_a_cell_with_dynamic_sodium_and_potassium(self) -> None:
         self.assertEqual(_one_step_failures(self.cell["dynamic"]), [], self.cell["dynamic"])

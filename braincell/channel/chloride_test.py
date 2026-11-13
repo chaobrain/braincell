@@ -14,10 +14,6 @@
 # ==============================================================================
 
 import functools
-import json
-import os
-import subprocess
-import sys
 import unittest
 
 import brainunit as u
@@ -28,6 +24,7 @@ import braincell as bc
 from braincell._base_channel import IonInfo
 from braincell.channel import IL, Cl_Leak, OhmicHH
 from braincell.ion import Chloride
+from braincell.ion._testing import run_float64
 
 _E_CL_35C = -87.22198260005996  # mV, Ci 5 / Co 133.5 mM, z = -1, 35 degC
 _E_HCO3_35C = -12.892326235873629  # mV, HCO3 16 / 26 mM, z = -1, 35 degC
@@ -53,20 +50,8 @@ def _tonic_gaba_currents() -> dict:
 
 @functools.cache
 def _float64_report() -> dict:
-    """Float64 measurements in a fresh process, as for the chloride ions.
-
-    Switching to x64 after a float32 ``Cell.run`` in the same process can feed
-    a float32 device copy of brainunit's constants to a float64 program.
-    """
-    code = (
-        "import json; from braincell.channel.chloride_test import _tonic_gaba_currents; "
-        "print(json.dumps(_tonic_gaba_currents()))"
-    )
-    env = dict(os.environ, JAX_ENABLE_X64="1", JAX_PLATFORMS="cpu")
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
-    if result.returncode != 0:
-        raise AssertionError(result.stderr)
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    """The float64 tonic GABA measurements."""
+    return run_float64(_tonic_gaba_currents)
 
 
 def _cable_cell() -> bc.Cell:

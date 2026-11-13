@@ -14,7 +14,6 @@
 # ==============================================================================
 
 import contextlib
-import gc
 import json
 import os
 import subprocess
@@ -737,7 +736,6 @@ class NetStimUpdateHorizonTest(unittest.TestCase):
         for precision in (64, 32):
             with self.subTest(precision=precision):
                 g_update, g_run = updates(precision)
-                gc.collect()
                 self.assertEqual(g_run.shape, (20, 1))  # one sample per step (L93)
                 np.testing.assert_array_equal(g_update, g_run)
                 # Arrivals at 1.3 and 3.3 ms: boundaries floor(T / dt + 0.5) =

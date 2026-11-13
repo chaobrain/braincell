@@ -14,10 +14,6 @@
 # ==============================================================================
 
 import functools
-import json
-import os
-import subprocess
-import sys
 import unittest
 from unittest import mock
 
@@ -29,7 +25,7 @@ import numpy as np
 
 import braincell as bc
 from braincell.ion._base import KineticIon
-from braincell.ion._testing import make_shell_ion
+from braincell.ion._testing import make_shell_ion, run_float64
 from braincell.ion.chloride import Chloride, ChlorideFixed, ChlorideInitNernst, Cldif_JE2011, _FRAT, _VRAT
 
 _E_35C = -87.22198260005996  # mV, Ci 5 / Co 133.5 mM, z = -1, R and F as in brainunit
@@ -45,13 +41,12 @@ def _nernst_mv(temp):
 
 
 def _x64_report() -> dict:
-    """Float64 measurements, run in a fresh process by ``_float64_report``.
+    """Float64 measurements; ``_float64_report`` runs it at float64."""
+    with brainstate.environ.context(dt=_DT * u.ms):
+        return _x64_measurements()
 
-    After a float32 ``Cell.run``, switching to x64 in the same process can feed
-    a float32 device copy of brainunit's numpy constants to a float64 program
-    (``RuntimeProgramInputMismatch``).
-    """
-    brainstate.environ.set(precision=64, dt=_DT * u.ms)
+
+def _x64_measurements() -> dict:
     steps = 40000
     cell = _cable_cell("Cldif_JE2011", species_initializers={"Ci": 8.0 * u.mM})
     result = cell.run(dt=_DT * u.ms, duration=(steps + 1) * _DT * u.ms)
@@ -72,12 +67,7 @@ def _x64_report() -> dict:
 
 @functools.cache
 def _float64_report() -> dict:
-    code = "import json; from braincell.ion.chloride_test import _x64_report; print(json.dumps(_x64_report()))"
-    env = dict(os.environ, JAX_ENABLE_X64="1", JAX_PLATFORMS="cpu")
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
-    if result.returncode != 0:
-        raise AssertionError(result.stderr)
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    return run_float64(_x64_report)
 
 
 class ChlorideReversalTest(unittest.TestCase):

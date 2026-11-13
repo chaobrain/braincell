@@ -220,10 +220,7 @@ def _fh_cable_cell(V_init=-100.0 * u.mV, **ion_kwargs):
 
 
 def _fh_x64_report() -> dict:
-    """Float64 measurements, run in a fresh process by ``_fh_float64``."""
-    import brainstate
-
-    brainstate.environ.set(precision=64)
+    """Float64 measurements; ``_fh_float64`` runs it at float64."""
     V = _V([-60.0])
     ion = PotassiumDetailedFH(size=1, **_BOTTA_POINT)
     ion.init_state(V)
@@ -246,9 +243,7 @@ def _fh_x64_report() -> dict:
 
 @functools.cache
 def _fh_float64() -> dict:
-    return run_float64(
-        "import json; from braincell.ion.potassium_test import _fh_x64_report; print(json.dumps(_fh_x64_report()))"
-    )
+    return run_float64(_fh_x64_report)
 
 
 class PotassiumDetailedFHTest(DynamicShellIonContractTests, unittest.TestCase):

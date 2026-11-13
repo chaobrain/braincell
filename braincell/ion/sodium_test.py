@@ -171,9 +171,6 @@ class SodiumFixedContractTest(FixedIonContractTests, unittest.TestCase):
 
 def _x64_points() -> list:
     """Float64 ``dCi/dt`` with relaxation, and E and ``dCi/dt`` of Canavier's soma at t = 0."""
-    import brainstate
-
-    brainstate.environ.set(precision=64)
     relaxing = SodiumDetailed(size=1, beta=0.5 / u.ms, C_rest=12.0 * u.mM)
     relaxing.init_state(_V([-65.0]))
     rate = relaxing.derivative(jnp.full(1, 10.0) * u.mM, _V([-65.0]), total_current=jnp.full(1, -2.0) * u.uA / u.cm**2)
@@ -197,9 +194,7 @@ class SodiumDetailedTest(DynamicShellIonContractTests, unittest.TestCase):
     INWARD_V_INIT = -65.0 * u.mV
 
     def test_relaxation_and_canavier_soma_in_float64(self) -> None:
-        rate, E, soma_rate = run_float64(
-            "import json; from braincell.ion.sodium_test import _x64_points; print(json.dumps(_x64_points()))"
-        )
+        rate, E, soma_rate = run_float64(_x64_points)
         # 0.5/ms * (12 - 10) mM - 2 uA/cm2 / (F * 1 um).
         self.assertAlmostEqual(rate / 0.99979271, 1.0, delta=1e-6)
         # (RT/F) ln(145/4) at 35 degC; -1.0548806805e-3 mA/cm2 * 4 / (F * 15 um).

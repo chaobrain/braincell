@@ -19,6 +19,7 @@ import contextlib
 import re
 import unittest
 import warnings
+from fractions import Fraction
 from unittest import mock
 
 import brainstate
@@ -1640,6 +1641,269 @@ class AxialOperatorPerRunTest(unittest.TestCase):
                     expected = gradient(solver, "loop", field)
                     np.testing.assert_allclose(gradient(solver, "run", field), expected, rtol=1e-10, atol=0.0)
                     self.assertTrue(np.all(expected != 0.0))
+
+
+#: The dt of the history before a dt change, 0.025 ms, as an exact fraction of a millisecond.
+_DT_OLD = Fraction(1, 40)
+
+
+def _schedules(dt):
+    """The recording schedules of the off-grid tests at ``dt`` (0.05 or 0.1 ms): ``{name: (start, period, kwargs)}``."""
+    period = Fraction(1, 10) if dt == Fraction(1, 20) else Fraction(1, 5)
+    kilohertz = int(1 / period)
+    out = {
+        "every_dt": (Fraction(0), dt, {}),
+        "period": (Fraction(0), period, {"period": float(period) * u.ms}),
+        "frequency": (Fraction(0), period, {"frequency": kilohertz * u.kHz}),
+        "start_0.2": (Fraction(1, 5), dt, {"start": 0.2 * u.ms}),
+        "start_0.2_period": (Fraction(1, 5), period, {"start": 0.2 * u.ms, "period": float(period) * u.ms}),
+    }
+    if dt == Fraction(1, 20):
+        out["start_0.05"] = (Fraction(1, 20), dt, {"start": 0.05 * u.ms})
+    return out
+
+
+def _rising_cell(schedules):
+    """One CV (20 um x radius 10 um) with a leak at 0 mV from -65 mV: V rises at every step, so a sample's value names its step.
+
+    Records V every step as ``"all"`` and on each schedule of ``schedules`` (:func:`_schedules`).
+    """
+    branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+    cell = braincell.Cell(
+        braincell.Morphology.from_root(branch), cv_policy=braincell.CVPerBranch(1), V_init=-65.0 * u.mV
+    )
+    cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=0.0 * u.mV))
+    cell.record("all", "V")
+    for name, (_, _, kwargs) in schedules.items():
+        cell.record(name, "V", **kwargs)
+    cell.init_state()
+    return cell
+
+
+def _hand_rows(start, period, origin, dt, n_steps, since=None):
+    """Rows of a run of ``n_steps`` steps of ``dt`` from ``origin`` (exact fractions) that sample ``start + j·period``.
+
+    Each time ``s`` goes to row ``floor((s - origin) / dt + 1/2)``, the step at which an event at ``s`` acts;
+    ``since`` keeps the times ``s >= since`` only.
+    """
+    rows, j = [], 0
+    while True:
+        time = start + j * period
+        row = int(((time - origin) / dt + Fraction(1, 2)).__floor__())
+        if row >= n_steps:
+            return rows
+        if row >= 0 and (since is None or time >= since):
+            rows.append(row)
+        j += 1
+
+
+def _sampled_rows(block, every):
+    """The rows of ``every`` (the ``"all"`` block) whose values ``block`` holds."""
+    reference = np.asarray(every.values.to_decimal(u.mV)).reshape(-1)
+    rows = []
+    for value in np.asarray(block.values.to_decimal(u.mV)).reshape(-1):
+        (hit,) = np.flatnonzero(reference == value)
+        rows.append(int(hit))
+    return rows
+
+
+def _run_after(cell, history, dt, n_steps):
+    """``history`` steps of 0.025 ms, then ``n_steps`` of ``dt`` (fractions of a ms); the result of the second run."""
+    if history:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # a history shorter than a period
+            cell.run(dt=float(_DT_OLD) * u.ms, duration=float(history * _DT_OLD) * u.ms)
+    return cell.run(dt=float(dt) * u.ms, duration=float(n_steps * dt) * u.ms)
+
+
+def long_run_cell():
+    """One CV with a leak at rest, recording V every 0.05 ms (``"p2"``) and every 0.1 ms (``"p4"``)."""
+    branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+    cell = braincell.Cell(
+        braincell.Morphology.from_root(branch), cv_policy=braincell.CVPerBranch(1), V_init=-65.0 * u.mV
+    )
+    cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+    cell.record("p2", "V", period=0.05 * u.ms)
+    cell.record("p4", "V", period=0.1 * u.ms)
+    return cell
+
+
+class OffGridScheduleTest(unittest.TestCase):
+    """CELL-59a: a run off the ``dt`` grid samples where a scheduled event at the sample time acts."""
+
+    # (history steps of 0.025 ms, dt in ms): the origins 1.5, 2.5 and 0.75 steps of dt.
+    HISTORIES = ((3, Fraction(1, 20)), (5, Fraction(1, 20)), (3, Fraction(1, 10)))
+
+    def _check_rows(self, history, dt, n_steps):
+        schedules = _schedules(dt)
+        cell = _rising_cell(schedules)
+        result = _run_after(cell, history, dt, n_steps)
+        origin_ms, step, _ = cell._clock_host()
+        self.assertEqual(step, n_steps)  # the clock counts from the dt change (L93)
+        self.assertAlmostEqual(origin_ms, float(history * _DT_OLD), places=6)
+        every = result.samples["all"]
+        self.assertEqual(every.values.shape[0], n_steps)
+        rows = {}
+        for name, (start, period, _) in schedules.items():
+            block = result.samples[name]
+            rows[name] = _sampled_rows(block, every)
+            self.assertEqual(rows[name], _hand_rows(start, period, history * _DT_OLD, dt, n_steps), name)
+            if rows[name]:
+                times = np.asarray(every.time.to_decimal(u.ms))[rows[name]]
+                np.testing.assert_allclose(np.asarray(block.time.to_decimal(u.ms)), times, rtol=0, atol=1e-6)
+            else:
+                self.assertIsNone(block.first_time)
+        return rows
+
+    def test_off_grid_runs_sample_the_steps_of_events_at_the_sample_times(self):
+        # On main 73136f6, after 3 steps of 0.025 ms, steps of 0.05 ms took
+        # no "period=0.1 ms" sample in 21 steps (the float time mask) and
+        # rows 0, 2, ..., 20 (0.075 ms on, rint of 1.5 steps) in 22, and no
+        # "start=0.2 ms" sample in either.
+        for precision in (32, 64):
+            for history, dt in self.HISTORIES:
+                for n_steps in (21, 22):
+                    with (
+                        self.subTest(precision=precision, history=history, dt=float(dt), n_steps=n_steps),
+                        brainstate.environ.context(precision=precision),
+                        warnings.catch_warnings(),
+                    ):
+                        warnings.simplefilter("ignore", RuntimeWarning)  # 21 steps of a 2-step period
+                        rows = self._check_rows(history, dt, n_steps)
+                        if (history, dt) == (3, Fraction(1, 20)):
+                            # 0.1, 0.2, ... ms at 0.125, 0.225, ... ms; 0.2 ms on at 0.225 ms.
+                            self.assertEqual(rows["period"], list(range(1, n_steps, 2)))
+                            self.assertEqual(rows["start_0.2"], list(range(3, n_steps)))
+
+    def test_on_the_grid_samples_are_the_schedule_times(self):
+        for history, dt in ((0, Fraction(1, 20)), (10, Fraction(1, 20)), (4, Fraction(1, 10))):
+            for n_steps in (21, 22):
+                with self.subTest(history=history, dt=float(dt), n_steps=n_steps), warnings.catch_warnings():
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    self._check_rows(history, dt, n_steps)
+
+    def test_two_segments_sample_as_one_run(self):
+        # On main 73136f6 each 21-step segment after 3 steps of 0.025 ms took
+        # no "period=0.1 ms" sample; one 42-step run took 21 (rint of 1.5).
+        dt = Fraction(1, 20)
+        schedules = _schedules(dt)
+        for precision in (32, 64):
+            with (
+                self.subTest(precision=precision),
+                brainstate.environ.context(precision=precision),
+                warnings.catch_warnings(),
+            ):
+                warnings.simplefilter("ignore", RuntimeWarning)
+                whole_cell = _rising_cell(schedules)
+                whole = _run_after(whole_cell, 3, dt, 42)
+                split_cell = _rising_cell(schedules)
+                first = _run_after(split_cell, 3, dt, 21)
+                split = RunResult.concat((first, split_cell.run(dt=0.05 * u.ms, duration=21 * 0.05 * u.ms)))
+                for name in schedules:
+                    joined, expected = split.samples[name], whole.samples[name]
+                    self.assertEqual(joined.values.shape, expected.values.shape, name)
+                    self.assertGreater(joined.values.shape[0], 0, name)
+                    np.testing.assert_allclose(
+                        joined.values.to_decimal(u.mV), expected.values.to_decimal(u.mV), rtol=1e-12, atol=0.0
+                    )
+                    np.testing.assert_allclose(
+                        joined.time.to_decimal(u.ms), expected.time.to_decimal(u.ms), rtol=0, atol=1e-6
+                    )
+                    rows = _sampled_rows(expected, whole.samples["all"])
+                    np.testing.assert_allclose(
+                        joined.time.to_decimal(u.ms),
+                        np.asarray(whole.samples["all"].time.to_decimal(u.ms))[rows],
+                        rtol=0,
+                        atol=1e-6,
+                    )
+
+    def test_samples_fall_on_the_boundaries_of_events_at_their_times(self):
+        # One event at each schedule time (weight 1 uS, no delay) into an
+        # ExpSyn that keeps its conductance: the boundary of row k adds
+        # 1 uS between rows k and k + 1, the last one after the run.
+        for precision in (32, 64):
+            for history, dt in ((3, Fraction(1, 20)), (3, Fraction(1, 10))):
+                for name, (start, period, kwargs) in _schedules(dt).items():
+                    if name == "frequency":
+                        continue
+                    with (
+                        self.subTest(precision=precision, history=history, dt=float(dt), schedule=name),
+                        brainstate.environ.context(precision=precision),
+                        warnings.catch_warnings(),
+                    ):
+                        warnings.simplefilter("ignore", RuntimeWarning)
+                        self._check_event_rows(history, dt, start, period, kwargs)
+
+    def _check_event_rows(self, history, dt, start, period, kwargs):
+        n_steps = 21
+        origin = history * _DT_OLD
+        end = origin + n_steps * dt
+        times = []
+        while start + len(times) * period < end:
+            times.append(float(start + len(times) * period))
+        branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+        cell = braincell.Cell(
+            braincell.Morphology.from_root(branch), cv_policy=braincell.CVPerBranch(1), V_init=-65.0 * u.mV
+        )
+        cell.paint(AllRegion(), mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+        cell.place(at(0, 0.5), mech.Synapse("ExpSyn", name="s", tau=1e9 * u.ms, e=-65.0 * u.mV))
+        cell.record("g", braincell.observe.synapse(name="s").state("g"))
+        cell.record("sampled", braincell.observe.synapse(name="s").state("g"), **kwargs)
+        braincell.connect(
+            "c",
+            source=braincell.EventSequence.from_times([np.asarray(times) * u.ms]),
+            synapse=cell.synapses["s"],
+            weight=1.0 * u.uS,
+        )
+        cell.init_state()
+        result = _run_after(cell, history, dt, n_steps)
+        g = np.asarray(result.samples["g"].values.to_decimal(u.uS), dtype=float).reshape(-1)
+        self.assertEqual(g.shape, (n_steps,))
+        after = float(np.asarray(cell.synapses["s"].get("g").to_decimal(u.uS)).reshape(-1)[0])  # L93
+        increments = np.diff(np.r_[g, after])
+        event_rows = np.flatnonzero(increments > 0.5).tolist()
+        self.assertTrue(np.allclose(increments[event_rows], 1.0))
+        sampled = result.samples["sampled"]
+        step_times = np.asarray(result.samples["g"].time.to_decimal(u.ms))
+        sample_rows = [int(np.argmin(np.abs(step_times - t))) for t in np.asarray(sampled.time.to_decimal(u.ms))]
+        self.assertEqual(sample_rows, _hand_rows(start, period, origin, dt, n_steps))
+        # The events from the dt change on act in this run, the earlier ones
+        # in the history's (CELL-55); each sample time from it on is sampled
+        # where its event acts.
+        self.assertEqual(event_rows, _hand_rows(start, period, origin, dt, n_steps, since=origin))
+
+    def test_a_long_run_takes_each_sample_once(self):
+        # On main 73136f6 the float time mask took extra samples from about
+        # 1e6 steps on: 21 steps after 1e6 took 21 and 16 samples (float64),
+        # 21 and 12 (float32), for 11 and 6.
+        for precision in (32, 64):
+            with self.subTest(precision=precision), brainstate.environ.context(precision=precision):
+                cell = long_run_cell()
+                cell.init_state()
+                long = cell.run(dt=DT, duration=1_000_000 * DT)
+                self.assertEqual(cell._clock_host()[1], 1_000_000)
+                self.assertEqual([long.samples[n].values.shape[0] for n in ("p2", "p4")], [500_000, 250_000])
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    short = cell.run(dt=DT, duration=21 * DT)
+                self.assertEqual(cell._clock_host()[1], 1_000_021)
+                self.assertEqual([short.samples[n].values.shape[0] for n in ("p2", "p4")], [11, 6])
+
+    def test_a_cell_reset_to_another_origin_samples_for_it(self):
+        # One Cell, 1.5 steps off the 0.05 ms grid and, after reset_state(),
+        # 2.5 steps off it: the second run is compiled for its own origin (L40).
+        dt = Fraction(1, 20)
+        schedules = _schedules(dt)
+        cell = _rising_cell(schedules)
+        rows = {}
+        for history in (3, 5):
+            if history == 5:
+                cell.reset_state()
+            result = _run_after(cell, history, dt, 22)
+            rows[history] = {name: _sampled_rows(result.samples[name], result.samples["all"]) for name in schedules}
+            for name, (start, period, _) in schedules.items():
+                self.assertEqual(rows[history][name], _hand_rows(start, period, history * _DT_OLD, dt, 22), name)
+        self.assertNotEqual(rows[3]["period"], rows[5]["period"])
 
 
 if __name__ == "__main__":

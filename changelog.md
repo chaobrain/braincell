@@ -2236,6 +2236,28 @@
   a `VoltageCrossingSource` with a threshold of its own carries the voltage
   before each step through the run loop: one more device copy per step on
   GPU.
+- A recording samples in whole steps of the grid from time 0, so a
+  standalone `Cell.run` whose steps are off that grid samples where a
+  scheduled event at the sample time acts, and a long run takes each sample
+  once (CELL-59a). A run at a `dt` the time reached is not a multiple of
+  steps from that time (CELL-48). Its samples were picked by one of two
+  rules, both wrong there: a schedule with `start` 0 whose period divides
+  the step count rounded the origin half to even, and the others matched
+  float times, which took none. On main `73136f6`, in float32 and float64,
+  after 3 steps of 0.025 ms, at `dt = 0.05 ms` with `period=0.1 ms`, 21
+  steps took no sample and 22 steps took them from 0.075 ms; both now take
+  the samples of 0.1, 0.2, ... ms at 0.125, 0.225, ... ms, where an event at
+  each time acts (10 and 11 samples). With `start=0.2 ms` they took none
+  and now take 18 and 19, from 0.225 ms. The float match also took extra
+  samples on the grid once a run had gone about 1e6 steps: at
+  `dt = 0.025 ms`, a 1e6-step `Network.run` took 500,002 samples of
+  `period=0.05 ms` in float64 and 510,938 in float32, for 500,000, and the
+  21 steps after it took 21, for 11. Each sample is now taken once. Runs on
+  the grid sample as before, bit for bit on the machine that tested them.
+  Where `dt` changes, each run samples its own steps only: a sample time
+  within half a new step before the change is taken by both runs, and one
+  midway between two steps of a run off the grid, followed by a run at a
+  smaller `dt`, by neither.
 
 ### Documentation
 

@@ -407,6 +407,17 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     compiled for that hand-over, which the segments that follow at that
     ``dt`` keep. A traced run has no host clock and keeps the grid from
     time 0.
+
+    The recording schedules sample the steps ``start + j·period`` of the
+    grid from time 0, in whole steps. Off that grid, each sample is taken
+    on the step a scheduled event at its time acts on: the origin counts
+    as :func:`_sample_origin_step` steps, which the loop of a fixed-shape
+    schedule is compiled for, and the other schedules select their rows on
+    the host (:func:`_sample_rows`). Each run selects among its own steps
+    only, so where ``dt`` changes a sample time within half a new step
+    before the change is taken by both runs, and one midway between two
+    steps of a run off the grid, followed by a run at a smaller ``dt``, by
+    neither (CELL-59a).
     """
     from braincell.network.event import _prepare_netstim_schedules, _schedule_horizon
 
@@ -479,11 +490,14 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
         )
 
     samples = {}
+    # The schedules other than the fixed-shape ones are only run untraced,
+    # with the host clock: row k is the step `first_step + k` from time 0.
+    first_step = step + _sample_origin_step(origin_ms, dt) if with_spikes else None
     for compiled, fixed, (values, first_time) in zip(compiled_recordings, plan.fixed_schedules, recorded):
         if not fixed:
-            mask = _recording_time_mask(times, compiled.schema)
-            values = values[mask]
-            first_time = None if not np.any(mask) else times[int(np.flatnonzero(mask)[0])]
+            rows = _sample_rows(first_step, n_steps, compiled.schema, dt)
+            values = values[rows.start : rows.stop : rows.step]
+            first_time = times[rows[0]] if rows else None
         samples[compiled.spec.name] = SampleBlock(
             values=values,
             schema=compiled.schema,
@@ -811,6 +825,8 @@ def _make_run_loop(
     period_steps = tuple(_recording_steps(compiled.schema.period, dt) for compiled in compiled_recordings)
     origin_ms, origin_step = (None, 0) if arrival_origin is None else arrival_origin
     block_steps = None if spike_port is None else spike_port.block_steps
+    # Off the grid, the step of the origin for the recording schedules, a constant of the loop (CELL-59a).
+    sample_origin = None if arrival_origin is None else _sample_origin_step(origin_ms, dt)
 
     def _run_loop(values):
         with brainstate.environ.context(dt=dt), arrivals_from(origin_ms, origin_step), handed_over(handover):
@@ -920,7 +936,7 @@ def _make_run_loop(
         for index, fixed in enumerate(fixed_schedules):
             if fixed:
                 indices = _fixed_recording_indices(
-                    origin, step, dt=dt, period_steps=period_steps[index], n_steps=n_steps
+                    origin, step, dt=dt, period_steps=period_steps[index], n_steps=n_steps, origin_step=sample_origin
                 )
                 recorded.append((values[index][indices], times[indices[0]]))
             else:
@@ -1009,14 +1025,6 @@ def _duration_steps(duration, dt) -> int:
     return steps
 
 
-def _recording_time_mask(times, schema) -> np.ndarray:
-    time_ms = np.asarray(times.to_decimal(u.ms), dtype=float)
-    start_ms = _scalar_decimal(schema.schedule_start, u.ms)
-    period_ms = _scalar_decimal(schema.period, u.ms)
-    relative = (time_ms - start_ms) / period_ms
-    return (time_ms >= start_ms - 1e-9) & np.isclose(relative, np.rint(relative), rtol=1e-6, atol=1e-6)
-
-
 def _recording_steps(value, dt) -> int:
     return int(round(_scalar_decimal(value, u.ms) / _scalar_decimal(dt, u.ms)))
 
@@ -1041,14 +1049,52 @@ def _differentiable_schedule_issues(compiled_recordings, *, dt, n_steps: int) ->
     return tuple(issues)
 
 
-def _fixed_recording_indices(origin, step, *, dt, period_steps: int, n_steps: int):
+def _fixed_recording_indices(origin, step, *, dt, period_steps: int, n_steps: int, origin_step=None):
     """Indices of the steps on the recording grid ``0, period, 2·period, …`` (in steps from ``t = 0``).
 
     The run starts ``step`` steps after the clock's ``origin``, which is 0
     unless ``dt`` changed: the step count places the run on the grid
-    exactly, however long the run has been (CELL-45).
+    exactly, however long the run has been (CELL-45). An origin on the
+    grid is ``rint(origin / dt)`` steps from time 0; one off it is given as
+    ``origin_step`` (:func:`_sample_origin_step`), which the loop is
+    compiled for (CELL-59a).
     """
-    dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
-    start_step = step + jnp.rint(origin.to_decimal(u.ms) / dt_ms).astype(jnp.int32)
+    if origin_step is None:
+        dt_ms = float(np.asarray(dt.to_decimal(u.ms), dtype=float).reshape(()))
+        start_step = step + jnp.rint(origin.to_decimal(u.ms) / dt_ms).astype(jnp.int32)
+    else:
+        start_step = step + origin_step
     offset = jnp.mod(-start_step, period_steps)
     return offset + jnp.arange(n_steps // period_steps, dtype=jnp.int32) * period_steps
+
+
+def _sample_origin_step(origin_ms: float, dt) -> int:
+    """The clock origin ``origin_ms`` in steps of ``dt`` from time 0, a tie rounded down, for the recording schedules.
+
+    A schedule samples at the times ``s = L·dt`` (``start + j·period``). A
+    run from an origin off the grid takes the sample at ``s`` on its step
+    ``round_half_up((s - origin) / dt)`` from the origin, where a scheduled
+    event at ``s`` acts (CELL-46, CELL-48): the step ``L - d`` with ``d``
+    this value, ``-round_half_up(-origin / dt)``. A sample midway between
+    two steps goes to the later one. On the grid ``d`` is ``origin / dt``.
+    ``origin_ms`` is the float64 origin of :func:`_float64_clock`; the
+    floor-based host rounding holds for the negative ratio (CELL-59a).
+    """
+    from braincell.network.event import round_half_up_steps_host
+
+    return -int(round_half_up_steps_host(np.asarray(-origin_ms / _scalar_decimal(dt, u.ms))))
+
+
+def _sample_rows(first_step: int, n_steps: int, schema, dt) -> range:
+    """The rows of a run's ``n_steps`` steps that ``schema`` samples; row ``k`` is the step ``first_step + k`` from time 0.
+
+    The schedule samples the steps ``start + j·period`` from time 0,
+    ``j >= 0``, in steps of ``dt``: the rows ``k`` for which
+    ``first_step + k - start`` is a multiple of ``period`` and not
+    negative. Integer steps, not times, so a run of any length takes each
+    sample once (CELL-59a).
+    """
+    start = _recording_steps(schema.schedule_start, dt)
+    period = _recording_steps(schema.period, dt)
+    lag = start - int(first_step)
+    return range(lag if lag > 0 else lag % period, n_steps, period)

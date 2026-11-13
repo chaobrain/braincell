@@ -1631,21 +1631,22 @@ class Network:
         for name, population in self.populations.items():
             if population.kind != "cell":
                 if population.kind == "netstim":
-                    table = population.model._event_table(until_ms=stop_ms)
+                    # Only the window's events: not a table of every generated one.
+                    source_id, event_ms = population.model._window_events(start_ms, stop_ms)
                 else:
                     table = population.model.events
-                event_ms = np.asarray(table.time.to_decimal(u.ms), dtype=float)
-                selected = (event_ms >= start_ms) & (event_ms < stop_ms)
-                selected_rows = np.flatnonzero(selected)
-                if selected_rows.size:
-                    order = np.lexsort((table.source_index[selected_rows], event_ms[selected_rows]))
-                    selected_rows = selected_rows[order]
+                    event_ms = np.asarray(table.time.to_decimal(u.ms), dtype=float)
+                    selected_rows = np.flatnonzero((event_ms >= start_ms) & (event_ms < stop_ms))
+                    source_id, event_ms = table.source_index[selected_rows], event_ms[selected_rows]
+                if source_id.size:
+                    order = np.lexsort((source_id, event_ms))
+                    source_id, event_ms = source_id[order], event_ms[order]
                 port = "spike" if population.kind == "netstim" else "event"
-                count = np.ones(int(selected_rows.size), dtype=np.int64)
+                count = np.ones(int(source_id.size), dtype=np.int64)
                 events[name] = {
                     port: EventSeries(
-                        time=table.time[selected_rows],
-                        source_id=table.source_index[selected_rows],
+                        time=u.Quantity(event_ms, u.ms),
+                        source_id=source_id,
                         count=count,
                         metadata={"population": name, "port": port},
                     )

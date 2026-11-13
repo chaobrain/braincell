@@ -559,6 +559,24 @@ class NetStim(EventSource):
             time=self._event_times_ms[source_index, event_index] * u.ms,
         )
 
+    def _window_events(self, start_ms: float, stop_ms: float) -> tuple[np.ndarray, np.ndarray]:
+        """Sources and float64 times (ms) of the events in ``[start_ms, stop_ms)``.
+
+        The rows are those of :meth:`_event_table` in the window, in its
+        order (source, then event). A source's events are a prefix of its
+        row, at times that do not decrease, so two binary searches per
+        source find them: the work grows with the sources and the events
+        returned, not with how many were generated.
+        """
+        self._ensure_schedule(until_ms=stop_ms)
+        times = self._event_times_ms
+        valid = np.minimum(self.number, times.shape[1]).astype(np.int64)
+        first = _first_at_or_after(times, valid, start_ms)
+        count = np.maximum(_first_at_or_after(times, valid, stop_ms) - first, 0)
+        source = np.repeat(np.arange(self.size, dtype=np.int64), count)
+        column = np.arange(source.size, dtype=np.int64) + np.repeat(first - (np.cumsum(count) - count), count)
+        return source, times[source, column]
+
     @property
     def _schedule_key(self) -> tuple[int, int]:
         """Cache token of the generated events: effective seed and width."""
@@ -1413,6 +1431,24 @@ def _build_event_schedule(*, start_ms, number, interval_ms, noise, seed, width=N
             axis=1,
         )
     return start_ms[:, None] + offsets, mask
+
+
+def _first_at_or_after(times: np.ndarray, valid: np.ndarray, value: float) -> np.ndarray:
+    """Per row, the first column ``j < valid`` with ``times[row, j] >= value`` (else ``valid``).
+
+    ``times[row, :valid[row]]`` must not decrease. One bisection step for
+    every unresolved row at a time: about ``log2(width)`` reads per row.
+    """
+    lo = np.zeros(valid.shape, dtype=np.int64)
+    hi = valid.copy()
+    rows = np.flatnonzero(lo < hi)
+    while rows.size:
+        mid = (lo[rows] + hi[rows]) // 2
+        below = times[rows, mid] < value
+        lo[rows[below]] = mid[below] + 1
+        hi[rows[~below]] = mid[~below]
+        rows = rows[lo[rows] < hi[rows]]
+    return lo
 
 
 def _estimated_width(source: NetStim, until_ms: float) -> int:

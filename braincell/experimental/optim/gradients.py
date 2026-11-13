@@ -974,7 +974,14 @@ def _diagnostic_operator(functional_step, carry):
         return None
     values, tangents = carry[0], carry[1]
     operator, operator_tangents = functional_step.build_operator_with_tangents(values, tangents)
-    _operator, pullback = jax.vjp(functional_step.operator.build, values)
+    hoisted = functional_step.operator
+    _operator, builder_pullback = jax.vjp(hoisted.build_from, hoisted.select(values))
+
+    def pullback(operator_cotangent):
+        # Scatter the builder-input cotangents back to the step's state order.
+        (builder_cotangents,) = builder_pullback(operator_cotangent)
+        return dict(zip(hoisted.value_indices, builder_cotangents))
+
     return operator, operator_tangents, pullback
 
 
@@ -1057,11 +1064,12 @@ def _local_loss_gradient(functional_step, state_values, step_data, operator=None
         _next_values, local_loss = functional_step.call_with_operator(values, step_data, op)
         return local_loss
 
-    state_signal, operator_signal = jax.grad(loss_with_operator, argnums=(0, 1), allow_int=True)(
-        state_values, operator
+    state_signal, operator_signal = jax.grad(loss_with_operator, argnums=(0, 1), allow_int=True)(state_values, operator)
+    through_operator = pullback(operator_signal)
+    return tuple(
+        jax.tree.map(_add_cotangent, signal, through_operator[index]) if index in through_operator else signal
+        for index, signal in enumerate(state_signal)
     )
-    (through_operator,) = pullback(operator_signal)
-    return jax.tree.map(_add_cotangent, state_signal, through_operator)
 
 
 def _add_cotangent(left, right):

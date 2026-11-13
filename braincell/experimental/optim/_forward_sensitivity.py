@@ -49,8 +49,15 @@ class OperatorInput(NamedTuple):
 
     def build(self, step_state_values):
         """Return the operator leaves for ``step_state_values`` (functional-step order)."""
-        values = tuple(step_state_values[index] for index in self.value_indices)
-        _new_values, leaves = self.builder.jaxpr_call(values, None)
+        return self.build_from(self.select(step_state_values))
+
+    def select(self, step_state_values):
+        """The builder's inputs: the values of the states it reads, in its own order."""
+        return tuple(step_state_values[index] for index in self.value_indices)
+
+    def build_from(self, builder_values):
+        """Return the operator leaves for the builder's own input values."""
+        _new_values, leaves = self.builder.jaxpr_call(builder_values, None)
         return leaves
 
 
@@ -98,8 +105,10 @@ class FunctionalStep(NamedTuple):
         """
         if self.operator is None:
             return None, None
-        operator, linear_map = jax.linearize(self.operator.build, state_values)
-        return operator, jax.vmap(linear_map)(state_tangents)
+        # Linearize in the builder's inputs only: the other states (some
+        # integer or boolean) do not reach the operator.
+        operator, linear_map = jax.linearize(self.operator.build_from, self.operator.select(state_values))
+        return operator, jax.vmap(linear_map)(self.operator.select(state_tangents))
 
 
 class ForwardSensitivityResult(NamedTuple):

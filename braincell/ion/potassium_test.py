@@ -24,6 +24,7 @@ import numpy as np
 
 from braincell._base_ion import Ion
 from braincell._base_neuron import HHTypedNeuron
+from braincell._constants import FARADAY_CONSTANT, GAS_CONSTANT
 from braincell.channel.potassium import K_TM1991
 from braincell.ion._base import InitNernstIon
 from braincell.ion._testing import V as _V, DynamicShellIonContractTests, FixedIonContractTests, run_float64
@@ -147,7 +148,7 @@ class PotassiumInitNernstTest(unittest.TestCase):
 
         self.assertIsNone(k.E)
         k.init_state(V)
-        expected = u.gas_constant * k.temp / (k.valence * u.faraday_constant) * u.math.log(k.Co / k.Ci)
+        expected = GAS_CONSTANT * k.temp / (k.valence * FARADAY_CONSTANT) * u.math.log(k.Co / k.Ci)
         self.assertTrue(u.math.allclose(k.E.to_decimal(u.mV), expected.to_decimal(u.mV), atol=1e-6))
 
         first_E = k.E
@@ -220,10 +221,7 @@ def _fh_cable_cell(V_init=-100.0 * u.mV, **ion_kwargs):
 
 
 def _fh_x64_report() -> dict:
-    """Float64 measurements, run in a fresh process by ``_fh_float64``."""
-    import brainstate
-
-    brainstate.environ.set(precision=64)
+    """Float64 measurements; ``_fh_float64`` runs it at float64."""
     V = _V([-60.0])
     ion = PotassiumDetailedFH(size=1, **_BOTTA_POINT)
     ion.init_state(V)
@@ -246,9 +244,7 @@ def _fh_x64_report() -> dict:
 
 @functools.cache
 def _fh_float64() -> dict:
-    return run_float64(
-        "import json; from braincell.ion.potassium_test import _fh_x64_report; print(json.dumps(_fh_x64_report()))"
-    )
+    return run_float64(_fh_x64_report)
 
 
 class PotassiumDetailedFHTest(DynamicShellIonContractTests, unittest.TestCase):

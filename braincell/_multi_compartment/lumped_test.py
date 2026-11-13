@@ -16,12 +16,7 @@
 """Lumped (point) Cells: ``Cell.point`` and ``cv_policy=Lumped()``."""
 
 import functools
-import gc
-import json
-import os
 import re
-import subprocess
-import sys
 import unittest
 import warnings
 from unittest import mock
@@ -38,6 +33,7 @@ from braincell._multi_compartment import cell as cell_module, lumped
 from braincell._single_compartment.point import PointNeuron
 from braincell.filter import AllRegion, RootLocation, at
 from braincell.quad._util import split_diffeq_states
+from braincell.ion._testing import run_float64
 
 LENGTH = 20.0 * u.um
 RADIUS = 10.0 * u.um
@@ -449,16 +445,6 @@ class LumpedKineticIonTest(unittest.TestCase):
                 self.assertTrue(np.all(np.isfinite(cell.V.value.to_decimal(u.mV))))
 
     def test_matches_the_cable_twin_under_staggered(self) -> None:
-        # JAX 0.12 reuses a NumPy constant (here ``u.gas_constant``) that a live
-        # program of one precision captured in a later eager op of the other,
-        # which fails with RuntimeProgramInputMismatch. Earlier tests' Cells
-        # hold float32 programs; free them and start the float64 run clean.
-        # This test's float64 Cells hold such programs too, and under unittest
-        # nothing else frees them before the float32 tests that follow (pytest's
-        # conftest hook does): collect them when the test ends (CELL-64).
-        gc.collect()
-        jax.clear_caches()
-        self.addCleanup(gc.collect)
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
             reference = {dt: _final_values(_kinetic_pool_cell("staggered"), dt) for dt in (0.005, 0.001)}
             for name in (None, "rk4", "ind_exp_euler", "exp_euler", "backward_euler"):
@@ -1794,7 +1780,7 @@ def _lumped_synapse_run(model, solver, dt_ms, lumped_cell=True):
 
 
 def _lumped_gaba_report() -> dict:
-    """CELL-31c on G; run in a float64 subprocess by :func:`_lumped_gaba_numbers`.
+    """CELL-31c on G; :func:`_lumped_gaba_numbers` runs it at float64.
 
     ``{"<solver>/<dt>": (max |V - reference| in mV, max |Ci - reference| in mM)}``
     against rk4 at dt = 0.00025 ms.
@@ -1815,17 +1801,7 @@ def _lumped_gaba_report() -> dict:
 
 @functools.cache
 def _lumped_gaba_numbers() -> dict:
-    # In a subprocess: a Cldif_JE2011 Cell run at one precision makes the next
-    # one at the other fail in one process (see the kinetic-twin test above).
-    code = (
-        "import json; from braincell._multi_compartment.lumped_test import _lumped_gaba_report; "
-        "print(json.dumps(_lumped_gaba_report()))"
-    )
-    env = dict(os.environ, JAX_ENABLE_X64="1", JAX_PLATFORMS="cpu")
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
-    if result.returncode != 0:
-        raise AssertionError(result.stderr)
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    return run_float64(_lumped_gaba_report)
 
 
 class LumpedBlockSolverPointSynapseTest(unittest.TestCase):

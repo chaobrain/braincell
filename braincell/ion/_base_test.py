@@ -26,6 +26,7 @@ import numpy as np
 
 from braincell._base_channel import Channel
 from braincell._base_channel import IonInfo
+from braincell._constants import FARADAY_CONSTANT, GAS_CONSTANT
 from braincell.ion import Calcium
 from braincell.ion import CalciumDetailed
 from braincell.ion import PotassiumDetailedFH
@@ -277,7 +278,7 @@ class IonTemplateTest(unittest.TestCase):
 
         ion.init_state(V)
         first_E = ion.E
-        expected = u.gas_constant * ion.temp / (ion.valence * u.faraday_constant) * u.math.log(ion.Co / ion.Ci)
+        expected = GAS_CONSTANT * ion.temp / (ion.valence * FARADAY_CONSTANT) * u.math.log(ion.Co / ion.Ci)
         self.assertTrue(u.math.allclose(first_E.to_decimal(u.mV), expected.to_decimal(u.mV), atol=1e-6))
 
         ion.Ci = braintools.init.param(1.0e-3 * u.mM, ion.varshape, allow_none=False)
@@ -402,9 +403,7 @@ class IonTemplateTest(unittest.TestCase):
         info = ion.pack_info()
 
         self.assertTrue(u.math.allclose(info.Ci, ion.Ci.value, atol=1e-12 * u.mM))
-        expected_E = (u.gas_constant * ion.temp / (ion.valence * u.faraday_constant)) * u.math.log(
-            ion.Co / ion.Ci.value
-        )
+        expected_E = (GAS_CONSTANT * ion.temp / (ion.valence * FARADAY_CONSTANT)) * u.math.log(ion.Co / ion.Ci.value)
         self.assertTrue(u.math.allclose(info.E.to_decimal(u.mV), expected_E.to_decimal(u.mV), atol=1e-6))
 
     def test_kinetic_ion_species_initializers_override_declared_inits(self) -> None:
@@ -718,7 +717,7 @@ class NernstHelperTest(unittest.TestCase):
     def test_nernst_matches_the_written_formula(self) -> None:
         Ci, Co = 0.1 * u.mM, 2.0 * u.mM
         temp, valence = u.celsius2kelvin(36.0), 2
-        expected = (u.gas_constant * temp / (valence * u.faraday_constant)) * u.math.log(Co / Ci)
+        expected = (GAS_CONSTANT * temp / (valence * FARADAY_CONSTANT)) * u.math.log(Co / Ci)
         self.assertTrue(u.math.allclose(ionbase._nernst(Ci=Ci, Co=Co, temp=temp, valence=valence), expected))
 
     def test_all_three_templates_agree_on_the_same_inputs(self) -> None:
@@ -767,7 +766,7 @@ class DerivedInitialValueTest(unittest.TestCase):
 # ``_cached_total_current`` when set -- into ``dCi/dt``. The rates below come
 # from each model's equation; a new dynamic ion fails
 # ``test_every_dynamic_ion_is_classified`` until it is listed in one table.
-_F = u.faraday_constant
+_F = FARADAY_CONSTANT
 
 
 def _mod_shell_rate(k, depth):

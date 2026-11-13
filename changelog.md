@@ -957,6 +957,25 @@
   recording keeps no copy of the state. Declare the recording before
   `init_state()`, as other recordings; a view without a rule raises
   `TypeError`, an unknown state `KeyError`.
+- **`Network.prepare_run(..., duration=...)`** prepares the `update()`
+  calls that follow for `n = duration / dt` steps (CELL-66). Without it
+  (the default, unchanged) `prepare_run` generates each `NetStim`'s events
+  as far as the step limit, about `2**31 * dt / interval` per source, so a
+  large population with an unlimited train (`number=1e9`, as in NEURON)
+  ran out of memory: on main e5ad6ed 100 such sources at `dt = 0.025 ms`
+  and `interval = 10 ms` raised `MemoryError` under a 24 GiB address limit
+  (about 77 GB extrapolated); with `duration=10 * u.ms` they take 861 MB,
+  0.24 s to the first `update()`. The steps within the duration are those
+  of a `prepare_run` without it, bit for bit. The first step after them is the
+  stop: an eager `update()` there raises `ValueError` naming it, before
+  anything changes, and in a compiled loop a step at or past it multiplies
+  every Cell's dynamic states and spikes by NaN, so the loss and its
+  gradient turn NaN rather than silently missing the events.
+  `prepare_run` again continues for a new duration, and `reset_state`
+  runs the same steps again; a loop compiled before a second
+  `prepare_run` keeps the old stop. Standalone `Cell.update()` and
+  `Cell.run` traced under `jax.jit` still generate every event (docs
+  only).
 
 ### Changes & Improvements
 
@@ -2270,11 +2289,52 @@
   would be lost. Call
   `cell.connections.prepare_runtime(dt)` once before, or `update()` or
   `run()` once outside it. And an `update()` at another `dt` than its live
-  connections have raises `ValueError`, as `Cell.run` does. A plasticity
+  connections have is refused as `Cell.run` refuses it (`ValueError`; since
+  CELL-76 only while one of their events is in flight). A plasticity
   rule on a live source, which runs only in a `Network`, is refused at the
   start of `update()` (`NotImplementedError`, as before), no longer after
   the scheduled rows' events of the step were written. A Cell without live
   connections steps as before.
+- Three entries of a standalone Cell's live connections (from its
+  `event_outputs` to its synapses) and a run back at an earlier `dt` behave
+  as documented (CELL-76). On main `8bb8721`, in float64, with a live self
+  connection and `dt = 0.1 ms`:
+  - `Cell.run` traced (inside `jit` or `grad`) before the connection's
+    delay history existed created it inside the trace. With a delay of
+    0.5 ms, two jitted 25-step runs lost the event of step 20, which
+    arrives in the second one (g 0.2 instead of 0.25 uS), and every later
+    `run`, `update()`, `prepare_runtime(dt)` or `reset_state()` raised
+    brainstate's `TraceContextError`; only `reset()` recovered. Such a run
+    now raises `RuntimeError` before any state changes, as a traced
+    `update()` does. After `cell.connections.prepare_runtime(dt)`, called
+    once before the traced function, the same function runs, bit for bit
+    as the eager runs (0.25 uS). A connection with no delay of a step runs
+    traced as before.
+  - `update()` on a Cell in a `Network` stepped that Cell alone and
+    delivered none of its connections: 30 calls left g at 0 where the
+    Network's run delivered 0.15 uS, and a Cell without live connections
+    went out of step with the others. It now raises `RuntimeError` ("Cell
+    belongs to Network ...; use Network.update() instead"), as `Cell.run`
+    does; `Network.update()` after `Network.prepare_run()` steps it, bit
+    for bit as `Network.run`.
+  - After one run, a run or `update()` at another `dt` was refused even
+    with no event in flight (a delay of 0 or after `reset_state()`), and
+    the message said to reset the cell state, which did not help; only
+    `reset()` did. The delays are now quantized again at the new `dt` when
+    none of their events is still to arrive; after `reset_state()` the run
+    is bit for bit that of a fresh Cell. While one is, the call is refused before any
+    state changes, with a message naming `reset_state()`; a traced call,
+    which cannot read the delay history, is refused with a message to run
+    once at the new `dt` outside it.
+  - A cable Cell that ran at a `dt`, then at another, then again at the
+    first with the same step count (0.025, 0.05, 0.025 ms, or off the grid
+    0.025, 0.03, 0.025 ms) raised `ValueError: Comparator raised exception
+    while sorting pytree dictionary keys.` in the third run: brainstate's
+    graph walk sorted the keys of the Cell's cache of compiled loops, and
+    two of them could not be compared (`None` against the hand-over of a
+    `dt` change). The cache is no longer walked; its keys are unchanged.
+    The third run is now bit for bit that of a Cell that compiles each
+    segment afresh. Lumped Cells did not fail.
 - Each `NetStim` and `EventSequence` event is delivered once where a run
   continues one at another `dt`, and where a `Cell` that ran on its own
   joins a `Network` (CELL-57). A `Cell.run` ended by preparing the boundary
@@ -2329,6 +2389,35 @@
   a `VoltageCrossingSource` with a threshold of its own carries the voltage
   before each step through the run loop: one more device copy per step on
   GPU.
+- A delayed event from a live source in a `Network` takes the connection
+  weight it arrives with, as in a standalone `Cell.run`, on live rows with
+  a plasticity rule, and in NEURON, whose `NetCon` weights an event at
+  delivery (CELL-69). The Network weighted each event when its source
+  fired and kept the weighted value until it arrived, so a
+  `ConnectionView.set(weight=...)` between two runs, or two `update()`
+  calls, missed the events still in their delay. On main `8bb8721`, in
+  float32 and float64, with `dt = 0.1 ms`, a Cell whose spikes in the steps
+  ending at 3.0, 4.8, 5.0 and 5.2 ms reach its own ExpSyn 0.1, 0.2 or
+  0.3 ms later, 50 steps, a weight set from 0.05 to 0.08 uS and 20 more
+  steps: the events sent before the change and arriving after it delivered
+  0.05 uS where `Cell.run` delivered 0.08 uS (at 5.0 ms with a delay of
+  0.1 ms, at 5.1 ms with 0.2 ms, at 5.0 and 5.2 ms with 0.3 ms), in
+  `Network.run`, in one-step runs and in `update()` loops. They now deliver
+  0.08 uS. For each target synapse layout, the Network now keeps the event
+  counts of the source members its delayed rows read over the longest
+  delay, weights them when they arrive, and sums them in the order the
+  queue of weighted events did. Runs that do not change a weight are
+  unchanged bit for bit on the machine that tested them, in float32 and
+  float64 and on both event backends. The delay buffer holds
+  `depth x source members` values where the queue held
+  `(depth + 1) x synapse rows`. In float64 with delays up to 80 steps, 1e6
+  rows from 1e6 sources onto 1e4 shared synapses take 624 MB (6.5 MB
+  before), and 1e6 rows from 900 sources onto 1e6 synapses take 0.58 MB
+  (648 MB before). The compiled run loop copied the whole queue twice per
+  step; it does not copy the history. Per step on one CPU core of a loaded
+  machine (main `2da3f2b`), 1e6 rows from 900 sources ran 2.0x faster onto
+  1e4 synapses and 2.7x faster onto 1e6 synapses (one clean measurement of
+  main), and 1e6 rows from 1e6 sources onto 1e4 synapses ran 10% slower.
 - A recording samples in whole steps of the grid from time 0, so a
   standalone `Cell.run` whose steps are off that grid samples where a
   scheduled event at the sample time acts, and a long run takes each sample
@@ -2351,6 +2440,18 @@
   within half a new step before the change is taken by both runs, and one
   midway between two steps of a run off the grid, followed by a run at a
   smaller `dt`, by neither.
+- A model can run at float32 while a float64 one is still alive in the same
+  process, and the reverse (OPT-17). Ions and channels that use the gas or
+  Faraday constant (every Nernst ion, the GHK flux, the calcium, chloride and
+  potassium concentration pools, `Kca1p1_MA2020_GoC`, `Kv1p5_MA2020_GrC`) raised
+  `JaxRuntimeError: RuntimeProgramInputMismatch` at the second model's
+  `init_state`, for example a float32 `Cell` with `CalciumDetailed` and
+  `CaT_HM1992` built while a float64 one that had run was kept. jaxlib 0.12
+  caches the device copy of a NumPy array per array object and hands it back
+  whatever `jax_enable_x64` is by then, and brainunit's `gas_constant` and
+  `faraday_constant` are shared 0-d arrays that a compiled program keeps;
+  braincell now holds them as NumPy scalars. Results are unchanged bit for bit
+  at both precisions on the machine that tested them.
 
 ### Documentation
 

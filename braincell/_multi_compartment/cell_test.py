@@ -17,10 +17,6 @@
 
 import dataclasses
 import functools
-import json
-import os
-import subprocess
-import sys
 import unittest
 import warnings
 from unittest import mock
@@ -54,6 +50,7 @@ from braincell import (
 )
 from braincell._compute.state import CellRuntimeState
 from braincell._multi_compartment import cell as cell_module
+from braincell.ion._testing import run_float64
 from braincell.filter import (
     AllRegion,
     BranchSlice,
@@ -1714,6 +1711,32 @@ class TestCellLifecycle(unittest.TestCase):
         cell.run(dt=0.1 * u.ms, duration=0.4 * u.ms)
         self.assertEqual(len(cell._run_loop_cache), 2)
 
+    def test_a_cable_cell_returns_to_an_earlier_dt(self):
+        """CELL-76: the third run failed while brainstate sorted the cache keys (``None`` against a hand-over)."""
+
+        def returning_cell():
+            cell = _hh_cell((1,), calcium=False)
+            cell.place(
+                at("soma", 0.5), mech.CurrentClamp(delay=0.05 * u.ms, durations=1.0 * u.ms, amplitudes=0.1 * u.nA)
+            )
+            cell.init_state()
+            return cell
+
+        for segments in (((0.025, 8), (0.05, 4), (0.025, 8)), ((0.025, 8), (0.03, 1), (0.025, 8))):
+            with self.subTest(segments=segments):
+                cell, fresh = returning_cell(), returning_cell()
+                for dt, n in segments:
+                    cell.run(dt=dt * u.ms, duration=n * dt * u.ms)
+                    fresh._run_loop_cache.clear()  # each segment of the reference compiles its own loop
+                    fresh.run(dt=dt * u.ms, duration=n * dt * u.ms)
+                self.assertEqual(len(cell._run_loop_cache), 3)  # the keys are unchanged: the return is a new shape
+                states, reference = brainstate.graph.states(cell), brainstate.graph.states(fresh)
+                self.assertEqual(states.keys(), reference.keys())
+                for path, state in states.items():
+                    for leaf, other in zip(jax.tree.leaves(state.value), jax.tree.leaves(reference[path].value)):
+                        np.testing.assert_array_equal(np.asarray(leaf), np.asarray(other), err_msg=str(path))
+                self.assertGreater(float(np.max(np.asarray(cell.V.value.to_decimal(u.mV)))), -64.0)  # the clamp acted
+
     def test_reset_clears_run_loop_cache(self):
         cell = _cell_with_recording()
         cell.init_state()
@@ -2270,7 +2293,7 @@ def _cahva_gates(cell):
 
 
 def _kinetic_integration_report() -> dict:
-    """The CELL-32 measurements; run in a float64 subprocess by :func:`_kinetic_integration_numbers`."""
+    """The CELL-32 measurements; :func:`_kinetic_integration_numbers` runs it at float64."""
 
     def run(order, solver, dt_ms):
         cell = _kinetic_calcium_cell(order, solver)
@@ -2305,19 +2328,7 @@ def _kinetic_integration_report() -> dict:
 
 @functools.cache
 def _kinetic_integration_numbers() -> dict:
-    # In a subprocess: in one process, a kinetic-ion Cell stepped under
-    # "integration" at one precision makes the next one fail at the other
-    # (JaxRuntimeError at init_state; on main too), which would break the
-    # float32 tests that follow.
-    code = (
-        "import json; from braincell._multi_compartment.cell_test import _kinetic_integration_report; "
-        "print(json.dumps(_kinetic_integration_report()))"
-    )
-    env = dict(os.environ, JAX_ENABLE_X64="1", JAX_PLATFORMS="cpu")
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
-    if result.returncode != 0:
-        raise AssertionError(result.stderr)
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    return run_float64(_kinetic_integration_report)
 
 
 def _soma_tree():
@@ -2353,8 +2364,8 @@ class UpdateLiveConnectionTest(unittest.TestCase):
     def _spike_steps(k):
         return (np.array([0, 9 - k, 19 - k]), np.array([10 - k, 20 - k, 29]))
 
-    def _cell(self, delay_ms, k, *, record=False):
-        spike_steps = self._spike_steps(k)
+    def _cell(self, delay_ms, k, *, record=False, init=True, spike_steps=None, scheduled=True):
+        spike_steps = self._spike_steps(k) if spike_steps is None else spike_steps
         dt = self.DT
 
         def solver(cell):
@@ -2377,13 +2388,15 @@ class UpdateLiveConnectionTest(unittest.TestCase):
             weight=self.W * u.uS,
             delay=delay_ms * u.ms,
         )
-        braincell.connect(
-            "scheduled",
-            source=braincell.EventSequence.from_times([np.asarray(self.SCHEDULED_MS) * u.ms]),
-            synapse=cell.synapses["s"][[0]],
-            weight=self.W_SCHEDULED * u.uS,
-        )
-        cell.init_state()
+        if scheduled:
+            braincell.connect(
+                "scheduled",
+                source=braincell.EventSequence.from_times([np.asarray(self.SCHEDULED_MS) * u.ms]),
+                synapse=cell.synapses["s"][[0]],
+                weight=self.W_SCHEDULED * u.uS,
+            )
+        if init:
+            cell.init_state()
         return cell
 
     def _expected(self, k):
@@ -2511,10 +2524,16 @@ class UpdateLiveConnectionTest(unittest.TestCase):
             )
             for call in cell._get_connection_store()._calls
         )
-        return states, buffers, calls
+        histories = tuple(
+            None if call.live_history is None else np.asarray(call.live_history.value).copy()
+            for call in cell._get_connection_store()._calls
+        )
+        return states, buffers, calls, histories
 
     def _assert_unchanged(self, before, after):
         self.assertEqual(before[2], after[2])
+        for history, other in zip(before[3], after[3]):
+            np.testing.assert_array_equal(history, other, err_msg="live history")
         self.assertEqual(before[0].keys(), after[0].keys())
         for key, leaves in before[0].items():
             for leaf, other in zip(leaves, after[0][key]):
@@ -2555,17 +2574,101 @@ class UpdateLiveConnectionTest(unittest.TestCase):
             self._assert_unchanged(before, self._fingerprint(cell))
             self.assertTrue(all(call.live_dt_ms is None for call in cell._get_connection_store()._calls))
 
-    def test_a_new_dt_is_refused_as_run_refuses_it(self):
+    def _jit_run(self, cell, dt, n):
+        return brainstate.transform.jit(lambda: cell.run(dt=dt * u.ms, duration=n * dt * u.ms) and None)
+
+    def test_a_traced_run_needs_the_delay_history_first(self):
+        """CELL-76: created in the trace, the history would die with it, and the events in flight at its end."""
+        for delay, k in self.DELAYS:
+            with self.subTest(delay=delay), jax.enable_x64(True), brainstate.environ.context(precision=64):
+                cell = self._cell(delay, k)
+                run = self._jit_run(cell, self.DT, 10)
+                if k > 0:
+                    before = self._fingerprint(cell)
+                    with self.assertRaisesRegex(RuntimeError, r"Cell\.run\(\) is traced") as caught:
+                        run()
+                    self._assert_unchanged(before, self._fingerprint(cell))
+                    self.assertIn("prepare_runtime(dt)", str(caught.exception))
+                    # The way out the message gives; the same function is then accepted.
+                    cell.connections.prepare_runtime(self.DT * u.ms)
+                eager = self._cell(delay, k)
+                rows, reference = [], []
+                for _ in range(3):  # arrivals on both sides of the call boundaries 10 and 20
+                    run()
+                    eager.run(dt=self.DT * u.ms, duration=10 * self.DT * u.ms)
+                    rows.append(self._g(cell))
+                    reference.append(self._g(eager))
+                np.testing.assert_allclose(rows, self._expected(k)[[9, 19, 29]], rtol=1e-12, atol=0.0)
+                np.testing.assert_array_equal(rows, reference)
+                self._assert_unchanged(self._fingerprint(eager), self._fingerprint(cell))
+
+    def test_a_traced_run_keeps_the_dt_of_the_history(self):
+        """CELL-76: inside a trace the history cannot be read; a run at the new dt outside it is the way out."""
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            cell = self._cell(0.3, 3)
+            cell.run(dt=self.DT * u.ms, duration=5 * self.DT * u.ms)  # the step-0 events arrived in step 3
+            run = self._jit_run(cell, 0.05, 10)
+            before = self._fingerprint(cell)
+            with self.assertRaisesRegex(ValueError, "cannot change dt inside a traced call"):
+                run()
+            self._assert_unchanged(before, self._fingerprint(cell))
+            cell.run(dt=0.05 * u.ms, duration=10 * 0.05 * u.ms)
+            run()
+            reference = self._cell(0.3, 3)
+            for dt, n in ((self.DT, 5), (0.05, 10), (0.05, 10)):
+                reference.run(dt=dt * u.ms, duration=n * dt * u.ms)
+            self._assert_unchanged(self._fingerprint(reference), self._fingerprint(cell))
+
+    def test_a_new_dt_is_accepted_when_no_event_is_in_flight(self):
+        """CELL-76: the delays are quantized again at the new dt; an event that arrived does not count."""
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            cell = self._cell(0.0, 0)  # no history
+            cell.run(dt=self.DT * u.ms, duration=3 * self.DT * u.ms)
+            cell.run(dt=0.05 * u.ms, duration=4 * 0.05 * u.ms)
+            self.assertEqual(cell._get_connection_store()._calls[0].live_dt_ms, 0.05)
+            # Member 0 (1 step) spikes at 0 and 1.1 ms, member 1 (3 steps) at 1.3 ms.
+            cell = self._cell(
+                np.array([0.1, 0.3]), None, spike_steps=(np.array([0, 11]), np.array([13])), scheduled=False
+            )
+            call = cell._get_connection_store()._calls[0]
+            # Back at 0.1 ms with the first run's step count: the loop cache holds two keys that differ
+            # first at the hand-over (test_a_cable_cell_returns_to_an_earlier_dt).
+            expected = ([0.05, 0.0], [0.05, 0.0], [0.05, 0.0], [0.10, 0.05])
+            segments = ((self.DT, 2, [1, 3]), (0.05, 16, [2, 6]), (self.DT, 2, [1, 3]), (self.DT, 5, [1, 3]))
+            for (dt, n, steps), g in zip(segments, expected):
+                with self.subTest(dt=dt, steps=n):
+                    if dt == 0.05:
+                        # Member 0's event arrived in step 1 and is still in the history, which is 3 deep.
+                        self.assertTrue(np.asarray(call.live_history.value).any())
+                    cell.run(dt=dt * u.ms, duration=n * dt * u.ms)
+                    self.assertEqual(call.live_delay_steps.tolist(), steps)
+                    self.assertEqual(call.live_history.value.shape, (max(steps), 2))
+                    np.testing.assert_allclose(self._g(cell), g, rtol=1e-12, atol=0.0)
+
+    def test_a_new_dt_is_refused_while_an_event_is_in_flight(self):
+        """CELL-76: refused as run refuses it, until reset_state(); then as a fresh Cell at the new dt."""
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
             cell = self._cell(0.1, 1)
-            self._eager(cell, 0, 2)
+            self._eager(cell, 0, 1)  # member 0 spikes in step 0; it arrives in step 1
             before = self._fingerprint(cell)
-            with self.assertRaisesRegex(ValueError, "cannot change dt"):
-                with brainstate.environ.context(dt=0.05 * u.ms, t=0.2 * u.ms):
-                    cell.update()
-            self._assert_unchanged(before, self._fingerprint(cell))
-            with self.assertRaisesRegex(ValueError, "cannot change dt"):
-                cell.run(dt=0.05 * u.ms, duration=0.05 * u.ms)
+            for name, refused in (
+                ("update", lambda: self._update_at(cell, 0.05, 0.1)),
+                ("run", lambda: cell.run(dt=0.05 * u.ms, duration=0.05 * u.ms)),
+                ("prepare_runtime", lambda: cell.connections.prepare_runtime(0.05 * u.ms)),
+            ):
+                with self.subTest(name), self.assertRaisesRegex(ValueError, "in flight; call reset_state"):
+                    refused()
+                self._assert_unchanged(before, self._fingerprint(cell))
+            cell.reset_state()
+            cell.run(dt=0.05 * u.ms, duration=20 * 0.05 * u.ms)
+            fresh = self._cell(0.1, 1)
+            fresh.run(dt=0.05 * u.ms, duration=20 * 0.05 * u.ms)
+            self._assert_unchanged(self._fingerprint(fresh), self._fingerprint(cell))
+
+    @staticmethod
+    def _update_at(cell, dt, t):
+        with brainstate.environ.context(dt=dt * u.ms, t=t * u.ms):
+            cell.update()
 
     def test_a_live_rule_row_is_refused_before_any_state_changes(self):
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
@@ -2622,18 +2725,30 @@ class UpdateLiveConnectionTest(unittest.TestCase):
             self.assertEqual(int(np.count_nonzero(np.diff(np.r_[0.0, reference]) > 0.0)), 2)  # both events arrived
             np.testing.assert_allclose(updated, reference, rtol=1e-12, atol=0.0)
 
-    def test_a_network_member_routes_no_live_rows(self):
+    def test_a_network_member_refuses_update(self):
+        """CELL-76: its Network steps it; Network.update() is the way out the message gives."""
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
-            cell = self._cell(0.1, 1)
-            net = braincell.Network("member")
-            net.add_population("cells", cell)
-            for step in range(3):
-                with brainstate.environ.context(dt=self.DT * u.ms, t=step * self.DT * u.ms):
-                    cell.update()  # its Network routes the rows
-            call = cell._get_connection_store()._calls[0]
-            self.assertEqual(call.name, "live")
-            self.assertIsNone(call.live_dt_ms)
-            self.assertIsNone(call.live_history)
+            nets = []
+            for name in ("member", "twin"):
+                cell = self._cell(0.1, 1, init=False, scheduled=False)
+                net = braincell.Network(name)
+                net.add_population("cells", cell)
+                net.init_state()
+                nets.append((net, cell))
+            (net, cell), (twin, twin_cell) = nets
+            before = self._fingerprint(cell)
+            with self.assertRaisesRegex(RuntimeError, r"Network 'member'; use Network\.update\(\) instead"):
+                self._update_at(cell, self.DT, 0.0)
+            self._assert_unchanged(before, self._fingerprint(cell))
+            net.prepare_run(dt=self.DT * u.ms)
+            rows = []
+            with brainstate.environ.context(dt=self.DT * u.ms):
+                for _ in range(self.N):
+                    net.update()
+                    rows.append(self._g(cell))
+            twin.run(dt=self.DT * u.ms, duration=self.N * self.DT * u.ms)
+            np.testing.assert_array_equal(rows[-1], self._g(twin_cell))
+            self._assert_unchanged(self._fingerprint(twin_cell), self._fingerprint(cell))
 
     def test_an_update_without_dt_is_refused_before_any_state_changes(self):
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
@@ -3245,7 +3360,7 @@ def _synapse_run(model, solver, dt_ms):
 
 
 def _gaba_block_solver_report() -> dict:
-    """CELL-31b on G; run in a float64 subprocess by :func:`_gaba_block_solver_numbers`.
+    """CELL-31b on G; :func:`_gaba_block_solver_numbers` runs it at float64.
 
     ``{"<solver>/<dt>": (max |V - reference| in mV, max |Ci - reference| in mM)}``
     against rk4 at dt = 0.00025 ms.
@@ -3266,18 +3381,7 @@ def _gaba_block_solver_report() -> dict:
 
 @functools.cache
 def _gaba_block_solver_numbers() -> dict:
-    # In a subprocess, as _kinetic_integration_numbers: in one process a
-    # Cldif_JE2011 Cell run at one precision makes the next one fail at the
-    # other (JaxRuntimeError at init_state; on main too).
-    code = (
-        "import json; from braincell._multi_compartment.cell_test import _gaba_block_solver_report; "
-        "print(json.dumps(_gaba_block_solver_report()))"
-    )
-    env = dict(os.environ, JAX_ENABLE_X64="1", JAX_PLATFORMS="cpu")
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=False)
-    if result.returncode != 0:
-        raise AssertionError(result.stderr)
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    return run_float64(_gaba_block_solver_report)
 
 
 class CellBlockSolverPointSynapseTest(unittest.TestCase):

@@ -2353,11 +2353,11 @@
   `(depth + 1) x synapse rows`. In float64 with delays up to 80 steps, 1e6
   rows from 1e6 sources onto 1e4 shared synapses take 624 MB (6.5 MB
   before), and 1e6 rows from 900 sources onto 1e6 synapses take 0.58 MB
-  (648 MB before). The run loop copied the queue twice per step; it does
-  not copy the history. Per step on one CPU core (main `2da3f2b`), 1e6 rows
-  from 900 sources take 2.61 ms (5.27 ms before) onto 1e4 synapses and
-  41.9 ms (113.6 ms before) onto 1e6 synapses; 1e6 rows from 1e6 sources
-  onto 1e4 synapses take 50.0 ms (45.5 ms before).
+  (648 MB before). The compiled run loop copied the whole queue twice per
+  step; it does not copy the history. Per step on one CPU core of a loaded
+  machine (main `2da3f2b`), 1e6 rows from 900 sources ran 2.0x faster onto
+  1e4 synapses and 2.7x faster onto 1e6 synapses (one clean measurement of
+  main), and 1e6 rows from 1e6 sources onto 1e4 synapses ran 10% slower.
 - A recording samples in whole steps of the grid from time 0, so a
   standalone `Cell.run` whose steps are off that grid samples where a
   scheduled event at the sample time acts, and a long run takes each sample

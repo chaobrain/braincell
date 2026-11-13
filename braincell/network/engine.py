@@ -1627,6 +1627,7 @@ class Network:
         events = {}
         start_ms = scalar_decimal(start_t, u.ms)
         stop_ms = scalar_decimal(stop_t, u.ms)
+        host_times = None
         event_index = 0
         for name, population in self.populations.items():
             if population.kind != "cell":
@@ -1658,8 +1659,11 @@ class Network:
                 values = np.asarray(event_values[event_index])
                 event_index += 1
                 time_index, source_id = np.nonzero(values)
+                if host_times is None:
+                    # On the host: indexing the device times compiles a gather for each new event count.
+                    host_times = np.asarray(u.get_mantissa(times))
                 events[name][port] = EventSeries(
-                    time=times[time_index],
+                    time=u.Quantity(host_times[time_index], u.get_unit(times)),
                     source_id=source_id,
                     count=np.asarray(values[time_index, source_id], dtype=np.int64),
                     metadata=_event_source_metadata(name, port, view),

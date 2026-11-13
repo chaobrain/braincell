@@ -457,8 +457,23 @@ def _events_in(table, start_ms, stop_ms):
     return table.source_index[rows], time_ms[rows]
 
 
-class NetStimResultEventsTest(unittest.TestCase):
-    """``Network.run`` reports the events of its window, reading only those (CELL-68)."""
+def _hh_points():
+    """Three HH point Cells clamped from 1 ms at 0, 0.2 and 0.4 nA: the last two fire repetitively."""
+    cell = Cell.point(3, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV)
+    cell.paint(
+        bc.mech.Ion("SodiumFixed", E=50.0 * u.mV),
+        bc.mech.Ion("PotassiumFixed", E=-77.0 * u.mV),
+        bc.mech.Channel("Na_HH1952", g_max=120.0 * u.mS / u.cm**2),
+        bc.mech.Channel("K_HH1952", g_max=36.0 * u.mS / u.cm**2),
+        bc.mech.Channel("IL", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+    )
+    amplitudes = np.asarray([0.0, 0.2, 0.4]) * u.nA
+    cell.place(RootLocation(0.5), bc.mech.CurrentClamp(delay=1.0 * u.ms, durations=1.0e3 * u.ms, amplitudes=amplitudes))
+    return cell
+
+
+class ResultEventsTest(unittest.TestCase):
+    """``Network.run`` reports the events of its window, reading only those and compiling nothing (CELL-68)."""
 
     def assert_series(self, series, source, time_ms) -> None:
         self.assertIs(type(series.time.mantissa), np.ndarray)
@@ -538,6 +553,44 @@ class NetStimResultEventsTest(unittest.TestCase):
                 # a table of every event reads 2**20.
                 for read, size in zip(reads, sizes, strict=True):
                     self.assertLessEqual(read, size + 2 * model.size * 20)
+
+    def test_result_events_compile_nothing(self) -> None:
+        # Runs of a length no other test uses: on the device, each new spike count compiled a gather.
+        net = bc.Network("compiles", seed=1)
+        post = net.add_population("post", _hh_points())
+        stim = net.add_population("stim", NetStim(size=2, start=[0.5, 1.5] * u.ms, interval=2.0 * u.ms, number=10**9))
+        net.add_population("sequence", EventSequence.from_times([np.asarray([0.25, 3.0]) * u.ms] * 2))
+        net.add_population("other", _exp_syn_cell())
+        net.connect("in", source=stim, synapse=net.populations["other"].synapses["syn"][[0, 0]], weight=0.01 * u.uS)
+        compiles = []
+
+        def listener(event, duration, **kwargs):
+            if event == "/jax/core/compile/backend_compile_duration":
+                compiles[-1] += 1
+
+        result_events = net._result_events
+
+        def counted(**kwargs):
+            compiles.append(0)
+            jax.monitoring.register_event_duration_secs_listener(listener)
+            try:
+                return result_events(**kwargs)
+            finally:
+                jax.monitoring.unregister_event_duration_listener(listener)
+
+        net._result_events = counted
+        dt = 0.025 * u.ms
+        results = [net.run(dt=dt, duration=steps * dt) for steps in (333, 333, 666, 999)]
+        self.assertEqual(compiles, [0, 0, 0, 0])
+        for result in results:
+            spikes = result.events["post"]["spike"]
+            step_ms = np.asarray(u.get_mantissa(result.time))
+            self.assertGreater(len(spikes.source_id), 0)
+            # Host arrays, like a standalone Cell.run's spikes: the steps' times, in the run's dtype.
+            self.assertIs(type(spikes.time.mantissa), np.ndarray)
+            self.assertEqual(spikes.time.mantissa.dtype, step_ms.dtype)
+            self.assertEqual(spikes.time.unit, u.get_unit(result.time))
+            self.assertTrue(np.all(np.isin(spikes.time.mantissa, step_ms)))
 
     def test_first_at_or_after_is_a_left_search_of_each_prefix(self) -> None:
         from braincell.network.event import _first_at_or_after

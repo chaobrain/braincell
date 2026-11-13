@@ -2289,11 +2289,52 @@
   would be lost. Call
   `cell.connections.prepare_runtime(dt)` once before, or `update()` or
   `run()` once outside it. And an `update()` at another `dt` than its live
-  connections have raises `ValueError`, as `Cell.run` does. A plasticity
+  connections have is refused as `Cell.run` refuses it (`ValueError`; since
+  CELL-76 only while one of their events is in flight). A plasticity
   rule on a live source, which runs only in a `Network`, is refused at the
   start of `update()` (`NotImplementedError`, as before), no longer after
   the scheduled rows' events of the step were written. A Cell without live
   connections steps as before.
+- Three entries of a standalone Cell's live connections (from its
+  `event_outputs` to its synapses) and a run back at an earlier `dt` behave
+  as documented (CELL-76). On main `8bb8721`, in float64, with a live self
+  connection and `dt = 0.1 ms`:
+  - `Cell.run` traced (inside `jit` or `grad`) before the connection's
+    delay history existed created it inside the trace. With a delay of
+    0.5 ms, two jitted 25-step runs lost the event of step 20, which
+    arrives in the second one (g 0.2 instead of 0.25 uS), and every later
+    `run`, `update()`, `prepare_runtime(dt)` or `reset_state()` raised
+    brainstate's `TraceContextError`; only `reset()` recovered. Such a run
+    now raises `RuntimeError` before any state changes, as a traced
+    `update()` does. After `cell.connections.prepare_runtime(dt)`, called
+    once before the traced function, the same function runs, bit for bit
+    as the eager runs (0.25 uS). A connection with no delay of a step runs
+    traced as before.
+  - `update()` on a Cell in a `Network` stepped that Cell alone and
+    delivered none of its connections: 30 calls left g at 0 where the
+    Network's run delivered 0.15 uS, and a Cell without live connections
+    went out of step with the others. It now raises `RuntimeError` ("Cell
+    belongs to Network ...; use Network.update() instead"), as `Cell.run`
+    does; `Network.update()` after `Network.prepare_run()` steps it, bit
+    for bit as `Network.run`.
+  - After one run, a run or `update()` at another `dt` was refused even
+    with no event in flight (a delay of 0 or after `reset_state()`), and
+    the message said to reset the cell state, which did not help; only
+    `reset()` did. The delays are now quantized again at the new `dt` when
+    none of their events is still to arrive; after `reset_state()` the run
+    is bit for bit that of a fresh Cell. While one is, the call is refused before any
+    state changes, with a message naming `reset_state()`; a traced call,
+    which cannot read the delay history, is refused with a message to run
+    once at the new `dt` outside it.
+  - A cable Cell that ran at a `dt`, then at another, then again at the
+    first with the same step count (0.025, 0.05, 0.025 ms, or off the grid
+    0.025, 0.03, 0.025 ms) raised `ValueError: Comparator raised exception
+    while sorting pytree dictionary keys.` in the third run: brainstate's
+    graph walk sorted the keys of the Cell's cache of compiled loops, and
+    two of them could not be compared (`None` against the hand-over of a
+    `dt` change). The cache is no longer walked; its keys are unchanged.
+    The third run is now bit for bit that of a Cell that compiles each
+    segment afresh. Lumped Cells did not fail.
 - Each `NetStim` and `EventSequence` event is delivered once where a run
   continues one at another `dt`, and where a `Cell` that ran on its own
   joins a `Network` (CELL-57). A `Cell.run` ended by preparing the boundary

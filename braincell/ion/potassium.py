@@ -22,6 +22,7 @@ import braintools
 import brainunit as u
 
 from braincell._base_ion import Ion
+from braincell._constants import FARADAY_CONSTANT
 from braincell._typing import Initializer, Size
 from braincell.mech import register_ion
 from braincell.ion._base import (
@@ -530,5 +531,5 @@ class PotassiumDetailedFH(Potassium, DynamicNernstIon):
         membrane, hence the minus sign.
         """
         _ = V
-        efflux = self._drive_current(total_current) / (self.valence * u.faraday_constant * self.d_o)
+        efflux = self._drive_current(total_current) / (self.valence * FARADAY_CONSTANT * self.d_o)
         return -efflux + self.beta_o * (self.Co_rest - Co)

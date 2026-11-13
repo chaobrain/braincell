@@ -22,6 +22,7 @@ import braintools
 import brainunit as u
 
 from braincell._base_ion import Ion
+from braincell._constants import FARADAY_CONSTANT
 from braincell._typing import Initializer, Size
 from braincell.ion._base import FixedIon, InitNernstIon, KineticIon, Factor, Reaction, Source, Species
 from braincell.mech import register_ion
@@ -222,7 +223,7 @@ def _current_influx(self, V, x, total_current=None):
     """``-pi d I / F``: an inward (positive) current is a Cl- efflux, ``z = -1``."""
     if total_current is None:
         return 0.0 * self.cli0 * self._diameter() ** 2 / self.tau
-    return -(total_current * u.math.pi * self._diameter()) / u.faraday_constant
+    return -(total_current * u.math.pi * self._diameter()) / FARADAY_CONSTANT
 
 
 def _pump(self, V, x, total_current=None):

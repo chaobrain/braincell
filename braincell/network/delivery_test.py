@@ -296,7 +296,8 @@ class DeliveryOrderTest(unittest.TestCase):
         """The delayed arrivals of each queue, from a float32 ring of weighted events written here.
 
         Each step reads and clears its slot first; then each route adds the
-        events of this step, weighted now, into the slot of their arrival:
+        events of this step, weighted now, into the slot of their arrival,
+        ``k + 1`` steps on for ``k`` delay steps (CELL-75):
         contact by contact on the scatter path, as one summed vector per route
         on the grouped path. A slot thus sums its events longest delay first,
         then by route and by contact.
@@ -305,7 +306,7 @@ class DeliveryOrderTest(unittest.TestCase):
         for route in routes:
             key = (route.source.post_population, int(route.source.layout_id))
             sizes[key] = int(route.source.n_active)
-        depth = 1 + max(int(np.max(route.delay_steps)) for route in routes)
+        depth = 2 + max(int(np.max(route.delay_steps)) for route in routes)
         rings = {key: np.zeros((depth, size), np.float32) for key, size in sizes.items()}
         arrivals = {key: np.zeros((n_steps, size), np.float32) for key, size in sizes.items()}
         for step in range(n_steps):
@@ -322,11 +323,11 @@ class DeliveryOrderTest(unittest.TestCase):
                         continue
                     summed = np.zeros(ring.shape[1], np.float32)
                     np.add.at(summed, np.asarray(route.flat_target_index), events)
-                    ring[(step + int(route.delay_steps)) % depth] += summed
+                    ring[(step + int(route.delay_steps) + 1) % depth] += summed
                     continue
                 for target, delay, event in zip(route.flat_target_index, delays, events):
                     if delay:
-                        ring[(step + int(delay)) % depth, int(target)] += event
+                        ring[(step + int(delay) + 1) % depth, int(target)] += event
         return arrivals
 
     def test_delayed_arrivals_sum_as_a_queue_of_weighted_events(self) -> None:
@@ -518,10 +519,10 @@ class InFlightWeightTest(unittest.TestCase):
     the payload delivered at boundary ``b``. It crosses threshold in the
     steps that end at 3.0, 4.8, 5.0 and 5.2 ms (dt 0.1 ms, steps
     ``m`` = 29, 47, 49, 51); with ``k >= 1`` delay steps an event of step
-    ``m`` arrives at boundary ``m + k``. The first run ends at boundary 50,
-    ``set(weight=)`` then changes the weights, and the second run takes 20
-    steps: the events sent before boundary 50 and delivered from it on were
-    in flight across the change. The expected payloads are a host rule
+    ``m`` arrives at boundary ``m + k + 1`` (CELL-75). The first run ends
+    at boundary 50, ``set(weight=)`` then changes the weights, and the
+    second run takes 20 steps: the events sent before boundary 50 and
+    delivered from it on were in flight across the change. The expected payloads are a host rule
     written here: the weight is the new one from boundary 50 on.
     """
 
@@ -553,8 +554,8 @@ class InFlightWeightTest(unittest.TestCase):
         cell.soma.record("g", braincell.observe.synapse(name="s").state("g"))
         return cell
 
-    def _model(self, rows, driver):
-        """``rows``: ``(name, delay ms, weight before, weight after)``; ``driver``: "network" or "cell"."""
+    def _model(self, rows):
+        """``rows``: ``(name, delay ms, weight before, weight after)``."""
         cell = self._cell()
         for name, delay, before, _ in rows:
             braincell.connect(
@@ -564,8 +565,6 @@ class InFlightWeightTest(unittest.TestCase):
                 weight=before * u.uS,
                 delay=delay * u.ms,
             )
-        if driver == "cell":
-            return cell, cell
         net = braincell.Network("in_flight")
         net.add_population("post", cell)
         return net, cell
@@ -579,15 +578,14 @@ class InFlightWeightTest(unittest.TestCase):
     def _g(cell) -> float:
         return float(np.asarray(cell.synapses["s"].g.to_decimal(u.uS)).reshape(-1)[0])
 
-    def _payloads_of_runs(self, rows, driver, **run_kwargs):
+    def _payloads_of_runs(self, rows, **run_kwargs):
         """The payload of boundaries 0..69 over two runs with ``set(weight=)`` between them."""
-        model, cell = self._model(rows, driver)
+        model, cell = self._model(rows)
         dt = self.DT_MS * u.ms
         g = []
         for steps in (self.N1, self.N2):
             result = model.run(dt=dt, duration=steps * dt, **run_kwargs)
-            samples = result.samples if driver == "cell" else result.samples["post"]
-            values = np.asarray(samples["g"].values.to_decimal(u.uS), dtype=np.float64)
+            values = np.asarray(result.samples["post"]["g"].values.to_decimal(u.uS), dtype=np.float64)
             self.assertEqual(values.shape[0], steps)
             g.append(values.reshape(steps, -1)[:, 0])
             if steps == self.N1:
@@ -596,7 +594,7 @@ class InFlightWeightTest(unittest.TestCase):
         return np.diff(np.concatenate(g))
 
     def _payloads_of_updates(self, rows):
-        model, cell = self._model(rows, "network")
+        model, cell = self._model(rows)
         model.prepare_run(dt=self.DT_MS * u.ms)
         g = [self._g(cell)]
         for step in range(self.N1 + self.N2):
@@ -611,8 +609,9 @@ class InFlightWeightTest(unittest.TestCase):
         for _, delay, before, after in rows:
             k = int(round(delay / self.DT_MS))
             for m in self.SPIKE_STEPS:
-                # A zero-delay event is added at the end of its own step.
-                b = m + k
+                # A zero-delay event is added at the end of its own step; a
+                # delayed one at the start of step m + k + 1 (CELL-75).
+                b = m if k == 0 else m + k + 1
                 payload[b] += after if b >= self.N1 else before
         return payload
 
@@ -626,30 +625,28 @@ class InFlightWeightTest(unittest.TestCase):
             rows = (("c", delay, 0.05, 0.08),)
             for backend in ("scatter", "brainevent"):
                 with self.subTest(delay=delay, event_backend=backend):
-                    network = self._payloads_of_runs(rows, "network", event_backend=backend)
+                    network = self._payloads_of_runs(rows, event_backend=backend)
                     self._assert_payloads(network, rows)
-            with self.subTest(delay=delay, driver="Cell.run"):
-                np.testing.assert_array_equal(network, self._payloads_of_runs(rows, "cell"))
             with self.subTest(delay=delay, driver="Network.update"):
                 self._assert_payloads(self._payloads_of_updates(rows), rows)
 
     @_float64
     def test_rows_of_one_synapse_each_take_their_own_weight_at_delivery(self) -> None:
-        # Boundary 50 receives the event of step 49 over "near" and the one
+        # Boundary 51 receives the event of step 49 over "near" and the one
         # of step 47 over "far", both sent before the change: 0.08 + 0.03.
         rows = (("near", 0.1, 0.05, 0.08), ("far", 0.3, 0.02, 0.03))
-        self.assertAlmostEqual(self._expected(rows)[self.N1], 0.11, places=15)
+        self.assertAlmostEqual(self._expected(rows)[self.N1 + 1], 0.11, places=15)
         for backend in ("scatter", "brainevent"):
             with self.subTest(event_backend=backend):
-                self._assert_payloads(self._payloads_of_runs(rows, "network", event_backend=backend), rows)
+                self._assert_payloads(self._payloads_of_runs(rows, event_backend=backend), rows)
         with self.subTest(driver="Network.update"):
             self._assert_payloads(self._payloads_of_updates(rows), rows)
 
     @_float64
     def test_reset_state_drops_the_events_in_flight(self) -> None:
         # The events of steps 47 and 49 are in flight when the first run
-        # ends; kept, they would arrive at boundaries 0 and 2 of the next.
-        model, cell = self._model((("c", 0.3, 0.05, 0.05),), "network")
+        # ends; kept, they would arrive at boundaries 1 and 3 of the next.
+        model, cell = self._model((("c", 0.3, 0.05, 0.05),))
         dt = self.DT_MS * u.ms
         runs = []
         for _ in range(2):
@@ -665,7 +662,7 @@ class InFlightWeightTest(unittest.TestCase):
         rows = (("near", 0.1, 0.05, 0.08), ("far", 0.3, 0.02, 0.03))
         for backend in ("scatter", "brainevent"):
             with self.subTest(event_backend=backend):
-                model, cell = self._model(rows, "network")
+                model, cell = self._model(rows)
                 dt = self.DT_MS * u.ms
                 counts = []
                 for action in ("run", "run", "set", "reset"):
@@ -678,6 +675,210 @@ class InFlightWeightTest(unittest.TestCase):
                     counts.append(names.count("jit(jaxpr_call)"))
                 self.assertGreaterEqual(counts[0], 1)
                 self.assertEqual(counts[1:], [0, 0, 0])
+
+
+class LiveArrivalStepTest(unittest.TestCase):
+    """CELL-75: a delayed live event is first seen in the same step on every path, as NEURON's ``NetCon``.
+
+    Seven identical HH members (a 1-CV cable with ``staggered``, or a lumped
+    Cell with ``rk4``), 0.1 nA from 0.25 ms, each driving its own ExpSyn
+    (tau 2 ms, e 0 mV, 0.002 uS) through a live connection of ``k`` steps of
+    0.025 ms. All cross 0 mV in step ``m`` (V before it below, V after it at
+    or above). The first step whose V after it differs from the same path
+    without the connection is ``m + 1 + k``; so in NEURON 9.0.2 with a fixed
+    step, whose ``NetCon`` delivers at ``t_{m+1+k}`` (the NetCon delay
+    comparison in ``validation/neuron/synapse/netcon_delay.py``).
+    """
+
+    DT = 0.025 * u.ms
+    N = 100
+    KS = (0, 1, 2, 3, 4, 11, 12)
+    W_US, TAU_MS = 0.002, 2.0
+    # NEURON 9.0.2, fixed step 0.025 ms: first seen in step m + 1 + k for every k (validation/neuron/synapse/netcon_delay.py).
+    NEURON_FIRST_SEEN_AFTER_CROSSING = 1
+
+    def _cell(self, kind, *, connect=True, rule=False):
+        from braincell import mech
+        from braincell.filter import AllRegion, RootLocation
+
+        n = len(self.KS)
+        channels = (
+            mech.Ion("SodiumFixed", name="sodium", E=50.0 * u.mV),
+            mech.Ion("PotassiumFixed", E=-77.0 * u.mV),
+            mech.Channel("IL", name="leak"),
+            mech.Channel("Na_HH1952", name="na"),
+            mech.Channel("K_HH1952", name="k"),
+        )
+        clamp = mech.CurrentClamp(delay=0.25 * u.ms, durations=8.0 * u.ms, amplitudes=0.1 * u.nA)
+        synapse = mech.Synapse("ExpSyn", name="syn", tau=self.TAU_MS * u.ms, e=0.0 * u.mV)
+        if kind == "cable":
+            branch = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
+            cell = braincell.Cell(
+                braincell.Morphology.from_root(branch),
+                cv_policy=braincell.CVPerBranch(1),
+                pop_size=(n,),
+                V_init=-65.0 * u.mV,
+                solver="staggered",
+            )
+            cell.paint(
+                AllRegion(),
+                mech.CableProperty(
+                    resting_potential=-65.0 * u.mV,
+                    membrane_capacitance=1.0 * u.uF / u.cm**2,
+                    axial_resistivity=100.0 * u.ohm * u.cm,
+                ),
+                *channels,
+            )
+            cell.place(RootLocation(0.5), clamp)
+            cell.place(RootLocation(0.5), synapse)
+        else:
+            cell = braincell.Cell.point(n, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, solver="rk4")
+            cell.paint(AllRegion(), *channels)
+            cell.place(clamp)
+            cell.place(synapse)
+        cell.record("v", braincell.observe.state("V"))
+        cell.record("g", braincell.observe.synapse(name="syn").state("g"))
+        if connect:
+            plasticity = None
+            if rule:
+                plasticity = mech.ConnectionRule(
+                    "PairSTDP", A_plus=1e-9 * u.uS, A_minus=1e-9 * u.uS, tau_plus=20.0 * u.ms, tau_minus=20.0 * u.ms
+                )
+            braincell.connect(
+                "self",
+                source=cell.event_outputs["spike"],
+                synapse=cell.synapses["syn"],
+                weight=self.W_US * u.uS,
+                delay=np.asarray(self.KS) * self.DT,
+                plasticity=plasticity,
+            )
+        return cell
+
+    def _after(self, samples, cell, name):
+        """``name`` after each step (rows) per member: the samples are taken before the steps."""
+        values = np.asarray(u.get_mantissa(samples[name].values), dtype=np.float64).reshape(self.N, -1)
+        last = np.asarray(u.get_mantissa(getattr(cell, "V").value if name == "v" else cell.synapses["syn"].g))
+        return np.concatenate([values[1:], last.reshape(1, -1)]), values
+
+    def _drive(self, kind, path, *, connect=True):
+        """V after each step and the g samples (before each step), per member, by one path."""
+        cell = self._cell(kind, connect=connect, rule=path == "network rule")
+        if path == "Cell.run":
+            cell.init_state()
+            samples = cell.run(dt=self.DT, duration=self.N * self.DT).samples
+        elif path == "update":
+            cell.init_state()
+            if connect:
+                cell.connections.prepare_runtime(self.DT)
+
+            def body(t):
+                with brainstate.environ.context(t=t):
+                    cell.update()
+                return cell.V.value.to_decimal(u.mV)
+
+            with brainstate.environ.context(dt=self.DT):
+                v = brainstate.transform.for_loop(body, jnp.arange(self.N) * self.DT)
+            return np.asarray(v, dtype=np.float64).reshape(self.N, -1), None
+        else:
+            net = braincell.Network("arrival")
+            net.add_population("c", cell)
+            net.init_state()
+            samples = net.run(dt=self.DT, duration=self.N * self.DT).samples["c"]
+        v, _ = self._after(samples, cell, "v")
+        g = np.asarray(samples["g"].values.to_decimal(u.uS), dtype=np.float64).reshape(self.N, -1)
+        return v, g
+
+    def _first_seen(self, v, reference):
+        changed = v != reference
+        self.assertTrue(np.all(changed.any(axis=0)))
+        return changed.argmax(axis=0)
+
+    def _check_kind(self, kind):
+        runs = {}
+        for path in ("Cell.run", "update", "network", "network rule"):
+            reference = runs.get(("reference", path if path != "network rule" else "network"))
+            if reference is None:
+                reference = self._drive(kind, path if path != "network rule" else "network", connect=False)[0]
+                runs[("reference", path if path != "network rule" else "network")] = reference
+            column = reference[:, 0]
+            np.testing.assert_array_equal(reference, np.repeat(column[:, None], len(self.KS), axis=1))
+            v_before = np.concatenate([[-65.0], column[:-1]])
+            m = int(np.flatnonzero((v_before < 0.0) & (column >= 0.0))[0])
+            v, g = self._drive(kind, path)
+            runs[path] = (v, g)
+            with self.subTest(kind=kind, path=path):
+                np.testing.assert_array_equal(
+                    self._first_seen(v, reference) - m, np.asarray(self.KS) + self.NEURON_FIRST_SEEN_AFTER_CROSSING
+                )
+        return runs, m
+
+    @_float64
+    def test_every_path_first_sees_an_event_k_steps_after_the_crossing_step(self) -> None:
+        for kind in ("cable", "lumped"):
+            runs, m = self._check_kind(kind)
+            (net_v, net_g), (run_v, _) = runs["network"], runs["Cell.run"]
+            with self.subTest(kind=kind, check="Network V is Cell.run V"):
+                np.testing.assert_array_equal(net_v, run_v)
+                # Until CELL-75 a Network row of k steps was bitwise a Cell.run row of k - 1.
+                for j in range(1, len(self.KS)):
+                    if self.KS[j - 1] == self.KS[j] - 1:
+                        self.assertFalse(np.array_equal(net_v[:, j], run_v[:, j - 1]), self.KS[j])
+            with self.subTest(kind=kind, check="recorded g as NEURON"):
+                # Sample j is g at t_j: NEURON records 0 at the delivery boundary t_{m+1+k}
+                # and w exp(-dt/tau) at the next one.
+                for j, k in enumerate(self.KS):
+                    if k == 0:
+                        continue
+                    np.testing.assert_array_equal(net_g[: m + 2 + k, j], 0.0)
+                    np.testing.assert_allclose(
+                        net_g[m + 2 + k, j], self.W_US * np.exp(-0.025 / self.TAU_MS), rtol=0.0, atol=1e-12
+                    )
+
+    @_float64
+    def test_a_delayed_event_between_two_populations_and_across_a_split_run(self) -> None:
+        # One HH source and three passive targets at rest (their V stays at -65 mV
+        # until an event arrives), with 0, 1 and 3 steps of delay. The runs split
+        # at the boundary after the crossing step and at the boundaries the
+        # 1- and 3-step events are delivered at, t_{m+2} and t_{m+4}.
+        from braincell import mech
+
+        ks = (0, 1, 3)
+
+        def network():
+            pre = self._cell("lumped", connect=False)
+            post = braincell.Cell.point(3, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, solver="rk4")
+            post.paint(mech.Channel("IL", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV))
+            post.place(mech.Synapse("ExpSyn", name="syn", tau=self.TAU_MS * u.ms, e=0.0 * u.mV))
+            post.record("v", braincell.observe.state("V"))
+            net = braincell.Network("pair")
+            net.add_population("pre", pre)
+            net.add_population("post", post)
+            net.connect(
+                "pp",
+                source=net.populations["pre"].event_outputs["spike"][[0, 0, 0]],
+                synapse=net.populations["post"].synapses["syn"],
+                weight=self.W_US * u.uS,
+                delay=np.asarray(ks) * self.DT,
+            )
+            return net, pre, post
+
+        net, pre, post = network()
+        result = net.run(dt=self.DT, duration=self.N * self.DT)
+        pre_v, _ = self._after(result.samples["pre"], pre, "v")
+        post_v, _ = self._after(result.samples["post"], post, "v")
+        v_before = np.concatenate([[-65.0], pre_v[:-1, 0]])
+        m = int(np.flatnonzero((v_before < 0.0) & (pre_v[:, 0] >= 0.0))[0])
+        first = (post_v != -65.0).argmax(axis=0)
+        np.testing.assert_array_equal(first - m, np.asarray(ks) + self.NEURON_FIRST_SEEN_AFTER_CROSSING)
+        net, _, split_post = network()
+        pieces = []
+        for steps in (m + 1, 1, 2, self.N - m - 4):
+            part = net.run(dt=self.DT, duration=steps * self.DT).samples["post"]["v"].values
+            pieces.append(np.asarray(part.to_decimal(u.mV), dtype=np.float64).reshape(steps, -1))
+        np.testing.assert_array_equal(
+            np.concatenate(pieces),
+            np.asarray(result.samples["post"]["v"].values.to_decimal(u.mV), dtype=np.float64).reshape(self.N, -1),
+        )
 
 
 if __name__ == "__main__":

@@ -287,7 +287,7 @@ class DeliveryPathTest(unittest.TestCase):
     @_float64
     def test_live_rows_through_the_queue_and_the_zero_delay_path(self) -> None:
         # The source crosses in step 5 (0.5 to 0.6 ms); delays of 0 and 2 steps
-        # arrive at 0.6 ms (end of that step) and at 0.7 ms.
+        # arrive at 0.6 ms (end of that step) and at 0.8 ms (CELL-75).
         for delay_ms in ([0.0, 0.2], [0.0, 0.0], [0.2, 0.2]):
             for backend in ("scatter", "brainevent"):
                 with self.subTest(delay_ms=delay_ms, backend=backend):
@@ -299,15 +299,17 @@ class DeliveryPathTest(unittest.TestCase):
         # A rule that keeps the weight: its rows deliver through the rule boundary (live, k >= 1;
         # scheduled) or the zero-delay block, and every one of them counts.
         rule = _stdp(A_plus=0.0 * u.uS, A_minus=0.0 * u.uS)
+        # The crossing step 5 with 3 delay steps arrives at 0.9 ms, after the
+        # last sample of a 1 ms run (CELL-75): that case runs 1.1 ms.
         cases = {
-            "live": (lambda: _live_pre([0.6]), [0.0, 0.2]),
-            "live, both delayed": (lambda: _live_pre([0.6]), [0.2, 0.3]),
-            "scheduled": (lambda: _seq([0.5], [0.5]), [0.1, 0.1]),
+            "live": (lambda: _live_pre([0.6]), [0.0, 0.2], 1.0),
+            "live, both delayed": (lambda: _live_pre([0.6]), [0.2, 0.3], 1.1),
+            "scheduled": (lambda: _seq([0.5], [0.5]), [0.1, 0.1], 1.0),
         }
-        for label, (source, delay_ms) in cases.items():
+        for label, (source, delay_ms, duration_ms) in cases.items():
             with self.subTest(label):
                 net = _network(source(), _toy_cell(), synapse_index=[0, 0], delay=delay_ms * u.ms, rule=rule)
-                self._check(*_run_network(net, 1.0))
+                self._check(*_run_network(net, duration_ms))
 
     @_float64
     def test_scheduled_rows(self) -> None:
@@ -840,15 +842,16 @@ class STPDeliveryPathTest(unittest.TestCase):
     @_float64
     def test_rule_rows(self) -> None:
         rule = _stdp(A_plus=0.0 * u.uS, A_minus=0.0 * u.uS)
+        # As in DeliveryPathTest: 3 delay steps from step 5 arrive at 0.9 ms (CELL-75).
         cases = {
-            "live": (lambda: _live_pre([0.6]), [0.0, 0.2]),
-            "live, both delayed": (lambda: _live_pre([0.6]), [0.2, 0.3]),
-            "scheduled": (lambda: _seq([0.5], [0.5]), [0.1, 0.1]),
+            "live": (lambda: _live_pre([0.6]), [0.0, 0.2], 1.0),
+            "live, both delayed": (lambda: _live_pre([0.6]), [0.2, 0.3], 1.1),
+            "scheduled": (lambda: _seq([0.5], [0.5]), [0.1, 0.1], 1.0),
         }
-        for label, (source, delay_ms) in cases.items():
+        for label, (source, delay_ms, duration_ms) in cases.items():
             with self.subTest(label):
                 net = _network(source(), _stp_toy(), synapse_index=[0, 0], delay=delay_ms * u.ms, rule=rule)
-                self._check(*_run_network(net, 1.0, reader=_stp_samples))
+                self._check(*_run_network(net, duration_ms, reader=_stp_samples))
 
     @_float64
     def test_scheduled_rows(self) -> None:

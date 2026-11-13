@@ -23,7 +23,6 @@ integrate the same equations (float64, ``rk4``).
 """
 
 import contextlib
-import gc
 import unittest
 
 import brainstate
@@ -44,16 +43,8 @@ KINDS = ("lumped", "cable")
 
 @contextlib.contextmanager
 def _float64():
-    # JAX 0.12 reuses a NumPy constant that a live program of the other
-    # precision captured; free earlier programs on both sides of the switch.
-    gc.collect()
-    jax.clear_caches()
-    try:
-        with jax.enable_x64(True), brainstate.environ.context(precision=64):
-            yield
-    finally:
-        gc.collect()
-        jax.clear_caches()
+    with jax.enable_x64(True), brainstate.environ.context(precision=64):
+        yield
 
 
 def _new_cell(kind, n, *, solver="rk4", V_init=-65.0 * u.mV, **geometry):

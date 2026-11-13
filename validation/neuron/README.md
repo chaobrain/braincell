@@ -82,8 +82,9 @@ so a new slow module needs no workflow change.
   `ion/tolerances_test.py`).
 
 `synapse/reference_test.py` (ExpSyn and Exp2Syn against NEURON's built-in
-mechanisms, no compiled models, about 7 s) is in neither tier yet; run it by
-hand with `pytest -q validation/neuron/synapse/reference_test.py`.
+mechanisms, no compiled models, about 7 s) and `synapse/netcon_delay_test.py`
+(a delayed HH self-connection against `NetCon`, about 7 s) are in neither
+tier yet; run them by hand with `pytest -q validation/neuron/synapse`.
 
 Reproduce both tiers locally after compiling the channel models as above:
 

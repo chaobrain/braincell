@@ -2438,6 +2438,31 @@
   machine (main `2da3f2b`), 1e6 rows from 900 sources ran 2.0x faster onto
   1e4 synapses and 2.7x faster onto 1e6 synapses (one clean measurement of
   main), and 1e6 rows from 1e6 sources onto 1e4 synapses ran 10% slower.
+- A delayed event from a live source in a `Network` acts in the step it
+  acts in for a standalone `Cell.run`, an `update()` loop and NEURON's
+  `NetCon` (CELL-75): a source that crosses in step m with a delay of k
+  steps is first seen by the dynamics in step m + 1 + k. The Network
+  delivered it one step early, in step m + k, on plain rows and on rows
+  with a plasticity rule alike, so a delay of one step acted as no delay.
+  On main `2eace76`, in float64 with `dt = 0.025 ms`, an HH cell (cable and
+  lumped) whose spike reaches its own ExpSyn (tau 2 ms, 0.002 uS) 1, 2, 3,
+  4, 11 or 12 steps later first saw the event k steps after its crossing
+  step, and its V was bit for bit that of `Cell.run` with a delay of k - 1
+  steps (k = 1: no delay). It now first sees it 1 + k steps after, and V is
+  bit for bit that of `Cell.run` with k steps; the same holds from one
+  population to another and across split runs. The recorded conductance of
+  a delayed row is 0 at the delivery boundary t_{m+1+k} and
+  w exp(-dt / tau) at the next sample, as in NEURON within 1e-12 uS; on
+  main it was w exp(-dt / tau) one sample earlier. Gradients through a
+  delayed live row in a `Network` move with it and now equal those of
+  `Cell.run`. Zero-delay rows, scheduled sources (`EventSequence`,
+  `NetStim`), a Network without live rows and a standalone `Cell.run` are
+  unchanged bit for bit on the machine that tested them. The delivery
+  history of a queue with delayed rows, and the history of rule rows, hold
+  one more row (the longest delay plus one): in float64, 20 sources with a
+  1 ms delay at `dt = 0.025 ms` take 6560 bytes (6400 before), and 1e5
+  sources with a delay of one step, the largest relative growth, take
+  1.6 MB (0.8 MB before). The reads per step are unchanged.
 - A recording samples in whole steps of the grid from time 0, so a
   standalone `Cell.run` whose steps are off that grid samples where a
   scheduled event at the sample time acts, and a long run takes each sample
@@ -2460,6 +2485,18 @@
   within half a new step before the change is taken by both runs, and one
   midway between two steps of a run off the grid, followed by a run at a
   smaller `dt`, by neither.
+- A model can run at float32 while a float64 one is still alive in the same
+  process, and the reverse (OPT-17). Ions and channels that use the gas or
+  Faraday constant (every Nernst ion, the GHK flux, the calcium, chloride and
+  potassium concentration pools, `Kca1p1_MA2020_GoC`, `Kv1p5_MA2020_GrC`) raised
+  `JaxRuntimeError: RuntimeProgramInputMismatch` at the second model's
+  `init_state`, for example a float32 `Cell` with `CalciumDetailed` and
+  `CaT_HM1992` built while a float64 one that had run was kept. jaxlib 0.12
+  caches the device copy of a NumPy array per array object and hands it back
+  whatever `jax_enable_x64` is by then, and brainunit's `gas_constant` and
+  `faraday_constant` are shared 0-d arrays that a compiled program keeps;
+  braincell now holds them as NumPy scalars. Results are unchanged bit for bit
+  at both precisions on the machine that tested them.
 
 ### Documentation
 

@@ -29,6 +29,7 @@ import braincell
 from braincell._base_channel import IonInfo
 from braincell._base_ion import Ion
 from braincell._base_neuron import HHTypedNeuron
+from braincell._constants import FARADAY_CONSTANT, GAS_CONSTANT
 from braincell.channel.calcium import CaT_HM1992
 from braincell.filter import AllRegion
 from braincell.ion.calcium import (
@@ -170,7 +171,7 @@ class CalciumInitNernstTest(unittest.TestCase):
 
         self.assertIsNone(ca.E)
         ca.init_state(V)
-        expected = u.gas_constant * ca.temp / (ca.valence * u.faraday_constant) * u.math.log(ca.Co / ca.Ci)
+        expected = GAS_CONSTANT * ca.temp / (ca.valence * FARADAY_CONSTANT) * u.math.log(ca.Co / ca.Ci)
         self.assertTrue(u.math.allclose(ca.E.to_decimal(u.mV), expected.to_decimal(u.mV), atol=1e-6))
 
         first_E = ca.E
@@ -241,7 +242,7 @@ class CalciumDetailedTest(unittest.TestCase):
         # E = (R temp) / (2 F) * ln(Co / C_i)
         cd = CalciumDetailed(size=1)
         cd.init_state(_V([-60.0]))
-        expected = u.gas_constant * cd.temp / (2 * u.faraday_constant) * u.math.log(cd.Co / cd.Ci.value)
+        expected = GAS_CONSTANT * cd.temp / (2 * FARADAY_CONSTANT) * u.math.log(cd.Co / cd.Ci.value)
         self.assertTrue(u.math.allclose(cd.E, expected, atol=1e-6 * u.mV))
 
     def test_E_updates_with_C_dynamically(self) -> None:
@@ -1768,7 +1769,7 @@ class CalciumFirstOrderTest(unittest.TestCase):
         tau = 5.0 * u.ms
         C_rest = 2.4e-4 * u.mM
         detailed = CalciumDetailed(size=1, d=d, tau=tau, C_rest=C_rest)
-        first_order = CalciumFirstOrder(size=1, alpha=1 / (2 * u.faraday_constant * d), beta=1 / tau)
+        first_order = CalciumFirstOrder(size=1, alpha=1 / (2 * FARADAY_CONSTANT * d), beta=1 / tau)
         V = _V([-60.0])
         Ci = jnp.array([6e-4]) * u.mM
         expected = np.asarray((C_rest / tau).to_decimal(u.mM / u.ms))
@@ -1849,7 +1850,7 @@ class CalciumFirstOrderTest(unittest.TestCase):
     def test_E_follows_nernst_formula(self) -> None:
         cfo = CalciumFirstOrder(size=1)
         cfo.init_state(_V([-60.0]))
-        expected = u.gas_constant * cfo.temp / (2 * u.faraday_constant) * u.math.log(cfo.Co / cfo.Ci.value)
+        expected = GAS_CONSTANT * cfo.temp / (2 * FARADAY_CONSTANT) * u.math.log(cfo.Co / cfo.Ci.value)
         self.assertTrue(u.math.allclose(cfo.E, expected, atol=1e-6 * u.mV))
 
 

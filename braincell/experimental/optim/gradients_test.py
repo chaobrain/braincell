@@ -1209,6 +1209,27 @@ class FunctionalStepTraceOrderTest(unittest.TestCase):
         np.testing.assert_array_equal(np.asarray(new_values, dtype=np.float64), [0.5, 2.0, 20.5])
         self.assertEqual(float(out), 0.5 + 3.0 * 20.5)
 
+    def test_dependencies_of_a_reordered_trace(self) -> None:
+        # OPT-18's dependency trace of the compact entries reads the step's
+        # results in the built order too.
+        def step(x):
+            if x.dtype == jnp.float32:
+                _ = self.b.value  # read b first: the same step, another order
+            self.a.value = self.a.value * self.p.value + x
+            self.b.value = self.b.value - x
+            return self.a.value
+
+        with jax.enable_x64(True):
+            built = fs.build_stateful_step(step, jnp.asarray(0.0, jnp.float64), {"p": self.p})
+            values = built.state_values()
+            retraced = built.function.get_state_trace(jnp.asarray(0.5, jnp.float32)).states
+            self.assertNotEqual([id(s) for s in retraced], [id(s) for s in built.state_trace.states])
+            expected = fs._step_tangent_dependencies(built, values, jnp.asarray(0.5, jnp.float64))
+            actual = fs._step_tangent_dependencies(built, values, jnp.asarray(0.5, jnp.float32))
+        # Built order (a, p, b): a' reads a and p, b' reads b, the output a'.
+        self.assertEqual(expected.new_state_deps, (0b011, 0b000, 0b100))
+        self.assertEqual(actual, expected)
+
     def test_trace_of_other_states_is_refused(self) -> None:
         def step(x):
             state = self.c if x.dtype == jnp.float32 else self.a

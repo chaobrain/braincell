@@ -1500,6 +1500,11 @@
   or a CI input. These tests skip without NEURON; a final step fails the job
   if any of them skipped or none ran. Before, they ran only by hand.
 
+- **CI runs the docstring examples on every pull request** (API-17). The
+  `checks` job ends with `pytest --doctest-modules braincell
+  --ignore-glob='*_test.py'`, so a `>>>` example whose output no longer
+  matches the code fails the pull request.
+
 ### Bug Fixes
 
 - brainpy's `align_pre` with a descriptor given no size works on a lumped

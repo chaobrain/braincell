@@ -1062,7 +1062,9 @@ def compact_forward_sensitivity_step(
     ------
     ValueError
         As :func:`build_active_state_projection`, if ``projection`` leaves out
-        a coordinate of a state in ``functional_step.materialized_states``.
+        a coordinate of a state in ``functional_step.materialized_states``, or
+        a state whose dropped sensitivity reaches a selected state or the
+        step's output.
     """
     _check_active_states(functional_step, projection, state_values, step_data)
     full_state_tangents = projection.embed_tangents(
@@ -1161,19 +1163,23 @@ def compact_forward_sensitivity_rollout(
     """Scan an exact rollout with a compact ``(parameter, active_state)`` carry.
 
     The result is exact when the active states carry every sensitivity the
-    loss depends on: the selection must include each state whose tangent is
-    not zero, since every other state starts each step with a zero tangent.
-    States materialized before the rollout are checked (below); a state the
-    step itself writes and the selection leaves out (an unselected calcium
-    concentration, say) is not detected and silently drops its part of the
-    gradient (OPT-18).
+    loss depends on: every other state starts each step with a zero tangent.
+    The selection is checked as in :func:`build_active_state_projection`,
+    both for the states materialized before the rollout and for the states
+    the step writes (an unselected calcium concentration, say). The check
+    does not see a dropped state's initial tangent set by a custom
+    initializer (only ``functional_step.materialized_states``), nor a
+    sensitivity carried through a point-tree voltage when a point current
+    is non-linear in the voltage (``SOLVER_START_TAG``).
 
     Raises
     ------
     ValueError
         If ``initial_active_state_tangents`` has the wrong shape, or, as
         :func:`build_active_state_projection`, if ``projection`` leaves out a
-        coordinate of a state in ``functional_step.materialized_states``.
+        coordinate of a state in ``functional_step.materialized_states`` or a
+        state whose dropped sensitivity reaches a selected state or the
+        step's output.
     """
     expected = (parameter_coordinates.size, projection.size)
     if tuple(initial_active_state_tangents.shape) != expected:

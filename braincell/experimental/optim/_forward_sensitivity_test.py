@@ -29,9 +29,14 @@ import numpy as np
 from braincell._compute._testing import _build_tree
 from braincell.filter import AllRegion, RootLocation
 
+from braincell._misc import SOLVER_START_TAG
 from braincell.experimental.optim._forward_sensitivity import (
+    _DEPENDENCY_CACHE,
     ActiveStateSelection,
     _align_state_values,
+    _equation_dependencies,
+    _jaxpr_dependencies,
+    _scan_layout,
     bptt_reference_loss,
     build_active_state_projection,
     build_stateful_step,
@@ -585,6 +590,288 @@ class CompactActiveStateTest(unittest.TestCase):
                     self.assertTrue(np.isfinite(gradient))
                     self.assertNotEqual(expected, 0.0)
                     np.testing.assert_allclose(gradient, expected, rtol=1e-6)
+
+
+def _calcium_case(solver, *, loss="V", field="g_max", materialize_in_step=False):
+    """The two-branch HH cable with a calcium pool: CalciumDetailed and CaT_HM1992 (2 mS/cm^2) on every CV.
+
+    Returns the cell, its BPTT and RTRL engines, the calcium ion node and the
+    V, m, h, n, CaT p, q selections (plus the materialized g_max State in
+    "rollout" mode). ``loss`` is ``"V"`` (``mean((V - target)^2)``) or
+    ``"Ca"`` (the mean concentration in uM, a calcium-imaging-like loss).
+    """
+    cell = braincell.Cell(
+        _build_tree(), pop_size=(2,), V_init=-65.0 * u.mV, **({} if solver == "default" else {"solver": solver})
+    )
+    cell.paint(
+        AllRegion(),
+        braincell.mech.Ion("SodiumFixed", E=50.0 * u.mV),
+        braincell.mech.Ion("PotassiumFixed", E=-77.0 * u.mV),
+        braincell.mech.Channel("Na_HH1952", name="na", g_max=120.0 * u.mS / u.cm**2),
+        braincell.mech.Channel("K_HH1952", name="k", g_max=36.0 * u.mS / u.cm**2),
+        braincell.mech.Channel("IL", name="leak", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+        braincell.mech.Ion("CalciumDetailed"),
+        braincell.mech.Channel("CaT_HM1992", name="cat", g_max=2.0 * u.mS / u.cm**2),
+    )
+    cell.place(
+        RootLocation(0.5),
+        braincell.mech.CurrentClamp(delay=0.0 * u.ms, durations=50.0 * u.ms, amplitudes=0.1 * u.nA),
+    )
+    cell.init_state()
+    source = braincell.trainable.scale(group_by="all", name=field)
+    if field == "Ra":
+        cell.geometry.Ra.trainable(source)
+    else:
+        cell.channels["na"].trainable(g_max=source)
+    cell.reset_state()
+
+    def node(kind):
+        layout = next(layout for layout in cell.layouts if layout.kind == kind)
+        return cell.runtime.get_runtime_node(layout.id)
+
+    calcium = node("ion:CalciumDetailed")
+
+    def step(target_mv):
+        if materialize_in_step:
+            cell.trainables.materialize()
+        cell.update()
+        if loss == "Ca":
+            return jnp.mean(calcium.Ci.value.to_decimal(u.mM)) * 1e3 + 0.0 * target_mv
+        return jnp.mean((cell.V.value.to_decimal(u.mV) - target_mv) ** 2)
+
+    example = jnp.asarray(-64.0)
+    bptt = build_rollout_value_and_grad(cell, step=step, method="bptt").prepare(example)
+    rtrl = build_rollout_value_and_grad(cell, step=step, method="rtrl").prepare(example)
+    sodium, potassium, cat = node("channel:Na_HH1952"), node("channel:K_HH1952"), node("channel:CaT_HM1992")
+    selections = [
+        _select_all("V", cell.V),
+        _select_all("m", sodium.p),
+        _select_all("h", sodium.q),
+        _select_all("n", potassium.p),
+        _select_all("cat.p", cat.p),
+        _select_all("cat.q", cat.q),
+    ]
+    states = rtrl._functional_step.state_trace.states
+    selections += [_select_all(label, states[index]) for index, label in rtrl._functional_step.materialized_states]
+    return cell, bptt, rtrl, calcium, selections
+
+
+def _full_gradient(engine, roots, data):
+    values, tangents = engine._initial_full_carry(roots)
+    return forward_sensitivity_rollout(engine._functional_step, values, tangents, data).final_gradient[0]
+
+
+class CompactStepWrittenStateTest(unittest.TestCase):
+    """OPT-18: a compact carry must keep the states the step writes whose sensitivity reaches the result."""
+
+    _assert_fingerprint_unchanged = CompactActiveStateTest._assert_fingerprint_unchanged
+
+    def test_an_unselected_calcium_concentration_is_refused(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            for solver in ("rk4", "default"):
+                with self.subTest(solver=solver):
+                    cell, _bptt, rtrl, calcium, selections = _calcium_case(solver)
+                    step = rtrl._functional_step
+                    self.assertEqual(rtrl.materialization_mode, "rollout")
+                    index = next(i for i, state in enumerate(step.state_trace.states) if state is calcium.Ci)
+                    before = _state_fingerprint(cell, step)
+                    with self.assertRaises(ValueError) as caught:
+                        build_active_state_projection(step, selections)
+                    self._assert_fingerprint_unchanged(before, _state_fingerprint(cell, step))
+                    message = str(caught.exception)
+                    self.assertIn(f"ion:CalciumDetailed.Ci (state_trace.states[{index}], 0 of 4 coordinates", message)
+                    self.assertIn("'g_max'", message)
+                    self.assertIn("truncated_states", message)
+                    # Only the concentration is missing.
+                    self.assertEqual(message.count("state_trace.states["), 1)
+                    # A second call is refused the same way.
+                    with self.assertRaisesRegex(ValueError, "ion:CalciumDetailed.Ci"):
+                        build_active_state_projection(step, selections)
+                    # A partial selection of the concentration is refused too.
+                    with self.assertRaisesRegex(ValueError, r"ion:CalciumDetailed.Ci .*3 of 4 coordinates"):
+                        build_active_state_projection(
+                            step, selections + [ActiveStateSelection("Ci", calcium.Ci, (0, 1, 2))]
+                        )
+
+    def test_each_compact_entry_refuses_the_dropped_concentration(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            cell, _bptt, rtrl, _calcium, selections = _calcium_case("rk4")
+            step = rtrl._functional_step
+            # Without example data the projection cannot be checked when it
+            # is built; each entry checks it with its own data.
+            projection = build_active_state_projection(step._replace(example_data=None), selections)
+            roots = tuple(state.value for state in rtrl.parameter_states.values())
+            values, tangents = rtrl._initial_full_carry(roots)
+            active = projection.extract_tangents(tangents)
+            data = jnp.linspace(-64.0, -60.0, 4)
+            for label, entry_step in (("with example data", step), ("without", step._replace(example_data=None))):
+                with self.subTest(step=label):
+                    before = _state_fingerprint(cell, step)
+                    with self.assertRaises(ValueError) as rollout:
+                        compact_forward_sensitivity_rollout(
+                            entry_step, projection, rtrl._parameter_coordinates, values, active, data
+                        )
+                    with self.assertRaises(ValueError) as one_step:
+                        compact_forward_sensitivity_step(
+                            entry_step, projection, rtrl._parameter_coordinates, values, active, data[0]
+                        )
+                    self._assert_fingerprint_unchanged(before, _state_fingerprint(cell, step))
+                    for caught in (rollout, one_step):
+                        self.assertIn("ion:CalciumDetailed.Ci", str(caught.exception))
+
+    def test_completed_selection_matches_the_central_difference(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            data = jnp.linspace(-64.0, -60.0, _COMPACT_STEPS)
+            for solver in ("rk4", "default"):
+                for loss in ("V", "Ca"):
+                    with self.subTest(solver=solver, loss=loss):
+                        _cell, bptt, rtrl, calcium, selections = _calcium_case(solver, loss=loss)
+                        roots = tuple(state.value for state in rtrl.parameter_states.values())
+                        expected = _central_difference(bptt, roots, data)
+                        complete = build_active_state_projection(
+                            rtrl._functional_step, selections + [_select_all("Ci", calcium.Ci)]
+                        )
+                        gradient = float(jax.jit(lambda r: _compact_gradient(rtrl, complete, r, data))(roots))
+                        self.assertTrue(np.isfinite(gradient))
+                        self.assertNotEqual(expected, 0.0)
+                        np.testing.assert_allclose(gradient, expected, rtol=1e-6)
+                        # Dropping the concentration on purpose is allowed and
+                        # gives the gradient the check refuses by default.
+                        truncated = build_active_state_projection(
+                            rtrl._functional_step, selections, truncated_states=(calcium.Ci,)
+                        )
+                        dropped = float(jax.jit(lambda r: _compact_gradient(rtrl, truncated, r, data))(roots))
+                        error = abs(dropped - expected) / abs(expected)
+                        self.assertGreater(error, 0.5 if loss == "Ca" else 1e-7)
+
+    def test_truncated_states_must_be_traced_states(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            _cell, _bptt, rtrl, _calcium, selections = _calcium_case("rk4")
+            with self.assertRaisesRegex(TypeError, "brainstate.State"):
+                build_active_state_projection(rtrl._functional_step, selections, truncated_states=("Ci",))
+            with self.assertRaisesRegex(ValueError, "traced once"):
+                build_active_state_projection(
+                    rtrl._functional_step, selections, truncated_states=(brainstate.ShortTermState(0.0),)
+                )
+
+    def test_the_point_tree_voltage_is_not_asked_for(self) -> None:
+        # The staggered solver reads _point_V only as its start value: the
+        # step's result depends on the stored value only through rounding.
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            data = jnp.linspace(-64.0, -60.0, _COMPACT_STEPS)
+            cell, _bptt, rtrl, _sodium, selections = _compact_case("g_max", materialize_in_step=True)
+            self.assertIn(SOLVER_START_TAG, cell._point_V.tag)
+            projection = build_active_state_projection(rtrl._functional_step, selections)
+            roots = tuple(state.value for state in rtrl.parameter_states.values())
+            gradient = float(jax.jit(lambda r: _compact_gradient(rtrl, projection, r, data))(roots))
+            full = float(jax.jit(lambda r: _full_gradient(rtrl, r, data))(roots))
+            self.assertNotEqual(full, 0.0)
+            np.testing.assert_allclose(gradient, full, rtol=1e-12)
+            # Without the tag the check asks for it.
+            vars(cell._point_V)["tag"] = None
+            try:
+                with self.assertRaisesRegex(ValueError, r"_point_V \(state_trace"):
+                    build_active_state_projection(rtrl._functional_step, selections)
+            finally:
+                vars(cell._point_V)["tag"] = {SOLVER_START_TAG}
+
+    def test_states_rewritten_from_the_roots_are_not_asked_for(self) -> None:
+        # "step" mode: the engine materializes before the user's step, which
+        # here materializes again; the geometry State Ra is rewritten each step.
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            data = jnp.linspace(-64.0, -60.0, _COMPACT_STEPS)
+            _cell, _bptt, rtrl, calcium, selections = _calcium_case("rk4", field="Ra", materialize_in_step=True)
+            step = rtrl._functional_step
+            self.assertEqual(rtrl.materialization_mode, "step")
+            self.assertTrue(step.rematerialized_states)
+            selections = selections + [_select_all("Ci", calcium.Ci)]
+            projection = build_active_state_projection(step, selections)
+            roots = tuple(state.value for state in rtrl.parameter_states.values())
+            gradient = float(jax.jit(lambda r: _compact_gradient(rtrl, projection, r, data))(roots))
+            full = float(jax.jit(lambda r: _full_gradient(rtrl, r, data))(roots))
+            self.assertNotEqual(full, 0.0)
+            np.testing.assert_allclose(gradient, full, rtol=1e-12)
+            # Without the record the check asks for them: the structural
+            # dependency (an element-wise overwrite) is there.
+            with self.assertRaisesRegex(ValueError, "RuntimeParameterState"):
+                build_active_state_projection(step._replace(rematerialized_states=()), selections)
+
+    def test_the_tangent_map_is_traced_once_per_step(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            _cell, _bptt, rtrl, calcium, selections = _calcium_case("rk4")
+            step = rtrl._functional_step
+            projection = build_active_state_projection(step, selections + [_select_all("Ci", calcium.Ci)])
+            build_active_state_projection(step, selections + [_select_all("Ci", calcium.Ci)])
+            roots = tuple(state.value for state in rtrl.parameter_states.values())
+            jax.jit(lambda r: _compact_gradient(rtrl, projection, r, jnp.linspace(-64.0, -60.0, 4)))(roots)
+            self.assertEqual(len(_DEPENDENCY_CACHE[step.function]), 1)
+
+
+class TangentDependencyTest(unittest.TestCase):
+    """OPT-18: the structural tangent dependencies behind the compact-carry check."""
+
+    def _dependencies(self, function, *args):
+        jaxpr = jax.make_jaxpr(function)(*args).jaxpr
+        return _jaxpr_dependencies(jaxpr, [1 << index for index in range(len(jaxpr.invars))])
+
+    def test_elementwise_jit_and_zero_derivatives(self) -> None:
+        def function(a, b, c):
+            inner = jax.jit(lambda x, y: (x * 2.0, y + 1.0))(a, b)
+            return inner[0] + inner[1], jnp.where(a > b, 1.0, 0.0), jax.lax.stop_gradient(c), c * 0.0 + a
+
+        a, b, c = (jnp.asarray(1.0),) * 3
+        # Dependencies of the tangent map, as the check traces them.
+        deps = self._dependencies(lambda x, y, z, tx, ty, tz: jax.jvp(function, (x, y, z), (tx, ty, tz))[1], a, b, c, a, b, c)
+        self.assertEqual(deps, [0b011000, 0, 0, 0b101000])
+
+    def test_scan_carry_reaches_its_fixed_point(self) -> None:
+        def function(a, b):
+            def body(carry, _):
+                first, second = carry
+                return (second, second * 2.0), first
+
+            (first, second), ys = jax.lax.scan(body, (a, b), None, length=3)
+            return first, second, ys
+
+        self.assertEqual(self._dependencies(function, 1.0, 2.0), [0b11, 0b10, 0b11])
+
+    def test_while_carry_reaches_its_fixed_point(self) -> None:
+        def function(a, b):
+            def body(carry):
+                count, first, second = carry
+                return count + 1, second, second * 2.0
+
+            _count, first, second = jax.lax.while_loop(lambda carry: carry[0] < 3, body, (0, a, b))
+            return first, second
+
+        self.assertEqual(self._dependencies(function, 1.0, 2.0), [0b11, 0b10])
+
+    def test_cond_joins_its_branches_but_not_its_index(self) -> None:
+        def function(flag, a, b):
+            return jax.lax.cond(flag, lambda x, y: x, lambda x, y: y * 2.0, a, b)
+
+        self.assertEqual(self._dependencies(function, True, 1.0, 2.0), [0b110])
+
+    def test_unknown_parameters_make_every_output_depend_on_every_input(self) -> None:
+        from types import SimpleNamespace
+
+        def equation(name, params, n_out=2):
+            primitive = SimpleNamespace(name=name)
+            return SimpleNamespace(primitive=primitive, params=params, outvars=[object()] * n_out)
+
+        self.assertIsNone(_scan_layout({}))
+        self.assertEqual(_scan_layout({"num_consts": 1, "num_carry": 2}), (1, 2))
+        body = jax.make_jaxpr(lambda x: x)(1.0)
+        for eq in (
+            equation("custom_unknown", {}),
+            equation("scan", {"jaxpr": body}),
+            equation("while", {"body_jaxpr": body}),
+            equation("cond", {"branches": (body,)}),
+            equation("pjit", {"jaxpr": body}),
+        ):
+            with self.subTest(primitive=eq.primitive.name):
+                self.assertEqual(_equation_dependencies(eq, [0b01, 0b10]), [0b11, 0b11])
+        self.assertEqual(_equation_dependencies(equation("custom_unknown", {}), [0, 0]), [0, 0])
 
 
 if __name__ == "__main__":

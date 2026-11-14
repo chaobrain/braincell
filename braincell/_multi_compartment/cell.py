@@ -63,6 +63,7 @@ from braincell._base_ion import Ion, MixIons
 from braincell._base_neuron import HHTypedNeuron, _zero_spike_like
 from braincell._deprecation import removed_member
 from braincell._misc import (
+    SOLVER_START_TAG,
     is_traced_value,
     scalar_decimal,
     strong_state_values,
@@ -2983,7 +2984,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._step_clamp_point_current = brainstate.ShortTermState(
             u.Quantity(jnp.zeros(self._runtime.pop_size + (self._runtime.n_point,), dtype=float), u.nA)
         )
-        self._point_V = brainstate.ShortTermState(self._initial_point_voltage(self.V.value))
+        self._point_V = brainstate.ShortTermState(self._initial_point_voltage(self.V.value), tag=SOLVER_START_TAG)
         self._next_synapse_inputs_prepared = brainstate.ShortTermState(jnp.asarray(False))
         self._reset_clock()
 

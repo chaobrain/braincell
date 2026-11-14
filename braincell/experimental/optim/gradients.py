@@ -694,8 +694,13 @@ def _prepare_steps(engine, example_step_data, *, require_scalar_output):
 
     initializer_step = build_stateful_step(initialize_and_zero, None, engine.parameter_states)
 
+    # The states the last trace of materialized_step's materialize() wrote.
+    materialize_writes = []
+
     def materialized_step(data):
-        manager.materialize()
+        with brainstate.StateTraceStack() as trace:
+            manager.materialize()
+        materialize_writes[:] = trace.get_write_states()
         return traced_user_step(data)
 
     if functional_step is None:
@@ -718,12 +723,46 @@ def _prepare_steps(engine, example_step_data, *, require_scalar_output):
         materialize=mode == "step",
         require_scalar_output=require_scalar_output,
     )
+    labels = _state_labels(engine.target)
     if mode == "rollout":
-        functional_step = _with_materialized_states(engine, functional_step, guarded_states)
+        functional_step = _with_materialized_states(engine, functional_step, guarded_states, labels)
+    else:
+        # materialized_step rewrites these from the roots before the user's
+        # step runs, so their stored values do not reach the result (OPT-18).
+        # A user step that also materializes writes them the same way.
+        roots = {id(state) for state in engine.parameter_states.values()}
+        rewritten = {id(state) for state in materialize_writes} - roots
+        functional_step = functional_step._replace(
+            rematerialized_states=tuple(
+                index for index, state in enumerate(functional_step.state_trace.states) if id(state) in rewritten
+            )
+        )
+    functional_step = functional_step._replace(
+        state_labels=tuple(labels.get(id(state), "") for state in functional_step.state_trace.states)
+    )
     return initializer_step, functional_step, mode, operator_mode
 
 
-def _with_materialized_states(engine, functional_step, guarded_states):
+def _state_labels(target):
+    """A label for each State of ``target``, by ``id``, for the compact-sensitivity check's messages.
+
+    A State backing a runtime node is labelled with the node's kind and
+    field (``channel:Na_HH1952.g_max``); any other with its attribute path
+    in the target (``V``, ``ion_channels.CalciumDetailed.Ci``).
+    """
+    labels = {}
+    runtime = getattr(target, "_runtime", None)
+    for layout in getattr(runtime, "layouts", ()):
+        node = runtime.runtime_nodes.get(layout.id)
+        for field, value in getattr(node, "__dict__", {}).items():
+            if isinstance(value, brainstate.State):
+                labels.setdefault(id(value), f"{layout.kind}.{field}")
+    for path, state in brainstate.graph.states(target).items():
+        labels.setdefault(id(state), ".".join(str(part) for part in path))
+    return labels
+
+
+def _with_materialized_states(engine, functional_step, guarded_states, labels):
     """Record where the step reads the states materialized before the rollout (OPT-16).
 
     The roots are excluded: the step reads them too (they stay in its trace)
@@ -731,13 +770,6 @@ def _with_materialized_states(engine, functional_step, guarded_states):
     runtime node and field it backs, for the compact-sensitivity check.
     """
     roots = {id(state) for state in engine.parameter_states.values()}
-    runtime = engine.target._runtime
-    labels = {}
-    for layout in runtime.layouts:
-        node = runtime.runtime_nodes.get(layout.id)
-        for field, value in getattr(node, "__dict__", {}).items():
-            if isinstance(value, brainstate.State):
-                labels.setdefault(id(value), f"{layout.kind}.{field}")
     positions = {id(state): index for index, state in enumerate(functional_step.state_trace.states)}
     materialized = tuple(
         (positions[id(state)], labels.get(id(state), type(state).__name__))

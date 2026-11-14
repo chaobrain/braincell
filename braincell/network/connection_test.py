@@ -309,9 +309,9 @@ class ConnectionTest(unittest.TestCase):
 
         self.assertEqual(len(spike_rows), 1)
         self.assertGreater(len(conductance_rows), 0)
-        # A recording samples before each step: the event delivered on the
-        # step that starts at the spike row first shows one sample later.
-        self.assertEqual(int(conductance_rows[0]) - 1, int(spike_rows[0]))
+        # The spike of step m is at t_{m+1} (CELL-80). A zero-delay event acts
+        # at the end of step m, so it first shows in the sample of t_{m+1}.
+        self.assertEqual(int(conductance_rows[0]), int(spike_rows[0]))
 
     def test_network_rejects_live_source_outside_execution_scope(self) -> None:
         pre, _ = _population(1)

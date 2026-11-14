@@ -712,7 +712,8 @@ class MultiDimensionalPopulationTest(unittest.TestCase):
                     cls.runs[kind, pop_size] = {
                         "values": {name: _values(block) for name, block in result.samples.items()},
                         "rows": {name: _row_keys(block) for name, block in result.samples.items()},
-                        "spike_step": np.rint(np.asarray(result.spikes.time.to_decimal(u.ms)) / 0.025).astype(int),
+                        # A step's spike is at its end, so step m's at (m + 1) dt (CELL-80).
+                        "spike_step": np.rint(np.asarray(result.spikes.time.to_decimal(u.ms)) / 0.025).astype(int) - 1,
                         "spike_source": np.asarray(result.spikes.source_id),
                         "spike_cv": np.asarray(result.spikes.metadata["cv_id"]),
                     }
@@ -803,7 +804,7 @@ class MultiDimensionalPopulationTest(unittest.TestCase):
                     spikes.metadata["batch_index"] * 6 + spikes.metadata["population_index"], np.arange(12)
                 )
                 V = _values(grid.samples["V"])
-                steps = np.rint(np.asarray(spikes.time.to_decimal(u.ms)) / 0.025).astype(int)
+                steps = np.rint(np.asarray(spikes.time.to_decimal(u.ms)) / 0.025).astype(int) - 1
                 for step, source in zip(steps, spikes.source_id):
                     batch, member = divmod(int(source), 6)
                     column = member * n_cv + _GRID_MID_CV[kind]

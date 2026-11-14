@@ -269,6 +269,32 @@
   no deprecation period (0.3 allows breaking changes without one, a
   project-lead decision). Use `jnp.asarray(series.time.mantissa)` where a
   JAX array is needed.
+- **All spike times move one `dt` later** (CELL-80). A Cell's spike in the
+  step from `t_m` to `t_m + dt` was reported at `t_m`, the start of the step;
+  `RunResult.spikes` and `NetworkResult.events[population][port]` of a Cell
+  (the `"spike"` port, a reduction model's events, and a
+  `VoltageCrossingSource` port) now report it at `t_m + dt`, the end of the
+  step, as NEURON's `NetCon.record` does in fixed step. A Hodgkin-Huxley soma
+  that NEURON 9.0.2 stamps at 2.475, 18.8 and 34.925 ms was reported at 2.45,
+  18.775 and 34.9 ms on main `999a21e`; the times now agree within 1e-9 ms
+  (`validation/neuron/synapse/spike_times_test.py`). A reduction model driven
+  by NetStim events at 0.3, 1.3 and 2.3 ms (dt 0.1 ms) reports 0.4, 1.4 and
+  2.4 ms instead of 0.3, 1.3 and 2.3 ms. The reported time is now the one the
+  library uses for the spike: a plasticity rule pairs the post spike at it
+  (a `PairSTDP` weight change computed from the old reported time was 1.25e-3
+  off in relative terms), and replaying `RunResult.spikes` as an
+  `EventSequence` with the connection's delay acts in the same step as the
+  live connection instead of one step earlier. A run reports the spikes of
+  its own steps, so their times lie in `(start_time, stop_time]` instead of
+  `[start_time, stop_time)`: a crossing in a run's last step is reported by
+  that run at its `stop_time`, and split runs still concatenate to one run.
+  The time is the next entry of the run's time axis (or its `stop_time`), so
+  it equals `result.time[m + 1]` bit for bit. NetStim and EventSequence
+  events keep their own times, and the dynamics do not change. There is no
+  deprecation period (0.3 allows breaking changes without one, a
+  project-lead decision). To get the old values, subtract `dt` from the
+  times; an `update()` loop that labels the spikes of the step at `t` should
+  label them `t + dt`.
 
 ### New Features
 
@@ -1401,6 +1427,32 @@
   longer compile for each new number of spikes (see Breaking Changes). The
   rows, their order and their values are unchanged, and an `EventSequence`
   still filters its whole table once per run.
+- **The `experimental.optim` engines build a cable Cell's axial operator
+  once per scan** (OPT-14). The engines replay the step they traced at
+  `prepare`, and that step built the operator (the Schur LU of the generic
+  solvers, four per `rk4` step; the DHS coefficients of `staggered` and
+  `dhs_voltage`) at every step, inside the scan. Every scanning entry now
+  builds it once from its initial states and passes it to each step: rollout
+  and trajectory BPTT and RTRL, both `diagnose` paths,
+  `forward_sensitivity_rollout`, `compact_forward_sensitivity_rollout` and
+  `bptt_reference_loss`. RTRL linearizes the build once and carries its
+  tangent, and `diagnose` pulls the operator's share of the local gradient
+  back through the build. On the CA1 morphology (`rk4`, float64), with `Ra`
+  trainable, a step took 230-377 ms on one CPU core and 18-39 ms on an RTX
+  3090 on main `8bb8721`; it now takes 0.59-1.09 ms and 0.16-0.34 ms. With
+  sodium `g_max` trainable, the RTRL-type entries on GPU went from 15-23 to
+  0.19-0.27 ms per step; CPU steps are unchanged, since XLA already moved
+  those builds out of the loop. Each run now pays for one build: the fixed
+  cost of a CPU run with `Ra` went from 28-54 to 84-129 ms, and on GPU a
+  build costs 15-23 ms (measured on the `g_max` RTRL entries). The compiled
+  scratch memory of rollout RTRL with one `Ra` scale per CV (681 directions)
+  fell from 70.8 to 18.9 GiB, and `prepare` takes 0.5-0.65 s longer with
+  `Ra` and 0.11 s with `g_max`. These are medians of 3 rounds; the CPU rows
+  ran at load1 1-9, the GPU rows under load (14-70). Gradients change only
+  in the last bits (Y cable: at most 6e-16 in float64, 8e-8 in float32). A
+  step that writes the geometry or an optimizer root keeps building the
+  operator at every step, with main's results; the new `axial_operator_mode`
+  property reports `"rollout"`, `"step"` or `"none"`.
 
 ### Bug Fixes
 

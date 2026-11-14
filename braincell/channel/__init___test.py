@@ -74,7 +74,6 @@ _NO_PRIMARY_SOURCE = frozenset(
         "freeze_gradient",
         "q10_factor",
         "CaN_IS2008",
-        "CaL_IS2008",
         "K_Leak",
         "Cl_Leak",
         "Na_Leak",
@@ -152,7 +151,7 @@ def test_pre_normalization_names_raise_attribute_error(name):
 
 
 class RenamedChannelTest(unittest.TestCase):
-    """MECH-42: braincell 0.3 renamed ``CaHT_HM1992`` to ``CaT_HM1992_Shifted25``, keeping no alias."""
+    """braincell 0.3 renamed ``CaHT_HM1992`` (MECH-42) and ``CaL_IS2008`` (MECH-49), keeping no alias."""
 
     def test_access_names_the_new_name_and_the_release(self):
         with self.assertRaises(AttributeError) as caught:
@@ -167,6 +166,19 @@ class RenamedChannelTest(unittest.TestCase):
     def test_from_import_raises_import_error_with_the_message(self):
         with self.assertRaisesRegex(ImportError, r"^braincell\.channel\.CaHT_HM1992 was renamed in braincell 0\.3\."):
             from braincell.channel import CaHT_HM1992  # noqa: F401
+
+    def test_cal_is2008_names_cal_li2017(self):
+        # MECH-49: the class reproduces Li et al. (2017); Inoue & Strowbridge (2008) has no L-type current.
+        with self.assertRaises(AttributeError) as caught:
+            channel.CaL_IS2008
+        message = str(caught.exception)
+        self.assertTrue(message.startswith("braincell.channel.CaL_IS2008 was renamed in braincell 0.3."), message)
+        self.assertIn("braincell.channel.CaL_Li2017", message)
+        self.assertIn("mech.Channel('CaL_Li2017'", message)
+        self.assertFalse(hasattr(channel, "CaL_IS2008"))
+        self.assertNotIn("CaL_IS2008", channel.__all__)
+        with self.assertRaisesRegex(ImportError, r"^braincell\.channel\.CaL_IS2008 was renamed in braincell 0\.3\."):
+            from braincell.channel import CaL_IS2008  # noqa: F401
 
     def test_other_missing_names_keep_the_generic_message(self):
         with self.assertRaisesRegex(AttributeError, "module 'braincell.channel' has no attribute 'NoSuchChannel'"):

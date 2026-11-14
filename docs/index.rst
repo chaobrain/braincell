@@ -125,7 +125,7 @@ A thalamic relay (HTC) point neuron, assembled from ion species and channels:
            mech.Ion('PotassiumFixed', E=-90. * u.mV),
            mech.Channel('KDR_Ba2002', V_sh=-30. * u.mV),
            mech.Ion('CalciumDetailed', C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um),
-           mech.Channel('CaL_IS2008', g_max=0.5 * (u.mS / u.cm ** 2)),
+           mech.Channel('CaL_Li2017', g_max=0.5 * (u.mS / u.cm ** 2)),
            mech.Channel('HCN_HM1992', g_max=0.01 * (u.mS / u.cm ** 2), E=-43 * u.mV),
            mech.Channel('IL', g_max=0.0075 * (u.mS / u.cm ** 2), E=-70 * u.mV),
        )

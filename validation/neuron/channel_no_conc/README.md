@@ -54,6 +54,8 @@ T0（`e_V ≤ 1e-6 mV`；`e_I`、`e_s ≤ 1e-10`）；每个 T1 项写明偏差�
 `configs/testing/cl_leak_testing.json` 对照同一库中的 `clleak.mod`：没有门变量
 （`gate_names` 为空列表，电压钳只比较 `e_I`）；`clleak` 只读 `ecl`，NEURON 侧由
 runner 对 `cl_ion` 设 `ion_style`，使 `ecl` 按 `ion_state` 的浓度取 Nernst 值。
+`configs/modeldb279/cat_hm1992_ghk.json` 对照按字节入库的 `data/modeldb/279/ITGHK.mod`
+（`identity.pinned_mod_files`，编进同一个 `testing` 库，见 [configs/README.md](configs/README.md)）。
 `configs/builtin/` 以 NEURON 自带机制为参照（任一已编译的库都含有）：`hh` 只留一种
 电导（其余设为 0，runner 对带 `TABLE` 的机制设 `usetable_<mech> = 0`），对照
 `K_HH1952` 与 `Na_HH1952`（braincell 侧 `temp_ref = 6.3 °C`）；`pas` 对照 `IL`。

@@ -84,7 +84,7 @@ ENTRIES = {entry.config: entry for entry in table.CONFIGS if entry.config in FAM
 class FamilyTableTest(unittest.TestCase):
     def test_the_family_is_in_the_tables(self):
         classes = family_classes()
-        self.assertEqual((len(classes), len(FAMILY_CONFIGS)), (50, 48))
+        self.assertEqual((len(classes), len(FAMILY_CONFIGS)), (51, 49))
         self.assertEqual(set(ENTRIES), set(FAMILY_CONFIGS))
         # A class or configuration added to the family must join the family's tuples.
         self.assertEqual(classes, tuple(sorted(table.CALCIUM_FAMILY_CLASSES)))

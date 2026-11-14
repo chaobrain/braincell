@@ -71,7 +71,7 @@ def HTC(
         ),
 
         mech.Ion('CalciumDetailed', C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um),
-        mech.Channel('CaL_IS2008', g_max=0.5 * (u.mS / u.cm ** 2)),
+        mech.Channel('CaL_Li2017', g_max=0.5 * (u.mS / u.cm ** 2)),
         mech.Channel('CaN_IS2008', g_max=0.5 * (u.mS / u.cm ** 2)),
         mech.Channel('CaT_HM1992', g_max=2.1 * (u.mS / u.cm ** 2)),
         mech.Channel('CaT_HM1992_Shifted25', g_max=3.0 * (u.mS / u.cm ** 2)),
@@ -107,7 +107,7 @@ def RTC(
         mech.Channel('K_Leak', g_max=gKL),
 
         mech.Ion('CalciumDetailed', C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um),
-        mech.Channel('CaL_IS2008', g_max=0.3 * (u.mS / u.cm ** 2)),
+        mech.Channel('CaL_Li2017', g_max=0.3 * (u.mS / u.cm ** 2)),
         mech.Channel('CaN_IS2008', g_max=0.6 * (u.mS / u.cm ** 2)),
         mech.Channel('CaT_HM1992', g_max=2.1 * (u.mS / u.cm ** 2)),
         mech.Channel('CaT_HM1992_Shifted25', g_max=0.6 * (u.mS / u.cm ** 2)),

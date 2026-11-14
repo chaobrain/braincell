@@ -130,6 +130,7 @@ CONFIGS = (
     ConfigEntry("ma25_bc/cav2p1_ma25_bc", cv.EXACT),
     ConfigEntry("ma25_bc/cav2p1_ma25_bc_frozen", cv.EXACT),
     ConfigEntry("ma25_bc/cav3p2_ma25_bc", cv.EXACT),
+    ConfigEntry("modeldb279/cat_hm1992_ghk", cv.EXACT),
     # backward_euler x 1, measured 2.208e-02 / 1.175e-04 at 0.025 ms (order 0.97 / 0.97).
     ConfigEntry("ma25_bc/kca1p1_ma25_bc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 5e-2, "e_s": 2e-4}),
     # Relaxation, backward_euler x 1, measured e_s 6.258e-05 at 0.025 ms (order 0.98).
@@ -230,10 +231,11 @@ CLASSES = (
     ClassEntry("CaHVA_MA2020_GrC", 1, False),  # 78.4 /ms, s gate at +60 mV
     ClassEntry("CaHVA_SU2015_DCN", 1, False),  # 31.2 /ms, m gate at +60 mV
     ClassEntry("CaLVA_SU2015_DCN", 0, False),  # 4.78 /ms, m gate at +60 mV
-    ClassEntry("CaL_IS2008", 1, False),  # 11.4 /ms, p gate at -100 mV
+    ClassEntry("CaL_Li2017", 1, False),  # 11.4 /ms, p gate at -100 mV
     ClassEntry("CaL_SU2015_DCN", 0, False),  # 4.78 /ms, m gate at +60 mV
     ClassEntry("CaN_IS2008", -1, False),  # 0.625 /ms, p gate at +60 mV
     ClassEntry("CaT_HM1992", 0, False),  # 7.32 /ms, p gate at +60 mV
+    ClassEntry("CaT_HM1992_GHK", 1, False),  # 11.0 /ms, p gate at +60 mV
     ClassEntry("CaT_HM1992_Shifted25", 0, False),  # 6.83 /ms, p gate at +60 mV
     ClassEntry("CaT_HP1992", 0, False),  # 2.3 /ms, p gate at +60 mV
     ClassEntry("Ca_ZH2019_IO", -2, False),  # 0.025 /ms, h gate at +60 mV
@@ -354,6 +356,7 @@ CALCIUM_FAMILY_CONFIGS = (
     "ma24_pc/kca2p2_ma24_pc_dep_o1", "ma24_pc/kca3p1_ma24_pc", "ma25_bc/cav1p2_ma25_bc",
     "ma25_bc/cav1p3_ma25_bc", "ma25_bc/cav2p1_ma25_bc", "ma25_bc/cav2p1_ma25_bc_frozen",
     "ma25_bc/cav3p2_ma25_bc", "ma25_bc/kca1p1_ma25_bc", "ma25_bc/kca2p2_ma25_bc", "ma25_bc/kca3p1_ma25_bc",
+    "modeldb279/cat_hm1992_ghk",
     "ri21_sc/cav2p1_ri21_sc", "ri21_sc/cav2p1_ri21_sc_frozen", "ri21_sc/cav3p2_ri21_sc",
     "ri21_sc/cav3p3_ri21_sc", "ri21_sc/kca1p1_ri21_sc", "ri21_sc/kca2p2_ri21_sc", "su15_dcn/cahva_su15_dcn",
     "su15_dcn/cal_su15_dcn", "su15_dcn/calva_su15_dcn", "su15_dcn/sk_su15_dcn", "testing/cav3p3_ma24_pc_finite",
@@ -363,7 +366,8 @@ CALCIUM_FAMILY_CONFIGS = (
 """The configurations of the classes in ``calcium.py`` and ``potassium_calcium.py``."""
 CALCIUM_FAMILY_CLASSES = (
     "AHP_De1994", "CaHT_Re1993", "CaHVA_MA2020_GoC", "CaHVA_MA2020_GrC", "CaHVA_SU2015_DCN",
-    "CaLVA_SU2015_DCN", "CaL_IS2008", "CaL_SU2015_DCN", "CaN_IS2008", "CaT_HM1992", "CaT_HM1992_Shifted25",
+    "CaLVA_SU2015_DCN", "CaL_Li2017", "CaL_SU2015_DCN", "CaN_IS2008", "CaT_HM1992", "CaT_HM1992_GHK",
+    "CaT_HM1992_Shifted25",
     "CaT_HP1992",
     "Ca_ZH2019_IO", "Ca_ZH2019_IO_Frozen", "Cav1p2_MA2020_GoC", "Cav1p2_MA2025_BC", "Cav1p3_MA2020_GoC",
     "Cav1p3_MA2025_BC", "Cav2p1_MA2024_PC", "Cav2p1_MA2024_PC_Frozen", "Cav2p1_MA2025_BC",

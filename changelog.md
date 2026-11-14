@@ -34,6 +34,23 @@
   the registry lookup of `mech.Channel("CaHT_HM1992", ...)` raises `KeyError`;
   both name the new class. Replace `CaHT_HM1992` with `CaT_HM1992_Shifted25`,
   in class references and in `mech.Channel("...")` strings alike.
+- **`braincell.channel.CaL_IS2008` is renamed `CaL_Li2017`** (MECH-49).
+  Inoue & Strowbridge (2008) has no L-type calcium current. The class's
+  constants, `p^2 q` gating and Q10 defaults are, character for character,
+  `ICaL_TC.cpp` of the thalamic model of Li, Henriquez & Fröhlich (2017)
+  (ModelDB 233509), which calls the current a high-threshold L-type `I_Ca/L`
+  "adapted from" Inoue & Strowbridge; the new name names that model. Rates and
+  defaults are unchanged. The default instance name sorts in the same place
+  among calcium channels, so cells keep their current order: the
+  `SC05` thalamic HTC and RTC cells give bitwise equal voltages in float64.
+  No alias is kept and there is no deprecation period (0.3 allows breaking
+  changes without one, a project-lead decision).
+  `braincell.channel.CaL_IS2008` raises `AttributeError` (`ImportError` on
+  `from braincell.channel import ...`) and `mech.Channel("CaL_IS2008", ...)`
+  raises `KeyError`; both name the new class. Replace `CaL_IS2008` with
+  `CaL_Li2017`. The docstrings of `CaN_IS2008`, `CaT_HM1992` and
+  `CaT_HM1992_Shifted25` now name the same model's code as their origin,
+  including the +25 mV shift (docs only).
 - **`braincell.ion.CalciumFirstOrder` defaults to a physical `alpha`**
   (MECH-46). The default was 0.13 mM/ms/(uA/cm**2), the Pinsky-Rinzel (1994)
   constant of a dimensionless calcium variable read as mM. It is now
@@ -1071,6 +1088,15 @@
   `prepare_run` keeps the old stop. Standalone `Cell.update()` and
   `Cell.run` traced under `jax.jit` still generate every event (docs
   only).
+- **`braincell.channel.CaT_HM1992_GHK`** (MECH-49): the Huguenard & McCormick
+  (1992) T current as Destexhe's `ITGHK.mod` (ModelDB 279) implements it, with
+  a GHK drive scaled by a permeability `perm` (default 2e-4 cm/s, the mod
+  file's `pcabar`), `q10_p = 5` and `q10_q = 3` at 24 degC, and the mod file's
+  2 mV shift on every rate (`V_sh = -2 mV`). It agrees with NEURON running the
+  unmodified `ITGHK.mod`, now in `data/modeldb/279`, within the channel
+  comparison suite's default tolerances in current and voltage clamp,
+  including the 0 mV step. The ohmic `CaT_HM1992` (a conductance `g_max`,
+  `q10_p = 3.55`) is unchanged.
 
 ### Changes & Improvements
 

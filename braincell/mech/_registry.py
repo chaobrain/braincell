@@ -596,10 +596,11 @@ def _check_category(category: str) -> None:
 
 
 #: ``(category, old name) -> (new name, release)`` for mechanisms that a release
-#: renamed without keeping an alias (MECH-42), so that a lookup of the old name
+#: renamed without keeping an alias (MECH-42, MECH-49), so that a lookup of the old name
 #: says what it became instead of guessing.
 _RENAMED = {
     ("channel", "CaHT_HM1992"): ("CaT_HM1992_Shifted25", "0.3"),
+    ("channel", "CaL_IS2008"): ("CaL_Li2017", "0.3"),
 }
 
 

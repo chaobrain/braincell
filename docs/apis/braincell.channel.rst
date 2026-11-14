@@ -42,9 +42,10 @@ Calcium Channels
    :template: classtemplate.rst
 
    CaN_IS2008
-   CaL_IS2008
+   CaL_Li2017
    CaT_HM1992
    CaT_HM1992_Shifted25
+   CaT_HM1992_GHK
    CaT_HP1992
    CaHT_Re1993
    CaHVA_MA2020_GoC

@@ -70,15 +70,15 @@ class CalciumCatalogueTest(CatalogueAssertions, unittest.TestCase):
     def test_family_is_configured_or_listed(self):
         configured = {class_name(config) for config in CONFIGS}
         uncovered = FAMILY & set(UNCOVERED)
-        self.assertEqual(len(FAMILY), 50)
-        self.assertEqual(len(CONFIGS), 48)
+        self.assertEqual(len(FAMILY), 51)
+        self.assertEqual(len(CONFIGS), 49)
         self.assertEqual(configured | uncovered, FAMILY)
         self.assertEqual(
             uncovered,
             {
                 "AHP_De1994",
                 "CaHT_Re1993",
-                "CaL_IS2008",
+                "CaL_Li2017",
                 "CaN_IS2008",
                 "CaT_HM1992",
                 "CaT_HM1992_Shifted25",

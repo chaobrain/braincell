@@ -30,15 +30,34 @@ import shutil
 import subprocess
 import sys
 
-from validation.neuron._paths import DATA_ROOT, mechanism_build_dir, model_dir
+from validation.neuron._paths import DATA_ROOT, mechanism_build_dir, model_dir, pinned_mod_files
 from validation.neuron.cell._nrnmech import nrnmech_path
+
+
+CHANNEL_NO_CONC_CONFIGS = Path(__file__).resolve().parent / "channel_no_conc" / "configs"
+
+
+def pinned_channel_sources() -> list[Path]:
+    """The ``identity.pinned_mod_files`` of every channel_no_conc configuration, hash-checked.
+
+    These third-party sources stay under ``data/modeldb/`` and are compiled into
+    the ``testing`` library, which the configurations' ``mod_dir`` names.
+    """
+    files = set()
+    for config in sorted(CHANNEL_NO_CONC_CONFIGS.glob("*/*.json")):
+        spec = json.loads(config.read_text())["identity"].get("pinned_mod_files")
+        if spec is not None:
+            files.update(pinned_mod_files(spec, owner=str(config)))
+    return sorted(files)
 
 
 def compile_mechanisms(model: str, kind: str = "cell", *, files=None) -> Path:
     """Build a model or explicit MOD subset and return its library parent.
 
     ``files`` selects an isolated content-addressed subset, used by ion
-    notebooks. Default cell builds include channel, ion and synapse sources.
+    notebooks. Default cell builds include channel, ion and synapse sources;
+    the ``testing`` build also includes the pinned ``data/modeldb`` sources of
+    the channel_no_conc configurations (:func:`pinned_channel_sources`).
     Existing libraries are reused only for the same sources and NEURON version.
     """
     import neuron
@@ -56,6 +75,8 @@ def compile_mechanisms(model: str, kind: str = "cell", *, files=None) -> Path:
         else:
             categories = ("channel", "ion", "synapse")
         sources = sorted(p for category in categories for p in (source_root / category).glob("*.mod"))
+        if model == "testing":
+            sources = sorted(sources + pinned_channel_sources())
     if not sources:
         raise FileNotFoundError(f"No MOD sources selected for {model}.")
     if len({p.name for p in sources}) != len(sources):

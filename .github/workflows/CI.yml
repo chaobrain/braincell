@@ -310,6 +310,8 @@ jobs:
       - name: Test the channel_no_conc suite (slow tier)
         run: pytest validation/neuron/channel_no_conc/tests -m slow --durations=10
       - name: Test the ion suite (slow tier)
+        # Runs after a failed step too, so one suite's failure cannot hide the other's.
+        if: ${{ !cancelled() }}
         run: pytest validation/neuron/ion -m slow -rs --durations=10 --junitxml="$RUNNER_TEMP/neuron-ion-slow.xml"
       - name: Require the ion suite (slow tier) to skip no test
         if: ${{ !cancelled() }}

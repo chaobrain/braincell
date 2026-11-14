@@ -17,8 +17,8 @@ calcium unless `mapping.ion` names another family (`ca1999` uses sodium,
 | `tolerances_test.py` | Every configuration within the table, with its root causes patched at T0, and a pump-rate counterexample (`slow`, daily tier) |
 | `sodium_test.py` | The `ca1999` configurations (Canavier's soma, `SodiumDetailed`, with and without the pump), with volume-factor and `km` counterexamples (`slow`, daily tier) |
 | `potassium_test.py` | The `bo2010` configuration (Botta's potassium pool, `PotassiumDetailedFH`), with the implicit-Euler patch and a depth counterexample (`slow`, daily tier) |
-| `chloride_test.py` | `Cldif_JE2011` against ModelDB 148253 (pull-request tier) |
-| `gaba_test.py` | `GabaA_JE2011` with `Cldif_JE2011` against ModelDB 148253 (pull-request tier) |
+| `chloride_test.py` | `Cldif_JE2011` against ModelDB 148253 (`slow`, daily tier) |
+| `gaba_test.py` | `GabaA_JE2011` with `Cldif_JE2011` against ModelDB 148253 (`slow`, daily tier) |
 
 ## Protocols
 
@@ -57,8 +57,8 @@ it once; run the suite in its own process, apart from `channel_no_conc`,
 whose libraries define the same channels.
 
 ```bash
-pytest -q validation/neuron/ion -m "not slow"   # pull-request tier, about 10 s
-pytest -q validation/neuron/ion -m slow         # daily tier, about 65 s
+pytest -q validation/neuron/ion -m "not slow"   # pull-request tier, about 1 s
+pytest -q validation/neuron/ion -m slow         # daily tier, about 60 s
 ```
 
 ```python

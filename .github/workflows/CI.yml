@@ -211,8 +211,6 @@ jobs:
             validation/neuron/_convergence_test.py validation/neuron/_mechanisms_test.py \
             validation/neuron/_paths_test.py -m "not slow" --durations=10
       - name: Test the ion suite (fast tier)
-        # Includes the chloride and GABA_A comparisons against ModelDB 148253
-        # (data/modeldb), which compile their own sources.
         if: ${{ !cancelled() && env.NEURON_SUITES == 'true' }}
         run: pytest validation/neuron/ion -m "not slow" -rs --durations=10 --junitxml="$RUNNER_TEMP/neuron-ion.xml"
       - name: Test the morphology comparisons
@@ -276,7 +274,8 @@ jobs:
   # is not in ci-ok's `needs`; a failure fails the daily run, which opens the
   # red issue. Each suite runs in its own process (mechanism libraries). The
   # ion suite compiles its own sources, the pinned ModelDB files under
-  # data/modeldb included, and must skip no test. It also compiles every
+  # data/modeldb included (the chloride, GABA_A, sodium and potassium
+  # comparisons), and must skip no test. It also compiles every
   # cerebellar model's whole-cell mechanisms, which no suite on a pull
   # request builds.
   slow_tests_neuron:

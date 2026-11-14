@@ -72,18 +72,18 @@ so a new slow module needs no workflow change.
   `cable/tests`; and, after compiling the eight channel models,
   `channel_no_conc/tests` with `_clamp_test.py`, `_tolerance_test.py`,
   `_convergence_test.py`, `_mechanisms_test.py` and `_paths_test.py`, all with `-m "not slow"`;
-  then `ion -m "not slow"` in a separate process (with the chloride and
-  GABA_A comparisons against the ModelDB sources in `data/modeldb`). Then,
-  each in its own process and with no compiled model: `morph`, the ASC
-  reader's `AscNeuronParityTest` (`braincell/io/asc/reader_test.py`), and
-  `synapse`. These and the ion suite skip without NEURON or a source file,
-  so the job fails when any of them skips (`.github/junit_counts.py`).
+  then `ion -m "not slow"` in a separate process. Then, each in its own
+  process and with no compiled model: `morph`, the ASC reader's
+  `AscNeuronParityTest` (`braincell/io/asc/reader_test.py`), and `synapse`.
+  These skip without NEURON, so the job fails when any of them, or a fast
+  ion test, skips (`.github/junit_counts.py`).
 - **Daily** (job `slow_tests_neuron`, not in `ci-ok`; a red run opens a
   `main is red` issue): after compiling the same models,
   `channel_no_conc/tests -m slow` (the per-family catalogue and `dt`
   convergence tests, and `test_neuron_agreement.py`),
   then `ion -m slow` in a separate process (the pool comparisons,
-  `ion/tolerances_test.py`, and the ModelDB sodium and potassium pools,
+  `ion/tolerances_test.py`, and the comparisons against the ModelDB sources
+  in `data/modeldb`: `ion/chloride_test.py`, `ion/gaba_test.py`,
   `ion/sodium_test.py` and `ion/potassium_test.py`); a skipped test fails
   the job.
 

@@ -18,7 +18,8 @@
 ``cldif.mod`` (``ModelDBRepository/148253@1d737a0``, no license statement) is
 committed unmodified in ``data/modeldb/148253`` (MECH-48); the test checks the
 SHA-256 pinned below before compiling it. Each side runs in its own process
-(BrainCell in float64); the limits are T0.
+(BrainCell in float64); the limits are T0. Slow tier (daily, with the other
+ModelDB comparisons).
 
 - Relaxation: one segment, L = 20 um, diam = 1 um, 35 degC, no current; after
   ``finitialize(-70)`` the outer shell is set to 8 mM, then 1000 ms at
@@ -37,9 +38,12 @@ import sys
 import unittest
 
 import numpy as np
+import pytest
 
 from validation.neuron._paths import DATA_ROOT, MODELDB_ROOT, pinned_source
 from validation.neuron._tolerance import T0_LIMITS, max_abs_error, relative_current_error
+
+pytestmark = pytest.mark.slow
 
 CLDIF_SHA256 = "077dc33c1f42fa85c67f6a5b3408844fd73c268f97c9c09620612b1759aa24ee"
 STEPS = 40000

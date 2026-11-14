@@ -19,6 +19,7 @@ Both ``.mod`` files (``ModelDBRepository/148253@1d737a0``, no license
 statement) are committed unmodified in ``data/modeldb/148253`` (MECH-48); the
 test checks the SHA-256 pinned below and in ``chloride_test`` before compiling
 them. Each side runs in its own process (BrainCell in float64); the limits are T0.
+Slow tier (daily, with the other ModelDB comparisons).
 
 One segment, L = 20 um, diam = 1 um, ``pas``/``IL`` (2.74578e-5 S/cm^2,
 -70 mV), 35 degC, one synapse (tau1 = 0.5 ms, tau2 = 6 ms, P = 0.18) driven
@@ -31,10 +32,13 @@ from pathlib import Path
 import unittest
 
 import numpy as np
+import pytest
 
 from validation.neuron._paths import MODELDB_ROOT, pinned_source
 from validation.neuron._tolerance import T0_LIMITS, max_abs_error, relative_current_error
 from validation.neuron.ion.chloride_test import _cldif_source, _library, _run
+
+pytestmark = pytest.mark.slow
 
 GABA_SHA256 = "6a7e8e810f02c2d9de67b18e158afc54e0971f5d7d5aafe3711244940fec1e24"
 

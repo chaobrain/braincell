@@ -1552,9 +1552,8 @@
   and check their hashes, instead of skipping unless the environment
   variables `BRAINCELL_JE2011_MOD_DIR`, `BRAINCELL_CA1999_MOD_DIR` and
   `BRAINCELL_BO2010_MOD_DIR` pointed at local copies; the variables are
-  gone. The chloride and GABA_A comparisons run in the pull-request
-  `validation` job, the sodium and potassium ones in the daily
-  `slow_tests_neuron` job, and both ion steps fail if a test skipped.
+  gone. They run in the daily `slow_tests_neuron` job, whose ion step, like
+  the pull-request one, now fails if a test skipped.
 
 ### Bug Fixes
 

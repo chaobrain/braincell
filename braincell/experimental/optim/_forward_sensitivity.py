@@ -1391,8 +1391,15 @@ def _broadcast_zero_tangents(values, direction_count: int):
 
 
 def _zero_tangent_leaf(value):
+    """A zero tangent for ``value``: ``float0`` for an integer or boolean leaf, its own dtype otherwise.
+
+    A Python ``int`` or ``bool`` (a runtime parameter such as AHP_De1994's
+    ``n=2``) has no ``dtype``; its type is the one JAX gives it (OPT-22).
+    """
     dtype = getattr(value, "dtype", None)
-    if dtype is not None and not np.issubdtype(np.dtype(dtype), np.inexact):
+    if dtype is None:
+        dtype = jnp.result_type(value)
+    if not np.issubdtype(np.dtype(dtype), np.inexact):
         return jnp.zeros_like(value, dtype=jax.dtypes.float0)
     return jnp.zeros_like(value)
 

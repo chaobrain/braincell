@@ -773,7 +773,9 @@ def _step_tangent_dependencies(functional_step: FunctionalStep, state_values, da
         def transition(state_leaves, operator_leaves):
             values = treedef.unflatten(state_leaves)
             data = (step_data, operator_def.unflatten(operator_leaves)) if has_operator else step_data
-            new_values, output = _call_in_built_order(functional_step.function, functional_step.state_trace, values, data)
+            new_values, output = _call_in_built_order(
+                functional_step.function, functional_step.state_trace, values, data
+            )
             return jax.tree.leaves(new_values), jax.tree.leaves(output)
 
         _primal_out, tangent_out = jax.jvp(

@@ -2824,12 +2824,12 @@
   (4 traces of the user's steps for the four engines, before 8), and a step
   traced again for data of another dtype keeps the order it was built with;
   a trace that reads other states raises `ValueError`; the compact entries'
-  check of the States the step writes (OPT-18) reads that order too. On the OPT-14 Y
-  cable (`rk4`, float64, 8 steps) the weak, strong and float32 examples now
-  give the same losses and gradients bit for bit in rollout and trajectory,
-  BPTT and RTRL (rollout BPTT loss 53.23479115912473, `Ra` gradient
-  5.377743579582837), on a Network and on the Cell alone, whose results are
-  unchanged.
+  check of the States the step writes (OPT-18) reads that order too. On the
+  OPT-14 Y cable (`rk4`, float64, 8 steps) the weak, strong and float32
+  examples now give the same losses and gradients bit for bit in rollout and
+  trajectory, BPTT and RTRL (rollout BPTT loss 53.23479115912473, `Ra`
+  gradient 5.377743579582837), on a Network and on the Cell alone, whose
+  results are unchanged.
 
 - **Compact forward sensitivity refuses an active set that would drop a
   trainable parameter** (OPT-16). When an engine materializes the trainable

@@ -146,7 +146,11 @@ class MaterializationScheduleTest(unittest.TestCase):
                 ("K_HH1952", "k", 3.6),
                 ("Na_HH1952", "na", 12.0),
             ):
-                cell.paint(AllRegion(), braincell.mech.Ion("SodiumFixed", name="na"), braincell.mech.Ion("PotassiumFixed", name="k"))
+                cell.paint(
+                    AllRegion(),
+                    braincell.mech.Ion("SodiumFixed", name="na"),
+                    braincell.mech.Ion("PotassiumFixed", name="k"),
+                )
                 cell.paint(
                     AllRegion(),
                     braincell.mech.Channel(

@@ -63,7 +63,9 @@ def _leak_cell():
 
 def _hh_cell():
     cell = braincell.Cell(_build_tree(), pop_size=(1,))
-    cell.paint(AllRegion(), braincell.mech.Ion("SodiumFixed", name="na"), braincell.mech.Ion("PotassiumFixed", name="k"))
+    cell.paint(
+        AllRegion(), braincell.mech.Ion("SodiumFixed", name="na"), braincell.mech.Ion("PotassiumFixed", name="k")
+    )
     cell.paint(
         AllRegion(),
         braincell.mech.Channel(

@@ -1170,6 +1170,21 @@
   `ralston2`). In the catalogue this flags `Cav1p2_*`, `Cav1p3_*`, `HCN1_*`
   and `Na_ZH2019_IO`. The default solver and all results are unchanged.
 
+- **`init_state` warns when a channel binds a placeholder ion** (CELL-78).
+  A channel that needs an ion family the Cell never declares (sodium,
+  potassium, calcium or the nonspecific family) is bound to a fixed
+  placeholder ion with its class defaults, for example E_K = -95 mV for
+  `K_HH1952`, and nothing said so. `init_state` now raises one
+  `UserWarning` per such family, on cable and lumped Cells and on Network
+  members, naming the family, the channels bound to it, the placeholder
+  class and its reversal potential, and the `braincell.mech.Ion(...)`
+  declaration that replaces it. The placeholder is the one used before and
+  results are bit for bit the same. `reset_state()` does not warn again;
+  `init_state()` after `reset()` does. The test suite turns the warning
+  into an error: 24 tests in 9 files, the `channel_no_conc` NEURON
+  comparison runner and the `cell.ipynb` and `single_cell_frontend.ipynb`
+  tutorials now declare their ions.
+
 - **Conditional pairing places its rows with one scatter** (CELL-18f).
   `source_first`, `synapse_first`, `by_source` and `by_synapse` put each
   fixed endpoint's partners on its rows one row at a time in Python; one

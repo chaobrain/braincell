@@ -24,7 +24,7 @@ import brainunit as u
 
 from braincell._base_channel import IonInfo
 from braincell._typing import ArrayLike, Initializer, Size
-from braincell.channel._base import Gate, HH, OhmicHH, cached_q10_factor, is_disabled
+from braincell.channel._base import Gate, HH, OhmicHH, cached_q10_factor, freeze_gradient, is_disabled
 from braincell.ion import Potassium
 from braincell.mech import StateSpec, register_channel
 
@@ -94,8 +94,9 @@ class _ExpRateGateCurrent:
     other.
 
     Users of the mixin must define ``ca``, ``cva``, ``cka``, ``cb``, ``cvb``,
-    ``ckb``, ``zn``, ``gunit``, ``e0`` and ``gateCurrent``, and declare a
-    single ``n`` gate in alpha/beta form.
+    ``ckb``, ``zn``, ``gunit``, ``e0``, ``gateCurrent`` and
+    ``freeze_gate_current_gradient``, and declare a single ``n`` gate in
+    alpha/beta form.
 
     The gating current is :math:`n_c e_0 \, 4 z_n \, \mathrm{d}n/\mathrm{d}t`
     with the channel density :math:`n_c = g_{\max} / g_{\text{unit}}`. The
@@ -103,6 +104,15 @@ class _ExpRateGateCurrent:
     ``igate = nc*(1e6)*e0*4*zn*ngateFlip()``; those two factors are NEURON's
     unit conversions (pS to S, C/ms to mA) and are not applied to the united
     quantities here.
+
+    With ``freeze_gate_current_gradient`` set, the rates inside the gating
+    current are evaluated at :func:`~braincell.channel.freeze_gradient` of
+    ``V``: the forward value is unchanged, but the gating current's
+    dependence on ``V`` enters neither the staggered solver's voltage
+    linearization nor gradients. NEURON's ``nrn_cur`` treats the gating
+    current the same way, because the ``.mod`` files compute the rates in
+    the ``DERIVATIVE`` block and its finite-difference conductance holds
+    them fixed.
     """
 
     def f_n_alpha(self, V, K: IonInfo):
@@ -122,10 +132,13 @@ class _ExpRateGateCurrent:
             # ``u.math.where`` below would then discard. A traced flag takes
             # the slow path, so the choice never depends on an unknown value.
             return conductive
+        # NEURON holds the gating current fixed in the voltage linearization
+        # (MECH-40), so by default its rates see a gradient-free V.
+        rate_V = freeze_gradient(V) if self.freeze_gate_current_gradient else V
         phi = self.gate_phi(self._iter_gates()[0])
         n = self.n.value
-        alpha = self.f_n_alpha(V, K)
-        beta = self.f_n_beta(V, K)
+        alpha = self.f_n_alpha(rate_V, K)
+        beta = self.f_n_beta(rate_V, K)
         ngate_flip = phi * (alpha * (1.0 - n) - beta * n) / u.ms
         # The ``.mod`` writes ``nc = (1e12)*gbar/gunit`` and
         # ``igate = nc*(1e6)*e0*4*zn*ngateFlip()``: the two factors convert
@@ -2151,6 +2164,12 @@ class Kv1p1_MA2025_BC(_ExpRateGateCurrent, HH):
         below.
     name : str, optional
         Optional channel name.
+    freeze_gate_current_gradient : bool, optional
+        If ``True`` (the default), the gating current's dependence on
+        ``V`` enters neither the staggered solver's voltage
+        linearization nor gradients, as in NEURON; its value is
+        unchanged. ``False`` keeps that dependence, as before 0.3. No
+        effect while ``gateCurrent`` is zero.
 
     See Also
     --------
@@ -2198,6 +2217,19 @@ class Kv1p1_MA2025_BC(_ExpRateGateCurrent, HH):
     convention against NMODL's outward-positive one. The term is
     selected with ``u.math.where`` rather than a Python branch, so
     ``gateCurrent`` may be an array and the choice stays traceable.
+
+    **Linearization.** NEURON's ``nrn_cur`` takes the membrane
+    conductance from a finite difference of ``BREAKPOINT`` with the
+    rates, computed in the ``DERIVATIVE`` block, held fixed, so the
+    gating current's dependence on ``V`` is absent from it. With the
+    default ``freeze_gate_current_gradient=True`` the rates inside
+    :math:`I_{\text{gate}}` are evaluated at
+    :func:`~braincell.channel.freeze_gradient` of ``V``, as
+    :attr:`~braincell.channel.GhkHH.freeze_drive_gradient` does for a
+    GHK drive: the current is unchanged, and that dependence enters
+    neither the staggered solver's voltage linearization nor
+    gradients, so current-clamp runs agree with NEURON at every
+    ``dt``.
 
     **Where the q10 factor is applied.** The gate declares
     ``q10 = 2.7`` at a reference of 22 degrees Celsius, so
@@ -2255,11 +2287,13 @@ class Kv1p1_MA2025_BC(_ExpRateGateCurrent, HH):
         temp: ArrayLike = u.celsius2kelvin(22.0),
         gateCurrent: Initializer = 0.0,
         name: Optional[str] = None,
+        freeze_gate_current_gradient: bool = True,
     ):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
+        self.freeze_gate_current_gradient = bool(freeze_gate_current_gradient)
         self.gunit = 16.0e-9 * u.mS
         self.ca = 0.12889
         self.cva = 45.0 * u.mV
@@ -2312,6 +2346,12 @@ class Kv1p1_MA2024_PC(Kv1p1_MA2025_BC):
         below.
     name : str, optional
         Optional channel name.
+    freeze_gate_current_gradient : bool, optional
+        If ``True`` (the default), the gating current's dependence on
+        ``V`` enters neither the staggered solver's voltage
+        linearization nor gradients, as in NEURON; its value is
+        unchanged. ``False`` keeps that dependence, as before 0.3. No
+        effect while ``gateCurrent`` is zero.
 
     See Also
     --------
@@ -2359,6 +2399,19 @@ class Kv1p1_MA2024_PC(Kv1p1_MA2025_BC):
     convention against NMODL's outward-positive one. The term is
     selected with ``u.math.where`` rather than a Python branch, so
     ``gateCurrent`` may be an array and the choice stays traceable.
+
+    **Linearization.** NEURON's ``nrn_cur`` takes the membrane
+    conductance from a finite difference of ``BREAKPOINT`` with the
+    rates, computed in the ``DERIVATIVE`` block, held fixed, so the
+    gating current's dependence on ``V`` is absent from it. With the
+    default ``freeze_gate_current_gradient=True`` the rates inside
+    :math:`I_{\text{gate}}` are evaluated at
+    :func:`~braincell.channel.freeze_gradient` of ``V``, as
+    :attr:`~braincell.channel.GhkHH.freeze_drive_gradient` does for a
+    GHK drive: the current is unchanged, and that dependence enters
+    neither the staggered solver's voltage linearization nor
+    gradients, so current-clamp runs agree with NEURON at every
+    ``dt``.
 
     **Where the q10 factor is applied.** The gate declares
     ``q10 = 2.7`` at a reference of 22 degrees Celsius, so
@@ -2450,6 +2503,12 @@ class Kv1p1_RI2021_SC(Kv1p1_MA2025_BC):
         below.
     name : str, optional
         Optional channel name.
+    freeze_gate_current_gradient : bool, optional
+        If ``True`` (the default), the gating current's dependence on
+        ``V`` enters neither the staggered solver's voltage
+        linearization nor gradients, as in NEURON; its value is
+        unchanged. ``False`` keeps that dependence, as before 0.3. No
+        effect while ``gateCurrent`` is zero.
 
     See Also
     --------
@@ -2497,6 +2556,19 @@ class Kv1p1_RI2021_SC(Kv1p1_MA2025_BC):
     convention against NMODL's outward-positive one. The term is
     selected with ``u.math.where`` rather than a Python branch, so
     ``gateCurrent`` may be an array and the choice stays traceable.
+
+    **Linearization.** NEURON's ``nrn_cur`` takes the membrane
+    conductance from a finite difference of ``BREAKPOINT`` with the
+    rates, computed in the ``DERIVATIVE`` block, held fixed, so the
+    gating current's dependence on ``V`` is absent from it. With the
+    default ``freeze_gate_current_gradient=True`` the rates inside
+    :math:`I_{\text{gate}}` are evaluated at
+    :func:`~braincell.channel.freeze_gradient` of ``V``, as
+    :attr:`~braincell.channel.GhkHH.freeze_drive_gradient` does for a
+    GHK drive: the current is unchanged, and that dependence enters
+    neither the staggered solver's voltage linearization nor
+    gradients, so current-clamp runs agree with NEURON at every
+    ``dt``.
 
     **Where the q10 factor is applied.** The gate declares
     ``q10 = 2.7`` at a reference of 22 degrees Celsius, so
@@ -2791,6 +2863,12 @@ class Kv3p3_MA2024_PC(_ExpRateGateCurrent, HH):
         below.
     name : str, optional
         Optional channel name.
+    freeze_gate_current_gradient : bool, optional
+        If ``True`` (the default), the gating current's dependence on
+        ``V`` enters neither the staggered solver's voltage
+        linearization nor gradients, as in NEURON; its value is
+        unchanged. ``False`` keeps that dependence, as before 0.3. No
+        effect while ``gateCurrent`` is zero.
 
     See Also
     --------
@@ -2831,6 +2909,19 @@ class Kv3p3_MA2024_PC(_ExpRateGateCurrent, HH):
     convention against NMODL's outward-positive one. The term is
     selected with ``u.math.where`` rather than a Python branch, so
     ``gateCurrent`` may be an array and the choice stays traceable.
+
+    **Linearization.** NEURON's ``nrn_cur`` takes the membrane
+    conductance from a finite difference of ``BREAKPOINT`` with the
+    rates, computed in the ``DERIVATIVE`` block, held fixed, so the
+    gating current's dependence on ``V`` is absent from it. With the
+    default ``freeze_gate_current_gradient=True`` the rates inside
+    :math:`I_{\text{gate}}` are evaluated at
+    :func:`~braincell.channel.freeze_gradient` of ``V``, as
+    :attr:`~braincell.channel.GhkHH.freeze_drive_gradient` does for a
+    GHK drive: the current is unchanged, and that dependence enters
+    neither the staggered solver's voltage linearization nor
+    gradients, so current-clamp runs agree with NEURON at every
+    ``dt``.
     The construction is the one :class:`Kv1p1_MA2024_PC` uses; only
     :math:`z_n` and the rate constants differ.
 
@@ -2902,11 +2993,13 @@ class Kv3p3_MA2024_PC(_ExpRateGateCurrent, HH):
         temp: ArrayLike = u.celsius2kelvin(22.0),
         gateCurrent: Initializer = 0.0,
         name: Optional[str] = None,
+        freeze_gate_current_gradient: bool = True,
     ):
         super().__init__(size=size, name=name)
         self.g_max = braintools.init.param(g_max, self.varshape, allow_none=False)
         self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
         self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
+        self.freeze_gate_current_gradient = bool(freeze_gate_current_gradient)
         self.gunit = 16.0e-9 * u.mS
         self.ca = 0.22
         self.cva = 16.0 * u.mV
@@ -4093,6 +4186,12 @@ class Kv1p1_MA2020_GoC(Kv1p1_MA2025_BC):
         below.
     name : str, optional
         Optional channel name.
+    freeze_gate_current_gradient : bool, optional
+        If ``True`` (the default), the gating current's dependence on
+        ``V`` enters neither the staggered solver's voltage
+        linearization nor gradients, as in NEURON; its value is
+        unchanged. ``False`` keeps that dependence, as before 0.3. No
+        effect while ``gateCurrent`` is zero.
 
     See Also
     --------
@@ -4140,6 +4239,19 @@ class Kv1p1_MA2020_GoC(Kv1p1_MA2025_BC):
     convention against NMODL's outward-positive one. The term is
     selected with ``u.math.where`` rather than a Python branch, so
     ``gateCurrent`` may be an array and the choice stays traceable.
+
+    **Linearization.** NEURON's ``nrn_cur`` takes the membrane
+    conductance from a finite difference of ``BREAKPOINT`` with the
+    rates, computed in the ``DERIVATIVE`` block, held fixed, so the
+    gating current's dependence on ``V`` is absent from it. With the
+    default ``freeze_gate_current_gradient=True`` the rates inside
+    :math:`I_{\text{gate}}` are evaluated at
+    :func:`~braincell.channel.freeze_gradient` of ``V``, as
+    :attr:`~braincell.channel.GhkHH.freeze_drive_gradient` does for a
+    GHK drive: the current is unchanged, and that dependence enters
+    neither the staggered solver's voltage linearization nor
+    gradients, so current-clamp runs agree with NEURON at every
+    ``dt``.
 
     **Where the q10 factor is applied.** The gate declares
     ``q10 = 2.7`` at a reference of 22 degrees Celsius, so
@@ -4778,6 +4890,12 @@ class Kv1p1_MA2020_GrC(Kv1p1_MA2025_BC):
         below.
     name : str, optional
         Optional channel name.
+    freeze_gate_current_gradient : bool, optional
+        If ``True`` (the default), the gating current's dependence on
+        ``V`` enters neither the staggered solver's voltage
+        linearization nor gradients, as in NEURON; its value is
+        unchanged. ``False`` keeps that dependence, as before 0.3. No
+        effect while ``gateCurrent`` is zero.
 
     See Also
     --------
@@ -4825,6 +4943,19 @@ class Kv1p1_MA2020_GrC(Kv1p1_MA2025_BC):
     convention against NMODL's outward-positive one. The term is
     selected with ``u.math.where`` rather than a Python branch, so
     ``gateCurrent`` may be an array and the choice stays traceable.
+
+    **Linearization.** NEURON's ``nrn_cur`` takes the membrane
+    conductance from a finite difference of ``BREAKPOINT`` with the
+    rates, computed in the ``DERIVATIVE`` block, held fixed, so the
+    gating current's dependence on ``V`` is absent from it. With the
+    default ``freeze_gate_current_gradient=True`` the rates inside
+    :math:`I_{\text{gate}}` are evaluated at
+    :func:`~braincell.channel.freeze_gradient` of ``V``, as
+    :attr:`~braincell.channel.GhkHH.freeze_drive_gradient` does for a
+    GHK drive: the current is unchanged, and that dependence enters
+    neither the staggered solver's voltage linearization nor
+    gradients, so current-clamp runs agree with NEURON at every
+    ``dt``.
 
     **Where the q10 factor is applied.** The gate declares
     ``q10 = 2.7`` at a reference of 22 degrees Celsius, so

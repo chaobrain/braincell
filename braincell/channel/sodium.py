@@ -24,7 +24,7 @@ import brainunit as u
 
 from braincell._base_channel import IonInfo
 from braincell._typing import ArrayLike, Initializer, Size
-from braincell.channel._base import Gate, OhmicHH, OhmicMarkov, is_disabled, q10_factor
+from braincell.channel._base import Gate, OhmicHH, OhmicMarkov, freeze_gradient, is_disabled, q10_factor
 from braincell.ion import Sodium
 from braincell.mech import StateSpec, register_channel
 
@@ -1324,6 +1324,17 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
     bare numbers, so they do not appear above, where every quantity
     carries its unit.
 
+    NEURON's ``nrn_cur`` takes the membrane conductance from a finite
+    difference of ``BREAKPOINT`` with the transition rates, computed in
+    the ``KINETIC`` block, held fixed, so :math:`I_{gate}`'s dependence
+    on ``V`` is absent from it. With the default
+    ``freeze_gate_current_gradient=True`` the rates in :math:`\dot{q}`
+    are evaluated at :func:`~braincell.channel.freeze_gradient` of
+    ``V``, as :attr:`~braincell.channel.GhkHH.freeze_drive_gradient`
+    does for a GHK drive: the current is unchanged, and that dependence
+    enters neither the staggered solver's voltage linearization nor
+    gradients, so current-clamp runs agree with NEURON at every ``dt``.
+
     Parameters
     ----------
     size : brainstate.typing.Size
@@ -1343,6 +1354,12 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
         Override for :class:`Markov`'s default ODE solver.
     substeps : int, optional
         Override for :class:`Markov`'s default substep count.
+    freeze_gate_current_gradient : bool, optional
+        If ``True`` (the default), the gating current's dependence on
+        ``V`` enters neither the staggered solver's voltage
+        linearization nor gradients, as in NEURON; its value is
+        unchanged. ``False`` keeps that dependence, as before 0.3. No
+        effect while ``gateCurrent`` is zero.
 
     See Also
     --------
@@ -1409,6 +1426,7 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
         name: Optional[str] = None,
         solver: str | None = None,
         substeps: int | None = None,
+        freeze_gate_current_gradient: bool = True,
     ):
         super().__init__(
             size=size,
@@ -1419,6 +1437,7 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
             substeps=substeps,
         )
         self.gateCurrent = braintools.init.param(gateCurrent, self.varshape, allow_none=False)
+        self.freeze_gate_current_gradient = bool(freeze_gate_current_gradient)
         self.Oon = 2.3
         self.epsilon = 1e-12
         self.zgate = 2.5435
@@ -1437,17 +1456,20 @@ class Nav1p1_MA2025_BC(Nav1p6_MA2020_GoC):
             # The shipped default. Tracing the gating-current branch anyway
             # would emit ~30 equations that the ``where`` then discards.
             return conductive
+        # NEURON holds the gating current fixed in the voltage linearization
+        # (MECH-40), so by default its rates see a gradient-free V.
+        Vr = freeze_gradient(V) if self.freeze_gate_current_gradient else V
         gate_flip = (
-            self.f01(V) * self.C1.value
-            + (self.f02(V) - self.b01(V)) * self.C2.value
-            + (self.f03(V) - self.b02(V)) * self.C3.value
-            + (self.f04(V) - self.b03(V)) * self.C4.value
-            - self.b04(V) * self.C5.value
-            + self.f11(V) * self.I1.value
-            + (self.f12(V) - self.b11(V)) * self.I2.value
-            + (self.f13(V) - self.b12(V)) * self.I3.value
-            + (self.f14(V) - self.b13(V)) * self.I4.value
-            - self.b14(V) * self.I5.value
+            self.f01(Vr) * self.C1.value
+            + (self.f02(Vr) - self.b01(Vr)) * self.C2.value
+            + (self.f03(Vr) - self.b02(Vr)) * self.C3.value
+            + (self.f04(Vr) - self.b03(Vr)) * self.C4.value
+            - self.b04(Vr) * self.C5.value
+            + self.f11(Vr) * self.I1.value
+            + (self.f12(Vr) - self.b11(Vr)) * self.I2.value
+            + (self.f13(Vr) - self.b12(Vr)) * self.I3.value
+            + (self.f14(Vr) - self.b13(Vr)) * self.I4.value
+            - self.b14(Vr) * self.I5.value
         ) / u.ms
         # The ``.mod`` writes ``nc = (1e12)*gbar/gunit`` and
         # ``igate = nc*(1e6)*e0*zgate*gateFlip()``: the two factors convert
@@ -1486,6 +1508,12 @@ class Nav1p1_RI2021_SC(Nav1p1_MA2025_BC):
         Override for :class:`Markov`'s default ODE solver.
     substeps : int, optional
         Override for :class:`Markov`'s default substep count.
+    freeze_gate_current_gradient : bool, optional
+        If ``True`` (the default), the gating current's dependence on
+        ``V`` enters neither the staggered solver's voltage
+        linearization nor gradients, as in NEURON; its value is
+        unchanged. ``False`` keeps that dependence, as before 0.3. No
+        effect while ``gateCurrent`` is zero.
 
     See Also
     --------

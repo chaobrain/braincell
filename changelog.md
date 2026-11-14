@@ -1473,6 +1473,22 @@
   step that writes the geometry or an optimizer root keeps building the
   operator at every step, with main's results; the new `axial_operator_mode`
   property reports `"rollout"`, `"step"` or `"none"`.
+- **The optional gating current no longer enters the voltage linearization**
+  (MECH-40). With `gateCurrent != 0`, `Kv1p1_MA2025_BC`, `Kv1p1_MA2024_PC`,
+  `Kv1p1_RI2021_SC`, `Kv1p1_MA2020_GoC`, `Kv1p1_MA2020_GrC`,
+  `Kv3p3_MA2024_PC`, `Nav1p1_MA2025_BC` and `Nav1p1_RI2021_SC` evaluate the
+  rates inside the gating current at a gradient-free `V`, so its dependence on
+  `V` enters neither the staggered solver's implicit voltage step nor
+  gradients. NEURON's `nrn_cur` holds the gating current constant the same
+  way. The current is unchanged, but current-clamp voltages now depend on
+  `dt` as NEURON's do: in the NEURON comparison (`dt = 0.01 ms`) the largest
+  difference went from 3.4e-3 mV (Kv1.1), 2.6e-3 mV (Kv3.3) and 7.8 mV
+  (Nav1.1) to 2.1e-13, 1.4e-13 and 1.1e-7 mV. Against each run's own
+  `dt = 1e-4 ms` result, Nav1.1's error at `dt = 0.025 ms` falls from
+  14.6-15.4 mV to 2.4-4.0 mV (measured on main `0d69ab8`, float64). The new
+  constructor argument `freeze_gate_current_gradient=False` restores the
+  previous linearization and gradients. The default-off path
+  (`gateCurrent = 0`) is unchanged.
 
 - **CI runs the morphology and synapse NEURON comparisons on every pull
   request** (MECH-44). The `validation` job now also runs

@@ -28,7 +28,6 @@ import unittest
 from unittest import mock
 
 import brainunit as u
-import jax
 import pytest
 
 import braincell.channel.potassium as potassium
@@ -109,26 +108,26 @@ class PotassiumRootCauseTest(unittest.TestCase):
         self.assertLessEqual(result["e_I"], T0_LIMITS["e_I"])
         self.assertLessEqual(result["e_s"], T0_LIMITS["e_s"])
 
-    def test_constant_gating_current_conductance_explains_the_current_clamp(self):
+    def test_gating_current_gradient_breaks_the_current_clamp(self):
+        # MECH-40: NEURON's rates() runs in the DERIVATIVE block, so its
+        # conductance estimate holds igate constant in v; BrainCell freezes
+        # igate's v-dependence alike by default. Keeping it breaks T0.
         name = "ma25_bc/kv1p1_ma25_bc:gateCurrent=1"
         variant = VARIANTS[name]
         skip_unless_compiled(self, (variant.config,))
-        original = potassium._ExpRateGateCurrent.current
+        original = potassium.Kv1p1_MA2025_BC.__init__
 
-        def current(self, V, K):
-            # NEURON's rates() runs in the DERIVATIVE block, so its conductance
-            # estimate holds igate constant in v; hide igate's v-dependence alike.
-            frozen = u.Quantity(jax.lax.stop_gradient(V.mantissa), unit=V.unit)
-            conductive = self.g_max * self.conductance_factor(V, K) * (K.E - V)
-            conductive_frozen = self.g_max * self.conductance_factor(frozen, K) * (K.E - frozen)
-            return conductive + (original(self, frozen, K) - conductive_frozen)
+        def live_gradient(self, *args, **kwargs):
+            original(self, *args, **{**kwargs, "freeze_gate_current_gradient": False})
 
-        with mock.patch.object(potassium._ExpRateGateCurrent, "current", current):
-            for protocol in CURRENT_CLAMP_PROTOCOLS:
-                with self.subTest(protocol=protocol):
-                    self.assertEqual(TABLE.tier(name, protocol), "T1")
-                    error = current_clamp_error(variant.config, protocol, dict(variant.channel_params))
-                    self.assertLessEqual(error, T0_LIMITS["e_V"])
+        for protocol in CURRENT_CLAMP_PROTOCOLS:
+            with self.subTest(protocol=protocol):
+                self.assertEqual(TABLE.tier(name, protocol), "T0")
+                frozen = current_clamp_error(variant.config, protocol, dict(variant.channel_params))
+                with mock.patch.object(potassium.Kv1p1_MA2025_BC, "__init__", live_gradient):
+                    live = current_clamp_error(variant.config, protocol, dict(variant.channel_params))
+                self.assertLessEqual(frozen, T0_LIMITS["e_V"])
+                self.assertGreater(live, 100.0 * T0_LIMITS["e_V"])
 
     def test_hh_rate_table_breaks_the_ramp(self):
         skip_unless_compiled(self, (HH,))

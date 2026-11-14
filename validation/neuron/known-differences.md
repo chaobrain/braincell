@@ -69,13 +69,25 @@ reads `0.99 mV` instead of `0.627 mV`).
 | `na_zh19_io` | `2.6e-5` / `4.5e-11` / `2.1e-10` | `5e-5` / `1e-6` / `1e-6` |
 | `kca2p2` in `ma20_goc`, `ma20_grc`, `ma25_bc`, `ri21_sc` | `4.2e-6` / `6.4e-6` / `3.5e-6` | `1e-5` each |
 | `ca_zh19_io` with `freeze_m_inf=False` | `3.9e-3` / `0.076` / `0.18` | `1e-2` / `0.2` / `0.5` |
-| The five `kv1p1` configurations with `gateCurrent = 1` | `3.8e-4` / `3.4e-3` / `1.4e-3` | `1e-3` / `1e-2` / `5e-3` |
-| `kv3p3_ma24_pc` with `gateCurrent = 1` | `2.5e-6` / `2.6e-3` / `6.2e-4` | `5e-6` / `5e-3` / `1e-3` |
-| `nav1p1_ma25_bc`, `nav1p1_ri21_sc` with `gateCurrent = 1` (MECH-19c) | `0.126` / `5.39` / `7.83` | `0.2` / `10` / `20` |
 
 The Cav2.1 row was measured on 2026-11-11, after MECH-6a; before it the
 unfrozen classes used CODATA constants and gave `2.8e-4` / `0.627` /
 `8.0e-5 mV`.
+
+The default-off options compared in `tolerances.VARIANTS` and not in the
+table are T0 in all five protocols: `Kv1p5_MA2020_GrC` with `gnonspec > 0`
+(NEURON's `ino` added to `ik`), and the five `kv1p1` configurations,
+`kv3p3_ma24_pc`, `nav1p1_ma25_bc` and `nav1p1_ri21_sc` with
+`gateCurrent = 1` (NEURON's `i` added to `ik` or `ina` under voltage clamp;
+the Nav1.1 states keep the initialization entry below). The `.mod` files
+compute the gating current from rates set in the `DERIVATIVE` or `KINETIC`
+block, so NEURON's finite-difference conductance holds it constant in `v`;
+since MECH-40 BrainCell freezes its dependence on `V` in the staggered
+solver's linearization alike (`freeze_gate_current_gradient=True`, the
+default). With `freeze_gate_current_gradient=False` the linearization
+includes `d(igate)/dV`, as for `freeze_m_inf=False` below, and the current
+clamp leaves T0 (before MECH-40: up to `3.4e-3 mV` for Kv1.1, `2.6e-3 mV`
+for Kv3.3 and `7.83 mV` for Nav1.1).
 
 Under voltage clamp the catalogue tests (`tests/test_catalogue_*.py`, slow)
 assert every configuration; the T1 entries explained in this document are
@@ -260,23 +272,6 @@ Class (d), `ca_zh19_io` with the non-default `freeze_m_inf=False`: the `.mod`
   mechanism as the unfrozen GHK classes above. The option does not change the
   current, and the voltage clamp stays T0 (`e_I = 1.3e-14`).
 
-### Kv1.1 and Kv3.3 gating current
-
-Class (d), the `kv1p1` configurations (GoC, GrC, PC, BC, SC) and
-  `kv3p3_ma24_pc` with the non-default `gateCurrent = 1`: the `.mod` adds the
-  gating current `igate = nc*e0*4*zn*(ninf - n)/taun` as a separate
-  `NONSPECIFIC_CURRENT i`, with `ninf` and `taun` from `rates()` in the
-  `DERIVATIVE` block, so NEURON's finite-difference conductance holds `igate`
-  constant in `v`. BrainCell folds `igate` into the channel current, and the
-  staggered solver's autodiff linearization includes `d(igate)/dV`, as for
-  `freeze_m_inf=False` above. The current itself agrees: under voltage clamp,
-  with NEURON's `i` added to `ik`, both protocols are T0 (`e_I <= 1.2e-15`).
-  Hiding `igate`'s dependence on `V` from the linearization
-  (`jax.lax.stop_gradient`) gives `<= 2.1e-13 mV` in all three templates.
-  The other default-off path of this family, `Kv1p5_MA2020_GrC` with
-  `gnonspec > 0` (NEURON's `ino` added to `ik`), is T0 in all five
-  protocols.
-
 ### Nav1.1 steady-state initialization
 
 Class (c), `nav1p1_ma25_bc` and `nav1p1_ri21_sc`, with and without
@@ -291,24 +286,6 @@ Class (c), `nav1p1_ma25_bc` and `nav1p1_ri21_sc`, with and without
   after `finitialize` gives `e_I <= 1.1e-14`, `e_s <= 2.3e-14` in both
   protocols, with and without the gating current. Under current clamp the
   default configurations stay within T0 (`<= 1.2e-7 mV`).
-
-### Nav1.1 gating current
-
-Class (d), `nav1p1_ma25_bc` and `nav1p1_ri21_sc` with the non-default
-  `gateCurrent = 1`: the same mechanism as Kv1.1 and Kv3.3 above. The `.mod`
-  adds `igate = nc*e0*zgate*gateFlip()` as a separate `NONSPECIFIC_CURRENT
-  i`; NEURON's finite-difference conductance holds it constant in `v`, while
-  BrainCell's autodiff linearization includes `d(igate)/dV`. The current
-  agrees: with NEURON's `i` added to `ina`, the voltage clamp differs only by
-  the initialization above. Hiding `igate`'s dependence on `V` from the
-  linearization (`jax.lax.stop_gradient`) gives `8.7e-9` / `1.1e-7` /
-  `7.6e-8 mV`, the values of the default configuration. The effect is much
-  larger than for Kv1.1 (`0.126` / `5.39` / `7.83 mV`): `gateFlip()` sums
-  transition rates of hundreds per ms that grow `e`-fold every `20 mV`, and
-  the dc cases that depolarize the cell amplify it. The difference shrinks
-  with `dt`: at `dt = 0.001 ms` the dc cases differ by at most `0.58 mV`. At
-  `dt = 0.01 ms` NEURON is the closer of the two to its own `dt = 0.001 ms`
-  run (up to `1.6 mV`, against up to `6.3 mV` for BrainCell).
 
 Not addressed: the current (`ix`) traces of the two runners are one step
 apart, and NEURON's sample `k + 1` matches BrainCell's sample `k`. This affects

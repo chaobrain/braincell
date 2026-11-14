@@ -51,9 +51,7 @@ _KCA1P1 = "Kca1.1 steady-state initialization"
 _GHK_ZERO = "GHK drive near 0 mV in mod files without a limit branch"
 _CA_ZH19_M_INF = "Ca_ZH2019_IO with freeze_m_inf=False"
 _KDR_ZH19 = "Kdr_ZH2019_IO limit branch"
-_GATE_CURRENT = "Kv1.1 and Kv3.3 gating current"
 _NAV1P1_INIT = "Nav1.1 steady-state initialization"
-_NAV1P1_GATE_CURRENT = "Nav1.1 gating current"
 _KV1P1 = tuple(f"{model}/kv1p1_{model}" for model in ("ma20_goc", "ma20_grc", "ma24_pc", "ma25_bc", "ri21_sc"))
 _NAV1P1 = ("ma25_bc/nav1p1_ma25_bc", "ri21_sc/nav1p1_ri21_sc")
 _CAV3P3 = ("ma24_pc/cav3p3_ma24_pc", "ma24_pc/cav3p3_ma24_pc_frozen", "ri21_sc/cav3p3_ri21_sc")
@@ -115,19 +113,6 @@ ENTRIES = [
         for entry in _current_clamp(config, 1e-5, 1e-5, 1e-5, "c", _KCA2P2)
     ),
     *_current_clamp("zh19_io/ca_zh19_io:freeze_m_inf=False", 1e-2, 0.2, 0.5, "d", _CA_ZH19_M_INF),
-    # Current clamp, e_V in mV (MECH-19b).
-    *(
-        entry
-        for config in _KV1P1
-        for entry in _current_clamp(f"{config}:gateCurrent=1", 1e-3, 1e-2, 5e-3, "d", _GATE_CURRENT)
-    ),
-    *_current_clamp("ma24_pc/kv3p3_ma24_pc:gateCurrent=1", 5e-6, 5e-3, 1e-3, "d", _GATE_CURRENT),
-    # Current clamp, e_V in mV (MECH-19c).
-    *(
-        entry
-        for config in _NAV1P1
-        for entry in _current_clamp(f"{config}:gateCurrent=1", 0.2, 10.0, 20.0, "d", _NAV1P1_GATE_CURRENT)
-    ),
     # Voltage clamp, e_I and e_s (MECH-19a).
     *(
         ToleranceEntry(config, protocol, {"e_I": e_I, "e_s": 5e-9}, "c", _KCA2P2)

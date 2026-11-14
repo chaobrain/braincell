@@ -755,6 +755,10 @@ def compact_forward_sensitivity_rollout(
     The result is exact when the active states carry every sensitivity the
     loss depends on: the selection must include each state whose tangent is
     not zero, since every other state starts each step with a zero tangent.
+    States materialized before the rollout are checked (below); a state the
+    step itself writes and the selection leaves out (an unselected calcium
+    concentration, say) is not detected and silently drops its part of the
+    gradient (OPT-18).
 
     Raises
     ------

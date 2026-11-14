@@ -154,11 +154,14 @@ jobs:
   # holds one runner for them; each suite runs in its own pytest process, so
   # the NEURON mechanism libraries of the cable, channel and ion suites never
   # share a process. Steps are selected by `changes`: the NEURON comparisons
-  # (validation/neuron) when `neuron`, the optim validation suite and the
-  # benchmark scripts' own tests when `bench`. Every selected step runs even
-  # after an earlier one failed, so one run reports every failure. Modules
-  # marked `slow` (pyproject.toml) run only in `slow_tests` and
-  # `slow_tests_neuron`.
+  # (validation/neuron, and the ASC reader's NEURON parity tests) when
+  # `neuron`, the optim validation suite and the benchmark scripts' own tests
+  # when `bench`. Every selected step runs even after an earlier one failed,
+  # so one run reports every failure. Modules marked `slow` (pyproject.toml)
+  # run only in `slow_tests` and `slow_tests_neuron`. The morphology, ASC and
+  # synapse comparisons skip their tests when NEURON cannot be imported; here
+  # a skipped test fails the job, so a broken NEURON install cannot turn them
+  # into silent passes.
   validation:
     needs: changes
     if: needs.changes.outputs.neuron == 'true' || needs.changes.outputs.bench == 'true'
@@ -209,6 +212,44 @@ jobs:
             exit 0
           fi
           exit "$status"
+      - name: Test the morphology comparisons
+        # SWC and ASC morphology metrics and soma layout against NEURON's
+        # import3d; NEURON's built-in mechanisms only, no compiled models.
+        if: ${{ !cancelled() && env.NEURON_SUITES == 'true' }}
+        run: pytest validation/neuron/morph -rs --durations=10 --junitxml="$RUNNER_TEMP/neuron-morph.xml"
+      - name: Test the ASC reader against NEURON (AscNeuronParityTest)
+        # The package suite has no NEURON, so these tests skip in `coverage`.
+        if: ${{ !cancelled() && env.NEURON_SUITES == 'true' }}
+        run: pytest braincell/io/asc/reader_test.py -k AscNeuronParityTest -rs --durations=10 --junitxml="$RUNNER_TEMP/neuron-asc.xml"
+      - name: Test the synapse comparisons
+        # ExpSyn and Exp2Syn, NetCon delays and spike times against NEURON's
+        # built-in mechanisms; no compiled models.
+        if: ${{ !cancelled() && env.NEURON_SUITES == 'true' }}
+        run: pytest validation/neuron/synapse -rs --durations=10 --junitxml="$RUNNER_TEMP/neuron-synapse.xml"
+      - name: Require the morphology, ASC and synapse comparisons to skip no test
+        if: ${{ !cancelled() && env.NEURON_SUITES == 'true' }}
+        run: |
+          python - "$RUNNER_TEMP"/neuron-morph.xml "$RUNNER_TEMP"/neuron-asc.xml "$RUNNER_TEMP"/neuron-synapse.xml <<'EOF'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          bad = False
+          for path in sys.argv[1:]:
+              try:
+                  root = ET.parse(path).getroot()
+              except (OSError, ET.ParseError) as exc:
+                  print(f"{path}: no report ({exc})")
+                  bad = True
+                  continue
+              suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+              tests = sum(int(s.get("tests", 0)) for s in suites)
+              skipped = sum(int(s.get("skipped", 0)) for s in suites)
+              print(f"{path}: {tests} tests, {skipped} skipped")
+              if tests == 0 or skipped:
+                  bad = True
+          if bad:
+              raise SystemExit("A NEURON comparison above ran no test or skipped one: is NEURON installed?")
+          EOF
       - name: Test validation/optim and benchmarks (fast tier)
         if: ${{ !cancelled() && env.BENCH_SUITES == 'true' }}
         run: pytest validation/optim benchmarks -m "not slow" --durations=10

@@ -71,7 +71,7 @@ so a new slow module needs no workflow change.
 - **Every pull request** (job `validation` in `ci-ok`, each suite its own process):
   `cable/tests`; and, after compiling the eight channel models,
   `channel_no_conc/tests` with `_clamp_test.py`, `_tolerance_test.py`,
-  `_convergence_test.py` and `_mechanisms_test.py`, all with `-m "not slow"`;
+  `_convergence_test.py`, `_mechanisms_test.py` and `_paths_test.py`, all with `-m "not slow"`;
   then `ion -m "not slow"` in a separate process (with the chloride and
   GABA_A comparisons against the ModelDB sources in `data/modeldb`). Then,
   each in its own process and with no compiled model: `morph`, the ASC
@@ -92,7 +92,8 @@ Reproduce both tiers locally after compiling the channel models as above:
 ```bash
 pytest -q validation/neuron/channel_no_conc/tests \
     validation/neuron/_clamp_test.py validation/neuron/_tolerance_test.py \
-    validation/neuron/_convergence_test.py validation/neuron/_mechanisms_test.py -m "not slow"
+    validation/neuron/_convergence_test.py validation/neuron/_mechanisms_test.py \
+    validation/neuron/_paths_test.py -m "not slow"
 pytest -q validation/neuron/ion -m "not slow"
 pytest -q validation/neuron/morph
 pytest -q braincell/io/asc/reader_test.py -k AscNeuronParityTest

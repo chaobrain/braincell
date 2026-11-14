@@ -63,11 +63,11 @@ The NEURON comparison suites are tiered the same way, each suite in its own pyte
 | Tier | CI job | What runs |
 | --- | --- | --- |
 | Every pull request (in `ci-ok`) | `validation` | `validation/neuron/cable/tests` |
-| Every pull request (in `ci-ok`) | `validation` | `validation/neuron/channel_no_conc/tests` and the shared `_clamp_test.py`, `_tolerance_test.py`, `_convergence_test.py`, `_mechanisms_test.py` under `validation/neuron/`, with `-m "not slow"`; then `validation/neuron/ion` with `-m "not slow"` in a separate process |
-| Every pull request (in `ci-ok`) | `validation` | `validation/neuron/morph` (SWC and ASC morphology metrics and soma layout against NEURON's import3d), `AscNeuronParityTest` in `braincell/io/asc/reader_test.py`, and `validation/neuron/synapse` (`ExpSyn`, `Exp2Syn`, `NetCon` delays and spike times), each in its own process; these tests skip without NEURON, so the job fails if any of them is skipped |
+| Every pull request (in `ci-ok`) | `validation` | `validation/neuron/channel_no_conc/tests` and the shared `_clamp_test.py`, `_tolerance_test.py`, `_convergence_test.py`, `_mechanisms_test.py`, `_paths_test.py` under `validation/neuron/`, with `-m "not slow"`; then `validation/neuron/ion` with `-m "not slow"` in a separate process (with the chloride and GABA_A comparisons against the ModelDB sources in `data/modeldb/`) |
+| Every pull request (in `ci-ok`) | `validation` | `validation/neuron/morph` (SWC and ASC morphology metrics and soma layout against NEURON's import3d), `AscNeuronParityTest` in `braincell/io/asc/reader_test.py`, and `validation/neuron/synapse` (`ExpSyn`, `Exp2Syn`, `NetCon` delays and spike times), each in its own process; these tests and the ion suite's skip without NEURON or a source file, so the job fails if any of them is skipped (`.github/junit_counts.py` reads each step's JUnit report) |
 | Daily run only | `test_linux` | `pytest braincell/` on the JAX floor (0.11.0) |
 | Daily run only | `test_macos`, `test_windows` | `pytest braincell/` on macOS and Windows (Python 3.13); kept out of pull requests to stay within the concurrent-job limit |
-| Daily run only | `slow_tests_neuron` | `-m slow` of `validation/neuron/channel_no_conc/tests` (the per-family catalogue and `dt` convergence tests, and `test_neuron_agreement.py`), then of `validation/neuron/ion` (the pool comparisons) in a separate process |
+| Daily run only | `slow_tests_neuron` | `-m slow` of `validation/neuron/channel_no_conc/tests` (the per-family catalogue and `dt` convergence tests, and `test_neuron_agreement.py`), then of `validation/neuron/ion` (the pool comparisons, and the sodium and potassium pools against the ModelDB sources in `data/modeldb/`) in a separate process, which fails if a test skipped |
 
 Both tiers compile the eight channel models first; the morphology, ASC and synapse comparisons use only NEURON's built-in mechanisms and need no build. To reproduce them locally:
 
@@ -78,7 +78,8 @@ done
 # Pull-request tier.
 python -m pytest validation/neuron/channel_no_conc/tests \
     validation/neuron/_clamp_test.py validation/neuron/_tolerance_test.py \
-    validation/neuron/_convergence_test.py validation/neuron/_mechanisms_test.py -m "not slow" -q
+    validation/neuron/_convergence_test.py validation/neuron/_mechanisms_test.py \
+    validation/neuron/_paths_test.py -m "not slow" -q
 python -m pytest validation/neuron/ion -m "not slow" -q
 python -m pytest validation/neuron/morph -q
 python -m pytest braincell/io/asc/reader_test.py -k AscNeuronParityTest -q

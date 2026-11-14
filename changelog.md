@@ -2827,6 +2827,26 @@
   Calls that were already exact are unchanged bit for bit. A State the step
   itself writes and the selection leaves out is still not detected (OPT-18).
 
+- **An optim engine on a `Network` prepared from a weak-typed example works
+  on float64 data** (OPT-21). `build_rollout_value_and_grad(network, ...)
+  .prepare(jnp.asarray(-60.0))` followed by a call on `jnp.linspace(...)`
+  raised `TypeError: scan body function carry input and carry output must
+  have the same pytree structure`; so did a float32 example. The rollout's
+  data slices are not weakly typed, so the call traced the step a second
+  time, and the engine passed the state values in the order of the first
+  trace. A Network's step reads its states through its compiled loop, which
+  lists them in another order on the trace that compiles it than on later
+  ones, so the values reached the wrong states. The engines now drop the
+  weak type of the example, so the call reuses the step traced by `prepare`
+  (4 traces of the user's steps for the four engines, before 8), and a step
+  traced again for data of another dtype keeps the order it was built with;
+  a trace that reads other states raises `ValueError`. On the OPT-14 Y
+  cable (`rk4`, float64, 8 steps) the weak, strong and float32 examples now
+  give the same losses and gradients bit for bit in rollout and trajectory,
+  BPTT and RTRL (rollout BPTT loss 53.23479115912473, `Ra` gradient
+  5.377743579582837), on a Network and on the Cell alone, whose results are
+  unchanged.
+
 ### Documentation
 
 - The `scheduled_delivery` advice in the `Network.run` docstring follows

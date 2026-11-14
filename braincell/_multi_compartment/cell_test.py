@@ -2344,11 +2344,12 @@ class UpdateLiveConnectionTest(unittest.TestCase):
     port. The solver sets a member's V to +40 mV in its spike steps and to
     -65 mV otherwise and integrates nothing, so g only grows: by 0.05 uS per
     live event and by 0.01 uS per scheduled one. A spike of step ``m`` with a
-    delay of ``k`` steps shows in g read after step ``m + k``, as in
-    ``Cell.run``. The spike steps put the arrivals on the last step before and
-    the first step after the segment boundaries 10 and 20, and on the first
-    and last steps; the scheduled events arrive within half a step of the
-    boundaries on both sides.
+    delay of ``k`` steps acts at the start of step ``m + 1 + k`` and shows in
+    g read after it, as in ``Cell.run`` and NEURON (CELL-81; main 51f669f:
+    after step ``m + k``). The spike steps put the arrivals on the last step
+    before and the first step after the segment boundaries 10 and 20, on the
+    first step they can reach (``k + 1``) and on the last step; the scheduled
+    events arrive within half a step of the boundaries on both sides.
     """
 
     DT = 0.1
@@ -2362,7 +2363,8 @@ class UpdateLiveConnectionTest(unittest.TestCase):
 
     @staticmethod
     def _spike_steps(k):
-        return (np.array([0, 9 - k, 19 - k]), np.array([10 - k, 20 - k, 29]))
+        # Arrivals k + 1, 9 and 19, and 10, 20 and 29 (main 51f669f: 0 - k, 9 - k, 19 - k and 10 - k, 20 - k, 29).
+        return (np.array([0, 8 - k, 18 - k]), np.array([9 - k, 19 - k, 28 - k]))
 
     def _cell(self, delay_ms, k, *, record=False, init=True, spike_steps=None, scheduled=True):
         spike_steps = self._spike_steps(k) if spike_steps is None else spike_steps
@@ -2404,8 +2406,8 @@ class UpdateLiveConnectionTest(unittest.TestCase):
         increments = np.zeros((self.N, 2))
         for member, steps in enumerate(self._spike_steps(k)):
             for m in steps:
-                if m + k < self.N:
-                    increments[m + k, member] += self.W
+                if m + 1 + k < self.N:
+                    increments[m + 1 + k, member] += self.W
         for step in self.SCHEDULED_STEPS:
             increments[step, 0] += self.W_SCHEDULED
         return np.cumsum(increments, axis=0)
@@ -2606,7 +2608,7 @@ class UpdateLiveConnectionTest(unittest.TestCase):
         """CELL-76: inside a trace the history cannot be read; a run at the new dt outside it is the way out."""
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
             cell = self._cell(0.3, 3)
-            cell.run(dt=self.DT * u.ms, duration=5 * self.DT * u.ms)  # the step-0 events arrived in step 3
+            cell.run(dt=self.DT * u.ms, duration=5 * self.DT * u.ms)  # the step-0 events arrived in step 4
             run = self._jit_run(cell, 0.05, 10)
             before = self._fingerprint(cell)
             with self.assertRaisesRegex(ValueError, "cannot change dt inside a traced call"):
@@ -2633,12 +2635,15 @@ class UpdateLiveConnectionTest(unittest.TestCase):
             call = cell._get_connection_store()._calls[0]
             # Back at 0.1 ms with the first run's step count: the loop cache holds two keys that differ
             # first at the hand-over (test_a_cable_cell_returns_to_an_earlier_dt).
+            # Each event acts at the start of the step after its own and its delay (CELL-81), so the first
+            # segment takes 3 steps for member 0's step-0 event to arrive in it (main 51f669f: 2 and 16 steps
+            # at 0.05 ms), and the last 5 steps for member 1's to arrive at 1.7 ms.
             expected = ([0.05, 0.0], [0.05, 0.0], [0.05, 0.0], [0.10, 0.05])
-            segments = ((self.DT, 2, [1, 3]), (0.05, 16, [2, 6]), (self.DT, 2, [1, 3]), (self.DT, 5, [1, 3]))
+            segments = ((self.DT, 3, [1, 3]), (0.05, 14, [2, 6]), (self.DT, 3, [1, 3]), (self.DT, 5, [1, 3]))
             for (dt, n, steps), g in zip(segments, expected):
                 with self.subTest(dt=dt, steps=n):
                     if dt == 0.05:
-                        # Member 0's event arrived in step 1 and is still in the history, which is 3 deep.
+                        # Member 0's event arrived in step 2 and is still in the history, which is 3 deep.
                         self.assertTrue(np.asarray(call.live_history.value).any())
                     cell.run(dt=dt * u.ms, duration=n * dt * u.ms)
                     self.assertEqual(call.live_delay_steps.tolist(), steps)
@@ -2649,7 +2654,7 @@ class UpdateLiveConnectionTest(unittest.TestCase):
         """CELL-76: refused as run refuses it, until reset_state(); then as a fresh Cell at the new dt."""
         with jax.enable_x64(True), brainstate.environ.context(precision=64):
             cell = self._cell(0.1, 1)
-            self._eager(cell, 0, 1)  # member 0 spikes in step 0; it arrives in step 1
+            self._eager(cell, 0, 1)  # member 0 spikes in step 0; it arrives in step 2
             before = self._fingerprint(cell)
             for name, refused in (
                 ("update", lambda: self._update_at(cell, 0.05, 0.1)),

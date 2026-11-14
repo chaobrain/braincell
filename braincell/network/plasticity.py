@@ -30,14 +30,12 @@ consume its events. Every read at a boundary sees the state before it:
   scheduled row. A live source detected in step ``m`` with a delay of ``k``
   steps arrives at ``t_{m + 1 + k}``, as in ``Cell.run`` and NEURON
   (CELL-75).
-- A row with a scheduled source, or a live source and ``k >= 1``, delivers
-  ``n * w(t_n-)`` here (and ``n`` to a ``"sum_count"`` synapse's event
-  count, CELL-12b), not through the Network's delayed delivery: a
+- Every row delivers ``n * w(t_n-)`` here (and ``n`` to a ``"sum_count"``
+  synapse's event count, CELL-12b), not through the Network's delivery: a
   live call keeps its own history of its sources' spike counts, one
-  column per distinct source (fan-out rows share it). A live row with
-  ``k = 0`` keeps the Network's immediate path, at the end of the detection
-  step, which reads the dynamic weight; the rule has not run for that
-  boundary yet, so it reads ``w(t_n-)`` too.
+  column per distinct source (fan-out rows share it); a live row with
+  ``k = 0`` reads its source's current count, the events of the step that
+  ended at ``t_n``, as the Network's zero-delay rows do (CELL-81).
 - ``post`` is the events of the member that owns each row's synapse:
   a live source's events of step ``m`` are at ``t_{m + 1}``, the time
   ``RunResult.spikes`` and ``NetworkResult.events`` report for them
@@ -232,9 +230,8 @@ class _LivePlan:
         self.columns = columns
         # Rows that each read a source of their own, in source order, need no gather.
         self.slot = None if np.array_equal(slot, np.arange(columns.size)) else slot
-        # Zero-delay rows stay on the Network's immediate path (lowering).
-        deliver = steps >= 1
-        self.deliver = deliver if plan.active is None else deliver & plan.active
+        # The rule delivers every active row, zero-delay ones included (CELL-81).
+        self.deliver = plan.active
 
     def per_row(self, counts):
         """Spread per-source ``counts`` to the rows."""
@@ -407,14 +404,6 @@ class RuleBinding:
             )
         for name, value in new.items():
             self.states[name].value = value
-
-    def weight_getter(self, offsets):
-        """A reader of the dynamic weight of the rows at ``offsets``, for a lowered zero-delay block."""
-        states = self.states
-        if offsets.size == self.plan.n_rows and np.array_equal(offsets, np.arange(offsets.size)):
-            return lambda: states["w"].value
-        index = np.asarray(offsets, dtype=np.int64)
-        return lambda: states["w"].value[index]
 
 
 def reads_voltage_before_step(cell) -> bool:

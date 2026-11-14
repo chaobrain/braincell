@@ -295,6 +295,37 @@
   project-lead decision). To get the old values, subtract `dt` from the
   times; an `update()` loop that labels the spikes of the step at `t` should
   label them `t + dt`.
+- **Live and zero-delay events act at the start of the next step, as in
+  NEURON** (CELL-81). A spike detected in step `m` with a delay of `k` steps
+  acts at the start of step `m + 1 + k` on every driver and for every `k`,
+  `k = 0` included, as NEURON's `NetCon` delivers at `t_{m+1+k}`. Before, a
+  zero-delay row of `Network.run` or `Network.update()`, and every live row
+  of `Cell.run` and of a standalone `update()` loop, added its event at the
+  end of the step (for `k >= 1` at the end of step `m + k`). Three things
+  change. (1) The recorded state at the delivery boundary does not hold the
+  event yet: for an HH soma crossing 0 mV in step 98 with an ExpSyn
+  (tau 2 ms) and a 0.002 uS self-connection (dt 0.025 ms), `g` at `t_{99+k}`
+  was 0.002 uS and is now 0, and `g` one sample later is
+  0.0019751556009877627 uS, equal to NEURON 9.0.2 within 1e-18 uS
+  (`validation/neuron/synapse/netcon_delay_test.py` now compares `k = 0`
+  too). Only that one sample changes: V, the spikes and every other `g`
+  sample are bitwise the same, and `Network` rows with `k >= 1` do not
+  change at all. (2) A weight set with `connections.set(weight=...)`
+  between two runs applies to an event delivered on the first boundary of
+  the second run: split at that boundary and set to 0.004 uS, the model
+  above gave 0.0019751556009877627 uS (the old weight) and now gives
+  0.0039503112019755255 uS, as NEURON does; a plasticity rule's
+  zero-delay rows read the rule's weight at that boundary too. (3) A
+  zero-delay event detected in the last step of a run arrives in the first
+  step of the next run (or `Network.run`, or `update()` loop), once, even
+  at a new `dt`; a `k >= 1` event detected in the last step is in flight,
+  so a new `dt` raises the existing `ValueError` until `reset_state()`. A
+  `Network` queue whose rows all have zero delay keeps no history: each
+  row reads its source's count at the start of the step. A reduction whose
+  `init_state()` output reports an event delivers it over a zero-delay row
+  at the first step. There is no deprecation period (0.3 allows breaking
+  changes without one, a project-lead decision). To compare with old
+  results, read `g` one sample later.
 
 ### New Features
 

@@ -4079,19 +4079,23 @@ class Cell(_CellFacade, HHTypedNeuron):
         -----
         The standalone update order is:
 
-        1. Prepare the discrete event payloads of the boundary ``t``, and
+        1. Route the spikes of the earlier steps through the Cell's live
+           connections (from its ``event_outputs`` to its synapses), as each
+           step of :meth:`run` does: a spike of the step from ``t_m`` with a
+           delay of ``k`` steps (``delay / dt``, rounded half up) reaches its
+           synapse at the boundary ``t_{m+1+k}``, at the start of the step
+           there, ``k = 0`` at the start of the next step, as in a Network
+           and NEURON's ``NetCon`` (CELL-81). A loop of ``update()`` calls
+           and :meth:`run` hand the events in flight to each other, the
+           spike of the last step included.
+        2. Prepare the discrete event payloads of the boundary ``t``, and
            run the connections' plasticity rules there, as each step of
            :meth:`run` does; so an event at the start time is delivered, and
-           a weight set between two calls acts from the next one.
-        2. Apply them to the runtime synapses.
-        3. Advance voltage and mechanism dynamics through ``self.solver``.
-        4. Detect and store the current spike.
-        5. Route that spike through the Cell's live connections (from its
-           ``event_outputs`` to its synapses), as each step of :meth:`run`
-           does: with a delay of ``k`` steps (``delay / dt``, rounded half
-           up), it reaches its synapse at the end of the ``k``-th step after
-           this one, ``k = 0`` at the end of this one. A loop of ``update()``
-           calls and :meth:`run` hand the events in flight to each other.
+           a weight set between two calls acts from the next one, on the
+           live events as well.
+        3. Apply them to the runtime synapses.
+        4. Advance voltage and mechanism dynamics through ``self.solver``.
+        5. Detect and store the current spike.
 
         The first call at a ``dt`` quantizes the live delays and allocates
         their history, a state; a call at another ``dt`` quantizes them again
@@ -4193,14 +4197,14 @@ class Cell(_CellFacade, HHTypedNeuron):
             # A reduction model has no V; its clock is a state as well.
             probe = self._clock_step.value if self._uses_reduction else self.V.value
             self._prepare_live_rows(live, dt, action="update", traced=is_traced_value(probe))
+            # At the boundary the step starts at, before its scheduled events,
+            # as each step of run() routes them (CELL-70, CELL-81).
+            self._apply_direct_live_connection_events(live)
         self._prepare_first_synapse_inputs(t=self._resolve_t())
         self._prepare_step_clamps()
         self._begin_step()
         with brainstate.environ.context(_braincell_step_clamps_prepared=True):
             spk = self._update_dynamics(external)
-        if live:
-            # Each step of run() routes them here, after the step (CELL-70).
-            self._apply_direct_live_connection_events(live)
         return spk
 
     def _standalone_live_rows(self) -> tuple:
@@ -4705,7 +4709,13 @@ class Cell(_CellFacade, HHTypedNeuron):
         return _rewrap_event_template(template, output)
 
     def _apply_direct_live_connection_events(self, live_connections=None) -> None:
-        """Route live direct sources and run target handlers at this boundary."""
+        """Write the live direct events of this boundary into the event buffers.
+
+        Called at the start of a step, before the boundary's scheduled
+        events are prepared: a spike of step ``m`` with ``k`` delay steps
+        arrives here at the start of step ``m + 1 + k``, as in a Network and
+        NEURON (CELL-81). The step consumes the buffers.
+        """
         if live_connections is None:
             live_connections = self.connections._call_views(scheduled=False)
         if not live_connections:
@@ -4744,38 +4754,12 @@ class Cell(_CellFacade, HHTypedNeuron):
                     .add(jnp.asarray(counts, dtype=layout_counts[layout_id].dtype))
                 )
 
-        point_v = None if self._uses_reduction else self._point_voltage_for_mechanisms(self.V.value)
         for layout in layouts:
             if layout.id not in drives:
                 continue
             template = event_runtime.get_event_buffer(layout.id)
             drive = _rewrap_event_template(template, drives[layout.id])
-            if layout.id in layout_counts:
-                self._apply_synapse_layout_event_drive(
-                    layout.id, drive, point_v=point_v, count=layout_counts[layout.id]
-                )
-            else:
-                self._apply_synapse_layout_event_drive(layout.id, drive, point_v=point_v)
-
-    def _apply_synapse_layout_event_drive(self, layout_id: int, drive, *, point_v=None, count=None) -> None:
-        """Apply one already-aggregated boundary payload to a runtime layout.
-
-        ``count`` is the per-row event count, given for a ``"sum_count"``
-        layout only (CELL-12b).
-        """
-        if self._uses_reduction:
-            current = self._reduction_input_runtime.get_event_buffer(layout_id)
-            self._set_event_buffer(layout_id, current + _coerce_drive_like(drive, current))
-            return
-        layout = self._runtime.layouts[int(layout_id)]
-        synapse = self._runtime.get_runtime_node(layout.id)
-        if point_v is None:
-            point_v = self._point_voltage_for_mechanisms(self.V.value)
-        args = (layout.gather_points(point_v),)
-        if count is None:
-            synapse.apply_events(drive, *args)
-        else:
-            synapse.apply_events(drive, *args, count=count)
+            self._write_event_arrival(layout.id, drive, count=layout_counts.get(layout.id))
 
     def _event_runtime(self):
         """Return the detailed or reduced owner of packed event buffers."""
@@ -4807,7 +4791,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         return self._runtime.event_counts.get(int(layout_id))
 
     def _write_event_arrival(self, layout_id: int, arrival, *, count=None) -> None:
-        """Merge one Network arrival with any event staged for this boundary.
+        """Merge one arrival (a Network's, or a run's live events) with any event staged for this boundary.
 
         ``count`` is the arrival's per-row event count, given for a
         ``"sum_count"`` layout only (CELL-12b). A detailed or lumped Cell's
@@ -5053,6 +5037,14 @@ class Cell(_CellFacade, HHTypedNeuron):
         ``ConnectionView.set(weight=...)``, acts from the first step of the
         next. A traced run (inside ``jax.jit``) has no host clock: it counts
         the arrivals on the grid from time 0, without this hand-over.
+
+        A live connection (from the Cell's ``event_outputs``) delivers a
+        spike of the step from ``t_m`` with ``k`` delay steps at the start of
+        the step at ``t_{m+1+k}``, ``k = 0`` included, as a Network and
+        NEURON's ``NetCon`` do (CELL-81): the state recorded at that boundary
+        does not hold the event yet and the next sample does, a weight set
+        between two runs weights the events that arrive in the next run,
+        and a spike of a run's last step arrives in the next run.
 
         A recording samples at ``start + j·period`` from time 0
         (:meth:`record`), counted in whole steps, so a run of any length

@@ -310,8 +310,9 @@ class ConnectionTest(unittest.TestCase):
         self.assertEqual(len(spike_rows), 1)
         self.assertGreater(len(conductance_rows), 0)
         # The spike of step m is at t_{m+1} (CELL-80). A zero-delay event acts
-        # at the end of step m, so it first shows in the sample of t_{m+1}.
-        self.assertEqual(int(conductance_rows[0]), int(spike_rows[0]))
+        # at the start of step m + 1, so it first shows in the sample of
+        # t_{m+2}, as in NEURON (CELL-81; main 51f669f: t_{m+1}).
+        self.assertEqual(int(conductance_rows[0]), int(spike_rows[0]) + 1)
 
     def test_network_rejects_live_source_outside_execution_scope(self) -> None:
         pre, _ = _population(1)

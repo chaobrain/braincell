@@ -57,7 +57,10 @@ class ExperimentSchemaTest(unittest.TestCase):
         config_root = CHANNEL_NO_CONC_ROOT / "configs"
 
         mod_suffixes = set()
-        testing = [DATA_ROOT / "mechanisms" / "testing" / name for name in ("kv.mod", "clleak.mod")]
+        testing = [
+            DATA_ROOT / "mechanisms" / "testing" / name
+            for name in ("kv.mod", "clleak.mod", "Cav3p3_MA24_PC_finite.mod", "Cav3p3_RI21_SC_finite.mod")
+        ]
         for mod_path in [*sorted(mod_root.glob("*/mechanisms/channel/*.mod")), *testing]:
             suffix = None
             for line in mod_path.read_text(errors="ignore").splitlines():
@@ -74,8 +77,8 @@ class ExperimentSchemaTest(unittest.TestCase):
             config_suffixes.add(model_config.mapping_spec.neuron.mechanism_name)
 
         neuron_builtins = {"hh", "pas"}  # NEURON's own mechanisms, compiled into every library
-        self.assertEqual(len(mod_suffixes), 86)
-        self.assertEqual(len(config_suffixes), 88)
+        self.assertEqual(len(mod_suffixes), 88)
+        self.assertEqual(len(config_suffixes), 90)
         self.assertEqual(config_suffixes, mod_suffixes | neuron_builtins)
 
     @requires_mechanisms()

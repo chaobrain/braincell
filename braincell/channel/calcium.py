@@ -86,22 +86,16 @@ def _cav3p1_nmodl_ghk_flux(V, ci, co, z, temp):
     """
     ghk_temp = temp + _CAV3P1_NMODL_TEMP_OFFSET
     zeta = (z * _CAV3P1_NMODL_FARADAY * V) / (_CAV3P1_NMODL_GAS_CONSTANT * ghk_temp)
-    exp_term = u.math.exp(-zeta)
-    numerator = ci - co * exp_term
-    small_branch = (z * _CAV3P1_NMODL_FARADAY) * numerator * (1 + zeta / 2)
-    regular_branch = (z * zeta * _CAV3P1_NMODL_FARADAY) * numerator / (1 - exp_term)
-    return u.math.where(u.math.abs(1 - exp_term) < 1e-6, small_branch, regular_branch)
+    numerator = ci - co * u.math.exp(-zeta)
+    return (z * _CAV3P1_NMODL_FARADAY) * numerator / u.math.exprel(-zeta)
 
 
 def _cav3p3_nmodl_ghk_flux(V, ci, co, z, temp):
     """GHK helper matching the constants and Kelvin conversion in Cav3p3 NMODL."""
     ghk_temp = temp + _CAV3P3_NMODL_TEMP_OFFSET
     w = (z * _CAV3P3_NMODL_FARADAY * V) / (_CAV3P3_NMODL_GAS_CONSTANT * ghk_temp)
-    exp_term = u.math.exp(w)
-    numerator = co - ci * exp_term
-    small_branch = -z * _CAV3P3_NMODL_FARADAY * numerator * (1 - w / 2)
-    regular_branch = -z * _CAV3P3_NMODL_FARADAY * numerator * w / (exp_term - 1)
-    return u.math.where(u.math.abs(exp_term - 1) < 1e-6, small_branch, regular_branch)
+    numerator = co - ci * u.math.exp(w)
+    return -z * _CAV3P3_NMODL_FARADAY * numerator / u.math.exprel(w)
 
 
 def _su2015_dcn_ghk_drive(V, ci, co, temp):
@@ -2131,9 +2125,10 @@ class Cav3p1_MA2020_GoC(GhkHH):
     ``R = 8.3145 J/(K mol)`` and the mod file's ``kelvinfkt``
     conversion ``273.19 + celsius``, whose 0.04 K offset from
     :func:`brainunit.celsius2kelvin` is carried as
-    ``_CAV3P1_NMODL_TEMP_OFFSET``. The helper also keeps the mod
-    file's small-``zeta`` series branch, taken when
-    ``|1 - exp(-zeta)| < 1e-6``. NEURON's raw ``ica`` for this
+    ``_CAV3P1_NMODL_TEMP_OFFSET``. Where the mod file switches to a
+    small-``zeta`` series when ``|1 - exp(-zeta)| < 1e-6``, the helper
+    divides by ``exprel(-zeta)`` instead, which is exact at and near
+    0 mV (MECH-43). NEURON's raw ``ica`` for this
     mechanism is outward-positive; ``current()`` negates it to match
     BrainCell's repo-wide inward-positive convention.
 
@@ -3848,12 +3843,10 @@ class Cav3p3_RI2021_SC(GhkHH):
     :func:`brainunit.celsius2kelvin` is carried as
     ``_CAV3P3_NMODL_TEMP_OFFSET``. The helper writes the flux as
     :math:`-zF(c_o - c_i e^{w}) w / (e^{w} - 1)` with
-    :math:`w = zFV'/(RT)`, matching the mod file line for line, and
-    adds one thing the mod file has no counterpart for: a
-    small-:math:`w` series branch
-    :math:`-zF(c_o - c_i e^{w})(1 - w/2)`, taken when
-    :math:`|e^{w} - 1| < 10^{-6}`, which avoids the division by
-    zero the mod file's expression has at :math:`V' = 0`.
+    :math:`w = zFV'/(RT)`, as the mod file does, but evaluates
+    :math:`w / (e^{w} - 1)` as :math:`1 / \operatorname{exprel}(w)`
+    (MECH-43), which is finite at :math:`V' = 0`, where the mod
+    file's expression divides by zero, and exact near it.
     ``current()`` negates the result to match BrainCell's repo-wide
     inward-positive convention against NEURON's outward-positive
     ``ica``.
@@ -4121,9 +4114,9 @@ class Cav3p3_MA2024_PC_Frozen(Cav3p3_MA2024_PC):
     scaling is not dimensionally self-consistent and ``g_scale`` is
     therefore dimensionless, the GHK helper carries the mod file's
     own ``F``/``R`` constants and its ``celsius + 273.14`` Kelvin
-    conversion plus a small-argument series branch the mod file
-    lacks, ``V_sh`` has no counterpart in the mod file, the Q10 is
-    declared on the ``Gate`` objects, and ``current()`` negates
+    conversion and evaluates the drive through ``exprel``, which
+    the mod file lacks, ``V_sh`` has no counterpart in the mod file,
+    the Q10 is declared on the ``Gate`` objects, and ``current()`` negates
     NEURON's outward-positive ``ica``. The ``perm`` and ``g_scale``
     defaults are the deposit's tuned values, not values reported by
     the origin paper.

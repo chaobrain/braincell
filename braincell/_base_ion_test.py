@@ -531,7 +531,6 @@ class IonRuntimeParameterTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ion.E, 45 * u.mV))
 
 
-
 class IonsBeforeChannelsLifecycleTest(unittest.TestCase):
     """MECH-51: a point neuron runs every ion's own state before any channel's.
 

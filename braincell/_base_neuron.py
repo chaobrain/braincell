@@ -75,9 +75,7 @@ def run_state_lifecycle(method: str, entries, batch_size=None) -> None:
     overrides the hook, runs its whole hook in the second pass.
     """
     entries = tuple(entries)
-    split = tuple(
-        bool(getattr(node, "_splits_state_lifecycle", lambda _: False)(method)) for node, _ in entries
-    )
+    split = tuple(bool(getattr(node, "_splits_state_lifecycle", lambda _: False)(method)) for node, _ in entries)
     for (node, args), is_split in zip(entries, split):
         if is_split:
             node._run_own_state_lifecycle(method, *args, batch_size=batch_size)

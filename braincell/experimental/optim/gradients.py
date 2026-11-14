@@ -36,6 +36,7 @@ from braincell.experimental.optim._forward_sensitivity import (
     OperatorInput,
     ParameterCoordinates,
     _align_state_carry,
+    _call_in_built_order,
     build_parameter_coordinates,
     build_stateful_step,
     forward_sensitivity_step,
@@ -916,7 +917,10 @@ def _axial_operator_step(
     builder_states = tuple(builder_trace.states)
     example_leaves = jax.tree.map(
         lambda leaf: jnp.zeros(leaf.shape, leaf.dtype),
-        jax.eval_shape(lambda values: builder.jaxpr_call(values, None)[1], builder_trace.get_state_values()),
+        jax.eval_shape(
+            lambda values: _call_in_built_order(builder, builder_trace, values, None)[1],
+            builder_trace.get_state_values(),
+        ),
     )
 
     def step_with_operator(args):
@@ -948,7 +952,7 @@ def _operator_inputs(builder, builder_trace):
     refresh reads every trainable parameter); a step may write those.
     """
     values = builder_trace.get_state_values()
-    closed = jax.make_jaxpr(lambda values: builder.jaxpr_call(values, None)[1])(values)
+    closed = jax.make_jaxpr(lambda values: _call_in_built_order(builder, builder_trace, values, None)[1])(values)
     needed = {var for var in closed.jaxpr.outvars if isinstance(var, jax.extend.core.Var)}
     for eqn in reversed(closed.jaxpr.eqns):
         if any(var in needed for var in eqn.outvars):

@@ -990,9 +990,10 @@ class JaxprCallEntryTest(unittest.TestCase):
         self.assertEqual(_direct_jaxpr_call_lines(source), [4, 5])
 
     def test_no_module_calls_jaxpr_call_directly(self) -> None:
+        # The modules, not their tests: the scan above names the method itself.
         package = pathlib.Path(__file__).resolve().parent
-        files = sorted(package.glob("*.py"))
-        self.assertGreaterEqual(len(files), 5)
+        files = sorted(path for path in package.glob("*.py") if not path.name.endswith("_test.py"))
+        self.assertEqual([path.name for path in files], ["__init__.py", "_forward_sensitivity.py", "gradients.py"])
         found = {
             path.name: lines
             for path in files

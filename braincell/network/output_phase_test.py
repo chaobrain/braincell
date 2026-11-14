@@ -103,7 +103,9 @@ class _Count(braincell.ReductionModel):
 
 def _reduced():
     soma = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
-    cell = braincell.Cell(braincell.Morphology.from_root(soma, name="soma"), cv_policy=braincell.CVPerBranch(), pop_size=(2,))
+    cell = braincell.Cell(
+        braincell.Morphology.from_root(soma, name="soma"), cv_policy=braincell.CVPerBranch(), pop_size=(2,)
+    )
     cell.add_reduction("count", _Count())
     cell.use_model("count")
     cell.record("value", braincell.observe.output("value"))
@@ -128,7 +130,9 @@ class DetailedOutputTest(unittest.TestCase):
                     self.assertEqual(out.shape[0], N)
                     self.assertGreater(np.ptp(V), 50.0)  # it fires
                     np.testing.assert_array_equal(out, V)
-                    np.testing.assert_array_equal(samples["out"].time.to_decimal(u.ms), samples["V"].time.to_decimal(u.ms))
+                    np.testing.assert_array_equal(
+                        samples["out"].time.to_decimal(u.ms), samples["V"].time.to_decimal(u.ms)
+                    )
 
 
 class ReducedOutputTest(unittest.TestCase):

@@ -1,6 +1,7 @@
 # Runs the full CI (CI.yml) once a day against the latest dependency
 # releases, so an upstream release that breaks braincell shows up even on a
-# day without pull requests. Pull requests run CI.yml directly.
+# day without pull requests, and the example scripts and tests (`examples`,
+# daily only). Pull requests run CI.yml directly.
 
 name: Daily CI Tests
 
@@ -20,13 +21,46 @@ jobs:
   ci:
     uses: ./.github/workflows/CI.yml
 
+  # The example scripts and the tests under examples/ (MECH-45), on CPU with
+  # the test dependencies only. Not part of CI.yml, so not in ci-ok; a failure
+  # fails the daily run, which opens the red issue below.
+  # .github/run_examples.py runs every tracked script except those listed,
+  # with reasons, in examples/nightly_skip.toml, then `pytest examples`,
+  # which must skip no test (a test that needs an optional dependency is
+  # deselected through the same file). No notebook runs here.
+  examples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-dev.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools
+          python -m pip install -r requirements-dev.txt
+          python -m pip install .
+      - name: Check the runner and the skip list
+        run: python .github/run_examples.py --self-test
+      - name: Run the example scripts
+        run: python .github/run_examples.py --timeout 600
+      - name: Test examples (pytest examples)
+        if: ${{ !cancelled() }}
+        run: python .github/run_examples.py --pytest "$RUNNER_TEMP/examples.xml"
+
   # Keeps one open issue labelled `main-is-red` while the daily run is red:
   # opens it on the first red run, comments on later ones, and closes it on
   # the next green run. A run from another branch (manual dispatch) reports
   # under the title "<branch> is red", so a test run never touches the issue
   # about main. Keep `needs` listing every job above.
   report:
-    needs: [ci]
+    needs: [ci, examples]
     if: always()
     runs-on: ubuntu-latest
     permissions:

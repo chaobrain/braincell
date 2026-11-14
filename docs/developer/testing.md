@@ -68,6 +68,7 @@ The NEURON comparison suites are tiered the same way, each suite in its own pyte
 | Daily run only | `test_linux` | `pytest braincell/` on the JAX floor (0.11.0) |
 | Daily run only | `test_macos`, `test_windows` | `pytest braincell/` on macOS and Windows (Python 3.13); kept out of pull requests to stay within the concurrent-job limit |
 | Daily run only | `slow_tests_neuron` | `-m slow` of `validation/neuron/channel_no_conc/tests` (the per-family catalogue and `dt` convergence tests, and `test_neuron_agreement.py`), then of `validation/neuron/ion` (the pool comparisons, and the chloride, GABA_A, sodium and potassium comparisons against the ModelDB sources in `data/modeldb/`) in a separate process, which fails if a test skipped |
+| Daily run only | `examples` (in `CI-daily.yml`, not `CI.yml`) | every example script under `examples/` except those in `examples/nightly_skip.toml`, then `pytest examples`; see {ref}`the examples job <the-daily-examples-job>` |
 
 Both tiers compile the eight channel models first; the morphology, ASC and synapse comparisons use only NEURON's built-in mechanisms and need no build. To reproduce them locally:
 
@@ -90,6 +91,23 @@ python -m pytest validation/neuron/ion -m slow -q
 ```
 
 A NEURON comparison module that takes more than about 25 s on its own on a CI runner gets `pytestmark = pytest.mark.slow` and so moves to the daily run; the daily job selects by marker, so it needs no workflow change. A red daily run opens a `main is red` issue, and fixing it is the first task of the day. To run the daily jobs on a branch, dispatch the daily workflow on it (`gh workflow run CI-daily.yml --ref <branch>`); a red run there opens an issue titled `<branch> is red`.
+
+(the-daily-examples-job)=
+### The daily examples job
+
+The daily workflow's `examples` job (not in `ci-ok`; a red run opens the `main is red` issue) runs `python .github/run_examples.py`, with the test dependencies only (`requirements-dev.txt`) and on CPU:
+
+- **Scripts**: every tracked `examples/**/*.py` except `*_test.py`, `__init__.py` and `conftest.py`, each in its own process from the repository root, with `MPLBACKEND=Agg`. A script inside a package runs as `python -m examples.<dotted.name>`, any other as `python <path>`. A script fails on a non-zero exit or after 600 s. Scripts run in path order, so one may read what an earlier script in its folder wrote (`stimulus_design/robust_oed.py` reads `dataset.py`'s output).
+- **Tests**: `pytest examples`. The step fails when a test is skipped, so a test that needs an optional dependency is deselected through the list, not skipped silently.
+- **Notebooks**: none run here. Re-execute the ones a change affects, as the PR checklist says.
+
+`examples/nightly_skip.toml` is the one list of what does not run. A `[[skip]]` entry (`path`, `reason`) is for a script that cannot run in that job: it needs a package the test dependencies do not install (numba, pandas, nmodl), a GPU, a long experiment run or command-line arguments, or it is not Python. A `[[deselect]]` entry (`nodeid`, `reason`) is for such a test. A `[[timeout]]` entry (`path`, `seconds`) is for a script that is merely slow. Each reason says what is missing. An entry for an untracked script, or for a test pytest does not collect, fails the job, so renaming or deleting an example means editing the list in the same PR. A new example joins the job without editing the workflow. To run the job locally, use a fresh environment with `pip install -r requirements-dev.txt` (a development environment with numba or NEURON hides missing dependencies) and run:
+
+```bash
+python .github/run_examples.py --self-test
+python .github/run_examples.py                 # or --only examples/<path>.py
+python .github/run_examples.py --pytest /tmp/examples.xml
+```
 
 See the [Validation Guide](https://github.com/chaobrain/braincell/blob/main/validation/neuron/README.md) for entry points and dependencies.
 The benchmark tests check the scripts on small configurations and synthetic records; nothing they time is a benchmark result. Running a benchmark itself is different:

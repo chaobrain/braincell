@@ -18,7 +18,10 @@ Suggested reading: [Cell](cell/README.md) → [Synapse](synapse/README.md) →
 [Recording](cell/recording.ipynb).
 
 Use a development installation (`pip install -e ".[dev]"`) and start notebooks
-from the repository root or their own directory. Each topic lists additional
+from the repository root or their own directory.
+The daily CI runs every script here and `pytest examples`, except the scripts
+and tests listed with a reason in [`nightly_skip.toml`](nightly_skip.toml); see the
+[Testing Guide](../docs/developer/testing.md#the-daily-examples-job). Each topic lists additional
 requirements and output locations. Generated files belong to local `artifacts/`.
 
 [Validation](../validation/README.md), [benchmarks](../benchmarks/README.md) and

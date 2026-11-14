@@ -1587,6 +1587,18 @@
   gone. They run in the daily `slow_tests_neuron` job, whose ion step, like
   the pull-request one, now fails if a test skipped.
 
+- **The daily CI runs the example scripts and `pytest examples`** (MECH-45).
+  A new `examples` job in the daily workflow (not in `ci-ok`) runs every
+  tracked script under `examples/` on CPU with `MPLBACKEND=Agg` and a 600 s
+  limit per script, then `pytest examples`, which fails if a test is
+  skipped. `examples/nightly_skip.toml` lists what does not run, each with
+  its reason: 12 of 60 scripts (numba, pandas or the nmodl API missing; GPU
+  experiment drivers; a 16384-member ensemble; two Jinja templates) and one
+  test (nevergrad). A broken example now turns the daily run red within a
+  day. `examples/optim/stimulus_design/dataset.py` no longer fails: it
+  indexed the per-member point areas (`pop_size + (n_point,)`) as a flat
+  array, so its current playback raised a broadcasting error.
+
 ### Bug Fixes
 
 - brainpy's `align_pre` with a descriptor given no size works on a lumped

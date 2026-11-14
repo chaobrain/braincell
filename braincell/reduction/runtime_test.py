@@ -347,7 +347,12 @@ class ReductionRuntimeTest(unittest.TestCase):
 
         result = network.run(dt=0.1 * u.ms, duration=0.3 * u.ms)
 
-        np.testing.assert_allclose(result.samples["post"]["value"].values[:, 0], [0.0, 1.0, 1.0])
+        # A zero-delay row reads its source's current count at the start of
+        # each step (CELL-81): there the events of the step before, and at
+        # step 0 those of the tick's initial output, which emits too (the
+        # built-in reductions start with none). main 51f669f: [0, 1, 1], each
+        # step's event added at its end and consumed in the next step.
+        np.testing.assert_allclose(result.samples["post"]["value"].values[:, 0], [1.0, 1.0, 1.0])
 
     def test_voltage_crossing_source_is_rejected_in_reduced_mode(self) -> None:
         cell = _cell(1)

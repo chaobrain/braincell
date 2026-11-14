@@ -710,7 +710,9 @@ class OtherSolversTest(_Float64Case):
 class EventVoltageTest(_Float64Case):
     """Event delivery hands a boundary synapse its point's voltage, not 0 mV."""
 
-    def test_both_delivery_paths_pass_the_boundary_voltage(self):
+    def test_live_delivery_passes_the_boundary_voltage(self):
+        # Live events go through the event buffer the step consumes at its
+        # start, as scheduled ones (CELL-81): one call, at the point's voltage.
         cell = _build("M1", "both", "rk4", autapse=True)
         with brainstate.environ.context(t=0.0 * u.ms, dt=0.025 * u.ms):
             cell.update()
@@ -722,12 +724,11 @@ class EventVoltageTest(_Float64Case):
         def apply_events(payload, V_post=None):
             seen.append(float(np.ravel(V_post.to_decimal(u.mV))[0]))
 
-        layout_id = cell.synapses["syn"]._store.layout_id("ExpSyn")
         with mock.patch.object(node, "apply_events", side_effect=apply_events):
             with brainstate.environ.context(t=0.025 * u.ms, dt=0.025 * u.ms):
                 cell._apply_direct_live_connection_events()
-                cell._apply_synapse_layout_event_drive(layout_id, u.Quantity(jnp.zeros((1,)), u.uS))
-        self.assertEqual(seen, [expected, expected])
+                cell._begin_step()
+        self.assertEqual(seen, [expected])
 
 
 class SynapseLayoutFilterTest(_Float64Case):

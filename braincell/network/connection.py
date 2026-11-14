@@ -1048,12 +1048,14 @@ class ConnectionView(DiscreteView):
                     f"Live connection {call.name!r} runs at dt = {call.live_dt_ms!r} ms and cannot change dt inside "
                     "a traced call (jit, grad, brainstate.transform.for_loop); run once at the new dt outside it."
                 )
-            # Between steps, row ``j`` holds the spikes of ``j`` steps before the last one. A
-            # delay of ``k`` steps reads row ``k - 1`` at the end of a step: those of ``j >= k``
-            # have arrived.
+            # A step delivers at its start (CELL-81): between steps the source's current count
+            # holds the last step's spikes, and row ``j`` of the history those of ``j + 1`` steps
+            # before it. A delay of ``k`` steps reads row ``k - 1`` at the start of a step: those
+            # of ``j >= k`` have arrived; the last step's are still to arrive for ``k >= 1``.
             steps = call.live_delay_steps
             in_flight = np.arange(history.shape[0])[:, None] < steps[None, :]
-            if np.any(np.asarray(history)[in_flight]):
+            current = np.asarray(call.source.current_event_count(self.source_index))
+            if np.any(np.asarray(history)[in_flight]) or np.any(current.reshape(-1, len(self))[:, steps >= 1]):
                 raise ValueError(
                     f"Live connection {call.name!r} cannot change dt from {call.live_dt_ms!r} ms while delayed "
                     "events are in flight; call reset_state() on the target Cell first, or keep its dt."

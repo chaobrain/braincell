@@ -51,9 +51,7 @@ class NetConDelayTest(unittest.TestCase):
 
     def test_both_record_the_delivery_boundary_alike(self):
         expected = WEIGHT_US * np.exp(-DT_MS / TAU_MS)
-        for k in DELAY_STEPS:
-            if k == 0:
-                continue  # BrainCell adds a zero-delay event at the end of its step: CELL-77
+        for k in DELAY_STEPS:  # k = 0 included: the event acts at the start of the next step (CELL-81)
             with self.subTest(k=k):
                 values = []
                 for side in (self.braincell[k], self.neuron[k]):

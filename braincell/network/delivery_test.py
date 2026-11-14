@@ -146,13 +146,10 @@ class _RecordingCell:
     """Stands in for a Cell: keeps what delivery writes during one step."""
 
     def __init__(self) -> None:
-        self.arrivals, self.drives = {}, {}
+        self.arrivals = {}
 
     def _write_event_arrival(self, layout_id, arrival) -> None:
         self.arrivals[int(layout_id)] = arrival
-
-    def _apply_synapse_layout_event_drive(self, layout_id, drive) -> None:
-        self.drives[int(layout_id)] = drive
 
 
 class _StepSource:
@@ -170,8 +167,8 @@ class _StepSource:
 class DeliveryOrderTest(unittest.TestCase):
     """CELL-18b: every queue receives the same values, summed in the same order.
 
-    Each case runs a compiled loop of queue writes, zero-delay drives and
-    history writes over the routes ``delivery_blocks`` returns and over one route
+    Each case runs a compiled loop of queue writes (zero-delay ones included,
+    CELL-81) and history writes over the routes ``delivery_blocks`` returns and over one route
     per block, and compares every value written. The weights span seven
     orders of magnitude, so a float32 sum taken in another order differs in
     its last bits.
@@ -203,7 +200,6 @@ class DeliveryOrderTest(unittest.TestCase):
     def _deliver(self, routed, blocks, sources, delivery_ops=None, n_steps=None):
         from braincell.network.delivery import (
             advance_delivery_state,
-            apply_immediate_events,
             create_delivery_state,
             record_source_events,
             write_arrivals,
@@ -219,15 +215,11 @@ class DeliveryOrderTest(unittest.TestCase):
             for source in sources:
                 source.step = index
             for cell in cells.values():
-                cell.arrivals, cell.drives = {}, {}
+                cell.arrivals = {}
             write_arrivals(routed, state, populations=populations)
-            apply_immediate_events(routed, state, populations=populations)
             record_source_events(state)
             advance_delivery_state(state)
-            return (
-                {(name, layout): value for name, cell in cells.items() for layout, value in cell.arrivals.items()},
-                {(name, layout): value for name, cell in cells.items() for layout, value in cell.drives.items()},
-            )
+            return ({(name, layout): value for name, cell in cells.items() for layout, value in cell.arrivals.items()},)
 
         return brainstate.transform.for_loop(step, jnp.arange(self.N_STEPS if n_steps is None else n_steps))
 
@@ -293,14 +285,17 @@ class DeliveryOrderTest(unittest.TestCase):
                 self._assert_same_delivery(blocks, (always,))
 
     def _queue_of_weighted_events(self, routes, n_steps):
-        """The delayed arrivals of each queue, from a float32 ring of weighted events written here.
+        """The arrivals of each queue, from a float32 ring of weighted events written here.
 
         Each step reads and clears its slot first; then each route adds the
         events of this step, weighted now, into the slot of their arrival,
-        ``k + 1`` steps on for ``k`` delay steps (CELL-75):
-        contact by contact on the scatter path, as one summed vector per route
-        on the grouped path. A slot thus sums its events longest delay first,
-        then by route and by contact.
+        ``k + 1`` steps on for ``k >= 1`` delay steps (CELL-75), and a
+        zero-delay contact adds the source's current count, weighted now, to
+        the arrival of this step (CELL-81; here the current count is this
+        step's row of the table): contact by contact on the scatter path, as
+        one summed vector per route on the grouped path. An arrival thus sums
+        its events longest delay first, zero delay last, then by route and by
+        contact.
         """
         rings, sizes = {}, {}
         for route in routes:
@@ -309,6 +304,7 @@ class DeliveryOrderTest(unittest.TestCase):
         depth = 2 + max(int(np.max(route.delay_steps)) for route in routes)
         rings = {key: np.zeros((depth, size), np.float32) for key, size in sizes.items()}
         arrivals = {key: np.zeros((n_steps, size), np.float32) for key, size in sizes.items()}
+        now = []
         for step in range(n_steps):
             for key, ring in rings.items():
                 arrivals[key][step] = ring[step % depth]
@@ -318,16 +314,23 @@ class DeliveryOrderTest(unittest.TestCase):
                 counts = np.asarray(route.source.event_source.table[step], np.float32)[np.asarray(route.pre_index)]
                 events = counts * np.asarray(route.weight.to_decimal(u.uS), np.float32)
                 delays = np.broadcast_to(np.asarray(route.delay_steps), events.shape)
+                arrival = arrivals[(route.source.post_population, int(route.source.layout_id))][step]
                 if np.ndim(route.delay_steps) == 0:
-                    if int(route.delay_steps) == 0:
-                        continue
                     summed = np.zeros(ring.shape[1], np.float32)
                     np.add.at(summed, np.asarray(route.flat_target_index), events)
-                    ring[(step + int(route.delay_steps) + 1) % depth] += summed
+                    if int(route.delay_steps) == 0:
+                        now.append((arrival, summed))
+                    else:
+                        ring[(step + int(route.delay_steps) + 1) % depth] += summed
                     continue
                 for target, delay, event in zip(route.flat_target_index, delays, events):
                     if delay:
                         ring[(step + int(delay) + 1) % depth, int(target)] += event
+                    else:
+                        now.append((arrival[int(target) : int(target) + 1], event))
+            for arrival, events in now:
+                arrival += events
+            now.clear()
         return arrivals
 
     def test_delayed_arrivals_sum_as_a_queue_of_weighted_events(self) -> None:
@@ -362,7 +365,7 @@ class DeliveryOrderTest(unittest.TestCase):
                 ops = None
                 if grouped:
                     ops = tuple(make_delivery_op(route, pre_size=8, backend="scatter") for route in routes)
-                arrivals, _ = self._deliver(routes, blocks, (first, second), delivery_ops=ops, n_steps=n_steps)
+                (arrivals,) = self._deliver(routes, blocks, (first, second), delivery_ops=ops, n_steps=n_steps)
                 expected = self._queue_of_weighted_events(routes, n_steps)
                 self.assertEqual(set(arrivals), set(expected))
                 for key, values in expected.items():
@@ -518,8 +521,8 @@ class InFlightWeightTest(unittest.TestCase):
     and leaves the synapse alone, so the increment of g over step ``b`` is
     the payload delivered at boundary ``b``. It crosses threshold in the
     steps that end at 3.0, 4.8, 5.0 and 5.2 ms (dt 0.1 ms, steps
-    ``m`` = 29, 47, 49, 51); with ``k >= 1`` delay steps an event of step
-    ``m`` arrives at boundary ``m + k + 1`` (CELL-75). The first run ends
+    ``m`` = 29, 47, 49, 51); with ``k`` delay steps an event of step ``m``
+    arrives at boundary ``m + k + 1`` (CELL-75), ``k = 0`` too (CELL-81). The first run ends
     at boundary 50, ``set(weight=)`` then changes the weights, and the
     second run takes 20 steps: the events sent before boundary 50 and
     delivered from it on were in flight across the change. The expected payloads are a host rule
@@ -609,9 +612,10 @@ class InFlightWeightTest(unittest.TestCase):
         for _, delay, before, after in rows:
             k = int(round(delay / self.DT_MS))
             for m in self.SPIKE_STEPS:
-                # A zero-delay event is added at the end of its own step; a
-                # delayed one at the start of step m + k + 1 (CELL-75).
-                b = m if k == 0 else m + k + 1
+                # Every event acts at the start of step m + k + 1 (CELL-75), a
+                # zero-delay one too (CELL-81; main 51f669f: at the end of step
+                # m, so the event of step 49 took the old weight).
+                b = m + k + 1
                 payload[b] += after if b >= self.N1 else before
         return payload
 

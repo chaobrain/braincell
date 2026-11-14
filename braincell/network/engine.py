@@ -57,7 +57,6 @@ from braincell.network.core import NetworkResult, Population
 from braincell.network.delivery import (
     DeliveryBlock,
     advance_delivery_state,
-    apply_immediate_events,
     create_delivery_state,
     delivery_blocks as build_delivery_blocks,
     make_delivery_op,
@@ -1263,7 +1262,7 @@ class Network:
         # A delivery op is only ever indexed for a block with a scalar delay,
         # which is exactly what grouping by delay produces. Without grouping
         # every block carries a per-contact delay vector and the vector path
-        # in write_arrivals/apply_immediate_events runs instead -- so
+        # in write_arrivals runs instead -- so
         # building the ops there would materialize two device index arrays per
         # block, and close over the block, for something never called. The two
         # cannot disagree: both read grouped_by_delay.
@@ -1451,12 +1450,6 @@ class Network:
                                 for name in ordered_population_names:
                                     cell = self.populations[name].cell
                                     cell._update_dynamics()
-                        with jax.named_scope("braincell:network_run:apply_zero_delay_events"):
-                            apply_immediate_events(
-                                delivery_blocks,
-                                delivery_state,
-                                populations=self.populations,
-                            )
                         with jax.named_scope("braincell:network_run:sample_outputs"):
                             recording_snapshots = tuple(
                                 pre_recording_snapshots[index] if compiled.phase == "pre" else compiled.sample()

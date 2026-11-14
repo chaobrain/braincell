@@ -71,6 +71,7 @@ CONFIGS = (
     "ri21_sc/cav3p3_ri21_sc",
     "su15_dcn/calva_su15_dcn",
     "zh19_io/na_zh19_io",
+    "zh19_io/hcn_hm1992",
     "ma20_goc/kca2p2_ma20_goc",
     "ma20_grc/kca2p2_ma20_grc",
     "ma25_bc/kca2p2_ma25_bc",

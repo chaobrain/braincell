@@ -531,5 +531,61 @@ class IonRuntimeParameterTest(unittest.TestCase):
         self.assertTrue(u.math.allclose(ion.E, 45 * u.mV))
 
 
+class IonsBeforeChannelsLifecycleTest(unittest.TestCase):
+    """MECH-51: a point neuron runs every ion's own state before any channel's.
+
+    A mixed pool reads its ions' ``Ci``. Before MECH-51 a pool whose key
+    sorted before the calcium ion's (``akca`` < ``ca``) was initialized
+    before it and raised ``AttributeError``.
+    """
+
+    def _run(self, pool_key: str):
+        with brainstate.environ.context(precision=64):
+            cell = PointNeuron(2, V_initializer=braintools.init.Constant(-65.0 * u.mV), solver="ralston2")
+            cell.k = braincell.ion.PotassiumFixed(2, E=-90.0 * u.mV)
+            cell.ca = braincell.ion.CalciumDetailed(2, C_rest=2.4e-4 * u.mM, tau=10.0 * u.ms, d=0.5 * u.um)
+            cell.ca.add(cat=braincell.channel.CaT_HM1992(2, g_max=2.0 * u.mS / u.cm**2))
+            pool = braincell.mix_ions(cell.k, cell.ca)
+            pool.add(ahp=braincell.channel.AHP_De1994(2, g_max=10.0 * u.mS / u.cm**2))
+            setattr(cell, pool_key, pool)
+            brainstate.nn.init_all_states(cell)
+            initial = (cell.V.value.to_decimal(u.mV), cell.ca.Ci.value.to_decimal(u.mM), pool.ahp.p.value)
+
+            def step(i):
+                with brainstate.environ.context(dt=0.025 * u.ms, t=i * 0.025 * u.ms):
+                    cell.update(5.0 * u.uA / u.cm**2)
+
+            brainstate.transform.for_loop(step, jnp.arange(40))
+            final = (cell.V.value.to_decimal(u.mV), cell.ca.Ci.value.to_decimal(u.mM), pool.ahp.p.value)
+        return initial, final
+
+    def test_a_pool_keyed_before_its_ions_runs_bitwise_like_one_keyed_after(self) -> None:
+        initial, final = self._run("kca")
+        for a, b in zip(initial, final):
+            self.assertEqual(b.dtype, jnp.float64)
+            self.assertTrue(bool(jnp.all(jnp.isfinite(b))))
+            self.assertFalse(bool(jnp.array_equal(a, b)))
+        for key in ("akca", "Akca"):
+            with self.subTest(pool_key=key):
+                other_initial, other_final = self._run(key)
+                for a, b in zip(initial + final, other_initial + other_final):
+                    self.assertEqual(a.tobytes(), b.tobytes())
+
+    def test_an_ion_that_overrides_init_state_keeps_its_whole_hook(self) -> None:
+        calls = []
+
+        class _OwnLifecycle(PotassiumFixed):
+            def init_state(self, V, batch_size=None):
+                calls.append("init_state")
+                super().init_state(V, batch_size=batch_size)
+
+        cell = PointNeuron(1, V_initializer=braintools.init.Constant(-65.0 * u.mV))
+        cell.k = _OwnLifecycle(1, E=-90.0 * u.mV)
+        self.assertFalse(cell.k._splits_state_lifecycle("init_state"))
+        self.assertTrue(cell.k._splits_state_lifecycle("reset_state"))
+        brainstate.nn.init_all_states(cell)
+        self.assertEqual(calls, ["init_state"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2257,6 +2257,36 @@
   `E=43 * u.mV` to keep the old behaviour. The examples and notebooks already
   pass `E=-43 * u.mV` and are unchanged.
 
+- **A channel that reads an ion other than its owner no longer depends on how
+  the ions are named** (MECH-51). The 17 such channels (the 15 K(Ca) channels
+  `AHP_De1994`, `SK_SU2015_DCN`, `Kca1p1_*`, `Kca2p2_*`, `Kca3p1_*`, which
+  belong to the potassium ion and read the calcium concentration;
+  `NaKPump_Ca1999`; `Kv1p5_MA2020_GrC`) had two faults. `init_state` ran each
+  ion's own state and then its channels', ion by ion in key order, so
+  `Ion("CalciumDetailed", name="ca")` with an unnamed `PotassiumFixed` (`"ca"`
+  sorts after `"PotassiumFixed"`) raised `AttributeError: 'CalciumDetailed'
+  object has no attribute 'Ci'`; so did a named `PotassiumDetailed` under the
+  pump, and an unnamed `SodiumDetailed` under `Kv1p5_MA2020_GrC`. Each of the
+  17 failed in at least one naming. And the cell reached the read ion's states
+  through the reading channel too, so once initialized such a cell left the
+  calcium `Ci` at rest: with `AHP_De1994` and `CaT_HM1992` (float64, 200 steps
+  of 0.025 ms, 0.2 nA) it stayed at 2.4e-4 mM, against 3.729450e-4 mM
+  unnamed. `Kv1p5_MA2020_GrC` with a fixed sodium ion failed on its first
+  step (`AssertionError: Unit mismatch`), and
+  `ion_channel_update_order="integration"` failed in all 89 configurations
+  tried, named or not (`UnexpectedTracerError` or a unit assertion where
+  `init_state` passed). `init_state` and `reset_state` (cable, lumped and
+  point neurons) now run every ion's own state before any channel's, and the
+  reading channel no longer holds the ions it reads as graph children.
+  Every configuration that ran on main runs bit for bit as before (51 of 51
+  tried, 17 of them unnamed, float64). Named runs equal unnamed ones bit for bit in 60 of the 71 named
+  configurations tried, among them `name="ca"` with `AHP_De1994` or
+  `SK_SU2015_DCN`. In the other 11 the names reorder the cell's top-level
+  nodes, which changes the order of evaluation and the result by rounding (at
+  most 8.6e-16 relative; `NaKPump_Ca1999` already did so on main). Under
+  `"integration"` a reordering name also changes whether the channel reads
+  the calcium before or after it advances.
+
 - The optional gating current of `Kv1p1_MA2025_BC`, `Kv1p1_MA2024_PC`,
   `Kv1p1_RI2021_SC`, `Kv1p1_MA2020_GoC`, `Kv1p1_MA2020_GrC` and
   `Kv3p3_MA2024_PC` (`gateCurrent != 0`) was 1e18 times too large: the

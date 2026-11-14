@@ -47,6 +47,45 @@ __all__ = ["HHTypedNeuron"]
 _STEP_VALUE_INPUTS: dict[int, tuple] = {}
 
 
+def run_state_lifecycle(method: str, entries, batch_size=None) -> None:
+    """Run ``init_state`` or ``reset_state`` over a model's top-level nodes, ions first.
+
+    Parameters
+    ----------
+    method : {"init_state", "reset_state"}
+        The lifecycle hook to run.
+    entries : iterable of (object, tuple)
+        ``(node, args)`` per top-level node, in iteration order; ``args``
+        are the node's positional arguments (the voltage it reads).
+    batch_size : int, optional
+        Forwarded to every hook.
+
+    Notes
+    -----
+    Every ion's own state (its concentrations, for a dynamic ion) is
+    allocated or reset before any channel's, and the channels then follow
+    in the nodes' order. A channel that reads more than one ion (a K(Ca)
+    channel under the potassium ion reads the calcium concentration) is a
+    child of only one of them. When each ion ran its own state and then its
+    children's in turn, that channel's ``init_state`` read the calcium ion
+    before it had a ``Ci`` whenever the calcium ion's key sorted after the
+    potassium ion's, so naming the calcium ion changed whether a cell
+    initialized (MECH-51). An ion opts in through
+    ``_splits_state_lifecycle``; any other node, or an ion whose class
+    overrides the hook, runs its whole hook in the second pass.
+    """
+    entries = tuple(entries)
+    split = tuple(bool(getattr(node, "_splits_state_lifecycle", lambda _: False)(method)) for node, _ in entries)
+    for (node, args), is_split in zip(entries, split):
+        if is_split:
+            node._run_own_state_lifecycle(method, *args, batch_size=batch_size)
+    for (node, args), is_split in zip(entries, split):
+        if is_split:
+            node._run_child_state_lifecycle(method, *args, batch_size=batch_size)
+        else:
+            getattr(node, method)(*args, batch_size=batch_size)
+
+
 def _first_step_only(value, first):
     """``value`` where the traced flag ``first`` is true, zero elsewhere (units kept)."""
     return jax.tree.map(lambda leaf: jnp.where(first, leaf, jnp.zeros_like(leaf)), value)
@@ -241,8 +280,7 @@ class HHTypedNeuron(brainpy.state.Dynamics, Container, DiffEqModule):
         """
         nodes = self.nodes(IonChannel, allowed_hierarchy=(1, 1)).values()
         TreeNode.check_hierarchies(self.__class__, *nodes)
-        for channel in nodes:
-            channel.init_state(self.V.value, batch_size=batch_size)
+        run_state_lifecycle("init_state", ((channel, (self.V.value,)) for channel in nodes), batch_size)
 
     def reset_state(self, batch_size=None):
         """Return every direct ion-channel child to its initial state.
@@ -258,8 +296,7 @@ class HHTypedNeuron(brainpy.state.Dynamics, Container, DiffEqModule):
         state already exists, so the check has already run.
         """
         nodes = self.nodes(IonChannel, allowed_hierarchy=(1, 1)).values()
-        for channel in nodes:
-            channel.reset_state(self.V.value, batch_size=batch_size)
+        run_state_lifecycle("reset_state", ((channel, (self.V.value,)) for channel in nodes), batch_size)
 
     def add(self, **elements):
         """Add ion channels to the neuron after construction.

@@ -458,11 +458,26 @@ class Ion(IonChannel, Container):
         integrate themselves: a channel still needs its state allocated
         whoever advances it.
         """
-        nodes = self._channels()
-        self.check_hierarchies(type(self), *nodes)
+        self._run_own_state_lifecycle(method, V, batch_size=batch_size)
+        self._run_child_state_lifecycle(method, V, batch_size=batch_size)
+
+    def _splits_state_lifecycle(self, method: str) -> bool:
+        """Whether a model may run this ion's ``method`` in two passes (MECH-51).
+
+        See :func:`braincell._base_neuron.run_state_lifecycle`. A subclass
+        that overrides the hook keeps it whole.
+        """
+        return getattr(type(self), method) is getattr(Ion, method)
+
+    def _run_own_state_lifecycle(self, method: str, V, batch_size=None) -> None:
+        """First pass of :meth:`_run_state_lifecycle`: check the children, then run this ion's own hook."""
+        self.check_hierarchies(type(self), *self._channels())
         self._run_ion_hook(f"_ion_{method}_hook", V, batch_size=batch_size)
+
+    def _run_child_state_lifecycle(self, method: str, V, batch_size=None) -> None:
+        """Second pass of :meth:`_run_state_lifecycle`: run ``method`` on every child channel."""
         ion_info = self.pack_info()
-        for node in nodes:
+        for node in self._channels():
             getattr(node, method)(V, ion_info, batch_size=batch_size)
 
     def init_state(self, V, batch_size: int = None):

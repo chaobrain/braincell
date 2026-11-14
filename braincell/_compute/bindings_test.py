@@ -693,3 +693,219 @@ class RuntimeSubsolverScheduleTest(unittest.TestCase):
         self.assertEqual(len(nodes), 2)
         self.assertIsNot(nodes[0], nodes[1])
         self.assertEqual({node.substeps for node in nodes}, {2, 3})
+
+
+# A dynamic ion class per family, so that a channel reading a family other
+# than its owner reads a ``Ci`` state, which exists only after the ion's own
+# ``init_state``. NonSpecific has no dynamic class.
+_DYNAMIC_ION = {"ca": "CalciumDetailed", "k": "PotassiumDetailed", "na": "SodiumDetailed", "no": "NonSpecificFixed"}
+
+
+def _multi_ion_channels() -> list[tuple[str, tuple[str, ...]]]:
+    """``(class name, ion families)`` of every registered channel that reads more than one ion."""
+    from braincell._compute.ions import ion_species_key
+    from braincell.mech import get_registry
+
+    registry = get_registry()
+    found = []
+    for name in sorted(registry.names("channel")):
+        root_type = getattr(registry.get("channel", name), "root_type", None)
+        families = tuple(
+            dict.fromkeys(
+                key for key in (ion_species_key(cls) for cls in getattr(root_type, "__args__", ())) if key is not None
+            )
+        )
+        if len(families) > 1:
+            found.append((name, families))
+    return found
+
+
+def _ion_reading_cell(channel, ions, *, extra=(), order=None):
+    """A two-branch cell with ``channel``, the ``(family, class, kwargs)`` ions and ``extra`` channels."""
+    from braincell.filter import AllRegion, RootLocation
+
+    kwargs = {} if order is None else {"ion_channel_update_order": order}
+    cell = Cell(_build_tree(), pop_size=(2,), V_init=-65.0 * u.mV, **kwargs)
+    cell.paint(
+        AllRegion(),
+        *(braincell.mech.Ion(cls, **kw) for _, cls, kw in ions),
+        braincell.mech.Channel("IL", name="leak", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+        *extra,
+        braincell.mech.Channel(channel, name="x"),
+    )
+    cell.place(
+        RootLocation(0.5),
+        braincell.mech.CurrentClamp(delay=0.0 * u.ms, durations=50.0 * u.ms, amplitudes=0.2 * u.nA),
+    )
+    return cell
+
+
+def _layout_states(cell) -> dict[str, np.ndarray]:
+    """Every state, keyed by the kind of the layout that owns it and its path in that node.
+
+    Only the states an ion or a channel holds itself: paths through an ion's
+    children repeat the channel layouts' states.
+    """
+    import brainstate
+
+    found = {"V": np.asarray(cell.V.value.to_decimal(u.mV))}
+    for layout in cell.layouts:
+        try:
+            node = cell.get_runtime_node(layout.id)
+        except KeyError:
+            continue
+        for path, state in brainstate.graph.states(node).items():
+            if path and path[0] == "channels":
+                continue
+            found[f"{layout.kind}|{'/'.join(map(str, path))}"] = np.asarray(u.get_mantissa(state.value))
+    return found
+
+
+def _run(cell, n_steps):
+    import brainstate
+    import jax.numpy as jnp
+
+    def step(i):
+        with brainstate.environ.context(dt=0.025 * u.ms, t=i * 0.025 * u.ms):
+            cell.update()
+
+    brainstate.transform.for_loop(step, jnp.arange(n_steps))
+
+
+class NamedIonLifecycleTest(unittest.TestCase):
+    """MECH-51: a channel that reads an ion other than its owner does not depend on the ions' names.
+
+    A K(Ca) channel is a child of the potassium ion only, and reads the
+    calcium ion's ``Ci``. Before MECH-51 ``Cell.init_state`` ran each ion's
+    own state and then its children's, ion by ion in key order: naming the
+    calcium ion ``"ca"`` sorts it after ``"PotassiumFixed"``, so the channel
+    read the calcium ion before it had a ``Ci`` (``AttributeError``).
+    Initialized, the cell then left the calcium ion's ``Ci`` at rest: the
+    wrapper holding the bound ions was their graph parent too, so ``Ci`` sat
+    under the potassium channel's path, which the ion phase excludes.
+    """
+
+    def test_every_multi_ion_channel_initializes_whatever_the_ion_names(self) -> None:
+        channels = _multi_ion_channels()
+        names = [name for name, _ in channels]
+        # 17 on main at MECH-51: 15 K(Ca) channels, NaKPump_Ca1999, Kv1p5_MA2020_GrC.
+        self.assertGreaterEqual(len(channels), 17)
+        for name in ("AHP_De1994", "SK_SU2015_DCN", "NaKPump_Ca1999", "Kv1p5_MA2020_GrC"):
+            self.assertIn(name, names)
+        for channel, families in channels:
+            # Naming one family's ion "z_<family>" sorts it after every other
+            # root key, so each family in turn is the last to be visited.
+            for named in families:
+                with self.subTest(channel=channel, named=named):
+                    ions = [
+                        (family, _DYNAMIC_ION[family], {"name": f"z_{family}"} if family == named else {})
+                        for family in families
+                    ]
+                    cell = _ion_reading_cell(channel, ions)
+                    cell.init_state()
+                    self.assertTrue(cell._initialized)
+
+    def _assert_named_run_matches_unnamed(self, channel, ions, names, extra, moving, n_steps=40):
+        import brainstate
+
+        results = {}
+        for label, naming in (("unnamed", {}), ("named", names)):
+            with brainstate.environ.context(precision=64):
+                spec = [(f, cls, {**kw, **({"name": naming[f]} if f in naming else {})}) for f, cls, kw in ions]
+                cell = _ion_reading_cell(channel, spec, extra=extra)
+                cell.init_state()
+                initial = _layout_states(cell)
+                _run(cell, n_steps)
+                final = _layout_states(cell)
+                cell.reset_state()
+                reset = _layout_states(cell)
+            results[label] = (initial, final, reset)
+        unnamed, named = results["unnamed"], results["named"]
+        initial, final, reset = unnamed
+        for key in ("V", *moving):
+            self.assertFalse(np.array_equal(final[key], initial[key]), f"{key} did not change")
+        for key, value in final.items():
+            if np.issubdtype(value.dtype, np.floating):
+                self.assertEqual(value.dtype, np.float64, key)
+                self.assertTrue(np.all(np.isfinite(value)), key)
+        for phase, a, b in zip(("init_state", "run", "reset_state"), unnamed, named):
+            self.assertEqual(sorted(a), sorted(b))
+            for key in a:
+                with self.subTest(phase=phase, state=key):
+                    self.assertEqual(a[key].tobytes(), b[key].tobytes())
+        # reset_state returns every ion before any channel, as init_state does.
+        for key in initial:
+            self.assertEqual(reset[key].tobytes(), initial[key].tobytes(), key)
+
+    def test_named_calcium_runs_bitwise_like_unnamed_for_ahp_and_sk(self) -> None:
+        ions = [("ca", "CalciumDetailed", {}), ("k", "PotassiumFixed", {"E": -77.0 * u.mV})]
+        cat = braincell.mech.Channel("CaT_HM1992", name="cat", g_max=2.0 * u.mS / u.cm**2)
+        for channel in ("AHP_De1994", "SK_SU2015_DCN"):
+            with self.subTest(channel=channel):
+                # Ci advances: it used to stay at rest once named.
+                moving = (f"channel:{channel}|{'p' if channel == 'AHP_De1994' else 'z'}", "ion:CalciumDetailed|Ci")
+                self._assert_named_run_matches_unnamed(channel, ions, {"ca": "ca"}, (cat,), moving)
+
+    def test_named_potassium_runs_bitwise_like_unnamed_for_the_sodium_potassium_pump(self) -> None:
+        # The pump's state lives on its sodium wrapper, which reads potassium.
+        ions = [("na", "SodiumDetailed", {}), ("k", "PotassiumDetailed", {})]
+        leak = braincell.mech.Channel("Na_Leak", name="nal", g_max=0.04 * u.mS / u.cm**2)
+        moving = ("ion:SodiumDetailed|Ci", "ion:PotassiumDetailed|Ci")
+        self._assert_named_run_matches_unnamed("NaKPump_Ca1999", ions, {"k": "k"}, (leak,), moving)
+
+    def test_a_dynamic_sodium_read_by_kv1p5_steps(self) -> None:
+        # Unnamed, PotassiumDetailed sorts before SodiumDetailed: init_state
+        # raised AttributeError. Initialized, the gates sat under the
+        # current-only NonSpecific wrapper's path and were advanced as ion
+        # states (an AssertionError on the derivative's unit).
+        import brainstate
+
+        ions = [("na", "SodiumDetailed", {}), ("k", "PotassiumDetailed", {}), ("no", "NonSpecificFixed", {})]
+        with brainstate.environ.context(precision=64):
+            leak = braincell.mech.Channel("Na_Leak", name="nal", g_max=0.04 * u.mS / u.cm**2)
+            cell = _ion_reading_cell("Kv1p5_MA2020_GrC", ions, extra=(leak,))
+            cell.init_state()
+            initial = _layout_states(cell)
+            _run(cell, 20)
+            final = _layout_states(cell)
+        for key in ("V", "channel:Kv1p5_MA2020_GrC|m", "ion:SodiumDetailed|Ci", "ion:PotassiumDetailed|Ci"):
+            with self.subTest(state=key):
+                self.assertTrue(np.all(np.isfinite(final[key])))
+                self.assertFalse(np.array_equal(final[key], initial[key]))
+
+    def test_bound_ions_and_borrowed_channels_are_not_graph_children_of_a_wrapper(self) -> None:
+        import brainstate
+
+        cell = _ion_reading_cell(
+            "NaKPump_Ca1999", [("na", "SodiumDetailed", {"name": "na"}), ("k", "PotassiumDetailed", {"name": "k"})]
+        )
+        cell.init_state()
+        paths = {id(state): path for path, state in brainstate.graph.states(cell).items()}
+        for key in ("na", "k"):
+            self.assertEqual(paths[id(cell.get_ion(key).Ci)], ("ion_channels", key, "Ci"))
+        owner, borrower = (cell.get_ion(key).channels["x"] for key in ("na", "k"))
+        self.assertTrue(owner._owns_state)
+        self.assertFalse(borrower._owns_state)
+        self.assertIs(owner._channel, borrower._channel)
+        self.assertEqual(owner.graph_invisible_attrs, ("_bound_ions",))
+        self.assertEqual(borrower.graph_invisible_attrs, ("_bound_ions", "_channel"))
+        self.assertFalse(any("_bound_ions" in path for path in paths.values()))
+
+    def test_integration_order_steps_a_kca_channel(self) -> None:
+        # The calcium ion's states were reached through the K(Ca) wrapper as
+        # well, so the "integration" order advanced them twice per step (an
+        # UnexpectedTracerError on main, with or without names).
+        import brainstate
+
+        ions = [("ca", "CalciumDetailed", {}), ("k", "PotassiumFixed", {"E": -77.0 * u.mV})]
+        cat = braincell.mech.Channel("CaT_HM1992", name="cat", g_max=2.0 * u.mS / u.cm**2)
+        with brainstate.environ.context(precision=64):
+            cell = _ion_reading_cell("AHP_De1994", ions, extra=(cat,), order="integration")
+            cell.init_state()
+            initial = _layout_states(cell)
+            _run(cell, 20)
+            final = _layout_states(cell)
+        for key in ("V", "channel:AHP_De1994|p", "ion:CalciumDetailed|Ci"):
+            with self.subTest(state=key):
+                self.assertTrue(np.all(np.isfinite(final[key])))
+                self.assertFalse(np.array_equal(final[key], initial[key]))

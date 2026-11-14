@@ -28,6 +28,7 @@ import numpy as np
 
 import braincell
 from braincell._random_test import default_key_data, drawn_seeds
+from braincell._multi_compartment.axial_operator_test import axial_builds, hh_y_cable, update_loop_voltage
 from braincell._multi_compartment.lifecycle_test import loop_compiles
 from braincell._multi_compartment.run_test import (
     _LUMPED_DRIVE,
@@ -39,12 +40,9 @@ from braincell._multi_compartment.run_test import (
     _rule_cell,
     _rule_updates,
     assert_same_trajectory,
-    axial_builds,
-    hh_y_cable,
     long_run_cell,
     make_event_cell,
     split_steps,
-    update_loop_voltage,
 )
 from braincell.filter import AllRegion, at
 from braincell.filter import RandomSamples

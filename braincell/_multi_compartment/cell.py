@@ -60,7 +60,7 @@ from brainstate.mixin import ParamDescriber
 
 from braincell._base_channel import Channel, IonChannel, Synapse as RuntimeSynapse
 from braincell._base_ion import Ion, MixIons
-from braincell._base_neuron import HHTypedNeuron, _zero_spike_like
+from braincell._base_neuron import HHTypedNeuron, _zero_spike_like, run_state_lifecycle
 from braincell._deprecation import removed_member
 from braincell._misc import (
     SOLVER_START_TAG,
@@ -2990,14 +2990,22 @@ class Cell(_CellFacade, HHTypedNeuron):
 
         cv_V = self.V.value
         with state_grouping(True):
-            for path, channel in self._runtime_objects_unchecked(IonChannel, allowed_hierarchy=(1, 1)).items():
-                args = self._runtime_node_phase_args(path, channel, cv_V)
-                channel.init_state(*args, batch_size=batch_size)
             # Mechanism init hooks allocate state; reset hooks materialize the
             # model-defined initial values from V_init and current parameters.
-            for path, channel in self._runtime_objects_unchecked(IonChannel, allowed_hierarchy=(1, 1)).items():
-                args = self._runtime_node_phase_args(path, channel, cv_V)
-                channel.reset_state(*args, batch_size=batch_size)
+            # Each pass runs every ion's own state before any channel's, so a
+            # channel that reads another ion than its owner finds it ready
+            # whatever the ions are named (MECH-51).
+            for method in ("init_state", "reset_state"):
+                run_state_lifecycle(
+                    method,
+                    (
+                        (channel, self._runtime_node_phase_args(path, channel, cv_V))
+                        for path, channel in self._runtime_objects_unchecked(
+                            IonChannel, allowed_hierarchy=(1, 1)
+                        ).items()
+                    ),
+                    batch_size,
+                )
 
         # Dense CV axial operators are only needed by derivative-based voltage
         # solvers. The default DHS/staggered path builds its own static source,
@@ -4963,9 +4971,15 @@ class Cell(_CellFacade, HHTypedNeuron):
             self._runtime.clear_event_buffer(layout_id)
         self._next_synapse_inputs_prepared.value = jnp.asarray(False)
         with state_grouping(True):
-            for path, channel in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items():
-                args = self._runtime_node_phase_args(path, channel, self.V.value)
-                channel.reset_state(*args, batch_size=batch_size)
+            # Every ion before any channel, as in init_state (MECH-51).
+            run_state_lifecycle(
+                "reset_state",
+                (
+                    (channel, self._runtime_node_phase_args(path, channel, self.V.value))
+                    for path, channel in self.runtime_objects(IonChannel, allowed_hierarchy=(1, 1)).items()
+                ),
+                batch_size,
+            )
         strong_state_values(self)  # as in init_state (CELL-54)
 
     # ------------------------------------------------------------------

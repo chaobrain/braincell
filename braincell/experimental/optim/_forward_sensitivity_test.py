@@ -15,7 +15,9 @@
 
 """Tests for the experimental exact forward-sensitivity core."""
 
+import ast
 import os
+import pathlib
 import unittest
 from unittest.mock import patch
 
@@ -37,6 +39,7 @@ from braincell.experimental.optim._forward_sensitivity import (
     _equation_dependencies,
     _jaxpr_dependencies,
     _scan_layout,
+    _zero_tangent_leaf,
     bptt_reference_loss,
     build_active_state_projection,
     build_stateful_step,
@@ -592,13 +595,15 @@ class CompactActiveStateTest(unittest.TestCase):
                     np.testing.assert_allclose(gradient, expected, rtol=1e-6)
 
 
-def _calcium_case(solver, *, loss="V", field="g_max", materialize_in_step=False):
+def _calcium_case(solver, *, loss="V", field="g_max", materialize_in_step=False, ahp_n=None):
     """The two-branch HH cable with a calcium pool: CalciumDetailed and CaT_HM1992 (2 mS/cm^2) on every CV.
 
     Returns the cell, its BPTT and RTRL engines, the calcium ion node and the
     V, m, h, n, CaT p, q selections (plus the materialized g_max State in
     "rollout" mode). ``loss`` is ``"V"`` (``mean((V - target)^2)``) or
     ``"Ca"`` (the mean concentration in uM, a calcium-imaging-like loss).
+    ``ahp_n`` adds AHP_De1994 (5 mS/cm^2) with that exponent ``n`` and its
+    gate to the selections.
     """
     cell = braincell.Cell(
         _build_tree(), pop_size=(2,), V_init=-65.0 * u.mV, **({} if solver == "default" else {"solver": solver})
@@ -613,6 +618,8 @@ def _calcium_case(solver, *, loss="V", field="g_max", materialize_in_step=False)
         braincell.mech.Ion("CalciumDetailed"),
         braincell.mech.Channel("CaT_HM1992", name="cat", g_max=2.0 * u.mS / u.cm**2),
     )
+    if ahp_n is not None:
+        cell.paint(AllRegion(), braincell.mech.Channel("AHP_De1994", name="ahp", g_max=5.0 * u.mS / u.cm**2, n=ahp_n))
     cell.place(
         RootLocation(0.5),
         braincell.mech.CurrentClamp(delay=0.0 * u.ms, durations=50.0 * u.ms, amplitudes=0.1 * u.nA),
@@ -651,6 +658,8 @@ def _calcium_case(solver, *, loss="V", field="g_max", materialize_in_step=False)
         _select_all("cat.p", cat.p),
         _select_all("cat.q", cat.q),
     ]
+    if ahp_n is not None:
+        selections.append(_select_all("ahp.p", node("channel:AHP_De1994").p))
     states = rtrl._functional_step.state_trace.states
     selections += [_select_all(label, states[index]) for index, label in rtrl._functional_step.materialized_states]
     return cell, bptt, rtrl, calcium, selections
@@ -874,6 +883,126 @@ class TangentDependencyTest(unittest.TestCase):
             with self.subTest(primitive=eq.primitive.name):
                 self.assertEqual(_equation_dependencies(eq, [0b01, 0b10]), [0b11, 0b11])
         self.assertEqual(_equation_dependencies(equation("custom_unknown", {}), [0, 0]), [0, 0])
+
+
+def _direct_jaxpr_call_lines(source, filename="<source>"):
+    """Lines that reach ``jaxpr_call`` outside ``_call_in_built_order``: an attribute, a name or a ``getattr`` string."""
+    tree = ast.parse(source, filename)
+    allowed = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_call_in_built_order":
+            allowed |= {id(child) for child in ast.walk(node)}
+    return sorted(
+        node.lineno
+        for node in ast.walk(tree)
+        if id(node) not in allowed
+        and (
+            (isinstance(node, ast.Attribute) and node.attr == "jaxpr_call")
+            or (isinstance(node, ast.Name) and node.id == "jaxpr_call")
+            or (isinstance(node, ast.Constant) and node.value == "jaxpr_call")
+        )
+    )
+
+
+class PythonScalarStateTest(unittest.TestCase):
+    """OPT-22: a state held as a Python ``int`` or ``bool`` gets a ``float0`` tangent, as an integer array does."""
+
+    def test_zero_tangent_of_a_python_scalar_follows_its_result_type(self) -> None:
+        with jax.enable_x64(True):
+            for value in (2, True, np.int64(2), np.bool_(True), jnp.asarray(2, dtype=jnp.int32), jnp.ones((3,), int)):
+                with self.subTest(value=repr(value)):
+                    tangent = _zero_tangent_leaf(value)
+                    self.assertEqual(tangent.dtype, jax.dtypes.float0)
+                    self.assertEqual(np.shape(tangent), np.shape(value))
+            # Inexact leaves keep a zero tangent of their own dtype and weak type.
+            for value, dtype, weak in (
+                (2.0, jnp.float64, True),
+                (1j, jnp.complex128, True),
+                (np.float32(1.5), jnp.float32, False),
+                (jnp.asarray(2.0), jnp.float64, True),
+                (jnp.ones((3,), dtype=jnp.float32), jnp.float32, False),
+            ):
+                with self.subTest(value=repr(value)):
+                    tangent = _zero_tangent_leaf(value)
+                    self.assertEqual((tangent.dtype, tangent.weak_type), (dtype, weak))
+                    self.assertEqual(tangent.shape, np.shape(value))
+                    self.assertFalse(np.any(np.asarray(tangent)))
+
+    def test_rtrl_through_python_int_and_bool_states_matches_the_closed_form(self) -> None:
+        with jax.enable_x64(True):
+            scale = brainstate.ParamState(jnp.asarray(1.5))
+            x = brainstate.ShortTermState(jnp.asarray(0.25))
+            power = brainstate.LongTermState(2)
+            on = brainstate.LongTermState(True)
+
+            def local_loss(drive):
+                x.value = 0.5 * x.value + jnp.where(on.value, 1.0, 0.0) * scale.value**power.value + drive
+                return x.value * x.value
+
+            step = build_stateful_step(local_loss, jnp.asarray(0.0), {"scale": scale})
+            values = step.state_values()
+            self.assertEqual({type(value) for value in values} & {int, bool}, {int, bool})
+            tangents = seed_scalar_parameter_directions(step, values)
+            data = jnp.asarray([0.0, 0.1, -0.2, 0.3])
+            forward = forward_sensitivity_rollout(step, values, tangents, data)
+            reverse_state_gradient = jax.grad(
+                lambda state_values: bptt_reference_loss(step, state_values, data), allow_int=True
+            )(values)
+            reverse = select_parameter_derivatives(step, reverse_state_gradient)["scale"]
+        # x' = x / 2 + s**2 + d, loss = sum x'**2: dx'/ds = dx/ds / 2 + 2 s.
+        state, sensitivity, gradient = 0.25, 0.0, 0.0
+        for drive in (0.0, 0.1, -0.2, 0.3):
+            state, sensitivity = 0.5 * state + 1.5**2 + drive, 0.5 * sensitivity + 2 * 1.5
+            gradient += 2 * state * sensitivity
+        self.assertTrue(np.isfinite(gradient) and gradient != 0.0)
+        np.testing.assert_allclose(forward.final_gradient[0], gradient, rtol=1e-12)
+        np.testing.assert_allclose(reverse, gradient, rtol=1e-12)
+
+    def test_ahp_with_an_integer_exponent_matches_bptt(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            data = jnp.linspace(-64.0, -60.0, _COMPACT_STEPS)
+            _cell, bptt, rtrl, calcium, selections = _calcium_case("rk4", ahp_n=2)
+            ints = [value for value in rtrl._functional_step.state_values() if type(value) is int]
+            self.assertEqual(ints, [2])
+            expected = float(bptt(data).gradients["g_max"])
+            self.assertTrue(np.isfinite(expected))
+            self.assertNotEqual(expected, 0.0)
+            np.testing.assert_allclose(float(rtrl(data).gradients["g_max"]), expected, rtol=1e-10)
+            roots = tuple(state.value for state in rtrl.parameter_states.values())
+            complete = build_active_state_projection(
+                rtrl._functional_step, selections + [_select_all("Ci", calcium.Ci)]
+            )
+            compact = float(jax.jit(lambda r: _compact_gradient(rtrl, complete, r, data))(roots))
+            np.testing.assert_allclose(compact, expected, rtol=1e-10)
+
+
+class JaxprCallEntryTest(unittest.TestCase):
+    """OPT-21: the package calls ``jaxpr_call`` only through ``_call_in_built_order``, which aligns state order."""
+
+    def test_the_scan_finds_a_direct_call(self) -> None:
+        source = (
+            "def _call_in_built_order(function, trace, values, args):\n"
+            "    return function.jaxpr_call(values, args)\n"
+            "def shapes(builder, values):\n"
+            "    return builder.jaxpr_call(values, None)\n"
+            "call = getattr(object, 'jaxpr_call')\n"
+        )
+        self.assertEqual(_direct_jaxpr_call_lines(source), [4, 5])
+
+    def test_no_module_calls_jaxpr_call_directly(self) -> None:
+        package = pathlib.Path(__file__).resolve().parent
+        files = sorted(package.glob("*.py"))
+        self.assertGreaterEqual(len(files), 5)
+        found = {
+            path.name: lines
+            for path in files
+            if (lines := _direct_jaxpr_call_lines(path.read_text(encoding="utf-8"), str(path)))
+        }
+        self.assertEqual(found, {})
+        # The sanctioned entry itself is present and does call it.
+        source = (package / "_forward_sensitivity.py").read_text(encoding="utf-8")
+        self.assertIn("def _call_in_built_order(", source)
+        self.assertGreaterEqual(source.count(".jaxpr_call("), 2)
 
 
 if __name__ == "__main__":

@@ -56,7 +56,7 @@ A draft pull request runs no tests: its `ci-ok` fails until you mark it ready fo
 | `benchmarks/` or another directory of `validation/` | `checks`, the `validation/optim` and benchmarks step of `validation` |
 | anything else (`docs/`, `examples/`, `changelog.md`, ...) | `checks` |
 
-`checks` (pre-commit, the package build and the documentation build) always runs. `coverage` runs `pytest braincell/` on the latest JAX, in parallel with pytest-xdist. Every job uses Python 3.13; the JAX floor (0.11.0), macOS and Windows run only in the daily workflow, which runs every job and also tests `main` (there is no run on `main` after a merge). To add a rule, edit `RUN_ALL` or `jobs()` in `ci_changes.py` and its `CASES`; the `changes` job runs `ci_changes.py --self-test` first.
+`checks` (pre-commit, the package build, the documentation build and the docstring examples, `pytest --doctest-modules braincell --ignore-glob='*_test.py'`) always runs. `coverage` runs `pytest braincell/` on the latest JAX, in parallel with pytest-xdist. Every job uses Python 3.13; the JAX floor (0.11.0), macOS and Windows run only in the daily workflow, which runs every job and also tests `main` (there is no run on `main` after a merge). To add a rule, edit `RUN_ALL` or `jobs()` in `ci_changes.py` and its `CASES`; the `changes` job runs `ci_changes.py --self-test` first.
 
 The NEURON comparison suites are tiered the same way, each suite in its own pytest process (one `validation` job on a pull request):
 

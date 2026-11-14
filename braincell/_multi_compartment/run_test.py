@@ -1173,7 +1173,15 @@ class RunLoopCarryTest(unittest.TestCase):
             with self.subTest(cell=name):
                 cell.init_state()
                 cell.run(dt=DT, duration=4 * DT)
-                self.assertEqual(_step_loop_rewrites(cell), [])
+                rewrites = _step_loop_rewrites(cell)
+                if name == "detector":
+                    # The detector's live row acts at the start of the next step (CELL-81), where it compares
+                    # the voltage before the step that ended there with the voltage after it: each step
+                    # hands the voltage before it to the next, as a rule's post detector does (CELL-55).
+                    # main 51f669f: none, the row was read in its own step.
+                    self.assertEqual(len(rewrites), 1)
+                else:
+                    self.assertEqual(rewrites, [])
         with self.subTest(cell="lumped with a value input"):
             # A value input is an argument of the loop, which then wraps each step to apply it on the first.
             cell = cells["lumped"]
@@ -1187,9 +1195,12 @@ class RunLoopCarryTest(unittest.TestCase):
             result = cell.run(dt=DT, duration=20.0 * u.ms)
         V = np.asarray(result.samples["V"].values.to_decimal(u.mV))
         g = np.asarray(result.samples["g"].values.to_decimal(u.uS))
-        # A crossing in the step from t_k is delivered at t_k + dt: g jumps between samples k and k + 1.
+        # A crossing in the step from t_k acts at the start of the next step, at t_k + dt (CELL-81): g jumps
+        # between samples k + 1 and k + 2 (main 51f669f: between k and k + 1, at the end of the step).
         crossings = (V[:-1] < -20.0) & (V[1:] >= -20.0)
-        np.testing.assert_array_equal(np.diff(g, axis=0) > 0.0, crossings)
+        jumps = np.diff(g, axis=0) > 0.0
+        np.testing.assert_array_equal(jumps[1:], crossings[:-1])
+        self.assertFalse(jumps[0].any())
         np.testing.assert_array_equal(crossings.sum(axis=0), [0, 1, 2])
 
     def test_the_voltage_before_the_last_step_outlives_the_run(self):

@@ -17,9 +17,8 @@ external event sources.
   `NetCon` with delays of 0, 1, 2, 3, 4 and 12 steps (`dt` 0.025 ms). Each
   side's V first differs from the unconnected soma in step m + 1 + k after
   its own crossing step m, and the recorded g is 0 at t_{m+1+k} and
-  w exp(-dt / tau) one sample later on both sides (within 1e-12 uS; zero
-  delay is not compared, BrainCell adds it at the end of the step). Needs
-  NEURON and skips without it.
+  w exp(-dt / tau) one sample later on both sides (within 1e-12 uS), zero
+  delay included. Needs NEURON and skips without it.
 - `spike_times.py` and `spike_times_test.py`: the spike times of an HH soma
   (one 20 um x 20 um compartment, 0.1, 0.2 and 0.3 nA from 0.25 ms, `dt`
   0.025 ms, 50 ms) in `RunResult.spikes` and the Network's

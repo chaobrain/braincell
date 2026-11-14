@@ -464,10 +464,14 @@ def register_channel(
 
     .. code-block:: python
 
-        >>> from braincell.mech import register_channel
-        >>> @register_channel("IL", aliases=("leaky",))
-        ... class IL(...):
-        ...     ...
+        >>> import braincell
+        >>> from braincell.mech import get_registry, register_channel
+        >>> @register_channel("MyLeak", aliases=("my_leak",))
+        ... class MyLeak(braincell.channel.IL):
+        ...     pass
+        >>> get_registry().get("channel", "my_leak") is MyLeak
+        True
+        >>> get_registry().unregister("channel", "MyLeak")
     """
     return _make_decorator(_CATEGORY_CHANNEL, name, aliases)
 

@@ -295,6 +295,43 @@
   project-lead decision). To get the old values, subtract `dt` from the
   times; an `update()` loop that labels the spikes of the step at `t` should
   label them `t + dt`.
+- **Live and zero-delay events act at the start of the next step, as in
+  NEURON** (CELL-81). A spike detected in step `m` with a delay of `k` steps
+  acts at the start of step `m + 1 + k` on every driver and for every `k`,
+  `k = 0` included, as NEURON's `NetCon` delivers at `t_{m+1+k}`. Before, a
+  zero-delay row of `Network.run` or `Network.update()`, and every live row
+  of `Cell.run` and of a standalone `update()` loop, added its event at the
+  end of the step (for `k >= 1` at the end of step `m + k`). Three things
+  change. (1) The recorded state at the delivery boundary does not hold the
+  event yet: for an HH soma crossing 0 mV in step 98 with an ExpSyn
+  (tau 2 ms) and a 0.002 uS self-connection (dt 0.025 ms), `g` at `t_{99+k}`
+  was 0.002 uS and is now 0, and `g` one sample later is
+  0.0019751556009877627 uS, equal to NEURON 9.0.2 within 1e-18 uS
+  (`validation/neuron/synapse/netcon_delay_test.py` now compares `k = 0`
+  too). Only that one sample changes: V, the spikes and every other `g`
+  sample are bitwise the same, and `Network` rows with `k >= 1` do not
+  change at all. (2) A weight set with `connections.set(weight=...)`
+  between two runs applies to an event delivered on the first boundary of
+  the second run: split at that boundary and set to 0.004 uS, the model
+  above gave 0.0019751556009877627 uS (the old weight) and now gives
+  0.0039503112019755255 uS, as NEURON does; a plasticity rule's
+  zero-delay rows read the rule's weight at that boundary too. (3) A
+  zero-delay event detected in the last step of a run arrives in the first
+  step of the next run (or `Network.run`, or `update()` loop), once, even
+  at a new `dt`; a `k >= 1` event detected in the last step is in flight,
+  so a new `dt` raises the existing `ValueError` until `reset_state()`. A
+  `Network` queue whose rows all have zero delay keeps no history: each
+  row reads its source's count at the start of the step. Two consequences
+  of reading the count at the start of the step: a reduction whose
+  `init_state()` output reports an event delivers it over a zero-delay row
+  at step 0 (the toy tick reduction of the tests did; the built-in
+  reductions start with none), and a standalone Cell with a live row from a
+  `VoltageCrossingSource` now carries the voltage before each step through
+  its `Cell.run` loop (one copy of `V` per step, as a plasticity rule's post
+  detector already did), since the row compares the voltage before and
+  after the step that ended. There is no deprecation period (0.3 allows breaking
+  changes without one, a project-lead decision). To compare with old
+  results, read `g` one sample later.
 
 ### New Features
 
@@ -1515,6 +1552,11 @@
   or a CI input. These tests skip without NEURON; a final step fails the job
   if any of them skipped or none ran. Before, they ran only by hand.
 
+- **CI runs the docstring examples on every pull request** (API-17). The
+  `checks` job ends with `pytest --doctest-modules braincell
+  --ignore-glob='*_test.py'`, so a `>>>` example whose output no longer
+  matches the code fails the pull request.
+
 ### Bug Fixes
 
 - brainpy's `align_pre` with a descriptor given no size works on a lumped
@@ -2097,6 +2139,21 @@
   `HCN1_RI2021_SC` (the `.mod` Q10 reference is 37 degC; the 23 degC `temp`
   default is an operating temperature) and `HCN_HM1992` (its `+43 mV`
   default is unchecked) are corrected.
+
+- **`HCN_HM1992` reverses at -43 mV by default** (MECH-47). The default `E`
+  was +43 mV, which made the h current about five times too large near rest
+  and reversed its direction between -43 and +43 mV: at the -65 mV steady
+  state (`p = 0.1397`, default `g_max`) the current was 150.8 uA/cm2 inward at
+  -65 mV and 101.9 uA/cm2 inward at -30 mV; it is now 30.7 uA/cm2 inward and
+  18.2 uA/cm2 outward. -43 mV is the `eh` of `HCN_ZH19_IO.mod`, whose gate
+  functions match the class's up to two rounded time-constant numbers, and
+  lies in the -50 to -20 mV range of a mixed-cation h current. Against that
+  `.mod` (a new `zh19_io/hcn_hm1992` comparison) the class's defaults now
+  agree to 2.6e-3 mV in current clamp, the remainder coming from the two
+  rounded numbers; with +43 mV they differed by 149 mV. There is no
+  deprecation period (a defect fix, a project-lead decision); pass
+  `E=43 * u.mV` to keep the old behaviour. The examples and notebooks already
+  pass `E=-43 * u.mV` and are unchanged.
 
 - The optional gating current of `Kv1p1_MA2025_BC`, `Kv1p1_MA2024_PC`,
   `Kv1p1_RI2021_SC`, `Kv1p1_MA2020_GoC`, `Kv1p1_MA2020_GrC` and
@@ -2784,6 +2841,19 @@
   NetStim firing every 0.1 ms compile at runs 1, 2, 3, 5 and 9, and not at
   all after `reset_state`. A rule's source removed from the planned loop's
   key would leave its row 21 of 80 conductance jumps.
+
+- **The docstring examples pass under doctest** (API-17). `pytest --doctest-modules
+  braincell --ignore-glob='*_test.py'` failed on 8 docstrings: examples
+  passing `...` as arguments (`mix_ions`, `register_channel`), using a
+  variable they never defined (`split_diffeq_states`, `plan_neuron_files`),
+  importing `load_neuromorpho` from `braincell` instead of `braincell.io`,
+  using the branch type `"dend"` (the name is `"dendrite"`), printing the `Cell`
+  that `paint` returns (`Cl_Leak`), and showing an old `Quantity` repr
+  (`Params`). Three examples that were skipped whole now run as well
+  (`build_standard_swc_url`, `Morphology.topo`, `MorphoBranch.attach`). The
+  command now reports 130 passed and 1 skipped (`Morphology.vis2d`, which
+  draws a figure). `mix_ions` also documents that it needs at least two ions,
+  as it already checked.
 
 ### Deprecations
 

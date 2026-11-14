@@ -886,6 +886,11 @@ def _make_run_loop(
                             for index, item in enumerate(compiled_recordings)
                             if item.phase == "pre"
                         }
+                    # The live events of this boundary, before its scheduled
+                    # ones, as a Network writes its arrivals: a spike of step
+                    # m with k delay steps acts at t_{m+1+k} (CELL-81).
+                    with jax.named_scope("braincell:cell_run:route_live_connections"):
+                        rcell._apply_direct_live_connection_events()
                     # The step prepares the boundary it starts at, as a
                     # Network step does, so an edit between runs (a weight
                     # set, a new dt) acts from the next run's first boundary
@@ -897,8 +902,6 @@ def _make_run_loop(
                     with jax.named_scope("braincell:cell_run:update_dynamics"):
                         with brainstate.environ.context(_braincell_step_clamps_prepared=True):
                             rcell._update_dynamics()
-                    with jax.named_scope("braincell:cell_run:route_live_connections"):
-                        rcell._apply_direct_live_connection_events()
                     with jax.named_scope("braincell:cell_run:sample_outputs"):
                         recording_snapshot = tuple(
                             pre_recording_snapshot[index] if item.phase == "pre" else item.sample()
@@ -912,7 +915,8 @@ def _make_run_loop(
                 return recording_snapshot + spikes
 
             prepared = rcell._next_synapse_inputs_prepared
-            previous_V = None if reads_voltage_before_step(rcell) else getattr(rcell, "_event_previous_V", None)
+            carried = reads_voltage_before_step(rcell) or _live_rows_read_voltage_before_step(rcell)
+            previous_V = None if carried else getattr(rcell, "_event_previous_V", None)
 
             def _carried_step(index, t, s):
                 # Two states are rewritten by every step before anything reads
@@ -922,8 +926,9 @@ def _make_run_loop(
                 # began, false: each step prepares its boundary and consumes
                 # it. The voltage before the step, which a VoltageCrossingSource
                 # reads within the step, leaves the loop from its last step
-                # only; a rule's post detector reads it at the next step's
-                # boundary, so the loop then carries it (CELL-55).
+                # only; a rule's post detector, or a live connection from a
+                # detector, reads it at the next step's boundary, so the loop
+                # then carries it (CELL-55, CELL-81).
                 flag = prepared.value
                 previous = None if previous_V is None else previous_V.value
                 outputs = _step(t, s)
@@ -977,6 +982,18 @@ def _make_run_loop(
         return times, start_t, stop_t, tuple(recorded), spike_rows
 
     return brainstate.transform.jit(axial_operator_before_steps(_run_loop, (rcell,), given=operator_given))
+
+
+def _live_rows_read_voltage_before_step(rcell: "Cell") -> bool:
+    """Whether a live connection of ``rcell`` reads a detector that compares the voltages before and after a step.
+
+    Its events are delivered at the start of the next step (CELL-81), which
+    reads the voltage before the step that just ended.
+    """
+    store = rcell._get_connection_store()
+    return any(
+        not call.source.is_scheduled and getattr(call.source, "_reads_previous_voltage", False) for call in store._calls
+    )
 
 
 def _blocked_loop(step_fn, samples, times, grid, *, block_steps: int, n_rows: int):

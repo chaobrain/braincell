@@ -99,8 +99,8 @@ class Cl_Leak(OhmicHH):
         >>> import brainunit as u
         >>> import braincell as bc
         >>> cell = bc.Cell.point(1, length=20.0 * u.um, radius=0.5 * u.um)
-        >>> cell.paint(bc.mech.Ion("ChlorideInitNernst", name="cl"))
-        >>> cell.paint(bc.mech.Channel("Cl_Leak", g_max=0.1 * u.mS / u.cm**2))
+        >>> cell = cell.paint(bc.mech.Ion("ChlorideInitNernst", name="cl"))
+        >>> cell = cell.paint(bc.mech.Channel("Cl_Leak", g_max=0.1 * u.mS / u.cm**2))
     """
 
     __module__ = "braincell.channel"

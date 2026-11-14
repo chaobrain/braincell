@@ -1331,7 +1331,27 @@ class Morphology:
 
         .. code-block:: python
 
-            >>> print(morph.topo())  # doctest: +SKIP
+            >>> import brainunit as u
+            >>> from braincell import Branch, Morphology
+            >>> morph = Morphology.from_root(
+            ...     Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma"),
+            ...     name="soma",
+            ... )
+            >>> dend = morph.soma.attach(
+            ...     Branch.from_lengths(lengths=[50.0] * u.um, radii=[2.0, 1.0] * u.um, type="dendrite"),
+            ...     name="dend_0",
+            ... )
+            >>> for name in ("dend_1", "dend_2"):
+            ...     _ = dend.attach(
+            ...         Branch.from_lengths(lengths=[30.0] * u.um, radii=[1.0, 0.5] * u.um, type="dendrite"),
+            ...         name=name,
+            ...     )
+            >>> axon = morph.soma.attach(
+            ...     Branch.from_lengths(lengths=[100.0] * u.um, radii=[0.5, 0.5] * u.um, type="axon"),
+            ...     name="axon_0",
+            ...     parent_x=0.5,
+            ... )
+            >>> print(morph.topo())
             soma
             ├── dend_0
             │   ├── dend_1
@@ -3726,8 +3746,13 @@ class MorphoBranch:
 
         .. code-block:: python
 
-            >>> child = morph.soma.attach(dend_branch, name="apical")  # doctest: +SKIP
-            >>> child.name  # doctest: +SKIP
+            >>> import brainunit as u
+            >>> from braincell import Branch, Morphology
+            >>> soma = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
+            >>> dend_branch = Branch.from_lengths(lengths=[50.0] * u.um, radii=[2.0, 1.0] * u.um, type="dendrite")
+            >>> morph = Morphology.from_root(soma, name="soma")
+            >>> child = morph.soma.attach(dend_branch, name="apical")
+            >>> child.name
             'apical'
         """
 

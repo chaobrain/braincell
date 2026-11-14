@@ -127,7 +127,23 @@ def split_diffeq_states(module: DiffEqModule, *, excluded_paths=()):
 
     Examples
     --------
-    >>> all_states, diffeq_states, other_states = split_diffeq_states(my_module)
+    .. code-block:: python
+
+        >>> import brainstate
+        >>> import brainunit as u
+        >>> import jax.numpy as jnp
+        >>> from braincell import DiffEqModule, DiffEqSingleState
+        >>> from braincell.quad._util import split_diffeq_states
+        >>> class Decay(brainstate.nn.Module, DiffEqModule):
+        ...     def __init__(self):
+        ...         super().__init__()
+        ...         self.x = DiffEqSingleState(jnp.zeros(2) * u.mV)
+        ...         self.spikes = brainstate.ShortTermState(jnp.zeros(2))
+        ...     def compute_derivative(self, *args, **kwargs):
+        ...         self.x.derivative = -self.x.value / (10.0 * u.ms)
+        >>> all_states, diffeq_states, other_states = split_diffeq_states(Decay())
+        >>> sorted(all_states), list(diffeq_states), list(other_states)
+        ([('spikes',), ('x',)], [('x',)], [('spikes',)])
     """
     # Exclude states directly owned by IndependentIntegration modules.
     independent_modules = brainstate.graph.nodes(module, IndependentIntegration, allowed_hierarchy=(1, 1000000000000))

@@ -134,10 +134,12 @@ Shared behavior changes also need validation through the Cell or Network path th
 
 ## Meet the coverage gates
 
-The `coverage` job in CI runs `pytest braincell/ -n auto --dist loadfile --cov=braincell --cov-report=xml` on the latest JAX and enforces two tiers:
+The `coverage` job in CI runs `pytest braincell/ -n auto --dist loadfile --cov=braincell` on the latest JAX as three shards in parallel. With `BRAINCELL_TEST_SHARD=<index>/<count>` set, the root `conftest.py` keeps only the tests of the files that `.github/ci_shards.py` assigns to that shard. Every shard collects the whole session, so each test file runs in exactly one shard, including new ones. The `coverage-report` job then combines the three shards' data and enforces two tiers:
 
 1. **Total floor.** Total coverage of `braincell/` (branch coverage on; `*_test.py` and `braincell/_version.py` omitted, see `[tool.coverage]` in `pyproject.toml`) must not fall below `report.fail_under`. The floor started at the total measured on `main` when the gate was introduced, rounded down; before each minor release it is raised to the current total, rounded down.
 2. **Changed lines.** On a pull request, the lines it adds or changes must be at least 90 % covered, checked by `diff-cover coverage.xml --compare-branch=origin/main --fail-under=90`.
+
+The shards are balanced by the measured seconds per test file in `.github/test_durations.json`. A file missing from that table is estimated from its size. When the shards drift apart (`python .github/ci_shards.py --show 3` prints the estimates), download the `junit-shard-*` artifacts of a recent `coverage` run, run `python .github/ci_shards.py --update junit-shard-*.xml`, and commit the table. Each shard also prints its 30 slowest tests (`--durations=30`).
 
 Reach coverage by testing edge cases and critical paths, not trivial lines. To check a change locally before pushing:
 

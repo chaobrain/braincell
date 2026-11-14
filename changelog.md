@@ -1474,6 +1474,16 @@
   operator at every step, with main's results; the new `axial_operator_mode`
   property reports `"rollout"`, `"step"` or `"none"`.
 
+- **CI runs the morphology and synapse NEURON comparisons on every pull
+  request** (MECH-44). The `validation` job now also runs
+  `validation/neuron/morph` (SWC and ASC morphology metrics and soma layout
+  against NEURON's import3d), the ASC reader's `AscNeuronParityTest` (which
+  the package suite skips, having no NEURON) and `validation/neuron/synapse`
+  (`ExpSyn`, `Exp2Syn`, `NetCon` delays and spike times), each in its own
+  process, whenever a pull request changes `braincell/`, `validation/neuron/`
+  or a CI input. These tests skip without NEURON; a final step fails the job
+  if any of them skipped or none ran. Before, they ran only by hand.
+
 ### Bug Fixes
 
 - brainpy's `align_pre` with a descriptor given no size works on a lumped

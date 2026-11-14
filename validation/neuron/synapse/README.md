@@ -9,9 +9,9 @@ external event sources.
   inhibitory, zero and strong driving force; one-segment passive cylinder,
   `dt` 0.025 ms, float64). The two sides differ by rounding only: V within
   1e-9 mV, g within 1e-12 uS, the current within 1e-10 nA. The test needs
-  NEURON (built-in mechanisms only, no `nrnivmodl`) and skips without it;
-  it is not run by CI yet. Run it with
-  `pytest -q validation/neuron/synapse/reference_test.py`.
+  NEURON (built-in mechanisms only, no `nrnivmodl`) and skips without it.
+  CI runs the whole directory on every pull request (`pytest -q
+  validation/neuron/synapse`) and fails if a test skips.
 - `netcon_delay.py` and `netcon_delay_test.py`: an HH soma whose spike
   drives its own `ExpSyn` through a `Network` connection, against NEURON's
   `NetCon` with delays of 0, 1, 2, 3, 4 and 12 steps (`dt` 0.025 ms). Each

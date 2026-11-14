@@ -23,7 +23,10 @@ Usage: ``python .github/ci_changes.py [--all] < changed-files`` prints
   ``setup.*``, ``MANIFEST.in``, any ``conftest.py``, ``data/``) runs everything.
 - ``braincell``: the package test suite with coverage, for ``braincell/``.
   The suite reads no file outside the package.
-- ``neuron``: the NEURON comparisons, for ``braincell/`` or ``validation/neuron/``.
+- ``neuron``: the NEURON comparisons (``validation/neuron/``, including the
+  morphology and synapse comparisons, and the ASC reader's NEURON parity tests
+  in ``braincell/io/asc/reader_test.py``), for ``braincell/`` (so also
+  ``braincell/morph/`` and ``braincell/io/``) or ``validation/neuron/``.
 - ``bench``: ``validation/optim`` and the benchmark scripts' tests, for
   ``braincell/``, ``validation/`` outside ``validation/neuron/``, or ``benchmarks/``.
 
@@ -60,6 +63,10 @@ def jobs(files: list[str]) -> dict[str, bool]:
 CASES = [
     (["docs/index.md", "examples/a.py", "changelog.md"], (False, False, False)),
     (["validation/neuron/channel_no_conc/tolerances.py"], (False, True, False)),
+    (["validation/neuron/morph/neuron_diff.py"], (False, True, False)),
+    (["validation/neuron/synapse/netcon_delay.py"], (False, True, False)),
+    (["braincell/morph/morphology.py"], (True, True, True)),
+    (["braincell/io/asc/reader.py"], (True, True, True)),
     (["validation/optim/x.py"], (False, False, True)),
     (["benchmarks/performance/a.py"], (False, False, True)),
     (["braincell/channel/sodium.py"], (True, True, True)),

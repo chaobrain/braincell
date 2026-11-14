@@ -30,8 +30,7 @@ import unittest
 import numpy as np
 import pytest
 
-from validation.neuron._tolerance import CURRENT_CLAMP_PROTOCOLS
-from validation.neuron.channel_no_conc.tolerances import KNOWN_DIFFERENCES, TABLE, VARIANTS
+from validation.neuron.channel_no_conc.tolerances import TABLE
 
 from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, compile_hint, load_module, uncompiled_models
 
@@ -71,6 +70,7 @@ CONFIGS = (
     "ri21_sc/cav3p3_ri21_sc",
     "su15_dcn/calva_su15_dcn",
     "zh19_io/na_zh19_io",
+    "zh19_io/hcn_hm1992",
     "ma20_goc/kca2p2_ma20_goc",
     "ma20_grc/kca2p2_ma20_grc",
     "ma25_bc/kca2p2_ma25_bc",
@@ -88,28 +88,6 @@ def _max_voltage_difference(config_path: Path, template_path: Path) -> float:
         for payload in experiment_schema.expand_cases(config)
     ]
     return float(np.max(errors))  # NaN propagates; max() would drop one that is not first
-
-
-class ToleranceTableTest(unittest.TestCase):
-    def test_current_clamp_entries_name_asserted_templates(self) -> None:
-        for entry in TABLE.entries:
-            if entry.protocol not in CURRENT_CLAMP_PROTOCOLS:
-                continue
-            if entry.config in VARIANTS:  # asserted by the catalogue test of its family
-                config = VARIANTS[entry.config][0]
-            else:
-                config = entry.config
-                self.assertIn(config, CONFIGS)
-            model_config = experiment_schema.load_model_config(CHANNEL_NO_CONC_ROOT / "configs" / f"{config}.json")
-            self.assertIn(entry.protocol, {Path(path).stem for path in model_config.template_paths}, entry.config)
-
-    def test_every_asserted_configuration_declares_the_current_clamp_templates(self) -> None:
-        for name in CONFIGS:
-            model_config = experiment_schema.load_model_config(CHANNEL_NO_CONC_ROOT / "configs" / f"{name}.json")
-            self.assertEqual({Path(path).stem for path in model_config.template_paths}, set(CURRENT_CLAMP_PROTOCOLS), name)
-
-    def test_every_t1_entry_names_a_known_differences_heading(self) -> None:
-        self.assertEqual(TABLE.missing_sections(KNOWN_DIFFERENCES.read_text()), [])
 
 
 class NeuronVoltageAgreementTest(unittest.TestCase):

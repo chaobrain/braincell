@@ -445,21 +445,26 @@ jobs:
           pytest braincell/
 
   # Coverage of braincell/ on the latest jax, gated in two tiers: the total
-  # must stay at or above `fail_under` in pyproject.toml's [tool.coverage]
-  # (pytest-cov applies it), and on a pull request the lines it adds or changes
-  # must be at least 90 % covered (diff-cover against origin/main).
+  # must stay at or above `fail_under` in pyproject.toml's [tool.coverage],
+  # and on a pull request the lines it adds or changes must be at least 90 %
+  # covered (diff-cover against origin/main). The tests run as three shards in
+  # parallel (.github/ci_shards.py balances the test files by the seconds in
+  # .github/test_durations.json; each collected file runs in exactly one
+  # shard); `coverage-report` combines their data and applies both gates.
   coverage:
     needs: changes
     if: needs.changes.outputs.braincell == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [ 0, 1, 2 ]
     steps:
       - name: Cancel Previous Runs
         uses: styfle/cancel-workflow-action@0.13.1
         with:
           access_token: ${{ github.token }}
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0  # diff-cover needs origin/main
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
@@ -475,11 +480,58 @@ jobs:
           python -m pip install --upgrade pip setuptools
           python -m pip install -r requirements-dev.txt jax pytest-cov pytest-xdist
           python -m pip install -e .
-      - name: Test with coverage
+      - name: Check the shard assignment
+        run: python .github/ci_shards.py --self-test
+      - name: Test with coverage (shard ${{ matrix.shard }} of 3)
         # One worker per CPU; whole files per worker, so a file's tests keep
-        # their order. pytest-cov merges the workers' data.
+        # their order. pytest-cov merges the workers' data into .coverage; the
+        # floor applies to the combined data, not to one shard.
+        env:
+          BRAINCELL_TEST_SHARD: ${{ matrix.shard }}/3
         run: |
-          pytest braincell/ -n auto --dist loadfile --cov=braincell --cov-report=xml --cov-report=term
+          pytest braincell/ -n auto --dist loadfile --cov=braincell --cov-report= --cov-fail-under=0 \
+            --durations=30 --junitxml="junit-shard-${{ matrix.shard }}.xml"
+      - name: Upload the coverage data
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-data-${{ matrix.shard }}
+          path: .coverage
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Upload the JUnit report (input to ci_shards.py --update)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-shard-${{ matrix.shard }}
+          path: junit-shard-${{ matrix.shard }}.xml
+          if-no-files-found: warn
+
+  coverage-report:
+    needs: coverage
+    if: needs.coverage.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # diff-cover needs origin/main
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install coverage and diff-cover
+        run: python -m pip install pytest-cov diff-cover
+      - name: Download the shards' coverage data
+        uses: actions/download-artifact@v8
+        with:
+          pattern: coverage-data-*
+      - name: Combine the shards and require the total floor
+        # `coverage report` applies `fail_under` from pyproject.toml.
+        run: |
+          for i in 0 1 2; do mv "coverage-data-$i/.coverage" ".coverage.shard$i"; done
+          coverage combine
+          coverage xml
+          coverage report
       - name: Upload the coverage report
         if: ${{ !cancelled() }}
         # The report is for reading only and gates nothing; GitHub's artifact
@@ -493,9 +545,7 @@ jobs:
           if-no-files-found: warn
       - name: Require 90 % coverage of the lines this pull request changes
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
-        run: |
-          python -m pip install diff-cover
-          diff-cover coverage.xml --compare-branch=origin/main --fail-under=90
+        run: diff-cover coverage.xml --compare-branch=origin/main --fail-under=90
 
   # The single required status check of the main branch ruleset. `changes`
   # must succeed, so a skipped test job always means "its files did not
@@ -512,6 +562,7 @@ jobs:
       - checks
       - validation
       - coverage
+      - coverage-report
     runs-on: ubuntu-latest
     steps:
       - name: Require `changes` to succeed and every other job to succeed or be skipped

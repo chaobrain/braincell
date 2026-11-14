@@ -2918,10 +2918,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         if self._uses_reduction:
             self._raise_if_reduction_has_delta_inputs()
             self._init_reduction_state(batch_size=batch_size)
+            self._batch_live_event_buffers(batch_size)
             self._runtime_generation += 1
             return
         if self._is_lumped:
             self._init_lumped_state(batch_size=batch_size)
+            self._batch_live_event_buffers(batch_size)
             self._runtime_generation += 1
             return
         self._runtime = CellRuntimeState.from_cell(self)
@@ -2987,6 +2989,7 @@ class Cell(_CellFacade, HHTypedNeuron):
         # so defer this matrix until ``_get_axial_operator()`` is actually used.
         self._runtime.axial_operator_source = None
         self._runtime.axial_operator_cache = None
+        self._batch_live_event_buffers(batch_size)
         self._initialized = True
         # Selections created during declaration are not runtime Views.  A
         # successful initialization creates the runtime generation and makes
@@ -2995,6 +2998,32 @@ class Cell(_CellFacade, HHTypedNeuron):
         self._runtime_generation += 1
         self._runtime_cvs_cache = self._build_runtime_cv_views()
         self._runtime_nodes_cache = self._build_runtime_node_views()
+
+    def _batch_live_event_buffers(self, batch_size) -> None:
+        """Give a batch axis to the event buffers that live rows write (CELL-84).
+
+        Each batch element spikes on its own, so the events its live rows
+        deliver differ between elements: the buffers of the layouts they
+        target hold ``(batch, rows)``. Scheduled events, the same for every
+        element, add to them by broadcasting. The others keep ``(rows,)``.
+        """
+        if batch_size is None:
+            return
+        store = self._get_connection_store()
+        live = [call for call in store._calls if not call.source.is_scheduled]
+        if not live:
+            return
+        synapse_store = self._get_synapse_store()
+        layouts = {int(synapse_store.layout_id(str(call.synapse_type))) for call in live}
+        runtime = self._event_runtime()
+        for layout_id in layouts:
+            if layout_id not in runtime.event_buffers:
+                continue
+            buffer = runtime.event_buffers[layout_id]
+            buffer.value = u.math.broadcast_to(buffer.value, (int(batch_size),) + tuple(u.math.shape(buffer.value)))
+            counts = self._event_count_state(layout_id)
+            if counts is not None:
+                counts.value = jnp.broadcast_to(counts.value, (int(batch_size),) + tuple(jnp.shape(counts.value)))
 
     def _check_solver_against_mechanisms(self) -> bool:
         """Whether the IndependentIntegration mechanisms advance after the solver.
@@ -4701,9 +4730,11 @@ class Cell(_CellFacade, HHTypedNeuron):
             if connection_weight is not None:
                 connection_weight = connection_weight[row_index]
             contribution = event_count * u.math.asarray(_connection_event_weight(template, connection_weight))
-            output = output.at[local_index].add(contribution)
+            # The last axis: a batch Cell's buffer has a batch axis before it (CELL-84), which a
+            # schedule, the same for each element, broadcasts over.
+            output = output.at[..., local_index].add(contribution)
             if counts is not None:
-                counts = counts.at[local_index].add(jnp.asarray(event_count, dtype=counts.dtype))
+                counts = counts.at[..., local_index].add(jnp.asarray(event_count, dtype=counts.dtype))
         if planned is not None:
             output, counts = planned.deliver(output, counts, planned_weights, t=t, dt=dt)
         if counts is not None:
@@ -4748,11 +4779,12 @@ class Cell(_CellFacade, HHTypedNeuron):
             template = event_runtime.get_event_buffer(layout_id)
             contribution = counts * u.math.asarray(_connection_event_weight(template, connection.weight))
             local_indices = synapse_store.runtime_rows(connection.synapse_id).astype(np.int32)
-            drives[layout_id] = drives[layout_id].at[local_indices].add(contribution)
+            # A batch Cell's rows count per element: ``(batch, rows)`` into ``(batch, synapse rows)`` (CELL-84).
+            drives[layout_id] = drives[layout_id].at[..., local_indices].add(contribution)
             if layout_id in layout_counts:
                 layout_counts[layout_id] = (
                     layout_counts[layout_id]
-                    .at[local_indices]
+                    .at[..., local_indices]
                     .add(jnp.asarray(counts, dtype=layout_counts[layout_id].dtype))
                 )
 

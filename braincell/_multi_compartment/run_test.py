@@ -2193,5 +2193,211 @@ class OffGridScheduleTest(unittest.TestCase):
         self.assertNotEqual(rows[3]["period"], rows[5]["period"])
 
 
+#: Per-element drive of the lumped batch (2 elements x 3 members) and the cable batch (3 x 1, a density at each point).
+_LUMPED_DRIVE = np.asarray([[0.1, 0.2, 0.3], [0.3, 0.0, 0.15]]) * u.nA
+_CABLE_DRIVE = np.asarray([[6.0], [10.0], [14.0]]) * (u.uA / u.cm**2)
+_W = 0.002 * u.uS
+
+
+def _live_batch_cell(kind, k, drive, *, synapse="ExpSyn", scheduled=False):
+    """HH members with an ExpSyn (tau 2 ms, e 0 mV) at the root, a per-element drive and live rows of ``k`` steps (CELL-84).
+
+    ``"lumped"``: ``Cell.point(3)`` on rk4, rows 0->1, 1->2, 2->0 of ``k``
+    steps and 0->0 of ``k + 2`` (another connect). ``"cable"``: one
+    60 um x 5 um branch in 3 CVs, staggered, one member and a self row.
+    ``scheduled`` adds an ``EventSequence`` of 0.001 uS on the same synapses:
+    rows at (1.0, 3.3), 2.0 and 2.6 ms onto synapses 2, 0 and 1.
+    """
+    if kind == "lumped":
+        cell = braincell.Cell.point(
+            3, length=20.0 * u.um, radius=10.0 * u.um, V_init=-65.0 * u.mV, V_th=0.0 * u.mV, solver="rk4"
+        )
+    else:
+        branch = braincell.Branch.from_lengths(lengths=[60.0] * u.um, radii=[5.0, 5.0] * u.um, type="soma")
+        cell = braincell.Cell(
+            braincell.Morphology.from_root(branch),
+            pop_size=1,
+            cv_policy=braincell.CVPerBranch(3),
+            V_init=-65.0 * u.mV,
+            V_th=0.0 * u.mV,
+        )
+    _paint_hh(cell)
+    cell.place(RootLocation(0.5), mech.Synapse(synapse, name="syn", tau=2.0 * u.ms, e=0.0 * u.mV))
+    if kind == "lumped":
+        cell.add_current_input("drive", lambda V: drive)
+    else:
+        cell.add_current_input("drive", lambda V: drive[..., None])
+    cell.record("v", braincell.observe.state("V"))
+    cell.record("g", braincell.observe.synapse(name="syn").state("g"))
+    spike = cell.event_outputs["spike"]
+    if kind == "lumped":
+        braincell.connect(
+            "ring", source=spike[[0, 1, 2]], synapse=cell.synapses["syn"][[1, 2, 0]], weight=_W, delay=k * DT
+        )
+        braincell.connect("back", source=spike[[0]], synapse=cell.synapses["syn"][[0]], weight=_W, delay=(k + 2) * DT)
+    else:
+        braincell.connect("self", source=spike, synapse=cell.synapses["syn"], weight=_W, delay=k * DT)
+    if scheduled:
+        # Rows 0, 1, 2 onto synapses 2, 0, 1: an index along the batch axis instead of the
+        # synapse axis would put them on other synapses (CELL-84).
+        times = [[1.0, 3.3], [2.0], [2.6]] if kind == "lumped" else [[1.0, 3.3]]
+        braincell.connect(
+            "seq",
+            source=braincell.EventSequence.from_times([np.asarray(row) * u.ms for row in times]),
+            synapse=cell.synapses["syn"][[2, 0, 1] if kind == "lumped" else [0]],
+            weight=0.001 * u.uS,
+        )
+    return cell
+
+
+def _v_g(result):
+    v = np.asarray(result.samples["v"].values.to_decimal(u.mV), dtype=np.float64)
+    g = np.asarray(result.samples["g"].values.to_decimal(u.uS), dtype=np.float64)
+    return v, g
+
+
+def _g_now(cell):
+    return np.asarray(cell.synapses["syn"].g.to_decimal(u.uS), dtype=np.float64)
+
+
+class BatchLiveConnectionTest(unittest.TestCase):
+    """CELL-84: a batch Cell with live rows runs each element as that element on its own.
+
+    Each element spikes on its own, so its live rows deliver its own events:
+    the rows' histories hold ``(depth, batch, rows)`` and the event buffers
+    they write ``(batch, synapse rows)``. On main ``2cd7dc4`` ``Cell.run``
+    raised at its first step: ``ValueError: Cannot broadcast to shape with
+    fewer dimensions`` for ``k = 0``, ``TypeError: Cannot concatenate arrays
+    with different numbers of dimensions`` for ``k >= 1``.
+    """
+
+    N = 400
+
+    def _assert_each_element_alone(self, kind, k, drive, **kwargs):
+        cell = _live_batch_cell(kind, k, drive, **kwargs)
+        cell.init_state(batch_size=len(drive))
+        v, g = _v_g(cell.run(dt=DT, duration=self.N * DT))
+        g_after = _g_now(cell)
+        self.assertEqual((v.shape[0], v.shape[1], g.shape[0], g.shape[1]), (self.N, len(drive), self.N, len(drive)))
+        # The elements differ, and the live rows deliver.
+        self.assertTrue(np.all(np.isfinite(v)) and np.all(np.isfinite(g)))
+        self.assertFalse(np.allclose(v[:, 0], v[:, 1]))
+        self.assertTrue(np.all(g.max(axis=0) > 0.0))
+        for b in range(len(drive)):
+            alone = _live_batch_cell(kind, k, drive[b], **kwargs)
+            alone.init_state()
+            vb, gb = _v_g(alone.run(dt=DT, duration=self.N * DT))
+            np.testing.assert_allclose(v[:, b], vb.reshape(v[:, b].shape), rtol=1e-12, atol=1e-12)
+            np.testing.assert_allclose(g[:, b], gb.reshape(g[:, b].shape), rtol=1e-12, atol=1e-18)
+            np.testing.assert_allclose(g_after[b], _g_now(alone).reshape(g_after[b].shape), rtol=1e-12, atol=1e-18)
+
+    def test_each_element_equals_its_run_on_its_own(self):
+        with _float64():
+            for kind, drive in (("lumped", _LUMPED_DRIVE), ("cable", _CABLE_DRIVE)):
+                for k in (0, 1, 3):
+                    with self.subTest(kind=kind, k=k):
+                        self._assert_each_element_alone(kind, k, drive)
+
+    def test_a_schedule_on_the_same_synapses_and_a_counting_layout(self):
+        # The schedule, the same for each element, adds to each element's live events; ExpSynSTD
+        # counts the events ("sum_count").
+        with _float64():
+            for synapse in ("ExpSyn", "ExpSynSTD"):
+                with self.subTest(synapse=synapse):
+                    self._assert_each_element_alone("lumped", 3, _LUMPED_DRIVE, synapse=synapse, scheduled=True)
+
+    def test_segments_update_and_reset_as_one_run(self):
+        with _float64():
+            cell = _live_batch_cell("lumped", 3, _LUMPED_DRIVE)
+            cell.init_state(batch_size=2)
+            _, whole = _v_g(cell.run(dt=DT, duration=self.N * DT))
+            self.assertGreater(whole.max(), 0.0)
+            with self.subTest("137 + 263 steps"):
+                split = _live_batch_cell("lumped", 3, _LUMPED_DRIVE)
+                split.init_state(batch_size=2)
+                g = np.concatenate([_v_g(split.run(dt=DT, duration=n * DT))[1] for n in (137, 263)])
+                np.testing.assert_allclose(g, whole, rtol=1e-12, atol=1e-18)
+            with self.subTest("reset_state()"):
+                cell.reset_state(batch_size=2)
+                np.testing.assert_allclose(_v_g(cell.run(dt=DT, duration=self.N * DT))[1], whole, rtol=1e-12, atol=1e-18)
+            with self.subTest("update() loop"):
+                looped = _live_batch_cell("lumped", 3, _LUMPED_DRIVE)
+                looped.init_state(batch_size=2)
+                looped.connections.prepare_runtime(DT)
+
+                def body(t):
+                    with brainstate.environ.context(t=t):
+                        looped.update()
+                    return looped.synapses["syn"].g.to_decimal(u.uS)
+
+                with brainstate.environ.context(dt=DT):
+                    g = np.asarray(brainstate.transform.for_loop(body, np.arange(self.N) * DT))
+                # Sample j is the state before step j.
+                g = np.concatenate([np.zeros((1,) + g.shape[1:]), g[:-1]])
+                np.testing.assert_allclose(g, whole, rtol=1e-12, atol=1e-18)
+
+    def test_a_reduction_model_runs_each_element(self):
+        def reduced():
+            cell = _reduced_cell()
+            braincell.connect(
+                "self", source=cell.event_outputs["spike"], synapse=cell.synapses["input"], weight=0.2 * u.uS, delay=3 * DT
+            )
+            braincell.connect("drive", source=_netstim(), synapse=cell.synapses["input"], weight=0.2 * u.uS)
+            return cell
+
+        with _float64():
+            batched = reduced()
+            batched.init_state(batch_size=2)
+            spikes = batched.run(dt=DT, duration=self.N * DT).spikes
+            alone = reduced()
+            alone.init_state()
+            expected = np.sort(_ms(alone.run(dt=DT, duration=self.N * DT).spikes))
+            self.assertGreater(len(expected), 3)  # the self row drives spikes after the NetStim's three
+            batch_index = spikes.metadata["batch_index"][spikes.source_id]
+            for b in range(2):
+                np.testing.assert_allclose(np.sort(_ms(spikes)[batch_index == b]), expected, rtol=1e-12)
+
+    def test_another_dt_with_an_event_in_flight_is_refused(self):
+        with _float64():
+            cell = _live_batch_cell("lumped", 3, _LUMPED_DRIVE)
+            cell.init_state(batch_size=2)
+            # The 0.3 nA members spike first; stop one step after it, the events in flight.
+            for _ in range(self.N):
+                cell.run(dt=DT, duration=DT)
+                if np.any(np.asarray(cell.spike.value)):
+                    break
+            self.assertTrue(np.any(np.asarray(cell.spike.value)))
+            cell.run(dt=DT, duration=DT)
+            history = [np.asarray(call.live_history.value).copy() for call in cell._get_connection_store()._calls]
+            buffers = {key: np.asarray(u.get_mantissa(value.value)).copy() for key, value in cell._runtime.event_buffers.items()}
+            states = {path: np.asarray(u.get_mantissa(state.value)).copy() for path, state in brainstate.graph.states(cell).items() if not isinstance(state.value, dict)}
+            with self.assertRaisesRegex(ValueError, "in flight"):
+                cell.run(dt=DT / 2, duration=DT)
+            for call, before in zip(cell._get_connection_store()._calls, history):
+                np.testing.assert_array_equal(np.asarray(call.live_history.value), before)
+            for key, before in buffers.items():
+                np.testing.assert_array_equal(np.asarray(u.get_mantissa(cell._runtime.event_buffers[key].value)), before)
+            for path, before in states.items():
+                np.testing.assert_array_equal(np.asarray(u.get_mantissa(brainstate.graph.states(cell)[path].value)), before)
+            cell.reset_state(batch_size=2)
+            cell.run(dt=DT / 2, duration=DT)
+
+    def test_runs_reuse_their_loop(self):
+        from braincell._multi_compartment.lifecycle_test import loop_compiles
+
+        with _float64():
+            cell = _live_batch_cell("lumped", 3, _LUMPED_DRIVE)
+            cell.init_state(batch_size=2)
+            counts = []
+            for index in range(3):
+                if index == 2:
+                    cell.reset_state(batch_size=2)
+                with loop_compiles() as names:
+                    cell.run(dt=DT, duration=20 * DT)
+                counts.append(len(names))
+            self.assertGreaterEqual(counts[0], 1)
+            self.assertEqual(counts[1:], [0, 0])
+
+
 if __name__ == "__main__":
     unittest.main()

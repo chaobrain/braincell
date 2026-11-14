@@ -719,6 +719,9 @@ def _build_point_placements(
         (int(role.cv_id), str(role.position)): int(node.id) for node in node_tree.nodes for role in node.roles
     }
     placements: list[PointPlacement] = []
+    # One lookup per branch, not per placement: a CV holds one placement
+    # per member with per-member locations (CELL-51).
+    branch_labels: dict[int, tuple[str, str]] = {}
     for cv in cvs:
         midpoint_id = int(node_tree.cv_to_mid_node_id[cv.id])
         for placement in cv.point_mech_roles:
@@ -726,15 +729,19 @@ def _build_point_placements(
                 (int(cv.id), str(placement.position)),
                 midpoint_id,
             )
-            branch = morpho.branch(index=int(placement.branch_id))
+            branch_id = int(placement.branch_id)
+            labels = branch_labels.get(branch_id)
+            if labels is None:
+                branch = morpho.branch(index=branch_id)
+                labels = branch_labels[branch_id] = (str(branch.name), str(branch.type))
             placements.append(
                 PointPlacement(
                     id=int(placement.placement_id),
                     mechanism=placement.mechanism,
                     display_name=placement.display_name,
-                    branch_id=int(placement.branch_id),
-                    branch_name=str(branch.name),
-                    branch_type=str(branch.type),
+                    branch_id=branch_id,
+                    branch_name=labels[0],
+                    branch_type=labels[1],
                     branch_x=float(placement.branch_x),
                     cv_id=int(cv.id),
                     cv_position=placement.position,

@@ -1307,6 +1307,26 @@
   each, the build takes 1.4 s, down from 149 s. The table's rows,
   order, values, units and dtypes are unchanged, and an invalid value
   still names the first failing synapse and its `place` call.
+- **One location list per member places and initializes about 3-4x
+  faster** (CELL-51). `cell.place([locset, ...], Synapse(...))` with one
+  list per member built a `Synapse` per member that checked its values
+  again, evaluated each member's locations and walked the call stack for
+  its `place` line; `init_state` then walked every per-member rule and
+  synapse through brainstate's graph, and Python's cyclic garbage
+  collector walked the per-member objects again and again (at 1e6 members
+  on main, 29 s of `place` and 55 s of `init_state` in one run). Each
+  distinct location list is now evaluated and checked once and the call
+  site found once; a member's values, parts of a declaration that passed
+  its check, are not checked again; the per-member rules and their map to
+  the declaration are one value each to the graph walk; the synapse table
+  reads each member's values directly; and the collector is paused while
+  `place` builds the per-member objects, then restored as it was. With
+  `at(0, 0.5)` and `tau` per member, on one CPU core (main `2eace76`),
+  `place` takes 0.93 s at 1e5 members and 9.5 s at 1e6 (3.6 s and 36.8 s
+  before), and `init_state` 0.96 s and 8.4 s (2.8 s and 25.6 s before).
+  The rules, placements, synapse table, warnings and errors are unchanged.
+  Each member still has its own rule and `Synapse`, about 9.5 us per member
+  in `place` at 1e6.
 - **A compiled run builds the axial operator once, before its steps**
   (CELL-50). `Cell.run` and `Network.run` trace the geometry, and each step
   built the cable's axial operator from it again: the DHS coefficients once

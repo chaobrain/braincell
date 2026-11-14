@@ -49,11 +49,13 @@ from braincell._discretization.geometry import CVGeometryResult, _GeoCV, _build_
 __all__ = [
     "PaintRule",
     "PlaceRule",
+    "PlaceRules",
     "build_cv_mechanisms",
     "default_paint_rules",
     "merge_paint_rules",
     "merge_place_rules",
     "normalize_paint_rules",
+    "normalize_per_member_place_rules",
     "normalize_place_rule",
 ]
 
@@ -409,6 +411,56 @@ def normalize_place_rule(
     )
 
 
+def normalize_per_member_place_rules(
+    locsets: tuple[LocsetExpr | LocsetMask, ...],
+    row_mechanisms: tuple[tuple[object, ...], ...],
+    *,
+    population_indices: tuple[int, ...],
+    morpho: Morphology,
+) -> tuple[PlaceRule, ...]:
+    """One place rule per member: :func:`normalize_place_rule` of each row, in order.
+
+    ``locsets[i]`` (a ``LocsetExpr`` or ``LocsetMask``, as the caller
+    checked) and ``row_mechanisms[i]`` are the location list and the
+    declarations of member ``population_indices[i]``. The result, and the
+    first error, are those of calling :func:`normalize_place_rule` row by
+    row with ``morpho``; the call site and the checks of each distinct
+    locset are computed once (CELL-51).
+    """
+    origin = caller_origin()
+    bases: dict[int, tuple[Morphology, int] | None] = {}
+    rules = []
+    for locset, mechanisms, index in zip(locsets, row_mechanisms, population_indices):
+        if len(mechanisms) == 0:
+            raise ValueError("Cell.place(...) expects at least one point mechanism.")
+        for mechanism in mechanisms:
+            if not isinstance(mechanism, Point):
+                raise TypeError(
+                    f"Cell.place(...) mechanisms must be Point instances, got {type(mechanism).__name__!s}."
+                )
+        key = id(locset)
+        if key not in bases:
+            basis = None
+            if isinstance(locset, LocsetMask):
+                require_existing_branches(locset, morpho)
+                basis = (morpho, morpho.revision)
+            elif held_branch_indices(locset):
+                basis = (morpho, morpho.revision)
+            bases[key] = basis
+        rules.append(
+            PlaceRule(
+                locset=locset,
+                mechanisms=tuple(mechanisms),
+                site="mid",
+                population_indices=(index,),
+                aligned=False,
+                origin=origin,
+                _index_basis=bases[key],
+            )
+        )
+    return tuple(rules)
+
+
 def require_existing_branches(locset: LocsetMask | LocsetBatch, morpho: Morphology) -> None:
     """Reject a resolved mask that names a branch ``morpho`` does not have.
 
@@ -470,6 +522,12 @@ def merge_paint_rules(
     return tuple(merged)
 
 
+class PlaceRules(tuple):
+    """A tuple of :class:`PlaceRule`, one leaf to pytree flattening (``jax.tree_util`` registers only ``tuple``)."""
+
+    __slots__ = ()
+
+
 def merge_place_rules(
     existing: tuple[PlaceRule, ...],
     incoming: tuple[PlaceRule, ...],
@@ -487,8 +545,14 @@ def merge_place_rules(
     -------
     tuple of PlaceRule
         Merged place-rule sequence.
+
+    Notes
+    -----
+    The result is a :class:`PlaceRules`, a ``tuple`` that pytree flattening
+    takes as one leaf: brainstate's graph walks over a Cell no longer visit
+    each of the rules, one per member with per-member locations (CELL-51).
     """
-    return tuple(existing) + tuple(incoming)
+    return PlaceRules(tuple(existing) + tuple(incoming))
 
 
 def _interval_contains(

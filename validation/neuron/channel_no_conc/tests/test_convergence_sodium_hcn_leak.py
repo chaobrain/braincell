@@ -86,7 +86,7 @@ ENTRIES = {entry.config: entry for entry in table.CONFIGS if entry.config in FAM
 class FamilyTableTest(unittest.TestCase):
     def test_the_family_is_in_the_tables(self):
         classes = family_classes()
-        self.assertEqual((len(classes), len(FAMILY_CONFIGS)), (24, 20))
+        self.assertEqual((len(classes), len(FAMILY_CONFIGS)), (24, 21))
         self.assertIn("IL", classes)  # leaky.py
         self.assertEqual(set(ENTRIES), set(FAMILY_CONFIGS))
         # A class or configuration added to the family must join the family's tuples.

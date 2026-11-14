@@ -2120,6 +2120,21 @@
   default is an operating temperature) and `HCN_HM1992` (its `+43 mV`
   default is unchecked) are corrected.
 
+- **`HCN_HM1992` reverses at -43 mV by default** (MECH-47). The default `E`
+  was +43 mV, which made the h current about five times too large near rest
+  and reversed its direction between -43 and +43 mV: at the -65 mV steady
+  state (`p = 0.1397`, default `g_max`) the current was 150.8 uA/cm2 inward at
+  -65 mV and 101.9 uA/cm2 inward at -30 mV; it is now 30.7 uA/cm2 inward and
+  18.2 uA/cm2 outward. -43 mV is the `eh` of `HCN_ZH19_IO.mod`, whose gate
+  functions match the class's up to two rounded time-constant numbers, and
+  lies in the -50 to -20 mV range of a mixed-cation h current. Against that
+  `.mod` (a new `zh19_io/hcn_hm1992` comparison) the class's defaults now
+  agree to 2.6e-3 mV in current clamp, the remainder coming from the two
+  rounded numbers; with +43 mV they differed by 149 mV. There is no
+  deprecation period (a defect fix, a project-lead decision); pass
+  `E=43 * u.mV` to keep the old behaviour. The examples and notebooks already
+  pass `E=-43 * u.mV` and are unchanged.
+
 - The optional gating current of `Kv1p1_MA2025_BC`, `Kv1p1_MA2024_PC`,
   `Kv1p1_RI2021_SC`, `Kv1p1_MA2020_GoC`, `Kv1p1_MA2020_GrC` and
   `Kv3p3_MA2024_PC` (`gateCurrent != 0`) was 1e18 times too large: the

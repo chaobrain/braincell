@@ -17,8 +17,11 @@
 
 import unittest
 
+import brainstate
 import brainunit as u
+import jax
 import jax.numpy as jnp
+import numpy as np
 
 from braincell._base_neuron import HHTypedNeuron
 from braincell.channel._base import HH
@@ -61,7 +64,7 @@ class IhHM1992Test(unittest.TestCase):
                 jnp.full((2,), 10.0),
             )
         )
-        self.assertTrue(u.math.allclose(ch.E.to_decimal(u.mV), jnp.full((2,), 43.0)))
+        self.assertTrue(u.math.allclose(ch.E.to_decimal(u.mV), jnp.full((2,), -43.0)))
         self.assertTrue(
             u.math.allclose(
                 ch.temp.to_decimal(u.kelvin),
@@ -142,6 +145,22 @@ class IhHM1992Test(unittest.TestCase):
                 atol=1e-9,
             )
         )
+
+    def test_default_current_at_the_resting_steady_state(self) -> None:
+        # MECH-47: E = -43 mV, as HCN_ZH19_IO.mod. Reference values from
+        # mpmath at 30 digits: p_inf(-65) = 1 / (1 + exp(10 / 5.5)) and
+        # I = 10 mS/cm2 * p * (-43 mV - V), inward positive.
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            ch = HCN_HM1992(size=2)
+            V_rest = jnp.full((2,), -65.0, dtype=jnp.float64) * u.mV
+            ch.init_state(V_rest)
+            ch.reset_state(V_rest)
+            np.testing.assert_allclose(np.asarray(ch.p.value), 0.13965218341676010654, rtol=1e-12, atol=0.0)
+            V = jnp.array([-65.0, -30.0], dtype=jnp.float64) * u.mV
+            current = np.asarray(ch.current(V).to_decimal(u.uA / u.cm**2))
+        self.assertGreater(current[0], 0.0)
+        self.assertLess(current[1], 0.0)
+        np.testing.assert_allclose(current, [30.723480351687223438, -18.15478384417881385], rtol=1e-12, atol=0.0)
 
     def test_p_inf_monotone_in_hyperpolarized_regime(self) -> None:
         ch = HCN_HM1992(size=1)

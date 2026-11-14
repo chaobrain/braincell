@@ -208,6 +208,7 @@ CONFIGS = (
     ConfigEntry("su15_dcn/hcn_su15_dcn", cv.EXACT),
     ConfigEntry("su15_dcn/naf_su15_dcn", cv.EXACT),
     ConfigEntry("su15_dcn/nap_su15_dcn", cv.EXACT),
+    ConfigEntry("zh19_io/hcn_hm1992", cv.EXACT),
     ConfigEntry("zh19_io/hcn_zh19_io", cv.EXACT),
     ConfigEntry("zh19_io/na_zh19_io", cv.EXACT),
     # chloride.py: Cl_Leak has no state (e_I 0 at every dt).
@@ -399,7 +400,8 @@ SODIUM_HCN_LEAK_FAMILY_CONFIGS = (
     "ma20_goc/nav1p6_ma20_goc", "ma20_grc/nafhf_ma20_grc", "ma20_grc/nav_ma20_grc", "ma24_pc/hcn1_ma24_pc",
     "ma24_pc/nav1p6_ma24_pc", "ma25_bc/hcn1_ma25_bc", "ma25_bc/nav1p1_ma25_bc", "ma25_bc/nav1p6_ma25_bc",
     "ri21_sc/hcn1_ri21_sc", "ri21_sc/nav1p1_ri21_sc", "ri21_sc/nav1p6_ri21_sc", "su15_dcn/hcn_su15_dcn",
-    "su15_dcn/naf_su15_dcn", "su15_dcn/nap_su15_dcn", "zh19_io/hcn_zh19_io", "zh19_io/na_zh19_io",
+    "su15_dcn/naf_su15_dcn", "su15_dcn/nap_su15_dcn", "zh19_io/hcn_hm1992", "zh19_io/hcn_zh19_io",
+    "zh19_io/na_zh19_io",
 )
 """The configurations of the classes in ``sodium.py``, ``hyperpolarization_activated.py`` and ``leaky.py``."""
 SODIUM_HCN_LEAK_FAMILY_CLASSES = (

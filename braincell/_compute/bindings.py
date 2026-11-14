@@ -311,6 +311,23 @@ class _BoundIonChannelRuntime(Channel):
 
     __module__ = "braincell._compute"
 
+    @property
+    def graph_invisible_attrs(self) -> tuple[str, ...]:
+        """Attributes the graph does not walk: what this wrapper reads but does not own (MECH-51).
+
+        The graph gives a state the first path that reaches it, in key
+        order. The bound ions are the cell's children under their own keys,
+        and a current-only wrapper's channel is the state-owning wrapper's
+        child. Were they this wrapper's graph children too, an ion's ``Ci``
+        (or the channel's gates) would sit under another ion's channel path
+        whenever that ion's key sorted first, and the ``"family"`` update
+        would leave them out of the phase that advances them; naming an ion
+        was enough to move them.
+        """
+        if self.__dict__.get("_owns_state", True):
+            return ("_bound_ions",)
+        return ("_bound_ions", "_channel")
+
     def __init__(
         self,
         channel: object,

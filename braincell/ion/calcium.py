@@ -59,6 +59,10 @@ __all__ = [
     'CdpLVA_SU2015_DCN',
 ]
 
+#: ``1 / (2 F d)`` for a ``d = 1 um`` submembrane shell, in mM/ms per uA/cm**2:
+#: the default ``alpha`` of :class:`CalciumFirstOrder` (MECH-46).
+_SHELL_1UM_ALPHA = (1.0 / (2.0 * FARADAY_CONSTANT * (1.0 * u.um))).in_unit(u.mM / u.ms / (u.uA / u.cm**2))
+
 
 class _ParvalbuminEquilibrium(brainstate.mixin.Mixin):
     r"""Resting occupancy of a parvalbumin pool competing for Ca and Mg.
@@ -566,7 +570,8 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
     alpha : array-like or callable, optional
         Conversion from inward calcium current density to the rate of
         change of ``Ci``, in concentration / time / current density.
-        Defaults to ``0.13 mM/ms/(uA/cm**2)``.
+        Defaults to :math:`1/(2Fd)` with :math:`d = 1\ \mathrm{\mu m}`,
+        about ``5.1821e-5 mM/ms/(uA/cm**2)`` (see Notes).
     beta : array-like or callable, optional
         First-order decay rate applied to ``Ci`` in :meth:`derivative`,
         in 1 / time. Defaults to ``0.075 /ms``.
@@ -623,8 +628,19 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
     :class:`CalciumDetailed` without its resting level: the two
     derivatives then differ by exactly :math:`\beta \cdot [Ca]_{rest}`.
 
-    The form and the default values are those of the dendritic
-    calcium equation of the Pinsky-Rinzel model [1]_,
+    The default ``alpha`` is the influx of a submembrane shell of
+    thickness :math:`d = 1\ \mathrm{\mu m}`, :math:`\alpha = 1/(2Fd) =
+    5.1821 \times 10^{-5}\ \mathrm{mM\, cm^2/(ms\, \mu A)}`, so ``Ci``
+    is the calcium concentration in that shell. It is the lumped
+    constant :math:`A = 5.18 \times 10^{-5}\ \mathrm{mM\, cm^2/(ms\,
+    \mu A)}` of the first-order calcium equation of [2]_ to its three
+    printed digits, and the influx term of :class:`CalciumDetailed`
+    with its default ``d``. The steady state under a constant inward
+    current is :math:`Ci = (\alpha/\beta) I_{Ca}`, about
+    :math:`6.91 \times 10^{-4}` mM per :math:`\mathrm{\mu A/cm^2}`.
+
+    The form and ``beta`` are those of the dendritic calcium equation
+    of the Pinsky-Rinzel model [1]_,
     :math:`Ca' = -0.13\, I_{Ca} - 0.075\, Ca`, as implemented in
     ModelDB accession 35358. There :math:`I_{Ca}` is
     outward-positive, so the signs agree with the inward-positive
@@ -632,12 +648,13 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
 
     - In that implementation the calcium variable is dimensionless:
       it starts at 0 and is compared against thresholds of 250 and
-      500 by the potassium currents it gates. The ``mM`` and
-      ``uA/cm**2`` units of the defaults here are a BrainCell
-      assignment, not the source's. With them the steady state
-      :math:`Ci = (\alpha/\beta) I_{Ca}` is about 1.7 mM per
-      :math:`\mathrm{\mu A/cm^2}` of inward current, several orders of
-      magnitude above the ``2.4e-4 mM`` initial value.
+      500 by the potassium currents it gates. Rescaling a
+      dimensionless variable leaves ``beta`` unchanged and changes
+      only ``alpha``: the default here measures one Pinsky-Rinzel
+      unit as :math:`\alpha / 0.13 \approx 3.986 \times 10^{-4}` mM,
+      so those thresholds sit at about 0.0997 and 0.199 mM. Pass
+      ``alpha=0.13 * u.mM / u.ms / (u.uA / u.cm**2)`` to read the
+      source's variable directly as mM, the default before 0.3.
     - The rectification :math:`\max(\cdot, 0)` is a BrainCell
       addition.
     - The initial value ``2.4e-4 mM`` is BrainCell's; the source
@@ -649,6 +666,11 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
            rhythmogenesis in a reduced Traub model for CA3 neurons.
            Journal of Computational Neuroscience, 1(1-2), 39-60.
            doi:10.1007/BF00962717
+    .. [2] Bazhenov, M., Timofeev, I., Steriade, M., & Sejnowski, T. J.
+           (1998). Cellular and network models for intrathalamic
+           augmenting responses during 10-Hz stimulation. Journal of
+           Neurophysiology, 79(5), 2730-2748.
+           doi:10.1152/jn.1998.79.5.2730
 
     Examples
     --------
@@ -662,7 +684,7 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
         >>> V = jnp.array([-65.0]) * u.mV
         >>> inward = jnp.array([1.0]) * u.uA / u.cm**2
         >>> ca.derivative(Ci, V, total_current=inward).to_decimal(u.mM / u.ms)
-        Array([0.129982], dtype=float32)
+        Array([3.382135e-05], dtype=float32)
         >>>
         >>> ca.derivative(Ci, V, total_current=None).to_decimal(u.mM / u.ms)
         Array([-1.8e-05], dtype=float32)
@@ -675,7 +697,7 @@ class CalciumFirstOrder(Calcium, DynamicNernstIon):
         self,
         size: Size,
         temp: Initializer = u.celsius2kelvin(36.0),
-        alpha: Initializer = 0.13 * u.mM / u.ms / (u.uA / u.cm**2),
+        alpha: Initializer = _SHELL_1UM_ALPHA,
         beta: Initializer = 0.075 / u.ms,
         Co: Optional[Initializer] = None,
         Ci_initializer: Initializer = braintools.init.Constant(2.4e-4 * u.mM),

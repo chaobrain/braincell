@@ -19,9 +19,11 @@ This module owns the step-time path that moves population spikes into
 postsynaptic synapse event buffers. The input is a lowered
 ``ConnectionBlock`` table, where each row is already a materialized synaptic
 contact. The delivery layer preserves per-contact delays for scatter routing,
-keeps one history of source event counts per target synapse layout, writes
-due arrivals weighted with the weight at delivery, and records the events of
-each step into the history. Backends may group contacts internally without
+keeps one history of source event counts per target synapse layout with
+delayed contacts, writes the arrivals of each boundary at the start of its
+step -- zero-delay ones included, from the sources' current counts (CELL-81)
+-- weighted with the weight at delivery, and records the events of each step
+into the history. Backends may group contacts internally without
 changing queue ownership.
 
 The module does not define synapse models and does not perform topology
@@ -93,26 +95,37 @@ class DeliveryBlock:
 
 @dataclass(frozen=True)
 class _QueuePlan:
-    """How one queue keeps and sums its delayed events (CELL-69).
+    """How one queue keeps and sums the events of its contacts (CELL-69, CELL-81).
 
-    The queue keeps the event counts of the source members its delayed
-    contacts read, at the last ``depth`` boundaries: ``sources[i]`` gives
-    ``columns[i]`` (its member ids) to each history row, in that order.
+    Every contact delivers at the start of a step: one with ``k`` delay
+    steps delivers at the start of step ``m + 1 + k`` the events its source
+    counted in step ``m``, as NEURON's ``NetCon`` (CELL-75, CELL-81). A
+    zero-delay contact reads its source's current count, the events of the
+    step that just ended; the others read a history.
 
-    With one delay per contact (the scatter path), ``lags``, ``columns_read``,
-    ``weight_index`` and ``targets`` list the delayed contacts in the order a
-    queue of weighted events summed them: longest delay first, then by route
-    and by contact. ``depth`` is the longest delay in steps plus one: a
-    contact with ``k`` delay steps reads, at the start of step ``m + k +
-    1``, the events counted at the end of step ``m``, history row
-    ``(cursor + depth - 1 - k) % depth`` (``lags`` holds ``depth - 1 - k``,
-    CELL-75), column
-    ``columns_read``, the weight ``concatenate(route weights)[weight_index]``
-    (``None``: in order), and adds to synapse row ``targets``.
+    The history keeps the event counts of the source members the delayed
+    contacts (``k >= 1``) read, at the last ``depth`` boundaries:
+    ``sources[i]`` gives ``columns[i]`` (its member ids) to each history row,
+    in that order. ``depth`` is the longest delay in steps plus one, 0 for a
+    queue of zero-delay contacts only, which keeps no history. A contact
+    with ``k`` delay steps reads history row
+    ``(cursor + depth - 1 - k) % depth`` (``lags`` holds ``depth - 1 - k``).
+    ``now_sources[i]`` gives ``now_columns[i]`` to the current counts the
+    zero-delay contacts read.
+
+    With one delay per contact (the scatter path), ``weight_index`` and
+    ``targets`` list the contacts in the order a queue of weighted events
+    summed them: longest delay first, then by route and by contact, so the
+    zero-delay ones come last. The first ``lags.size`` read the history at
+    ``lags`` and column ``columns_read``; the others read the current counts
+    at ``now_read``. Each takes the weight
+    ``concatenate(route weights)[weight_index]`` (``None``: in order) and
+    adds to synapse row ``targets``.
 
     With one delay per route (the ``brainevent`` path), ``scalar`` lists
     ``(block index, depth - 1 - k, first column, size)`` longest delay first;
-    each route reads its source's whole row.
+    a delayed route reads its source's whole history row, a zero-delay
+    route (lag ``None``, last) its source's whole current count.
     """
 
     depth: int = 0
@@ -124,6 +137,14 @@ class _QueuePlan:
     columns_read: np.ndarray | None = None
     targets: np.ndarray | None = None
     scalar: tuple = ()
+    now_sources: tuple = ()
+    now_columns: tuple = ()
+    now_read: np.ndarray | None = None
+
+    @property
+    def empty(self) -> bool:
+        """Whether the queue has no contact (its target receives nothing from it)."""
+        return not self.scalar and self.targets is None
 
 
 @dataclass(frozen=True)
@@ -234,8 +255,8 @@ def delivery_blocks(
     and reach different synapses (CELL-18b). A step then runs one gather and
     one scatter for them instead of one per block. Each synapse of such a
     route receives contacts from one member only, in that member's order,
-    so every queue slot and zero-delay drive gets the same additions in the
-    same order as from one route per block, on any backend.
+    so every queue slot gets the same additions in the same order as from
+    one route per block, on any backend.
     """
     if not group_by_delay:
         return _merged_delivery_blocks(blocks)
@@ -430,7 +451,9 @@ def create_delivery_state(
     -----
     Each queue with delayed contacts keeps one history of the event counts
     of the source members those contacts read, one row deeper than its
-    longest delay in steps (CELL-75): ``depth x members`` values in the
+    longest delay in steps (CELL-75); its zero-delay contacts, and a queue
+    of zero-delay contacts only, read their sources' current counts and
+    keep none (CELL-81): ``depth x members`` values in the
     sources' event dtype, where a queue of weighted events, before CELL-69,
     held ``depth x synapse rows``. A route with one delay per contact (the
     scatter path) keeps only the members its delayed contacts read; a
@@ -451,7 +474,7 @@ def create_delivery_state(
     queue_keys: list[tuple[str, int]] = []
     queue_sources: list[ConnectionBlock] = []
     block_queue_indices: list[int] = []
-    delayed: list[list[tuple[int, np.ndarray, np.ndarray | None]]] = []
+    routed: list[list[tuple[int, np.ndarray, np.ndarray | None]]] = []
     for block_index, block in enumerate(blocks):
         key = (block.source.post_population, int(block.source.layout_id))
         queue_index = queue_index_by_key.get(key)
@@ -460,17 +483,15 @@ def create_delivery_state(
             queue_index_by_key[key] = queue_index
             queue_keys.append(key)
             queue_sources.append(block.source)
-            delayed.append([])
+            routed.append([])
         block_queue_indices.append(queue_index)
         delay_steps = np.asarray(block.delay_steps, dtype=np.int32)
         if delay_steps.ndim == 0:
-            if int(delay_steps) > 0:
-                delayed[queue_index].append((block_index, delay_steps, None))
+            routed[queue_index].append((block_index, delay_steps, None))
             continue
-        contacts = np.flatnonzero(delay_steps > 0)
-        if contacts.size:
-            delayed[queue_index].append((block_index, delay_steps[contacts], contacts))
-    queue_plans = tuple(_queue_plan(parts, blocks) for parts in delayed)
+        if delay_steps.size:
+            routed[queue_index].append((block_index, delay_steps, np.arange(delay_steps.size)))
+    queue_plans = tuple(_queue_plan(parts, blocks) for parts in routed)
     histories = []
     for plan in queue_plans:
         if not plan.depth:
@@ -504,67 +525,136 @@ def create_delivery_state(
 
 
 def _queue_plan(parts: list[tuple[int, np.ndarray, np.ndarray | None]], blocks) -> _QueuePlan:
-    """The history columns of one queue and its delayed contacts in the order a queue of weighted events summed them."""
+    """The history and current-count columns of one queue, and its contacts in the order a queue of weighted events summed them."""
     if not parts:
         return _QueuePlan()
-    # A contact of k steps reads the events of k + 1 boundaries before (CELL-75).
-    depth = max(int(np.max(delay)) for _, delay, _ in parts) + 1
-    sources: list = []
-    reads: list[list[np.ndarray]] = []
-    whole: list[bool] = []
-    index_of: dict[int, int] = {}
-    for block_index, delay, contacts in parts:
-        source = blocks[block_index].source.event_source
-        position = index_of.get(id(source))
-        if position is None:
-            position = index_of[id(source)] = len(sources)
-            sources.append(source)
-            reads.append([])
-            whole.append(False)
-        if contacts is None:
-            whole[position] = True
-        else:
-            reads[position].append(np.asarray(blocks[block_index].pre_index, dtype=np.int64)[contacts])
-    columns = tuple(
-        np.arange(int(source.size), dtype=np.int32) if is_whole else np.unique(np.concatenate(read)).astype(np.int32)
-        for source, read, is_whole in zip(sources, reads, whole)
-    )
-    starts = np.concatenate([[0], np.cumsum([ids.size for ids in columns])]).astype(np.int64)
     if any(contacts is None for _, _, contacts in parts):
         if not all(contacts is None for _, _, contacts in parts):
             raise ValueError("A queue mixes scalar-delay and per-contact-delay routes.")
-        scalar = []
-        for block_index, delay, _ in parts:
-            position = index_of[id(blocks[block_index].source.event_source)]
-            scalar.append((block_index, depth - 1 - int(delay), int(starts[position]), int(columns[position].size)))
-        # Stable: routes of one delay keep their order.
-        scalar.sort(key=lambda item: item[1])
-        return _QueuePlan(depth=depth, sources=tuple(sources), columns=columns, scalar=tuple(scalar))
-    delays, read, targets, weight_index, weight_blocks = [], [], [], [], []
+        return _scalar_queue_plan(parts, blocks)
+    # A contact of k >= 1 steps reads the events of k + 1 boundaries before (CELL-75); one of
+    # 0 steps, the source's current count (CELL-81).
+    depth = max((int(np.max(delay)) for _, delay, _ in parts), default=0)
+    depth = depth + 1 if depth else 0
+    history, now = _ColumnTable(), _ColumnTable()
+    for block_index, delay, contacts in parts:
+        pre = np.asarray(blocks[block_index].pre_index, dtype=np.int64)[contacts]
+        source = blocks[block_index].source.event_source
+        history.add(source, pre[delay > 0])
+        now.add(source, pre[delay == 0])
+    delays, read, from_history, targets, weight_index, weight_blocks = [], [], [], [], [], []
     offset = 0
     for block_index, delay, contacts in parts:
         block = blocks[block_index]
-        position = index_of[id(block.source.event_source)]
+        source = block.source.event_source
         pre = np.asarray(block.pre_index, dtype=np.int64)[contacts]
+        delayed = delay > 0
         delays.append(delay)
-        read.append(starts[position] + np.searchsorted(columns[position], pre))
+        read.append(np.where(delayed, history.read(source, pre), now.read(source, pre)))
+        from_history.append(delayed)
         targets.append(np.asarray(block.flat_target_index, dtype=np.int64)[contacts])
         weight_index.append(offset + contacts)
         weight_blocks.append(block_index)
         offset += len(block.pre_index)
     delays = np.concatenate(delays)
+    # Longest delay first, zero-delay contacts last; stable within a delay.
     order = np.argsort(-delays, kind="stable")
+    read = np.concatenate(read)[order]
+    n_history = int(np.count_nonzero(delays > 0))
     weight_index = np.concatenate(weight_index)[order]
     return _QueuePlan(
         depth=depth,
-        sources=tuple(sources),
-        columns=columns,
+        sources=history.sources,
+        columns=history.columns,
         weight_blocks=tuple(weight_blocks),
         weight_index=None if np.array_equal(weight_index, np.arange(offset)) else weight_index.astype(np.int32),
-        lags=(depth - 1 - delays[order]).astype(np.int32),
-        columns_read=np.concatenate(read)[order].astype(np.int32),
+        lags=(depth - 1 - delays[order][:n_history]).astype(np.int32),
+        columns_read=read[:n_history].astype(np.int32),
         targets=np.concatenate(targets)[order].astype(np.int32),
+        now_sources=now.sources,
+        now_columns=now.columns,
+        now_read=read[n_history:].astype(np.int32),
     )
+
+
+def _scalar_queue_plan(parts, blocks) -> _QueuePlan:
+    """The plan of a queue of routes with one delay each (the ``brainevent`` path)."""
+    delayed = [(block_index, int(delay)) for block_index, delay, _ in parts if int(delay) > 0]
+    depth = max((delay for _, delay in delayed), default=-1) + 1
+    history = _ColumnTable()
+    for block_index, _ in delayed:
+        source = blocks[block_index].source.event_source
+        history.add(source, None)
+    scalar = []
+    for block_index, delay in delayed:
+        source = blocks[block_index].source.event_source
+        start, size = history.span(source)
+        scalar.append((block_index, depth - 1 - delay, start, size))
+    # Stable: routes of one delay keep their order.
+    scalar.sort(key=lambda item: item[1])
+    for block_index, delay, _ in parts:
+        if int(delay) == 0:
+            scalar.append((block_index, None, 0, int(blocks[block_index].source.event_source.size)))
+    return _QueuePlan(depth=depth, sources=history.sources, columns=history.columns, scalar=tuple(scalar))
+
+
+class _ColumnTable:
+    """The source members a set of contacts reads, one block of columns per source in first-seen order."""
+
+    def __init__(self) -> None:
+        self._sources: list = []
+        self._reads: list[list[np.ndarray]] = []
+        self._whole: list[bool] = []
+        self._index_of: dict[int, int] = {}
+        self._columns: tuple | None = None
+
+    def add(self, source, members) -> None:
+        """Add the members ``members`` of ``source`` read (``None``: all of them); none adds nothing."""
+        if members is not None and not len(members):
+            return
+        position = self._index_of.get(id(source))
+        if position is None:
+            position = self._index_of[id(source)] = len(self._sources)
+            self._sources.append(source)
+            self._reads.append([])
+            self._whole.append(False)
+        if members is None:
+            self._whole[position] = True
+        else:
+            self._reads[position].append(np.asarray(members, dtype=np.int64))
+        self._columns = None
+
+    @property
+    def sources(self) -> tuple:
+        return tuple(self._sources)
+
+    @property
+    def columns(self) -> tuple:
+        if self._columns is None:
+            self._columns = tuple(
+                np.arange(int(source.size), dtype=np.int32)
+                if whole
+                else np.unique(np.concatenate(reads)).astype(np.int32)
+                for source, reads, whole in zip(self._sources, self._reads, self._whole)
+            )
+        return self._columns
+
+    def _starts(self) -> np.ndarray:
+        return np.concatenate([[0], np.cumsum([ids.size for ids in self.columns])]).astype(np.int64)
+
+    def span(self, source) -> tuple[int, int]:
+        """``(first column, size)`` of ``source``."""
+        position = self._index_of[id(source)]
+        return int(self._starts()[position]), int(self.columns[position].size)
+
+    def read(self, source, members) -> np.ndarray:
+        """The column of each of ``members`` of ``source``; 0 for a source this table does not hold."""
+        position = self._index_of.get(id(source))
+        if position is None:
+            return np.zeros(len(members), dtype=np.int64)
+        columns = self.columns[position]
+        found = np.minimum(np.searchsorted(columns, members), max(columns.size - 1, 0))
+        return self._starts()[position] + found
 
 
 def _route_counts(block: DeliveryBlock, pre_spike, contacts=None, *, dtype):
@@ -602,26 +692,36 @@ def _queue_arrival(blocks, state: DeliveryState, queue_index: int):
     count_dtype = state.count_dtype(queue_index)
     count = None if count_dtype is None else jnp.zeros(mantissa.shape, dtype=count_dtype)
     plan = state.queue_plans[queue_index]
-    if not plan.depth:
+    if plan.empty:
         return arrival, count
-    history_state = state.histories[queue_index]
-    cursor = state.history_cursors[queue_index].value
+    rows = []
+    if plan.depth:
+        history_state = state.histories[queue_index]
+        cursor = state.history_cursors[queue_index].value
+        if plan.scalar:
+            rows = [
+                jax.lax.dynamic_index_in_dim(
+                    history_state.value, _wrap(cursor + lag, plan.depth), axis=0, keepdims=False
+                )
+                for _, lag, _, _ in plan.scalar
+                if lag is not None
+            ]
+        else:
+            lagged = _wrap(cursor + jnp.asarray(plan.lags), plan.depth)
+            rows = [history_state.value[lagged, jnp.asarray(plan.columns_read)]]
+        # The reads come before this step's row is written. Nothing else orders
+        # them -- the row is the source's events, which need not depend on the
+        # arrivals -- and XLA then copied the whole history twice a step to
+        # write it in place.
+        rows, history_state.value = jax.lax.optimization_barrier((rows, history_state.value))
     if plan.scalar:
-        rows = [
-            jax.lax.dynamic_index_in_dim(history_state.value, _wrap(cursor + lag, plan.depth), axis=0, keepdims=False)
-            for _, lag, _, _ in plan.scalar
-        ]
-    else:
-        lagged = _wrap(cursor + jnp.asarray(plan.lags), plan.depth)
-        rows = [history_state.value[lagged, jnp.asarray(plan.columns_read)]]
-    # The reads come before this step's row is written. Nothing else orders
-    # them -- the row is the source's events, which need not depend on the
-    # arrivals -- and XLA then copied the whole history twice a step to
-    # write it in place.
-    rows, history_state.value = jax.lax.optimization_barrier((rows, history_state.value))
-    if plan.scalar:
-        for (block_index, _, start, size), row in zip(plan.scalar, rows):
-            pre_spike = row[start : start + size]
+        rows = iter(rows)
+        for block_index, lag, start, size in plan.scalar:
+            if lag is None:
+                # A zero-delay route: the events its source counted in the step that just ended.
+                pre_spike = route_source_event(blocks[block_index])
+            else:
+                pre_spike = next(rows)[start : start + size]
             event = state.delivery_ops[block_index](pre_spike).reshape(mantissa.shape)
             # Each route's events are summed before they join the queue, as
             # in a queue of weighted events; without the barrier XLA folds
@@ -631,8 +731,18 @@ def _queue_arrival(blocks, state: DeliveryState, queue_index: int):
             if count is not None:
                 count = count + _route_counts(blocks[block_index], pre_spike, dtype=count.dtype)
     else:
-        (pre,) = rows
-        weights = [_in_unit(blocks[block_index].weight, unit) for block_index in plan.weight_blocks]
+        if plan.now_read.size:
+            # The zero-delay contacts: their sources' current counts, the events of the step that just ended.
+            now = [
+                jnp.asarray(source.current_event_count(ids)) for source, ids in zip(plan.now_sources, plan.now_columns)
+            ]
+            now = jnp.concatenate(now) if len(now) > 1 else now[0]
+            rows = rows + [now[jnp.asarray(plan.now_read)]]
+        pre = jnp.concatenate(rows) if len(rows) > 1 else rows[0]
+        weights = [
+            jnp.broadcast_to(_in_unit(blocks[block_index].weight, unit), (len(blocks[block_index].pre_index),))
+            for block_index in plan.weight_blocks
+        ]
         weight = jnp.concatenate(weights) if len(weights) > 1 else weights[0]
         if plan.weight_index is not None:
             weight = weight[jnp.asarray(plan.weight_index)]
@@ -653,7 +763,7 @@ def write_arrivals(
     *,
     populations: dict,
 ) -> None:
-    """Write the delayed arrivals of this boundary into target event buffers.
+    """Write the arrivals of this boundary into target event buffers.
 
     Parameters
     ----------
@@ -669,13 +779,18 @@ def write_arrivals(
 
     Notes
     -----
-    A contact with ``k >= 1`` delay steps delivers at the start of step
+    A contact with ``k`` delay steps delivers at the start of step
     ``m + k + 1`` the events its source counted at the end of step ``m``,
     weighted with the weight at delivery, as NEURON's ``NetCon`` does
     (CELL-69): the dynamics first see the event in step ``m + 1 + k``, as
-    in ``Cell.run`` and NEURON (CELL-75). The arrivals of one queue are summed in the order a queue of
-    weighted events summed them: longest delay first, then by route and by
-    contact. Every queue writes its target's event buffer each step.
+    in ``Cell.run`` and NEURON (CELL-75). A zero-delay contact is no
+    exception: it delivers at the start of the next step, from its source's
+    current count, so the state recorded at the delivery boundary does not
+    hold the event and a weight set between two runs weights the event that
+    arrives at the next run's first boundary (CELL-81). The arrivals of one
+    queue are summed in the order a queue of weighted events summed them:
+    longest delay first, then by route and by contact. Every queue writes
+    its target's event buffer each step.
     """
     for index, (post_population, layout_id) in enumerate(state.queue_keys):
         arrival, count = _queue_arrival(blocks, state, index)
@@ -708,50 +823,6 @@ def record_source_events(state: DeliveryState) -> None:
         )
 
 
-def apply_immediate_events(
-    blocks: tuple[DeliveryBlock, ...],
-    state: DeliveryState,
-    *,
-    populations: dict,
-) -> None:
-    """Apply zero-delay population events at their detection boundary.
-
-    A counting queue (a ``"sum_count"`` target layout) also passes the
-    per-row number of these events as ``count`` (CELL-12b).
-    """
-    grouped = {}
-    grouped_counts = {}
-    for index, block in enumerate(blocks):
-        pre_spike = route_source_event(block)
-        delay_steps = np.asarray(block.delay_steps, dtype=np.int32)
-        n_active = int(block.source.n_active)
-        if delay_steps.ndim == 0:
-            if int(delay_steps) != 0:
-                continue
-            immediate = None
-            event = state.delivery_ops[index](pre_spike).reshape((n_active,))
-        else:
-            immediate = delay_steps == 0
-            if not np.any(immediate):
-                continue
-            contact_event = pre_spike[jnp.asarray(block.pre_index)] * block.weight
-            event = zeros_like(contact_event, shape=(n_active,))
-            event = event.at[jnp.asarray(block.flat_target_index[immediate])].add(contact_event[immediate])
-        key = (block.source.post_population, int(block.source.layout_id))
-        grouped[key] = event if key not in grouped else grouped[key] + event
-        count_dtype = state.count_dtype(state.block_queue_indices[index])
-        if count_dtype is not None:
-            counts = _route_counts(block, pre_spike, immediate, dtype=count_dtype)
-            grouped_counts[key] = counts if key not in grouped_counts else grouped_counts[key] + counts
-    for (post_population, layout_id), event in grouped.items():
-        cell = populations[post_population].cell
-        count = grouped_counts.get((post_population, layout_id))
-        if count is None:
-            cell._apply_synapse_layout_event_drive(layout_id, event)
-        else:
-            cell._apply_synapse_layout_event_drive(layout_id, event, count=count)
-
-
 def advance_delivery_state(state: DeliveryState) -> None:
     """Advance every history cursor by one step.
 
@@ -763,6 +834,125 @@ def advance_delivery_state(state: DeliveryState) -> None:
     for index, cursor in enumerate(state.history_cursors):
         if cursor is not None:
             cursor.value = _wrap(cursor.value + 1, state.queue_plans[index].depth)
+
+
+@dataclass(frozen=True)
+class EventHistoryHandle:
+    """The source counts a Network keeps for its live rows, as its Cells read them after it (CELL-83).
+
+    A Cell that leaves a Network (the Network is dropped) and runs on its own
+    takes the events still in flight from here into the histories of its
+    live rows (``Cell.run``, ``Cell.update``, ``prepare_runtime``). The
+    handle holds the Network's histories and cursors, not the Network, so
+    the Cell can leave it.
+
+    Parameters
+    ----------
+    histories, cursors, plans : tuple
+        ``DeliveryState.histories``, ``history_cursors`` and ``queue_plans``.
+    dt_ms : float
+        The Network's ``dt`` in ms, which its histories count steps of.
+    """
+
+    histories: tuple
+    cursors: tuple
+    plans: tuple
+    dt_ms: float
+
+    @classmethod
+    def of(cls, state: DeliveryState, dt_ms: float) -> "EventHistoryHandle":
+        return cls(state.histories, state.history_cursors, state.queue_plans, float(dt_ms))
+
+    def holds(self, state: DeliveryState) -> bool:
+        """Whether this is the handle of ``state``."""
+        return self.histories is state.histories
+
+    def holds_any(self, states) -> bool:
+        """Whether this is the handle of one of ``states``."""
+        return any(self.holds(state) for state in states)
+
+    def counts(self, source, members, lags: int) -> np.ndarray:
+        """The counts of ``members`` of ``source`` in the ``lags`` steps before the newest.
+
+        Row ``j - 1`` holds the counts of step ``s - 1 - j``, ``s`` being the
+        step the next run starts at, ``j = 1 .. lags``: a Cell's live rows
+        keep them so before step ``s``. The newest, of step ``s - 1``, are the
+        source's current count. A member no queue keeps, or a lag past the
+        depth of the queues that keep it, is 0: no contact of the Network
+        reads it, so none of its events is in flight.
+        """
+        members = np.asarray(members, dtype=np.int64)
+        out = np.zeros((lags, members.size))
+        depth_read = np.zeros(members.size, dtype=np.int64)
+        for history, cursor, plan in zip(self.histories, self.cursors, self.plans):
+            if history is None:
+                continue
+            for column, depth_ok in _member_columns(plan, source, members, depth_read):
+                n_lags = min(lags, plan.depth - 1)
+                rows = (int(np.asarray(cursor.value)) - 1 - np.arange(1, n_lags + 1)) % plan.depth
+                read = history.value[jnp.asarray(rows)[:, None], jnp.asarray(column[depth_ok])[None, :]]
+                out[:n_lags, depth_ok] = np.asarray(read)
+                depth_read[depth_ok] = plan.depth
+        return out
+
+
+def _member_columns(plan: _QueuePlan, source, members: np.ndarray, depth_read: np.ndarray):
+    """``(column of each member, mask)`` for the members of ``source`` one queue keeps deeper than ``depth_read``."""
+    start = 0
+    for owner, columns in zip(plan.sources, plan.columns):
+        if owner is source and columns.size:
+            position = np.minimum(np.searchsorted(columns, members), columns.size - 1)
+            mask = (columns[position] == members) & (plan.depth > depth_read)
+            if np.any(mask):
+                yield start + position, mask
+        start += columns.size
+
+
+def write_live_histories(state: DeliveryState, rows) -> None:
+    """Write the source counts that Cells kept on their own into a Network's histories (CELL-83).
+
+    Parameters
+    ----------
+    state : DeliveryState
+        The Network's delivery state, before the first step it runs these
+        Cells: a new state, or one a reset cleared.
+    rows : iterable
+        ``(source, members, history)`` per live connect call of the Cells:
+        ``history`` (``(K, len(members))``) holds the counts of the ``K``
+        steps before the newest, newest first, as a Cell's live rows keep
+        them (:meth:`EventHistoryHandle.counts`).
+
+    Notes
+    -----
+    The first step reads row ``cursor - 1 - j`` for the counts of ``j + 1``
+    steps before it: for ``j = 0`` each source's current count, for the
+    others ``rows``. The Network then delivers each event still in flight
+    once, at the step the Cell would have. Zero counts are not written: the
+    rows are 0 already.
+    """
+    rows = [(source, np.asarray(members, dtype=np.int64), np.asarray(kept)) for source, members, kept in rows]
+    for history, cursor, plan in zip(state.histories, state.history_cursors, state.queue_plans):
+        if history is None:
+            continue
+        now = int(np.asarray(cursor.value))
+        value = history.value
+        start = 0
+        for source, columns in zip(plan.sources, plan.columns):
+            current = np.asarray(source.current_event_count(columns)).reshape(-1)
+            if np.any(current):
+                value = value.at[(now - 1) % plan.depth, start : start + columns.size].set(current)
+            start += columns.size
+        for source, members, kept in rows:
+            if not np.any(kept):
+                continue
+            for column, mask in _member_columns(plan, source, members, np.zeros(members.size, dtype=np.int64)):
+                n_lags = min(kept.shape[0], plan.depth - 1)
+                lag_rows = (now - 1 - np.arange(1, n_lags + 1)) % plan.depth
+                value = value.at[jnp.asarray(lag_rows)[:, None], jnp.asarray(column[mask])[None, :]].set(
+                    kept[:n_lags][:, mask]
+                )
+        if value is not history.value:
+            history.value = value
 
 
 def normalize_event_backend(value: str) -> str:

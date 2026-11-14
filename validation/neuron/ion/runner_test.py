@@ -23,6 +23,7 @@ from unittest import mock
 import numpy as np
 
 from validation.neuron import _clamp
+from validation.neuron._paths import DATA_ROOT
 from validation.neuron._tolerance import POOL_PROTOCOL_METRICS
 from validation.neuron.ion import runner
 from validation.neuron.ion.tolerances import KNOWN_DIFFERENCES, TABLE
@@ -98,42 +99,32 @@ class PoolConfigurationTest(unittest.TestCase):
         self.assertEqual(dict(cc.current_clamp), {"delay_ms": 5.0, "dur_ms": 20.0, "amp_nA": 0.5})
 
 
-class ExternalSourcesTest(unittest.TestCase):
-    """Configurations whose ``.mod`` files are outside the repository."""
+class PinnedSourcesTest(unittest.TestCase):
+    """Configurations whose ``.mod`` files are pinned third-party sources under ``data/modeldb``."""
 
-    def test_external_configurations_resolve_from_their_directory(self):
-        import os
-        import tempfile
-
+    def test_pinned_configurations_resolve_from_data(self):
         from braincell.mech import get_registry
 
-        # Derived from the configurations, not listed: every one is in-repository or external, never both.
-        external, internal = runner.external_config_names(), runner.config_names()
-        print(f"\n{len(external)} external and {len(internal)} in-repository configurations")
-        self.assertTrue(external and internal)
-        self.assertFalse(set(external) & set(internal))
-        self.assertEqual(sorted(external + internal), runner._all_config_names())
+        # Derived from the configurations, not listed: every one is pinned or not, never both.
+        pinned, internal = runner.pinned_config_names(), runner.config_names()
+        print(f"\n{len(pinned)} pinned and {len(internal)} other configurations")
+        self.assertTrue(pinned and internal)
+        self.assertFalse(set(pinned) & set(internal))
+        self.assertEqual(sorted(pinned + internal), runner._all_config_names())
         registry = get_registry()
-        for config in runner.external_config_names():
-            spec = runner.load_config(config)["identity"]["external_mod_files"]
-            with tempfile.TemporaryDirectory() as directory, self.subTest(config=config):
-                with mock.patch.dict(os.environ, {spec["env"]: ""}):
-                    with self.assertRaisesRegex(runner.SourcesUnavailable, "maintainers' decision"):
-                        runner.load_case(config, "pool_cc")
-                with mock.patch.dict(os.environ, {spec["env"]: directory}):
-                    with self.assertRaisesRegex(runner.SourcesUnavailable, "is missing"):
-                        runner.load_case(config, "pool_cc")
-                for name in spec["sha256"]:
-                    (Path(directory) / name).write_text("not the recorded file")
-                with mock.patch.dict(os.environ, {spec["env"]: directory}):
-                    with self.assertRaisesRegex(ValueError, "SHA-256"):
-                        runner.load_case(config, "pool_cc")
-                    with mock.patch.object(runner.hashlib, "sha256") as digest:
-                        digest.return_value.hexdigest.side_effect = [spec["sha256"][n] for n in sorted(spec["sha256"])]
-                        case = runner.load_case(config, "pool_cc")
-                external = [p.name for p in case.mod_files if p.parent == Path(directory)]
-                self.assertEqual(sorted(external), sorted(spec["sha256"]))
+        for config in pinned:
+            spec = runner.load_config(config)["identity"]["pinned_mod_files"]
+            with self.subTest(config=config):
+                self.assertEqual(set(spec), {"dir", "source", "sha256"})
+                self.assertTrue(spec["dir"].startswith("modeldb/"))
+                case = runner.load_case(config, "pool_cc")
+                folder = DATA_ROOT / spec["dir"]
+                self.assertEqual(sorted(p.name for p in case.mod_files if p.parent == folder), sorted(spec["sha256"]))
                 self.assertTrue(all(p.is_file() for p in case.mod_files))
+                # The hashes are the ones in the folder's provenance README.
+                readme = (folder / "README.md").read_text(encoding="utf-8")
+                for name, digest in spec["sha256"].items():
+                    self.assertIn(f"| `{name}` | `{digest}` |", readme)
                 registry.get("ion", case.pool[1])
                 registry.get("channel", case.channel.braincell)
                 for kind, name, params in case.braincell_mechanisms:
@@ -143,13 +134,33 @@ class ExternalSourcesTest(unittest.TestCase):
                 self.assertTrue(conductances and all(p.value > 0 for p in conductances))
                 self.assertEqual(case.n_steps * case.simulation["dt_ms"], case.simulation["duration_ms"])
 
+    def test_a_changed_or_missing_pinned_file_is_refused(self):
+        import shutil
+        import tempfile
+
+        for config in runner.pinned_config_names():
+            spec = runner.load_config(config)["identity"]["pinned_mod_files"]
+            name = sorted(spec["sha256"])[0]
+            with tempfile.TemporaryDirectory() as directory, self.subTest(config=config):
+                root = Path(directory)
+                shutil.copytree(DATA_ROOT / spec["dir"], root / spec["dir"])
+                with mock.patch.object(runner, "DATA_ROOT", root):
+                    self.assertEqual(len(runner.pinned_mod_files(config)), len(spec["sha256"]))  # the copy passes
+                    path = root / spec["dir"] / name
+                    data = bytearray(path.read_bytes())
+                    data[len(data) // 2] ^= 0x01
+                    path.write_bytes(bytes(data))
+                    with self.assertRaisesRegex(ValueError, rf"{config} .*{name} has SHA-256"):
+                        runner.load_case(config, "pool_cc")
+                    path.unlink()
+                    with self.assertRaisesRegex(FileNotFoundError, f"{name} is missing"):
+                        runner.load_case(config, "pool_cc")
+
     def test_a_written_extracellular_concentration_is_a_pool_state(self):
         import brainunit as u
 
-        spec = runner.load_config("bo2010/potassium_detailed_fh")["identity"]["external_mod_files"]
-        with mock.patch.object(runner, "external_mod_files", lambda config: ()):
-            case = runner.load_case("bo2010/potassium_detailed_fh", "pool_cc")
-        self.assertEqual(spec["env"], "BRAINCELL_BO2010_MOD_DIR")
+        case = runner.load_case("bo2010/potassium_detailed_fh", "pool_cc")
+        self.assertIn(DATA_ROOT / "modeldb" / "127021" / "K_conc.mod", case.mod_files)
         self.assertEqual((case.ion, case.states, dict(case.concentrations)), ("k", (("ko", "Co"),), {"Ci": 140.0, "Co": 5.0}))
         braincell = {p.braincell: p.quantity() for p in case.pool_params if p.braincell}
         neuron = {p.neuron: p.value for p in case.pool_params if p.neuron}
@@ -160,10 +171,8 @@ class ExternalSourcesTest(unittest.TestCase):
         self.assertEqual((braincell["C_rest"], braincell["Co_rest"]), (140.0 * u.mM, 5.0 * u.mM))
 
     def test_the_pump_has_the_same_parameters_on_both_sides(self):
-        spec = runner.load_config("ca1999/sodium_detailed_pump")["identity"]["external_mod_files"]
-        with mock.patch.object(runner, "external_mod_files", return_value=()):
-            case = runner.load_case("ca1999/sodium_detailed_pump", "pool_cc")
-        self.assertIn("pump.mod", spec["sha256"])
+        case = runner.load_case("ca1999/sodium_detailed_pump", "pool_cc")
+        self.assertIn(DATA_ROOT / "modeldb" / "6763" / "pump.mod", case.mod_files)
         ((suffix, neuron),) = case.neuron_mechanisms
         neuron = {p.neuron: p.value for p in neuron}
         (braincell,) = [params for _, cls, params in case.braincell_mechanisms if cls == "NaKPump_Ca1999"]
@@ -198,7 +207,7 @@ class RateTableTest(unittest.TestCase):
 class PoolToleranceTableTest(unittest.TestCase):
     def test_entries_name_listed_protocols_and_documented_causes(self):
         listed = {(case.config, case.protocol) for case in _cases()}
-        listed |= {(c, Path(t).stem) for c in runner.external_config_names() for t in runner.load_config(c)["templates"]}
+        listed |= {(c, Path(t).stem) for c in runner.pinned_config_names() for t in runner.load_config(c)["templates"]}
         for entry in TABLE.entries:
             with self.subTest(config=entry.config, protocol=entry.protocol):
                 self.assertIn((entry.config, entry.protocol), listed)

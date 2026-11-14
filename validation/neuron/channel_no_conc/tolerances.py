@@ -24,7 +24,11 @@ moving a T0 configuration here loosens a tolerance and needs the lead's
 approval.
 
 ``NON_FINITE_REFERENCE`` names the voltage-clamp commands whose NEURON run is
-not finite and that the comparison therefore leaves out.
+not finite and that the comparison therefore leaves out. Each of those
+configurations also has a finite reference, ``configs/testing/<name>_finite``:
+the same BrainCell side against a copy of the ``.mod`` whose 0/0 term has a
+series branch (``data/mechanisms/testing``), where every command is compared
+(MECH-43).
 
 ``VARIANTS`` names the default-off options that are compared separately;
 their entries use the variant name as the configuration.
@@ -51,9 +55,8 @@ _KCA1P1 = "Kca1.1 steady-state initialization"
 _GHK_ZERO = "GHK drive near 0 mV in mod files without a limit branch"
 _CA_ZH19_M_INF = "Ca_ZH2019_IO with freeze_m_inf=False"
 _KDR_ZH19 = "Kdr_ZH2019_IO limit branch"
-_GATE_CURRENT = "Kv1.1 and Kv3.3 gating current"
 _NAV1P1_INIT = "Nav1.1 steady-state initialization"
-_NAV1P1_GATE_CURRENT = "Nav1.1 gating current"
+_HCN_HM1992 = "HCN_HM1992 against HCN_ZH19_IO.mod"
 _KV1P1 = tuple(f"{model}/kv1p1_{model}" for model in ("ma20_goc", "ma20_grc", "ma24_pc", "ma25_bc", "ri21_sc"))
 _NAV1P1 = ("ma25_bc/nav1p1_ma25_bc", "ri21_sc/nav1p1_ri21_sc")
 _CAV3P3 = ("ma24_pc/cav3p3_ma24_pc", "ma24_pc/cav3p3_ma24_pc_frozen", "ri21_sc/cav3p3_ri21_sc")
@@ -115,19 +118,8 @@ ENTRIES = [
         for entry in _current_clamp(config, 1e-5, 1e-5, 1e-5, "c", _KCA2P2)
     ),
     *_current_clamp("zh19_io/ca_zh19_io:freeze_m_inf=False", 1e-2, 0.2, 0.5, "d", _CA_ZH19_M_INF),
-    # Current clamp, e_V in mV (MECH-19b).
-    *(
-        entry
-        for config in _KV1P1
-        for entry in _current_clamp(f"{config}:gateCurrent=1", 1e-3, 1e-2, 5e-3, "d", _GATE_CURRENT)
-    ),
-    *_current_clamp("ma24_pc/kv3p3_ma24_pc:gateCurrent=1", 5e-6, 5e-3, 1e-3, "d", _GATE_CURRENT),
-    # Current clamp, e_V in mV (MECH-19c).
-    *(
-        entry
-        for config in _NAV1P1
-        for entry in _current_clamp(f"{config}:gateCurrent=1", 0.2, 10.0, 20.0, "d", _NAV1P1_GATE_CURRENT)
-    ),
+    # Current clamp, e_V in mV (MECH-47).
+    *_current_clamp("zh19_io/hcn_hm1992", 2e-4, 5e-3, 2e-3, "c", _HCN_HM1992),
     # Voltage clamp, e_I and e_s (MECH-19a).
     *(
         ToleranceEntry(config, protocol, {"e_I": e_I, "e_s": 5e-9}, "c", _KCA2P2)
@@ -144,6 +136,9 @@ ENTRIES = [
     ToleranceEntry("su15_dcn/cahva_su15_dcn", "vc_steps", {"e_I": 2e-5}, "c", _GHK_ZERO),
     ToleranceEntry("su15_dcn/cahva_su15_dcn", "vc_ramp", {"e_I": 2e-5}, "c", _GHK_ZERO),
     ToleranceEntry("su15_dcn/calva_su15_dcn", "vc_steps", {"e_I": 1e-9}, "c", _GHK_ZERO),
+    # Voltage clamp (MECH-47).
+    ToleranceEntry("zh19_io/hcn_hm1992", "vc_steps", {"e_I": 5e-3, "e_s": 2e-3}, "c", _HCN_HM1992),
+    ToleranceEntry("zh19_io/hcn_hm1992", "vc_ramp", {"e_I": 1e-3, "e_s": 2e-3}, "c", _HCN_HM1992),
     # Voltage clamp (MECH-19b).
     ToleranceEntry("zh19_io/kdr_zh19_io", "vc_ramp", {"e_I": 2e-9, "e_s": 1e-8}, "c", _KDR_ZH19),
     # Voltage clamp (MECH-19c).
@@ -167,7 +162,8 @@ NON_FINITE_REFERENCE = {(config, "vc_steps"): (0.0, _GHK_ZERO) for config in _CA
 """(configuration, protocol) -> (test potential in mV, known-differences heading).
 
 NEURON's run of that command is not finite, so the command is left out of the
-comparison; the catalogue test checks that it is still not finite.
+comparison; the catalogue test checks that it is still not finite. The
+configuration's finite reference (``testing/<name>_finite``) compares it.
 """
 
 _NO_MOD = "no .mod reference in the repository"
@@ -184,7 +180,6 @@ UNCOVERED = {
     "CaT_HM1992": f"{_MODELDB} ModelDB 279 ITGHK.mod, which uses a GHK drive (MECH-6a)",
     "CaT_HM1992_Shifted25": f"{_NO_MOD}; no published model: CaT_HM1992 with the gates shifted by +25 mV",
     "CaT_HP1992": f"{_MODELDB} ModelDB 3670 IT2.mod",
-    "HCN_HM1992": f"{_NO_MOD}; {_HM1992}; its +43 mV reversal default is unchecked (MECH-6c)",
     "KA1_HM1992": f"{_NO_MOD}; {_HM1992}",
     "KA2_HM1992": f"{_NO_MOD}; {_HM1992}",
     "KDR_Ba2002": f"{_MODELDB} ModelDB 3670 HH2.mod: the rates of K_TM1991 with V_sh = -50 mV and q10 = 3",

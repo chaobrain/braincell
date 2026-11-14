@@ -34,6 +34,24 @@
   the registry lookup of `mech.Channel("CaHT_HM1992", ...)` raises `KeyError`;
   both name the new class. Replace `CaHT_HM1992` with `CaT_HM1992_Shifted25`,
   in class references and in `mech.Channel("...")` strings alike.
+- **`braincell.ion.CalciumFirstOrder` defaults to a physical `alpha`**
+  (MECH-46). The default was 0.13 mM/ms/(uA/cm**2), the Pinsky-Rinzel (1994)
+  constant of a dimensionless calcium variable read as mM. It is now
+  `1/(2 F d)` for a 1 um submembrane shell, 5.1821e-5 mM/ms/(uA/cm**2), the
+  constant `A = 5.18e-5` of Bazhenov et al. (1998) and the influx of
+  `CalciumDetailed` with its default `d`. `beta` (0.075 /ms) and the initial
+  `Ci` (2.4e-4 mM) are unchanged. Measured on main 384c860:
+  - Under a constant inward current, the steady `Ci = alpha * I / beta` falls
+    from 1.7333 mM to 6.9095e-4 mM per uA/cm**2, 2508.6 times lower.
+  - A one-compartment cell (Hodgkin-Huxley sodium and potassium, `CaHT_Re1993`
+    and `AHP_De1994`, driven by 0.3 nA for 200 ms) used to reach 3.228 mM,
+    above the 2 mM outside, so E_Ca fell to -6.38 mV and the cell fired 3
+    spikes. It now peaks at 7.44e-3 mM, keeps E_Ca between 74.5 and 155.4 mV,
+    and fires 18 spikes.
+
+  To keep the old behaviour, pass
+  `alpha=0.13 * u.mM / u.ms / (u.uA / u.cm**2)`. 0.3 allows breaking changes
+  without a deprecation period (a project-lead decision).
 - **Event aggregations that never took effect are rejected** (CELL-40).
   `ScalarEventInput(unit, aggregation="ordered")` and
   `TriggerEventInput(aggregation="any")` or `(aggregation="ordered")` raise
@@ -295,6 +313,57 @@
   project-lead decision). To get the old values, subtract `dt` from the
   times; an `update()` loop that labels the spikes of the step at `t` should
   label them `t + dt`.
+- **Live and zero-delay events act at the start of the next step, as in
+  NEURON** (CELL-81). A spike detected in step `m` with a delay of `k` steps
+  acts at the start of step `m + 1 + k` on every driver and for every `k`,
+  `k = 0` included, as NEURON's `NetCon` delivers at `t_{m+1+k}`. Before, a
+  zero-delay row of `Network.run` or `Network.update()`, and every live row
+  of `Cell.run` and of a standalone `update()` loop, added its event at the
+  end of the step (for `k >= 1` at the end of step `m + k`). Three things
+  change. (1) The recorded state at the delivery boundary does not hold the
+  event yet: for an HH soma crossing 0 mV in step 98 with an ExpSyn
+  (tau 2 ms) and a 0.002 uS self-connection (dt 0.025 ms), `g` at `t_{99+k}`
+  was 0.002 uS and is now 0, and `g` one sample later is
+  0.0019751556009877627 uS, equal to NEURON 9.0.2 within 1e-18 uS
+  (`validation/neuron/synapse/netcon_delay_test.py` now compares `k = 0`
+  too). Only that one sample changes: V, the spikes and every other `g`
+  sample are bitwise the same, and `Network` rows with `k >= 1` do not
+  change at all. (2) A weight set with `connections.set(weight=...)`
+  between two runs applies to an event delivered on the first boundary of
+  the second run: split at that boundary and set to 0.004 uS, the model
+  above gave 0.0019751556009877627 uS (the old weight) and now gives
+  0.0039503112019755255 uS, as NEURON does; a plasticity rule's
+  zero-delay rows read the rule's weight at that boundary too. (3) A
+  zero-delay event detected in the last step of a run arrives in the first
+  step of the next run (or `Network.run`, or `update()` loop), once, even
+  at a new `dt`; a `k >= 1` event detected in the last step is in flight,
+  so a new `dt` raises the existing `ValueError` until `reset_state()`. A
+  `Network` queue whose rows all have zero delay keeps no history: each
+  row reads its source's count at the start of the step. Two consequences
+  of reading the count at the start of the step: a reduction whose
+  `init_state()` output reports an event delivers it over a zero-delay row
+  at step 0 (the toy tick reduction of the tests did; the built-in
+  reductions start with none), and a standalone Cell with a live row from a
+  `VoltageCrossingSource` now carries the voltage before each step through
+  its `Cell.run` loop (one copy of `V` per step, as a plasticity rule's post
+  detector already did), since the row compares the voltage before and
+  after the step that ended. There is no deprecation period (0.3 allows breaking
+  changes without one, a project-lead decision). To compare with old
+  results, read `g` one sample later.
+- **`observe.output(...)` is sampled at the start of each step, as every
+  other recording** (CELL-82). Row `j` of an output recording was the value
+  after step `j` (at `t_{j+1}`); it is now the value at `t_j`, the one step
+  `j - 1` produced, and row 0 is the value after `init_state()`. For a
+  detailed Cell, `observe.output("voltage")` and `state("V")` now record the
+  same rows element by element: on main `8710fe5` row 0 of the output of an
+  HH soma was -64.99989616533065 mV, the voltage after the first step,
+  against -65.0 mV for `state("V")`. A reduction model that starts at 5 and
+  adds 1 per step recorded `[6, 7, 8]` over three steps and now records
+  `[5, 6, 7]`. Split runs still join into the whole run bit for bit. The
+  dynamics, `cell.outputs` and the events do not change. There is no
+  deprecation period (0.3 allows breaking changes without one, a
+  project-lead decision). To get the old rows, drop row 0 and append
+  `cell.outputs[name]` read after the run.
 
 ### New Features
 
@@ -1170,6 +1239,21 @@
   `ralston2`). In the catalogue this flags `Cav1p2_*`, `Cav1p3_*`, `HCN1_*`
   and `Na_ZH2019_IO`. The default solver and all results are unchanged.
 
+- **`init_state` warns when a channel binds a placeholder ion** (CELL-78).
+  A channel that needs an ion family the Cell never declares (sodium,
+  potassium, calcium or the nonspecific family) is bound to a fixed
+  placeholder ion with its class defaults, for example E_K = -95 mV for
+  `K_HH1952`, and nothing said so. `init_state` now raises one
+  `UserWarning` per such family, on cable and lumped Cells and on Network
+  members, naming the family, the channels bound to it, the placeholder
+  class and its reversal potential, and the `braincell.mech.Ion(...)`
+  declaration that replaces it. The placeholder is the one used before and
+  results are bit for bit the same. `reset_state()` does not warn again;
+  `init_state()` after `reset()` does. The test suite turns the warning
+  into an error: 24 tests in 9 files, the `channel_no_conc` NEURON
+  comparison runner and the `cell.ipynb` and `single_cell_frontend.ipynb`
+  tutorials now declare their ions.
+
 - **Conditional pairing places its rows with one scatter** (CELL-18f).
   `source_first`, `synapse_first`, `by_source` and `by_synapse` put each
   fixed endpoint's partners on its rows one row at a time in Python; one
@@ -1473,6 +1557,62 @@
   step that writes the geometry or an optimizer root keeps building the
   operator at every step, with main's results; the new `axial_operator_mode`
   property reports `"rollout"`, `"step"` or `"none"`.
+- **The optional gating current no longer enters the voltage linearization**
+  (MECH-40). With `gateCurrent != 0`, `Kv1p1_MA2025_BC`, `Kv1p1_MA2024_PC`,
+  `Kv1p1_RI2021_SC`, `Kv1p1_MA2020_GoC`, `Kv1p1_MA2020_GrC`,
+  `Kv3p3_MA2024_PC`, `Nav1p1_MA2025_BC` and `Nav1p1_RI2021_SC` evaluate the
+  rates inside the gating current at a gradient-free `V`, so its dependence on
+  `V` enters neither the staggered solver's implicit voltage step nor
+  gradients. NEURON's `nrn_cur` holds the gating current constant the same
+  way. The current is unchanged, but current-clamp voltages now depend on
+  `dt` as NEURON's do: in the NEURON comparison (`dt = 0.01 ms`) the largest
+  difference went from 3.4e-3 mV (Kv1.1), 2.6e-3 mV (Kv3.3) and 7.8 mV
+  (Nav1.1) to 2.1e-13, 1.4e-13 and 1.1e-7 mV. Against each run's own
+  `dt = 1e-4 ms` result, Nav1.1's error at `dt = 0.025 ms` falls from
+  14.6-15.4 mV to 2.4-4.0 mV (measured on main `0d69ab8`, float64). The new
+  constructor argument `freeze_gate_current_gradient=False` restores the
+  previous linearization and gradients. The default-off path
+  (`gateCurrent = 0`) is unchanged.
+
+- **CI runs the morphology and synapse NEURON comparisons on every pull
+  request** (MECH-44). The `validation` job now also runs
+  `validation/neuron/morph` (SWC and ASC morphology metrics and soma layout
+  against NEURON's import3d), the ASC reader's `AscNeuronParityTest` (which
+  the package suite skips, having no NEURON) and `validation/neuron/synapse`
+  (`ExpSyn`, `Exp2Syn`, `NetCon` delays and spike times), each in its own
+  process, whenever a pull request changes `braincell/`, `validation/neuron/`
+  or a CI input. These tests skip without NEURON; a final step fails the job
+  if any of them skipped or none ran. Before, they ran only by hand.
+
+- **CI runs the docstring examples on every pull request** (API-17). The
+  `checks` job ends with `pytest --doctest-modules braincell
+  --ignore-glob='*_test.py'`, so a `>>>` example whose output no longer
+  matches the code fails the pull request.
+
+- **The ModelDB ion-pool comparisons run in CI** (MECH-48). Six `.mod` files
+  from ModelDB entries without a license statement are now committed
+  unmodified under `data/modeldb/` (148253: `cldif.mod`, `gabaA_Cl.mod`;
+  6763: `nadifl.mod`, `pump.mod`, `leak.mod`; 127021: `K_conc.mod`), each
+  folder with a README giving the source commit, retrieval date and SHA-256.
+  The comparisons of `Cldif_JE2011`, `GabaA_JE2011`, `SodiumDetailed`,
+  `NaKPump_Ca1999` and `PotassiumDetailedFH` against them read these files
+  and check their hashes, instead of skipping unless the environment
+  variables `BRAINCELL_JE2011_MOD_DIR`, `BRAINCELL_CA1999_MOD_DIR` and
+  `BRAINCELL_BO2010_MOD_DIR` pointed at local copies; the variables are
+  gone. They run in the daily `slow_tests_neuron` job, whose ion step, like
+  the pull-request one, now fails if a test skipped.
+
+- **The daily CI runs the example scripts and `pytest examples`** (MECH-45).
+  A new `examples` job in the daily workflow (not in `ci-ok`) runs every
+  tracked script under `examples/` on CPU with `MPLBACKEND=Agg` and a 600 s
+  limit per script, then `pytest examples`, which fails if a test is
+  skipped. `examples/nightly_skip.toml` lists what does not run, each with
+  its reason: 12 of 60 scripts (numba, pandas or the nmodl API missing; GPU
+  experiment drivers; a 16384-member ensemble; two Jinja templates) and one
+  test (nevergrad). A broken example now turns the daily run red within a
+  day. `examples/optim/stimulus_design/dataset.py` no longer fails: it
+  indexed the per-member point areas (`pop_size + (n_point,)`) as a flat
+  array, so its current playback raised a broadcasting error.
 
 ### Bug Fixes
 
@@ -2044,6 +2184,25 @@
   previous expression to 1e-13 relative at least 0.01 mV away from `v12` and
   takes the limit `tau_n = 1 / (q (Ra + Rb))` there.
 
+- The GHK drive near 0 mV is exact to rounding, and so is its slope (MECH-43).
+  `braincell.channel.ghk_flux` and the calcium drive of the Cav3.1 and Cav3.3
+  classes switched to a first-order series when `|1 - exp(-zeta)| <= 1e-6`
+  (`zeta = zFV/RT`, within about 1.3e-5 mV of 0 mV for calcium at 36 degC).
+  The quotient used outside that band loses digits next to it: in float64
+  the value was off by up to 7.4e-11 relative near the switch, the slope
+  `d/dV`, which the staggered solvers take by autodiff, by up to 1.1e-4, and
+  the slope was NaN at exactly 0 mV. In float32 cancellation cost up to 1.9e-2 of the value.
+  The three helpers now divide by `exprel`, which takes the limit: float64
+  value and slope agree with a high-precision reference to 4.1e-16 and
+  4.2e-15 relative within 10 mV of 0 mV, float32 to 1.6e-7 and 1.1e-6. The
+  NEURON comparison stays within its limits; its largest change is the Cav2.1
+  ramp current, 3.8e-15 to 2.5e-14 relative. The Cav3.3 `.mod` files return
+  NaN at exactly 0 mV, so that voltage-clamp step was left out of their
+  comparison; copies of the two files with a finite limit (in
+  `data/mechanisms/testing`) now compare all eight steps and the ramp at the
+  exact-match tier, `2.7e-14` and `1.2e-14` relative. Away from 0 mV results
+  do not change beyond rounding.
+
 - The optional gating current of `Nav1p1_MA2025_BC` and `Nav1p1_RI2021_SC`
   (`gateCurrent != 0`) was 1e18 times too large, for the same reason as the
   Kv entry below: the `(1e12)` and `(1e6)` factors of the `.mod` formula are
@@ -2056,6 +2215,21 @@
   `HCN1_RI2021_SC` (the `.mod` Q10 reference is 37 degC; the 23 degC `temp`
   default is an operating temperature) and `HCN_HM1992` (its `+43 mV`
   default is unchecked) are corrected.
+
+- **`HCN_HM1992` reverses at -43 mV by default** (MECH-47). The default `E`
+  was +43 mV, which made the h current about five times too large near rest
+  and reversed its direction between -43 and +43 mV: at the -65 mV steady
+  state (`p = 0.1397`, default `g_max`) the current was 150.8 uA/cm2 inward at
+  -65 mV and 101.9 uA/cm2 inward at -30 mV; it is now 30.7 uA/cm2 inward and
+  18.2 uA/cm2 outward. -43 mV is the `eh` of `HCN_ZH19_IO.mod`, whose gate
+  functions match the class's up to two rounded time-constant numbers, and
+  lies in the -50 to -20 mV range of a mixed-cation h current. Against that
+  `.mod` (a new `zh19_io/hcn_hm1992` comparison) the class's defaults now
+  agree to 2.6e-3 mV in current clamp, the remainder coming from the two
+  rounded numbers; with +43 mV they differed by 149 mV. There is no
+  deprecation period (a defect fix, a project-lead decision); pass
+  `E=43 * u.mV` to keep the old behaviour. The examples and notebooks already
+  pass `E=-43 * u.mV` and are unchanged.
 
 - The optional gating current of `Kv1p1_MA2025_BC`, `Kv1p1_MA2024_PC`,
   `Kv1p1_RI2021_SC`, `Kv1p1_MA2020_GoC`, `Kv1p1_MA2020_GrC` and
@@ -2569,6 +2743,29 @@
   `faraday_constant` are shared 0-d arrays that a compiled program keeps;
   braincell now holds them as NumPy scalars. Results are unchanged bit for bit
   at both precisions on the machine that tested them.
+- A delayed live event still in flight when a Cell moves between running on
+  its own and a `Network` now arrives once, at its step (CELL-83). The Network
+  keeps the recent spike counts of its live sources in its own histories, and a
+  Cell run on its own keeps them in its live rows' histories; neither read the
+  other at a hand-over. On main `2cd7dc4` (an HH soma with a self-connection of
+  k = 1, 3 or 12 steps, split at every step from one before its spike to the
+  delivery), `Cell.run` followed by `Network.run` lost the event at every split
+  after the spike; `Network.run` followed by `Cell.run` (the Network dropped)
+  lost it unless the spike fell in the Network's last step; three segments lost
+  it or delivered the Cell's old history at another step: 81 of 168 cases were
+  wrong, none now. The `update()` and `prepare_run` + `update()` drivers, a
+  population with several delays and both event backends behave the same. The
+  Network takes over each joining Cell's counts before its first step, and a
+  Cell that leaves it takes them back at its next `run()`, `update()` or
+  `connections.prepare_runtime(dt)`. This is a host-side copy, once per
+  hand-over, and the compiled loops are unchanged. Two hand-overs that dropped
+  the event silently are now refused, before anything changes:
+  - a `Network` run, or a `Cell.run` after a Network, at another `dt` while a
+    delayed event is in flight raises `ValueError`. Call `reset_state()`
+    first, or keep the `dt`; `Cell.run` already refused this for its own rows.
+  - an `update()` traced right after the Cell left a Network raises
+    `RuntimeError`. Call `cell.connections.prepare_runtime(dt)` once outside
+    the trace.
 
 - **Compact forward sensitivity refuses an active set that would drop a
   trainable parameter** (OPT-16). When an engine materializes the trainable
@@ -2760,6 +2957,19 @@
   NetStim firing every 0.1 ms compile at runs 1, 2, 3, 5 and 9, and not at
   all after `reset_state`. A rule's source removed from the planned loop's
   key would leave its row 21 of 80 conductance jumps.
+
+- **The docstring examples pass under doctest** (API-17). `pytest --doctest-modules
+  braincell --ignore-glob='*_test.py'` failed on 8 docstrings: examples
+  passing `...` as arguments (`mix_ions`, `register_channel`), using a
+  variable they never defined (`split_diffeq_states`, `plan_neuron_files`),
+  importing `load_neuromorpho` from `braincell` instead of `braincell.io`,
+  using the branch type `"dend"` (the name is `"dendrite"`), printing the `Cell`
+  that `paint` returns (`Cl_Leak`), and showing an old `Quantity` repr
+  (`Params`). Three examples that were skipped whole now run as well
+  (`build_standard_swc_url`, `Morphology.topo`, `MorphoBranch.attach`). The
+  command now reports 130 passed and 1 skipped (`Morphology.vis2d`, which
+  draws a figure). `mix_ions` also documents that it needs at least two ions,
+  as it already checked.
 
 ### Deprecations
 

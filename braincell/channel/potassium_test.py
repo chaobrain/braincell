@@ -829,6 +829,125 @@ class Kv3p3MA24PCTest(unittest.TestCase):
         _assert_gating_current_matches_mod(self, ch, constants, 30.0, -10.0, 0.35)
 
 
+def _rate_gradient(ch, info, v_mv):
+    """``dI/dV`` in uA/cm2 per mV at ``v_mv`` with the gates at their steady state there."""
+    V = jnp.array([v_mv], dtype=jnp.float64) * u.mV
+    ch.init_state(V, info)
+    ch.reset_state(V, info)
+
+    def current(v):
+        return ch.current(v * u.mV, info).to_decimal(u.uA / u.cm**2).sum()
+
+    return float(jax.grad(current)(jnp.array([v_mv], dtype=jnp.float64))[0])
+
+
+class GateCurrentLinearizationTest(unittest.TestCase):
+    """MECH-40: the gating current's V dependence stays out of gradients by default.
+
+    NEURON's ``nrn_cur`` holds the gating current fixed when it forms the
+    membrane conductance, and the staggered solver takes that conductance from
+    ``jax.grad`` of the current, so ``dI/dV`` with ``gateCurrent = 1`` must
+    equal the conductive part alone. The reference values are plain-float
+    closed forms at the -65 mV steady state (22 degC, ``phi = 1``).
+    """
+
+    # class, (ca, cva, cka, cb, cvb, ckb), zn, g_max in mS/cm2
+    CASES = (
+        (Kv1p1_MA2025_BC, (0.12889, 45.0, -33.90877, 0.12889, 45.0, 12.42101), 2.7978, 4.0),
+        (Kv1p1_MA2024_PC, (0.12889, 45.0, -33.90877, 0.12889, 45.0, 12.42101), 2.7978, 4.0),
+        (Kv1p1_RI2021_SC, (0.12889, 45.0, -33.90877, 0.12889, 45.0, 12.42101), 2.7978, 4.0),
+        (Kv1p1_MA2020_GoC, (0.12889, 45.0, -33.90877, 0.12889, 45.0, 12.42101), 2.7978, 4.0),
+        (Kv1p1_MA2020_GrC, (0.12889, 45.0, -33.90877, 0.12889, 45.0, 12.42101), 2.7978, 4.0),
+        (Kv3p3_MA2024_PC, (0.22, 16.0, -26.5, 0.22, 16.0, 26.5), 1.9196, 5.0),
+    )
+    V_MV = -65.0
+
+    @staticmethod
+    def _closed_form(rates, zn, g_max, v_mv, with_gate_current):
+        ca, cva, cka, cb, cvb, ckb = rates
+        alpha = ca * math.exp(-(v_mv + cva) / cka)
+        beta = cb * math.exp(-(v_mv + cvb) / ckb)
+        n = alpha / (alpha + beta)
+        # d/dV of g n^4 (E - V); mS/cm2 is uA/cm2 per mV.
+        conductive = -g_max * n**4
+        if not with_gate_current:
+            return conductive
+        # igate = nc e0 4 zn (alpha (1 - n) - beta n) / ms, nc = g_max / 16 pS;
+        # C/ms per cm2 is 1e9 uA/cm2. The current is conductive - igate.
+        nc = g_max / 16e-9
+        d_flip = -alpha / cka * (1.0 - n) + beta / ckb * n
+        return conductive - nc * 1.60217646e-19 * 4.0 * zn * d_flip * 1e9
+
+    def _gradient(self, cls, **kwargs):
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            return _rate_gradient(cls(size=1, **kwargs), k_info(), self.V_MV)
+
+    def test_default_gradient_equals_the_gradient_without_gating_current(self) -> None:
+        for cls, rates, zn, g_max in self.CASES:
+            with self.subTest(cls=cls.__name__):
+                expected = self._closed_form(rates, zn, g_max, self.V_MV, with_gate_current=False)
+                off = self._gradient(cls, gateCurrent=0.0)
+                on = self._gradient(cls, gateCurrent=1.0)
+                self.assertLessEqual(abs(off - expected), 1e-12 * abs(expected))
+                self.assertLessEqual(abs(on - off), 1e-12 * abs(off))
+
+    def test_switch_off_restores_the_gating_current_gradient(self) -> None:
+        for cls, rates, zn, g_max in self.CASES:
+            with self.subTest(cls=cls.__name__):
+                expected = self._closed_form(rates, zn, g_max, self.V_MV, with_gate_current=True)
+                conductive = self._closed_form(rates, zn, g_max, self.V_MV, with_gate_current=False)
+                # The gating term must dominate, or the check would not tell the two paths apart.
+                self.assertGreater(abs(expected - conductive), 5.0 * abs(conductive))
+                live = self._gradient(cls, gateCurrent=1.0, freeze_gate_current_gradient=False)
+                self.assertLessEqual(abs(live - expected), 1e-12 * abs(expected))
+
+    def test_switch_does_not_change_the_current_or_the_default_off_path(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            for cls, _, _, _ in self.CASES:
+                with self.subTest(cls=cls.__name__):
+                    k = k_info(2)
+                    V = jnp.array([-40.0, 10.0], dtype=jnp.float64) * u.mV
+                    values = {}
+                    for gate_current in (0.0, 1.0):
+                        for freeze in (True, False):
+                            ch = cls(size=2, gateCurrent=gate_current, freeze_gate_current_gradient=freeze)
+                            ch.init_state(V, k)
+                            # Away from the steady state, so the gating current is not zero.
+                            ch.n.value = jnp.array([0.1, 0.6], dtype=jnp.float64)
+                            values[gate_current, freeze] = np.asarray(ch.current(V, k).to_decimal(DENSITY_UNIT))
+                    self.assertTrue(np.all(np.isfinite(values[1.0, True])))
+                    self.assertFalse(np.allclose(values[1.0, True], values[0.0, True], rtol=1e-6, atol=0.0))
+                    np.testing.assert_array_equal(values[1.0, True], values[1.0, False])
+                    np.testing.assert_array_equal(values[0.0, True], values[0.0, False])
+                    self.assertEqual(
+                        self._gradient(cls, gateCurrent=0.0, freeze_gate_current_gradient=False),
+                        self._gradient(cls, gateCurrent=0.0),
+                    )
+
+    def test_switch_reaches_the_cell_runtime_node(self) -> None:
+        import braincell
+        from braincell._compute._testing import _build_tree
+        from braincell.filter import AllRegion
+
+        for freeze in (True, False):
+            with self.subTest(freeze=freeze):
+                cell = braincell.Cell(_build_tree())
+                cell.paint(
+                    AllRegion(),
+                    braincell.mech.Channel(
+                        "Kv1p1_MA2025_BC", name="kv", gateCurrent=1.0, freeze_gate_current_gradient=freeze
+                    ),
+                )
+                cell.paint(AllRegion(), braincell.mech.Ion("PotassiumFixed", name="k"))
+                cell.init_state()
+                self.assertIs(cell.runtime.get_runtime_node(0).freeze_gate_current_gradient, freeze)
+
+    def test_switch_defaults_to_frozen(self) -> None:
+        for cls, _, _, _ in self.CASES:
+            with self.subTest(cls=cls.__name__):
+                self.assertIs(cls(size=1).freeze_gate_current_gradient, True)
+
+
 class Kv3p4MA24PCTest(unittest.TestCase):
     def test_matches_bc_variant(self) -> None:
         temp = u.celsius2kelvin(22.0)

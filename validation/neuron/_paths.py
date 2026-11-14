@@ -15,11 +15,13 @@
 
 """Shared repository data and build locations for NEURON workflows."""
 
+import hashlib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_ROOT = REPO_ROOT / "data"
 CEREBELLUM_ROOT = DATA_ROOT / "cerebellum"
+MODELDB_ROOT = DATA_ROOT / "modeldb"
 ARTIFACT_ROOT = Path(__file__).resolve().parent / "artifacts"
 
 
@@ -34,3 +36,20 @@ def model_dir(model: str) -> Path:
 def mechanism_build_dir(model: str, kind: str = "cell") -> Path:
     """Return a workflow-owned build root (the parent of x86_64)."""
     return ARTIFACT_ROOT / "mechanisms" / model / kind
+
+
+def pinned_source(path: Path, sha256: str) -> Path:
+    """Return ``path`` after checking that its bytes have the SHA-256 ``sha256``.
+
+    For third-party sources kept unmodified under ``data/`` (``data/modeldb/``):
+    a comparison against them is only meaningful for the recorded file.
+    Raises ``FileNotFoundError`` when the file is missing and ``ValueError``
+    when its hash differs.
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(f"{path} is missing; it is a pinned source (SHA-256 {sha256}).")
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual != sha256:
+        raise ValueError(f"{path} has SHA-256 {actual}, not the recorded {sha256}; restore the file from its source.")
+    return path

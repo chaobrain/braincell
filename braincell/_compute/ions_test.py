@@ -1201,7 +1201,9 @@ class RuntimeIonTest(unittest.TestCase):
             braincell.mech.Channel("Kv1p5_MA2020_GrC", name="kv1p5"),
         )
 
-        cell.init_state()
+        # No ion is declared, so each family binds its placeholder (CELL-78).
+        with self.assertWarnsRegex(UserWarning, "Kv1p5_MA2020_GrC binds ion family 'no'"):
+            cell.init_state()
 
         self.assertEqual(sorted(cell.runtime.ions), ["ca", "k", "na", "no"])
         self.assertIsInstance(cell.get_ion("no"), braincell.ion.NonSpecificFixed)
@@ -1231,3 +1233,133 @@ class RuntimeIonTest(unittest.TestCase):
                 braincell.mech.Ion("SodiumInitNernst", name="na_main"),
             )
         self.assertIn("cannot denote both", str(ctx.exception))
+
+
+_ALL = BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0)
+
+
+def _placeholder_warnings(call):
+    """Run ``call`` and return the messages of the placeholder-ion warnings it emits."""
+    import warnings
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        call()
+    return [str(w.message) for w in caught if issubclass(w.category, UserWarning) and "ion family" in str(w.message)]
+
+
+def _sodium_cable(*extra, **cell_kwargs):
+    cell = Cell(_build_tree(), **cell_kwargs)
+    cell.paint(_ALL, braincell.mech.Channel("Na_HH1952", g_max=12.0 * (u.mS / u.cm**2)), *extra)
+    return cell
+
+
+def _sodium_point(*extra):
+    cell = Cell.point()
+    cell.soma.paint(braincell.mech.Channel("Na_HH1952", g_max=12.0 * (u.mS / u.cm**2)), *extra)
+    return cell
+
+
+class PlaceholderIonWarningTest(unittest.TestCase):
+    """CELL-78: init_state warns once per ion family a mechanism binds to a placeholder ion."""
+
+    def test_an_undeclared_family_warns_with_the_channel_and_the_declaration(self) -> None:
+        for label, build in (("cable", _sodium_cable), ("lumped", _sodium_point)):
+            with self.subTest(cell=label):
+                cell = build()
+                (message,) = _placeholder_warnings(cell.init_state)
+                for part in (
+                    "Na_HH1952 binds ion family 'na'",
+                    "placeholder SodiumFixed",
+                    "E = 50 mV",
+                    "braincell.mech.Ion('SodiumFixed', E=50 * u.mV)",
+                ):
+                    self.assertIn(part, message)
+                self.assertEqual(_placeholder_warnings(build(braincell.mech.Ion("SodiumFixed")).init_state), [])
+
+    def test_each_family_warns_once_naming_every_channel(self) -> None:
+        for label, build in (("cable", _sodium_cable), ("lumped", _sodium_point)):
+            with self.subTest(cell=label):
+                cell = build(
+                    braincell.mech.Channel("Na_TM1991", g_max=1.0 * (u.mS / u.cm**2)),
+                    braincell.mech.Channel("K_HH1952", g_max=3.6 * (u.mS / u.cm**2)),
+                )
+                messages = _placeholder_warnings(cell.init_state)
+                self.assertEqual(len(messages), 2)
+                self.assertIn("Na_HH1952, Na_TM1991 bind ion family 'na'", messages[0])
+                self.assertIn("they use a placeholder SodiumFixed", messages[0])
+                self.assertIn("K_HH1952 binds ion family 'k'", messages[1])
+                self.assertIn("E = -95 mV", messages[1])
+
+    def test_a_channel_painted_on_two_regions_is_named_once(self) -> None:
+        cell = Cell(_build_tree())
+        for branch in (0, 1):
+            cell.paint(
+                BranchSlice(branch_index=branch, prox=0.0, dist=1.0),
+                braincell.mech.Channel("Na_HH1952", g_max=12.0 * (u.mS / u.cm**2)),
+            )
+        (message,) = _placeholder_warnings(cell.init_state)
+        self.assertIn("Na_HH1952 binds ion family 'na'", message)
+
+    def test_reset_state_is_silent_and_each_init_state_warns_again(self) -> None:
+        for label, build in (("cable", _sodium_cable), ("lumped", _sodium_point)):
+            with self.subTest(cell=label):
+                cell = build()
+                self.assertEqual(len(_placeholder_warnings(cell.init_state)), 1)
+                self.assertEqual(_placeholder_warnings(cell.reset_state), [])
+                cell.reset()
+                self.assertEqual(len(_placeholder_warnings(cell.init_state)), 1)
+
+    def test_a_network_warns_for_each_member(self) -> None:
+        from braincell.network import Network
+
+        network = Network("network")
+        network.add_population("first", _sodium_cable())
+        network.add_population("second", _sodium_point(braincell.mech.Ion("SodiumFixed")))
+        network.add_population("third", _sodium_point())
+        self.assertEqual(len(_placeholder_warnings(network.init_state)), 2)
+
+    def test_the_warning_raised_as_an_error_leaves_the_cell_uninitialized(self) -> None:
+        import warnings
+
+        cell = _sodium_cable()
+        attributes = dict(vars(cell))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            with self.assertRaisesRegex(UserWarning, "Na_HH1952 binds ion family 'na'"):
+                cell.init_state()
+        self.assertEqual(vars(cell).keys(), attributes.keys())
+        for key, value in attributes.items():
+            self.assertIs(vars(cell)[key], value, key)
+        # Declaring the ion, as the message says, lets the same Cell initialize.
+        cell.paint(_ALL, braincell.mech.Ion("SodiumFixed", E=50 * u.mV))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            cell.init_state()
+
+    def test_declaring_the_class_defaults_reproduces_the_placeholder_run(self) -> None:
+        from braincell.filter import RootLocation
+
+        def voltage(*ions):
+            cell = Cell(_build_tree())
+            if ions:
+                cell.paint(_ALL, *ions)
+            cell.paint(
+                _ALL,
+                braincell.mech.Channel("Na_HH1952", g_max=120.0 * (u.mS / u.cm**2)),
+                braincell.mech.Channel("K_HH1952", g_max=36.0 * (u.mS / u.cm**2)),
+                braincell.mech.Channel("IL", g_max=0.3 * (u.mS / u.cm**2), E=-54.3 * u.mV),
+            )
+            cell.place(
+                RootLocation(x=0.5),
+                braincell.mech.CurrentClamp(delay=0.0 * u.ms, durations=5.0 * u.ms, amplitudes=1.0 * u.nA),
+            )
+            cell.record("v", braincell.observe.state("V"))
+            _placeholder_warnings(cell.init_state)
+            return np.asarray(cell.run(dt=0.025 * u.ms, duration=5.0 * u.ms).traces["v"].to_decimal(u.mV))
+
+        placeholder = voltage()
+        declared = voltage(braincell.mech.Ion("SodiumFixed", name="na"), braincell.mech.Ion("PotassiumFixed", name="k"))
+        self.assertTrue(np.all(np.isfinite(placeholder)))
+        self.assertGreater(float(np.ptp(placeholder)), 10.0)  # it fires
+        np.testing.assert_allclose(declared, placeholder, rtol=1e-12)

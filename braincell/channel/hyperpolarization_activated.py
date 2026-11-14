@@ -74,7 +74,8 @@ class HCN_HM1992(OhmicHH):
     g_max : array-like or callable, optional
         Maximal conductance density, default ``10.0 mS/cm2``.
     E : array-like or callable, optional
-        Reversal potential, default ``43.0 mV``.
+        Reversal potential, default ``-43.0 mV`` (``+43.0 mV`` before
+        0.3; see Notes).
     temp : array-like, optional
         Absolute temperature driving the Q10 factor, default 36
         degrees Celsius.
@@ -93,11 +94,17 @@ class HCN_HM1992(OhmicHH):
     to the fixed ``E`` parameter: the current is
     ``g_max * p * (E - V)``.
 
-    The default ``E = +43 mV`` has not been checked against the
-    paper's methods. :class:`HCN_ZH2019_IO`, whose gate functions are
-    the same up to rounding (``14.6`` and ``0.07`` for ``14.59`` and
-    ``0.0701``), takes ``E = -43 mV`` from its ``.mod`` source; pass
-    ``E=-43.0 * u.mV`` for that reversal potential.
+    **Reversal potential.** The default ``E = -43 mV`` is taken from
+    ``HCN_ZH19_IO.mod`` (``eh = -43 mV``), the source of
+    :class:`HCN_ZH2019_IO`, whose gate functions are the same up to
+    rounding (``14.6`` and ``0.07`` for ``14.59`` and ``0.0701``), and
+    lies in the -50 to -20 mV range of a mixed-cation h current. The
+    paper's methods have not been read. Before 0.3 the default was
+    ``+43 mV``, which made the current about five times larger near
+    rest and reversed its direction between -43 and +43 mV; pass
+    ``E=43.0 * u.mV`` for the old behaviour. The NEURON comparison of
+    the defaults against ``HCN_ZH19_IO.mod`` is the ``zh19_io/hcn_hm1992``
+    configuration of the channel validation suite.
 
     References
     ----------
@@ -116,7 +123,7 @@ class HCN_HM1992(OhmicHH):
         self,
         size: Size,
         g_max: Initializer = 10.0 * (u.mS / u.cm**2),
-        E: Initializer = 43.0 * u.mV,
+        E: Initializer = -43.0 * u.mV,
         temp: ArrayLike = u.celsius2kelvin(36.0),
         q10: Initializer = 1.0,
         temp_ref: ArrayLike = u.celsius2kelvin(36.0),

@@ -30,8 +30,11 @@ not collect it.
 
 from typing import Sequence
 
+import brainstate
 import brainunit as u
+import jax
 import jax.numpy as jnp
+import numpy as np
 
 from braincell._base_channel import IonInfo
 
@@ -43,6 +46,7 @@ from braincell.ion._testing import V as voltage
 __all__ = [
     "DENSITY_UNIT",
     "assert_channels_agree",
+    "assert_ghk_near_zero",
     "ca_info",
     "k_info",
     "na_info",
@@ -160,3 +164,36 @@ def assert_channels_agree(
         ),
         "current diverged",
     )
+
+
+def assert_ghk_near_zero(case, flux, rows, *, precision: int = 64, rtol: float = 1e-12, slope_rtol=None) -> None:
+    """Check a GHK flux helper and its ``d/dV`` near 0 mV against reference rows.
+
+    ``flux`` is called as ``flux(V=..., ci=1e-4 mM, co=2 mM, z=2,
+    temp=309.15 K)`` at ``precision`` (64 or 32 bits); each row is ``(V in
+    mV, flux in C/m^3, d flux/dV in C/m^3 per mV)`` from an independent
+    high-precision computation (MECH-43). ``slope_rtol`` defaults to
+    ``rtol``.
+    """
+    slope_rtol = rtol if slope_rtol is None else slope_rtol
+    dtype = jnp.float64 if precision == 64 else jnp.float32
+    with jax.enable_x64(precision == 64), brainstate.environ.context(precision=precision):
+
+        def value(v_mV):
+            out = flux(
+                V=v_mV * u.mV,
+                ci=jnp.asarray(1e-4, dtype) * u.mM,
+                co=jnp.asarray(2.0, dtype) * u.mM,
+                z=2,
+                temp=jnp.asarray(309.15, dtype) * u.kelvin,
+            )
+            return out.to_decimal(u.coulomb / u.meter**3)
+
+        for v_mV, expected, expected_slope in rows:
+            v = jnp.asarray(v_mV, dtype)
+            got, slope = float(value(v)), float(jax.grad(value)(v))
+            case.assertTrue(np.isfinite(got) and np.isfinite(slope), (v_mV, got, slope))
+            case.assertLessEqual(abs(got - expected), rtol * abs(expected), (v_mV, got, expected))
+            case.assertLessEqual(
+                abs(slope - expected_slope), slope_rtol * abs(expected_slope), (v_mV, slope, expected_slope)
+            )

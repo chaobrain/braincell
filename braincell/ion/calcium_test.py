@@ -1691,6 +1691,28 @@ class CdpLVA_SU2015_DCNTest(unittest.TestCase):
 _CURRENT_DENSITY = u.uA / u.cm**2
 _ALPHA_UNIT = u.mM / u.ms / _CURRENT_DENSITY
 
+#: ``1 / (2 F d)`` for ``d = 1 um`` in mM/ms per uA/cm**2, on the host in float64
+#: from the exact SI values ``F = e * N_A``: ``1e-6 A/cm**2 / (2 F * 1e-4 cm)``
+#: is mol/(s cm**3), times 1e3 for mM/ms. Bazhenov et al. (1998) print it as
+#: ``A = 5.18e-5 mM cm**2/(ms uA)``.
+_SHELL_1UM_ALPHA = 1e-6 / (2.0 * 1.602176634e-19 * 6.02214076e23 * 1e-4) * 1e3
+
+
+class _ConstantInwardCalcium(braincell.Channel):
+    """A calcium current of fixed density, for the steady state of a pool."""
+
+    root_type = Calcium
+
+    def __init__(self, size, I=None, name=None):
+        super().__init__(size, name=name)
+        self.I = I
+
+    def current(self, V, Ca: IonInfo):
+        return self.I * u.math.ones_like(V.to_decimal(u.mV))
+
+    def compute_derivative(self, *args, **kwargs):
+        pass
+
 
 def _first_order_cell(with_channel: bool, lumped: bool = False, **ion_params):
     """Build a one-CV cell carrying a ``CalciumFirstOrder`` pool named ``ca``."""
@@ -1699,7 +1721,10 @@ def _first_order_cell(with_channel: bool, lumped: bool = False, **ion_params):
     cell = braincell.Cell(braincell.Morphology.from_root(branch), cv_policy=cv_policy)
     cell.paint(AllRegion(), braincell.mech.Ion("CalciumFirstOrder", name="ca", **ion_params))
     if with_channel:
-        cell.paint(AllRegion(), braincell.mech.Channel("CaT_HM1992", name="cat", g_max=0.5 * u.mS / u.cm**2))
+        # MECH-46: at -65 mV the T-type window current is 0.0703 uA/cm**2 per
+        # 0.5 mS/cm**2; Ci rises from 2.4e-4 mM only above 0.347 uA/cm**2 with
+        # the default alpha, so 5 mS/cm**2 (0.703 uA/cm**2) leaves a 2x margin.
+        cell.paint(AllRegion(), braincell.mech.Channel("CaT_HM1992", name="cat", g_max=5.0 * u.mS / u.cm**2))
     cell.paint(
         AllRegion(),
         braincell.mech.Channel("IL", name="leak", g_max=0.1 * u.mS / u.cm**2, E=-65.0 * u.mV),
@@ -1716,8 +1741,12 @@ class CalciumFirstOrderTest(unittest.TestCase):
         self.assertTrue(CalciumFirstOrder.uses_total_current)
 
     def test_default_parameters(self) -> None:
-        cfo = CalciumFirstOrder(size=1)
-        self.assertTrue(u.math.allclose(cfo.alpha, _ALPHA_UNIT * 0.13, atol=1e-9 * _ALPHA_UNIT))
+        with brainstate.environ.context(precision=64):
+            cfo = CalciumFirstOrder(size=1)
+            alpha = np.asarray(cfo.alpha.to_decimal(_ALPHA_UNIT), dtype=np.float64)
+        # MECH-46: a 1 um shell, 1/(2 F d); 0.13 before.
+        np.testing.assert_allclose(alpha, _SHELL_1UM_ALPHA, rtol=1e-12)
+        np.testing.assert_allclose(alpha, 5.18e-5, rtol=5e-4)  # Bazhenov et al. (1998), (A5)
         self.assertTrue(u.math.allclose(cfo.beta, 0.075 / u.ms, atol=1e-9 / u.ms))
         self.assertTrue(u.math.allclose(cfo.Co, 2.0 * u.mM, atol=1e-9 * u.mM))
         self.assertTrue(u.math.allclose(cfo.temp, u.celsius2kelvin(36.0), atol=1e-6 * u.kelvin))
@@ -1735,14 +1764,14 @@ class CalciumFirstOrderTest(unittest.TestCase):
 
     def test_derivative_is_a_concentration_rate_for_every_current(self) -> None:
         # dCi/dt = max(alpha * I_Ca, 0) - beta * Ci with the defaults
-        # alpha = 0.13 mM/ms/(uA/cm**2), beta = 0.075 /ms, Ci = 2.4e-4 mM:
-        # inward +1 uA/cm**2 gives 0.13 - 1.8e-5; outward current is
-        # rectified away, and "no current" (None) is a zero current.
+        # alpha = 1/(2 F * 1 um), beta = 0.075 /ms, Ci = 2.4e-4 mM:
+        # inward +1 uA/cm**2 gives 5.1821348e-5 - 1.8e-5; outward current
+        # is rectified away, and "no current" (None) is a zero current.
         cfo = CalciumFirstOrder(size=1)
         V = _V([-60.0])
         Ci = jnp.array([2.4e-4]) * u.mM
         cases = (
-            ("inward", jnp.array([1.0]) * _CURRENT_DENSITY, 0.129982),
+            ("inward", jnp.array([1.0]) * _CURRENT_DENSITY, _SHELL_1UM_ALPHA - 0.075 * 2.4e-4),
             ("outward", jnp.array([-1.0]) * _CURRENT_DENSITY, -1.8e-5),
             ("none", None, -1.8e-5),
         )
@@ -1765,16 +1794,23 @@ class CalciumFirstOrderTest(unittest.TestCase):
         # With alpha = 1/(2 F d) and beta = 1/tau both models share the
         # rectified influx and the -Ci/tau decay; Detailed additionally
         # relaxes toward C_rest, so the difference is exactly beta * C_rest.
-        d = 1.0 * u.um
+        # Both default to the same 1 um shell (MECH-46).
+        d = 2.0 * u.um
         tau = 5.0 * u.ms
         C_rest = 2.4e-4 * u.mM
-        detailed = CalciumDetailed(size=1, d=d, tau=tau, C_rest=C_rest)
-        first_order = CalciumFirstOrder(size=1, alpha=1 / (2 * FARADAY_CONSTANT * d), beta=1 / tau)
+        pairs = (
+            (
+                CalciumDetailed(size=1, d=d, tau=tau, C_rest=C_rest),
+                CalciumFirstOrder(size=1, alpha=1 / (2 * FARADAY_CONSTANT * d), beta=1 / tau),
+            ),
+            (CalciumDetailed(size=1, tau=1 / (0.075 / u.ms), C_rest=C_rest), CalciumFirstOrder(size=1)),
+        )
         V = _V([-60.0])
         Ci = jnp.array([6e-4]) * u.mM
-        expected = np.asarray((C_rest / tau).to_decimal(u.mM / u.ms))
-        for current in (jnp.array([1.0]) * _CURRENT_DENSITY, jnp.array([-1.0]) * _CURRENT_DENSITY, None):
-            with self.subTest(total_current=current):
+        currents = (jnp.array([1.0]) * _CURRENT_DENSITY, jnp.array([-1.0]) * _CURRENT_DENSITY, None)
+        for (detailed, first_order), current in itertools.product(pairs, currents):
+            expected = np.asarray((C_rest * first_order.beta).to_decimal(u.mM / u.ms))
+            with self.subTest(d=detailed.d, total_current=current):
                 diff = detailed.derivative(Ci, V, total_current=current) - first_order.derivative(
                     Ci, V, total_current=current
                 )
@@ -1824,6 +1860,25 @@ class CalciumFirstOrderTest(unittest.TestCase):
         Ci_mM = np.asarray(Ci.to_decimal(u.mM))
         self.assertTrue(np.all(np.isfinite(Ci_mM)))
         np.testing.assert_allclose(Ci_mM, 2.4e-4 * np.exp(-0.075 * 0.1), rtol=1e-4)
+
+    def test_cell_steady_state_under_a_constant_current_is_alpha_I_over_beta(self) -> None:
+        # MECH-46: with the default alpha = 1/(2 F * 1 um) and beta = 0.075 /ms,
+        # a constant inward current I settles Ci at alpha * I / beta: 6.9095e-4 mM
+        # per uA/cm**2 (1.7333 mM with the old alpha = 0.13). 600 ms is 45 decay
+        # times, so the transient from 2.4e-4 mM is below exp(-45) = 2.9e-20.
+        for I, lumped in itertools.product((1.0, 2.5), (False, True)):
+            with self.subTest(I=I, lumped=lumped), brainstate.environ.context(precision=64):
+                cell = _first_order_cell(with_channel=False, lumped=lumped)
+                cell.paint(
+                    AllRegion(),
+                    braincell.mech.Channel(_ConstantInwardCalcium, name="const", ion_name="ca", I=I * _CURRENT_DENSITY),
+                )
+                cell.run(dt=0.025 * u.ms, duration=600.0 * u.ms)
+                Ci = np.asarray(cell.get_ion("ca").Ci.value.to_decimal(u.mM))
+                self.assertEqual(Ci.dtype, np.float64)
+                self.assertTrue(np.all(np.isfinite(Ci)))
+                self.assertFalse(np.any(Ci == 2.4e-4))
+                np.testing.assert_allclose(Ci, _SHELL_1UM_ALPHA * I / 0.075, rtol=1e-12)
 
     def test_init_state_creates_diffeq_state_Ci(self) -> None:
         cfo = CalciumFirstOrder(size=3)

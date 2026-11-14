@@ -765,6 +765,64 @@ class _Nav1p1Mixin:
     def _make(self, size=1, **kwargs):
         return self.CLS(size=size, **kwargs)
 
+    def _gradient_and_difference(self, v_mv=-65.0, h_mv=1e-3, **kwargs):
+        """``jax.grad`` and a central difference of the current at ``v_mv`` (uA/cm2 per mV, float64).
+
+        The states sit at the ``v_mv`` steady state and are held while the
+        difference steps ``V``, so the difference is the full ``dI/dV`` of
+        the forward expression, independent of which terms autodiff sees.
+        """
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            ch = self._make(size=1, **kwargs)
+            na = na_info()
+            V = jnp.array([v_mv], dtype=jnp.float64) * u.mV
+            ch.init_state(V, na)
+            ch.reset_state(V, na)
+
+            def current(v):
+                return ch.current(v * u.mV, na).to_decimal(u.uA / u.cm**2).sum()
+
+            grad = float(jax.grad(current)(jnp.array([v_mv], dtype=jnp.float64))[0])
+            plus = float(current(jnp.array([v_mv + h_mv], dtype=jnp.float64)))
+            minus = float(current(jnp.array([v_mv - h_mv], dtype=jnp.float64)))
+        return grad, (plus - minus) / (2.0 * h_mv)
+
+    def test_default_gradient_leaves_out_the_gating_current(self) -> None:
+        # MECH-40: NEURON's nrn_cur holds the gating current fixed in the
+        # membrane conductance; the staggered solver takes it from jax.grad.
+        off, off_difference = self._gradient_and_difference(gateCurrent=0.0)
+        on, _ = self._gradient_and_difference(gateCurrent=1.0)
+        self.assertLessEqual(abs(off - off_difference), 1e-7 * abs(off))
+        self.assertLessEqual(abs(on - off), 1e-12 * abs(off))
+
+    def test_switch_off_restores_the_gating_current_gradient(self) -> None:
+        live, difference = self._gradient_and_difference(gateCurrent=1.0, freeze_gate_current_gradient=False)
+        conductive, _ = self._gradient_and_difference(gateCurrent=0.0)
+        # The gating term dominates, so the two paths are told apart.
+        self.assertGreater(abs(live - conductive), 100.0 * abs(conductive))
+        self.assertLessEqual(abs(live - difference), 1e-7 * abs(difference))
+        self.assertEqual(
+            self._gradient_and_difference(gateCurrent=0.0, freeze_gate_current_gradient=False)[0], conductive
+        )
+
+    def test_switch_does_not_change_the_current(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            V = jnp.array([-40.0, 10.0], dtype=jnp.float64) * u.mV
+            na = na_info(2)
+            values = {}
+            for gate_current in (0.0, 1.0):
+                for freeze in (True, False):
+                    ch = self._make(size=2, gateCurrent=gate_current, freeze_gate_current_gradient=freeze)
+                    ch.init_state(V, na)
+                    # Not the steady state, so the gating current is not zero.
+                    ch.reset_state(jnp.array([-80.0, -20.0], dtype=jnp.float64) * u.mV, na)
+                    values[gate_current, freeze] = np.asarray(ch.current(V, na).to_decimal(DENSITY_UNIT))
+        self.assertTrue(np.all(np.isfinite(values[1.0, True])))
+        self.assertFalse(np.allclose(values[1.0, True], values[0.0, True], rtol=1e-6, atol=0.0))
+        np.testing.assert_array_equal(values[1.0, True], values[1.0, False])
+        np.testing.assert_array_equal(values[0.0, True], values[0.0, False])
+        self.assertIs(self._make(size=1).freeze_gate_current_gradient, True)
+
     def test_root_type_is_sodium(self) -> None:
         self.assertIs(self.CLS.root_type, Sodium)
 

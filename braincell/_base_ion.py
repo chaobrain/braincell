@@ -823,13 +823,13 @@ def mix_ions(*ions) -> MixIons:
     """
     Create a mixed ion channel by combining multiple ion instances.
 
-    This function takes one or more Ion instances and creates a MixIons object,
+    This function takes two or more Ion instances and creates a MixIons object,
     which represents a channel that can handle multiple types of ions simultaneously.
 
     Parameters
     ----------
     *ions
-        One or more instances of the Ion class. Each instance represents a specific
+        Two or more instances of the Ion class. Each instance represents a specific
         type of ion (e.g., sodium, potassium, calcium) that will be part of the
         mixed ion channel.
 
@@ -842,17 +842,19 @@ def mix_ions(*ions) -> MixIons:
     Raises
     ------
     AssertionError
-        If no ions are provided or if any of the provided arguments is not an instance
-        of the Ion class.
+        If fewer than two ions are provided or if any of the provided arguments is not
+        an instance of the Ion class.
 
     Examples
     --------
     .. code-block:: python
 
         >>> import braincell
-        >>> sodium_ion = braincell.ion.SodiumFixed(...)
-        >>> potassium_ion = braincell.ion.PotassiumFixed(...)
+        >>> sodium_ion = braincell.ion.SodiumFixed(1)
+        >>> potassium_ion = braincell.ion.PotassiumFixed(1)
         >>> mixed_channel = braincell.mix_ions(sodium_ion, potassium_ion)
+        >>> type(mixed_channel).__name__
+        'MixIons'
     """
     for ion in ions:
         assert isinstance(ion, Ion), f'Must be instance of {Ion.__name__}. But got {type(ion)}'

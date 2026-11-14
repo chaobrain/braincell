@@ -29,7 +29,6 @@ import unittest
 from unittest import mock
 
 import brainunit as u
-import jax
 import numpy as np
 import pytest
 
@@ -73,6 +72,7 @@ HH = "builtin/na_hh1952_hh"
 PAS = "builtin/il_pas"
 NA_ZH19 = "zh19_io/na_zh19_io"
 NAV1P1 = "ma25_bc/nav1p1_ma25_bc"
+HCN_HM1992 = "zh19_io/hcn_hm1992"
 
 
 def _mod_limit_branch(offset: float, shifted: float, scale: float):
@@ -108,9 +108,9 @@ class SodiumHcnLeakCatalogueTest(CatalogueAssertions, unittest.TestCase):
         configured = {class_name(config) for config in CONFIGS}
         uncovered = FAMILY & set(UNCOVERED)
         self.assertEqual(len(FAMILY), 24)
-        self.assertEqual(len(CONFIGS), 20)
+        self.assertEqual(len(CONFIGS), 21)
         self.assertEqual(configured | uncovered, FAMILY)
-        self.assertEqual(uncovered, {"Na_Ba2002", "Na_Leak", "Na_TM1991", "HCN_HM1992"})
+        self.assertEqual(uncovered, {"Na_Ba2002", "Na_Leak", "Na_TM1991"})
         self.assertEqual({config for config in CONFIGS if config.startswith("builtin/")}, {HH, PAS})
 
     def test_every_configuration_stays_within_its_limits(self):
@@ -163,25 +163,25 @@ class SodiumHcnLeakRootCauseTest(unittest.TestCase):
                     self.assertLessEqual(result["e_I"], T0_LIMITS["e_I"])
                     self.assertLessEqual(result["e_s"], T0_LIMITS["e_s"])
 
-    def test_nav1p1_constant_gating_current_conductance_explains_the_current_clamp(self):
+    def test_nav1p1_gating_current_gradient_breaks_the_current_clamp(self):
+        # MECH-40: NEURON's conductance estimate holds igate constant in v (as
+        # for Kv1.1); BrainCell freezes igate's v-dependence alike by default.
         name = f"{NAV1P1}:gateCurrent=1"
         variant = VARIANTS[name]
         skip_unless_compiled(self, (variant.config,))
-        original = sodium.Nav1p1_MA2025_BC.current
-        conductive = sodium.Nav1p6_MA2020_GoC.current
+        original = sodium.Nav1p1_MA2025_BC.__init__
 
-        def current(self, V, Na):
-            # NEURON's conductance estimate holds igate constant in v (as for Kv1.1);
-            # hide igate's v-dependence from BrainCell's linearization alike.
-            frozen = u.Quantity(jax.lax.stop_gradient(V.mantissa), unit=V.unit)
-            return conductive(self, V, Na) + (original(self, frozen, Na) - conductive(self, frozen, Na))
+        def live_gradient(self, *args, **kwargs):
+            original(self, *args, **{**kwargs, "freeze_gate_current_gradient": False})
 
-        with mock.patch.object(sodium.Nav1p1_MA2025_BC, "current", current):
-            for protocol in CURRENT_CLAMP_PROTOCOLS:
-                with self.subTest(protocol=protocol):
-                    self.assertEqual(TABLE.tier(name, protocol), "T1")
-                    error = current_clamp_error(variant.config, protocol, dict(variant.channel_params))
-                    self.assertLessEqual(error, T0_LIMITS["e_V"])
+        for protocol in CURRENT_CLAMP_PROTOCOLS:
+            with self.subTest(protocol=protocol):
+                self.assertEqual(TABLE.tier(name, protocol), "T0")
+                frozen = current_clamp_error(variant.config, protocol, dict(variant.channel_params))
+                with mock.patch.object(sodium.Nav1p1_MA2025_BC, "__init__", live_gradient):
+                    live = current_clamp_error(variant.config, protocol, dict(variant.channel_params))
+                self.assertLessEqual(frozen, T0_LIMITS["e_V"])
+                self.assertGreater(live, 100.0 * T0_LIMITS["e_V"])
 
     def test_hh_rate_table_breaks_the_ramp(self):
         skip_unless_compiled(self, (HH,))
@@ -201,6 +201,42 @@ class SodiumHcnLeakRootCauseTest(unittest.TestCase):
         params = {"temp_ref_celsius": 36.0}
         result = voltage_clamp.compare_protocol(config_path(HH), template_path("vc_steps"), channel_params=params)
         self.assertGreater(result["e_s"], 0.1)
+
+    def test_hcn_hm1992_mod_tau_constants_explain_the_t1_entries(self):
+        # HCN_ZH19_IO.mod rounds tauq's constants to 14.6 and 0.07 (HCN_HM1992: 14.59, 0.0701).
+        skip_unless_compiled(self, (HCN_HM1992,))
+
+        def mod_tau(self, V):
+            V = V.to_decimal(u.mV)
+            return 1.0 / (u.math.exp(-0.086 * V - 14.6) + u.math.exp(0.07 * V - 1.87))
+
+        for protocol in (*CURRENT_CLAMP_PROTOCOLS, *VOLTAGE_CLAMP_PROTOCOLS):
+            with self.subTest(protocol=protocol):
+                self.assertEqual(TABLE.tier(HCN_HM1992, protocol), "T1")
+        unpatched = current_clamp_error(HCN_HM1992, "dc")
+        self.assertGreater(unpatched, T0_LIMITS["e_V"])
+        with mock.patch.object(hcn.HCN_HM1992, "f_p_tau", mod_tau):
+            for protocol in CURRENT_CLAMP_PROTOCOLS:
+                with self.subTest(protocol=protocol):
+                    self.assertLessEqual(current_clamp_error(HCN_HM1992, protocol), T0_LIMITS["e_V"])
+            for protocol in VOLTAGE_CLAMP_PROTOCOLS:
+                with self.subTest(protocol=protocol):
+                    result = voltage_clamp.compare_protocol(config_path(HCN_HM1992), template_path(protocol))
+                    self.assertLessEqual(result["e_I"], T0_LIMITS["e_I"])
+                    self.assertLessEqual(result["e_s"], T0_LIMITS["e_s"])
+
+    def test_hcn_hm1992_old_reversal_default_breaks_the_comparison(self):
+        # MECH-47: the configuration gives NEURON eh = -43 mV and leaves BrainCell's E at its
+        # default, so the old +43 mV default is far outside the T1 limits.
+        skip_unless_compiled(self, (HCN_HM1992,))
+        original = hcn.HCN_HM1992.__init__
+
+        def old_default(self, *args, **kwargs):
+            original(self, *args, **{**kwargs, "E": 43.0 * u.mV})
+
+        with mock.patch.object(hcn.HCN_HM1992, "__init__", old_default):
+            error = current_clamp_error(HCN_HM1992, "dc")
+        self.assertGreater(error, 1.0)
 
     def test_pas_comparison_sees_a_change_of_the_leak_current(self):
         # The leak is stateless and its voltage-clamp e_I is exactly 0; a 0.1 % change must show.

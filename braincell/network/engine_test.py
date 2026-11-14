@@ -177,14 +177,15 @@ class NetworkRuntimeTest(unittest.TestCase):
         result = make_runtime_network().run(dt=0.1 * u.ms, duration=0.4 * u.ms)
         conductance = np.asarray(result.samples["post"]["g"].values.to_decimal(u.uS))
         first_nonzero = int(np.flatnonzero(conductance[:, 0] > 0.0)[0])
-        self.assertEqual(first_nonzero, 1)
+        # The spike of step 0 acts at the start of step 1, so sample 1 (t_1) has no g yet (CELL-81; main 51f669f: 1).
+        self.assertEqual(first_nonzero, 2)
 
     def test_heterogeneous_delay_routes_rows_independently(self) -> None:
         network = make_runtime_network(delay=[0.0, 0.3] * u.ms)
         result = network.run(dt=0.1 * u.ms, duration=0.6 * u.ms)
         conductance = np.asarray(result.samples["post"]["g"].values.to_decimal(u.uS))
-        self.assertEqual(int(np.flatnonzero(conductance[:, 0] > 0.0)[0]), 1)
-        # 3 delay steps: one sample after the delay-0 row's, as NEURON (CELL-75).
+        # Sample 1 + 1 + k for k delay steps, as NEURON (CELL-75, CELL-81; main 51f669f: 1 for the delay-0 row).
+        self.assertEqual(int(np.flatnonzero(conductance[:, 0] > 0.0)[0]), 2)
         self.assertEqual(int(np.flatnonzero(conductance[:, 1] > 0.0)[0]), 5)
 
     def test_split_run_preserves_events_in_flight(self) -> None:

@@ -79,6 +79,10 @@ def lower_direct_connections(
             synapse_types = tuple(dict.fromkeys(connection.synapse_type.tolist()))
             if len(synapse_types) != 1:
                 raise TypeError("One direct Connection block must target exactly one synapse type.")
+            if call.plasticity is not None:
+                # A plasticity rule delivers its rows itself, zero-delay ones
+                # included, at its boundary (CELL-12a, CELL-81).
+                continue
             synapse_type = str(synapse_types[0])
             layout_id = post.cell._get_synapse_store().layout_id(synapse_type)
             layout = post.cell._event_layout(layout_id)
@@ -91,23 +95,8 @@ def lower_direct_connections(
             )
             pre_index = connection.source_index.astype(np.int32)
             post_index = connection.synapse.population_index.astype(np.int32)
+            weight = connection.weight
             weight_getter = lambda connection=connection: connection.weight  # noqa: E731
-            if call.plasticity is None:
-                weight = connection.weight
-            else:
-                # A plasticity rule delivers its delayed rows itself, at its
-                # boundary (CELL-12a); the zero-delay rows stay on the
-                # immediate path and read the rule's dynamic weight.
-                keep = np.flatnonzero(delay_steps == 0)
-                if keep.size == 0:
-                    continue
-                offsets = connection._active_ids[keep] - int(call.row_ids[0])
-                weight_getter = call.plasticity.weight_getter(offsets)
-                weight = weight_getter()
-                pre_index = pre_index[keep]
-                post_index = post_index[keep]
-                synapse_index = synapse_index[keep]
-                delay_steps = delay_steps[keep]
             blocks.append(
                 ConnectionBlock(
                     pre_population=pre.name,
@@ -145,8 +134,8 @@ def _expand_delay_steps(delay, *, dt, n_contact: int, quantization: str = "neare
         delay,
         name="delay",
         prefix="Network",
-        # A delay may be a per-contact vector, and zero means immediate
-        # delivery, so neither the scalar nor the positivity rule applies.
+        # A delay may be a per-contact vector, and zero means delivery at
+        # the next boundary, so neither the scalar nor the positivity rule applies.
         require_scalar=False,
         require_positive=False,
     )

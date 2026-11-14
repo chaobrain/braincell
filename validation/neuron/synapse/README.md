@@ -9,17 +9,16 @@ external event sources.
   inhibitory, zero and strong driving force; one-segment passive cylinder,
   `dt` 0.025 ms, float64). The two sides differ by rounding only: V within
   1e-9 mV, g within 1e-12 uS, the current within 1e-10 nA. The test needs
-  NEURON (built-in mechanisms only, no `nrnivmodl`) and skips without it;
-  it is not run by CI yet. Run it with
-  `pytest -q validation/neuron/synapse/reference_test.py`.
+  NEURON (built-in mechanisms only, no `nrnivmodl`) and skips without it.
+  CI runs the whole directory on every pull request (`pytest -q
+  validation/neuron/synapse`) and fails if a test skips.
 - `netcon_delay.py` and `netcon_delay_test.py`: an HH soma whose spike
   drives its own `ExpSyn` through a `Network` connection, against NEURON's
   `NetCon` with delays of 0, 1, 2, 3, 4 and 12 steps (`dt` 0.025 ms). Each
   side's V first differs from the unconnected soma in step m + 1 + k after
   its own crossing step m, and the recorded g is 0 at t_{m+1+k} and
-  w exp(-dt / tau) one sample later on both sides (within 1e-12 uS; zero
-  delay is not compared, BrainCell adds it at the end of the step). Needs
-  NEURON and skips without it.
+  w exp(-dt / tau) one sample later on both sides (within 1e-12 uS), zero
+  delay included. Needs NEURON and skips without it.
 - `spike_times.py` and `spike_times_test.py`: the spike times of an HH soma
   (one 20 um x 20 um compartment, 0.1, 0.2 and 0.3 nA from 0.25 ms, `dt`
   0.025 ms, 50 ms) in `RunResult.spikes` and the Network's

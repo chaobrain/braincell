@@ -131,9 +131,11 @@ class ScalarEventInput(EventInput):
         ``apply_events(payload, V_post=None, *, count)``. ``count`` is a
         dimensionless float array shaped like ``payload`` that holds whole
         numbers, zero on rows without events. Every delivery path counts:
-        scheduled sources, the Network's delay queues and zero-delay
-        delivery, a standalone Cell's live connections, and rows with a
-        plasticity rule.
+        scheduled sources, the Network's delivery of live events (zero
+        delay included), a standalone Cell's live connections, and rows
+        with a plasticity rule. All of them deliver at the start of a step,
+        so the events of one boundary reach ``apply_events`` together
+        (CELL-81).
 
     Raises
     ------

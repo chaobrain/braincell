@@ -146,6 +146,7 @@ class _ConnectionStore:
         "_next_row_id",
         "_next_connect_id",
         "_warning_emitted",
+        "network_history",
     )
 
     id = _store_column("id", "Stable row id of each row.")
@@ -177,6 +178,10 @@ class _ConnectionStore:
         self._next_row_id = 0
         self._next_connect_id = 0
         self._warning_emitted = False
+        #: The ``EventHistoryHandle`` of the Network that last ran the Cell, whose
+        #: histories hold the events its live rows have in flight; ``None`` when
+        #: the rows' own histories do (CELL-83).
+        self.network_history = None
 
     def _concatenate_pending(self) -> None:
         pending, self._pending = self._pending, []
@@ -920,16 +925,23 @@ class ConnectionView(DiscreteView):
 
         :meth:`Cell.run <braincell.Cell.run>` does this at its start, and
         each :meth:`Cell.update <braincell.Cell.update>` call before its step;
-        a spike of a step with a delay of ``k`` steps (``delay / dt``, rounded
-        half up) then reaches its synapse at the end of the ``k``-th step
-        after it. The history is a state, which a traced call cannot create
-        for later calls: before ``update()`` runs under
+        a spike of step ``m`` with a delay of ``k`` steps (``delay / dt``,
+        rounded half up) then acts on its synapse at the start of step
+        ``m + 1 + k``. The history is a state, which a traced call cannot
+        create for later calls: before ``update()`` runs under
         ``brainstate.transform.for_loop`` or ``jit``, call this once outside,
         or the traced call raises. A call at the ``dt`` the rows already have
         does nothing. A call at another ``dt`` quantizes them again when none
         of their delayed events is still to arrive, as after
         :meth:`Cell.reset_state <braincell.Cell.reset_state>`; it is refused
         while one is, so that none is lost or moved to another step.
+
+        A Cell that ran in a :class:`~braincell.Network` (since dropped)
+        takes the events its live rows have in flight from that Network's
+        histories here, or at its next ``run()`` or ``update()``, so each
+        arrives once, at its step (CELL-83). A traced ``update()`` cannot
+        take them: call this once outside the trace first. The ``dt`` check
+        above then compares with the Network's ``dt``.
 
         Parameters
         ----------
@@ -942,9 +954,10 @@ class ConnectionView(DiscreteView):
             For a plasticity rule on a live source, which runs only in a
             :class:`~braincell.Network`; raised before any row is prepared.
         ValueError
-            If ``dt`` is not positive, or the rows have another ``dt`` and
-            one of their delayed events is still to arrive; raised before any
-            row is prepared.
+            If ``dt`` is not positive, or the rows have another ``dt`` (or
+            the Network that ran the Cell last had another) and one of their
+            delayed events is still to arrive; raised before any row is
+            prepared.
 
         Examples
         --------
@@ -986,6 +999,7 @@ class ConnectionView(DiscreteView):
             True
         """
         self._refuse_live_rules()
+        self.root._take_network_history(dt, traced=False, action="prepare_runtime(dt)")
         views = tuple(self._call_views(scheduled=False))
         for view in views:
             # Every row is checked before any is prepared (CELL-76).
@@ -1048,17 +1062,99 @@ class ConnectionView(DiscreteView):
                     f"Live connection {call.name!r} runs at dt = {call.live_dt_ms!r} ms and cannot change dt inside "
                     "a traced call (jit, grad, brainstate.transform.for_loop); run once at the new dt outside it."
                 )
-            # Between steps, row ``j`` holds the spikes of ``j`` steps before the last one. A
-            # delay of ``k`` steps reads row ``k - 1`` at the end of a step: those of ``j >= k``
-            # have arrived.
-            steps = call.live_delay_steps
-            in_flight = np.arange(history.shape[0])[:, None] < steps[None, :]
-            if np.any(np.asarray(history)[in_flight]):
+            if self._in_flight(history, call.live_delay_steps):
                 raise ValueError(
                     f"Live connection {call.name!r} cannot change dt from {call.live_dt_ms!r} ms while delayed "
                     "events are in flight; call reset_state() on the target Cell first, or keep its dt."
                 )
         return call, True
+
+    def _in_flight(self, history, steps) -> bool:
+        """Whether a delayed event of this call is still to arrive, ``history`` its rows' history.
+
+        A step delivers at its start (CELL-81): between steps the source's current count
+        holds the last step's spikes, and row ``j`` of the history those of ``j + 1`` steps
+        before it. A delay of ``k`` steps reads row ``k - 1`` at the start of a step: those
+        of ``j >= k`` have arrived; the last step's are still to arrive for ``k >= 1``.
+        """
+        call = self._require_single_call("check events in flight")
+        steps = np.asarray(steps)
+        current = np.asarray(call.source.current_event_count(self.source_index))
+        if np.any(current.reshape(-1, len(self))[:, steps >= 1]):
+            return True
+        if history is None:
+            return False
+        history = np.asarray(history)
+        return bool(np.any(history[np.arange(history.shape[0])[:, None] < steps[None, :]]))
+
+    def _network_history_rows(self) -> list | None:
+        """The history each live call takes from the Network that last ran the Cell (CELL-83).
+
+        ``None`` when the rows' own histories are current; otherwise
+        ``(call, view, steps, history)`` per live call without a plasticity
+        rule, the delays quantized at the Network's ``dt`` as ``Cell.run``
+        does and ``history`` (``None`` for zero-delay rows) the counts the
+        Network kept.
+        """
+        handle = self._store.network_history
+        if handle is None:
+            return None
+        rows = []
+        for call, view in self.root._call_items(scheduled=False):
+            if call.plasticity is not None:
+                continue
+            delay_ms = np.asarray(view.delay.to_decimal(u.ms), dtype=float)
+            steps = _round_half_up_steps(delay_ms / handle.dt_ms).astype(np.int32)
+            depth = int(np.max(steps, initial=0))
+            history = handle.counts(call.source, view.source_index, depth) if depth else None
+            rows.append((call, view, steps, history))
+        return rows
+
+    def _take_network_history(self, dt, *, traced: bool, action: str) -> None:
+        """Move the events in flight from the Network that last ran the Cell into its live rows (CELL-83).
+
+        A Network keeps the recent counts of its live sources in its own
+        histories; a Cell that leaves it and runs on its own reads its rows'
+        histories, so the counts move there first, once. Refused, before
+        anything changes, inside a trace (the move happens on the host) and
+        at another ``dt`` while an event is in flight, as ``Cell.run``
+        refuses that for its own rows (CELL-76).
+        """
+        if self.cell.network_owner is not None:
+            return  # the Network runs it, and reads its own histories
+        handle = self._store.network_history
+        if handle is None:
+            return
+        if traced:
+            raise RuntimeError(
+                f"Cell.{action} is traced (jit, grad, brainstate.transform.for_loop) right after the Cell ran in a "
+                "Network, whose live events in flight it takes over first, on the host. Call "
+                "cell.connections.prepare_runtime(dt) once before the traced function, or call update() or run() "
+                "once outside it."
+            )
+        rows = self._network_history_rows()
+        dt_ms = scalar_decimal(dt, u.ms)
+        if not np.isclose(handle.dt_ms, dt_ms):
+            for call, view, steps, history in rows:
+                if view._in_flight(history, steps):
+                    raise ValueError(
+                        f"Live connection {call.name!r} cannot change dt from {handle.dt_ms!r} ms, the dt of the "
+                        "Network that ran it last, while delayed events are in flight; call reset_state() on the "
+                        "target Cell first, or keep its dt."
+                    )
+        for call, view, steps, history in rows:
+            call.live_dt_ms = handle.dt_ms
+            call.live_delay_steps = steps
+            if history is None:
+                if call.live_history is not None:
+                    call.live_history.value = jnp.zeros_like(call.live_history.value)
+                continue
+            value = jnp.asarray(history, dtype=jnp.zeros(()).dtype)
+            if call.live_history is None:
+                call.live_history = brainstate.ShortTermState(value)
+            else:
+                call.live_history.value = value
+        self._store.network_history = None
 
     def _live_history_depth(self, dt) -> int:
         """The steps of history this call's delays need at ``dt`` (0: every delay rounds to 0 steps)."""
@@ -1085,6 +1181,10 @@ class ConnectionView(DiscreteView):
             call.live_history = brainstate.ShortTermState(jnp.zeros((max_steps, len(self))))
 
     def reset_runtime(self) -> None:
+        if self.cell.network_owner is None:
+            # On its own, the Cell restarts with nothing in flight; in a Network, whose
+            # reset_state() clears its histories as well, they stay the ones it reads.
+            self._store.network_history = None
         for call in (self._store.call(item) for item in self._store.active_call_ids(self._candidate_ids)):
             if call.live_history is not None:
                 call.live_history.value = jnp.zeros_like(call.live_history.value)
@@ -1092,6 +1192,7 @@ class ConnectionView(DiscreteView):
                 call.plasticity.reset(call.weight)
 
     def clear_runtime(self) -> None:
+        self._store.network_history = None
         for call in (self._store.call(item) for item in self._store.active_call_ids(self._candidate_ids)):
             call.live_history = None
             call.live_delay_steps = None

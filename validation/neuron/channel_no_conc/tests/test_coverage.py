@@ -19,17 +19,21 @@ The configurations are the JSON files under ``configs/``; the reasons are
 ``tolerances.UNCOVERED``. A new channel class registered without either fails
 here, as does a stale name in the list. Every configuration lists the three
 current-clamp templates, and every case of every configuration compares a
-channel that conducts: its conductance (or permeability) is above zero.
+channel that conducts: its conductance (or permeability) is above zero. The
+finite-reference copies of the Cav3.3 ``.mod`` files (MECH-43) equal their
+originals with the two changes their README lists.
 """
 
 from collections.abc import Iterable, Mapping
 import dataclasses
+import hashlib
 from pathlib import Path
 import unittest
 
 import braincell.channel  # noqa: F401  (registers the channel classes)
 from braincell.mech import get_registry, register_channel
 from validation.neuron._tolerance import CURRENT_CLAMP_PROTOCOLS
+from validation.neuron._paths import DATA_ROOT
 from validation.neuron.channel_no_conc.tolerances import UNCOVERED
 
 from ._helpers import CHANNEL_NO_CONC_ROOT, TEMPLATES_ROOT, load_module
@@ -153,6 +157,53 @@ class ChannelCoverageTest(unittest.TestCase):
     def test_a_listed_configured_channel_and_an_empty_reason_fail(self):
         problems = coverage_problems(_registered(), _configured(), {**UNCOVERED, "K_Kv_test": " "})
         self.assertEqual(problems, ["K_Kv_test: in UNCOVERED but has a configuration", "K_Kv_test: empty reason"])
+
+
+_TESTING_MOD = DATA_ROOT / "mechanisms" / "testing"
+FINITE_REFERENCE_COPIES = {
+    "Cav3p3_MA24_PC_finite.mod": DATA_ROOT / "cerebellum/pc_ma2024/mechanisms/channel/Cav3p3_MA24_PC.mod",
+    "Cav3p3_RI21_SC_finite.mod": DATA_ROOT / "cerebellum/sc_ma2021/mechanisms/channel/Cav3p3_RI21_SC.mod",
+}
+_GHK_LINE = "ghk = -0.001*z*F*(cao-cai*exp(w))*w/(exp(w)-1)"
+_GHK_BRANCH = (
+    "if (fabs(exp(w)-1) < 1e-6) {\n"
+    "        ghk = -0.001*z*F*(cao-cai*exp(w))*(1-w/2)\n"
+    "      } else {\n"
+    "        ghk = -0.001*z*F*(cao-cai*exp(w))*w/(exp(w)-1)\n"
+    "      }"
+)
+
+
+def finite_copy(original: str, suffix: str) -> str:
+    """``original`` with its ``SUFFIX`` renamed ``<suffix>_finite`` and the 0/0 GHK line given a series branch."""
+    if original.count(f"SUFFIX {suffix}\n") != 1 or original.count(_GHK_LINE) != 1:
+        raise ValueError(f"{suffix}: the SUFFIX line or the GHK line is not found exactly once")
+    return original.replace(f"SUFFIX {suffix}\n", f"SUFFIX {suffix}_finite\n").replace(_GHK_LINE, _GHK_BRANCH)
+
+
+class FiniteReferenceCopyTest(unittest.TestCase):
+    def test_each_copy_is_its_original_with_the_two_listed_changes(self):
+        for name, original in FINITE_REFERENCE_COPIES.items():
+            with self.subTest(copy=name):
+                suffix = name.removesuffix("_finite.mod")
+                expected = finite_copy(original.read_bytes().decode("ascii"), suffix)
+                self.assertEqual((_TESTING_MOD / name).read_bytes().decode("ascii"), expected)
+
+    def test_the_readme_records_each_original_sha256(self):
+        readme = (_TESTING_MOD / "README.md").read_text(encoding="utf-8")
+        for name, original in FINITE_REFERENCE_COPIES.items():
+            with self.subTest(copy=name):
+                self.assertIn(original.relative_to(DATA_ROOT.parent).as_posix(), readme)
+                self.assertIn(hashlib.sha256(original.read_bytes()).hexdigest(), readme)
+
+    def test_a_changed_original_or_copy_is_detected(self):
+        name, original = next(iter(FINITE_REFERENCE_COPIES.items()))
+        text = original.read_bytes().decode("ascii")
+        copy = (_TESTING_MOD / name).read_bytes().decode("ascii")
+        drifted = finite_copy(text.replace("vhalfn", "vhalfn_", 1), "Cav3p3_MA24_PC")
+        self.assertNotEqual(drifted, copy)
+        with self.assertRaises(ValueError):
+            finite_copy(text.replace(_GHK_LINE, "ghk = 0"), "Cav3p3_MA24_PC")
 
 
 if __name__ == "__main__":

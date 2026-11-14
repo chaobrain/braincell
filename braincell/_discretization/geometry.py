@@ -417,7 +417,7 @@ def interval_area_fraction(
         >>> from braincell import Branch
         >>> from braincell._discretization.geometry import interval_area_fraction
         >>> taper = Branch.from_lengths(lengths=[100.0] * u.um,
-        ...                             radii=[4.0, 1.0] * u.um, type="dend")
+        ...                             radii=[4.0, 1.0] * u.um, type="dendrite")
         >>> area = float(taper.area.to_decimal(u.um ** 2))
         >>> round(interval_area_fraction(taper, prox=0.0, dist=1.0,
         ...                              lateral_area_um2=area,

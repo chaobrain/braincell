@@ -23,3 +23,32 @@ python -m validation.neuron._mechanisms testing --kind channel
 
 The library is written to `validation/neuron/artifacts/mechanisms/testing/channel/`.
 Ion notebooks compile only their requested Toy mechanisms in isolated subsets.
+
+`Cav3p3_MA24_PC_finite.mod` and `Cav3p3_RI21_SC_finite.mod` are finite
+references for the 0 mV voltage-clamp command (MECH-43). They are copies of
+`data/cerebellum/pc_ma2024/mechanisms/channel/Cav3p3_MA24_PC.mod`
+(SHA-256 `82781c90703880449bdffe2203339357d24b2bf8017993bc7efc2575809afaa6`)
+and `data/cerebellum/sc_ma2021/mechanisms/channel/Cav3p3_RI21_SC.mod`
+(SHA-256 `49109875a6b87dabb5ef8b20d795d0e1304bdd081f343f0abeec2cc59073f576`)
+with two changes each:
+
+- `SUFFIX Cav3p3_MA24_PC` becomes `SUFFIX Cav3p3_MA24_PC_finite`
+  (`Cav3p3_RI21_SC` becomes `Cav3p3_RI21_SC_finite`), so the copy and the
+  original can be loaded in one process;
+- the GHK line of `rates()`,
+  `ghk = -0.001*z*F*(cao-cai*exp(w))*w/(exp(w)-1)`, which is 0/0 at
+  `w = 0`, becomes the small-`w` series branch that `Cav3p1_MA24_PC.mod`
+  uses in its `ghk()`:
+
+  ```
+  if (fabs(exp(w)-1) < 1e-6) {
+    ghk = -0.001*z*F*(cao-cai*exp(w))*(1-w/2)
+  } else {
+    ghk = -0.001*z*F*(cao-cai*exp(w))*w/(exp(w)-1)
+  }
+  ```
+
+NMODL has no built-in `exprelr`, hence the branch. The channel_no_conc
+configurations `configs/testing/cav3p3_*_finite.json` compare the BrainCell
+Cav3.3 classes against these copies; `tests/test_coverage.py` rebuilds each
+copy from its original and checks that the two are identical.

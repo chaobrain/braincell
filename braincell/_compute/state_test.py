@@ -171,6 +171,7 @@ class CellRuntimeStateTest(unittest.TestCase):
         soma = cell.loc(at("soma", 0.5))
         soma.record("v", braincell.observe.state("V"))
         soma.record("p", braincell.observe.channel(name="Na_HH1952").state("p"))
+        cell.paint(BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0), braincell.mech.Ion("SodiumFixed"))
         cell.init_state()
         rcell = cell
 
@@ -252,6 +253,7 @@ class CellRuntimeStateTest(unittest.TestCase):
             ),
         )
         cell.loc(at("soma", 0.5)).record("g_max", braincell.observe.channel(name="Na_HH1952").state("g_max"))
+        cell.paint(BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0), braincell.mech.Ion("SodiumFixed"))
         cell.init_state()
         rcell = cell
 

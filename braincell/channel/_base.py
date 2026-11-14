@@ -92,21 +92,15 @@ def ghk_flux(V, ci, co, z, temp):
 
     .. math::
 
-        \text{regular\_branch} = \frac{z \zeta F
-        (c_i - c_o e^{-\zeta})}{1 - e^{-\zeta}}
+        \frac{z \zeta F (c_i - c_o e^{-\zeta})}{1 - e^{-\zeta}}
+        = \frac{z F (c_i - c_o e^{-\zeta})}{\operatorname{exprel}(-\zeta)},
+        \qquad \operatorname{exprel}(x) = \frac{e^x - 1}{x}
 
-    which is undefined at ``zeta = 0`` because ``1 - exp(-zeta)`` vanishes
-    there and the branch divides by it. To keep the function stable as
-    ``zeta -> 0``, a second, algebraically equivalent branch
-
-    .. math::
-
-        \text{small\_branch} = z F (c_i - c_o e^{-\zeta})
-        \left(1 + \frac{\zeta}{2}\right)
-
-    is selected instead via ``u.math.where`` whenever
-    ``abs(1 - exp(-zeta)) <= 1e-6``, which both avoids the division and
-    stays numerically well conditioned near that singularity.
+    The left form is 0/0 at ``zeta = 0``, and near it ``1 - exp(-zeta)``
+    loses digits to cancellation. :func:`brainunit.math.exprel` takes the
+    limit ``exprel(0) = 1`` there and stays accurate to rounding nearby, for
+    the value and for its derivative, so the flux is
+    ``z * F * (c_i - c_o)`` at 0 mV and needs no branch (MECH-43).
 
     Goldman (1943) [1]_ and Hodgkin & Katz (1949) [2]_ are together the
     origin of the name "GHK", but they are the primary sources for two
@@ -128,11 +122,9 @@ def ghk_flux(V, ci, co, z, temp):
            doi:10.1113/jphysiol.1949.sp004310
     """
     zeta = (z * FARADAY_CONSTANT * V) / (GAS_CONSTANT * temp)
-    exp_term = u.math.exp(-zeta)
-    numerator = ci - co * exp_term
-    small_branch = (z * FARADAY_CONSTANT) * numerator * (1 + zeta / 2)
-    regular_branch = (z * zeta * FARADAY_CONSTANT) * numerator / (1 - exp_term)
-    return u.math.where(u.math.abs(1 - exp_term) <= 1e-6, small_branch, regular_branch)
+    numerator = ci - co * u.math.exp(-zeta)
+    # zeta / (1 - exp(-zeta)) = 1 / exprel(-zeta), finite at zeta = 0.
+    return (z * FARADAY_CONSTANT) * numerator / u.math.exprel(-zeta)
 
 
 def q10_factor(q10, temp, temp_ref):

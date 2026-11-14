@@ -70,7 +70,9 @@ jobs:
   # `sphinx -j` forks a process after JAX has started its threads and
   # deadlocks. Notebooks are not executed (nb_execution_mode = "off" in
   # docs/conf.py). The page header and the intersphinx inventories are
-  # downloaded live. Runs on every pull request.
+  # downloaded live. Last, the `>>>` examples in the package's docstrings run
+  # as doctests (test modules excluded), so an example that no longer matches
+  # the code fails the pull request. Runs on every pull request.
   checks:
     needs: changes
     runs-on: ubuntu-latest
@@ -149,16 +151,26 @@ jobs:
         env:
           BRAINX_HEADER_TTL: "0"
         run: python -m sphinx -W --keep-going -b html docs docs/_build/html
+      - name: Run the docstring examples
+        # Collecting every module needs the test dependencies (pytest and the
+        # optional imports); the root conftest.py selects the CPU.
+        run: |
+          python -m pip install -r requirements-dev.txt
+          python -m pytest --doctest-modules braincell --ignore-glob='*_test.py' -rs --durations=5
 
   # The tests outside the braincell package, in one job so a pull request
   # holds one runner for them; each suite runs in its own pytest process, so
   # the NEURON mechanism libraries of the cable, channel and ion suites never
   # share a process. Steps are selected by `changes`: the NEURON comparisons
-  # (validation/neuron) when `neuron`, the optim validation suite and the
-  # benchmark scripts' own tests when `bench`. Every selected step runs even
-  # after an earlier one failed, so one run reports every failure. Modules
-  # marked `slow` (pyproject.toml) run only in `slow_tests` and
-  # `slow_tests_neuron`.
+  # (validation/neuron, and the ASC reader's NEURON parity tests) when
+  # `neuron`, the optim validation suite and the benchmark scripts' own tests
+  # when `bench`. Every selected step runs even after an earlier one failed,
+  # so one run reports every failure. Modules marked `slow` (pyproject.toml)
+  # run only in `slow_tests` and `slow_tests_neuron`. The morphology, ASC and
+  # synapse comparisons skip their tests when NEURON cannot be imported, and
+  # the ion suite's when a pinned source under data/modeldb is missing; here
+  # a skipped test fails the job (.github/junit_counts.py), so a broken NEURON
+  # install or a lost file cannot turn them into silent passes.
   validation:
     needs: changes
     if: needs.changes.outputs.neuron == 'true' || needs.changes.outputs.bench == 'true'
@@ -197,18 +209,30 @@ jobs:
           pytest validation/neuron/channel_no_conc/tests \
             validation/neuron/_clamp_test.py validation/neuron/_tolerance_test.py \
             validation/neuron/_convergence_test.py validation/neuron/_mechanisms_test.py \
-            -m "not slow" --durations=10
+            validation/neuron/_paths_test.py -m "not slow" --durations=10
       - name: Test the ion suite (fast tier)
-        # pytest exits 5 when it collects no test, which is not a failure.
+        if: ${{ !cancelled() && env.NEURON_SUITES == 'true' }}
+        run: pytest validation/neuron/ion -m "not slow" -rs --durations=10 --junitxml="$RUNNER_TEMP/neuron-ion.xml"
+      - name: Test the morphology comparisons
+        # SWC and ASC morphology metrics and soma layout against NEURON's
+        # import3d; NEURON's built-in mechanisms only, no compiled models.
+        if: ${{ !cancelled() && env.NEURON_SUITES == 'true' }}
+        run: pytest validation/neuron/morph -rs --durations=10 --junitxml="$RUNNER_TEMP/neuron-morph.xml"
+      - name: Test the ASC reader against NEURON (AscNeuronParityTest)
+        # The package suite has no NEURON, so these tests skip in `coverage`.
+        if: ${{ !cancelled() && env.NEURON_SUITES == 'true' }}
+        run: pytest braincell/io/asc/reader_test.py -k AscNeuronParityTest -rs --durations=10 --junitxml="$RUNNER_TEMP/neuron-asc.xml"
+      - name: Test the synapse comparisons
+        # ExpSyn and Exp2Syn, NetCon delays and spike times against NEURON's
+        # built-in mechanisms; no compiled models.
+        if: ${{ !cancelled() && env.NEURON_SUITES == 'true' }}
+        run: pytest validation/neuron/synapse -rs --durations=10 --junitxml="$RUNNER_TEMP/neuron-synapse.xml"
+      - name: Require the morphology, ASC, synapse and ion comparisons to skip no test
         if: ${{ !cancelled() && env.NEURON_SUITES == 'true' }}
         run: |
-          status=0
-          pytest validation/neuron/ion -m "not slow" --durations=10 || status=$?
-          if [ "$status" -eq 5 ]; then
-            echo "No fast test under validation/neuron/ion."
-            exit 0
-          fi
-          exit "$status"
+          python .github/junit_counts.py --self-test
+          python .github/junit_counts.py "$RUNNER_TEMP"/neuron-morph.xml "$RUNNER_TEMP"/neuron-asc.xml \
+            "$RUNNER_TEMP"/neuron-synapse.xml "$RUNNER_TEMP"/neuron-ion.xml
       - name: Test validation/optim and benchmarks (fast tier)
         if: ${{ !cancelled() && env.BENCH_SUITES == 'true' }}
         run: pytest validation/optim benchmarks -m "not slow" --durations=10
@@ -248,9 +272,12 @@ jobs:
   # selected by marker, so a new slow module joins without editing this file.
   # Like `slow_tests`, it runs only when the daily workflow calls this file and
   # is not in ci-ok's `needs`; a failure fails the daily run, which opens the
-  # red issue. Each suite runs in its own process (mechanism libraries). It
-  # also compiles every cerebellar model's whole-cell mechanisms, which no
-  # suite on a pull request builds.
+  # red issue. Each suite runs in its own process (mechanism libraries). The
+  # ion suite compiles its own sources, the pinned ModelDB files under
+  # data/modeldb included (the chloride, GABA_A, sodium and potassium
+  # comparisons), and must skip no test. It also compiles every
+  # cerebellar model's whole-cell mechanisms, which no suite on a pull
+  # request builds.
   slow_tests_neuron:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -283,16 +310,12 @@ jobs:
       - name: Test the channel_no_conc suite (slow tier)
         run: pytest validation/neuron/channel_no_conc/tests -m slow --durations=10
       - name: Test the ion suite (slow tier)
-        # pytest exits 5 when it collects no test: validation/neuron/ion has
-        # no slow module yet, which is not a failure.
-        run: |
-          status=0
-          pytest validation/neuron/ion -m slow --durations=10 || status=$?
-          if [ "$status" -eq 5 ]; then
-            echo "No slow test under validation/neuron/ion."
-            exit 0
-          fi
-          exit "$status"
+        # Runs after a failed step too, so one suite's failure cannot hide the other's.
+        if: ${{ !cancelled() }}
+        run: pytest validation/neuron/ion -m slow -rs --durations=10 --junitxml="$RUNNER_TEMP/neuron-ion-slow.xml"
+      - name: Require the ion suite (slow tier) to skip no test
+        if: ${{ !cancelled() }}
+        run: python .github/junit_counts.py "$RUNNER_TEMP/neuron-ion-slow.xml"
       - name: Compile the whole-cell mechanisms
         # The channel builds above leave each model's ion and synapse MOD
         # files uncompiled; a cell build compiles channel, ion and synapse

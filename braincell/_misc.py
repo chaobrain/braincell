@@ -136,7 +136,7 @@ def validate_time_quantity(
         per-contact synaptic delays.
     require_positive : bool, default True
         Require every element to be strictly positive. Pass ``False`` where
-        zero is meaningful, such as a zero delay meaning immediate delivery.
+        zero is meaningful, such as a zero delay (delivery at the next boundary).
 
     Raises
     ------

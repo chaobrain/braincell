@@ -141,6 +141,11 @@ class MaterializationScheduleTest(unittest.TestCase):
         # timing. Both population rows share the same per-CV optimizer roots.
         with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
             cell = braincell.Cell(_build_tree(), pop_size=(2,))
+            cell.paint(
+                AllRegion(),
+                braincell.mech.Ion("SodiumFixed", name="na"),
+                braincell.mech.Ion("PotassiumFixed", name="k"),
+            )
             for mechanism, name, conductance in (
                 ("IL", "leak", 0.3),
                 ("K_HH1952", "k", 3.6),
@@ -491,6 +496,7 @@ class RolloutGradientEngineTest(unittest.TestCase):
     def test_default_initializer_differentiates_parameter_dependent_reset(self) -> None:
         def make_cell():
             cell = braincell.Cell(_build_tree(), pop_size=(1,))
+            cell.paint(AllRegion(), braincell.mech.Ion("SodiumFixed", name="na"))
             cell.paint(
                 AllRegion(),
                 braincell.mech.Channel("Na_HH1952", name="na", g_max=12.0 * u.mS / u.cm**2),
@@ -688,6 +694,7 @@ class TrajectoryGradientEngineTest(unittest.TestCase):
     def test_two_pass_includes_parameter_dependent_reset(self) -> None:
         def make_cell():
             cell = braincell.Cell(_build_tree(), pop_size=(1,))
+            cell.paint(AllRegion(), braincell.mech.Ion("SodiumFixed", name="na"))
             cell.paint(
                 AllRegion(),
                 braincell.mech.Channel("Na_HH1952", name="na", g_max=12.0 * u.mS / u.cm**2),

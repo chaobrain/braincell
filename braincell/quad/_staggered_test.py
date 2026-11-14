@@ -138,6 +138,7 @@ class StaggeredAutodiffTest(unittest.TestCase):
             V_init=-65.0 * u.mV,
             solver="staggered",
         )
+        cell.paint(AllRegion(), mech.Ion("SodiumFixed", name="na"), mech.Ion("PotassiumFixed", name="k"))
         cell.paint(
             AllRegion(),
             mech.Channel(

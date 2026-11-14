@@ -2792,6 +2792,23 @@
   - an `update()` traced right after the Cell left a Network raises
     `RuntimeError`. Call `cell.connections.prepare_runtime(dt)` once outside
     the trace.
+- A batch Cell (`init_state(batch_size=b)`) with live connections runs under
+  `Cell.run` and `update()`, each element as that element on its own
+  (CELL-84). On main `384c860` the first step raised `ValueError: Cannot
+  broadcast to shape with fewer dimensions` for a zero delay and `TypeError:
+  Cannot concatenate arrays with different numbers of dimensions` for a delay
+  of one step or more. The live rows' histories, their sums and the event
+  buffers of the synapses they reach now carry the batch axis; a schedule on
+  the same synapses, the same for each element, adds to every element. The
+  V and g of a lumped batch (2 elements x 3 members, delays 0, 1 and 3
+  steps) and of a cable batch (3 elements, 3 CVs) match each element run
+  alone to 1.42e-14 mV and exactly in g, float64, on the machine that tested
+  them; so do split runs, `update()` loops, `reset_state()`, `ExpSynSTD` and
+  a reduction model. A `Network` now refuses a Cell that already carries a
+  batch: `Network.run` and `prepare_run` raise `NotImplementedError` with the
+  message of `Network.init_state(batch_size=...)` before anything changes.
+  Before, `Network.run` ran every step, then raised `ValueError: too many
+  values to unpack` while assembling the events, the Cell's clock advanced.
 
 - **Compact forward sensitivity refuses an active set that would drop a
   trainable parameter** (OPT-16). When an engine materializes the trainable

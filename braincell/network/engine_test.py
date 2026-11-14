@@ -30,8 +30,11 @@ import braincell
 from braincell._random_test import default_key_data, drawn_seeds
 from braincell._multi_compartment.lifecycle_test import loop_compiles
 from braincell._multi_compartment.run_test import (
+    _LUMPED_DRIVE,
     DT,
     WEIGHT,
+    _hh_cell,
+    _live_batch_cell,
     _float64,
     _rule_cell,
     _rule_updates,
@@ -2024,6 +2027,88 @@ class NetworkLongRunSampleTest(unittest.TestCase):
                 short = network.run(dt=DT, duration=21 * DT)
                 self.assertEqual(cell._clock_host()[1], 1_000_021)
                 self.assertEqual([short.samples["post"][n].values.shape[0] for n in ("p2", "p4")], [11, 6])
+
+
+def _cell_fingerprint(cell):
+    """Every State of ``cell``, its event buffers, its connect calls' runtime fields and its clock."""
+    states = {
+        str(path): [np.asarray(leaf).copy() for leaf in jax.tree.leaves(state.value)]
+        for path, state in brainstate.graph.states(cell).items()
+    }
+    buffers = {
+        key: np.asarray(u.get_mantissa(value.value)).copy()
+        for key, value in cell._event_runtime().event_buffers.items()
+    }
+    calls = [
+        (
+            None if call.live_history is None else np.asarray(call.live_history.value).copy(),
+            call.live_dt_ms,
+            None if call.live_delay_steps is None else tuple(call.live_delay_steps.tolist()),
+        )
+        for call in cell._get_connection_store()._calls
+    ]
+    handle = cell._get_connection_store().network_history
+    return states, buffers, calls, handle, float(cell.current_time.to_decimal(u.ms))
+
+
+def _network_fingerprint(net):
+    """``repr`` of each attribute of ``net``: the caches, prepared run and configuration hold the same objects."""
+    return {name: repr(value) for name, value in vars(net).items()}
+
+
+class BatchedCellInANetworkTest(unittest.TestCase):
+    """CELL-84: a Network refuses a Cell that already carries a batch, before changing anything.
+
+    ``Network.init_state(batch_size=...)`` refuses a batch (CELL-15); a Cell
+    initialized on its own with one could still join. On main ``973a5fa``
+    ``Network.run`` ran every step, then raised ``ValueError: too many
+    values to unpack`` while it assembled the events, the Cell's clock at
+    0.25 ms after 10 steps; ``prepare_run`` accepted it.
+    """
+
+    def _assert_unchanged(self, before, after):
+        (states, buffers, calls, handle, time), net = before
+        (states2, buffers2, calls2, handle2, time2), net2 = after
+        self.assertEqual(states.keys(), states2.keys())
+        for key, leaves in states.items():
+            for leaf, other in zip(leaves, states2[key]):
+                np.testing.assert_array_equal(leaf, other, err_msg=key)
+        self.assertEqual(buffers.keys(), buffers2.keys())
+        for key, value in buffers.items():
+            np.testing.assert_array_equal(value, buffers2[key])
+        for (history, dt_ms, steps), (history2, dt_ms2, steps2) in zip(calls, calls2):
+            self.assertEqual((dt_ms, steps), (dt_ms2, steps2))
+            if history is None:
+                self.assertIsNone(history2)
+            else:
+                np.testing.assert_array_equal(history, history2)
+        self.assertIs(handle, handle2)
+        self.assertEqual(time, time2)
+        self.assertEqual(net, net2)
+
+    def test_run_and_prepare_run_refuse_it(self) -> None:
+        builders = {
+            "live rows": lambda: _live_batch_cell("lumped", 3, _LUMPED_DRIVE),
+            "no live rows": lambda: _hh_cell("lumped"),
+        }
+        with _float64():
+            for name, build in builders.items():
+                for entry in ("run", "prepare_run"):
+                    with self.subTest(cell=name, entry=entry):
+                        cell = build()
+                        cell.init_state(batch_size=2)
+                        net = Network("batched")
+                        net.add_population("c", cell)
+                        before = (_cell_fingerprint(cell), _network_fingerprint(net))
+                        call = getattr(net, entry)
+                        kwargs = {"duration": 10 * DT} if entry == "run" else {}
+                        with self.assertRaises(NotImplementedError) as caught:
+                            call(dt=DT, **kwargs)
+                        self._assert_unchanged(before, (_cell_fingerprint(cell), _network_fingerprint(net)))
+                        # The message of Network.init_state(batch_size=...).
+                        with self.assertRaises(NotImplementedError) as reference:
+                            Network("other").init_state(batch_size=2)
+                        self.assertEqual(str(caught.exception), str(reference.exception))
 
 
 if __name__ == "__main__":

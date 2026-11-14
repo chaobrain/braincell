@@ -943,6 +943,10 @@ class ConnectionView(DiscreteView):
         take them: call this once outside the trace first. The ``dt`` check
         above then compares with the Network's ``dt``.
 
+        On a Cell initialized with ``batch_size``, the history keeps each
+        element's events, ``(depth, batch, rows)``, and each element's rows
+        deliver its own spikes (CELL-84).
+
         Parameters
         ----------
         dt : Quantity
@@ -1085,7 +1089,9 @@ class ConnectionView(DiscreteView):
         if history is None:
             return False
         history = np.asarray(history)
-        return bool(np.any(history[np.arange(history.shape[0])[:, None] < steps[None, :]]))
+        # A batch Cell's history is ``(depth, batch, rows)``: the batch joins the last axis (CELL-84).
+        kept = np.moveaxis(history, -1, 1).reshape(history.shape[0], len(self), -1)
+        return bool(np.any(kept[np.arange(history.shape[0])[:, None] < steps[None, :]]))
 
     def _network_history_rows(self) -> list | None:
         """The history each live call takes from the Network that last ran the Cell (CELL-83).
@@ -1171,14 +1177,22 @@ class ConnectionView(DiscreteView):
         call.live_dt_ms = dt_ms
         call.live_delay_steps = steps
         max_steps = int(np.max(steps, initial=0))
+        # A batch Cell's source counts per element: ``(depth, batch, rows)`` (CELL-84).
+        batch = self._live_batch_shape(call)
         if call.live_history is not None:
             # The history of an earlier dt holds no event in flight (_check_live_dt). The same
             # state, so a compiled loop that holds it sees the new shape and traces again; a dt
             # whose delays all round to 0 steps keeps it, zero and unread.
-            shape = (max_steps, len(self)) if max_steps else call.live_history.value.shape
+            shape = (max_steps, *batch, len(self)) if max_steps else call.live_history.value.shape
             call.live_history.value = jnp.zeros(shape)
         elif max_steps > 0:
-            call.live_history = brainstate.ShortTermState(jnp.zeros((max_steps, len(self))))
+            call.live_history = brainstate.ShortTermState(jnp.zeros((max_steps, *batch, len(self))))
+
+    def _live_batch_shape(self, call: _ConnectionCall) -> tuple:
+        """The batch axes of this call's source counts: ``()`` unless the Cell runs a batch (CELL-84)."""
+        cell = self.cell
+        batch = getattr(cell, "_runtime_batch_size", None)
+        return () if batch is None else (int(batch),)
 
     def reset_runtime(self) -> None:
         if self.cell.network_owner is None:
@@ -1208,9 +1222,11 @@ class ConnectionView(DiscreteView):
             return current
         rows = np.arange(len(self), dtype=np.int32)
         delayed_row = np.maximum(steps - 1, 0)
-        delayed = call.live_history.value[delayed_row, rows]
+        history = call.live_history.value
+        # Row ``k - 1`` of each row's own column; a batch Cell's batch axes sit between (CELL-84).
+        delayed = jnp.moveaxis(jnp.moveaxis(history, -1, 1)[delayed_row, rows], 0, -1)
         output = jnp.where(jnp.asarray(steps) == 0, current, delayed)
-        call.live_history.value = jnp.concatenate((current[None, :], call.live_history.value[:-1]), axis=0)
+        call.live_history.value = jnp.concatenate((current[None], history[:-1]), axis=0)
         return output
 
     def _require_single_call(self, action: str) -> _ConnectionCall:

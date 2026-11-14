@@ -108,12 +108,13 @@ Public classes, methods and functions use [NumPy-style docstrings](https://numpy
 8. **References**: numbered entries (`.. [1]`), including the sources of a model's equations.
 9. **Examples**.
 
-Examples are runnable and doctestable:
+Examples are runnable and doctestable. CI's `checks` job runs them on every pull request with `pytest --doctest-modules braincell --ignore-glob='*_test.py'`, so an example whose output no longer matches the code fails the pull request:
 
 - wrap them in a `.. code-block:: python` directive so that Sphinx highlights them;
 - prefix every input line with `>>>` (continuation lines with `...`), and put the expected output on the next line without a prefix;
 - separate scenarios with a blank `>>>` line;
-- start with every import the block needs (`import brainunit as u`, …).
+- start with every import the block needs (`import brainunit as u`, …);
+- define every object the example uses, so it runs offline; mark a line `# doctest: +SKIP` only when it needs the network, a file that is not in the repository, or a plot window.
 
 ## Deprecation
 

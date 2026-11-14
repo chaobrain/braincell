@@ -36,6 +36,7 @@ from examples.optim.stimulus_design.dataset import (
     _validate_dataset,
     build_cell,
     cross_locations,
+    simulate_voltage,
 )
 
 
@@ -106,3 +107,22 @@ def test_cross_locations_preserves_waveform_and_builds_expected_split_counts() -
         calibration,
     )
     _validate_dataset(dataset)
+
+
+def test_current_playback_drives_each_protocol_at_its_own_site() -> None:
+    # Two protocols: none, and 0.05 nA into the soma. Each protocol is one
+    # population member, so the playback divides by per-member point areas;
+    # indexing those as one flat array raised a broadcasting TypeError.
+    steps = 40
+    currents = np.zeros((2, N_STEPS, 3))
+    currents[1, :, 0] = 0.05
+    with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+        voltage = np.asarray(simulate_voltage(build_cell(currents, trainable=False), num_steps=steps))
+
+    assert voltage.shape == (2, steps, 7)
+    assert np.all(np.isfinite(voltage))
+    rise = voltage[1, -1] - voltage[0, -1]
+    soma, dend_a_tip, dend_b_tip = 0, 3, 6
+    assert rise[soma] > 0.1  # mV after 1 ms
+    assert rise[soma] > rise[dend_a_tip] > 0.0
+    assert rise[soma] > rise[dend_b_tip] > 0.0

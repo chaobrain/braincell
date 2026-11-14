@@ -180,7 +180,7 @@ class CellRuntimeState:
     clamp_routing_table: object | None = None
     cable: CableArrays | None = None
     cv_area: object | None = None  # (n_cv,) brainunit Quantity, cm^2
-    point_area: object | None = None  # (n_point,) brainunit Quantity, cm^2
+    point_area: object | None = None  # (*pop_size, n_point) brainunit Quantity, cm^2
     pop_size: tuple[int, ...] = ()
     geometry: dict[str, RuntimeParameterState] | None = None
     reference_cable: CableArrays | None = None

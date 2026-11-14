@@ -225,7 +225,7 @@ def _attach_current_playback(cell: braincell.Cell, current_na) -> None:
     branch_to_cvs = cell.cv_tree.branch_to_cv_ids
     target_cvs = np.asarray((branch_to_cvs[0][0], branch_to_cvs[1][-1], branch_to_cvs[2][-1]), dtype=np.int32)
     target_points = jnp.asarray(cell.node_tree.cv_to_mid_node_id[target_cvs])
-    target_area = cell.runtime.point_area.to_decimal(u.cm**2)[target_points]
+    target_area = cell.runtime.point_area.to_decimal(u.cm**2)[..., target_points]
     n_point = cell.n_point
 
     def playback(_point_voltage):

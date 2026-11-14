@@ -1,0 +1,69 @@
+# What the daily `examples` job does not run (.github/run_examples.py).
+#
+# Every other tracked examples/**/*.py that is not a *_test.py, __init__.py or
+# conftest.py runs with MPLBACKEND=Agg on CPU, with the job's dependencies
+# (requirements-dev.txt: braincell[testing]). List a script here only when it
+# cannot run there: it needs a package that install does not provide, a GPU,
+# the network or command-line arguments for a long experiment, or it is not
+# Python. Give the reason; an entry for a file that is not a tracked example
+# script fails the job. A script that is merely slow gets a [[timeout]] entry
+# instead.
+
+# NMODL conversion: needs the nmodl Python API (NEURON's neuron.nmodl or Blue
+# Brain's nmodl package), which no braincell extra installs.
+[[skip]]
+path = "examples/convert_mod/nmodl/examples/generate_braincell.py"
+reason = "needs the nmodl Python API (neuron.nmodl or the nmodl package)"
+
+[[skip]]
+path = "examples/convert_mod/nmodl/steps/inspect_ast/cli.py"
+reason = "needs the nmodl Python API (neuron.nmodl or the nmodl package)"
+
+[[skip]]
+path = "examples/convert_mod/nmodl/steps/inspect_ir/cli.py"
+reason = "needs the nmodl Python API (neuron.nmodl or the nmodl package)"
+
+[[skip]]
+path = "examples/convert_mod/nmodl/steps/render/cli.py"
+reason = "needs the nmodl Python API (neuron.nmodl or the nmodl package)"
+
+[[skip]]
+path = "examples/convert_mod/nmodl/templates/density_channel.py"
+reason = "a Jinja template for generated channel code, not Python; steps/render fills it in"
+
+[[skip]]
+path = "examples/convert_mod/nmodl/templates/one_ion_hh_ohmic.py"
+reason = "a Jinja template for generated channel code, not Python; steps/render fills it in"
+
+[[skip]]
+path = "examples/optim/stimulus_design/global_ensemble.py"
+reason = "experiment: a 16384-member parameter ensemble (over 15 min on CPU) that reads robust_oed.py's output; global_ensemble_test.py tests its parts on small inputs"
+
+# Experiment drivers: their `run` command starts workers with
+# JAX_PLATFORMS=cuda on a chosen GPU. Their modules are covered by the
+# *_test.py files beside them (pytest examples).
+[[skip]]
+path = "examples/optim/initialization/hybrid_initialization.py"
+reason = "experiment driver: needs a subcommand, and `run` starts CUDA workers on a GPU"
+
+[[skip]]
+path = "examples/optim/parameter_fitting/run.py"
+reason = "experiment driver: needs a subcommand, and `run` starts CUDA workers on a GPU"
+
+[[skip]]
+path = "examples/single_compartment/SC01_fitting_a_hh_neuron.py"
+reason = "needs pandas, which no braincell extra installs"
+
+[[skip]]
+path = "examples/single_compartment/SC03_COBA_HH_2007_braincell.py"
+reason = "needs numba (brainevent's CPU event kernels)"
+
+[[skip]]
+path = "examples/single_compartment/SC06_unified_thalamus_model.py"
+reason = "needs numba (imported directly)"
+
+# Tests under examples/ that `pytest examples` deselects. The job fails when a
+# test skips, so a test that needs an optional dependency is listed here.
+[[deselect]]
+nodeid = "examples/optim/initialization/hybrid_initialization_test.py::test_nevergrad_search_obeys_same_batched_contract_when_installed"
+reason = "needs nevergrad (the optim extra)"

@@ -109,6 +109,7 @@ class RuntimeBindingTest(unittest.TestCase):
             braincell.mech.Channel("Na_HH1952", g_max=8.0 * (u.mS / u.cm**2)),
         )
 
+        cell.paint(BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0), braincell.mech.Ion("SodiumFixed"))
         cell.init_state()
         rcell = cell
 
@@ -156,6 +157,7 @@ class RuntimeBindingTest(unittest.TestCase):
             braincell.mech.Channel("Na_HH1952", g_max=8.0 * (u.mS / u.cm**2)),
         )
 
+        cell.paint(BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0), braincell.mech.Ion("SodiumFixed"))
         cell.init_state()
         rcell = cell
 
@@ -470,6 +472,7 @@ class RuntimeBindingTest(unittest.TestCase):
             ),
         )
 
+        cell.paint(BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0), braincell.mech.Ion("SodiumFixed"))
         cell.init_state()
         rcell = cell
         layout = rcell.layouts[0]
@@ -497,6 +500,7 @@ class RuntimeBindingTest(unittest.TestCase):
             ),
         )
 
+        cell.paint(BranchSlice(branch_index=[0, 1], prox=0.0, dist=1.0), braincell.mech.Ion("SodiumFixed"))
         cell.init_state()
         rcell = cell
         layout = rcell.layouts[0]

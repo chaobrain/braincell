@@ -89,7 +89,12 @@ from braincell._compute.parameters import (
     parameter_state_value,
 )
 from braincell.quad import get_integrator
-from braincell._compute.ions import _build_runtime_ions, _sync_runtime_ion, ion_species_key
+from braincell._compute.ions import (
+    _build_runtime_ions,
+    _sync_runtime_ion,
+    ion_species_key,
+    warn_placeholder_ion_bindings,
+)
 from braincell._compute.layouts import MechanismLayout
 
 if TYPE_CHECKING:
@@ -250,6 +255,15 @@ def _build_runtime_nodes(
             runtime_nodes[layout.id] = node
             bound_ion_keys[layout.id] = layout_bound_ion_keys
             current_owner_keys[layout.id] = current_owner_key
+    # Every declared ion owns at least one layout; the rest are placeholders.
+    declared_ions = {id(node) for node in ion_runtime_nodes.values()}
+    warn_placeholder_ion_bindings(
+        (
+            (_mechanism_class_name(layout_mechanisms[layout_id]), keys)
+            for layout_id, keys in sorted(bound_ion_keys.items())
+        ),
+        {key: ion for key, ion in ions.items() if id(ion) not in declared_ions},
+    )
     return (
         ions,
         ion_aliases,
@@ -363,6 +377,13 @@ class _BoundIonChannelRuntime(Channel):
         if self._component_key is None:
             return self._channel.current(V, *self._infos())
         return self._channel.current_components(V, *self._infos())[self._component_key]
+
+
+def _mechanism_class_name(mechanism: object) -> str:
+    """Registry name of a bound mechanism: a channel's class, a synapse's type."""
+    if isinstance(mechanism, SynapsePlacement):
+        return str(mechanism.synapse_type)
+    return mechanism.class_name
 
 
 def _instantiate_runtime_node(

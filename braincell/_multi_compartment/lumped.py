@@ -59,6 +59,7 @@ import numpy as np
 
 from braincell._compute.bindings import (
     _instantiate_runtime_node,
+    _mechanism_class_name,
     apply_subsolver_schedule,
     install_channel_on_ions,
 )
@@ -69,6 +70,7 @@ from braincell._compute.ions import (
     _placeholder_family_keys,
     _runtime_ion_species_key,
     _supported_ion_runtime_params,
+    warn_placeholder_ion_bindings,
 )
 from braincell._compute.layouts import (
     _allocate_current_clamp_buffer,
@@ -638,9 +640,11 @@ def build_lumped_runtime(
         class_candidates.setdefault(runtime_cls.__name__, []).append(name)
         schedule_pairs.append((declaration, node))
 
+    placeholders: dict[str, object] = {}
     for family_key, default_ion in build_placeholder_ions(size=pop_size).items():
         if family_key in family_candidates:
             continue
+        placeholders[family_key] = default_ion
         ions[family_key] = default_ion
         family_candidates[family_key] = [family_key]
         class_candidates.setdefault(type(default_ion).__name__, []).append(family_key)
@@ -687,6 +691,13 @@ def build_lumped_runtime(
         family_candidates=frozen_candidates,
         class_candidates=class_candidates,
         bound_ion_keys=bound_ion_keys,
+    )
+    warn_placeholder_ion_bindings(
+        (
+            (_mechanism_class_name(state.layout_mechanisms[layout_id]), keys)
+            for layout_id, keys in sorted(state.bound_ion_keys.items())
+        ),
+        placeholders,
     )
 
     runtime = LumpedRuntime(

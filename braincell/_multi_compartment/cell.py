@@ -2804,6 +2804,14 @@ class Cell(_CellFacade, HHTypedNeuron):
             and 60 mV, so that the run would return NaN. The message names
             each such gate and the ``dt`` below which the solver is stable on
             it, and suggests ``"exp_euler"`` or ``"ind_exp_euler"``.
+        UserWarning
+            Once for each ion family (``"na"``, ``"k"``, ``"ca"``, ``"no"``)
+            that a channel binds but the cell never declares: the channel
+            then reads a placeholder fixed ion with its class defaults (for
+            example ``E = -95 mV`` for ``"k"``). The message names the
+            family, the channels and the ``braincell.mech.Ion(...)``
+            declaration that replaces the placeholder. Each ``init_state()``
+            warns again; :meth:`reset_state` does not.
         """
         self._raise_if_network_owned("init_state()")
         self._raise_if_initialized("init_state()")

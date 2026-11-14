@@ -938,6 +938,7 @@ class GateCurrentLinearizationTest(unittest.TestCase):
                         "Kv1p1_MA2025_BC", name="kv", gateCurrent=1.0, freeze_gate_current_gradient=freeze
                     ),
                 )
+                cell.paint(AllRegion(), braincell.mech.Ion("PotassiumFixed", name="k"))
                 cell.init_state()
                 self.assertIs(cell.runtime.get_runtime_node(0).freeze_gate_current_gradient, freeze)
 

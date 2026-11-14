@@ -115,25 +115,22 @@ def build_cell(
             temperature=u.celsius2kelvin(float(case.simulation.temperature_celsius)),
         ),
     )
+    ions = []
     if _needs_kv1p5_grc_auxiliary_ions(mapping_spec):
-        cell.paint(region, Ion("SodiumFixed", name="na"))
-        cell.paint(region, Ion("NonSpecificFixed", name="no"))
+        ions += [Ion("SodiumFixed", name="na"), Ion("NonSpecificFixed", name="no")]
 
     if case.ion_state is not None and case.ion_state.has_concentrations:
         ion_name = mapping_spec.current_source.ion_name
         if ion_name is None:
             raise ValueError("ion_state requires mapping.current to resolve to ik/ina/ica.")
-        cell.paint(
-            region,
-            _build_init_nernst_ion(
-                ion_name=ion_name,
-                case=case,
-            ),
-        )
+        ions.append(_build_init_nernst_ion(ion_name=ion_name, case=case))
     elif mapping_spec.current_source.ion_name == "ca":
         # observe.ion(...) records painted ions only: paint the default fixed
         # calcium ion explicitly, so that its Ci, Co and E are recorded.
-        cell.paint(region, Ion("CalciumFixed", name="ca"))
+        ions.append(Ion("CalciumFixed", name="ca"))
+    ions += _default_fixed_ions(get_registry().get("channel", mapping_spec.braincell.class_name), ions)
+    for ion in ions:
+        cell.paint(region, ion)
     channel_binding_kwargs = _braincell_channel_binding_kwargs(mapping_spec)
     cell.paint(region, Channel(mapping_spec.braincell.class_name, **channel_binding_kwargs, **channel_kwargs))
 
@@ -214,6 +211,30 @@ def run_case(case: ChannelNoConcCase, *, solver: str | None = None) -> dict[str,
             for gate_name in mapping_spec.braincell.gate_names
         },
     }
+
+
+def _default_fixed_ions(channel_cls, declared) -> list:
+    """Fixed ions, with their class defaults, for the families ``channel_cls`` binds and ``declared`` leaves out.
+
+    A Cell would bind those families to placeholder ions with the same class
+    defaults and warn that it did (CELL-78); declaring them keeps the values
+    and states the ion each comparison uses. A case's reversal potential is
+    still set after ``init_state``.
+    """
+    from braincell._compute.bindings import _channel_family_slots
+    from braincell._compute.ions import ion_species_key
+    from braincell.ion import build_placeholder_ions
+    from braincell.mech import Ion, get_registry
+
+    registry = get_registry()
+    covered = {ion_species_key(registry.get("ion", ion.class_name)) for ion in declared}
+    defaults = build_placeholder_ions(size=(1,))
+    ions = []
+    for family, _root in _channel_family_slots(channel_cls):
+        if family in defaults and family not in covered:
+            covered.add(family)
+            ions.append(Ion(type(defaults[family]).__name__, name=family))
+    return ions
 
 
 def _needs_kv1p5_grc_auxiliary_ions(mapping_spec: MappingSpec) -> bool:

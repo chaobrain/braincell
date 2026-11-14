@@ -1239,6 +1239,21 @@
   `ralston2`). In the catalogue this flags `Cav1p2_*`, `Cav1p3_*`, `HCN1_*`
   and `Na_ZH2019_IO`. The default solver and all results are unchanged.
 
+- **`init_state` warns when a channel binds a placeholder ion** (CELL-78).
+  A channel that needs an ion family the Cell never declares (sodium,
+  potassium, calcium or the nonspecific family) is bound to a fixed
+  placeholder ion with its class defaults, for example E_K = -95 mV for
+  `K_HH1952`, and nothing said so. `init_state` now raises one
+  `UserWarning` per such family, on cable and lumped Cells and on Network
+  members, naming the family, the channels bound to it, the placeholder
+  class and its reversal potential, and the `braincell.mech.Ion(...)`
+  declaration that replaces it. The placeholder is the one used before and
+  results are bit for bit the same. `reset_state()` does not warn again;
+  `init_state()` after `reset()` does. The test suite turns the warning
+  into an error: 24 tests in 9 files, the `channel_no_conc` NEURON
+  comparison runner and the `cell.ipynb` and `single_cell_frontend.ipynb`
+  tutorials now declare their ions.
+
 - **Conditional pairing places its rows with one scatter** (CELL-18f).
   `source_first`, `synapse_first`, `by_source` and `by_synapse` put each
   fixed endpoint's partners on its rows one row at a time in Python; one
@@ -1586,6 +1601,18 @@
   `BRAINCELL_BO2010_MOD_DIR` pointed at local copies; the variables are
   gone. They run in the daily `slow_tests_neuron` job, whose ion step, like
   the pull-request one, now fails if a test skipped.
+
+- **The daily CI runs the example scripts and `pytest examples`** (MECH-45).
+  A new `examples` job in the daily workflow (not in `ci-ok`) runs every
+  tracked script under `examples/` on CPU with `MPLBACKEND=Agg` and a 600 s
+  limit per script, then `pytest examples`, which fails if a test is
+  skipped. `examples/nightly_skip.toml` lists what does not run, each with
+  its reason: 12 of 60 scripts (numba, pandas or the nmodl API missing; GPU
+  experiment drivers; a 16384-member ensemble; two Jinja templates) and one
+  test (nevergrad). A broken example now turns the daily run red within a
+  day. `examples/optim/stimulus_design/dataset.py` no longer fails: it
+  indexed the per-member point areas (`pop_size + (n_point,)`) as a flat
+  array, so its current playback raised a broadcasting error.
 
 ### Bug Fixes
 

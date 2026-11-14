@@ -3917,6 +3917,7 @@ def _hh_cell(pop_size, *, calcium: bool = True) -> Cell:
     tree.soma.attach(dend, name="dend", parent_x=0.5)
 
     cell = Cell(tree, pop_size=pop_size, cv_policy=CVPerBranch(cv_per_branch=2))
+    cell.paint(AllRegion(), mech.Ion("SodiumFixed", name="na"), mech.Ion("PotassiumFixed", name="k"))
     cell.paint(AllRegion(), mech.Channel("Na_HH1952", g_max=12.0 * (u.mS / u.cm**2)))
     cell.paint(AllRegion(), mech.Channel("K_HH1952", g_max=3.6 * (u.mS / u.cm**2)))
     cell.paint(AllRegion(), mech.Channel("IL", g_max=0.3 * (u.mS / u.cm**2), E=-54.0 * u.mV))
@@ -4011,6 +4012,7 @@ class RuntimeInspectionCollapsesPopulationAxisTest(unittest.TestCase):
     @staticmethod
     def _cell(pop_size=1) -> Cell:
         cell = Cell(_soma_tree(), cv_policy=CVPerBranch(), pop_size=pop_size)
+        cell.paint(AllRegion(), mech.Ion("SodiumFixed", name="na"))
         cell.paint(AllRegion(), mech.Channel("Na_HH1952", g_max=12.0 * (u.mS / u.cm**2)))
         cell.init_state()
         return cell

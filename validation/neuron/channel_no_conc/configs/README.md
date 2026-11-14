@@ -752,7 +752,9 @@ HCN 就是这样。
 - `configs/su15_dcn/`
 - `configs/ri21_sc/`
 - `configs/su15_dcn/`
-- `configs/testing/`（`kv_testing.json`：`data/mechanisms/testing/kv.mod` 的 `Kv` 对 `K_Kv_test`）
+- `configs/testing/`（`kv_testing.json`：`data/mechanisms/testing/kv.mod` 的 `Kv` 对 `K_Kv_test`；
+  `cav3p3_*_finite.json`：三个 Cav3.3 配置的 BrainCell 一侧对 `.mod` 副本 `Cav3p3_*_finite.mod`，
+  副本只把 0/0 的 GHK 项换成级数分支，0 mV 命令在其上可比较，MECH-43）
 - `configs/builtin/`（NEURON 自带机制作参照：`k_hh1952_hh.json` 为 `hh` 只留钾电导，
   对 `K_HH1952`；带 `TABLE` 的机制由 runner 设 `usetable_<mech> = 0`）
 

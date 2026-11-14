@@ -22,6 +22,7 @@ patches of this family's voltage-clamp T1 entries, which must bring the
 configuration back to T0.
 """
 
+import json
 import os
 import unittest
 from unittest import mock
@@ -33,7 +34,8 @@ import pytest
 import braincell.channel.calcium as calcium
 import braincell.channel.potassium_calcium as potassium_calcium
 from validation.neuron import _clamp
-from validation.neuron.channel_no_conc.tolerances import TABLE, UNCOVERED
+from validation.neuron._tolerance import T0_LIMITS, VOLTAGE_CLAMP_PROTOCOLS
+from validation.neuron.channel_no_conc.tolerances import NON_FINITE_REFERENCE, TABLE, UNCOVERED
 
 from ._catalogue import (
     CatalogueAssertions,
@@ -69,7 +71,7 @@ class CalciumCatalogueTest(CatalogueAssertions, unittest.TestCase):
         configured = {class_name(config) for config in CONFIGS}
         uncovered = FAMILY & set(UNCOVERED)
         self.assertEqual(len(FAMILY), 50)
-        self.assertEqual(len(CONFIGS), 45)
+        self.assertEqual(len(CONFIGS), 48)
         self.assertEqual(configured | uncovered, FAMILY)
         self.assertEqual(
             uncovered,
@@ -112,6 +114,28 @@ class CalciumRootCauseTest(unittest.TestCase):
         with mock.patch.object(calcium.Cav3p3_RI2021_SC, "ghk", staticmethod(mod_ghk)):
             result = voltage_clamp.compare_protocol(_config_path(config), _template_path("vc_ramp"))
         self.assertLessEqual(result["e_I"], 1e-10)
+
+    def test_cav3p3_finite_mod_reference_compares_every_command(self):
+        # MECH-43: against a copy of the .mod with a series branch at w = 0, the
+        # 0 mV command left out against the original is finite, and the ramp's
+        # T1 (the same 0/0 term near 0 mV) is T0.
+        _skip_unless_compiled(self)
+        self.assertEqual(len(NON_FINITE_REFERENCE), 3)
+        for (config, protocol), (test_mV, _) in NON_FINITE_REFERENCE.items():
+            finite = f"testing/{config.split('/')[1]}_finite"
+            with self.subTest(config=config):
+                self.assertEqual(protocol, "vc_steps")
+                self.assertEqual(TABLE.tier(config, "vc_ramp"), "T1")
+                case, commands = voltage_clamp.load_protocol(_config_path(finite), _template_path("vc_steps"))
+                self.assertEqual(len(commands), 8)
+                index = json.loads(_template_path("vc_steps").read_text())["voltage_clamp"]["test_mV"].index(test_mV)
+                neuron = voltage_clamp.run_neuron_command(case, commands[index])
+                self.assertTrue(np.all(np.isfinite(neuron["ix"])))
+                for vc in VOLTAGE_CLAMP_PROTOCOLS:
+                    self.assertEqual(TABLE.tier(finite, vc), "T0")
+                    result = voltage_clamp.compare_protocol(_config_path(finite), _template_path(vc))
+                    self.assertLessEqual(result["e_I"], T0_LIMITS["e_I"], vc)
+                    self.assertLessEqual(result["e_s"], T0_LIMITS["e_s"], vc)
 
     def test_kca2p2_exact_initial_state_explains_the_steps(self):
         config = "ma20_goc/kca2p2_ma20_goc"

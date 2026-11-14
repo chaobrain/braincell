@@ -24,7 +24,11 @@ moving a T0 configuration here loosens a tolerance and needs the lead's
 approval.
 
 ``NON_FINITE_REFERENCE`` names the voltage-clamp commands whose NEURON run is
-not finite and that the comparison therefore leaves out.
+not finite and that the comparison therefore leaves out. Each of those
+configurations also has a finite reference, ``configs/testing/<name>_finite``:
+the same BrainCell side against a copy of the ``.mod`` whose 0/0 term has a
+series branch (``data/mechanisms/testing``), where every command is compared
+(MECH-43).
 
 ``VARIANTS`` names the default-off options that are compared separately;
 their entries use the variant name as the configuration.
@@ -158,7 +162,8 @@ NON_FINITE_REFERENCE = {(config, "vc_steps"): (0.0, _GHK_ZERO) for config in _CA
 """(configuration, protocol) -> (test potential in mV, known-differences heading).
 
 NEURON's run of that command is not finite, so the command is left out of the
-comparison; the catalogue test checks that it is still not finite.
+comparison; the catalogue test checks that it is still not finite. The
+configuration's finite reference (``testing/<name>_finite``) compares it.
 """
 
 _NO_MOD = "no .mod reference in the repository"

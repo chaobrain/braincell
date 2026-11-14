@@ -56,6 +56,7 @@ from braincell.network.recording import EventSeries, SampleBlock, step_end_times
 from braincell.network.core import NetworkResult, Population
 from braincell.network.delivery import (
     DeliveryBlock,
+    EventHistoryHandle,
     advance_delivery_state,
     create_delivery_state,
     delivery_blocks as build_delivery_blocks,
@@ -64,6 +65,7 @@ from braincell.network.delivery import (
     record_source_events,
     resolve_event_backend,
     write_arrivals,
+    write_live_histories,
 )
 from braincell.network.lowering import lower_direct_connections
 from braincell.network.scheduled import (
@@ -741,6 +743,7 @@ class Network:
             raise ValueError("Network.run(...) requires at least one population.")
         self._reject_different_times(dt, prefix="Network.run(...)")
         self._reject_off_grid_start(dt, prefix="Network.run(...)")
+        self._reject_live_dt_change(dt, prefix="Network.run(...)")
         self.init_state()
         if not self._cell_populations():
             return self._run_scheduled_sources_only(dt=dt, duration=duration)
@@ -798,6 +801,7 @@ class Network:
             scheduled_delivery=scheduled_delivery,
             join=join,
         )
+        self._take_live_histories(ordered_population_names, cached_loop.delivery_state, dt)
         values = self._take_value_inputs(ordered_population_names)
         try:
             with _schedule_horizon(until_ms):
@@ -1034,6 +1038,7 @@ class Network:
         scheduled_delivery = normalize_scheduled_delivery(scheduled_delivery, prefix="Network.prepare_run(...)")
         self._reject_different_times(dt, prefix="Network.prepare_run(...)")
         self._reject_off_grid_start(dt, prefix="Network.prepare_run(...)")
+        self._reject_live_dt_change(dt, prefix="Network.prepare_run(...)")
         self.init_state()
         if not self._cell_populations():
             raise ValueError("Network.prepare_run requires at least one Cell population.")
@@ -1086,6 +1091,7 @@ class Network:
             scheduled_delivery=scheduled_delivery,
             join=join,
         )
+        self._take_live_histories(setup.ordered_population_names, cached.delivery_state, dt)
         self.trainables.materialize()
         self._prepared_run = (setup, cached, dt, join)
         self._prepared_plans = plans
@@ -1608,6 +1614,80 @@ class Network:
             "adding it."
         )
 
+    def _reject_live_dt_change(self, dt, *, prefix: str) -> None:
+        """Raise ``ValueError``, before changing anything, if a Cell joins at another ``dt`` with a live event in flight.
+
+        A Cell that ran on its own (or in a Network since dropped) keeps the
+        events its live rows have in flight in steps of that run's ``dt``;
+        this Network takes them over only at the same ``dt`` (CELL-83), as
+        ``Cell.run`` changes ``dt`` only when none is in flight (CELL-76).
+        """
+        dt_ms = scalar_decimal(dt, u.ms)
+        for name, population in self._cell_populations().items():
+            cell = population.cell
+            if not getattr(cell, "_initialized", False):
+                continue
+            connections = cell.connections
+            handle = connections._store.network_history
+            if handle is not None and handle.holds_any(self._delivery_state_cache.values()):
+                continue
+            rows = connections._network_history_rows()
+            if rows is None:
+                rows = [
+                    (call, view, call.live_delay_steps, None if call.live_history is None else call.live_history.value)
+                    for call, view in connections._call_items(scheduled=False)
+                    if call.plasticity is None and call.live_dt_ms is not None
+                ]
+                rows = [row for row in rows if not np.isclose(row[0].live_dt_ms, dt_ms)]
+            elif np.isclose(handle.dt_ms, dt_ms):
+                continue
+            for call, view, steps, history in rows:
+                if view._in_flight(history, steps):
+                    raise ValueError(
+                        f"{prefix} cannot run population {name!r} at dt = {dt_ms:g} ms: its live connection "
+                        f"{call.name!r} ran at another dt and has delayed events in flight, counted in steps of "
+                        "that dt. Run the Cell on its own at that dt until they arrive, call reset_state() on it "
+                        "before adding it, or run the Network at that dt."
+                    )
+
+    def _take_live_histories(self, names: tuple[str, ...], state, dt) -> None:
+        """Write into ``state`` the live events in flight of the Cells that ran elsewhere last (CELL-83).
+
+        A Cell's live rows keep the counts of their sources' recent steps in
+        their own histories when it runs on its own; this Network keeps them
+        in ``state``. A Cell that ran on its own, or in another Network,
+        since this Network last ran it hands those counts over here, once,
+        so each event in flight arrives once, at its step. The Cells then
+        hold the handle of ``state``, from which a run on its own takes the
+        counts back. The usual call, on Cells this Network ran last, only
+        compares the handles.
+        """
+        cells = [self.populations[name].cell for name in names]
+        joining = [cell for cell in cells if not _holds(cell.connections._store.network_history, state)]
+        if not joining:
+            return
+        dt_ms = scalar_decimal(dt, u.ms)
+        rows = []
+        for cell in joining:
+            connections = cell.connections
+            pending = connections._network_history_rows()
+            if pending is not None:
+                # Cells a dropped Network ran last: the counts it kept, at its dt.
+                if np.isclose(connections._store.network_history.dt_ms, dt_ms):
+                    rows.extend(
+                        (call.source, view.source_index, history)
+                        for call, view, _, history in pending
+                        if history is not None
+                    )
+                continue
+            for call, view in connections._call_items(scheduled=False):
+                if call.plasticity is None and call.live_history is not None and np.isclose(call.live_dt_ms, dt_ms):
+                    rows.append((call.source, view.source_index, call.live_history.value))
+        write_live_histories(state, rows)
+        handle = EventHistoryHandle.of(state, dt_ms)
+        for cell in cells:
+            cell.connections._store.network_history = handle
+
     def _start_clocks(self, names: tuple[str, ...], *, dt, n_steps: int, prefix: str) -> tuple[float, _Join]:
         """Give the Cells named ``names`` one clock counting steps of ``dt``; return its time in ms and the join.
 
@@ -1888,6 +1968,11 @@ def _event_source_metadata(population: str, port: str, view) -> dict:
             continue
         metadata[name] = freeze_array(array[source_ids])
     return metadata
+
+
+def _holds(handle, state) -> bool:
+    """Whether ``handle`` (an ``EventHistoryHandle`` or ``None``) is ``state``'s."""
+    return handle is not None and handle.holds(state)
 
 
 def _reset_delivery_state(state) -> None:

@@ -836,6 +836,125 @@ def advance_delivery_state(state: DeliveryState) -> None:
             cursor.value = _wrap(cursor.value + 1, state.queue_plans[index].depth)
 
 
+@dataclass(frozen=True)
+class EventHistoryHandle:
+    """The source counts a Network keeps for its live rows, as its Cells read them after it (CELL-83).
+
+    A Cell that leaves a Network (the Network is dropped) and runs on its own
+    takes the events still in flight from here into the histories of its
+    live rows (``Cell.run``, ``Cell.update``, ``prepare_runtime``). The
+    handle holds the Network's histories and cursors, not the Network, so
+    the Cell can leave it.
+
+    Parameters
+    ----------
+    histories, cursors, plans : tuple
+        ``DeliveryState.histories``, ``history_cursors`` and ``queue_plans``.
+    dt_ms : float
+        The Network's ``dt`` in ms, which its histories count steps of.
+    """
+
+    histories: tuple
+    cursors: tuple
+    plans: tuple
+    dt_ms: float
+
+    @classmethod
+    def of(cls, state: DeliveryState, dt_ms: float) -> "EventHistoryHandle":
+        return cls(state.histories, state.history_cursors, state.queue_plans, float(dt_ms))
+
+    def holds(self, state: DeliveryState) -> bool:
+        """Whether this is the handle of ``state``."""
+        return self.histories is state.histories
+
+    def holds_any(self, states) -> bool:
+        """Whether this is the handle of one of ``states``."""
+        return any(self.holds(state) for state in states)
+
+    def counts(self, source, members, lags: int) -> np.ndarray:
+        """The counts of ``members`` of ``source`` in the ``lags`` steps before the newest.
+
+        Row ``j - 1`` holds the counts of step ``s - 1 - j``, ``s`` being the
+        step the next run starts at, ``j = 1 .. lags``: a Cell's live rows
+        keep them so before step ``s``. The newest, of step ``s - 1``, are the
+        source's current count. A member no queue keeps, or a lag past the
+        depth of the queues that keep it, is 0: no contact of the Network
+        reads it, so none of its events is in flight.
+        """
+        members = np.asarray(members, dtype=np.int64)
+        out = np.zeros((lags, members.size))
+        depth_read = np.zeros(members.size, dtype=np.int64)
+        for history, cursor, plan in zip(self.histories, self.cursors, self.plans):
+            if history is None:
+                continue
+            for column, depth_ok in _member_columns(plan, source, members, depth_read):
+                n_lags = min(lags, plan.depth - 1)
+                rows = (int(np.asarray(cursor.value)) - 1 - np.arange(1, n_lags + 1)) % plan.depth
+                read = history.value[jnp.asarray(rows)[:, None], jnp.asarray(column[depth_ok])[None, :]]
+                out[:n_lags, depth_ok] = np.asarray(read)
+                depth_read[depth_ok] = plan.depth
+        return out
+
+
+def _member_columns(plan: _QueuePlan, source, members: np.ndarray, depth_read: np.ndarray):
+    """``(column of each member, mask)`` for the members of ``source`` one queue keeps deeper than ``depth_read``."""
+    start = 0
+    for owner, columns in zip(plan.sources, plan.columns):
+        if owner is source and columns.size:
+            position = np.minimum(np.searchsorted(columns, members), columns.size - 1)
+            mask = (columns[position] == members) & (plan.depth > depth_read)
+            if np.any(mask):
+                yield start + position, mask
+        start += columns.size
+
+
+def write_live_histories(state: DeliveryState, rows) -> None:
+    """Write the source counts that Cells kept on their own into a Network's histories (CELL-83).
+
+    Parameters
+    ----------
+    state : DeliveryState
+        The Network's delivery state, before the first step it runs these
+        Cells: a new state, or one a reset cleared.
+    rows : iterable
+        ``(source, members, history)`` per live connect call of the Cells:
+        ``history`` (``(K, len(members))``) holds the counts of the ``K``
+        steps before the newest, newest first, as a Cell's live rows keep
+        them (:meth:`EventHistoryHandle.counts`).
+
+    Notes
+    -----
+    The first step reads row ``cursor - 1 - j`` for the counts of ``j + 1``
+    steps before it: for ``j = 0`` each source's current count, for the
+    others ``rows``. The Network then delivers each event still in flight
+    once, at the step the Cell would have. Zero counts are not written: the
+    rows are 0 already.
+    """
+    rows = [(source, np.asarray(members, dtype=np.int64), np.asarray(kept)) for source, members, kept in rows]
+    for history, cursor, plan in zip(state.histories, state.history_cursors, state.queue_plans):
+        if history is None:
+            continue
+        now = int(np.asarray(cursor.value))
+        value = history.value
+        start = 0
+        for source, columns in zip(plan.sources, plan.columns):
+            current = np.asarray(source.current_event_count(columns)).reshape(-1)
+            if np.any(current):
+                value = value.at[(now - 1) % plan.depth, start : start + columns.size].set(current)
+            start += columns.size
+        for source, members, kept in rows:
+            if not np.any(kept):
+                continue
+            for column, mask in _member_columns(plan, source, members, np.zeros(members.size, dtype=np.int64)):
+                n_lags = min(kept.shape[0], plan.depth - 1)
+                lag_rows = (now - 1 - np.arange(1, n_lags + 1)) % plan.depth
+                value = value.at[jnp.asarray(lag_rows)[:, None], jnp.asarray(column[mask])[None, :]].set(
+                    kept[:n_lags][:, mask]
+                )
+        if value is not history.value:
+            history.value = value
+
+
 def normalize_event_backend(value: str) -> str:
     """Validate the requested event-delivery backend.
 

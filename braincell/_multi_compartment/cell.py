@@ -4232,6 +4232,8 @@ class Cell(_CellFacade, HHTypedNeuron):
         calls: allocated inside the trace, it would die with it, and the
         events in flight at the end of the call with it (CELL-76).
         """
+        # The events in flight of a Network that ran the Cell last (CELL-83).
+        self.connections._take_network_history(dt, traced=traced, action=f"{action}()")
         for view in live:
             call, unprepared = view._check_live_dt(dt)
             if traced and unprepared and call.live_history is None and view._live_history_depth(dt) > 0:

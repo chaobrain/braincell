@@ -2716,6 +2716,29 @@
   `faraday_constant` are shared 0-d arrays that a compiled program keeps;
   braincell now holds them as NumPy scalars. Results are unchanged bit for bit
   at both precisions on the machine that tested them.
+- A delayed live event still in flight when a Cell moves between running on
+  its own and a `Network` now arrives once, at its step (CELL-83). The Network
+  keeps the recent spike counts of its live sources in its own histories, and a
+  Cell run on its own keeps them in its live rows' histories; neither read the
+  other at a hand-over. On main `2cd7dc4` (an HH soma with a self-connection of
+  k = 1, 3 or 12 steps, split at every step from one before its spike to the
+  delivery), `Cell.run` followed by `Network.run` lost the event at every split
+  after the spike; `Network.run` followed by `Cell.run` (the Network dropped)
+  lost it unless the spike fell in the Network's last step; three segments lost
+  it or delivered the Cell's old history at another step: 81 of 168 cases were
+  wrong, none now. The `update()` and `prepare_run` + `update()` drivers, a
+  population with several delays and both event backends behave the same. The
+  Network takes over each joining Cell's counts before its first step, and a
+  Cell that leaves it takes them back at its next `run()`, `update()` or
+  `connections.prepare_runtime(dt)`. This is a host-side copy, once per
+  hand-over, and the compiled loops are unchanged. Two hand-overs that dropped
+  the event silently are now refused, before anything changes:
+  - a `Network` run, or a `Cell.run` after a Network, at another `dt` while a
+    delayed event is in flight raises `ValueError`. Call `reset_state()`
+    first, or keep the `dt`; `Cell.run` already refused this for its own rows.
+  - an `update()` traced right after the Cell left a Network raises
+    `RuntimeError`. Call `cell.connections.prepare_runtime(dt)` once outside
+    the trace.
 
 ### Documentation
 

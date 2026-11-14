@@ -143,7 +143,13 @@ class _ObserveNamespace:
         return _CellStateObservable(_cell_state_field(field))
 
     def output(self, name: str):
-        """Observe one selected model output after each model update."""
+        """Observe one selected model output, sampled at the start of each step.
+
+        Row ``j`` is the output at ``t_j``: the value step ``j - 1``
+        produced, and row 0 the value after ``init_state()``, as every other
+        recording (CELL-82). For a detailed Cell, ``output("voltage")`` and
+        ``state("V")`` record the same rows.
+        """
         _require_name(name, "output name")
         return _OutputObservable(name)
 
@@ -477,8 +483,7 @@ def compile_recording(cell, spec: RecordingSpec, *, dt):
         schedule_start=spec.start,
         time_offset=(0.5 * dt if isinstance(spec.observable, _ClampCurrentObservable) else 0.0 * u.ms),
     )
-    phase = "post" if isinstance(spec.observable, _OutputObservable) else "pre"
-    return _CompiledRecording(spec=spec, schema=schema, sample=sampler, phase=phase)
+    return _CompiledRecording(spec=spec, schema=schema, sample=sampler)
 
 
 @dataclass(frozen=True)
@@ -486,7 +491,6 @@ class _CompiledRecording:
     spec: RecordingSpec
     schema: RecordingSchema
     sample: object = field(compare=False, repr=False)
-    phase: str = "pre"
 
 
 def recording_is_active(cell, spec: RecordingSpec) -> bool:

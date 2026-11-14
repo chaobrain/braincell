@@ -1433,11 +1433,8 @@ class Network:
                             flat_recordings = tuple(
                                 compiled for name in ordered_population_names for compiled in compiled_recordings[name]
                             )
-                            pre_recording_snapshots = {
-                                index: compiled.sample()
-                                for index, compiled in enumerate(flat_recordings)
-                                if compiled.phase == "pre"
-                            }
+                            # Every recording, an output too, is the state at the step's start (CELL-82).
+                            recording_snapshots = tuple(compiled.sample() for compiled in flat_recordings)
                         with jax.named_scope("braincell:network_run:write_arrivals"):
                             write_arrivals(delivery_blocks, delivery_state, populations=self.populations)
                         with jax.named_scope("braincell:network_run:prepare_inputs"):
@@ -1450,11 +1447,6 @@ class Network:
                                 for name in ordered_population_names:
                                     cell = self.populations[name].cell
                                     cell._update_dynamics()
-                        with jax.named_scope("braincell:network_run:sample_outputs"):
-                            recording_snapshots = tuple(
-                                pre_recording_snapshots[index] if compiled.phase == "pre" else compiled.sample()
-                                for index, compiled in enumerate(flat_recordings)
-                            )
                         with jax.named_scope("braincell:network_run:record_events"):
                             events = tuple(
                                 view.owner.current_event_count(view.source_id)

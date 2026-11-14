@@ -881,11 +881,8 @@ def _make_run_loop(
                     with jax.named_scope("braincell:cell_run:prepare_clamps"):
                         rcell._prepare_step_clamps(t=t, dt=brainstate.environ.get_dt())
                     with jax.named_scope("braincell:cell_run:sample_recordings"):
-                        pre_recording_snapshot = {
-                            index: item.sample()
-                            for index, item in enumerate(compiled_recordings)
-                            if item.phase == "pre"
-                        }
+                        # Every recording, an output too, is the state at the step's start (CELL-82).
+                        recording_snapshot = tuple(item.sample() for item in compiled_recordings)
                     # The live events of this boundary, before its scheduled
                     # ones, as a Network writes its arrivals: a spike of step
                     # m with k delay steps acts at t_{m+1+k} (CELL-81).
@@ -902,11 +899,6 @@ def _make_run_loop(
                     with jax.named_scope("braincell:cell_run:update_dynamics"):
                         with brainstate.environ.context(_braincell_step_clamps_prepared=True):
                             rcell._update_dynamics()
-                    with jax.named_scope("braincell:cell_run:sample_outputs"):
-                        recording_snapshot = tuple(
-                            pre_recording_snapshot[index] if item.phase == "pre" else item.sample()
-                            for index, item in enumerate(compiled_recordings)
-                        )
                     spikes = ()
                     if spike_port is not None:
                         with jax.named_scope("braincell:cell_run:sample_spikes"):

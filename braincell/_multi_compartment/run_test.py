@@ -226,7 +226,9 @@ class SplitCellRunTest(unittest.TestCase):
             result = RunResult.concat(tuple(cell.run(dt=0.1 * u.ms, duration=n * 0.1 * u.ms) for n in steps))
             return np.asarray(result.samples["value"].values.to_decimal(u.uS))[:, 0]
 
-        np.testing.assert_allclose(run((6,)), [0.0, 0.0, 0.0, 0.2, 0.0, 0.0])
+        # The event at 0.3 ms acts in step 3; row 4 is the value it produced, at 0.4 ms (CELL-82; main
+        # 8710fe5: row 3, outputs were sampled after each step).
+        np.testing.assert_allclose(run((6,)), [0.0, 0.0, 0.0, 0.0, 0.2, 0.0])
         np.testing.assert_allclose(run((3, 3)), run((6,)))
 
     def test_traced_runs_continue_without_redelivery(self):

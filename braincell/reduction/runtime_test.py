@@ -112,7 +112,7 @@ class ReductionRuntimeTest(unittest.TestCase):
         result = cell.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
         self.assertEqual(result.samples["features"].values.shape, (2, 3, 4))
 
-    def test_output_recording_is_post_update_and_detailed_recording_is_omitted(self) -> None:
+    def test_output_recording_is_sampled_at_step_start_and_detailed_recording_is_omitted(self) -> None:
         cell = _cell(2)
         cell.soma.record("old_v", braincell.observe.state("V"))
         cell[1].record("reduced", braincell.observe.output("value"))
@@ -122,7 +122,9 @@ class ReductionRuntimeTest(unittest.TestCase):
         result = cell.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
 
         self.assertEqual(tuple(result.samples), ("reduced",))
-        np.testing.assert_allclose(result.samples["reduced"].values, [[1.0, 2.0], [2.0, 3.0]])
+        # Row 0 is the output after init_state(), row 1 the one step 0 produced
+        # (CELL-82; main 8710fe5: [[1, 2], [2, 3]], sampled after each step).
+        np.testing.assert_allclose(result.samples["reduced"].values, [[0.0, 1.0], [1.0, 2.0]])
         rows = result.samples["reduced"].schema.rows
         self.assertEqual([(row.population_index, row.output_index) for row in rows], [(1, (0,)), (1, (1,))])
 
@@ -193,9 +195,10 @@ class ReductionRuntimeTest(unittest.TestCase):
             weight=[0.2, 0.3] * u.uS,
         )
 
-        result = network.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
+        result = network.run(dt=0.1 * u.ms, duration=0.3 * u.ms)
 
-        np.testing.assert_allclose(result.samples["target"]["value"].values.to_decimal(u.uS), [[0.5], [0.0]])
+        # Row j + 1 is the value step j produced (CELL-82; main 8710fe5: [[0.5], [0.0]] over two steps).
+        np.testing.assert_allclose(result.samples["target"]["value"].values.to_decimal(u.uS), [[0.0], [0.5], [0.0]])
         np.testing.assert_array_equal(result.events["target"]["spike"].source_id, [0])
 
     def test_quantity_accumulators_validate_threshold_and_input_units(self) -> None:
@@ -305,7 +308,8 @@ class ReductionRuntimeTest(unittest.TestCase):
         factor = 1.0 / (np.exp(-t_peak / tau2) - np.exp(-t_peak / tau1))
         expected = [0.2 * 2.0, 0.2 * factor * (tau2 - tau1)]
         np.testing.assert_allclose(
-            result.samples["target"]["value"].values[0].to_decimal(u.uS * u.ms),
+            # Row 1, the value step 0 produced (CELL-82; main 8710fe5: row 0).
+            result.samples["target"]["value"].values[1].to_decimal(u.uS * u.ms),
             expected,
             rtol=1e-6,
         )
@@ -323,9 +327,10 @@ class ReductionRuntimeTest(unittest.TestCase):
         target = network.add_population("target", cell)
         network.connect("drive", source=source, synapse=target.synapses["input"], weight=0.2 * u.uS)
 
-        result = network.run(dt=0.1 * u.ms, duration=0.2 * u.ms)
+        result = network.run(dt=0.1 * u.ms, duration=0.3 * u.ms)
 
-        np.testing.assert_allclose(result.samples["target"]["value"].values, [[1.0, 1.0], [0.0, 0.0]])
+        # Row j + 1 is the value step j produced (CELL-82; main 8710fe5: [[1, 1], [0, 0]] over two steps).
+        np.testing.assert_allclose(result.samples["target"]["value"].values, [[0.0, 0.0], [1.0, 1.0], [0.0, 0.0]])
         np.testing.assert_array_equal(result.events["target"]["spike"].source_id, [0, 1])
         self.assertEqual(len(model._context.input_groups), 1)
         np.testing.assert_array_equal(model._context.input_groups[0].population_index, [0, 1])
@@ -350,9 +355,10 @@ class ReductionRuntimeTest(unittest.TestCase):
         # A zero-delay row reads its source's current count at the start of
         # each step (CELL-81): there the events of the step before, and at
         # step 0 those of the tick's initial output, which emits too (the
-        # built-in reductions start with none). main 51f669f: [0, 1, 1], each
-        # step's event added at its end and consumed in the next step.
-        np.testing.assert_allclose(result.samples["post"]["value"].values[:, 0], [1.0, 1.0, 1.0])
+        # built-in reductions start with none). Row 0 is the accumulator's
+        # value after init_state(), row j + 1 the one step j produced
+        # (CELL-82). main 8710fe5: [1, 1, 1], sampled after each step.
+        np.testing.assert_allclose(result.samples["post"]["value"].values[:, 0], [0.0, 1.0, 1.0])
 
     def test_voltage_crossing_source_is_rejected_in_reduced_mode(self) -> None:
         cell = _cell(1)

@@ -332,6 +332,20 @@
   after the step that ended. There is no deprecation period (0.3 allows breaking
   changes without one, a project-lead decision). To compare with old
   results, read `g` one sample later.
+- **`observe.output(...)` is sampled at the start of each step, as every
+  other recording** (CELL-82). Row `j` of an output recording was the value
+  after step `j` (at `t_{j+1}`); it is now the value at `t_j`, the one step
+  `j - 1` produced, and row 0 is the value after `init_state()`. For a
+  detailed Cell, `observe.output("voltage")` and `state("V")` now record the
+  same rows element by element: on main `8710fe5` row 0 of the output of an
+  HH soma was -64.99989616533065 mV, the voltage after the first step,
+  against -65.0 mV for `state("V")`. A reduction model that starts at 5 and
+  adds 1 per step recorded `[6, 7, 8]` over three steps and now records
+  `[5, 6, 7]`. Split runs still join into the whole run bit for bit. The
+  dynamics, `cell.outputs` and the events do not change. There is no
+  deprecation period (0.3 allows breaking changes without one, a
+  project-lead decision). To get the old rows, drop row 0 and append
+  `cell.outputs[name]` read after the run.
 
 ### New Features
 

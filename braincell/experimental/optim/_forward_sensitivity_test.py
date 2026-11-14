@@ -551,13 +551,9 @@ class CompactActiveStateTest(unittest.TestCase):
             data = jnp.linspace(-64.0, -60.0, 4)
             before = _state_fingerprint(cell, step)
             with self.assertRaises(ValueError) as rollout:
-                compact_forward_sensitivity_rollout(
-                    step, projection, rtrl._parameter_coordinates, values, active, data
-                )
+                compact_forward_sensitivity_rollout(step, projection, rtrl._parameter_coordinates, values, active, data)
             with self.assertRaises(ValueError) as one_step:
-                compact_forward_sensitivity_step(
-                    step, projection, rtrl._parameter_coordinates, values, active, data[0]
-                )
+                compact_forward_sensitivity_step(step, projection, rtrl._parameter_coordinates, values, active, data[0])
             self._assert_fingerprint_unchanged(before, _state_fingerprint(cell, step))
             for caught in (rollout, one_step):
                 self.assertIn("channel:Na_HH1952.g_max", str(caught.exception))

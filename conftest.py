@@ -48,11 +48,14 @@ def pytest_collection_finish(session):
 # keep only the tests of the files assigned to that shard. Every shard collects
 # the whole session, so each collected file runs in exactly one shard.
 def pytest_collection_modifyitems(config, items):
-    value = os.environ.get("BRAINCELL_TEST_SHARD")
-    if not value:
-        return
     import importlib.util
     from pathlib import Path
+
+    value = os.environ.get("BRAINCELL_TEST_SHARD")
+    # Only braincell's own session is sharded; a pytest that a test starts in
+    # a temporary directory (with ``-p conftest``) inherits the variable.
+    if not value or Path(config.rootpath).resolve() != Path(__file__).resolve().parent:
+        return
 
     spec = importlib.util.spec_from_file_location(
         "_braincell_ci_shards", Path(__file__).with_name(".github") / "ci_shards.py"
@@ -60,11 +63,14 @@ def pytest_collection_modifyitems(config, items):
     shards = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(shards)
     index, count = shards.parse_shard(value)
-    root = Path(config.rootpath)
+    root = Path(__file__).resolve().parent
     name_of = {item: Path(item.path).relative_to(root).as_posix() for item in items}
     keep = shards.shard_files(list(name_of.values()), index, count)
     selected = [item for item in items if name_of[item] in keep]
     deselected = [item for item in items if name_of[item] not in keep]
-    if deselected:
-        config.hook.pytest_deselected(items=deselected)
-        items[:] = selected
+    # Longest files first, so the workers do not end waiting on one that
+    # started last; the tests of a file keep their order.
+    seconds = shards.estimate(sorted(keep), shards.load_durations())
+    selected.sort(key=lambda item: -seconds[name_of[item]])
+    config.hook.pytest_deselected(items=deselected)
+    items[:] = selected

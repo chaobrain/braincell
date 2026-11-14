@@ -637,6 +637,10 @@ def _prepare_steps(engine, example_step_data, *, require_scalar_output):
     Returns ``(initializer_step, functional_step, materialization_mode,
     axial_operator_mode)``; see :func:`_axial_operator_step` for the last.
     """
+    # A rollout steps on slices of its data, which are not weakly typed; a
+    # weak example (``jnp.asarray(-60.0)``) would trace the step for another
+    # signature, and every call trace it again (OPT-21).
+    example_step_data = jax.tree.map(_strong_leaf, example_step_data)
     manager = engine.target.trainables
     inspect_states = getattr(manager, "_rollout_materialization_states", None)
     guarded_states = None if inspect_states is None else inspect_states()
@@ -909,6 +913,14 @@ def _validate_parameters(parameters) -> dict[str, brainstate.ParamState]:
             raise TypeError(f"Parameter {name!r} must be a brainstate.ParamState.")
         checked[name] = state
     return checked
+
+
+def _strong_leaf(leaf):
+    """``leaf`` without a weak type: a Python number or a weakly typed array becomes a strong array."""
+    if isinstance(leaf, (int, float, complex)) or getattr(leaf, "weak_type", False):
+        leaf = jnp.asarray(leaf)
+        return jax.lax.convert_element_type(leaf, leaf.dtype)
+    return leaf
 
 
 def _replace_parameter_values(values, indices, roots):

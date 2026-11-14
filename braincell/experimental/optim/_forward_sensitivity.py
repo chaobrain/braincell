@@ -61,7 +61,7 @@ class OperatorInput(NamedTuple):
 
     def build_from(self, builder_values):
         """Return the operator leaves for the builder's own input values."""
-        _new_values, leaves = self.builder.jaxpr_call(builder_values, None)
+        _new_values, leaves = _call_in_built_order(self.builder, self.builder_trace, builder_values, None)
         return leaves
 
 
@@ -95,14 +95,13 @@ class FunctionalStep(NamedTuple):
         :meth:`call_with_operator`.
         """
         if self.operator is None:
-            return self.function.jaxpr_call(state_values, step_data)
+            return _call_in_built_order(self.function, self.state_trace, state_values, step_data)
         return self.call_with_operator(state_values, step_data, self.operator.build(state_values))
 
     def call_with_operator(self, state_values, step_data, operator):
         """Evaluate the transition with prebuilt operator leaves (``operator`` is ``None`` without one)."""
-        if self.operator is None:
-            return self.function.jaxpr_call(state_values, step_data)
-        return self.function.jaxpr_call(state_values, (step_data, operator))
+        args = step_data if self.operator is None else (step_data, operator)
+        return _call_in_built_order(self.function, self.state_trace, state_values, args)
 
     def build_operator(self, state_values):
         """The operator leaves for ``state_values``, or ``None`` for a step without an operator input."""
@@ -921,6 +920,39 @@ def _state_index(traced_states, expected_state, *, name: str) -> int:
             f"found {len(matches)} matching state entries."
         )
     return matches[0]
+
+
+def _call_in_built_order(function, state_trace, state_values, args):
+    """Call ``function.jaxpr_call`` with state values and results in the order of ``state_trace``.
+
+    ``jaxpr_call`` evaluates the trace that brainstate keeps for the
+    abstract signature of ``args`` (shape, dtype and weak type of each leaf)
+    and traces the function again for a new one. That trace can list the
+    same states in another order: a Network's step reads its states through
+    a compiled loop, which a second trace finds in its cache (OPT-21). The
+    values are permuted into that trace's order and the new values back.
+
+    Raises
+    ------
+    ValueError
+        If the trace for ``args`` reads other states than ``state_trace``.
+    """
+    built = tuple(state_trace.states)
+    traced = tuple(function.get_state_trace(args).states)
+    if len(traced) == len(built) and all(a is b for a, b in zip(traced, built)):
+        return function.jaxpr_call(state_values, args)
+    positions = {id(state): index for index, state in enumerate(built)}
+    if len(traced) != len(built) or any(id(state) not in positions for state in traced):
+        raise ValueError(
+            "The step reads other states for this step data than for the data it was traced with; "
+            "trace it with data of the same structure, shapes and dtypes."
+        )
+    order = [positions[id(state)] for state in traced]
+    new_values, out = function.jaxpr_call(type(state_values)(state_values[index] for index in order), args)
+    aligned = [None] * len(built)
+    for index, value in zip(order, new_values):
+        aligned[index] = value
+    return type(new_values)(aligned), out
 
 
 def _zero_tangent_tree(values):

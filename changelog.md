@@ -34,6 +34,24 @@
   the registry lookup of `mech.Channel("CaHT_HM1992", ...)` raises `KeyError`;
   both name the new class. Replace `CaHT_HM1992` with `CaT_HM1992_Shifted25`,
   in class references and in `mech.Channel("...")` strings alike.
+- **`braincell.ion.CalciumFirstOrder` defaults to a physical `alpha`**
+  (MECH-46). The default was 0.13 mM/ms/(uA/cm**2), the Pinsky-Rinzel (1994)
+  constant of a dimensionless calcium variable read as mM. It is now
+  `1/(2 F d)` for a 1 um submembrane shell, 5.1821e-5 mM/ms/(uA/cm**2), the
+  constant `A = 5.18e-5` of Bazhenov et al. (1998) and the influx of
+  `CalciumDetailed` with its default `d`. `beta` (0.075 /ms) and the initial
+  `Ci` (2.4e-4 mM) are unchanged. Measured on main 384c860:
+  - Under a constant inward current, the steady `Ci = alpha * I / beta` falls
+    from 1.7333 mM to 6.9095e-4 mM per uA/cm**2, 2508.6 times lower.
+  - A one-compartment cell (Hodgkin-Huxley sodium and potassium, `CaHT_Re1993`
+    and `AHP_De1994`, driven by 0.3 nA for 200 ms) used to reach 3.228 mM,
+    above the 2 mM outside, so E_Ca fell to -6.38 mV and the cell fired 3
+    spikes. It now peaks at 7.44e-3 mM, keeps E_Ca between 74.5 and 155.4 mV,
+    and fires 18 spikes.
+
+  To keep the old behaviour, pass
+  `alpha=0.13 * u.mM / u.ms / (u.uA / u.cm**2)`. 0.3 allows breaking changes
+  without a deprecation period (a project-lead decision).
 - **Event aggregations that never took effect are rejected** (CELL-40).
   `ScalarEventInput(unit, aggregation="ordered")` and
   `TriggerEventInput(aggregation="any")` or `(aggregation="ordered")` raise

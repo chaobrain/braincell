@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "label": "HCN_HM1992 against IO HCN ZH19"
+  },
+  "identity": {
+    "mod_dir": "../../../artifacts/mechanisms/io_zh2019/channel"
+  },
+  "defaults": {
+    "channel_params": {
+      "g_max_mS_cm2": 10.0,
+      "E_mV": -43.0
+    }
+  },
+  "mapping": {
+    "current": "ih",
+    "impl_name": {
+      "neuron": "HCN_ZH19_IO",
+      "braincell": "HCN_HM1992"
+    },
+    "gate_names": {
+      "canonical": [
+        "q"
+      ],
+      "neuron": [
+        "q"
+      ],
+      "braincell": [
+        "p"
+      ]
+    },
+    "channel_params": {
+      "g_max_mS_cm2": {
+        "neuron": "gbar",
+        "braincell": "g_max"
+      },
+      "E_mV": {
+        "neuron": "eh"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

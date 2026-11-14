@@ -45,7 +45,7 @@ from braincell._misc import (
     validate_time_quantity,
 )
 from braincell.network.recording import EventSeries, SampleBlock, concat_sample_blocks
-from braincell.quad._staggered import axial_operator_per_run
+from braincell.quad._staggered import axial_operator_per_run, host_axial_operator, installed_axial_operator
 
 if TYPE_CHECKING:
     from braincell._multi_compartment.cell import Cell
@@ -457,8 +457,13 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     )
 
     compiled_recordings = rcell._compiled_recordings(dt)
+    # Of a concrete geometry the axial operator is built once, on the host,
+    # and given to the loop as an argument; a traced one builds it in the
+    # program, before the steps (CELL-52, CELL-50).
+    operator = host_axial_operator(rcell)
     plan = _cached_run_plan(
         rcell,
+        operator_given=operator is not None,
         dt=dt,
         n_steps=n_steps,
         compiled_recordings=compiled_recordings,
@@ -475,7 +480,10 @@ def run(rcell: "Cell", *, dt, duration) -> RunResult:
     values = rcell._take_value_inputs()
     try:
         with brainstate.environ.context(dt=dt), _schedule_horizon(until_ms):
-            times, start_time, stop_time, recorded, spike_rows = plan.loop(values)
+            if operator is None:
+                times, start_time, stop_time, recorded, spike_rows = plan.loop(values)
+            else:
+                times, start_time, stop_time, recorded, spike_rows = plan.loop((operator[1],), values)
     except BaseException:
         rcell._restore_value_inputs(values)
         raise
@@ -742,6 +750,7 @@ def _cached_run_plan(
     arrival_origin: tuple[float, int] | None = None,
     handover=None,
     spike_path: tuple[bool, bool] | None = None,
+    operator_given: bool = False,
 ) -> _RunPlan:
     """Return the persistent plan for one run shape.
 
@@ -761,7 +770,9 @@ def _cached_run_plan(
     ``handover`` (:func:`_dt_change_handover`), ``None`` unless a run at
     another ``dt`` came before. ``spike_path`` (:func:`_spike_output_path`)
     selects how the loop packs the spikes and copies them back; ``None`` is
-    neither way.
+    neither way. ``operator_given`` selects the loop that takes the axial
+    operator's arrays as its first argument (:func:`axial_operator_before_steps`)
+    over the one that builds it from the traced geometry.
     """
     cache = rcell._run_loop_cache
     key = (
@@ -774,6 +785,7 @@ def _cached_run_plan(
         arrival_origin,
         handover,
         spike_path,
+        bool(operator_given),
     )
     cached = cache.get(key)
     if cached is None:
@@ -796,6 +808,7 @@ def _cached_run_plan(
                 spike_port=spike_port,
                 arrival_origin=arrival_origin,
                 handover=handover,
+                operator_given=operator_given,
             ),
             fixed_schedules=fixed_schedules,
             schedule_issues=_differentiable_schedule_issues(compiled_recordings, dt=dt, n_steps=n_steps),
@@ -816,6 +829,7 @@ def _make_run_loop(
     spike_port: _SpikePort | None = None,
     arrival_origin: tuple[float, int] | None = None,
     handover=None,
+    operator_given: bool = False,
 ):
     """Create the jitted stateful run loop for a fixed observer layout.
 
@@ -834,7 +848,8 @@ def _make_run_loop(
     ``arrival_origin`` is ``(origin in ms, its step)`` when the clock's
     origin is off the ``dt`` grid from time 0 (:func:`_arrival_origin`).
     ``handover`` holds what the runs at another ``dt`` before took
-    (:func:`_dt_change_handover`).
+    (:func:`_dt_change_handover`). With ``operator_given`` the loop takes
+    the arrays of ``rcell``'s axial operator first (:func:`axial_operator_before_steps`).
     """
     from braincell.network.event import arrival_origin as arrivals_from, boundary_step, grid_step, handed_over
     from braincell.network.plasticity import reads_voltage_before_step
@@ -961,7 +976,7 @@ def _make_run_loop(
                 recorded.append((values[index], None))
         return times, start_t, stop_t, tuple(recorded), spike_rows
 
-    return brainstate.transform.jit(axial_operator_before_steps(_run_loop, (rcell,)))
+    return brainstate.transform.jit(axial_operator_before_steps(_run_loop, (rcell,), given=operator_given))
 
 
 def _blocked_loop(step_fn, samples, times, grid, *, block_steps: int, n_rows: int):
@@ -1005,13 +1020,34 @@ def _blocked_loop(step_fn, samples, times, grid, *, block_steps: int, n_rows: in
     return buffers + (_words_to_rows(words, block_steps),)
 
 
-def axial_operator_before_steps(loop, cells):
+def axial_operator_before_steps(loop, cells, *, given: bool = False):
     """``loop``, building the axial operator of each of ``cells`` once, before the steps it traces.
 
     The geometry is the same at every step of a run; built inside the step,
     the operator would be built again at every step, and at every stage of
     the generic solvers (CELL-50). See ``axial_operator_per_run``.
+
+    With ``given``, the operators are inputs instead: the returned function
+    takes first one entry per cell, the leaves of
+    :func:`~braincell.quad._staggered.host_axial_operator` (or ``None`` to
+    build that cell's as above), and installs them with the layout the
+    cell's runtime keeps, so the program builds no operator (CELL-52).
     """
+
+    if given:
+
+        @functools.wraps(loop)
+        def with_given(operators, *args):
+            with contextlib.ExitStack() as stack:
+                for cell, leaves in zip(cells, operators, strict=True):
+                    if leaves is None:
+                        stack.enter_context(axial_operator_per_run(cell))
+                    else:
+                        built = cell._runtime.axial_operator_layout.join(leaves)
+                        stack.enter_context(installed_axial_operator(cell, built))
+                return loop(*args)
+
+        return with_given
 
     @functools.wraps(loop)
     def built_once(*args):

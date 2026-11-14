@@ -23,7 +23,6 @@ separately compiled diagnostic path.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-import dataclasses
 from typing import NamedTuple
 
 import brainstate
@@ -743,53 +742,6 @@ def _changed_writes(trace):
     return changed
 
 
-class _OperatorLayout(NamedTuple):
-    """Which fields of a :class:`RunAxialOperator` are traced arrays, and the static rest.
-
-    The traced fields become the operator leaves a step takes as input; the
-    others (index tables, sizes, dtypes) are fixed by the morphology and
-    kept as they were built.
-    """
-
-    kind: str
-    source: object = None
-    source_fields: tuple[str, ...] = ()
-    cache: object = None
-    cache_fields: tuple[str, ...] = ()
-
-    @classmethod
-    def split(cls, built):
-        """``(layout, leaves)`` for a built ``RunAxialOperator``."""
-        if built.cv_operator is not None:
-            return cls("cv"), (built.cv_operator,)
-        source, cache = built.dhs
-        source_fields = _traced_fields(source)
-        cache_fields = _traced_fields(cache)
-        leaves = tuple(getattr(source, name) for name in source_fields)
-        leaves += tuple(getattr(cache, name) for name in cache_fields)
-        return cls("dhs", source, source_fields, cache, cache_fields), leaves
-
-    def join(self, leaves):
-        """The ``RunAxialOperator`` with ``leaves`` in place of the traced fields."""
-        from braincell.quad._staggered import RunAxialOperator
-
-        if self.kind == "cv":
-            return RunAxialOperator(cv_operator=leaves[0])
-        count = len(self.source_fields)
-        source = dataclasses.replace(self.source, **dict(zip(self.source_fields, leaves[:count])))
-        cache = dataclasses.replace(self.cache, **dict(zip(self.cache_fields, leaves[count:])))
-        return RunAxialOperator(dhs=(source, cache))
-
-
-def _traced_fields(record):
-    """Names of the dataclass fields of ``record`` that hold a JAX array anywhere in their tree."""
-    return tuple(
-        field.name
-        for field in dataclasses.fields(record)
-        if any(isinstance(leaf, jax.Array) for leaf in jax.tree.leaves(getattr(record, field.name)))
-    )
-
-
 def _axial_operator_step(
     engine,
     functional_step,
@@ -818,7 +770,7 @@ def _axial_operator_step(
     runtime's host caches are written only for concrete geometry, so no
     cache keeps them.
     """
-    from braincell.quad._staggered import axial_operator_per_run
+    from braincell.quad._staggered import AxialOperatorLayout, axial_operator_per_run, installed_axial_operator
 
     target = engine.target
     runtime = getattr(target, "_runtime", None)
@@ -838,7 +790,7 @@ def _axial_operator_step(
             built = runtime.run_axial_operator
             if built is None:
                 return ()
-            layout, leaves = _OperatorLayout.split(built)
+            layout, leaves = AxialOperatorLayout.split(built)
             layouts.append(layout)
             return leaves
 
@@ -863,12 +815,8 @@ def _axial_operator_step(
             # Keep every state the operator is built from in the step's
             # values, so a rollout can build it from them.
             _ = state.value
-        previous = runtime.run_axial_operator
-        runtime.run_axial_operator = layout.join(leaves)
-        try:
+        with installed_axial_operator(target, layout.join(leaves)):
             return base_step(data)
-        finally:
-            runtime.run_axial_operator = previous
 
     step = build_stateful_step(
         step_with_operator,

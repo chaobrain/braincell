@@ -171,6 +171,12 @@ class CellRuntimeState:
     #: The axial operator a compiled run built before its steps, while it
     #: traces them (``braincell.quad._staggered.axial_operator_per_run``).
     run_axial_operator: object | None = None
+    #: How the arrays a compiled run takes in place of the operator fit back
+    #: into it (``braincell.quad._staggered.host_axial_operator``, CELL-52).
+    axial_operator_layout: object | None = None
+    #: Compiled builders of the operator from the concrete geometry, by
+    #: solver family and float dtype; they outlive geometry edits (CELL-52).
+    axial_operator_builders: dict | None = None
     clamp_routing_table: object | None = None
     cable: CableArrays | None = None
     cv_area: object | None = None  # (n_cv,) brainunit Quantity, cm^2

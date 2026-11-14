@@ -1066,11 +1066,11 @@ def _select_declared_rows(array: np.ndarray, owner: np.ndarray, local: np.ndarra
     rows of the declaration at once.
     """
     size = owner.size
+    if array.size == 1:
+        return np.repeat(array.reshape(-1)[:1], size)
     owner_count = int(owner[-1]) + 1
     counts = np.bincount(owner, minlength=owner_count)
     common_length = int(counts[0]) if np.all(counts == counts[0]) else None
-    if array.size == 1:
-        return np.repeat(array.reshape(-1)[:1], size)
     if common_length is not None and array.shape == (common_length,):
         return array[local]
     if array.shape == (owner_count, 1):
@@ -1126,18 +1126,38 @@ def _column_by_declaration(parameter: str, spec, groups, size: int):
         value = declaration.params[parameter] if parameter in declaration.params else spec.default
         if first is None:
             first = value
-        if getattr(value, "shape", ()) in ((), None):
+        # A quantity's own unit gives its mantissa, as ``to_decimal`` does,
+        # and its shape is the mantissa's: read both directly, as one
+        # declaration per member makes this loop run once per member
+        # (CELL-51).
+        if isinstance(value, u.Quantity):
+            unit, mantissa = value.unit, value.mantissa
+            shape = np.shape(mantissa)
+        else:
+            unit, mantissa = None, value
+            shape = getattr(value, "shape", ())
+        if shape in ((), None):
             shared.setdefault(id(value), [value, []])[1].append(positions)
             continue
-        unit = value.unit if isinstance(value, u.Quantity) else None
-        selected = _select_declared_rows(np.asarray(value if unit is None else value.to_decimal(unit)), owner, local)
+        selected = _select_declared_rows(np.asarray(mantissa), owner, local)
         batch = batches.setdefault((id(unit), selected.dtype), [unit, [], []])
         batch[1].append(selected)
         batch[2].append(positions)
     pieces = []
     for value, positions in shared.values():
+        positions = np.concatenate(positions) if len(positions) > 1 else positions[0]
+        if isinstance(value, u.Quantity) and np.ndim(value.mantissa) == 0 and len(shared) > 1:
+            # A scalar of its own, as each member's value of a declaration
+            # split per member is: checked with the others of its unit, as
+            # one column. A value that fails makes the caller rebuild the
+            # column row by row, which names it (CELL-51).
+            selected = np.repeat(np.asarray(value.mantissa), positions.size)
+            batch = batches.setdefault((id(value.unit), selected.dtype), [value.unit, [], []])
+            batch[1].append(selected)
+            batch[2].append(positions)
+            continue
         spec.validate(value, parameter)
-        pieces.append((value, np.concatenate(positions), ()))
+        pieces.append((value, positions, ()))
     for unit, arrays, positions in batches.values():
         array = np.concatenate(arrays)
         value = array if unit is None else u.Quantity(array, unit)

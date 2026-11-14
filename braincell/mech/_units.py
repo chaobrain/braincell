@@ -124,6 +124,33 @@ def warn_invalid_declared_parameters(
                 _warn(str(exc), type(exc))
 
 
+def declared_parameters_are_valid(
+    category: str,
+    class_name: str,
+    instance_name: str | None,
+    params: Mapping[str, Any],
+) -> bool:
+    """Whether :func:`warn_invalid_declared_parameters` would warn about nothing, every value checked.
+
+    ``True`` only when the class resolves and every parameter is a known
+    name with a literal value that passes its check, so that any part of
+    a value (a row of an array) passes too (CELL-51). Warns about nothing.
+    """
+    info = _parameter_info(category, class_name)
+    if info is _UNRESOLVABLE:
+        return False
+    owner = describe_mechanism(category, class_name, instance_name)
+    accepted = [name for name in info if name not in _CELL_SUPPLIED]
+    for name, value in params.items():
+        if name not in accepted or not _is_literal(value):
+            return False
+        try:
+            info[name].validate(value, name, owner=owner)
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
 def warn_invalid_constructed_parameters(node: Any, category: str) -> None:
     """Warn about the units of the parameters a directly built Channel or Ion stores.
 

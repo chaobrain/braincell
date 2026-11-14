@@ -27,6 +27,7 @@ Type responsibilities in this file:
 """
 
 import contextlib
+import dataclasses
 import functools
 import operator
 import os
@@ -520,6 +521,168 @@ def _built_for_run(target) -> RunAxialOperator | None:
     return getattr(getattr(target, "_runtime", None), "run_axial_operator", None)
 
 
+def _array_fields(record) -> tuple[str, ...]:
+    """Names of the dataclass fields of ``record`` that hold a JAX array anywhere in their tree."""
+    return tuple(
+        field.name
+        for field in dataclasses.fields(record)
+        if any(isinstance(leaf, jax.Array) for leaf in jax.tree.leaves(getattr(record, field.name)))
+    )
+
+
+@dataclass(frozen=True)
+class AxialOperatorLayout:
+    """Where the arrays of a :class:`RunAxialOperator` go, so they can be the inputs of a compiled step.
+
+    :meth:`split` takes a built operator apart into this layout and its
+    array leaves; :meth:`join` puts other leaves of the same shapes (the
+    traced arguments of a loop) back. The fields that are not arrays (index
+    tables, sizes, dtypes) are fixed by the morphology and kept as built.
+    """
+
+    kind: str
+    source: object = None
+    source_fields: tuple[str, ...] = ()
+    cache: object = None
+    cache_fields: tuple[str, ...] = ()
+
+    @classmethod
+    def split(cls, built: RunAxialOperator) -> tuple["AxialOperatorLayout", tuple]:
+        """``(layout, leaves)`` of ``built``."""
+        if built.cv_operator is not None:
+            return cls("cv"), (built.cv_operator,)
+        source, cache = built.dhs
+        source_fields = _array_fields(source)
+        cache_fields = _array_fields(cache)
+        leaves = tuple(getattr(source, name) for name in source_fields)
+        leaves += tuple(getattr(cache, name) for name in cache_fields)
+        return cls("dhs", source, source_fields, cache, cache_fields), leaves
+
+    def join(self, leaves) -> RunAxialOperator:
+        """The :class:`RunAxialOperator` with ``leaves`` in place of the split arrays."""
+        if self.kind == "cv":
+            return RunAxialOperator(cv_operator=leaves[0])
+        count = len(self.source_fields)
+        source = dataclasses.replace(self.source, **dict(zip(self.source_fields, leaves[:count], strict=True)))
+        cache = dataclasses.replace(self.cache, **dict(zip(self.cache_fields, leaves[count:], strict=True)))
+        return RunAxialOperator(dhs=(source, cache))
+
+
+@contextlib.contextmanager
+def installed_axial_operator(target, built: RunAxialOperator):
+    """Give the steps traced inside the block ``built`` as ``target``'s axial operator.
+
+    The caller built it (or took its arrays as inputs of a compiled loop);
+    the solvers read it as they read the one :func:`axial_operator_per_run`
+    builds. The previous operator is restored on exit.
+    """
+    runtime = target._runtime
+    previous = runtime.run_axial_operator
+    runtime.run_axial_operator = built
+    try:
+        yield
+    finally:
+        runtime.run_axial_operator = previous
+
+
+def _compiled_builder(target, kind: str, build):
+    """A compiled ``build()`` of ``target``'s runtime, one per ``kind`` and float dtype.
+
+    ``build`` returns a dataclass of the operator; the compiled builder
+    returns the same dataclass, its array fields computed by one compiled
+    program from the runtime's geometry states (inputs of the program, so
+    a geometry edit does not compile it again) and its other fields those of
+    the first trace. Built eagerly, op by op, the operator takes seconds the
+    first time (CELL-52).
+    """
+    runtime = target._runtime
+    builders = runtime.axial_operator_builders
+    if builders is None:
+        builders = runtime.axial_operator_builders = {}
+    key = (kind, jnp.dtype(brainstate.environ.dftype()))
+    builder = builders.get(key)
+    if builder is None:
+        traced = []
+
+        def arrays():
+            records = build()
+            traced[:] = [(record, _array_fields(record)) for record in records]
+            return tuple(tuple(getattr(record, name) for name in names) for record, names in traced)
+
+        compiled = brainstate.transform.jit(arrays)
+
+        def builder():
+            values = compiled()
+            return tuple(
+                dataclasses.replace(record, **dict(zip(names, value, strict=True)))
+                for (record, names), value in zip(traced, values, strict=True)
+            )
+
+        builders[key] = builder
+    return builder()
+
+
+def host_axial_operator(target) -> tuple[AxialOperatorLayout, tuple] | None:
+    """``(layout, leaves)`` of ``target``'s axial operator, built from its concrete geometry (CELL-52).
+
+    The operator comes from the runtime caches (``axial_operator_source``,
+    ``dhs_source`` and ``dhs_static_cache``), which a geometry edit clears
+    (``CellRuntimeState.refresh_geometry``); on a miss a compiled builder
+    makes it. A compiled ``Cell.run`` takes the leaves as arguments, and
+    :func:`axial_operator_before_steps` puts them back with the layout,
+    which this function keeps in ``runtime.axial_operator_layout`` for the
+    trace. ``None`` for a target without an axial operator (a lumped Cell,
+    one running a reduction model), before ``init_state``, and when the
+    geometry is traced (a run under ``jax.grad`` or ``jax.jit``): the run
+    then builds it in its program, before the steps.
+    """
+    runtime = getattr(target, "_runtime", None)
+    if (
+        runtime is None
+        or getattr(runtime, "geometry", None) is None
+        or getattr(target, "_is_lumped", False)
+        or getattr(target, "_uses_reduction", False)
+        or _geometry_is_traced(runtime)
+    ):
+        return None
+    node_tree = target.node_tree
+    scheduling = target.node_scheduling(algorithm="dhs")
+    if target.solver_name in _DHS_SOLVERS:
+        source = runtime.dhs_source
+        cache = runtime.dhs_static_cache
+        if (
+            source is None
+            or cache is None
+            or getattr(cache, "float_dtype", None) != jnp.dtype(brainstate.environ.dftype())
+        ):
+
+            def build():
+                built_source = _build_dhs_static_source(target, node_tree=node_tree, scheduling=scheduling)
+                return built_source, _build_dhs_static_cache(built_source)
+
+            source, cache = _compiled_builder(target, "dhs", build)
+            runtime.dhs_source = source
+            runtime.dhs_static_cache = cache
+        built = RunAxialOperator(dhs=(source, cache))
+    else:
+        source = runtime.axial_operator_source
+        if source is None:
+            (holder,) = _compiled_builder(
+                target,
+                "cv",
+                lambda: (
+                    RunAxialOperator(
+                        cv_operator=_reduce_cv_axial_operator(target, node_tree=node_tree, scheduling=scheduling)
+                    ),
+                ),
+            )
+            source = runtime.axial_operator_source = holder.cv_operator
+        built = RunAxialOperator(cv_operator=source)
+    layout, leaves = AxialOperatorLayout.split(built)
+    runtime.axial_operator_layout = layout
+    return layout, leaves
+
+
 @contextlib.contextmanager
 def axial_operator_per_run(target):
     """Build ``target``'s axial operator once, for the steps traced inside the block.
@@ -535,14 +698,18 @@ def axial_operator_per_run(target):
 
     Outside a trace the runtime caches serve, and the block does nothing; so
     it does for a lumped Cell and one running a reduction model, which have
-    no axial operator.
+    no axial operator, and when an operator is installed already
+    (:func:`installed_axial_operator`).
     """
     runtime = getattr(target, "_runtime", None)
     if (
         getattr(target, "_is_lumped", False)
         or getattr(target, "_uses_reduction", False)
         or not _geometry_is_traced(runtime)
+        or runtime.run_axial_operator is not None
     ):
+        # An operator installed by an enclosing block (or given to the loop)
+        # serves as it is.
         yield
         return
     node_tree = target.node_tree
@@ -554,12 +721,8 @@ def axial_operator_per_run(target):
         else:
             cv_operator = _reduce_cv_axial_operator(target, node_tree=node_tree, scheduling=scheduling)
             built = RunAxialOperator(cv_operator=cv_operator)
-    previous = runtime.run_axial_operator
-    runtime.run_axial_operator = built
-    try:
+    with installed_axial_operator(target, built):
         yield
-    finally:
-        runtime.run_axial_operator = previous
 
 
 def _get_dhs_static_source(target, *, node_tree, scheduling) -> DHSStaticSource:

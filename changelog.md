@@ -1307,6 +1307,26 @@
   each, the build takes 1.4 s, down from 149 s. The table's rows,
   order, values, units and dtypes are unchanged, and an invalid value
   still names the first failing synapse and its `place` call.
+- **One location list per member places and initializes about 3-4x
+  faster** (CELL-51). `cell.place([locset, ...], Synapse(...))` with one
+  list per member built a `Synapse` per member that checked its values
+  again, evaluated each member's locations and walked the call stack for
+  its `place` line; `init_state` then walked every per-member rule and
+  synapse through brainstate's graph, and Python's cyclic garbage
+  collector walked the per-member objects again and again (at 1e6 members
+  on main, 29 s of `place` and 55 s of `init_state` in one run). Each
+  distinct location list is now evaluated and checked once and the call
+  site found once; a member's values, parts of a declaration that passed
+  its check, are not checked again; the per-member rules and their map to
+  the declaration are one value each to the graph walk; the synapse table
+  reads each member's values directly; and the collector is paused while
+  `place` builds the per-member objects, then restored as it was. With
+  `at(0, 0.5)` and `tau` per member, on one CPU core (main `2eace76`),
+  `place` takes 0.93 s at 1e5 members and 9.5 s at 1e6 (3.6 s and 36.8 s
+  before), and `init_state` 0.96 s and 8.4 s (2.8 s and 25.6 s before).
+  The rules, placements, synapse table, warnings and errors are unchanged.
+  Each member still has its own rule and `Synapse`, about 9.5 us per member
+  in `place` at 1e6.
 - **A compiled run builds the axial operator once, before its steps**
   (CELL-50). `Cell.run` and `Network.run` trace the geometry, and each step
   built the cable's axial operator from it again: the DHS coefficients once
@@ -1321,6 +1341,26 @@
   1000-member 3-branch cable 0.44-0.94 of main. On CPU, XLA had already
   moved the solve out of the loop, and a step costs the same. A loop of
   `update()` calls written by the caller still builds it at every step.
+- **`Cell.run` builds the axial operator once per geometry, not once per
+  run** (CELL-52). A compiled `Cell.run` built the cable's axial operator
+  in its program at every run, from the traced geometry: the CV operator
+  with the LU factorization of its Schur complement for `rk4` and the other
+  generic solvers, the DHS coefficients for `"staggered"` and
+  `"dhs_voltage"`. When the geometry is concrete, the run now takes the
+  operator from the Cell's host caches and passes it to the compiled loop
+  as an argument. The caches are filled once by a compiled builder and
+  again only after the geometry changes. A run whose geometry is traced
+  (under `jax.grad` or `jax.jit`) builds it in the program as before.
+  Outputs and gradients are bitwise unchanged (CA1 and a 3-branch cable,
+  `rk4` and the default solver). On one CPU core (float64, main
+  `996e26d`), a 400-step CA1 `rk4` run took 103.6 ms and now takes
+  81.5 ms; over four sessions it took 0.72-0.83 of main's time. Steps cost
+  the same. The default solver and a 1000-member 3-branch cable, whose
+  build was already small, cost what they did. On GPU (RTX 3090) the same
+  CA1 run went from 58.7 to 49.6 ms. The first run of a process also
+  compiles the builder, 0.09-0.22 s: CA1 `rk4` went from 0.74 to 0.82 s,
+  the other models stay within 4%. `Network.run` still builds the operator
+  in its program.
 - **A sparse later window of a `"padded"` run no longer stops the run**
   (CELL-53). `scheduled_delivery="padded"` checks a window's 8 slots per
   record only when its plan takes more bytes than every padded plan the

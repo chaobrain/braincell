@@ -42,7 +42,7 @@ import numpy as np
 from braincell.mech._base import Mechanism
 from braincell.mech._density import _resolve_class_name
 from braincell.mech._params import Params, quantity_hashable
-from braincell.mech._units import warn_invalid_declared_parameters
+from braincell.mech._units import declared_parameters_are_valid, warn_invalid_declared_parameters
 from braincell.mech._validate import require_str
 
 __all__ = [
@@ -286,6 +286,26 @@ class Synapse(Point):
         object.__setattr__(self, "params", Params(params) if params else Params())
         object.__setattr__(self, "name", name)
         warn_invalid_declared_parameters("synapse", synapse_type, self.instance_name, self.params)
+
+    def _with_params(self, params: Mapping[str, Any], *, checked: bool) -> "Synapse":
+        """This declaration with other parameter values, as ``Synapse(self.synapse_type, name=self.name, **params)``.
+
+        ``checked=True`` skips the declaration check: the caller passes
+        parts of values this declaration holds, and
+        :meth:`_values_are_checked` is ``True`` (CELL-51, one declaration
+        split per member).
+        """
+        if not checked:
+            return type(self)(self.synapse_type, name=self.name, **params)
+        split = object.__new__(type(self))
+        object.__setattr__(split, "synapse_type", self.synapse_type)
+        object.__setattr__(split, "params", Params(params) if params else Params())
+        object.__setattr__(split, "name", self.name)
+        return split
+
+    def _values_are_checked(self) -> bool:
+        """Whether every parameter is a literal value that passes its declaration check."""
+        return declared_parameters_are_valid("synapse", self.synapse_type, self.instance_name, self.params)
 
     def __setattr__(self, name: str, value: Any) -> None:
         raise AttributeError(f"{type(self).__name__} is immutable; cannot set attribute {name!r}.")

@@ -2111,5 +2111,111 @@ class BatchedCellInANetworkTest(unittest.TestCase):
                         self.assertEqual(str(caught.exception), str(reference.exception))
 
 
+class NetworkGivenAxialOperatorTest(unittest.TestCase):
+    """OPT-15: update() takes the axial operators an optim engine built; nothing else reuses them (L40)."""
+
+    @staticmethod
+    def _network(**options):
+        from braincell.experimental.optim.gradients_test import _network
+
+        return _network(("a", "Y", "rk4"), ("b", "Y3", "default"), **options)
+
+    @staticmethod
+    def _engine(network, cells):
+        from braincell.experimental.optim import build_rollout_value_and_grad
+        from braincell.experimental.optim.gradients_test import _network_step
+
+        return build_rollout_value_and_grad(network, step=_network_step(network, cells), method="rtrl")
+
+    @staticmethod
+    def _voltage(cells):
+        return np.concatenate([np.asarray(cell.V.value.to_decimal(u.mV)) for cell in cells.values()], axis=-1)
+
+    def _own_runs(self, network, cells, n_steps=20):
+        from braincell.experimental.optim.gradients_test import _Y_DT
+
+        network.reset_state()
+        result = network.run(dt=_Y_DT, duration=n_steps * _Y_DT)
+        run = np.concatenate([np.asarray(u.get_mantissa(result.traces[name]["v"])) for name in cells], axis=-1)
+        network.reset_state()
+        network.prepare_run(dt=_Y_DT)
+        updates = []
+        for _ in range(n_steps):
+            network.update()
+            updates.append(self._voltage(cells))
+        return run, np.stack(updates)
+
+    def test_the_networks_own_runs_before_and_after_an_engine(self):
+        from braincell.experimental.optim.gradients_test import _y_targets
+
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            expected_run, expected_updates = self._own_runs(*self._network(record=True))
+            self.assertTrue(np.all(np.isfinite(expected_run)) and np.ptp(expected_run) > 1.0)
+            self.assertTrue(np.all(np.isfinite(expected_updates)) and np.ptp(expected_updates) > 1.0)
+            reference = self._engine(*self._network())(_y_targets(16))
+
+            # The engine first.
+            network, cells = self._network(record=True)
+            engine = self._engine(network, cells)
+            first = engine(_y_targets(16))
+            self.assertEqual(engine.axial_operator_mode, "rollout")
+            for cell in cells.values():
+                self.assertIsNone(cell._runtime.run_axial_operator)
+            run, updates = self._own_runs(network, cells)
+            np.testing.assert_allclose(run, expected_run, rtol=1e-12)
+            np.testing.assert_allclose(updates, expected_updates, rtol=1e-12)
+            again = engine(_y_targets(16))
+
+            # The Network's own runs first.
+            network, cells = self._network(record=True)
+            self._own_runs(network, cells)
+            network.reset_state()
+            later = self._engine(network, cells)(_y_targets(16))
+        for result in (first, again, later):
+            np.testing.assert_allclose(float(result.loss), float(reference.loss), rtol=1e-12)
+            for name, gradient in reference.gradients.items():
+                self.assertNotEqual(float(u.get_mantissa(gradient)), 0.0)
+                np.testing.assert_allclose(
+                    float(u.get_mantissa(result.gradients[name])), float(u.get_mantissa(gradient)), rtol=1e-12
+                )
+
+    def test_the_loop_given_the_operators_is_built_once(self):
+        from braincell.experimental.optim.gradients_test import _y_targets
+
+        built = []
+        make = Network._make_network_run_loop
+
+        def counting(network, **options):
+            built.append(options.get("operator_given", False))
+            return make(network, **options)
+
+        with jax.enable_x64(True), brainstate.environ.context(precision=64):
+            network, cells = self._network()
+            with patch.object(Network, "_make_network_run_loop", autospec=True, side_effect=counting):
+                self._engine(network, cells).prepare(_y_targets()[0])
+                given = network._prepared_run[1].given_runner
+                self.assertIsNotNone(given)
+                self._engine(network, cells).prepare(_y_targets()[0])
+                network.reset_state()
+                self._engine(network, cells)(_y_targets(4))
+                self.assertIs(network._prepared_run[1].given_runner, given)
+                self.assertEqual(built, [True])
+                # A Cell that registers a callable input drops both loops.
+                network._drop_compiled_loops()
+                self.assertIsNone(network._prepared_run[1].given_runner)
+                self._engine(network, cells).prepare(_y_targets()[0])
+                self.assertEqual(built, [True, False, True])
+            # update() outside an engine compiles its own loop once, as on
+            # main (the engine only traced it).
+            network.reset_state()
+            counts = []
+            for _ in range(3):
+                with loop_compiles() as names:
+                    network.update()
+                counts.append(names.count("jit(jaxpr_call)"))
+        self.assertGreaterEqual(counts[0], 1)
+        self.assertEqual(counts[1:], [0, 0])
+
+
 if __name__ == "__main__":
     unittest.main()

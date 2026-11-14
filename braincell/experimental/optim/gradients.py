@@ -22,6 +22,7 @@ separately compiled diagnostic path.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable, Mapping, Sequence
 from typing import NamedTuple
 
@@ -169,13 +170,15 @@ class RolloutGradientEngine:
 
     @property
     def axial_operator_mode(self) -> str | None:
-        """Where a cable target's axial operator is built, or ``None`` before :meth:`prepare`.
+        """Where a cable target's axial operators are built, or ``None`` before :meth:`prepare`.
 
         ``"rollout"``: once per scan, from the initial state values, and
-        passed to every step (RTRL passes its tangent too). ``"step"``: at
-        every step, because the step writes a state the operator is built
-        from or an optimizer root. ``"none"``: there is no operator to hoist
-        (a lumped Cell, a reduction model, a ``Network``).
+        passed to every step (RTRL passes their tangents too); in a
+        ``Network``, a population Cell whose operator inputs the step writes
+        builds its own at every step. ``"step"``: at every step, because the
+        step writes a state every operator is built from, or an optimizer
+        root. ``"none"``: there is no operator to hoist (a lumped Cell, a
+        reduction model, a ``Network`` of such Cells).
         """
         return self._axial_operator_mode
 
@@ -490,13 +493,15 @@ class TrajectoryGradientEngine:
 
     @property
     def axial_operator_mode(self) -> str | None:
-        """Where a cable target's axial operator is built, or ``None`` before :meth:`prepare`.
+        """Where a cable target's axial operators are built, or ``None`` before :meth:`prepare`.
 
         ``"rollout"``: once per scan, from the initial state values, and
-        passed to every step (RTRL passes its tangent too). ``"step"``: at
-        every step, because the step writes a state the operator is built
-        from or an optimizer root. ``"none"``: there is no operator to hoist
-        (a lumped Cell, a reduction model, a ``Network``).
+        passed to every step (RTRL passes their tangents too); in a
+        ``Network``, a population Cell whose operator inputs the step writes
+        builds its own at every step. ``"step"``: at every step, because the
+        step writes a state every operator is built from, or an optimizer
+        root. ``"none"``: there is no operator to hoist (a lumped Cell, a
+        reduction model, a ``Network`` of such Cells).
         """
         return self._axial_operator_mode
 
@@ -814,58 +819,101 @@ def _axial_operator_step(
     materialize,
     require_scalar_output,
 ):
-    """Retrace ``base_step`` with the target's axial operator as an explicit input.
+    """Retrace ``base_step`` with the target's axial operators as an explicit input.
 
-    Returns ``(functional_step, axial_operator_mode)``:
+    The target's cable Cells are the target itself, or the Cells of a
+    Network's populations; the operator of each is built by one builder
+    (OPT-15). Returns ``(functional_step, axial_operator_mode)``:
 
     - ``"rollout"``: the step takes the operator leaves with its data, so a
-      rollout builds the operator once, from its initial state values.
-    - ``"step"``: the user's step changes a state the operator is built
+      rollout builds the operators once, from its initial state values. In
+      a Network, a Cell whose operator inputs the step changes keeps
+      building its own at every step.
+    - ``"step"``: the user's step changes a state every operator is built
       from, or an optimizer root, so every step builds its own; the step is
       returned unchanged.
     - ``"none"``: the target builds no axial operator (a lumped Cell, one
-      running a reduction model, a Network); the step is returned unchanged.
+      running a reduction model, a Network of such Cells); the step is
+      returned unchanged.
 
     ``user_writes`` holds the ids of the states the user's step changed when
-    ``functional_step`` was traced. While the step is traced its runtime
-    holds that trace's operator leaves; they are restored on exit, and the
-    runtime's host caches are written only for concrete geometry, so no
-    cache keeps them.
+    ``functional_step`` was traced. A Network's ``update()`` refreshes the
+    trainable parameters, the geometry included, at every step, from the
+    roots; for a Network the user's step is traced once more without that
+    refresh, to find the states it writes itself. While the step is traced
+    the runtimes hold that trace's operator leaves; they are restored on
+    exit, and the runtimes' host caches are written only for concrete
+    geometry, so no cache keeps them.
     """
     from braincell.quad._staggered import AxialOperatorLayout, axial_operator_per_run, installed_axial_operator
 
     target = engine.target
-    runtime = getattr(target, "_runtime", None)
-    if getattr(runtime, "geometry", None) is None or not hasattr(runtime, "run_axial_operator"):
+    populations = getattr(target, "_cell_populations", None)
+    cells = (target,) if populations is None else tuple(population.cell for population in populations().values())
+    cells = tuple(
+        cell
+        for cell in cells
+        if getattr(getattr(cell, "_runtime", None), "geometry", None) is not None
+        and hasattr(cell._runtime, "run_axial_operator")
+    )
+    if not cells:
         return functional_step, "none"
-    manager = target.trainables
-    layouts = []
+    if populations is not None:
+        user_writes = _network_user_writes(engine, example_step_data)
 
-    def build(_):
-        for state in engine.parameter_states.values():
-            _ = state.value
-        if materialize:
-            # The step refreshes its runtime parameters, geometry included,
-            # before it builds the operator; build it from the same values.
-            manager.materialize()
-        with axial_operator_per_run(target):
-            built = runtime.run_axial_operator
-            if built is None:
-                return ()
-            layout, leaves = AxialOperatorLayout.split(built)
-            layouts.append(layout)
-            return leaves
+    def refresh(selected):
+        # The step refreshes its runtime parameters, geometry included,
+        # before it builds the operator; build it from the same values.
+        if populations is None:
+            target.trainables.materialize()
+            return
+        for cell in selected:
+            if cell.trainables.bindings():
+                cell.trainables.materialize()
 
-    builder = brainstate.transform.StatefulFunction(build, return_only_write=False)
-    builder.make_jaxpr(None)
-    if not layouts:
+    def operator_builder(selected):
+        """``(builder, its state trace, [(cell, layout)])`` for the operators of ``selected``.
+
+        A Cell that builds no operator (lumped, or running a reduction
+        model) has no layout and no leaves.
+        """
+        layouts = []
+
+        def build(_):
+            for state in engine.parameter_states.values():
+                _ = state.value
+            if materialize:
+                refresh(selected)
+            leaves = []
+            with contextlib.ExitStack() as stack:
+                for cell in selected:
+                    stack.enter_context(axial_operator_per_run(cell))
+                    built = cell._runtime.run_axial_operator
+                    if built is not None:
+                        layout, cell_leaves = AxialOperatorLayout.split(built)
+                        layouts.append((cell, layout))
+                        leaves.append(cell_leaves)
+            return tuple(leaves)
+
+        builder = brainstate.transform.StatefulFunction(build, return_only_write=False)
+        builder.make_jaxpr(None)
+        return builder, builder.get_state_trace(None), layouts
+
+    roots = {id(state) for state in engine.parameter_states.values()}
+    per_cell = [(cell, operator_builder((cell,))) for cell in cells]
+    per_cell = [(cell, built) for cell, built in per_cell if built[2]]
+    if not per_cell:
         return functional_step, "none"
-    builder_trace = builder.get_state_trace(None)
-    builder_states = tuple(builder_trace.states)
-    guarded = {id(state) for state in builder_states} | {id(state) for state in engine.parameter_states.values()}
-    if user_writes & guarded:
+    # A Cell whose operator inputs (or any optimizer root) the step writes
+    # builds its own at every step.
+    kept = [(cell, built) for cell, built in per_cell if not user_writes & (_operator_inputs(*built[:2]) | roots)]
+    if not kept:
         return functional_step, "step"
-    layout = layouts[0]
+    if len(kept) == 1:
+        builder, builder_trace, layouts = kept[0][1]
+    else:
+        builder, builder_trace, layouts = operator_builder(tuple(cell for cell, _ in kept))
+    builder_states = tuple(builder_trace.states)
     example_leaves = jax.tree.map(
         lambda leaf: jnp.zeros(leaf.shape, leaf.dtype),
         jax.eval_shape(lambda values: builder.jaxpr_call(values, None)[1], builder_trace.get_state_values()),
@@ -877,7 +925,9 @@ def _axial_operator_step(
             # Keep every state the operator is built from in the step's
             # values, so a rollout can build it from them.
             _ = state.value
-        with installed_axial_operator(target, layout.join(leaves)):
+        with contextlib.ExitStack() as stack:
+            for (cell, layout), cell_leaves in zip(layouts, leaves, strict=True):
+                stack.enter_context(installed_axial_operator(cell, layout.join(cell_leaves)))
             return base_step(data)
 
     step = build_stateful_step(
@@ -889,6 +939,42 @@ def _axial_operator_step(
     positions = {id(state): index for index, state in enumerate(step.state_trace.states)}
     indices = tuple(positions[id(state)] for state in builder_states)
     return step._replace(operator=OperatorInput(builder, builder_trace, indices)), "rollout"
+
+
+def _operator_inputs(builder, builder_trace):
+    """The ids of the states whose values reach the operator leaves ``builder`` returns.
+
+    The builder also reads states that do not reach the operator (the
+    refresh reads every trainable parameter); a step may write those.
+    """
+    values = builder_trace.get_state_values()
+    closed = jax.make_jaxpr(lambda values: builder.jaxpr_call(values, None)[1])(values)
+    needed = {var for var in closed.jaxpr.outvars if isinstance(var, jax.extend.core.Var)}
+    for eqn in reversed(closed.jaxpr.eqns):
+        if any(var in needed for var in eqn.outvars):
+            needed.update(var for var in eqn.invars if isinstance(var, jax.extend.core.Var))
+    invars = iter(closed.jaxpr.invars)
+    reached = set()
+    for state, value in zip(builder_trace.states, values, strict=True):
+        leaves = [next(invars) for _ in jax.tree.leaves(value)]
+        if any(var in needed for var in leaves):
+            reached.add(id(state))
+    return reached
+
+
+def _network_user_writes(engine, example_step_data):
+    """The ids of the states a Network target's user step changes itself, without ``update()``'s refresh."""
+    writes = []
+
+    def traced(data):
+        with brainstate.StateTraceStack() as trace:
+            engine.step(data)
+        writes[:] = _changed_writes(trace)
+        return jnp.asarray(0.0)
+
+    with engine.target._update_keeps_trainables():
+        brainstate.transform.StatefulFunction(traced, return_only_write=False).make_jaxpr(example_step_data)
+    return {id(state) for state in writes}
 
 
 def build_rollout_value_and_grad(

@@ -1226,8 +1226,8 @@ class FunctionalStepTraceOrderTest(unittest.TestCase):
             self.assertNotEqual([id(s) for s in retraced], [id(s) for s in built.state_trace.states])
             expected = fs._step_tangent_dependencies(built, values, jnp.asarray(0.5, jnp.float64))
             actual = fs._step_tangent_dependencies(built, values, jnp.asarray(0.5, jnp.float32))
-        # Built order (a, p, b): a' reads a and p, b' reads b, the output a'.
-        self.assertEqual(expected.new_state_deps, (0b011, 0b000, 0b100))
+        # Built order (a, p, b): a' reads a and p, p is carried, b' reads b.
+        self.assertEqual(expected.new_state_deps, (0b011, 0b010, 0b100))
         self.assertEqual(actual, expected)
 
     def test_trace_of_other_states_is_refused(self) -> None:

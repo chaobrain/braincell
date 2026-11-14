@@ -2754,6 +2754,19 @@
   all after `reset_state`. A rule's source removed from the planned loop's
   key would leave its row 21 of 80 conductance jumps.
 
+- **The docstring examples pass under doctest** (API-17). `pytest --doctest-modules
+  braincell --ignore-glob='*_test.py'` failed on 8 docstrings: examples
+  passing `...` as arguments (`mix_ions`, `register_channel`), using a
+  variable they never defined (`split_diffeq_states`, `plan_neuron_files`),
+  importing `load_neuromorpho` from `braincell` instead of `braincell.io`,
+  using the branch type `"dend"` (the name is `"dendrite"`), printing the `Cell`
+  that `paint` returns (`Cl_Leak`), and showing an old `Quantity` repr
+  (`Params`). Three examples that were skipped whole now run as well
+  (`build_standard_swc_url`, `Morphology.topo`, `MorphoBranch.attach`). The
+  command now reports 130 passed and 1 skipped (`Morphology.vis2d`, which
+  draws a figure). `mix_ions` also documents that it needs at least two ions,
+  as it already checked.
+
 ### Deprecations
 
 - **Constructing an invalid mechanism declaration** (MECH-26).

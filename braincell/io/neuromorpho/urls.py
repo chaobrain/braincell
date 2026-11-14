@@ -129,7 +129,9 @@ def build_standard_swc_url(neuron: "NeuroMorphoNeuron") -> str:
 
     .. code-block:: python
 
-        >>> build_standard_swc_url(neuron)  # doctest: +SKIP
+        >>> from braincell.io.neuromorpho import NeuroMorphoNeuron, build_standard_swc_url
+        >>> neuron = NeuroMorphoNeuron.from_payload({"neuron_id": 1, "neuron_name": "TypeA-10", "archive": "Scanziani"})
+        >>> build_standard_swc_url(neuron)
         'https://neuromorpho.org/dableFiles/scanziani/CNG%20version/TypeA-10.CNG.swc'
     """
 
@@ -263,9 +265,15 @@ def plan_neuron_files(
 
     .. code-block:: python
 
-        >>> plans = plan_neuron_files(neuron, mode="standard")  # doctest: +SKIP
+        >>> from braincell.io.neuromorpho import NeuroMorphoNeuron, plan_neuron_files
+        >>> neuron = NeuroMorphoNeuron.from_payload(
+        ...     {"neuron_id": 1, "neuron_name": "cnic_001", "archive": "Wearne_Hof", "original_format": "cnic_001.asc"}
+        ... )
+        >>> plans = plan_neuron_files(neuron, mode="standard")
         >>> plans[0].kind
         'standard'
+        >>> [plan.filename for plan in plan_neuron_files(neuron)]
+        ['cnic_001.CNG.swc', 'cnic_001.asc']
     """
 
     from braincell.io.neuromorpho.models import NeuroMorphoFilePlan  # local to break import cycle

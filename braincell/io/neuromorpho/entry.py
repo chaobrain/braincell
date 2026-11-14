@@ -207,7 +207,7 @@ def load_neuromorpho(
 
     .. code-block:: python
 
-        >>> from braincell import load_neuromorpho
+        >>> from braincell.io import load_neuromorpho
         >>> morph = load_neuromorpho(10047)  # doctest: +SKIP
         >>> morph, report = load_neuromorpho(10047, return_report=True)  # doctest: +SKIP
     """

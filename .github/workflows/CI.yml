@@ -526,12 +526,14 @@ jobs:
         with:
           pattern: coverage-data-*
       - name: Combine the shards and require the total floor
-        # `coverage report` applies `fail_under` from pyproject.toml.
+        # `coverage report` applies `fail_under` from pyproject.toml. `-i`
+        # skips files with no source (a test executes code under a made-up
+        # braincell/fake.py), as pytest-cov's own reports do.
         run: |
           for i in 0 1 2; do mv "coverage-data-$i/.coverage" ".coverage.shard$i"; done
           coverage combine
-          coverage xml
-          coverage report
+          coverage xml -i
+          coverage report -i
       - name: Upload the coverage report
         if: ${{ !cancelled() }}
         # The report is for reading only and gates nothing; GitHub's artifact

@@ -69,6 +69,7 @@ reads `0.99 mV` instead of `0.627 mV`).
 | `na_zh19_io` | `2.6e-5` / `4.5e-11` / `2.1e-10` | `5e-5` / `1e-6` / `1e-6` |
 | `kca2p2` in `ma20_goc`, `ma20_grc`, `ma25_bc`, `ri21_sc` | `4.2e-6` / `6.4e-6` / `3.5e-6` | `1e-5` each |
 | `ca_zh19_io` with `freeze_m_inf=False` | `3.9e-3` / `0.076` / `0.18` | `1e-2` / `0.2` / `0.5` |
+| `hcn_hm1992` (`HCN_HM1992` against `HCN_ZH19_IO.mod`, MECH-47) | `9.1e-5` / `2.6e-3` / `7.4e-4` | `2e-4` / `5e-3` / `2e-3` |
 
 The Cav2.1 row was measured on 2026-11-11, after MECH-6a; before it the
 unfrozen classes used CODATA constants and gave `2.8e-4` / `0.627` /
@@ -104,6 +105,7 @@ current).
 | `calva_su15_dcn` | `4.1e-10`, `6.3e-15` / `7.4e-11`, `1.9e-15` | `1e-9`, T0 / T0 |
 | `kdr_zh19_io` (MECH-19b) | `1.2e-15`, `3.3e-16` / `8.4e-10`, `6.5e-9` | T0 / `2e-9`, `1e-8` |
 | `na_zh19_io` (MECH-19c) | `1.4e-15`, `8.8e-15` / `3.6e-8`, `1.0e-8` | T0 / `1e-7`, `2e-8` |
+| `hcn_hm1992` (MECH-47) | `1.6e-3`, `1.1e-3` / `5.0e-4`, `9.9e-4` | `5e-3`, `2e-3` / `1e-3`, `2e-3` |
 | `nav1p1_ma25_bc`, `nav1p1_ri21_sc` (MECH-19c) | `3.2e-12`, `7.9e-10` / `1.9e-13`, `5.1e-10` | T0, `2e-9` / T0, `1e-9` |
 | The same with `gateCurrent = 1` (MECH-19c) | `3.2e-12`, `7.9e-10` / `1.1e-10`, `5.1e-10` | T0, `2e-9` / `2e-10`, `1e-9` |
 
@@ -271,6 +273,20 @@ Class (d), `ca_zh19_io` with the non-default `freeze_m_inf=False`: the `.mod`
   solver's autodiff linearization also includes `d(minf)/dV`, the same
   mechanism as the unfrozen GHK classes above. The option does not change the
   current, and the voltage clamp stays T0 (`e_I = 1.3e-14`).
+
+### HCN_HM1992 against HCN_ZH19_IO.mod
+
+Class (c), `hcn_hm1992`: `HCN_HM1992` has no `.mod` of its own and is
+  compared with `io_zh2019`'s `HCN_ZH19_IO.mod`, whose `eh = -43 mV` is the
+  class's default reversal potential since MECH-47 (the configuration sets
+  `eh` on the NEURON side only, so BrainCell runs its default). The gate
+  functions are the same, except that the `.mod` rounds two constants of
+  `tauq` to `14.6` and `0.07`, where the class has `14.59` and `0.0701`.
+  Evaluating the class's time constant with the `.mod`'s two constants gives
+  `<= 4.4e-12 mV` in the three current-clamp templates and
+  `e_I <= 6.1e-15`, `e_s <= 9.2e-15` under voltage clamp (2026-11-14,
+  braincell `6e0511b`). With the old `+43 mV` default the `dc` template
+  differs by `149 mV`.
 
 ### Nav1.1 steady-state initialization
 

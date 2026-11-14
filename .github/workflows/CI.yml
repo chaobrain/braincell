@@ -437,12 +437,17 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools
-          python -m pip install -r requirements-dev.txt
+          python -m pip install -r requirements-dev.txt pytest-xdist
           python -m pip install jax==${{ matrix.jax-version }} || exit 1
           python -m pip install . || exit 1
       - name: Test with pytest
+        # One worker per CPU, whole files per worker, as in `coverage`. A
+        # single process ran for about an hour and its runner was shut down
+        # three daily runs in a row (2026-11-14) at 51-65 min, before the
+        # suite finished; four smaller processes finish in about a third of
+        # the time.
         run: |
-          pytest braincell/
+          pytest braincell/ -n auto --dist loadfile --durations=30
 
   # Coverage of braincell/ on the latest jax, gated in two tiers: the total
   # must stay at or above `fail_under` in pyproject.toml's [tool.coverage],

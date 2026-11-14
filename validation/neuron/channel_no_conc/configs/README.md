@@ -160,6 +160,23 @@
 - 目录必须存在
 - 推荐写绝对路径
 
+可选 `pinned_mod_files`：NEURON 一侧是 `data/modeldb/` 下按字节入库的第三方
+`.mod`（无许可声明，见 `data/modeldb/README.md`）时写明其目录、来源与每个文件的
+SHA-256，`load_model_config` 每次核对（文件缺失抛 `FileNotFoundError`，内容不同抛
+`ValueError`）。这些文件编进 `testing` 库（`python -m validation.neuron._mechanisms
+testing --kind channel`），所以 `mod_dir` 写 `testing/channel`：
+
+```json
+{
+  "mod_dir": "../../../artifacts/mechanisms/testing/channel",
+  "pinned_mod_files": {
+    "dir": "modeldb/279",
+    "source": "ModelDB 279, ModelDBRepository/279@31424439f64771344c28105e80093eecf1fc0b64",
+    "sha256": {"ITGHK.mod": "fa71f75d0b5440f79bb080f1b4dce7a77bc04ff8c657c95eca7f01739111d394"}
+  }
+}
+```
+
 ### `defaults`
 
 `defaults` 可选。

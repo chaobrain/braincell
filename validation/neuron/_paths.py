@@ -53,3 +53,20 @@ def pinned_source(path: Path, sha256: str) -> Path:
     if actual != sha256:
         raise ValueError(f"{path} has SHA-256 {actual}, not the recorded {sha256}; restore the file from its source.")
     return path
+
+
+def pinned_mod_files(spec, *, owner: str) -> tuple[Path, ...]:
+    """Resolve an ``identity.pinned_mod_files`` entry and check each file's SHA-256.
+
+    ``spec`` is ``{"dir": <path under data/>, "source": <origin>, "sha256":
+    {<file name>: <digest>}}``; ``owner`` (the configuration) prefixes any
+    error, which is :func:`pinned_source`'s ``FileNotFoundError`` or
+    ``ValueError``. Returns the files in name order.
+    """
+    files = []
+    for name, digest in sorted(spec["sha256"].items()):
+        try:
+            files.append(pinned_source(DATA_ROOT / spec["dir"] / name, digest))
+        except (FileNotFoundError, ValueError) as error:
+            raise type(error)(f"{owner} ({spec['source']}): {error}") from None
+    return tuple(files)

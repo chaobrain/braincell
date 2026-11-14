@@ -161,6 +161,14 @@ class MechanismRegistryBasicsTest(MechanismRegistryIsolationMixin, unittest.Test
         with self.assertRaises(KeyError) as ctx:
             reg.get("ion", "CaHT_HM1992")
         self.assertNotIn("renamed", ctx.exception.args[0])
+        # MECH-49.
+        with self.assertRaises(KeyError) as ctx:
+            reg.get("channel", "CaL_IS2008")
+        self.assertEqual(
+            ctx.exception.args[0],
+            "No 'channel' mechanism registered as 'CaL_IS2008'. "
+            "braincell 0.3 renamed it to 'CaL_Li2017' and kept no alias.",
+        )
 
 
 class MechanismRegistryAliasTest(MechanismRegistryIsolationMixin, unittest.TestCase):

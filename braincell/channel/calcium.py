@@ -43,9 +43,10 @@ __all__ = [
     "CaN_IS2008",
     "CaT_HM1992",
     "CaT_HM1992_Shifted25",
+    "CaT_HM1992_GHK",
     "CaT_HP1992",
     "CaHT_Re1993",
-    "CaL_IS2008",
+    "CaL_Li2017",
     "CaHVA_SU2015_DCN",
     "CaL_SU2015_DCN",
     "CaLVA_SU2015_DCN",
@@ -171,9 +172,9 @@ class CaN_IS2008(HH):
 
     See Also
     --------
-    CaL_IS2008 : Sibling channel from the same source paper, whose
-        L-type attribution is contradicted by the paper's own text
-        (see its Notes).
+    CaL_Li2017 : The L-type current of the same thalamic model,
+        formerly ``CaL_IS2008``; that paper has no L-type current (see
+        its Notes).
 
     Notes
     -----
@@ -203,6 +204,17 @@ class CaN_IS2008(HH):
     documented as a ported implementation of substantially supported
     but not fully confirmed provenance, not as a transcription of a
     specific paper's printed equations.
+
+    The BrainPy class is itself a port of ``Ican_TC.cpp`` in the
+    ModelDB deposit (accession 233509) of Li, Henriquez & Fröhlich
+    (2017), "Unified thalamic model generates multiple distinct
+    oscillations with state-dependent entrainment by stimulation",
+    PLOS Computational Biology 13(10): e1005797: the same 43 / 5.2
+    activation, the ``2.7/(...) + 1.6`` time constant, ``Kd = 0.2 mM``
+    and ``E_CAN = 10 mV``. Li et al. write that their description of
+    this current "was adapted from" Inoue & Strowbridge (2008), so the
+    code confirms the constants' route into BrainCell, not their
+    agreement with that paper.
     """
 
     __module__ = "braincell.channel"
@@ -276,9 +288,9 @@ class CaT_HM1992(OhmicHH):
         degrees Celsius.
     q10_p : array-like or callable, optional
         Q10 scaling factor for the activation gate, default
-        ``3.55``. This value could not be traced to the paper or to
-        any reference NEURON implementation; treat it as a
-        BrainCell/BrainPy default (see Notes).
+        ``3.55``, the value of the Li et al. (2017) thalamic model
+        this class reproduces; Destexhe's ``ITGHK.mod`` uses 5 (see
+        Notes and :class:`CaT_HM1992_GHK`).
     temp_ref_p : array-like, optional
         Reference temperature for ``q10_p``, default 24 degrees
         Celsius.
@@ -299,6 +311,9 @@ class CaT_HM1992(OhmicHH):
     CaT_HM1992_Shifted25 : Same gating functions with ``V_sh`` moved to
         ``+25.0 mV``; the shift has no source in this paper (see its
         Notes).
+    CaT_HM1992_GHK : The same paper's T current as ``ITGHK.mod``
+        implements it: a GHK flux scaled by a permeability, ``q10_p =
+        5`` and the 2 mV shift applied to every rate.
     CaT_HP1992 : Independently sourced T-type current for reticular
         nucleus neurons, with the same ``p^2 q`` gating shape but a
         different Boltzmann parameterisation.
@@ -336,6 +351,15 @@ class CaT_HM1992(OhmicHH):
     already-folded 2 mV shift, so the shipped defaults sit 3 mV from
     ``ITGHK.mod``'s own defaults. This is a documented free
     parameter, not a citation error.
+
+    The class as a whole -- the ohmic drive, the midpoints, the bare
+    time constants, ``q10_p = 3.55`` / ``q10_q = 3`` at 24 degrees
+    Celsius and ``V_sh = -3 mV`` -- is ``IT0_TC.cpp`` of the ModelDB
+    deposit (accession 233509) of Li, Henriquez & Fröhlich (2017),
+    PLOS Computational Biology 13(10): e1005797, which its network
+    file runs with ``Shift_m = Shift_h = -3``. BrainPy's
+    ``ICaT_HM1992``, from which this class was ported, is a port of
+    that code. :class:`CaT_HM1992_GHK` follows ``ITGHK.mod`` instead.
 
     References
     ----------
@@ -616,8 +640,20 @@ class CaT_HM1992_Shifted25(CaT_HM1992):
     current translated 28 mV depolarized -- a BrainCell/BrainPy-derived
     variant, not a current the cited paper reports, which is why
     braincell 0.3 names it after its content (the T current, shifted
-    by +25 mV) rather than as a high-threshold current. The ``+25 mV``
-    shift itself has no traceable source in the paper or elsewhere.
+    by +25 mV) rather than as a high-threshold current.
+
+    The shift comes from the thalamic model of Li, Henriquez & Fröhlich
+    (2017), PLOS Computational Biology 13(10): e1005797, whose ModelDB
+    deposit (accession 233509) runs ``IT_TC.cpp`` -- the same rate
+    functions as its low-threshold ``IT0_TC.cpp``, which it runs with
+    ``Shift = -3`` (see :class:`CaT_HM1992`) -- with
+    ``Shift_m = Shift_h = 25`` as the high-threshold T current
+    ``I_Ca/HT``. The paper writes that "both the activation and
+    inactivation of the I_Ca/T current was shifted by 28 mV, similar to
+    a previous TC modeling study", citing Vijayan, S.,
+    & Kopell, N. J. (2012), PNAS 109(45), 18553-18558,
+    doi:10.1073/pnas.1215385109. So the +25 mV is a modelling choice of
+    that model, not a current measured in thalamic relay neurons.
 
     The citation below is included because it correctly identifies
     the origin of the *gating kinetics* (they are exactly Huguenard &
@@ -667,6 +703,185 @@ class CaT_HM1992_Shifted25(CaT_HM1992):
             temp_ref_q=temp_ref_q,
             V_sh=V_sh,
             name=name,
+        )
+
+
+@register_channel("CaT_HM1992_GHK")
+class CaT_HM1992_GHK(GhkHH):
+    r"""Huguenard & McCormick 1992 T-type calcium current with GHK drive.
+
+    .. versionadded:: 0.3
+
+    The thalamic relay-neuron low-threshold (T-type) calcium current
+    :math:`I_T` of (Huguenard & McCormick, 1992) [1]_ as Destexhe's
+    ``ITGHK.mod`` implements it for (Destexhe et al., 1998) [2]_:
+    :math:`p^2 q` HH gating driven by a constant-field (GHK) calcium
+    flux scaled by a permeability, rather than the ohmic drive of
+    :class:`CaT_HM1992`:
+
+    .. math::
+
+        \begin{aligned}
+        I_{Ca} &= -P \, p^2 q \, \Phi(V, [Ca]_i, [Ca]_o, z{=}2, T) \\
+        p_\infty &= \frac{1}{1 + \exp(-(V' + 57) / 6.2)} \\
+        \tau_p &= 0.612 + \frac{1}
+                  {\exp(-(V' + 132) / 16.7) + \exp((V' + 16.8) / 18.2)} \\
+        q_\infty &= \frac{1}{1 + \exp((V' + 81) / 4)} \\
+        \tau_q &= \begin{cases}
+                  \exp((V' + 467) / 66.6) & V' < -80 \\
+                  28 + \exp(-(V' + 22) / 10.5) & V' \geq -80
+                  \end{cases}
+        \end{aligned}
+
+    where :math:`V' = (V - V_{sh}) / \mathrm{mV}`, :math:`P` is the
+    permeability ``perm`` and :math:`\Phi` is
+    :func:`~braincell.channel._base.ghk_flux` evaluated at the
+    *unshifted* :math:`V`. :math:`\tau_p`/:math:`\tau_q` (in
+    milliseconds) are further scaled by
+    :meth:`~braincell.channel._base.HH.gate_phi`.
+
+    Parameters
+    ----------
+    size : brainstate.typing.Size
+        Channel state shape.
+    perm : array-like or callable, optional
+        Calcium permeability :math:`P`, the mod file's ``pcabar``.
+        Defaults to ``2e-4 cm/s``, the mod file's value.
+    temp : array-like, optional
+        Absolute temperature, entering both the Q10 factors and the
+        GHK flux. Defaults to 36 degrees Celsius.
+    q10_p : array-like or callable, optional
+        Q10 scaling factor for the activation gate, default ``5.0``
+        (the mod file's ``qm``).
+    temp_ref_p : array-like, optional
+        Reference temperature for ``q10_p``, default 24 degrees
+        Celsius.
+    q10_q : array-like or callable, optional
+        Q10 scaling factor for the inactivation gate, default
+        ``3.0`` (the mod file's ``qh``).
+    temp_ref_q : array-like, optional
+        Reference temperature for ``q10_q``, default 24 degrees
+        Celsius.
+    V_sh : array-like or callable, optional
+        Shift applied to both gates' rates, :math:`V' = V - V_{sh}`.
+        Defaults to ``-2.0 mV``, the mod file's ``shift = 2 mV``
+        (screening charge at 2 mM external calcium), which the mod
+        file adds to ``v``.
+    name : str, optional
+        Optional channel name.
+
+    See Also
+    --------
+    CaT_HM1992 : The ohmic T current of the Li et al. (2017) thalamic
+        model, with ``q10_p = 3.55`` and the 2 mV shift folded into the
+        midpoints only; ``g_max`` there is a conductance density.
+    braincell.channel._base.ghk_flux : The constant-field flux.
+
+    Notes
+    -----
+    Transcribed from ``ITGHK.mod`` (ModelDB accession 279, Destexhe's
+    NEURON tutorial for thalamic relay neurons; the file is kept
+    unmodified in braincell's ``data/modeldb/279``), headed "Model of Huguenard & McCormick, J
+    Neurophysiol 68: 1373-1383, 1992 ... described by
+    Goldman-Hodgkin-Katz equations". Every rate constant, the
+    :math:`V' = -80` branch, ``qm = 5`` / ``qh = 3`` with
+    ``phi = q^((celsius - 24)/10)`` and ``pcabar = 0.2e-3 cm/s`` are
+    the mod file's. Unlike :class:`CaT_HM1992`, the 2 mV shift enters
+    the time constants as well as the midpoints, and the mod file's
+    ``actshift`` (an extra activation-only shift, 0 there) is not a
+    parameter here.
+
+    The mod file computes ``ica = pcabar m^2 h ghk(v, cai, cao)`` with
+    NEURON's ``FARADAY`` and ``R``, which in NEURON 9 are the CODATA
+    values :func:`~braincell.channel._base.ghk_flux` uses, at
+    ``celsius + 273.15``. ``current()`` returns its negative,
+    BrainCell's inward-positive convention. Near 0 mV the mod file's
+    ``efun`` switches to ``1 - z/2`` for ``|z| < 1e-4``;
+    :func:`~braincell.channel._base.ghk_flux` evaluates the same flux
+    with ``exprel``, finite and smooth through 0 mV.
+
+    ``perm`` is a permeability in ``cm/s``, not a conductance density:
+    the ``g_max`` of :class:`CaT_HM1992` does not carry over.
+
+    Against NEURON 9 running ``ITGHK.mod`` (one soma,
+    ``cai = 2.4e-4 mM``, ``cao = 2 mM``, ``pcabar = 2e-4 cm/s``), the
+    class agrees within the default tolerances of the channel
+    comparison suite in current clamp and voltage clamp, including the
+    0 mV step: configuration ``modeldb279/cat_hm1992_ghk`` of
+    ``validation/neuron/channel_no_conc``, asserted by
+    ``tests/test_catalogue_calcium.py`` and
+    ``tests/test_neuron_agreement.py``.
+
+    References
+    ----------
+    .. [1] Huguenard, J. R., & McCormick, D. A. (1992). Simulation of
+           the currents involved in rhythmic oscillations in thalamic
+           relay neurons. Journal of Neurophysiology, 68(4), 1373-1383.
+           doi:10.1152/jn.1992.68.4.1373
+    .. [2] Destexhe, A., Neubig, M., Ulrich, D., & Huguenard, J. R.
+           (1998). Dendritic low-threshold calcium currents in thalamic
+           relay cells. The Journal of Neuroscience, 18(10), 3574-3588.
+           doi:10.1523/JNEUROSCI.18-10-03574.1998
+
+    Examples
+    --------
+    .. code-block:: python
+
+        >>> import brainunit as u
+        >>> from braincell import mech
+        >>> declaration = mech.Channel("CaT_HM1992_GHK", perm=1e-4 * u.cm / u.second)
+    """
+
+    __module__ = "braincell.channel"
+    root_type = Calcium
+    gates = (
+        Gate("p", power=2, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
+    )
+
+    def __init__(
+        self,
+        size: Size,
+        perm: Initializer = 0.2e-3 * (u.cm / u.second),
+        temp: ArrayLike = u.celsius2kelvin(36.0),
+        q10_p: Initializer = 5.0,
+        temp_ref_p: ArrayLike = u.celsius2kelvin(24.0),
+        q10_q: Initializer = 3.0,
+        temp_ref_q: ArrayLike = u.celsius2kelvin(24.0),
+        V_sh: Initializer = -2.0 * u.mV,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.perm = braintools.init.param(perm, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10_p = braintools.init.param(q10_p, self.varshape, allow_none=False)
+        self.temp_ref_p = braintools.init.param(temp_ref_p, self.varshape, allow_none=False)
+        self.q10_q = braintools.init.param(q10_q, self.varshape, allow_none=False)
+        self.temp_ref_q = braintools.init.param(temp_ref_q, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.z = 2
+
+    def permeability(self):
+        return self.perm
+
+    def f_p_inf(self, V, Ca: IonInfo):
+        V = (V - self.V_sh).to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp(-(V + 57.0) / 6.2))
+
+    def f_p_tau(self, V, Ca: IonInfo):
+        V = (V - self.V_sh).to_decimal(u.mV)
+        return 0.612 + 1.0 / (u.math.exp(-(V + 132.0) / 16.7) + u.math.exp((V + 16.8) / 18.2))
+
+    def f_q_inf(self, V, Ca: IonInfo):
+        V = (V - self.V_sh).to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V + 81.0) / 4.0))
+
+    def f_q_tau(self, V, Ca: IonInfo):
+        V = (V - self.V_sh).to_decimal(u.mV)
+        return u.math.where(
+            V < -80.0,
+            u.math.exp((V + 467.0) / 66.6),
+            28.0 + u.math.exp(-(V + 22.0) / 10.5),
         )
 
 
@@ -801,12 +1016,18 @@ class CaHT_Re1993(OhmicHH):
         return 0.0065 / (u.math.exp((-15.0 + temp) / 28.0) + 1.0)
 
 
-@register_channel("CaL_IS2008")
-class CaL_IS2008(OhmicHH):
-    r"""Inoue & Strowbridge 2008 L-type calcium current.
+@register_channel("CaL_Li2017")
+class CaL_Li2017(OhmicHH):
+    r"""High-threshold L-type calcium current of the Li et al. 2017 thalamic model.
 
-    A voltage-gated calcium current with :math:`p^2 q` HH gating and
-    an ohmic driving force:
+    .. versionchanged:: 0.3
+       Renamed from ``CaL_IS2008``, which presented this class as an
+       L-type current of Inoue & Strowbridge (2008), a paper that has
+       none; the old name is not kept as an alias (see Notes).
+
+    The high-threshold L-type calcium current :math:`I_{Ca/L}` of the
+    thalamocortical and interneuron cells of (Li, Henriquez & Fröhlich,
+    2017) [1]_, with :math:`p^2 q` HH gating and an ohmic driving force:
 
     .. math::
 
@@ -852,42 +1073,43 @@ class CaL_IS2008(OhmicHH):
 
     See Also
     --------
-    CaN_IS2008 : Sibling channel from the same source paper, whose
-        calcium-activated non-selective cation attribution is
-        substantially, though not fully, supported (see its Notes).
+    CaN_IS2008 : The calcium-activated non-selective cation current of
+        the same thalamic model, whose voltage dependence Li et al.
+        also attribute to Inoue & Strowbridge (2008).
 
     Notes
     -----
-    Ported verbatim from BrainPy's ``ICaL_IS2008``
-    (``brainpy/dyn/channels/calcium.py``): every rate constant and
-    the ``p^2 q`` gating scheme match exactly, and BrainPy attributes
-    this current to Inoue & Strowbridge (2008) alone.
+    Every constant above, the ``p^2 q`` gating and the temperature
+    defaults are character for character those of ``ICaL_TC.cpp`` in
+    the model's ModelDB deposit (accession 233509, ``src/ICaL_TC.cpp``):
+    ``m_inf = 1/(1+exp(-(v+10-Shift_m)/4))``,
+    ``h_inf = 1/(1+exp((v+25-Shift_h)/2))``, the ``0.4 + 0.7/(...)``
+    and ``300 + 100/(...)`` time constants divided by
+    ``Phi = Q^((Cels-24)/10)``, ``Qm = 3.55``, ``Qh = 3``,
+    ``Cels = 36`` and ``Shift = 0``. The paper's S2 Table gives the
+    resulting factors at 36 degrees Celsius as 4.6 and 3.7
+    (:math:`3.55^{1.2}` and :math:`3^{1.2}`). The class reached
+    BrainCell through BrainPy's ``ICaL_IS2008``, a port of that code,
+    and the thalamic example models of BrainCell use it with the
+    deposit's ``G_CaL`` of 0.5 and 0.3 mS/cm2.
 
-    **This attribution is contradicted by the cited paper's own
-    text.** Inoue, T., & Strowbridge, B. W. (2008) models exactly two
-    voltage-gated calcium currents in its olfactory bulb granule-cell
-    simulations: "a low-threshold (T-type) Ca current, and a
-    high-threshold (P/N-type) Ca current." The strings "L-type",
-    "L type" and "ICaL" do not occur anywhere in the article text --
-    the paper has **no L-type calcium current** for this class to be
-    a port of. Two further, independent signs point the same way:
-    this class's ``q10_p = 3.55`` / ``q10_q = 3.0`` at 24 degrees
-    Celsius defaults are byte-identical to :class:`CaT_HM1992`'s
-    temperature defaults (24 degC is the Huguenard & McCormick
-    reference temperature, not an olfactory-bulb one), and no ModelDB
-    deposit exists for this paper to compare constants against. The
-    paper's Methods also defer whatever gating constants it does
-    report to supplementary materials not included with the
-    PMC-deposited author manuscript, so even the P/N-type or T-type
-    currents it does contain cannot be checked against this class
-    from the text alone.
+    Li et al. write that the description of :math:`I_{Ca/L}` "was
+    adapted from" Inoue & Strowbridge (2008), and the deposit's header
+    reads "From Inoue and Strowbridge, 2008". That paper's olfactory
+    bulb granule-cell model has a low-threshold T-type and a
+    high-threshold P/N-type calcium current, and no L-type one; its
+    gating constants are in supplementary material that could not be
+    obtained. Neither the L-type label nor the constants are therefore
+    confirmed against Inoue & Strowbridge, which is why braincell 0.3
+    names the class after the model whose code it reproduces.
 
-    Because of this, either this class implements the paper's
-    high-threshold P/N-type current under the wrong name, or its true
-    source is a different paper entirely; both possibilities remain
-    open. This docstring ships no ``References`` section: printing a
-    confident citation to Inoue & Strowbridge (2008) for an *L-type*
-    current would misattribute a current that paper does not contain.
+    References
+    ----------
+    .. [1] Li, G., Henriquez, C. S., & Fröhlich, F. (2017). Unified
+           thalamic model generates multiple distinct oscillations with
+           state-dependent entrainment by stimulation. PLOS
+           Computational Biology, 13(10), e1005797.
+           doi:10.1371/journal.pcbi.1005797
     """
 
     __module__ = "braincell.channel"

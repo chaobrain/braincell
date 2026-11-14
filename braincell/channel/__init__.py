@@ -33,9 +33,10 @@ from braincell.channel.calcium import (
     CaN_IS2008,
     CaT_HM1992,
     CaT_HM1992_Shifted25,
+    CaT_HM1992_GHK,
     CaT_HP1992,
     CaHT_Re1993,
-    CaL_IS2008,
+    CaL_Li2017,
     CaHVA_SU2015_DCN,
     CaL_SU2015_DCN,
     CaLVA_SU2015_DCN,
@@ -176,7 +177,7 @@ __all__ = sorted(
     + _sodium_all
 )
 
-#: Names that braincell 0.3 renamed without an alias (MECH-42), with what to
+#: Names that braincell 0.3 renamed without an alias (MECH-42, MECH-49), with what to
 #: use instead; raised as ``AttributeError`` (``ImportError`` on a
 #: ``from braincell.channel import ...`` line).
 _REMOVED_ATTRIBUTES = {
@@ -184,6 +185,12 @@ _REMOVED_ATTRIBUTES = {
         "braincell.channel.CaHT_HM1992 was renamed in braincell 0.3. Use "
         "braincell.channel.CaT_HM1992_Shifted25 (mech.Channel('CaT_HM1992_Shifted25', ...)), the same channel "
         "under a name that says what it is: the T current of CaT_HM1992 with its gates shifted by +25 mV."
+    ),
+    "CaL_IS2008": (
+        "braincell.channel.CaL_IS2008 was renamed in braincell 0.3. Use "
+        "braincell.channel.CaL_Li2017 (mech.Channel('CaL_Li2017', ...)), the same channel "
+        "under the name of the model it reproduces: the L-type current of Li, Henriquez & Frohlich (2017); "
+        "Inoue & Strowbridge (2008) has no L-type current."
     ),
 }
 __getattr__ = _removed_attributes(__name__, _REMOVED_ATTRIBUTES)

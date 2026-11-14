@@ -29,7 +29,7 @@ import numpy as np
 
 from braincell._base_neuron import HHTypedNeuron
 from braincell.channel import calcium as calcium_module
-from braincell.channel._base import HH, ghk_flux
+from braincell.channel._base import GhkHH, HH, ghk_flux
 from braincell.channel.calcium import (
     CaHVA_SU2015_DCN,
     CaL_SU2015_DCN,
@@ -39,8 +39,9 @@ from braincell.channel.calcium import (
     Ca_ZH2019_IO,
     Ca_ZH2019_IO_Frozen,
     CaT_HM1992_Shifted25,
+    CaT_HM1992_GHK,
     CaHT_Re1993,
-    CaL_IS2008,
+    CaL_Li2017,
     CaN_IS2008,
     CaT_HM1992,
     CaT_HP1992,
@@ -318,8 +319,198 @@ class CaHT_Re1993Test(_P2QHHMixin, unittest.TestCase):
     CLS = CaHT_Re1993
 
 
-class CaL_IS2008Test(_P2QHHMixin, unittest.TestCase):
-    CLS = CaL_IS2008
+#: ``(V mV, p_inf, tau_p ms, q_inf, tau_q ms, I)`` of ``ICaL_TC.cpp`` (ModelDB 233509,
+#: Li et al. 2017) evaluated from its C++ text in float64, with ``I = g p^2 q (E - V)``
+#: at the steady-state gates, ``g = 1 mS/cm2`` and ``E = 120 mV``, in mS/cm2 * mV (MECH-49).
+_ICAL_TC_REFERENCE = (
+    (-100.0, 1.6918979223288784e-10, 0.401243268560069, 1.0, 300.1807532287766, 6.297540875077706e-18),
+    (-80.0, 2.5109990926928157e-08, 0.4047163487774566, 0.99999999999886, 301.48352900408383, 1.2610232886993912e-13),
+    (-60.0, 3.726639284186561e-06, 0.4178813896879442, 0.999999974890009, 312.00325047314135, 2.4998112010294158e-09),
+    (-40.0, 0.0005527786369235996, 0.46724800666791844, 0.9994472213630764, 350.0, 4.886324993044687e-05),
+    (-20.0, 0.07585818002124355, 0.6268189957823599, 0.07585818002124355, 312.00325047314135, 0.06111323768176895),
+    (0.0, 0.9241418199787566, 0.7314168388172242, 3.726639284186561e-06, 301.48352900408383, 0.0003819230335737624),
+    (20.0, 0.9994472213630764, 0.5276588220188739, 1.6918979223288784e-10, 300.1807532287766, 1.6900279492577123e-08),
+    (40.0, 0.9999962733607158, 0.43476477459680163, 7.681204685202035e-15, 300.0220182748802, 6.144917948120363e-13),
+)
+
+
+class CaL_Li2017Test(_P2QHHMixin, unittest.TestCase):
+    CLS = CaL_Li2017
+
+    def test_matches_ical_tc_of_li_2017(self) -> None:
+        """MECH-49: the class renamed from ``CaL_IS2008`` is ``ICaL_TC.cpp``, element for element."""
+        V_mV, p_inf, tau_p, q_inf, tau_q, current = (np.array(column) for column in zip(*_ICAL_TC_REFERENCE))
+        with brainstate.environ.context(precision=64):
+            V = voltage(V_mV)
+            ca = ca_info(V_mV.size, Ci=5e-5, E=120.0)
+            ch = CaL_Li2017(V_mV.size)
+            ch.init_state(V, ca)
+            ch.reset_state(V, ca)
+            self.assertEqual(ch.p.value.dtype, jnp.float64)
+            for rate, expected in (("f_p_inf", p_inf), ("f_p_tau", tau_p), ("f_q_inf", q_inf), ("f_q_tau", tau_q)):
+                np.testing.assert_allclose(getattr(ch, rate)(V, ca), expected, rtol=1e-12, atol=0, err_msg=rate)
+            np.testing.assert_allclose(ch.current(V, ca).to_decimal(DENSITY_UNIT), current, rtol=1e-12, atol=0)
+            gates = {gate.name: gate for gate in ch._iter_gates()}
+            np.testing.assert_allclose(ch.gate_phi(gates["p"]), 3.55**1.2, rtol=1e-12)
+            np.testing.assert_allclose(ch.gate_phi(gates["q"]), 3.0**1.2, rtol=1e-12)
+
+    def test_signature_and_defaults_are_unchanged_by_the_rename(self) -> None:
+        params = inspect.signature(inspect.unwrap(CaL_Li2017.__init__)).parameters
+        self.assertEqual(
+            list(params),
+            ["self", "size", "g_max", "temp", "q10_p", "temp_ref_p", "q10_q", "temp_ref_q", "V_sh", "name"],
+        )
+        expected = {
+            "g_max": 1.0 * (u.mS / u.cm**2),
+            "temp": u.celsius2kelvin(36.0),
+            "q10_p": 3.55,
+            "temp_ref_p": u.celsius2kelvin(24.0),
+            "q10_q": 3.0,
+            "temp_ref_q": u.celsius2kelvin(24.0),
+            "V_sh": 0.0 * u.mV,
+            "name": None,
+        }
+        for name, value in expected.items():
+            self.assertTrue(_same_default(params[name].default, value), name)
+
+    def test_registered_under_the_new_name_only(self) -> None:
+        registry = get_registry()
+        self.assertIs(registry.get("channel", "CaL_Li2017"), CaL_Li2017)
+        self.assertEqual(registry.key_for("channel", CaL_Li2017), "CaL_Li2017")
+        self.assertFalse(registry.contains("channel", "CaL_IS2008"))
+        with self.assertRaises(KeyError) as caught:
+            registry.get("channel", "CaL_IS2008")
+        self.assertIn("'CaL_Li2017'", caught.exception.args[0])
+        self.assertIn("braincell 0.3", caught.exception.args[0])
+
+
+#: ``(V mV, p_inf, tau_p ms, q_inf, tau_q ms)`` of ``ITGHK.mod`` (ModelDB 279) evaluated
+#: from its text in float64 at ``shift = 2 mV``, ``actshift = 0``; tau before ``phi``. The
+#: ``(v + shift) < -80`` branch of tau_h lies between -82.001 and -82 mV (MECH-49).
+_ITGHK_GATES = (
+    (-120.0, 5.334325475213075e-05, 2.904095260999236, 0.9999038975845005, 188.7154340014129),
+    (-90.0, 0.0066928509242848554, 11.51272715070815, 0.8519528019683106, 296.0980622045103),
+    (-82.001, 0.023896451284745414, 13.861867101091585, 0.43788503359106573, 333.8847240391913),
+    (-82.0, 0.023900213736707834, 13.86203482789083, 0.43782349911420193, 278.5878415206564),
+    (-80.0, 0.03270116507689669, 14.114244339793817, 0.320821300824607, 235.1272488898345),
+    (-79.999, 0.03270626736449414, 14.114327607383062, 0.32076682951647456, 235.107523424501),
+    (-60.0, 0.4597646070902748, 9.242937163960393, 0.0031726828424851893, 58.832564751815084),
+    (-40.0, 0.9554051082112419, 3.7808974204835097, 2.144494842091395e-05, 32.58967641519969),
+    (-20.0, 0.9981492698193938, 1.6789199931657381, 1.4449800373124837e-07, 28.683210422674946),
+    (0.0, 0.9999263511981811, 0.9679077867135525, 9.736200303530205e-10, 28.10170139230423),
+    (20.0, 0.9999970741877094, 0.7306141060994489, 6.560200168110743e-12, 28.015139074073435),
+    (40.0, 0.9999998837754862, 0.6515270349986355, 4.420228103640978e-14, 28.002253573511712),
+)
+#: ``(V mV, ica mA/cm2)``: the mod file's ``pcabar m^2 h ghk(v, cai, cao)`` (outward positive)
+#: at ``m = 0.6``, ``h = 0.3``, ``pcabar = 2e-4 cm/s``, ``cai = 2.4e-4 mM``, ``cao = 2 mM``,
+#: 36 degC, with NEURON 9.0.2's ``FARADAY`` and ``R``.
+_ITGHK_CURRENT = (
+    (-60.0, -0.03797026385401351),
+    (-40.0, -0.026341007284747493),
+    (-20.0, -0.01610457671300051),
+    (0.0, -0.008335332335530531),
+    (20.0, -0.0035862868826235374),
+    (40.0, -0.001304427623993546),
+)
+_CURRENT_DENSITY = u.mA / u.cm**2
+
+
+def _naive_ghk(V, ci, co, z, temp):
+    # The textbook zeta / (1 - exp(-zeta)) form without a limit at 0 mV: 0/0 there.
+    zeta = (z * u.faraday_constant * V) / (u.gas_constant * temp)
+    return z * u.faraday_constant * (ci - co * u.math.exp(-zeta)) * zeta / (1 - u.math.exp(-zeta))
+
+
+class _NaiveGhkCaT(CaT_HM1992_GHK):
+    ghk = staticmethod(_naive_ghk)
+
+
+class CaT_HM1992_GHKTest(unittest.TestCase):
+    """MECH-49: the T current of ``ITGHK.mod`` (ModelDB 279), GHK drive and ``q10_p = 5``."""
+
+    def _channel(self, V, ca, cls=CaT_HM1992_GHK, **kwargs):
+        ch = cls(V.shape[0], **kwargs)
+        ch.init_state(V, ca)
+        return ch
+
+    def test_structure_and_defaults(self) -> None:
+        self.assertIs(CaT_HM1992_GHK.root_type, Calcium)
+        self.assertTrue(issubclass(CaT_HM1992_GHK, GhkHH))
+        self.assertIs(get_registry().get("channel", "CaT_HM1992_GHK"), CaT_HM1992_GHK)
+        ch = CaT_HM1992_GHK(1)
+        gates = ch._iter_gates()
+        self.assertEqual(tuple((gate.name, gate.power) for gate in gates), (("p", 2), ("q", 1)))
+        params = inspect.signature(inspect.unwrap(CaT_HM1992_GHK.__init__)).parameters
+        expected = {
+            "perm": 2e-4 * (u.cm / u.second),
+            "temp": u.celsius2kelvin(36.0),
+            "q10_p": 5.0,
+            "temp_ref_p": u.celsius2kelvin(24.0),
+            "q10_q": 3.0,
+            "temp_ref_q": u.celsius2kelvin(24.0),
+            "V_sh": -2.0 * u.mV,
+            "name": None,
+        }
+        self.assertEqual(list(params), ["self", "size", *expected])
+        for name, value in expected.items():
+            self.assertTrue(_same_default(params[name].default, value), name)
+        self.assertFalse(hasattr(ch, "g_max"))
+
+    def test_gates_match_itghk_mod(self) -> None:
+        V_mV, p_inf, tau_p, q_inf, tau_q = (np.array(column) for column in zip(*_ITGHK_GATES))
+        with brainstate.environ.context(precision=64):
+            V = voltage(V_mV)
+            ca = ca_info(V_mV.size, Ci=2.4e-4)
+            ch = self._channel(V, ca)
+            for rate, expected in (("f_p_inf", p_inf), ("f_p_tau", tau_p), ("f_q_inf", q_inf), ("f_q_tau", tau_q)):
+                np.testing.assert_allclose(getattr(ch, rate)(V, ca), expected, rtol=1e-12, atol=0, err_msg=rate)
+            gates = {gate.name: gate for gate in ch._iter_gates()}
+            np.testing.assert_allclose(ch.gate_phi(gates["p"]), 6.898648307306074, rtol=1e-12)
+            np.testing.assert_allclose(ch.gate_phi(gates["q"]), 3.7371928188465517, rtol=1e-12)
+            # Counter-example: the ohmic class's q10_p of 3.55 is a different activation rate.
+            old = self._channel(V, ca, q10_p=3.55)
+            old_gates = {gate.name: gate for gate in old._iter_gates()}
+            self.assertFalse(np.allclose(old.gate_phi(old_gates["p"]), 6.898648307306074, rtol=1e-3))
+
+    def test_current_matches_itghk_mod(self) -> None:
+        V_mV, ica = (np.array(column) for column in zip(*_ITGHK_CURRENT))
+        with brainstate.environ.context(precision=64):
+            V = voltage(V_mV)
+            ca = ca_info(V_mV.size, Ci=2.4e-4, Co=2.0)
+            ch = self._channel(V, ca)
+            ch.p.value = jnp.full(V_mV.shape, 0.6)
+            ch.q.value = jnp.full(V_mV.shape, 0.3)
+            # BrainCell's current is inward-positive, the mod file's ica outward-positive.
+            np.testing.assert_allclose(ch.current(V, ca).to_decimal(_CURRENT_DENSITY), -ica, rtol=1e-12, atol=0)
+
+    def test_current_is_finite_and_smooth_through_0_mv(self) -> None:
+        # D16: exprel, no branch. At 0 mV the flux is its limit z F (ci - co).
+        points = np.array([0.0, 1e-9, -1e-9, 1e-6, -1e-6])
+        ci, co = 2.4e-4, 2.0
+        with brainstate.environ.context(precision=64):
+            V = voltage(points)
+            ca = ca_info(points.size, Ci=ci, Co=co)
+            ch = self._channel(V, ca)
+            ch.p.value = jnp.full(points.shape, 0.6)
+            ch.q.value = jnp.full(points.shape, 0.3)
+            current = ch.current(V, ca).to_decimal(_CURRENT_DENSITY)
+            self.assertTrue(np.all(np.isfinite(current)))
+            # -P p^2 q 2 F (ci - co): cm/s * C/mol * mM = 1e-3 mA/cm2.
+            limit = -2e-4 * 0.36 * 0.3 * 2 * 96485.33212331001 * (ci - co) * 1e-3
+            np.testing.assert_allclose(current[0], limit, rtol=1e-12)
+            np.testing.assert_allclose(current, limit, rtol=1e-5)
+
+            def at(v):
+                return ch.current(jnp.full(points.shape, v) * u.mV, ca).to_decimal(_CURRENT_DENSITY)[0]
+
+            slope = jax.grad(at)(0.0)
+            self.assertTrue(np.isfinite(slope))
+            self.assertLess(abs(slope - (at(1e-3) - at(-1e-3)) / 2e-3), 1e-6 * abs(slope))
+            # Counter-example: without exprel the 0 mV point is 0/0.
+            naive = self._channel(V, ca, cls=_NaiveGhkCaT)
+            naive.p.value = ch.p.value
+            naive.q.value = ch.q.value
+            self.assertTrue(np.isnan(naive.current(V, ca).to_decimal(_CURRENT_DENSITY)[0]))
 
 
 class CaHVA_SU2015_DCNTest(unittest.TestCase):

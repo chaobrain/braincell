@@ -61,7 +61,8 @@ class ExperimentSchemaTest(unittest.TestCase):
             DATA_ROOT / "mechanisms" / "testing" / name
             for name in ("kv.mod", "clleak.mod", "Cav3p3_MA24_PC_finite.mod", "Cav3p3_RI21_SC_finite.mod")
         ]
-        for mod_path in [*sorted(mod_root.glob("*/mechanisms/channel/*.mod")), *testing]:
+        pinned = [DATA_ROOT / "modeldb" / "279" / "ITGHK.mod"]  # identity.pinned_mod_files (MECH-49)
+        for mod_path in [*sorted(mod_root.glob("*/mechanisms/channel/*.mod")), *testing, *pinned]:
             suffix = None
             for line in mod_path.read_text(errors="ignore").splitlines():
                 stripped = line.strip()
@@ -77,8 +78,8 @@ class ExperimentSchemaTest(unittest.TestCase):
             config_suffixes.add(model_config.mapping_spec.neuron.mechanism_name)
 
         neuron_builtins = {"hh", "pas"}  # NEURON's own mechanisms, compiled into every library
-        self.assertEqual(len(mod_suffixes), 88)
-        self.assertEqual(len(config_suffixes), 90)
+        self.assertEqual(len(mod_suffixes), 89)
+        self.assertEqual(len(config_suffixes), 91)
         self.assertEqual(config_suffixes, mod_suffixes | neuron_builtins)
 
     @requires_mechanisms()
@@ -866,6 +867,57 @@ class ExperimentSchemaTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "ion_state is only valid"):
             experiment_schema.ChannelNoConcCase.from_dict(payload)
+
+
+
+class PinnedModFilesTest(unittest.TestCase):
+    """``identity.pinned_mod_files``: third-party sources under ``data/modeldb`` (MECH-49)."""
+
+    def _pinned_configs(self) -> list[Path]:
+        return [
+            path
+            for path in sorted((CHANNEL_NO_CONC_ROOT / "configs").glob("*/*.json"))
+            if "pinned_mod_files" in json.loads(path.read_text())["identity"]
+        ]
+
+    def test_pinned_configurations_resolve_and_are_compiled_into_the_testing_library(self) -> None:
+        from validation.neuron import _mechanisms
+
+        configs = self._pinned_configs()
+        print(f"\n{len(configs)} pinned channel_no_conc configurations")
+        self.assertEqual([path.relative_to(CHANNEL_NO_CONC_ROOT / "configs").as_posix() for path in configs], ["modeldb279/cat_hm1992_ghk.json"])
+        for path in configs:
+            model_config = experiment_schema.load_model_config(path)
+            self.assertEqual(model_config.pinned_mod_files, (DATA_ROOT / "modeldb" / "279" / "ITGHK.mod",))
+            self.assertEqual(Path(model_config.mod_dir), mechanism_build_dir("testing", "channel"))
+        self.assertEqual(_mechanisms.pinned_channel_sources(), [DATA_ROOT / "modeldb" / "279" / "ITGHK.mod"])
+        self.assertEqual(experiment_schema.load_model_config(CHANNEL_NO_CONC_ROOT / "configs" / "testing" / "kv_testing.json").pinned_mod_files, ())
+
+    def test_a_changed_or_missing_pinned_file_is_refused(self) -> None:
+        source = self._pinned_configs()[0]
+        payload = json.loads(source.read_text())
+        spec = payload["identity"]["pinned_mod_files"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            copy = root / "configs" / "modeldb279"
+            copy.mkdir(parents=True)
+            for name in spec["sha256"]:
+                (root / name).write_bytes((DATA_ROOT / spec["dir"] / name).read_bytes())
+            payload["identity"]["pinned_mod_files"] = {**spec, "dir": str(root)}  # absolute: DATA_ROOT / root is root
+            payload["identity"]["mod_dir"] = str(root)
+            payload["templates"] = [str((source.parent / t).resolve()) for t in payload["templates"]]
+            config = copy / source.name
+            write_json(config, payload)
+            self.assertEqual(len(experiment_schema.load_model_config(config).pinned_mod_files), 1)  # the copy passes
+            target = root / next(iter(spec["sha256"]))
+            data = bytearray(target.read_bytes())
+            data[-2] ^= 1  # one byte changed
+            target.write_bytes(bytes(data))
+            with self.assertRaisesRegex(ValueError, r"modeldb279/cat_hm1992_ghk\.json \(ModelDB 279.*not the recorded"):
+                experiment_schema.load_model_config(config)
+            target.unlink()
+            with self.assertRaisesRegex(FileNotFoundError, "is missing"):
+                experiment_schema.load_model_config(config)
 
 
 if __name__ == "__main__":

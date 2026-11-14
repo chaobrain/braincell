@@ -1,0 +1,56 @@
+{
+  "meta": {
+    "label": "Huguenard & McCormick 1992 T current, GHK (ModelDB 279 ITGHK.mod)"
+  },
+  "identity": {
+    "mod_dir": "../../../artifacts/mechanisms/testing/channel",
+    "pinned_mod_files": {
+      "dir": "modeldb/279",
+      "source": "ModelDB 279, ModelDBRepository/279@31424439f64771344c28105e80093eecf1fc0b64",
+      "sha256": {
+        "ITGHK.mod": "fa71f75d0b5440f79bb080f1b4dce7a77bc04ff8c657c95eca7f01739111d394"
+      }
+    }
+  },
+  "defaults": {
+    "ion_state": {
+      "Ci_mM": 0.00024,
+      "Co_mM": 2.0
+    },
+    "channel_params": {
+      "perm_cm_s": 0.0002
+    }
+  },
+  "mapping": {
+    "current": "ica",
+    "impl_name": {
+      "neuron": "itGHK",
+      "braincell": "CaT_HM1992_GHK"
+    },
+    "gate_names": {
+      "canonical": [
+        "p",
+        "q"
+      ],
+      "neuron": [
+        "m",
+        "h"
+      ],
+      "braincell": [
+        "p",
+        "q"
+      ]
+    },
+    "channel_params": {
+      "perm_cm_s": {
+        "neuron": "pcabar",
+        "braincell": "perm"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

@@ -24,6 +24,8 @@ import math
 from pathlib import Path
 from typing import Any, Mapping
 
+from validation.neuron._paths import pinned_mod_files as _pinned_mod_files
+
 try:
     from .mapping_schema import MappingSpec, normalize_mapping_payload
     from .schema_common import require_mapping, require_number, require_str, require_submapping
@@ -152,6 +154,7 @@ class ModelConfig:
     mapping_payload: dict[str, Any]
     mapping_spec: MappingSpec
     template_paths: tuple[Path, ...]
+    pinned_mod_files: tuple[Path, ...] = ()
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any], *, config_path: Path) -> "ModelConfig":
@@ -159,6 +162,14 @@ class ModelConfig:
         _reject_legacy_config_shape(payload)
 
         identity = require_submapping(payload, "identity")
+        # Third-party sources kept unmodified under data/ (MECH-48, MECH-49): the
+        # comparison means something only for the recorded bytes, so every load
+        # checks them. They are compiled into the ``testing`` library.
+        pinned = identity.get("pinned_mod_files")
+        pinned_files = ()
+        if pinned is not None:
+            pinned = require_mapping(pinned, name="identity.pinned_mod_files")
+            pinned_files = _pinned_mod_files(pinned, owner=str(config_path))
         mapping_payload = normalize_mapping_payload(require_submapping(payload, "mapping"))
         mapping_spec = MappingSpec.from_mapping(mapping_payload)
         return cls(
@@ -175,6 +186,7 @@ class ModelConfig:
             mapping_payload=mapping_payload,
             mapping_spec=mapping_spec,
             template_paths=_resolve_template_paths(payload.get("templates"), config_path=config_path),
+            pinned_mod_files=pinned_files,
         )
 
 

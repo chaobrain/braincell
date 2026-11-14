@@ -62,7 +62,7 @@ def HTC(size, solver: str = 'ind_exp_euler'):
         mech.Channel('KDR_Ba2002', V_sh=-30. * u.mV, q10=2.0, temp=u.celsius2kelvin(16.)),
 
         mech.Ion('CalciumDetailed', C_rest=5e-5 * u.mM, tau=10. * u.ms, d=0.5 * u.um),
-        mech.Channel('CaL_IS2008', g_max=0.5 * (u.mS / u.cm ** 2)),
+        mech.Channel('CaL_Li2017', g_max=0.5 * (u.mS / u.cm ** 2)),
         mech.Channel('CaT_HM1992', g_max=2.1 * (u.mS / u.cm ** 2)),
 
         mech.Channel('AHP_De1994', g_max=0.3 * (u.mS / u.cm ** 2)),  # uses K and Ca
@@ -107,7 +107,7 @@ cell.paint(AllRegion(), mech.Channel("IL", g_max=0.0003 * u.siemens / u.cm**2, E
 cell.paint(branch_in("type", "soma"), mech.Channel("Na_Ba2002", g_max=0.12 * u.siemens / u.cm**2))
 cell.paint(
     branch_in("type", ("dendrite", "basal_dendrite", "apical_dendrite")),
-    mech.Channel("CaL_IS2008", g_max=0.002 * u.siemens / u.cm**2),
+    mech.Channel("CaL_Li2017", g_max=0.002 * u.siemens / u.cm**2),
 )
 
 # Inject current at the soma

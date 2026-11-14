@@ -163,7 +163,7 @@ class DirectConstructionUnitCheckTest(unittest.TestCase):
         cell = braincell.Cell(braincell.Morphology.from_root(branch), cv_policy=braincell.CVPerBranch(2))
         cell.paint(AllRegion(), braincell.mech.Channel("IL", name="leak", g_max=0.2 * u.mS / u.cm**2))
         cell.paint(AllRegion(), braincell.mech.Ion("CalciumDetailed", tau=10.0 * u.ms))
-        cell.paint(AllRegion(), braincell.mech.Channel("CaL_IS2008", g_max=lambda ctx: 1.0 * u.mS / u.cm**2))
+        cell.paint(AllRegion(), braincell.mech.Channel("CaL_Li2017", g_max=lambda ctx: 1.0 * u.mS / u.cm**2))
         with warnings.catch_warnings():
             warnings.simplefilter("error", FutureWarning)
             cell.init_state()

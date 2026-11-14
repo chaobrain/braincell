@@ -60,7 +60,7 @@ reason = "needs numba (brainevent's CPU event kernels)"
 
 [[skip]]
 path = "examples/single_compartment/SC06_unified_thalamus_model.py"
-reason = "needs numba (imported directly)"
+reason = "needs numba (brainevent's CPU event kernels)"
 
 # Tests under examples/ that `pytest examples` deselects. The job fails when a
 # test skips, so a test that needs an optional dependency is listed here.

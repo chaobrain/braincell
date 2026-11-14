@@ -7,6 +7,9 @@
   for the offline NeuroMorpho regression, and [`neuroml2/`](morphology/neuroml2/README.md),
   NeuroML2 cells for the NeuroML2 reader (one from libNeuroML, BSD-3-Clause).
 - `mechanisms/testing/`: synthetic MOD fixtures for numerical validation.
+- [`modeldb/`](modeldb/README.md): unmodified ModelDB MOD files without a license statement
+  (MECH-48, D13), one folder per accession, with their source and SHA-256, for the ion-pool
+  comparisons against NEURON.
 - `reference_traces/`: fixed reference input/output traces.
 
 Data is read by examples, validation and benchmarks. Python adapters, compiler

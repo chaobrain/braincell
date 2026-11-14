@@ -15,10 +15,9 @@
 
 """``PotassiumDetailedFH`` against Botta et al.'s (2010) ``K_conc.mod`` in NEURON (slow tier).
 
-ModelDB 127021's ``K_conc.mod`` carries no license statement; whether it may
-be committed awaits a maintainers' decision. Until then the configuration
-``bo2010/potassium_detailed_fh`` reads it from ``BRAINCELL_BO2010_MOD_DIR``
-(SHA-256 checked) and these tests skip without it. The soma: L = diam =
+The configuration ``bo2010/potassium_detailed_fh`` reads ModelDB 127021's
+``K_conc.mod`` from ``data/modeldb/127021`` (no license statement, committed
+unmodified by MECH-48; SHA-256 checked). The soma: L = diam =
 15 um, 23 degC, ``ki`` 140 and ``ko`` 5 mM, the ``.mod`` file's ``d = 0.2 um``
 (``d = d_o = 0.4 um`` in BrainCell: the file writes the influx as
 ``ik / (2 FARADAY d)``), ``beta = 0.075 /ms`` (the published simulation's),
@@ -97,10 +96,6 @@ class BottaPotassiumPoolTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        try:
-            runner.load_case(CONFIG, PROTOCOL)
-        except runner.SourcesUnavailable as reason:
-            raise unittest.SkipTest(str(reason))
         cls.result = runner.compare_protocol(CONFIG, PROTOCOL)
 
     def test_the_pool_matches_neuron_within_its_t1_entry(self):

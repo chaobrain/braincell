@@ -15,10 +15,10 @@ calcium unless `mapping.ion` names another family (`ca1999` uses sodium,
 | `tolerances.py` | The T1 entries; every other configuration and protocol is T0 |
 | `runner_test.py` | Configurations, templates and table, without NEURON (pull-request tier) |
 | `tolerances_test.py` | Every configuration within the table, with its root causes patched at T0, and a pump-rate counterexample (`slow`, daily tier) |
-| `sodium_test.py` | The `ca1999` configuration (Canavier's soma, `SodiumDetailed`), with a volume-factor counterexample (`slow`, local only, see below) |
-| `potassium_test.py` | The `bo2010` configuration (Botta's potassium pool, `PotassiumDetailedFH`), with the implicit-Euler patch and a depth counterexample (`slow`, local only, see below) |
-| `chloride_test.py` | `Cldif_JE2011` against ModelDB 148253 (local only, see below) |
-| `gaba_test.py` | `GabaA_JE2011` with `Cldif_JE2011` against ModelDB 148253 (local only, see below) |
+| `sodium_test.py` | The `ca1999` configurations (Canavier's soma, `SodiumDetailed`, with and without the pump), with volume-factor and `km` counterexamples (`slow`, daily tier) |
+| `potassium_test.py` | The `bo2010` configuration (Botta's potassium pool, `PotassiumDetailedFH`), with the implicit-Euler patch and a depth counterexample (`slow`, daily tier) |
+| `chloride_test.py` | `Cldif_JE2011` against ModelDB 148253 (pull-request tier) |
+| `gaba_test.py` | `GabaA_JE2011` with `Cldif_JE2011` against ModelDB 148253 (pull-request tier) |
 
 ## Protocols
 
@@ -57,8 +57,8 @@ it once; run the suite in its own process, apart from `channel_no_conc`,
 whose libraries define the same channels.
 
 ```bash
-pytest -q validation/neuron/ion -m "not slow"   # pull-request tier
-pytest -q validation/neuron/ion -m slow         # daily tier, about 40 s
+pytest -q validation/neuron/ion -m "not slow"   # pull-request tier, about 10 s
+pytest -q validation/neuron/ion -m slow         # daily tier, about 65 s
 ```
 
 ```python
@@ -73,54 +73,45 @@ whose NEURON state for `cai` is not `cai` itself names it in `ci_state`. A
 difference above T0 needs its cause, a patch that removes it and an entry in
 `tolerances.py`.
 
+### ModelDB sources
+
+Six `.mod` files come unmodified from three ModelDB entries without a license
+statement; they are committed under `data/modeldb/` (MECH-48), one folder per
+entry with a README giving the source commit, retrieval date and SHA-256.
+A configuration names them under `identity.pinned_mod_files` (the folder,
+the source and each file's SHA-256); `load_case` refuses a file whose hash
+differs (`ValueError`) or that is missing (`FileNotFoundError`), and
+`config_names()` leaves these configurations out: their own modules run them.
+`chloride_test.py` and `gaba_test.py` pin their two files in the module.
+
+| Folder | Files | Used by |
+|---|---|---|
+| `data/modeldb/148253` (Jedlicka et al. 2011, `@1d737a0`) | `cldif.mod`, `gabaA_Cl.mod` | `chloride_test.py`, `gaba_test.py` |
+| `data/modeldb/6763` (Canavier 1999, `@ccdc2f0`) | `nadifl.mod`, `pump.mod`, `leak.mod` | `ca1999/*`, `sodium_test.py` |
+| `data/modeldb/127021` (Botta et al. 2010, `@fa2e53a`) | `K_conc.mod` | `bo2010/potassium_detailed_fh`, `potassium_test.py` |
+
 `ca1999/sodium_detailed_pump_off` is Canavier's (1999) soma with the pump
 off: `SodiumDetailed` (`d = diam/4`) with `Na_Leak`, `PotassiumFixed` and
-`K_Leak` against `nadifl.mod` with `leak.mod` (ModelDB 6763), 2000 ms under
--0.02 nA, T0. Its `.mod` files have no license statement either; the
-configuration lists them under `identity.external_mod_files` with their
-SHA-256 (`ModelDBRepository/6763@ccdc2f0`), `config_names()` leaves it out,
-and `sodium_test.py` skips unless `BRAINCELL_CA1999_MOD_DIR` points to them.
+`K_Leak` against `nadifl.mod` with `leak.mod`, 2000 ms under -0.02 nA, T0.
 `nai` and `nao` are written to NEURON's ion defaults (`nai0_na_ion`) before
 `finitialize`: `nadifl` writes `nai`, so a segment value would be reset.
 `ca1999/sodium_detailed_pump` adds the Na/K pump: `pump.mod` with
 `ipumpmax = 0.012` mA/cm² (`seg1.nrn`; NEURON-only mechanisms are listed under
 `defaults.neuron_mechanisms`) against `NaKPump_Ca1999(imax=0.012 mA/cm²)`;
-`nai` falls from 4 to 3.9901 mM, T0. Both configurations need `nadifl.mod`,
-`pump.mod` and `leak.mod` in the directory.
-
-```bash
-BRAINCELL_CA1999_MOD_DIR=/path/to/6763 pytest -q validation/neuron/ion/sodium_test.py -m slow
-```
+`nai` falls from 4 to 3.9901 mM, T0.
 
 `bo2010/potassium_detailed_fh` is Botta et al.'s (2010) potassium pool,
-`PotassiumDetailedFH` with `K_Leak` against `K_conc.mod` (ModelDB 127021,
-`ModelDBRepository/127021@fa2e53a`) with the testing `kleak.mod`: 23 degC,
-`ki` 140 and `ko` 5 mM, 200 ms under 0.05 nA. The pool's `Co` is a state, so
-the configuration lists NEURON's `ko` (read from the segment) as a pool state
-and `e_pool` measures it. `K_conc.mod` writes the influx as
-`ik / (2 FARADAY d)`: its `d = 0.2 um` is BrainCell's `d = d_o = 0.4 um`.
-NEURON's implicit Euler step against BrainCell's exponential one makes it T1
-(class (c), `tolerances.py`); `potassium_test.py` checks the first-step
-factor, T0 with an implicit-Euler patch, and a 0.1 % error of `d_o` on that
-patched run. It skips unless `BRAINCELL_BO2010_MOD_DIR` points to the file:
-
-```bash
-BRAINCELL_BO2010_MOD_DIR=/path/to/127021 pytest -q validation/neuron/ion/potassium_test.py -m slow
-```
+`PotassiumDetailedFH` with `K_Leak` against `K_conc.mod` with the testing
+`kleak.mod`: 23 degC, `ki` 140 and `ko` 5 mM, 200 ms under 0.05 nA. The pool's
+`Co` is a state, so the configuration lists NEURON's `ko` (read from the
+segment) as a pool state and `e_pool` measures it. `K_conc.mod` writes the
+influx as `ik / (2 FARADAY d)`: its `d = 0.2 um` is BrainCell's
+`d = d_o = 0.4 um`. NEURON's implicit Euler step against BrainCell's
+exponential one makes it T1 (class (c), `tolerances.py`); `potassium_test.py`
+checks the first-step factor, T0 with an implicit-Euler patch, and a 0.1 %
+error of `d_o` on that patched run.
 
 `chloride_test.py` compares `Cldif_JE2011` with ModelDB 148253's `cldifus` on
 one segment, as a zero-current relaxation and with `Cl_Leak` under current
-clamp (T0). `cldif.mod` has no license
-statement and whether it may be committed awaits the maintainers' decision;
-until then the test runs only when `BRAINCELL_JE2011_MOD_DIR` points to a
-directory with that file (`ModelDBRepository/148253@1d737a0`, SHA-256 checked
-by the test), and skips otherwise:
-
-```bash
-BRAINCELL_JE2011_MOD_DIR=/path/to/148253 pytest -q validation/neuron/ion/chloride_test.py
-```
-
-`gaba_test.py` compares `GabaA_JE2011` with `Cldif_JE2011` against `gaba` with
-`cldifus` on the same segment (NetStim-driven, 1005 ms, T0). It also needs
-`gabaA_Cl.mod` in that directory (SHA-256 checked by the test) and skips the
-same way.
+clamp (T0). `gaba_test.py` compares `GabaA_JE2011` with `Cldif_JE2011` against
+`gaba` with `cldifus` on the same segment (NetStim-driven, 1005 ms, T0).

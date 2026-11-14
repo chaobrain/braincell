@@ -69,7 +69,7 @@ ENTRIES = [
     _newton("testing/toy_ca_pump_factor_kinetic", _CC, e_Ci=1e-4, e_pool=1e-4),
     ToleranceEntry("testing/toy_ca_pump_factor_kinetic", _CC, {"e_V": 5e-6}, "c", FORWARD_DIFFERENCE),
     _newton("testing/toy_diam_factor_kinetic", _ZERO, e_Ci=2e-4, e_pool=2e-4),
-    # External sources (BRAINCELL_BO2010_MOD_DIR); checked by potassium_test.py.
+    # Pinned ModelDB source (data/modeldb/127021); checked by potassium_test.py.
     ToleranceEntry("bo2010/potassium_detailed_fh", _CC, {"e_V": 1e-4, "e_Ci": 1e-7, "e_pool": 5e-6}, "c", IMPLICIT_EULER),
 ]
 

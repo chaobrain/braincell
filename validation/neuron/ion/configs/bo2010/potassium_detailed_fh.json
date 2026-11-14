@@ -2,10 +2,9 @@
   "meta": {"label": "Botta et al. 2010 potassium pool (K_conc.mod): PotassiumDetailedFH with a potassium leak (kleak.mod); the .mod file's ik / (2 FARADAY d) with d = 0.2 um is d = d_o = 0.4 um at z = 1"},
   "identity": {
     "mod_files": ["mechanisms/testing/kleak.mod"],
-    "external_mod_files": {
-      "env": "BRAINCELL_BO2010_MOD_DIR",
+    "pinned_mod_files": {
+      "dir": "modeldb/127021",
       "source": "ModelDB 127021, ModelDBRepository/127021@fa2e53a71c0fb789d942f9008af0be9c1b98bdbe",
-      "reason": "the ModelDB files carry no license statement and await a maintainers' decision on committing them",
       "sha256": {
         "K_conc.mod": "40cd4916b1c53f34d09243f2f62676e16648df9ee09396cb16e14df401e0e5d0"
       }

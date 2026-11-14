@@ -121,9 +121,9 @@ class PoolAgreementTest(unittest.TestCase):
         self.assertEqual(failed, [])
 
     def test_t1_limits_are_needed_and_tight(self):
-        external = set(runner.external_config_names())  # checked by their own test modules
+        pinned = set(runner.pinned_config_names())  # checked by their own test modules
         for entry in TABLE.entries:
-            if entry.config in external:
+            if entry.config in pinned:
                 continue
             result = self.results[(entry.config, entry.protocol)]
             for metric, limit in entry.limits.items():

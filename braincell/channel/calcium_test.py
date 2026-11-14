@@ -72,6 +72,7 @@ from braincell.mech import get_registry
 from braincell.channel._testing import (
     DENSITY_UNIT,
     assert_channels_agree,
+    assert_ghk_near_zero,
     ca_info,
     voltage,
 )
@@ -86,6 +87,33 @@ def _cav3p1_nmodl_ghk_flux(V, ci, co, z, temp):
     small_branch = (z * faraday) * numerator * (1 + zeta / 2)
     regular_branch = (z * zeta * faraday) * numerator / (1 - exp_term)
     return u.math.where(u.math.abs(1 - exp_term) < 1e-6, small_branch, regular_branch)
+
+
+#: ``(V in mV, flux in C/m^3, d/dV in C/m^3 per mV)`` of the Cav3.1 and Cav3.3 NMODL GHK
+#: helpers at ci = 1e-4 mM, co = 2 mM, z = 2, T = 309.15 K, from mpmath at 50 digits
+#: with each .mod's F, R and Kelvin offset (MECH-43).
+_CAV3P1_GHK_NEAR_ZERO = (
+    (0, -385920.703, 14485.708147469784186),
+    (1e-9, -385920.70298551429185, 14485.708147107371605),
+    (-1e-9, -385920.70301448570815, 14485.708147832196768),
+    (1e-6, -385920.68851429203374, 14485.707785057202273),
+    (-1e-6, -385920.71748570832868, 14485.7085098823661),
+    (2e-5, -385920.41328590953312, 14485.700899218145924),
+    (-2e-5, -385920.99271423543191, 14485.715395721422449),
+    (1e-3, -385906.21747305882116, 14485.34573488793908),
+    (-1e-3, -385935.18888935376072, 14486.070560051629293),
+)
+_CAV3P3_GHK_NEAR_ZERO = (
+    (0, -386060.696, 14500.48245833483132),
+    (1e-9, -386060.69598549951754, 14500.482457971810781),
+    (-1e-9, -386060.69601450048246, 14500.482458697851859),
+    (1e-6, -386060.68149951772318, 14500.482095314292306),
+    (-1e-6, -386060.71050048263985, 14500.482821355370334),
+    (2e-5, -386060.40599042343741, 14500.475197924051038),
+    (-2e-5, -386060.9860097217708, 14500.489718745611602),
+    (1e-3, -386046.19569905193466, 14500.119437795885461),
+    (-1e-3, -386075.19666396860432, 14500.84547887377718),
+)
 
 
 class _P2QHHMixin:
@@ -1714,6 +1742,14 @@ class RemovableSingularityTest(unittest.TestCase):
                                 stack.enter_context(mock.patch.object(owner, attribute, function))
                             with self.assertRaises(AssertionError):
                                 self._assert_finite(cls, [v_star])
+
+
+class NmodlGhkNearZeroTest(unittest.TestCase):
+    def test_cav3p1_helper_matches_the_limit_near_0_mV(self) -> None:
+        assert_ghk_near_zero(self, calcium_module._cav3p1_nmodl_ghk_flux, _CAV3P1_GHK_NEAR_ZERO)
+
+    def test_cav3p3_helper_matches_the_limit_near_0_mV(self) -> None:
+        assert_ghk_near_zero(self, calcium_module._cav3p3_nmodl_ghk_flux, _CAV3P3_GHK_NEAR_ZERO)
 
 
 if __name__ == "__main__":

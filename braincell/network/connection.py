@@ -943,6 +943,10 @@ class ConnectionView(DiscreteView):
         take them: call this once outside the trace first. The ``dt`` check
         above then compares with the Network's ``dt``.
 
+        On a Cell initialized with ``batch_size``, the history keeps each
+        element's events, ``(depth, batch, rows)``, and each element's rows
+        deliver its own spikes (CELL-84).
+
         Parameters
         ----------
         dt : Quantity

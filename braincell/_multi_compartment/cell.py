@@ -2783,6 +2783,12 @@ class Cell(_CellFacade, HHTypedNeuron):
         every attribute is restored, :attr:`morpho` is the declaration tree
         again, and a corrected declaration initializes as on a new Cell.
 
+        With ``batch_size``, each element of the batch runs as that element
+        on its own; its live connections (``event_outputs`` to the Cell's own
+        synapses) deliver its own spikes, so the event buffers of the
+        synapses they reach hold one row per element (CELL-84). A
+        :class:`~braincell.Network` runs no batch and refuses such a Cell.
+
         Raises
         ------
         RuntimeError

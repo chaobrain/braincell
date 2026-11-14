@@ -597,6 +597,10 @@ class Network:
             changed; call :meth:`reset_state` (after :meth:`init_state` if a
             Cell is not initialized), or run the Cells on their own to the
             same time before adding them.
+        NotImplementedError
+            If a Cell was initialized on its own with ``batch_size``: a
+            Network runs no batch, as :meth:`init_state` refuses one;
+            nothing has changed (CELL-84).
         PaddingLimitError
             A ``ValueError``, if a ``"padded"`` plan would exceed its limits
             (Notes); nothing has run.
@@ -743,6 +747,7 @@ class Network:
             raise ValueError("Network.run(...) requires at least one population.")
         self._reject_different_times(dt, prefix="Network.run(...)")
         self._reject_off_grid_start(dt, prefix="Network.run(...)")
+        self._reject_batched_cells()
         self._reject_live_dt_change(dt, prefix="Network.run(...)")
         self.init_state()
         if not self._cell_populations():
@@ -936,6 +941,9 @@ class Network:
             changed. Also if ``duration`` is not a positive integer multiple
             of ``dt``, or the steps it adds would pass the step limit,
             before anything has changed.
+        NotImplementedError
+            If a Cell was initialized on its own with ``batch_size``, as in
+            :meth:`run`, before anything has changed.
         TypeError
             If ``duration`` has no time unit.
         RuntimeError
@@ -1038,6 +1046,7 @@ class Network:
         scheduled_delivery = normalize_scheduled_delivery(scheduled_delivery, prefix="Network.prepare_run(...)")
         self._reject_different_times(dt, prefix="Network.prepare_run(...)")
         self._reject_off_grid_start(dt, prefix="Network.prepare_run(...)")
+        self._reject_batched_cells()
         self._reject_live_dt_change(dt, prefix="Network.prepare_run(...)")
         self.init_state()
         if not self._cell_populations():
@@ -1613,6 +1622,19 @@ class Network:
             "Network.reset_state() to start from t = 0, or run the Cell on its own to a multiple of dt before "
             "adding it."
         )
+
+    def _reject_batched_cells(self) -> None:
+        """Raise ``NotImplementedError``, before changing anything, if a Cell joins with a batch (CELL-84).
+
+        A Cell initialized on its own with ``init_state(batch_size=b)`` keeps
+        its batch axis when it joins. A Network runs no batch (CELL-15), as
+        :meth:`init_state` refuses ``batch_size``; such a run ran every step
+        and then failed while it assembled the events, its Cells' clocks
+        advanced.
+        """
+        for population in self._cell_populations().values():
+            if getattr(population.cell, "_initialized", False):
+                _reject_batch_size(population.cell._runtime_batch_size)
 
     def _reject_live_dt_change(self, dt, *, prefix: str) -> None:
         """Raise ``ValueError``, before changing anything, if a Cell joins at another ``dt`` with a live event in flight.

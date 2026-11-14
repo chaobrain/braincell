@@ -15,11 +15,10 @@
 
 """``SodiumDetailed`` against Canavier's (1999) soma in NEURON, the pump off and on (slow tier).
 
-ModelDB 6763's ``nadifl.mod``, ``pump.mod`` and ``leak.mod`` carry no license
-statement; whether they may be committed awaits a maintainers' decision. Until
-then the configurations ``ca1999/sodium_detailed_pump_off`` and
-``ca1999/sodium_detailed_pump`` read them from ``BRAINCELL_CA1999_MOD_DIR``
-(SHA-256 checked) and these tests skip without it.
+The configurations ``ca1999/sodium_detailed_pump_off`` and
+``ca1999/sodium_detailed_pump`` read ModelDB 6763's ``nadifl.mod``,
+``pump.mod`` and ``leak.mod`` from ``data/modeldb/6763`` (no license
+statement, committed unmodified by MECH-48; SHA-256 checked).
 The soma: L = diam = 15 um, 35 degC, ``nai`` 4 and ``nao`` 145 mM, IClamp
 -0.02 nA from t = 0, 2000 ms. BrainCell: ``SodiumDetailed(d=lambda ctx:
 ctx.diam_mid / 4)`` with ``Na_Leak`` (40 uS/cm2), ``PotassiumFixed(E=-100 mV)``
@@ -55,12 +54,6 @@ def _violations(result, table: ToleranceTable = TABLE, config: str = CONFIG) -> 
 
 
 class CanavierSomaPumpOffTest(unittest.TestCase):
-    def setUp(self):
-        try:
-            runner.load_case(CONFIG, PROTOCOL)
-        except runner.SourcesUnavailable as reason:
-            self.skipTest(str(reason))
-
     def test_sodium_accumulation_matches_neuron(self):
         result = runner.compare_protocol(CONFIG, PROTOCOL)
         nai = result["neuron"]["cai"]
@@ -88,12 +81,6 @@ class CanavierSomaPumpOffTest(unittest.TestCase):
 
 
 class CanavierSomaPumpTest(unittest.TestCase):
-    def setUp(self):
-        try:
-            runner.load_case(PUMP_CONFIG, PROTOCOL)
-        except runner.SourcesUnavailable as reason:
-            self.skipTest(str(reason))
-
     def test_sodium_with_the_pump_matches_neuron(self):
         result = runner.compare_protocol(PUMP_CONFIG, PROTOCOL)
         nai = result["neuron"]["cai"]

@@ -1556,6 +1556,19 @@
   --ignore-glob='*_test.py'`, so a `>>>` example whose output no longer
   matches the code fails the pull request.
 
+- **The ModelDB ion-pool comparisons run in CI** (MECH-48). Six `.mod` files
+  from ModelDB entries without a license statement are now committed
+  unmodified under `data/modeldb/` (148253: `cldif.mod`, `gabaA_Cl.mod`;
+  6763: `nadifl.mod`, `pump.mod`, `leak.mod`; 127021: `K_conc.mod`), each
+  folder with a README giving the source commit, retrieval date and SHA-256.
+  The comparisons of `Cldif_JE2011`, `GabaA_JE2011`, `SodiumDetailed`,
+  `NaKPump_Ca1999` and `PotassiumDetailedFH` against them read these files
+  and check their hashes, instead of skipping unless the environment
+  variables `BRAINCELL_JE2011_MOD_DIR`, `BRAINCELL_CA1999_MOD_DIR` and
+  `BRAINCELL_BO2010_MOD_DIR` pointed at local copies; the variables are
+  gone. They run in the daily `slow_tests_neuron` job, whose ion step, like
+  the pull-request one, now fails if a test skipped.
+
 ### Bug Fixes
 
 - brainpy's `align_pre` with a descriptor given no size works on a lumped

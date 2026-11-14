@@ -15,11 +15,11 @@
 
 """``Cldif_JE2011`` against NEURON's ``cldifus`` (ModelDB 148253) on one segment.
 
-Whether ``cldif.mod`` (no license statement) may be committed awaits a
-maintainers' decision; until then the tests run only when
-``BRAINCELL_JE2011_MOD_DIR`` holds the file pinned below
-(``ModelDBRepository/148253@1d737a0``). Each side runs in its own process
-(BrainCell in float64); the limits are T0.
+``cldif.mod`` (``ModelDBRepository/148253@1d737a0``, no license statement) is
+committed unmodified in ``data/modeldb/148253`` (MECH-48); the test checks the
+SHA-256 pinned below before compiling it. Each side runs in its own process
+(BrainCell in float64); the limits are T0. Slow tier (daily, with the other
+ModelDB comparisons).
 
 - Relaxation: one segment, L = 20 um, diam = 1 um, 35 degC, no current; after
   ``finitialize(-70)`` the outer shell is set to 8 mM, then 1000 ms at
@@ -30,7 +30,6 @@ maintainers' decision; until then the tests run only when
   compared with point i of NEURON; NEURON's extra last point is not compared.
 """
 
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -39,9 +38,12 @@ import sys
 import unittest
 
 import numpy as np
+import pytest
 
-from validation.neuron._paths import DATA_ROOT
+from validation.neuron._paths import DATA_ROOT, MODELDB_ROOT, pinned_source
 from validation.neuron._tolerance import T0_LIMITS, max_abs_error, relative_current_error
+
+pytestmark = pytest.mark.slow
 
 CLDIF_SHA256 = "077dc33c1f42fa85c67f6a5b3408844fd73c268f97c9c09620612b1759aa24ee"
 STEPS = 40000
@@ -114,13 +116,8 @@ print(json.dumps([np.asarray(result.samples["v"].values.to_decimal(u.mV))[:, 0].
 """
 
 
-def _cldif_source(test: unittest.TestCase) -> Path:
-    mod_dir = os.environ.get("BRAINCELL_JE2011_MOD_DIR")
-    if not mod_dir:
-        test.skipTest("cldif.mod awaits a maintainers' decision on committing it; set BRAINCELL_JE2011_MOD_DIR.")
-    source = Path(mod_dir) / "cldif.mod"
-    test.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), CLDIF_SHA256)
-    return source
+def _cldif_source() -> Path:
+    return pinned_source(MODELDB_ROOT / "148253" / "cldif.mod", CLDIF_SHA256)
 
 
 def _library(*sources: Path) -> str:
@@ -140,7 +137,7 @@ def _run(code: str, *args: str) -> np.ndarray:
 
 class CldifusAgreementTest(unittest.TestCase):
     def test_zero_current_relaxation_matches_neuron(self) -> None:
-        neuron = _run(_NEURON, _library(_cldif_source(self)))
+        neuron = _run(_NEURON, _library(_cldif_source()))
         braincell = _run(_BRAINCELL % (STEPS + 1))
         self.assertEqual(neuron.shape, (STEPS + 1,))
         self.assertEqual(neuron[0], 8.0)
@@ -149,7 +146,7 @@ class CldifusAgreementTest(unittest.TestCase):
         self.assertLessEqual(error, T0_LIMITS["e_s"])
 
     def test_chloride_leak_under_current_clamp_matches_neuron(self) -> None:
-        library = _library(_cldif_source(self), DATA_ROOT / "mechanisms" / "testing" / "clleak.mod")
+        library = _library(_cldif_source(), DATA_ROOT / "mechanisms" / "testing" / "clleak.mod")
         v_nrn, ci_nrn = _run(_NEURON_CLAMP, library)
         v_bc, ci_bc = _run(_BRAINCELL_CLAMP)
         self.assertEqual(v_nrn.shape, (24001,))

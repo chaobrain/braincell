@@ -36,11 +36,11 @@ a state), pool and channel parameters mapped on one side only, and
 {parameter: [value, unit]}]``) for what NEURON's channel mechanism computes
 beyond the pool's ion, and ``defaults.neuron_mechanisms`` (further NEURON
 mechanisms, ``[suffix, {parameter: value}]``, such as a pump whose BrainCell
-counterpart is in ``braincell_mechanisms``). ``identity.external_mod_files``
-names sources outside the repository: an environment variable holding their
-directory and each file's SHA-256; such configurations are not in
-:func:`config_names` and :func:`load_case` raises :class:`SourcesUnavailable`
-while the variable is unset.
+counterpart is in ``braincell_mechanisms``). ``identity.pinned_mod_files``
+names third-party sources kept unmodified under ``data/`` (``data/modeldb/``,
+MECH-48): their directory, origin and each file's SHA-256, which
+:func:`load_case` checks; such configurations are not in :func:`config_names`
+(their own test modules run them).
 
 Sample ``i`` of both sides is the state at ``t = i dt``. Metrics (see
 ``_tolerance``): ``e_Ci`` (``Ci`` over the protocol's largest NEURON ``cai``),
@@ -56,17 +56,15 @@ process; do not load another suite's channel libraries in the same process.
 from collections.abc import Callable, Mapping
 import dataclasses
 from dataclasses import dataclass
-import hashlib
 import inspect
 import json
-import os
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from validation.neuron import _clamp, _tolerance
-from validation.neuron._paths import DATA_ROOT
+from validation.neuron._paths import DATA_ROOT, pinned_source
 
 ION_ROOT = Path(__file__).resolve().parent
 CONFIGS_ROOT = ION_ROOT / "configs"
@@ -90,10 +88,6 @@ UNITS = {
 
 DIAM_FRACTION = "diam_mid"
 """Unit of a BrainCell length given as a fraction of each CV's mid diameter (a spatial callable)."""
-
-
-class SourcesUnavailable(Exception):
-    """A configuration's external ``.mod`` files are not available; the message says why."""
 
 
 def _pairs(names: Mapping[str, list[str]], what: str) -> tuple[tuple[str, str], ...]:
@@ -175,36 +169,30 @@ def _all_config_names() -> list[str]:
 
 
 def config_names() -> list[str]:
-    """Every configuration under ``configs/`` whose sources are in the repository, as ``<model>/<name>``."""
-    return [name for name in _all_config_names() if "external_mod_files" not in load_config(name)["identity"]]
+    """Every configuration under ``configs/`` without pinned third-party sources, as ``<model>/<name>``."""
+    return [name for name in _all_config_names() if "pinned_mod_files" not in load_config(name)["identity"]]
 
 
-def external_config_names() -> list[str]:
-    """The configurations with ``identity.external_mod_files``."""
-    return [name for name in _all_config_names() if "external_mod_files" in load_config(name)["identity"]]
+def pinned_config_names() -> list[str]:
+    """The configurations with ``identity.pinned_mod_files``."""
+    return [name for name in _all_config_names() if "pinned_mod_files" in load_config(name)["identity"]]
 
 
-def external_mod_files(config: str) -> tuple[Path, ...]:
-    """Resolve ``config``'s external ``.mod`` files and check their SHA-256.
+def pinned_mod_files(config: str) -> tuple[Path, ...]:
+    """Resolve ``config``'s pinned ``.mod`` files under ``data/`` and check their SHA-256.
 
-    Raises :class:`SourcesUnavailable` when the environment variable is unset
-    or a file is missing, and ``ValueError`` when a file differs from its
-    recorded hash.
+    Raises ``FileNotFoundError`` when a file is missing and ``ValueError``
+    when a file differs from its recorded hash (:func:`pinned_source`).
     """
-    spec = load_config(config)["identity"].get("external_mod_files")
+    spec = load_config(config)["identity"].get("pinned_mod_files")
     if spec is None:
         return ()
-    directory = os.environ.get(spec["env"])
-    if not directory:
-        raise SourcesUnavailable(f"{config}: {spec['reason']}; set {spec['env']} to a directory holding {sorted(spec['sha256'])}.")
     files = []
     for name, digest in sorted(spec["sha256"].items()):
-        path = Path(directory) / name
-        if not path.is_file():
-            raise SourcesUnavailable(f"{config}: {spec['reason']}; {path} ({spec['source']}) is missing.")
-        if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
-            raise ValueError(f"{config}: {path} does not have the SHA-256 recorded for {name} ({spec['source']}).")
-        files.append(path)
+        try:
+            files.append(pinned_source(DATA_ROOT / spec["dir"] / name, digest))
+        except (FileNotFoundError, ValueError) as error:
+            raise type(error)(f"{config} ({spec['source']}): {error}") from None
     return tuple(files)
 
 
@@ -273,7 +261,7 @@ def load_case(config: str, protocol: str) -> PoolCase:
     return PoolCase(
         config=config,
         protocol=protocol,
-        mod_files=tuple(DATA_ROOT / path for path in raw["identity"]["mod_files"]) + external_mod_files(config),
+        mod_files=tuple(DATA_ROOT / path for path in raw["identity"]["mod_files"]) + pinned_mod_files(config),
         pool=(mapping["pool_name"]["neuron"], mapping["pool_name"]["braincell"]),
         pool_params=params("pool_params", defaults.get("pool_params", {})),
         states=_pairs({k: v for k, v in pool_states.items() if k != "units"} or {"common": []}, f"{config} pool_states"),
@@ -303,10 +291,9 @@ _LOADED: list[Path] = []
 
 
 def mechanism_library() -> Path:
-    """Compile every configuration's sources into one library and load it once.
+    """Compile every configuration's sources, pinned ones included, into one library and load it once.
 
-    External sources join the library when their environment variable is
-    set, so a process builds the same library whichever comparison runs first.
+    Every process builds the same library whichever comparison runs first.
     """
     from neuron import h
 
@@ -314,11 +301,8 @@ def mechanism_library() -> Path:
     from validation.neuron.cell._nrnmech import nrnmech_path
 
     files = {DATA_ROOT / p for name in _all_config_names() for p in load_config(name)["identity"]["mod_files"]}
-    for name in external_config_names():
-        try:
-            files.update(external_mod_files(name))
-        except SourcesUnavailable:
-            pass
+    for name in pinned_config_names():
+        files.update(pinned_mod_files(name))
     files = sorted(files)
     library = nrnmech_path(compile_mechanisms("testing", files=files) / "x86_64")
     if not _LOADED:

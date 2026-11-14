@@ -821,7 +821,9 @@ class TangentDependencyTest(unittest.TestCase):
 
         a, b, c = (jnp.asarray(1.0),) * 3
         # Dependencies of the tangent map, as the check traces them.
-        deps = self._dependencies(lambda x, y, z, tx, ty, tz: jax.jvp(function, (x, y, z), (tx, ty, tz))[1], a, b, c, a, b, c)
+        deps = self._dependencies(
+            lambda x, y, z, tx, ty, tz: jax.jvp(function, (x, y, z), (tx, ty, tz))[1], a, b, c, a, b, c
+        )
         self.assertEqual(deps, [0b011000, 0, 0, 0b101000])
 
     def test_scan_carry_reaches_its_fixed_point(self) -> None:

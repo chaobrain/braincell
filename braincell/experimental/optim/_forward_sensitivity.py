@@ -780,7 +780,10 @@ def _step_tangent_dependencies(functional_step: FunctionalStep, state_values, da
         _primal_out, tangent_out = jax.jvp(
             transition,
             (list(primals), list(operator_primals)),
-            (full_tangents(abstract, inexact, tangents), full_tangents(operator_abstract, operator_inexact, operator_tangents)),
+            (
+                full_tangents(abstract, inexact, tangents),
+                full_tangents(operator_abstract, operator_inexact, operator_tangents),
+            ),
         )
         return tangent_out
 

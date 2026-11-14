@@ -1466,7 +1466,7 @@ class Network:
 
         With ``operator_given`` the loop takes first one entry per Cell, the
         leaves of its axial operator or ``None``
-        (:func:`~braincell._multi_compartment.run.axial_operator_before_steps`).
+        (:func:`~braincell._multi_compartment.axial_operator.axial_operator_before_steps`).
         """
         from braincell.network.event import boundary_step, grid_step, handed_over
 

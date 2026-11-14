@@ -2,10 +2,9 @@
   "meta": {"label": "Canavier 1999 soma with the pump off: SodiumDetailed (nadifl) with sodium and potassium leaks (leak.mod)"},
   "identity": {
     "mod_files": [],
-    "external_mod_files": {
-      "env": "BRAINCELL_CA1999_MOD_DIR",
+    "pinned_mod_files": {
+      "dir": "modeldb/6763",
       "source": "ModelDB 6763, ModelDBRepository/6763@ccdc2f0083c0ffdbba1f1a8fd8b68d391bff5cc1",
-      "reason": "the ModelDB files carry no license statement and await a maintainers' decision on committing them",
       "sha256": {
         "leak.mod": "71d5171938be424cf9b266f2d1fade561f2e70a89f43c71dbdd1f1cde8e6fad9",
         "nadifl.mod": "26d1903892222e2b7e6bfdd09c3640693c35b19d4f6d496f5498d7dc5d66ab48"

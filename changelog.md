@@ -34,6 +34,24 @@
   the registry lookup of `mech.Channel("CaHT_HM1992", ...)` raises `KeyError`;
   both name the new class. Replace `CaHT_HM1992` with `CaT_HM1992_Shifted25`,
   in class references and in `mech.Channel("...")` strings alike.
+- **`braincell.ion.CalciumFirstOrder` defaults to a physical `alpha`**
+  (MECH-46). The default was 0.13 mM/ms/(uA/cm**2), the Pinsky-Rinzel (1994)
+  constant of a dimensionless calcium variable read as mM. It is now
+  `1/(2 F d)` for a 1 um submembrane shell, 5.1821e-5 mM/ms/(uA/cm**2), the
+  constant `A = 5.18e-5` of Bazhenov et al. (1998) and the influx of
+  `CalciumDetailed` with its default `d`. `beta` (0.075 /ms) and the initial
+  `Ci` (2.4e-4 mM) are unchanged. Measured on main 384c860:
+  - Under a constant inward current, the steady `Ci = alpha * I / beta` falls
+    from 1.7333 mM to 6.9095e-4 mM per uA/cm**2, 2508.6 times lower.
+  - A one-compartment cell (Hodgkin-Huxley sodium and potassium, `CaHT_Re1993`
+    and `AHP_De1994`, driven by 0.3 nA for 200 ms) used to reach 3.228 mM,
+    above the 2 mM outside, so E_Ca fell to -6.38 mV and the cell fired 3
+    spikes. It now peaks at 7.44e-3 mM, keeps E_Ca between 74.5 and 155.4 mV,
+    and fires 18 spikes.
+
+  To keep the old behaviour, pass
+  `alpha=0.13 * u.mM / u.ms / (u.uA / u.cm**2)`. 0.3 allows breaking changes
+  without a deprecation period (a project-lead decision).
 - **Event aggregations that never took effect are rejected** (CELL-40).
   `ScalarEventInput(unit, aggregation="ordered")` and
   `TriggerEventInput(aggregation="any")` or `(aggregation="ordered")` raise
@@ -332,6 +350,20 @@
   after the step that ended. There is no deprecation period (0.3 allows breaking
   changes without one, a project-lead decision). To compare with old
   results, read `g` one sample later.
+- **`observe.output(...)` is sampled at the start of each step, as every
+  other recording** (CELL-82). Row `j` of an output recording was the value
+  after step `j` (at `t_{j+1}`); it is now the value at `t_j`, the one step
+  `j - 1` produced, and row 0 is the value after `init_state()`. For a
+  detailed Cell, `observe.output("voltage")` and `state("V")` now record the
+  same rows element by element: on main `8710fe5` row 0 of the output of an
+  HH soma was -64.99989616533065 mV, the voltage after the first step,
+  against -65.0 mV for `state("V")`. A reduction model that starts at 5 and
+  adds 1 per step recorded `[6, 7, 8]` over three steps and now records
+  `[5, 6, 7]`. Split runs still join into the whole run bit for bit. The
+  dynamics, `cell.outputs` and the events do not change. There is no
+  deprecation period (0.3 allows breaking changes without one, a
+  project-lead decision). To get the old rows, drop row 0 and append
+  `cell.outputs[name]` read after the run.
 
 ### New Features
 
@@ -1557,6 +1589,19 @@
   --ignore-glob='*_test.py'`, so a `>>>` example whose output no longer
   matches the code fails the pull request.
 
+- **The ModelDB ion-pool comparisons run in CI** (MECH-48). Six `.mod` files
+  from ModelDB entries without a license statement are now committed
+  unmodified under `data/modeldb/` (148253: `cldif.mod`, `gabaA_Cl.mod`;
+  6763: `nadifl.mod`, `pump.mod`, `leak.mod`; 127021: `K_conc.mod`), each
+  folder with a README giving the source commit, retrieval date and SHA-256.
+  The comparisons of `Cldif_JE2011`, `GabaA_JE2011`, `SodiumDetailed`,
+  `NaKPump_Ca1999` and `PotassiumDetailedFH` against them read these files
+  and check their hashes, instead of skipping unless the environment
+  variables `BRAINCELL_JE2011_MOD_DIR`, `BRAINCELL_CA1999_MOD_DIR` and
+  `BRAINCELL_BO2010_MOD_DIR` pointed at local copies; the variables are
+  gone. They run in the daily `slow_tests_neuron` job, whose ion step, like
+  the pull-request one, now fails if a test skipped.
+
 ### Bug Fixes
 
 - brainpy's `align_pre` with a descriptor given no size works on a lumped
@@ -2686,6 +2731,29 @@
   `faraday_constant` are shared 0-d arrays that a compiled program keeps;
   braincell now holds them as NumPy scalars. Results are unchanged bit for bit
   at both precisions on the machine that tested them.
+- A delayed live event still in flight when a Cell moves between running on
+  its own and a `Network` now arrives once, at its step (CELL-83). The Network
+  keeps the recent spike counts of its live sources in its own histories, and a
+  Cell run on its own keeps them in its live rows' histories; neither read the
+  other at a hand-over. On main `2cd7dc4` (an HH soma with a self-connection of
+  k = 1, 3 or 12 steps, split at every step from one before its spike to the
+  delivery), `Cell.run` followed by `Network.run` lost the event at every split
+  after the spike; `Network.run` followed by `Cell.run` (the Network dropped)
+  lost it unless the spike fell in the Network's last step; three segments lost
+  it or delivered the Cell's old history at another step: 81 of 168 cases were
+  wrong, none now. The `update()` and `prepare_run` + `update()` drivers, a
+  population with several delays and both event backends behave the same. The
+  Network takes over each joining Cell's counts before its first step, and a
+  Cell that leaves it takes them back at its next `run()`, `update()` or
+  `connections.prepare_runtime(dt)`. This is a host-side copy, once per
+  hand-over, and the compiled loops are unchanged. Two hand-overs that dropped
+  the event silently are now refused, before anything changes:
+  - a `Network` run, or a `Cell.run` after a Network, at another `dt` while a
+    delayed event is in flight raises `ValueError`. Call `reset_state()`
+    first, or keep the `dt`; `Cell.run` already refused this for its own rows.
+  - an `update()` traced right after the Cell left a Network raises
+    `RuntimeError`. Call `cell.connections.prepare_runtime(dt)` once outside
+    the trace.
 
 ### Documentation
 

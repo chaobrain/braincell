@@ -77,3 +77,4 @@ dev/**            export-ignore
 data/cerebellum/** -text whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
 data/morphology/neuromorpho/** -text whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
 data/mechanisms/testing/** -text whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
+data/modeldb/** -text whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab

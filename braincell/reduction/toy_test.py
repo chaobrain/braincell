@@ -332,7 +332,9 @@ class SynapticKernelAccumulatorTest(_OutputAssertions):
         reduced.add_reduction("kernel", _KERNEL(threshold=100.0 * u.uS * u.ms))
         reduced.use_model("kernel")
         reduced.record("value", braincell.observe.output("value"))
-        first = np.asarray(run(reduced, dt)["value"].values[0].to_decimal(u.uS * u.ms), dtype=np.float64)
+        # Row 1 is the value step 0 produced; row 0 is the value after init_state() (CELL-82; main 8710fe5:
+        # row 0 of a one-step run).
+        first = np.asarray(run(reduced, 2 * dt)["value"].values[1].to_decimal(u.uS * u.ms), dtype=np.float64)
 
         self.assertLess(abs(detailed_exp - first[0]) / first[0], 1e-2)
         self.assertLess(abs(detailed_exp2 - first[1]) / first[1], 1e-4)

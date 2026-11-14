@@ -26,6 +26,9 @@ This module sits below bindings/state and does not import their runtime code.
 from __future__ import annotations
 
 import functools
+import os
+import warnings
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING
 
 import brainunit as u
@@ -122,6 +125,62 @@ def _build_default_ions(n_point: int) -> dict[str, object]:
     if isinstance(n_point, tuple):
         return build_placeholder_ions(size=n_point)
     return build_placeholder_ions(size=(n_point,))
+
+
+# The warning below names the user's call (``cell.init_state()``,
+# ``net.init_state()``) rather than a frame inside the package.
+_PACKAGE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + os.sep
+
+
+def warn_placeholder_ion_bindings(
+    bindings: Iterable[tuple[str, tuple[str, ...]]],
+    placeholders: Mapping[str, object],
+) -> None:
+    """Warn once for each placeholder ion that a mechanism binds.
+
+    A placeholder ion is the fixed ion a cell gets for a family it never
+    declares (see :func:`braincell.ion.build_placeholder_ions`); its
+    parameters are the class defaults, such as ``E = -95 mV`` for ``k``.
+    The numbers are unchanged; the warning tells the user which values the
+    model is using and how to choose them.
+
+    Parameters
+    ----------
+    bindings : iterable of (str, tuple of str)
+        One ``(class_name, bound_ion_keys)`` pair per bound mechanism (a
+        channel, or a synapse that reads an ion), in declaration order.
+    placeholders : mapping of str to object
+        The placeholder ions of this cell, keyed by family symbol.
+
+    Warns
+    -----
+    UserWarning
+        One per placeholder family some mechanism binds, in the order of
+        :func:`braincell.ion.build_placeholder_ions`. The message names the
+        family, the mechanism classes bound to it, the placeholder class and
+        its reversal potential, and the ``braincell.mech.Ion(...)``
+        declaration that replaces it.
+    """
+    users: dict[str, dict[str, None]] = {}
+    for class_name, keys in bindings:
+        for key in keys:
+            if key in placeholders:
+                users.setdefault(key, {})[class_name] = None
+    for family, ion in placeholders.items():
+        names = users.get(family)
+        if not names:
+            continue
+        ion_class = type(ion).__name__
+        E = float(np.asarray(u.Quantity(ion.E).to_decimal(u.mV)).ravel()[0])
+        one = len(names) == 1
+        warnings.warn(
+            f"{', '.join(names)} {'binds' if one else 'bind'} ion family {family!r}, which this cell does not "
+            f"declare, so {'it uses' if one else 'they use'} a placeholder {ion_class} with its class defaults "
+            f"(E = {E:g} mV). Declare the ion to choose its parameters, e.g. "
+            f"cell.paint(<region>, braincell.mech.Ion({ion_class!r}, E={E:g} * u.mV)).",
+            UserWarning,
+            skip_file_prefixes=(_PACKAGE_DIR,),
+        )
 
 
 def _collect_runtime_ion_instances(

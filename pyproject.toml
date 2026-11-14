@@ -223,6 +223,7 @@ ini_options.markers = [
 ini_options.filterwarnings = [
   "error:.* is deprecated since braincell:DeprecationWarning",
   "error:.*braincell [0-9]+\\.[0-9]+:FutureWarning",
+  "error:.* ion family '[a-z]+', which this cell does not declare:UserWarning",
 ]
 
 [tool.coverage]

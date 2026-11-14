@@ -35,6 +35,7 @@ from braincell._misc import (
     scalar_decimal,
     validate_time_quantity,
 )
+from braincell._multi_compartment.axial_operator import axial_operator_before_steps
 from braincell._multi_compartment.run import (
     MAX_STEPS,
     _arrival_origin,
@@ -45,7 +46,6 @@ from braincell._multi_compartment.run import (
     _keep_started_clock,
     _kept_handover,
     _sample_rows,
-    axial_operator_before_steps,
     check_step_limit,
     host_clock_start,
 )

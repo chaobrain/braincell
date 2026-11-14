@@ -2769,9 +2769,11 @@ class UpdateLiveDynamicsTest(unittest.TestCase):
     """CELL-70: a live self connection with HH dynamics, ``update()`` loops against ``Cell.run``.
 
     A 1-CV cable (staggered) and a lumped Cell (rk4): HH1952 sodium and
-    potassium, leak, a 0.1 nA clamp from 0.25 ms, an ExpSyn (tau 2 ms, e 0 mV)
-    driven by the Cell's own spike, weight 0.002 uS; dt 0.025 ms. Both fire
-    in step 84 (from 0); the event shows in g after step 84 + k (k = 0, 4, 12).
+    potassium, leak, a 0.5 nA clamp from 0.25 ms, an ExpSyn (tau 2 ms, e 0 mV)
+    driven by the Cell's own spike, weight 0.002 uS; dt 0.025 ms. The cable
+    fires in step 42 and the lumped Cell in step 41 (from 0); the event shows
+    in g after the spike's step + k (k = 0, 4, 12). The long loop keeps the
+    cable at 0.1 nA (first spike in step 84).
     """
 
     DT = 0.025 * u.ms
@@ -2786,8 +2788,8 @@ class UpdateLiveDynamicsTest(unittest.TestCase):
             mech.Channel("K_HH1952", name="k"),
         )
 
-    def _cell(self, kind, delay_ms, *, clamp_ms=8.0, record=False):
-        clamp = mech.CurrentClamp(delay=0.25 * u.ms, durations=clamp_ms * u.ms, amplitudes=0.1 * u.nA)
+    def _cell(self, kind, delay_ms, *, clamp_ms=8.0, amplitude_nA=0.5, record=False):
+        clamp = mech.CurrentClamp(delay=0.25 * u.ms, durations=clamp_ms * u.ms, amplitudes=amplitude_nA * u.nA)
         synapse = mech.Synapse("ExpSyn", name="syn", tau=2.0 * u.ms, e=0.0 * u.mV)
         if kind == "cable":
             branch = Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um)
@@ -2854,7 +2856,7 @@ class UpdateLiveDynamicsTest(unittest.TestCase):
         return np.flatnonzero(np.diff(g) > 1e-3 * 0.002)
 
     def test_cable_and_lumped_update_loops_match_run(self):
-        n = 120  # the first spike's events arrive by step 96
+        n = 64  # the first spike's events arrive by step 54
         for kind in ("cable", "lumped"):
             for delay in (0.0, 0.1, 0.3):
                 with (
@@ -2884,7 +2886,7 @@ class UpdateLiveDynamicsTest(unittest.TestCase):
                     )
 
     def test_float32_eager_update_loops_match_run(self):
-        n = 120  # the first spike's events arrive by step 96
+        n = 64  # the first spike's events arrive by step 54
         for kind in ("cable", "lumped"):
             for delay in (0.0, 0.1, 0.3):
                 with self.subTest(kind=kind, delay=delay), brainstate.environ.context(precision=32):
@@ -2894,19 +2896,19 @@ class UpdateLiveDynamicsTest(unittest.TestCase):
                     self.assertGreater(jumps.size, 0)
                     np.testing.assert_array_equal(self._jumps(rows[:, 1]), jumps)
                     np.testing.assert_allclose(rows[:, 1], reference[:, 1], rtol=1e-5, atol=1e-9)
-                    # On the CPU the eager float32 ops round apart from the compiled run's from step 21
-                    # on, before any spike: up to 2.5e-4 mV on the cable's upstroke.
+                    # On the CPU the eager float32 ops round apart from the compiled run's from step 10
+                    # (the clamp's first) on, before any spike: up to 5.0e-5 mV around the cable's spike.
                     np.testing.assert_allclose(rows[:, 0], reference[:, 0], rtol=1e-5, atol=1e-3)
 
     def test_float32_long_update_loop_matches_one_run(self):
         # L77: 32010 steps, the clamp on for the whole run.
         n = 32010
         with brainstate.environ.context(precision=32):
-            ran = self._cell("cable", 0.1, clamp_ms=1e6, record=True)
+            ran = self._cell("cable", 0.1, clamp_ms=1e6, amplitude_nA=0.1, record=True)
             result = ran.run(dt=self.DT, duration=n * self.DT)
             v_ref = np.asarray(result.samples["v"].values.to_decimal(u.mV)).reshape(n, -1)[:, 0]
             g_ref = np.asarray(result.samples["g"].values.to_decimal(u.uS)).reshape(n, -1)[:, 0]
-            looped = self._cell("cable", 0.1, clamp_ms=1e6)
+            looped = self._cell("cable", 0.1, clamp_ms=1e6, amplitude_nA=0.1)
             looped.connections.prepare_runtime(self.DT)
 
             def body(step):

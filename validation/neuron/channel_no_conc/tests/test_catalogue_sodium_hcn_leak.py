@@ -29,7 +29,6 @@ import unittest
 from unittest import mock
 
 import brainunit as u
-import jax
 import numpy as np
 import pytest
 
@@ -163,25 +162,25 @@ class SodiumHcnLeakRootCauseTest(unittest.TestCase):
                     self.assertLessEqual(result["e_I"], T0_LIMITS["e_I"])
                     self.assertLessEqual(result["e_s"], T0_LIMITS["e_s"])
 
-    def test_nav1p1_constant_gating_current_conductance_explains_the_current_clamp(self):
+    def test_nav1p1_gating_current_gradient_breaks_the_current_clamp(self):
+        # MECH-40: NEURON's conductance estimate holds igate constant in v (as
+        # for Kv1.1); BrainCell freezes igate's v-dependence alike by default.
         name = f"{NAV1P1}:gateCurrent=1"
         variant = VARIANTS[name]
         skip_unless_compiled(self, (variant.config,))
-        original = sodium.Nav1p1_MA2025_BC.current
-        conductive = sodium.Nav1p6_MA2020_GoC.current
+        original = sodium.Nav1p1_MA2025_BC.__init__
 
-        def current(self, V, Na):
-            # NEURON's conductance estimate holds igate constant in v (as for Kv1.1);
-            # hide igate's v-dependence from BrainCell's linearization alike.
-            frozen = u.Quantity(jax.lax.stop_gradient(V.mantissa), unit=V.unit)
-            return conductive(self, V, Na) + (original(self, frozen, Na) - conductive(self, frozen, Na))
+        def live_gradient(self, *args, **kwargs):
+            original(self, *args, **{**kwargs, "freeze_gate_current_gradient": False})
 
-        with mock.patch.object(sodium.Nav1p1_MA2025_BC, "current", current):
-            for protocol in CURRENT_CLAMP_PROTOCOLS:
-                with self.subTest(protocol=protocol):
-                    self.assertEqual(TABLE.tier(name, protocol), "T1")
-                    error = current_clamp_error(variant.config, protocol, dict(variant.channel_params))
-                    self.assertLessEqual(error, T0_LIMITS["e_V"])
+        for protocol in CURRENT_CLAMP_PROTOCOLS:
+            with self.subTest(protocol=protocol):
+                self.assertEqual(TABLE.tier(name, protocol), "T0")
+                frozen = current_clamp_error(variant.config, protocol, dict(variant.channel_params))
+                with mock.patch.object(sodium.Nav1p1_MA2025_BC, "__init__", live_gradient):
+                    live = current_clamp_error(variant.config, protocol, dict(variant.channel_params))
+                self.assertLessEqual(frozen, T0_LIMITS["e_V"])
+                self.assertGreater(live, 100.0 * T0_LIMITS["e_V"])
 
     def test_hh_rate_table_breaks_the_ramp(self):
         skip_unless_compiled(self, (HH,))

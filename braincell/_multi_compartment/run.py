@@ -992,8 +992,7 @@ def _live_rows_read_voltage_before_step(rcell: "Cell") -> bool:
     """
     store = rcell._get_connection_store()
     return any(
-        not call.source.is_scheduled and getattr(call.source, "_reads_previous_voltage", False)
-        for call in store._calls
+        not call.source.is_scheduled and getattr(call.source, "_reads_previous_voltage", False) for call in store._calls
     )
 
 

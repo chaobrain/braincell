@@ -733,7 +733,9 @@ def _queue_arrival(blocks, state: DeliveryState, queue_index: int):
     else:
         if plan.now_read.size:
             # The zero-delay contacts: their sources' current counts, the events of the step that just ended.
-            now = [jnp.asarray(source.current_event_count(ids)) for source, ids in zip(plan.now_sources, plan.now_columns)]
+            now = [
+                jnp.asarray(source.current_event_count(ids)) for source, ids in zip(plan.now_sources, plan.now_columns)
+            ]
             now = jnp.concatenate(now) if len(now) > 1 else now[0]
             rows = rows + [now[jnp.asarray(plan.now_read)]]
         pre = jnp.concatenate(rows) if len(rows) > 1 else rows[0]

@@ -261,7 +261,12 @@ class HandoverTest(unittest.TestCase):
     @_float64
     def test_each_transition_delivers_the_event_once(self):
         reference = self._reference()
-        for first, second in (("Cell.run", "Cell.run"), ("Cell.run", "Network"), ("Network", "Cell.run"), ("update", "Cell.run")):
+        for first, second in (
+            ("Cell.run", "Cell.run"),
+            ("Cell.run", "Network"),
+            ("Network", "Cell.run"),
+            ("update", "Cell.run"),
+        ):
             with self.subTest(first=first, second=second):
                 if first == "Network":
                     run = _Driver("Network.run", 0)

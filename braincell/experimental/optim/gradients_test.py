@@ -33,6 +33,7 @@ from braincell._base_channel import IonChannel
 from braincell._parameter_schema import RuntimeParameterState
 from braincell.trainable._manager import ParameterBinding, TrainableManager, _TargetRow
 from braincell.filter import AllRegion, RootLocation
+from braincell.io._testing import FIXTURE_DIR
 from braincell.experimental.optim import _forward_sensitivity as fs
 from braincell.experimental.optim.gradients import (
     TrajectoryGradientResult,
@@ -750,20 +751,27 @@ _DIAGNOSE_ENTRIES = ("diagnose(at=None)", "diagnose(at=(1,2))")
 _TWO_PASS_ENTRIES = ("trajectory rtrl",) + _DIAGNOSE_ENTRIES
 
 
-def _y_cable_cell(solver="rk4", field="Ra", *, record=False):
-    """The Y cable of the OPT-14 acceptance, with ``Ra`` or the sodium ``g_max`` trainable."""
-    morphology = braincell.Morphology.from_root(
-        braincell.Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="dendrite"),
-        name="trunk",
-    )
-    for name in ("left", "right"):
-        morphology.attach(
-            parent="trunk",
-            child_branch=braincell.Branch.from_lengths(
-                lengths=[100.0] * u.um, radii=[0.5, 0.5] * u.um, type="dendrite"
-            ),
-            child_name=name,
+def _y_cable_cell(solver="rk4", field="Ra", *, record=False, shape="Y"):
+    """The Y cable of the OPT-14 acceptance, with ``Ra`` or the sodium ``g_max`` trainable.
+
+    ``shape="Y3"`` gives the trunk a third child (4 CVs), ``"CA1"`` is the
+    CA1 fixture (``CVPerBranch()``, 681 CVs); same channels and clamp.
+    """
+    if shape == "CA1":
+        morphology = braincell.Morphology.from_swc(FIXTURE_DIR / "CA1.swc")
+    else:
+        morphology = braincell.Morphology.from_root(
+            braincell.Branch.from_lengths(lengths=[100.0] * u.um, radii=[1.0, 1.0] * u.um, type="dendrite"),
+            name="trunk",
         )
+        for name in ("left", "right", "middle")[: 3 if shape == "Y3" else 2]:
+            morphology.attach(
+                parent="trunk",
+                child_branch=braincell.Branch.from_lengths(
+                    lengths=[100.0] * u.um, radii=[0.5, 0.5] * u.um, type="dendrite"
+                ),
+                child_name=name,
+            )
     options = {} if solver == "default" else {"solver": solver}
     cell = braincell.Cell(
         morphology,
@@ -1335,15 +1343,16 @@ class AxialOperatorFallbackTest(unittest.TestCase):
             engine(_y_targets(4))
             self.assertEqual(engine.axial_operator_mode, "none")
 
-            cell = _y_cable_cell("rk4", "Ra")
+            # A Network of lumped Cells (OPT-15: one with a cable Cell
+            # builds its operator once per rollout, NetworkAxialOperatorTest).
             network = braincell.Network("net")
-            network.add_population("y", cell)
+            network.add_population("point", lumped)
             network.init_state()
             network.prepare_run(dt=_Y_DT)
 
             def network_step(target_mv):
                 network.update()
-                return jnp.mean((cell.V.value.to_decimal(u.mV) - target_mv) ** 2)
+                return jnp.mean((lumped.V.value.to_decimal(u.mV) - target_mv) ** 2)
 
             engine = build_rollout_value_and_grad(network, step=network_step, method="rtrl")
             self.assertIsNone(engine.axial_operator_mode)
@@ -1373,6 +1382,284 @@ class AxialOperatorFallbackTest(unittest.TestCase):
             np.asarray(u.get_mantissa(first.gradients["Ra"])),
             rtol=1e-12,
         )
+
+
+def _network(*populations, field="Ra", record=False, **prepare):
+    """A Network of ``(name, shape, solver)`` populations of :func:`_y_cable_cell`, prepared for ``update()``."""
+    network = braincell.Network("net")
+    cells = {}
+    for name, shape, solver in populations:
+        cells[name] = _y_cable_cell(solver, field, record=record, shape=shape)
+        network.add_population(name, cells[name])
+    network.init_state()
+    network.prepare_run(dt=_Y_DT, **prepare)
+    return network, cells
+
+
+def _network_step(network, cells):
+    def step(target_mv):
+        network.update()
+        return sum(jnp.mean((cell.V.value.to_decimal(u.mV) - target_mv) ** 2) for cell in cells.values())
+
+    return step
+
+
+def _network_entries(network, cells, example):
+    """Rollout BPTT, RTRL, trajectory BPTT, RTRL and ``diagnose(at=None)`` of a Network, as ``(roots, data) -> (loss, gradients)``."""
+    step = _network_step(network, cells)
+
+    def observe(_target_mv):
+        network.update()
+        return tuple(cell.V.value.to_decimal(u.mV) for cell in cells.values())
+
+    def loss(observations, targets):
+        return sum(jnp.mean((values - targets[:, None, None]) ** 2) for values in observations)
+
+    rollout = {
+        method: build_rollout_value_and_grad(network, step=step, method=method).prepare(example)
+        for method in ("bptt", "rtrl")
+    }
+    trajectory = {
+        method: build_trajectory_value_and_grad(network, step=observe, loss=loss, method=method).prepare(example)
+        for method in ("bptt", "rtrl")
+    }
+    names = rollout["rtrl"].parameter_names
+
+    def wrap(method, **options):
+        def entry(roots, data):
+            result = method(roots, data, **options)
+            return result.loss, jnp.stack([u.get_mantissa(result.gradients[name]).reshape(()) for name in names])
+
+        return entry
+
+    entries = {
+        "rollout bptt": wrap(rollout["bptt"]._bptt),
+        "rollout rtrl": wrap(rollout["rtrl"]._rtrl),
+        "trajectory bptt": wrap(trajectory["bptt"]._bptt),
+        "trajectory rtrl": wrap(trajectory["rtrl"]._rtrl_two_pass),
+        "diagnose(at=None)": lambda roots, data: wrap(rollout["rtrl"]._rtrl_diagnostic_all, length=data.shape[0])(
+            roots, data
+        ),
+    }
+    engines = (*rollout.values(), *trajectory.values())
+    roots = tuple(state.value for state in rollout["rtrl"].parameter_states.values())
+    return entries, engines, roots, names
+
+
+class NetworkAxialOperatorTest(unittest.TestCase):
+    """OPT-15: optim entries on a Network build each cable Cell's axial operator once per rollout."""
+
+    _COUNTED = ("rollout bptt", "rollout rtrl", "diagnose(at=None)")
+    # Loss of main 363cfc4 (per-step building) for the fallback cases:
+    # populations a (Y, rk4) and b (Y3, staggered), 32 steps, float64.
+    _MAIN_LOSS = {
+        "writes a.Ra state": 84.69145466297005,
+        "writes a root": 83.88858978085719,
+        "calls materialize": 83.88430964846597,
+        "plain g_max": 83.88430964846597,
+        "plain Ra": 83.88430964846597,
+    }
+
+    def _assert_built_once(self, closed, cells, label):
+        # The diagnose pullback keeps the transposed assembly in its loop
+        # body (rk4 4 scatter-adds, staggered 3), never an LU (OPT-14).
+        for name, cell in cells.items():
+            counts = _operator_builds(closed, cell)
+            rk4 = cell.solver_name == "rk4"
+            with self.subTest(cell=name):
+                self.assertEqual(counts["lu"]["loop"], 0, counts)
+                if label == "diagnose(at=None)":
+                    self.assertLessEqual(max(counts["scatter per loop"]), 4 if rk4 else 3, counts)
+                else:
+                    self.assertEqual(counts["scatter"]["loop"], 0, counts)
+                if rk4:
+                    self.assertEqual(counts["lu"]["outside"], 2 if label == "diagnose(at=None)" else 1, counts)
+                else:
+                    self.assertGreater(counts["scatter"]["outside"], 0, counts)
+
+    def test_entries_build_each_operator_once_per_rollout(self) -> None:
+        # main 363cfc4: Y rk4 1 LU and 8 assembly scatter-adds in the loop
+        # (diagnose 2 and 16), CA1 7-8 scatter-adds (diagnose 15); with
+        # g_max trainable BPTT was hoisted already, RTRL and diagnose not.
+        configurations = (
+            ((("y", "Y", "rk4"),), "Ra"),
+            ((("y", "Y", "rk4"),), "g_max"),
+            ((("y", "Y", "rk4"), ("ca1", "CA1", "default")), "Ra"),
+        )
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            for populations, field in configurations:
+                network, cells = _network(*populations, field=field)
+                step = _network_step(network, cells)
+                engines = {
+                    method: build_rollout_value_and_grad(network, step=step, method=method).prepare(_y_targets()[0])
+                    for method in ("bptt", "rtrl")
+                }
+                roots = tuple(state.value for state in engines["rtrl"].parameter_states.values())
+                entries = {
+                    "rollout bptt": engines["bptt"]._bptt,
+                    "rollout rtrl": engines["rtrl"]._rtrl,
+                    "diagnose(at=None)": lambda r, d: engines["rtrl"]._rtrl_diagnostic_all(r, d, length=d.shape[0]),
+                }
+                for label, entry in entries.items():
+                    with self.subTest(populations=tuple(cells), field=field, entry=label):
+                        self._assert_built_once(jax.make_jaxpr(entry)(roots, _y_targets(4)), cells, label)
+                        self.assertEqual(engines["rtrl"].axial_operator_mode, "rollout")
+
+    def test_hoisted_operators_match_per_step_building(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            for populations in ((("y", "Y", "rk4"),), (("a", "Y", "rk4"), ("b", "Y3", "default"))):
+                for field in ("Ra", "g_max"):
+                    targets = _y_targets()
+                    network, cells = _network(*populations, field=field)
+                    hoisted, _engines, roots, _names = _network_entries(network, cells, targets[0])
+                    with patch(
+                        "braincell.experimental.optim.gradients._axial_operator_step",
+                        side_effect=_per_step_operator,
+                    ):
+                        per_step, reference_engines, _roots, _names = _network_entries(network, cells, targets[0])
+                    for engine in reference_engines:
+                        self.assertEqual(engine.axial_operator_mode, "step")
+                    for label in hoisted:
+                        with self.subTest(populations=tuple(cells), field=field, entry=label):
+                            loss, value = jax.jit(hoisted[label])(roots, targets)
+                            expected_loss, expected = jax.jit(per_step[label])(roots, targets)
+                            self.assertTrue(np.all(np.isfinite(expected)) and np.all(expected != 0.0))
+                            np.testing.assert_allclose(float(loss), float(expected_loss), rtol=1e-12)
+                            np.testing.assert_allclose(np.asarray(value), np.asarray(expected), rtol=1e-12)
+
+    def test_ra_gradients_match_central_differences(self) -> None:
+        # One Y population is the Cell of OPT-14: its central differences
+        # (h = 1e-5 on the BPTT loss, main) are the Cell's.
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            network, cells = _network(("y", "Y", "rk4"))
+            entries, _engines, roots, _names = _network_entries(network, cells, _y_targets()[0])
+            for label, entry in entries.items():
+                family = "trajectory" if label.startswith("trajectory") else "rollout"
+                with self.subTest(entry=label):
+                    _loss, value = jax.jit(entry)(roots, _y_targets())
+                    np.testing.assert_allclose(_scalar(value), _RA_CENTRAL_DIFFERENCE[("rk4", family)], rtol=1e-7)
+
+    @staticmethod
+    def _fallback_engine(case, method):
+        field = "Ra" if case in ("calls materialize", "plain Ra") else "g_max"
+        network, cells = _network(("a", "Y", "rk4"), ("b", "Y3", "default"), field=field)
+        counter = brainstate.ShortTermState(jnp.zeros(()))
+        ra_state = cells["a"]._runtime.geometry["Ra"]
+        ra_initial = ra_state.value
+        root = next(iter(cells["a"].trainables.parameters().states().values()))
+
+        def step(target_mv):
+            counter.value = counter.value + 1.0
+            if case == "writes a.Ra state":
+                ra_state.value = ra_initial * (1.0 + 1e-3 * counter.value)
+            elif case == "writes a root":
+                root.value = root.value * 1.0001
+            elif case == "calls materialize":
+                network.trainables.materialize()
+            network.update()
+            return sum(jnp.mean((cell.V.value.to_decimal(u.mV) - target_mv) ** 2) for cell in cells.values())
+
+        def initializer():
+            counter.value = jnp.zeros(())
+            network.reset_state()
+
+        engine = build_rollout_value_and_grad(network, step=step, method=method, initializer=initializer)
+        return engine.prepare(_y_targets()[0]), cells
+
+    def test_each_cell_falls_back_on_its_own(self) -> None:
+        # The step's own writes decide, not update()'s refresh of the
+        # trainable parameters (which rewrites Ra at every step), nor the
+        # g_max states the jitted update loop writes back.
+        expected_mode = {
+            "writes a.Ra state": "rollout",
+            "writes a root": "step",
+            "calls materialize": "step",
+            "plain g_max": "rollout",
+            "plain Ra": "rollout",
+        }
+        per_step = {"writes a.Ra state": ("a",), "writes a root": ("a", "b"), "calls materialize": ("a", "b")}
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            for case, main_loss in self._MAIN_LOSS.items():
+                for method in ("bptt", "rtrl"):
+                    with self.subTest(case=case, method=method):
+                        engine, cells = self._fallback_engine(case, method)
+                        self.assertNotEqual(cells["a"]._runtime.n_point, cells["b"]._runtime.n_point)
+                        roots = tuple(state.value for state in engine.parameter_states.values())
+                        closed = jax.make_jaxpr(engine._rtrl if method == "rtrl" else engine._bptt)(
+                            roots, _y_targets(4)
+                        )
+                        if method == "rtrl":
+                            for name, cell in cells.items():
+                                counts = _operator_builds(closed, cell)
+                                looped = counts["scatter"]["loop"] > 0
+                                self.assertEqual(looped, name in per_step.get(case, ()), (name, counts))
+                        result = engine(_y_targets())
+                        np.testing.assert_allclose(float(result.loss), main_loss, rtol=1e-12)
+                        self.assertEqual(engine.axial_operator_mode, expected_mode[case])
+
+    def test_undetected_writes_would_change_the_loss(self) -> None:
+        # Counter-examples: if the step's own Ra write went unnoticed, the
+        # hoisted operator would keep the initial Ra; if every state the
+        # builder reads counted, the staggered Cell would build every step
+        # because the jitted update loop writes back its g_max state.
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            with patch("braincell.experimental.optim.gradients._network_user_writes", return_value=set()):
+                engine, _cells = self._fallback_engine("writes a.Ra state", "bptt")
+            loss = float(engine(_y_targets()).loss)
+            np.testing.assert_allclose(loss, self._MAIN_LOSS["plain g_max"], rtol=1e-12)
+            self.assertGreater(abs(loss - self._MAIN_LOSS["writes a.Ra state"]), 0.5)
+
+            def every_state(_builder, trace):
+                return {id(state) for state in trace.states}
+
+            with patch("braincell.experimental.optim.gradients._operator_inputs", side_effect=every_state):
+                engine, cells = self._fallback_engine("plain g_max", "rtrl")
+            roots = tuple(state.value for state in engine.parameter_states.values())
+            closed = jax.make_jaxpr(engine._rtrl)(roots, _y_targets(4))
+            self.assertGreater(_operator_builds(closed, cells["b"])["scatter"]["loop"], 0)
+
+    def test_lumped_populations_are_left_alone(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            lumped = braincell.Cell.point(2, V_init=-65.0 * u.mV, solver="rk4")
+            lumped.paint(braincell.mech.Channel("IL", name="leak", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV))
+            cell = _y_cable_cell("rk4", "Ra")
+            network = braincell.Network("net")
+            network.add_population("y", cell)
+            network.add_population("point", lumped)
+            network.init_state()
+            network.prepare_run(dt=_Y_DT)
+            cells = {"y": cell, "point": lumped}
+            engine = build_rollout_value_and_grad(network, step=_network_step(network, cells), method="rtrl")
+            result = engine(_y_targets())
+            self.assertEqual(engine.axial_operator_mode, "rollout")
+            roots = tuple(state.value for state in engine.parameter_states.values())
+            self._assert_built_once(jax.make_jaxpr(engine._rtrl)(roots, _y_targets(4)), {"y": cell}, "rollout rtrl")
+            with patch("braincell.experimental.optim.gradients._axial_operator_step", side_effect=_per_step_operator):
+                reference = build_rollout_value_and_grad(network, step=_network_step(network, cells), method="rtrl")
+                expected = reference(_y_targets())
+            self.assertTrue(np.isfinite(float(expected.loss)))
+            np.testing.assert_allclose(float(result.loss), float(expected.loss), rtol=1e-12)
+            np.testing.assert_allclose(
+                _scalar(u.get_mantissa(result.gradients["y.Ra"])),
+                _scalar(u.get_mantissa(expected.gradients["y.Ra"])),
+                rtol=1e-12,
+            )
+
+    def test_scheduled_delivery_update_takes_the_operators(self) -> None:
+        # With scheduled delivery the update loop takes the plans as well.
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            network, cells = _network(("y", "Y", "rk4"), scheduled_delivery="direct")
+            self.assertIsNotNone(network._prepared_plans)
+            engine = build_rollout_value_and_grad(network, step=_network_step(network, cells), method="rtrl")
+            result = engine(_y_targets())
+            self.assertEqual(engine.axial_operator_mode, "rollout")
+            roots = tuple(state.value for state in engine.parameter_states.values())
+            self._assert_built_once(jax.make_jaxpr(engine._rtrl)(roots, _y_targets(4)), cells, "rollout rtrl")
+            # The Cell's loss and gradient (OPT-14): the plans carry no event.
+            np.testing.assert_allclose(float(result.loss), 35.726706283725434, rtol=1e-12)
+            np.testing.assert_allclose(
+                _scalar(u.get_mantissa(result.gradients["y.Ra"])), _RA_CENTRAL_DIFFERENCE[("rk4", "rollout")], rtol=1e-7
+            )
 
 
 if __name__ == "__main__":

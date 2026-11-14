@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import functools
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import brainstate
 import brainunit as u
@@ -75,6 +76,7 @@ from braincell.network.scheduled import (
     scheduled_inputs,
 )
 from braincell.mech import Synapse
+from braincell.quad._staggered import AxialOperatorLayout
 from braincell.quad.protocol import DiffEqState
 
 
@@ -93,10 +95,16 @@ class _RunSetup:
 
 @dataclass(frozen=True)
 class _CachedRunLoop:
-    """Compiled network scan plus its reusable delivery buffers."""
+    """Compiled network scan plus its reusable delivery buffers.
+
+    ``given_runner``, built on first use by :meth:`Network.update`, is the
+    loop that takes the Cells' axial operators as its first argument
+    (OPT-15); ``None`` until then.
+    """
 
     runner: object
     delivery_state: object
+    given_runner: object = None
 
 
 @dataclass(frozen=True)
@@ -192,6 +200,8 @@ class Network:
 
         self.trainables = NetworkTrainables(self)
         self._prepared_run = None
+        # Off only within _update_keeps_trainables().
+        self._refresh_trainables_in_update = True
         # The NetStim horizon of update(): its events up to one step past the step limit (CELL-56).
         self._prepared_until_ms: float | None = None
         # The step update() may not reach: prepare_run(duration=...) generated
@@ -233,6 +243,20 @@ class Network:
         if self._prepared_run is not None:
             setup, cached, dt, join = self._prepared_run
             self._prepared_run = (setup, _CachedRunLoop(runner=None, delivery_state=cached.delivery_state), dt, join)
+
+    @contextlib.contextmanager
+    def _update_keeps_trainables(self):
+        """In the block, :meth:`update` does not refresh the trainable parameters first.
+
+        An optim engine traces the user's step in it to find the states the
+        step itself writes: the refresh writes the parameters' runtime
+        states, the geometry included, at every step (OPT-15).
+        """
+        self._refresh_trainables_in_update = False
+        try:
+            yield
+        finally:
+            self._refresh_trainables_in_update = True
 
     def _mark_topology_changed(self) -> None:
         self._topology_version += 1
@@ -1178,15 +1202,38 @@ class Network:
                 delivery_state=cached.delivery_state,
             )
             self._prepared_run = (setup, cached, dt, join)
-        self.trainables.materialize()
+        if self._refresh_trainables_in_update:
+            self.trainables.materialize()
+        runner, operators = (
+            cached.runner,
+            _installed_axial_operators(self.populations[name].cell for name in setup.ordered_population_names),
+        )
+        if operators is not None:
+            # An optim engine built the Cells' axial operators before its
+            # scan (OPT-15): the loop takes them as arguments.
+            if cached.given_runner is None:
+                cached = replace(
+                    cached,
+                    given_runner=self._make_network_run_loop(
+                        setup=setup,
+                        dt=dt,
+                        n_steps=1,
+                        delivery_state=cached.delivery_state,
+                        scheduled_delivery=self._runtime_config[-1],
+                        join=join,
+                        operator_given=True,
+                    ),
+                )
+                self._prepared_run = (setup, cached, dt, join)
+            runner = functools.partial(cached.given_runner, operators[1])
         values = self._take_value_inputs(setup.ordered_population_names)
         try:
             # A trace of the step reads the NetStim events prepare_run generated.
-            with _schedule_horizon(self._prepared_until_ms):
+            with _schedule_horizon(self._prepared_until_ms), _given_layouts(operators):
                 if self._prepared_plans is None:
-                    cached.runner(values)
+                    runner(values)
                 else:
-                    cached.runner(values, self._prepared_plans)
+                    runner(values, self._prepared_plans)
         except BaseException:
             self._restore_value_inputs(values)
             raise
@@ -1398,6 +1445,7 @@ class Network:
         delivery_state,
         scheduled_delivery: str | None = None,
         join: _Join = _Join(),
+        operator_given: bool = False,
     ):
         """Create a persistent jitted scan of ``n_steps`` steps for one network run shape.
 
@@ -1415,6 +1463,10 @@ class Network:
         hand-over. Every step prepares the boundary it starts at for every
         Cell, the first included (CELL-55), so the loop of ``update()``,
         which runs one step per call, is the loop of a one-step run.
+
+        With ``operator_given`` the loop takes first one entry per Cell, the
+        leaves of its axial operator or ``None``
+        (:func:`~braincell._multi_compartment.axial_operator.axial_operator_before_steps`).
         """
         from braincell.network.event import boundary_step, grid_step, handed_over
 
@@ -1495,14 +1547,15 @@ class Network:
                 cell._clock_step.value = end_step
             return times, origin + step * dt, origin + end_step * dt, samples_over_time
 
-        loop = axial_operator_before_steps(_run_loop, cells)
+        loop = axial_operator_before_steps(_run_loop, cells, given=operator_given)
         if scheduled_delivery is None:
             return brainstate.transform.jit(loop)
         routes = self._scheduled_plans.routes
 
-        def _scheduled_run_loop(values, plans):
-            with scheduled_inputs(scheduled_delivery, routes, plans):
-                return loop(values)
+        def _scheduled_run_loop(*args):
+            # (operators,) values, plans
+            with scheduled_inputs(scheduled_delivery, routes, args[-1]):
+                return loop(*args[:-1])
 
         return brainstate.transform.jit(_scheduled_run_loop)
 
@@ -1995,6 +2048,48 @@ def _event_source_metadata(population: str, port: str, view) -> dict:
 def _holds(handle, state) -> bool:
     """Whether ``handle`` (an ``EventHistoryHandle`` or ``None``) is ``state``'s."""
     return handle is not None and handle.holds(state)
+
+
+def _installed_axial_operators(cells):
+    """``(layouts, leaves)`` of the axial operators installed on ``cells``, one entry per Cell (OPT-15).
+
+    An optim engine installs each cable Cell's operator, built once before
+    its scan (``installed_axial_operator``), while it traces the user's
+    step; a Cell without one has ``None`` in both. ``None`` when no Cell has
+    one, as outside such a trace.
+    """
+    layouts, leaves = [], []
+    for cell in cells:
+        built = getattr(getattr(cell, "_runtime", None), "run_axial_operator", None)
+        layout, arrays = (None, None) if built is None else AxialOperatorLayout.split(built)
+        layouts.append((cell, layout))
+        leaves.append(arrays)
+    if all(arrays is None for arrays in leaves):
+        return None
+    return tuple(layouts), tuple(leaves)
+
+
+@contextlib.contextmanager
+def _given_layouts(operators):
+    """Keep the layouts of ``operators`` (:func:`_installed_axial_operators`) on their Cells' runtimes in the block.
+
+    The loop that takes the operators reads them when it is traced; the
+    layouts hold that trace's arrays, so they are restored on exit.
+    """
+    if operators is None:
+        yield
+        return
+    restore = []
+    try:
+        for cell, layout in operators[0]:
+            if layout is not None:
+                runtime = cell._runtime
+                restore.append((runtime, runtime.axial_operator_layout))
+                runtime.axial_operator_layout = layout
+        yield
+    finally:
+        for runtime, layout in reversed(restore):
+            runtime.axial_operator_layout = layout
 
 
 def _reset_delivery_state(state) -> None:

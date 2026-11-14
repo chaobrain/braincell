@@ -1583,6 +1583,28 @@
   step that writes the geometry or an optimizer root keeps building the
   operator at every step, with main's results; the new `axial_operator_mode`
   property reports `"rollout"`, `"step"` or `"none"`.
+- **The `experimental.optim` engines also build the axial operators of a
+  `Network` target once per scan** (OPT-15). A step that calls
+  `Network.update()` ran the Network's one-step loop, which built each cable
+  Cell's operator again at every step. The engines now build every cable
+  population's operator once from the scan's initial states and pass it to
+  `update()`, whose loop takes the operators as arguments; `Network.run`, and
+  `update()` outside an engine, are unchanged. On a one-population CA1 Network
+  (`rk4`, float64, `Ra` trainable) a step took 72-91 ms on one CPU core and
+  20.7-23.5 ms on an RTX 3090 on main `6e38470`; it now takes 0.83-0.93 ms
+  and 0.20-0.32 ms. With sodium `g_max` trainable, the GPU RTRL entries went
+  from 14.9-15.0 to 0.20-0.21 ms per step; BPTT on GPU and every CPU entry
+  are unchanged, as XLA already moved those builds out of the loop. A CPU run
+  with `Ra` now pays one build, 85-92 ms against 21-37 ms of fixed cost
+  before. These are medians of 9 calls in 3 rounds, at load1 5-8 on CPU and
+  6-17 on GPU. Losses are
+  unchanged; gradients change only in the last bits (at most 1.2e-14). A
+  population whose geometry the step writes keeps building its own operator
+  at every step; `axial_operator_mode` is now `"rollout"` for a Network with
+  a cable population (it was `"none"`). The refresh of the trainable
+  parameters that `update()` makes at every step does not count as such a
+  write, and for Cell and Network targets alike only the states that reach
+  the operator decide.
 - **The optional gating current no longer enters the voltage linearization**
   (MECH-40). With `gateCurrent != 0`, `Kv1p1_MA2025_BC`, `Kv1p1_MA2024_PC`,
   `Kv1p1_RI2021_SC`, `Kv1p1_MA2020_GoC`, `Kv1p1_MA2020_GrC`,

@@ -33,6 +33,7 @@ from braincell.channel.calcium import (
     CaN_IS2008,
     CaT_HM1992,
     CaT_HM1992_Shifted25,
+    CaT_HM1992_GHK,
     CaT_HP1992,
     CaHT_Re1993,
     CaL_IS2008,

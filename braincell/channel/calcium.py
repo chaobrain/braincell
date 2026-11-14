@@ -43,6 +43,7 @@ __all__ = [
     "CaN_IS2008",
     "CaT_HM1992",
     "CaT_HM1992_Shifted25",
+    "CaT_HM1992_GHK",
     "CaT_HP1992",
     "CaHT_Re1993",
     "CaL_IS2008",
@@ -667,6 +668,63 @@ class CaT_HM1992_Shifted25(CaT_HM1992):
             temp_ref_q=temp_ref_q,
             V_sh=V_sh,
             name=name,
+        )
+
+
+@register_channel("CaT_HM1992_GHK")
+class CaT_HM1992_GHK(GhkHH):
+    r"""PROTOTYPE (MECH-49): ITGHK.mod, ModelDB 279."""
+
+    __module__ = "braincell.channel"
+    root_type = Calcium
+    gates = (
+        Gate("p", power=2, q10="q10_p", temp_ref="temp_ref_p"),
+        Gate("q", q10="q10_q", temp_ref="temp_ref_q"),
+    )
+
+    def __init__(
+        self,
+        size: Size,
+        perm: Initializer = 0.2e-3 * (u.cm / u.second),
+        temp: ArrayLike = u.celsius2kelvin(36.0),
+        q10_p: Initializer = 5.0,
+        temp_ref_p: ArrayLike = u.celsius2kelvin(24.0),
+        q10_q: Initializer = 3.0,
+        temp_ref_q: ArrayLike = u.celsius2kelvin(24.0),
+        V_sh: Initializer = -2.0 * u.mV,
+        name: Optional[str] = None,
+    ):
+        super().__init__(size=size, name=name)
+        self.perm = braintools.init.param(perm, self.varshape, allow_none=False)
+        self.temp = braintools.init.param(temp, self.varshape, allow_none=False)
+        self.q10_p = braintools.init.param(q10_p, self.varshape, allow_none=False)
+        self.temp_ref_p = braintools.init.param(temp_ref_p, self.varshape, allow_none=False)
+        self.q10_q = braintools.init.param(q10_q, self.varshape, allow_none=False)
+        self.temp_ref_q = braintools.init.param(temp_ref_q, self.varshape, allow_none=False)
+        self.V_sh = braintools.init.param(V_sh, self.varshape, allow_none=False)
+        self.z = 2
+
+    def permeability(self):
+        return self.perm
+
+    def f_p_inf(self, V, Ca: IonInfo):
+        V = (V - self.V_sh).to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp(-(V + 57.0) / 6.2))
+
+    def f_p_tau(self, V, Ca: IonInfo):
+        V = (V - self.V_sh).to_decimal(u.mV)
+        return 0.612 + 1.0 / (u.math.exp(-(V + 132.0) / 16.7) + u.math.exp((V + 16.8) / 18.2))
+
+    def f_q_inf(self, V, Ca: IonInfo):
+        V = (V - self.V_sh).to_decimal(u.mV)
+        return 1.0 / (1.0 + u.math.exp((V + 81.0) / 4.0))
+
+    def f_q_tau(self, V, Ca: IonInfo):
+        V = (V - self.V_sh).to_decimal(u.mV)
+        return u.math.where(
+            V < -80.0,
+            u.math.exp((V + 467.0) / 66.6),
+            28.0 + u.math.exp(-(V + 22.0) / 10.5),
         )
 
 

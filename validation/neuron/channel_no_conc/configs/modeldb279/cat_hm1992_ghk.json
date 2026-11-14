@@ -1,0 +1,40 @@
+{
+  "meta": {
+    "label": "Huguenard & McCormick 1992 T current, GHK (ModelDB 279 ITGHK.mod)"
+  },
+  "identity": {
+    "mod_dir": "../../../artifacts/mechanisms/testing/subset-b69586fc3ae4c682"
+  },
+  "defaults": {
+    "ion_state": {
+      "Ci_mM": 0.00024,
+      "Co_mM": 2.0
+    },
+    "channel_params": {
+      "perm_cm_s": 0.0002
+    }
+  },
+  "mapping": {
+    "current": "ica",
+    "impl_name": {
+      "neuron": "itGHK",
+      "braincell": "CaT_HM1992_GHK"
+    },
+    "gate_names": {
+      "canonical": ["p", "q"],
+      "neuron": ["m", "h"],
+      "braincell": ["p", "q"]
+    },
+    "channel_params": {
+      "perm_cm_s": {
+        "neuron": "pcabar",
+        "braincell": "perm"
+      }
+    }
+  },
+  "templates": [
+    "../../templates/vinit_celsius.json",
+    "../../templates/dc.json",
+    "../../templates/ac.json"
+  ]
+}

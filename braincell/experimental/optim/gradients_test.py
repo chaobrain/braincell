@@ -1123,13 +1123,20 @@ class WeakTypedExampleTest(unittest.TestCase):
         return results, prepared
 
     def _assert_identical(self, actual, expected):
+        def gradient(result):
+            # The one root: "Ra" on a Cell, prefixed by the population on a Network.
+            (value,) = result.gradients.values()
+            return u.get_mantissa(value)
+
         for label in expected:
             with self.subTest(entry=label):
-                loss, gradient = expected[label].loss, u.get_mantissa(expected[label].gradients["Ra"])
+                loss = expected[label].loss
                 self.assertTrue(np.isfinite(float(loss)) and float(loss) != 0.0, float(loss))
-                self.assertTrue(np.all(np.isfinite(gradient)) and np.all(gradient != 0.0), gradient)
+                self.assertTrue(np.all(np.isfinite(gradient(expected[label]))), gradient(expected[label]))
+                self.assertTrue(np.all(gradient(expected[label]) != 0.0), gradient(expected[label]))
+                self.assertEqual(tuple(actual[label].gradients), tuple(expected[label].gradients))
                 np.testing.assert_array_equal(np.asarray(actual[label].loss), np.asarray(loss))
-                np.testing.assert_array_equal(u.get_mantissa(actual[label].gradients["Ra"]), gradient)
+                np.testing.assert_array_equal(gradient(actual[label]), gradient(expected[label]))
 
     def test_weak_example_matches_strong_example(self) -> None:
         with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):

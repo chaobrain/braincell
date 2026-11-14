@@ -581,7 +581,7 @@ class LumpedStiffGateTest(unittest.TestCase):
     def test_non_stiff_channels_do_not_warn_and_are_unchanged(self) -> None:
         # CaHVA_MA2020_GoC's s gate reaches 78.4 /ms (at +60 mV): 78.4 * 0.025 = 1.96, just inside the bound.
         cases = (
-            ("Kv3p4_MA2020_GoC", (bc.mech.Channel("Kv3p4_MA2020_GoC"),), None, True),
+            ("Kv3p4_MA2020_GoC", (bc.mech.Channel("Kv3p4_MA2020_GoC"),), ("PotassiumFixed", "k"), True),
             ("CaHVA_MA2020_GoC", (bc.mech.Channel("CaHVA_MA2020_GoC", ion_name="ca"),), ("CalciumFixed", "ca"), True),
             ("HH1952", _mechanisms(True), None, False),
         )

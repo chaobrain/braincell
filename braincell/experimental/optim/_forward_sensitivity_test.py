@@ -63,6 +63,7 @@ def _leak_cell():
 
 def _hh_cell():
     cell = braincell.Cell(_build_tree(), pop_size=(1,))
+    cell.paint(AllRegion(), braincell.mech.Ion("SodiumFixed", name="na"), braincell.mech.Ion("PotassiumFixed", name="k"))
     cell.paint(
         AllRegion(),
         braincell.mech.Channel(
@@ -210,6 +211,7 @@ class ForwardSensitivityCoreTest(unittest.TestCase):
     def test_parameter_dependent_reset_is_included_in_initial_sensitivity(self) -> None:
         with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
             cell = braincell.Cell(_build_tree(), pop_size=(1,))
+            cell.paint(AllRegion(), braincell.mech.Ion("SodiumFixed", name="na"))
             cell.paint(
                 AllRegion(),
                 braincell.mech.Channel("Na_HH1952", name="na", g_max=12.0 * u.mS / u.cm**2),

@@ -146,6 +146,7 @@ class MaterializationScheduleTest(unittest.TestCase):
                 ("K_HH1952", "k", 3.6),
                 ("Na_HH1952", "na", 12.0),
             ):
+                cell.paint(AllRegion(), braincell.mech.Ion("SodiumFixed", name="na"), braincell.mech.Ion("PotassiumFixed", name="k"))
                 cell.paint(
                     AllRegion(),
                     braincell.mech.Channel(
@@ -491,6 +492,7 @@ class RolloutGradientEngineTest(unittest.TestCase):
     def test_default_initializer_differentiates_parameter_dependent_reset(self) -> None:
         def make_cell():
             cell = braincell.Cell(_build_tree(), pop_size=(1,))
+            cell.paint(AllRegion(), braincell.mech.Ion("SodiumFixed", name="na"))
             cell.paint(
                 AllRegion(),
                 braincell.mech.Channel("Na_HH1952", name="na", g_max=12.0 * u.mS / u.cm**2),
@@ -688,6 +690,7 @@ class TrajectoryGradientEngineTest(unittest.TestCase):
     def test_two_pass_includes_parameter_dependent_reset(self) -> None:
         def make_cell():
             cell = braincell.Cell(_build_tree(), pop_size=(1,))
+            cell.paint(AllRegion(), braincell.mech.Ion("SodiumFixed", name="na"))
             cell.paint(
                 AllRegion(),
                 braincell.mech.Channel("Na_HH1952", name="na", g_max=12.0 * u.mS / u.cm**2),

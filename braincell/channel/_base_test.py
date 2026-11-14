@@ -1595,7 +1595,9 @@ class GateResetShapeTest(unittest.TestCase):
                 )
                 cell.paint(AllRegion(), Channel(name))
                 cell.loc(at("soma", 0.5)).record("v", braincell.observe.state("V"))
-                cell.init_state()
+                # Calcium is not declared, so it binds the placeholder (CELL-78).
+                with self.assertWarnsRegex(UserWarning, f"{name} binds ion family 'ca'"):
+                    cell.init_state()
                 cell.reset_state()
                 result = cell.run(dt=0.025 * u.ms, duration=0.1 * u.ms)
                 trace = result.traces["v"].to_decimal(u.mV)

@@ -2319,7 +2319,9 @@ class BatchLiveConnectionTest(unittest.TestCase):
                 np.testing.assert_allclose(g, whole, rtol=1e-12, atol=1e-18)
             with self.subTest("reset_state()"):
                 cell.reset_state(batch_size=2)
-                np.testing.assert_allclose(_v_g(cell.run(dt=DT, duration=self.N * DT))[1], whole, rtol=1e-12, atol=1e-18)
+                np.testing.assert_allclose(
+                    _v_g(cell.run(dt=DT, duration=self.N * DT))[1], whole, rtol=1e-12, atol=1e-18
+                )
             with self.subTest("update() loop"):
                 looped = _live_batch_cell("lumped", 3, _LUMPED_DRIVE)
                 looped.init_state(batch_size=2)
@@ -2340,7 +2342,11 @@ class BatchLiveConnectionTest(unittest.TestCase):
         def reduced():
             cell = _reduced_cell()
             braincell.connect(
-                "self", source=cell.event_outputs["spike"], synapse=cell.synapses["input"], weight=0.2 * u.uS, delay=3 * DT
+                "self",
+                source=cell.event_outputs["spike"],
+                synapse=cell.synapses["input"],
+                weight=0.2 * u.uS,
+                delay=3 * DT,
             )
             braincell.connect("drive", source=_netstim(), synapse=cell.synapses["input"], weight=0.2 * u.uS)
             return cell
@@ -2369,16 +2375,27 @@ class BatchLiveConnectionTest(unittest.TestCase):
             self.assertTrue(np.any(np.asarray(cell.spike.value)))
             cell.run(dt=DT, duration=DT)
             history = [np.asarray(call.live_history.value).copy() for call in cell._get_connection_store()._calls]
-            buffers = {key: np.asarray(u.get_mantissa(value.value)).copy() for key, value in cell._runtime.event_buffers.items()}
-            states = {path: np.asarray(u.get_mantissa(state.value)).copy() for path, state in brainstate.graph.states(cell).items() if not isinstance(state.value, dict)}
+            buffers = {
+                key: np.asarray(u.get_mantissa(value.value)).copy()
+                for key, value in cell._runtime.event_buffers.items()
+            }
+            states = {
+                path: np.asarray(u.get_mantissa(state.value)).copy()
+                for path, state in brainstate.graph.states(cell).items()
+                if not isinstance(state.value, dict)
+            }
             with self.assertRaisesRegex(ValueError, "in flight"):
                 cell.run(dt=DT / 2, duration=DT)
             for call, before in zip(cell._get_connection_store()._calls, history):
                 np.testing.assert_array_equal(np.asarray(call.live_history.value), before)
             for key, before in buffers.items():
-                np.testing.assert_array_equal(np.asarray(u.get_mantissa(cell._runtime.event_buffers[key].value)), before)
+                np.testing.assert_array_equal(
+                    np.asarray(u.get_mantissa(cell._runtime.event_buffers[key].value)), before
+                )
             for path, before in states.items():
-                np.testing.assert_array_equal(np.asarray(u.get_mantissa(brainstate.graph.states(cell)[path].value)), before)
+                np.testing.assert_array_equal(
+                    np.asarray(u.get_mantissa(brainstate.graph.states(cell)[path].value)), before
+                )
             cell.reset_state(batch_size=2)
             cell.run(dt=DT / 2, duration=DT)
 

@@ -2036,7 +2036,8 @@ def _cell_fingerprint(cell):
         for path, state in brainstate.graph.states(cell).items()
     }
     buffers = {
-        key: np.asarray(u.get_mantissa(value.value)).copy() for key, value in cell._event_runtime().event_buffers.items()
+        key: np.asarray(u.get_mantissa(value.value)).copy()
+        for key, value in cell._event_runtime().event_buffers.items()
     }
     calls = [
         (

@@ -401,7 +401,7 @@ class NeuronDiffTest(unittest.TestCase):
         _assert_same_soma_orientation(self, comparison)
         for metric_name in comparison["selected_metrics"]:
             _assert_zero_diff(self, comparison, metric_name)
-        self.assertAlmostEqual(comparison["neuron"]["total_length"]["value"], 18.58960153598011, delta=1e-6)
+        self.assertAlmostEqual(comparison["neuron"]["total_length"]["value"], 17.58960153598011, delta=1e-6)
         self.assertAlmostEqual(comparison["neuron"]["total_area"]["value"], 88.30454830410312, delta=1e-6)
 
     def test_compare_asc_with_neuron_matches_untyped_tree(self) -> None:

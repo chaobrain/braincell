@@ -2921,6 +2921,20 @@
   the engine rewrites from the roots each step are not asked for. Calls that
   pass the check are unchanged bit for bit.
 
+- **Exact and compact RTRL run on a model with a Python `int` runtime
+  parameter** (OPT-22). With `AHP_De1994(n=2)` on the two-branch HH cable with
+  a `CalciumDetailed` pool, `build_rollout_value_and_grad(..., method="rtrl")`
+  raised `ValueError: linearized function called on tangent values
+  inconsistent with the original primal values: Got tangent aval ~int64[] for
+  primal aval ~int64[] but expected ~float0[]` (main `188fcd8`), and so did
+  compact forward sensitivity, which starts from the same carry; BPTT worked.
+  The zero tangent of a leaf without a `dtype` (a Python number) was always a
+  float zero; a Python `int` or `bool` now gets a `float0` tangent, as an
+  integer array does. On that cable (32 steps, float64) the RTRL and compact
+  `g_max` gradients (-50.00477501350579 with `rk4`) are within 5.9e-14 of
+  BPTT, and equal those with `n=2.0`; float-only models give the same losses
+  and gradients bit for bit.
+
 ### Documentation
 
 - The `scheduled_delivery` advice in the `Network.run` docstring follows

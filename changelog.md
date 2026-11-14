@@ -2767,6 +2767,23 @@
     `RuntimeError`. Call `cell.connections.prepare_runtime(dt)` once outside
     the trace.
 
+- **Compact forward sensitivity refuses an active set that would drop a
+  trainable parameter** (OPT-16). When an engine materializes the trainable
+  values before the rollout (`materialization_mode == "rollout"`, e.g. a
+  sodium `g_max` scale), the step reads the parameter only through the
+  channel's runtime parameter State. `compact_forward_sensitivity_rollout`
+  gives every State outside the active set a zero tangent, so with V and the
+  gates active it returned a `g_max` gradient of exactly 0; on the OPT-14 Y
+  cable (32 steps, float64, main `0d69ab8`) the central differences are
+  -2.4801 (`rk4`) and -3.8924 (default solver). `FunctionalStep` now records
+  these States in `materialized_states`, and `build_active_state_projection`,
+  `compact_forward_sensitivity_rollout` and `compact_forward_sensitivity_step`
+  raise `ValueError` naming each one (e.g. `channel:Na_HH1952.g_max`) unless
+  all its coordinates are selected. With the State selected the gradients are
+  -2.4800507 and -3.8923652, within 6.2e-10 of the central differences.
+  Calls that were already exact are unchanged bit for bit. A State the step
+  itself writes and the selection leaves out is still not detected (OPT-18).
+
 ### Documentation
 
 - The `scheduled_delivery` advice in the `Network.run` docstring follows

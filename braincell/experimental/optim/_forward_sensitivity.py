@@ -66,7 +66,14 @@ class OperatorInput(NamedTuple):
 
 
 class FunctionalStep(NamedTuple):
-    """A stateful step exposed as an explicit state-value transition."""
+    """A stateful step exposed as an explicit state-value transition.
+
+    ``materialized_states`` lists ``(index, label)`` for each state that
+    holds trainable values written before the rollout rather than by the
+    step (an engine's ``materialization_mode == "rollout"``): the step reads
+    the parameters only through these states, so a compact carry must keep
+    their sensitivity (see :func:`build_active_state_projection`).
+    """
 
     function: brainstate.transform.StatefulFunction
     state_trace: brainstate.StateTraceStack
@@ -74,6 +81,7 @@ class FunctionalStep(NamedTuple):
     parameter_states: tuple[brainstate.ParamState, ...]
     parameter_indices: tuple[int, ...]
     operator: OperatorInput | None = None
+    materialized_states: tuple[tuple[int, str], ...] = ()
 
     def state_values(self):
         """Return current values in the state order expected by ``jaxpr_call``."""
@@ -441,7 +449,12 @@ def build_active_state_projection(
     TypeError
         If a selection is not an ``ActiveStateSelection``.
     ValueError
-        If names repeat, a state is not traced, or an index is invalid.
+        If names repeat, a state is not traced, or an index is invalid. Also
+        if the selections leave out a coordinate of a state in
+        ``functional_step.materialized_states``: the step reads the
+        trainable parameters only through those states, so a compact carry
+        without them would drop the parameters' sensitivity and return a
+        zero gradient for them.
     """
     state_values = functional_step.state_values() if state_values is None else state_values
     traced_states = tuple(functional_step.state_trace.states)
@@ -479,7 +492,39 @@ def build_active_state_projection(
         offset += len(indices)
     if not resolved:
         raise ValueError("Active state projection requires at least one selection.")
-    return ActiveStateProjection(tuple(resolved), offset)
+    projection = ActiveStateProjection(tuple(resolved), offset)
+    _check_materialized_states_active(functional_step, projection, state_values)
+    return projection
+
+
+def _check_materialized_states_active(functional_step: FunctionalStep, projection, state_values) -> None:
+    """Raise unless ``projection`` keeps every coordinate of the step's materialized states.
+
+    The full sensitivity of such a state is its initial one, set by the
+    initializer from the optimizer roots; the step itself never writes it.
+    A compact carry gives every unselected state a zero tangent at each
+    step, which for these states silently removes the parameters from the
+    gradient.
+    """
+    if not functional_step.materialized_states:
+        return
+    selected: dict[int, set[int]] = {}
+    for selection in projection.selections:
+        selected.setdefault(selection.state_index, set()).update(selection.indices)
+    missing = []
+    for index, label in functional_step.materialized_states:
+        size = _single_array_leaf(state_values[index], label=label).size
+        count = len(selected.get(index, ()))
+        if count < size:
+            missing.append(f"{label} (state_trace.states[{index}], {count} of {size} coordinates selected)")
+    if missing:
+        raise ValueError(
+            f"The active states leave out {', '.join(missing)}. The trainable parameters "
+            f"{functional_step.parameter_names!r} reach the step only through these states, which hold "
+            "values materialized before the rollout, so the compact gradient would omit them (zero when "
+            "nothing else depends on the parameters). Select every coordinate of each such state, or call "
+            "the target's trainables.materialize() inside the step so that the step reads the optimizer roots."
+        )
 
 
 def seed_scalar_parameter_directions(functional_step: FunctionalStep, state_values):
@@ -603,8 +648,15 @@ def compact_forward_sensitivity_step(
     operator=None,
     operator_tangents=None,
 ):
-    """Advance one step while carrying only selected active-state sensitivity."""
+    """Advance one step while carrying only selected active-state sensitivity.
 
+    Raises
+    ------
+    ValueError
+        As :func:`build_active_state_projection`, if ``projection`` leaves out
+        a coordinate of a state in ``functional_step.materialized_states``.
+    """
+    _check_materialized_states_active(functional_step, projection, state_values)
     full_state_tangents = projection.embed_tangents(
         state_values,
         active_state_tangents,
@@ -698,12 +750,29 @@ def compact_forward_sensitivity_rollout(
     initial_active_state_tangents,
     step_data,
 ) -> ForwardSensitivityResult:
-    """Scan an exact rollout with a compact ``(parameter, active_state)`` carry."""
+    """Scan an exact rollout with a compact ``(parameter, active_state)`` carry.
+
+    The result is exact when the active states carry every sensitivity the
+    loss depends on: the selection must include each state whose tangent is
+    not zero, since every other state starts each step with a zero tangent.
+    States materialized before the rollout are checked (below); a state the
+    step itself writes and the selection leaves out (an unselected calcium
+    concentration, say) is not detected and silently drops its part of the
+    gradient (OPT-18).
+
+    Raises
+    ------
+    ValueError
+        If ``initial_active_state_tangents`` has the wrong shape, or, as
+        :func:`build_active_state_projection`, if ``projection`` leaves out a
+        coordinate of a state in ``functional_step.materialized_states``.
+    """
     expected = (parameter_coordinates.size, projection.size)
     if tuple(initial_active_state_tangents.shape) != expected:
         raise ValueError(
             f"Initial active-state tangents must have shape {expected!r}, got {initial_active_state_tangents.shape!r}."
         )
+    _check_materialized_states_active(functional_step, projection, initial_state_values)
     gradient_dtype = _parameter_dtype(functional_step, initial_state_values)
     initial_gradient = jnp.zeros((parameter_coordinates.size,), dtype=gradient_dtype)
     operator, operator_tangents = functional_step.build_operator_with_tangents(

@@ -718,7 +718,33 @@ def _prepare_steps(engine, example_step_data, *, require_scalar_output):
         materialize=mode == "step",
         require_scalar_output=require_scalar_output,
     )
+    if mode == "rollout":
+        functional_step = _with_materialized_states(engine, functional_step, guarded_states)
     return initializer_step, functional_step, mode, operator_mode
+
+
+def _with_materialized_states(engine, functional_step, guarded_states):
+    """Record where the step reads the states materialized before the rollout (OPT-16).
+
+    The roots are excluded: the step reads them too (they stay in its trace)
+    but its result does not depend on them. Each state is labelled with the
+    runtime node and field it backs, for the compact-sensitivity check.
+    """
+    roots = {id(state) for state in engine.parameter_states.values()}
+    runtime = engine.target._runtime
+    labels = {}
+    for layout in runtime.layouts:
+        node = runtime.runtime_nodes.get(layout.id)
+        for field, value in getattr(node, "__dict__", {}).items():
+            if isinstance(value, brainstate.State):
+                labels.setdefault(id(value), f"{layout.kind}.{field}")
+    positions = {id(state): index for index, state in enumerate(functional_step.state_trace.states)}
+    materialized = tuple(
+        (positions[id(state)], labels.get(id(state), type(state).__name__))
+        for state in guarded_states
+        if id(state) not in roots and id(state) in positions
+    )
+    return functional_step._replace(materialized_states=materialized)
 
 
 def _changed_writes(trace):

@@ -30,9 +30,13 @@ from braincell._compute._testing import _build_tree
 from braincell.filter import AllRegion, RootLocation
 
 from braincell.experimental.optim._forward_sensitivity import (
+    ActiveStateSelection,
     _align_state_values,
     bptt_reference_loss,
+    build_active_state_projection,
     build_stateful_step,
+    compact_forward_sensitivity_rollout,
+    compact_forward_sensitivity_step,
     forward_sensitivity_rollout,
     forward_sensitivity_step,
     initialize_forward_sensitivity,
@@ -413,6 +417,174 @@ class ForwardSensitivityCoreTest(unittest.TestCase):
                     self.assertNotEqual(float(given[3][0]), 0.0)
                     np.testing.assert_allclose(given[2], built[2], rtol=1e-12)
                     np.testing.assert_allclose(given[3], built[3], rtol=1e-12)
+
+
+_COMPACT_STEPS = 32
+
+
+def _compact_hh_cell(field):
+    """Two-branch HH cable, ions declared, a 0.1 nA step at the root; one ``scale`` root on ``field``."""
+    cell = braincell.Cell(_build_tree(), pop_size=(2,), V_init=-65.0 * u.mV)
+    cell.paint(
+        AllRegion(),
+        braincell.mech.Ion("SodiumFixed", E=50.0 * u.mV),
+        braincell.mech.Ion("PotassiumFixed", E=-77.0 * u.mV),
+        braincell.mech.Channel("Na_HH1952", name="na", g_max=120.0 * u.mS / u.cm**2),
+        braincell.mech.Channel("K_HH1952", name="k", g_max=36.0 * u.mS / u.cm**2),
+        braincell.mech.Channel("IL", name="leak", g_max=0.3 * u.mS / u.cm**2, E=-54.3 * u.mV),
+    )
+    cell.place(
+        RootLocation(0.5),
+        braincell.mech.CurrentClamp(delay=0.0 * u.ms, durations=50.0 * u.ms, amplitudes=0.1 * u.nA),
+    )
+    cell.init_state()
+    source = braincell.trainable.scale(group_by="all", name=field)
+    if field == "Ra":
+        cell.geometry.Ra.trainable(source)
+    else:
+        cell.channels["na"].trainable(g_max=source)
+    cell.reset_state()
+    return cell
+
+
+def _compact_case(field, *, materialize_in_step=False):
+    """The cell, its BPTT and RTRL rollout engines and the V, m, h, n selections."""
+    cell = _compact_hh_cell(field)
+
+    def step(target_mv):
+        if materialize_in_step:
+            cell.trainables.materialize()
+        cell.update()
+        return jnp.mean((cell.V.value.to_decimal(u.mV) - target_mv) ** 2)
+
+    example = jnp.asarray(-64.0)
+    bptt = build_rollout_value_and_grad(cell, step=step, method="bptt").prepare(example)
+    rtrl = build_rollout_value_and_grad(cell, step=step, method="rtrl").prepare(example)
+
+    def node(kind):
+        layout = next(layout for layout in cell.layouts if layout.kind == kind)
+        return cell.runtime.get_runtime_node(layout.id)
+
+    sodium, potassium = node("channel:Na_HH1952"), node("channel:K_HH1952")
+    selections = [
+        _select_all("V", cell.V),
+        _select_all("m", sodium.p),
+        _select_all("h", sodium.q),
+        _select_all("n", potassium.p),
+    ]
+    return cell, bptt, rtrl, sodium, selections
+
+
+def _select_all(name, state):
+    return ActiveStateSelection(name, state, tuple(range(int(np.size(u.get_mantissa(state.value))))))
+
+
+def _compact_gradient(engine, projection, roots, data):
+    values, tangents = engine._initial_full_carry(roots)
+    result = compact_forward_sensitivity_rollout(
+        engine._functional_step,
+        projection,
+        engine._parameter_coordinates,
+        values,
+        projection.extract_tangents(tangents),
+        data,
+    )
+    return result.final_gradient[0]
+
+
+def _central_difference(engine, roots, data, h=1e-5):
+    loss = jax.jit(lambda parameters: engine._bptt(parameters, data).loss)
+    return (float(loss((roots[0] + h,))) - float(loss((roots[0] - h,)))) / (2 * h)
+
+
+def _state_fingerprint(cell, functional_step):
+    """Every traced state's value, the step's fields and the cell's attributes, for a refused call."""
+    values = tuple(np.asarray(u.get_mantissa(leaf)) for leaf in jax.tree.leaves(functional_step.state_values()))
+    return values, tuple(functional_step), dict(vars(cell))
+
+
+class CompactActiveStateTest(unittest.TestCase):
+    """OPT-16: a compact carry must keep the states a trainable parameter reaches the step through."""
+
+    def _assert_fingerprint_unchanged(self, before, after):
+        for old, new in zip(before[0], after[0]):
+            np.testing.assert_array_equal(old, new)
+        self.assertEqual(len(before[0]), len(after[0]))
+        self.assertEqual(len(before[1]), len(after[1]))
+        for old, new in zip(before[1], after[1]):
+            self.assertIs(old, new)
+        self.assertEqual(before[2].keys(), after[2].keys())
+        for key, value in before[2].items():
+            self.assertIs(after[2][key], value, key)
+
+    def test_rollout_materialized_g_max_outside_the_active_states_is_refused(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            cell, _bptt, rtrl, sodium, selections = _compact_case("g_max")
+            step = rtrl._functional_step
+            self.assertEqual(rtrl.materialization_mode, "rollout")
+            g_max = vars(sodium)["g_max"]
+            before = _state_fingerprint(cell, step)
+            with self.assertRaises(ValueError) as caught:
+                build_active_state_projection(step, selections)
+            self._assert_fingerprint_unchanged(before, _state_fingerprint(cell, step))
+            message = str(caught.exception)
+            self.assertIn("channel:Na_HH1952.g_max", message)
+            index = next(i for i, state in enumerate(step.state_trace.states) if state is g_max)
+            self.assertIn(f"state_trace.states[{index}]", message)
+            self.assertIn("'g_max'", message)
+            self.assertEqual(step.materialized_states, ((index, "channel:Na_HH1952.g_max"),))
+
+            # A second call is refused the same way.
+            with self.assertRaisesRegex(ValueError, "channel:Na_HH1952.g_max"):
+                build_active_state_projection(step, selections)
+
+    def test_each_compact_entry_refuses_a_projection_built_without_the_check(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            cell, _bptt, rtrl, _sodium, selections = _compact_case("g_max")
+            step = rtrl._functional_step
+            # A projection built against a step that records no materialized
+            # state is refused when used with the engine's step.
+            projection = build_active_state_projection(step._replace(materialized_states=()), selections)
+            roots = tuple(state.value for state in rtrl.parameter_states.values())
+            values, tangents = rtrl._initial_full_carry(roots)
+            active = projection.extract_tangents(tangents)
+            data = jnp.linspace(-64.0, -60.0, 4)
+            before = _state_fingerprint(cell, step)
+            with self.assertRaises(ValueError) as rollout:
+                compact_forward_sensitivity_rollout(step, projection, rtrl._parameter_coordinates, values, active, data)
+            with self.assertRaises(ValueError) as one_step:
+                compact_forward_sensitivity_step(step, projection, rtrl._parameter_coordinates, values, active, data[0])
+            self._assert_fingerprint_unchanged(before, _state_fingerprint(cell, step))
+            for caught in (rollout, one_step):
+                self.assertIn("channel:Na_HH1952.g_max", str(caught.exception))
+
+    def test_completed_active_states_match_the_central_difference(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
+            data = jnp.linspace(-64.0, -60.0, _COMPACT_STEPS)
+            cases = {
+                # g_max materialized before the rollout, its State selected.
+                "g_max rollout": ("g_max", False, True),
+                # The step materializes: it reads the root, nothing recorded.
+                "g_max step": ("g_max", True, False),
+                # Ra is materialized every step on a cable cell.
+                "Ra step": ("Ra", False, False),
+            }
+            for label, (field, materialize_in_step, add_g_max) in cases.items():
+                with self.subTest(case=label):
+                    _cell, bptt, rtrl, sodium, selections = _compact_case(
+                        field, materialize_in_step=materialize_in_step
+                    )
+                    self.assertEqual(rtrl.materialization_mode, "rollout" if add_g_max else "step")
+                    self.assertEqual(bool(rtrl._functional_step.materialized_states), add_g_max)
+                    if add_g_max:
+                        selections = selections + [_select_all("g_max", vars(sodium)["g_max"])]
+                    projection = build_active_state_projection(rtrl._functional_step, selections)
+                    roots = tuple(state.value for state in rtrl.parameter_states.values())
+                    gradient = float(jax.jit(lambda r: _compact_gradient(rtrl, projection, r, data))(roots))
+                    expected = _central_difference(bptt, roots, data)
+                    self.assertTrue(np.isfinite(gradient))
+                    self.assertNotEqual(expected, 0.0)
+                    np.testing.assert_allclose(gradient, expected, rtol=1e-6)
 
 
 if __name__ == "__main__":

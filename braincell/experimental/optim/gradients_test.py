@@ -842,15 +842,18 @@ def _y_entries(cell, example):
         return fs.ActiveStateSelection(label, state, tuple(range(int(np.size(u.get_mantissa(state.value))))))
 
     sodium, potassium = node("channel:Na_HH1952"), node("channel:K_HH1952")
-    projection = fs.build_active_state_projection(
-        rollout_rtrl._functional_step,
-        [
-            selection("V", cell.V),
-            selection("m", sodium.p),
-            selection("h", sodium.q),
-            selection("n", potassium.p),
-        ],
-    )
+    selections = [
+        selection("V", cell.V),
+        selection("m", sodium.p),
+        selection("h", sodium.q),
+        selection("n", potassium.p),
+    ]
+    traced = rollout_rtrl._functional_step.state_trace.states
+    for index, label in rollout_rtrl._functional_step.materialized_states:
+        # A g_max materialized before the rollout reaches the step only
+        # through its State, which the compact carry must keep (OPT-16).
+        selections.append(selection(label, traced[index]))
+    projection = fs.build_active_state_projection(rollout_rtrl._functional_step, selections)
 
     def forward(roots, data):
         values, tangents = rollout_rtrl._initial_full_carry(roots)
@@ -1036,10 +1039,7 @@ class AxialOperatorPerRolloutTest(unittest.TestCase):
                                 loss, value = jax.jit(hoisted[label])(roots, targets)
                                 expected_loss, expected = jax.jit(per_step[label])(roots, targets)
                                 self.assertTrue(np.isfinite(_scalar(expected)))
-                                # The compact entry's g_max gradient is zero on both paths:
-                                # its active states omit the materialized g_max buffer (OPT-16).
-                                if not (field == "g_max" and label == "compact_forward_sensitivity_rollout"):
-                                    self.assertNotEqual(_scalar(expected), 0.0)
+                                self.assertNotEqual(_scalar(expected), 0.0)
                                 np.testing.assert_allclose(_scalar(loss), _scalar(expected_loss), rtol=rtol)
                                 np.testing.assert_allclose(_scalar(value), _scalar(expected), rtol=rtol)
 

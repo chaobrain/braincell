@@ -2112,6 +2112,25 @@
   previous expression to 1e-13 relative at least 0.01 mV away from `v12` and
   takes the limit `tau_n = 1 / (q (Ra + Rb))` there.
 
+- The GHK drive near 0 mV is exact to rounding, and so is its slope (MECH-43).
+  `braincell.channel.ghk_flux` and the calcium drive of the Cav3.1 and Cav3.3
+  classes switched to a first-order series when `|1 - exp(-zeta)| <= 1e-6`
+  (`zeta = zFV/RT`, within about 1.3e-5 mV of 0 mV for calcium at 36 degC).
+  The quotient used outside that band loses digits next to it: in float64
+  the value was off by up to 7.4e-11 relative near the switch, the slope
+  `d/dV`, which the staggered solvers take by autodiff, by up to 1.1e-4, and
+  the slope was NaN at exactly 0 mV. In float32 cancellation cost up to 1.9e-2 of the value.
+  The three helpers now divide by `exprel`, which takes the limit: float64
+  value and slope agree with a high-precision reference to 4.1e-16 and
+  4.2e-15 relative within 10 mV of 0 mV, float32 to 1.6e-7 and 1.1e-6. The
+  NEURON comparison stays within its limits; its largest change is the Cav2.1
+  ramp current, 3.8e-15 to 2.5e-14 relative. The Cav3.3 `.mod` files return
+  NaN at exactly 0 mV, so that voltage-clamp step was left out of their
+  comparison; copies of the two files with a finite limit (in
+  `data/mechanisms/testing`) now compare all eight steps and the ramp at the
+  exact-match tier, `2.7e-14` and `1.2e-14` relative. Away from 0 mV results
+  do not change beyond rounding.
+
 - The optional gating current of `Nav1p1_MA2025_BC` and `Nav1p1_RI2021_SC`
   (`gateCurrent != 0`) was 1e18 times too large, for the same reason as the
   Kv entry below: the `(1e12)` and `(1e6)` factors of the `.mod` formula are

@@ -139,6 +139,10 @@ CONFIGS = (
     ConfigEntry("ri21_sc/cav2p1_ri21_sc_frozen", cv.EXACT),
     ConfigEntry("ri21_sc/cav3p2_ri21_sc", cv.EXACT),
     ConfigEntry("ri21_sc/cav3p3_ri21_sc", cv.EXACT),
+    # The finite NEURON references of the three Cav3.3 configurations (MECH-43); the Cell side is the same.
+    ConfigEntry("testing/cav3p3_ma24_pc_finite", cv.EXACT),
+    ConfigEntry("testing/cav3p3_ma24_pc_frozen_finite", cv.EXACT),
+    ConfigEntry("testing/cav3p3_ri21_sc_finite", cv.EXACT),
     # backward_euler x 1, measured 2.208e-02 / 1.175e-04 at 0.025 ms (order 0.97 / 0.97).
     ConfigEntry("ri21_sc/kca1p1_ri21_sc", cv.ABOVE_GUIDE_LINE, limits={"e_I": 5e-2, "e_s": 2e-4}),
     # Relaxation, backward_euler x 1, measured e_s 6.258e-05 at 0.025 ms (order 0.98).
@@ -352,7 +356,8 @@ CALCIUM_FAMILY_CONFIGS = (
     "ma25_bc/cav3p2_ma25_bc", "ma25_bc/kca1p1_ma25_bc", "ma25_bc/kca2p2_ma25_bc", "ma25_bc/kca3p1_ma25_bc",
     "ri21_sc/cav2p1_ri21_sc", "ri21_sc/cav2p1_ri21_sc_frozen", "ri21_sc/cav3p2_ri21_sc",
     "ri21_sc/cav3p3_ri21_sc", "ri21_sc/kca1p1_ri21_sc", "ri21_sc/kca2p2_ri21_sc", "su15_dcn/cahva_su15_dcn",
-    "su15_dcn/cal_su15_dcn", "su15_dcn/calva_su15_dcn", "su15_dcn/sk_su15_dcn", "zh19_io/ca_zh19_io",
+    "su15_dcn/cal_su15_dcn", "su15_dcn/calva_su15_dcn", "su15_dcn/sk_su15_dcn", "testing/cav3p3_ma24_pc_finite",
+    "testing/cav3p3_ma24_pc_frozen_finite", "testing/cav3p3_ri21_sc_finite", "zh19_io/ca_zh19_io",
     "zh19_io/ca_zh19_io_frozen",
 )
 """The configurations of the classes in ``calcium.py`` and ``potassium_calcium.py``."""

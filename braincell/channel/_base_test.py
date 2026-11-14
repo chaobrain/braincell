@@ -40,6 +40,7 @@ from braincell.quad import get_integrator
 from braincell.quad.protocol import DiffEqState
 from braincell.channel.potassium import Kv1p1_MA2025_BC
 from braincell.channel._testing import (
+    assert_ghk_near_zero,
     ca_info,
     k_info,
 )
@@ -125,6 +126,21 @@ class _ExampleHHDefaultPhi(HH):
 
     def current(self, V, K: IonInfo):
         return self.g_max * self.conductance_factor(V, K) * (K.E - V)
+
+
+#: ``(V in mV, ghk_flux in C/m^3, d/dV in C/m^3 per mV)`` at ci = 1e-4 mM, co = 2 mM,
+#: z = 2, T = 309.15 K, from mpmath at 50 digits with the module's F and R (MECH-43).
+_GHK_FLUX_NEAR_ZERO = (
+    (0, -385922.031426815338, 14487.747286145669447),
+    (1e-9, -385922.03141232759071, 14487.747285783156073),
+    (-1e-9, -385922.03144130308529, 14487.747286508182821),
+    (1e-6, -385922.01693906823311, 14487.746923632295291),
+    (-1e-6, -385922.0459145628054, 14487.747648659043603),
+    (2e-5, -385921.74167194211776, 14487.740035878186327),
+    (-2e-5, -385922.32118183356359, 14487.754536413152567),
+    (1e-3, -385907.54386078587939, 14487.384772771581537),
+    (-1e-3, -385936.51935535817073, 14488.109799519757356),
+)
 
 
 class _ExampleGHK(HH):
@@ -1601,6 +1617,18 @@ class GateResetShapeTest(unittest.TestCase):
                 trace = result.traces["v"].to_decimal(u.mV)
                 self.assertEqual(trace.shape[0], 4)
                 self.assertTrue(bool(jnp.all(jnp.isfinite(trace))))
+
+
+class GhkFluxNearZeroTest(unittest.TestCase):
+    def test_value_and_slope_match_the_limit_near_0_mV(self) -> None:
+        # With the former |1 - exp(-zeta)| <= 1e-6 branch every row failed: the slope was NaN
+        # at exactly 0 mV and off by 2.5e-11 to 2e-8 relative elsewhere, the value by 7e-11 at
+        # -2e-5 mV. exprel is exact to rounding there.
+        assert_ghk_near_zero(self, ghk_flux, _GHK_FLUX_NEAR_ZERO)
+
+    def test_float32_value_and_slope_stay_close_near_0_mV(self) -> None:
+        # The former branch lost up to 2 % of the float32 value near 2e-5 mV to cancellation.
+        assert_ghk_near_zero(self, ghk_flux, _GHK_FLUX_NEAR_ZERO, precision=32, rtol=1e-6, slope_rtol=1e-5)
 
 
 if __name__ == "__main__":

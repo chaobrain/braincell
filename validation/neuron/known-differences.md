@@ -100,6 +100,7 @@ current).
 | `kca2p2` in `ma20_goc`, `ma20_grc`, `ma25_bc`, `ri21_sc` | `1.1e-6`, `3.1e-9` / `4.3e-7`, `3.1e-9` | `2e-6`, `5e-9` / `1e-6`, `5e-9` |
 | `kca1p1` in `ma20_goc`, `ma20_grc`, `ma25_bc`, `ri21_sc` | `1.1e-13`, `3.1e-11` / `4.5e-10`, `2.8e-11` | T0 / `1e-9`, T0 |
 | `cav3p3_ma24_pc`, `cav3p3_ma24_pc_frozen`, `cav3p3_ri21_sc` | `2.7e-14`, `3.0e-14` without the 0 mV step / `2.5e-5`, `1.1e-14` | T0 / `5e-5`, T0 |
+| The same against the finite copies, `testing/cav3p3_*_finite` (MECH-43) | `2.7e-14`, `3.0e-14` with all eight steps / `1.2e-14`, `1.1e-14` | T0 / T0 |
 | `cav3p1_test2_pc24` | `3.4e-6`, `7.4e-15` / `1.6e-6`, `2.6e-15` | `1e-5`, T0 / `5e-6`, T0 |
 | `cahva_su15_dcn` | `6.7e-6`, `1.4e-15` / `7.2e-6`, `2.2e-16` | `2e-5`, T0 / `2e-5`, T0 |
 | `calva_su15_dcn` | `4.1e-10`, `6.3e-15` / `7.4e-11`, `1.9e-15` | `1e-9`, T0 / T0 |
@@ -238,8 +239,9 @@ Class (c), `cav3p3_ma24_pc`, `cav3p3_ma24_pc_frozen`, `cav3p3_ri21_sc`
   (the ramp sample at `t = 105 ms`, `v = -1.0e-11 mV`; the first sample of the
   0 mV step, `v = 4.7e-13 mV`), `exp(w) - 1` keeps only a few significant
   digits, and NEURON's current there is off by up to `2.5e-5` of the
-  protocol's largest current. BrainCell switches to the series `1 - w/2`
-  when `|exp(w) - 1| < 1e-6`, as `Cav3p1_MA24_PC.mod` does in its `ghk()`;
+  protocol's largest current. BrainCell evaluates the drive through `exprel`
+  (MECH-43; before it, through the series `1 - w/2` when
+  `|exp(w) - 1| < 1e-6`, as `Cav3p1_MA24_PC.mod` does in its `ghk()`);
   `cav3p1_ma24_pc`, the same class against that `.mod`, is T0. Evaluating the
   `.mod`'s expression without the branch in BrainCell gives
   `e_I = 1.3e-14` (Cav3.3 `vc_ramp`), `2.9e-14` and `4.1e-15` (test2
@@ -250,7 +252,12 @@ Class (c), `cav3p3_ma24_pc`, `cav3p3_ma24_pc_frozen`, `cav3p3_ri21_sc`
   not finite for the rest of that command (1198 of 1401 samples). The
   comparison leaves that command out (`NON_FINITE_REFERENCE` in
   `tolerances.py`; the test checks that it is still not finite); the other
-  seven are T0. Before MECH-19a the metrics dropped such NaN samples
+  seven are T0. Against copies of the two `.mod` files whose GHK line takes
+  `Cav3p1_MA24_PC.mod`'s series branch (`data/mechanisms/testing`, the
+  configurations `testing/cav3p3_*_finite`, MECH-43), all eight commands are
+  finite and T0 (`e_I = 2.7e-14`, `e_s = 3.0e-14`), and so is the ramp
+  (`e_I = 1.2e-14`): the ramp's T1 has the same cause as the 0 mV command.
+  Before MECH-19a the metrics dropped such NaN samples
   silently and reported this protocol as T0; they now raise `ValueError` on
   any non-finite sample. The current clamp of these configurations is not
   affected (the unfrozen Cav3.1 rows above are the linearization).

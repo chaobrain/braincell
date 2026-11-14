@@ -997,16 +997,22 @@ class NetStimPrepareRunDurationTest(unittest.TestCase):
             grads, value = brainstate.transform.grad(loss, grad_states=params, return_value=True)()
             return float(np.asarray(jax.tree.leaves(grads)[0]).reshape(-1)[0]), float(value)
 
-        def network(duration):
-            net, cell, _ = _duration_network(size=3, interval=2.0 * u.ms, weight=0.01 * u.uS)
+        def network(duration, **kwargs):
+            net, cell, source = _duration_network(size=3, interval=2.0 * u.ms, weight=0.01 * u.uS, **kwargs)
             net.init_state()
             cell.synapses["s"].trainable(tau=bc.trainable.scale(name="f"))
             net.prepare_run(dt=_DURATION_DT, **({} if duration is None else {"duration": duration}))
-            return net, cell
+            return net, cell, source
 
         with _float64():
-            grad, value = gradient(*network(None), _DURATION_STEPS)
-            net, cell = network(_DURATION_STEPS * _DURATION_DT)
+            # The reference needs no duration because it is finite: 8 events per
+            # source, the last after the run. With the default number (10**9)
+            # and no duration, prepare_run generates every event below the step
+            # limit, 80 million of them, and the test needed 7-12 GB.
+            net, cell, source = network(None, number=8)
+            self.assertTrue(np.all(source._event_times_ms[:, -1] > _DURATION_STEPS * _DURATION_DT.to_decimal(u.ms)))
+            grad, value = gradient(net, cell, _DURATION_STEPS)
+            net, cell, _ = network(_DURATION_STEPS * _DURATION_DT)
             within = gradient(net, cell, _DURATION_STEPS)
             past = gradient(net, cell, _DURATION_STEPS + 1)
         self.assertTrue(np.isfinite(grad) and grad != 0.0)

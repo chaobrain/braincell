@@ -1071,6 +1071,179 @@ class AxialOperatorPerRolloutTest(unittest.TestCase):
                                 np.testing.assert_allclose(left, right, rtol=1e-9, atol=1e-12)
 
 
+def _y_network():
+    cell = _y_cable_cell("rk4", "Ra")
+    network = braincell.Network("net")
+    network.add_population("y", cell)
+    network.init_state()
+    network.prepare_run(dt=_Y_DT)
+    return network, cell
+
+
+def _y_cell_target():
+    cell = _y_cable_cell("rk4", "Ra")
+    return cell, cell
+
+
+def _counted_engines(target, cell, example):
+    """The four engines on ``target``, prepared with ``example``, and a count of the traces of their steps."""
+    traces = [0]
+
+    def advance():
+        traces[0] += 1
+        target.update()
+        return cell.V.value.to_decimal(u.mV)
+
+    def rollout_step(target_mv):
+        return jnp.mean((advance() - target_mv) ** 2)
+
+    def observation_step(_target_mv):
+        return advance()
+
+    engines = {}
+    for method in ("bptt", "rtrl"):
+        engines[f"rollout {method}"] = build_rollout_value_and_grad(target, step=rollout_step, method=method)
+        engines[f"trajectory {method}"] = build_trajectory_value_and_grad(
+            target, step=observation_step, loss=_trajectory_loss, method=method
+        )
+    for engine in engines.values():
+        engine.prepare(example)
+    return engines, traces
+
+
+class WeakTypedExampleTest(unittest.TestCase):
+    """OPT-21: an engine prepared from a weak-typed example matches one prepared from a strong one."""
+
+    def _results(self, build, example, data):
+        target, cell = build()
+        engines, traces = _counted_engines(target, cell, example)
+        prepared = traces[0]
+        results = {label: engine(data) for label, engine in engines.items()}
+        self.assertEqual(traces[0], prepared, "a call traced the step again")
+        return results, prepared
+
+    def _assert_identical(self, actual, expected):
+        def gradient(result):
+            # The one root: "Ra" on a Cell, prefixed by the population on a Network.
+            (value,) = result.gradients.values()
+            return u.get_mantissa(value)
+
+        for label in expected:
+            with self.subTest(entry=label):
+                loss = expected[label].loss
+                self.assertTrue(np.isfinite(float(loss)) and float(loss) != 0.0, float(loss))
+                self.assertTrue(np.all(np.isfinite(gradient(expected[label]))), gradient(expected[label]))
+                self.assertTrue(np.all(gradient(expected[label]) != 0.0), gradient(expected[label]))
+                self.assertEqual(tuple(actual[label].gradients), tuple(expected[label].gradients))
+                np.testing.assert_array_equal(np.asarray(actual[label].loss), np.asarray(loss))
+                np.testing.assert_array_equal(gradient(actual[label]), gradient(expected[label]))
+
+    def test_weak_example_matches_strong_example(self) -> None:
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            weak, strong = jnp.asarray(-60.0), jnp.asarray(-60.0, dtype=jnp.float64)
+            self.assertEqual((weak.weak_type, strong.weak_type), (True, False))
+            data = _y_targets(8)
+            self.assertEqual((data.dtype, data.weak_type), (jnp.float64, False))
+            for name, build in (("network", _y_network), ("cell", _y_cell_target)):
+                with self.subTest(target=name):
+                    expected, strong_traces = self._results(build, strong, data)
+                    actual, weak_traces = self._results(build, weak, data)
+                    self.assertEqual(weak_traces, strong_traces)
+                    self._assert_identical(actual, expected)
+
+    def test_example_of_another_dtype_matches(self) -> None:
+        # A float32 example traces the step again for float64 data; that
+        # trace lists the Network's states in another order (OPT-21).
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            data = _y_targets(8)
+            expected, _ = self._results(_y_network, jnp.asarray(-60.0, dtype=jnp.float64), data)
+            network, cell = _y_network()
+            engines, _traces = _counted_engines(network, cell, jnp.asarray(-60.0, dtype=jnp.float32))
+            self._assert_identical({label: engine(data) for label, engine in engines.items()}, expected)
+
+    def test_trace_count_over_runs_and_reset(self) -> None:
+        # L102: run 1, run 2 and the run after reset_state() reuse the
+        # step traced by prepare.
+        with jax.enable_x64(True), brainstate.environ.context(dt=_Y_DT, precision=64):
+            data = _y_targets(8)
+            network, cell = _y_network()
+            engines, traces = _counted_engines(network, cell, jnp.asarray(-60.0))
+            prepared = traces[0]
+            self.assertGreater(prepared, 0)
+            first = {label: engine(data) for label, engine in engines.items()}
+            second = {label: engine(data) for label, engine in engines.items()}
+            network.reset_state()
+            third = {label: engine(data) for label, engine in engines.items()}
+            self.assertEqual(traces[0], prepared)
+            self._assert_identical(second, first)
+            self._assert_identical(third, first)
+
+
+class FunctionalStepTraceOrderTest(unittest.TestCase):
+    """OPT-21: a step traced again for other data keeps the state order it was built with."""
+
+    def setUp(self) -> None:
+        self.p = brainstate.ParamState(jnp.asarray(2.0))
+        self.a = brainstate.ShortTermState(jnp.asarray(1.0))
+        self.b = brainstate.ShortTermState(jnp.asarray(10.0))
+        self.c = brainstate.ShortTermState(jnp.asarray(100.0))
+
+    def test_reordered_trace_keeps_the_built_order(self) -> None:
+        def step(x):
+            # float32 data reads b before a: its trace lists them the other way.
+            first, second = (self.b, self.a) if x.dtype == jnp.float32 else (self.a, self.b)
+            first.value = first.value * self.p.value + x
+            second.value = second.value - x
+            return self.a.value + 3.0 * self.b.value
+
+        with jax.enable_x64(True):
+            built = fs.build_stateful_step(step, jnp.asarray(0.0, jnp.float64), {"p": self.p})
+            order = [id(state) for state in built.state_trace.states]
+            self.assertEqual(order, [id(self.a), id(self.p), id(self.b)])
+            values = built.state_values()
+            new_values, out = built.call(values, jnp.asarray(0.5, jnp.float32))
+            retraced = built.function.get_state_trace(jnp.asarray(0.5, jnp.float32)).states
+        self.assertNotEqual([id(state) for state in retraced], order)
+        # The float32 trace: b = 10 * 2 + 0.5, a = 1 - 0.5, p unchanged;
+        # the values come back in the built order (a, p, b).
+        np.testing.assert_array_equal(np.asarray(new_values, dtype=np.float64), [0.5, 2.0, 20.5])
+        self.assertEqual(float(out), 0.5 + 3.0 * 20.5)
+
+    def test_dependencies_of_a_reordered_trace(self) -> None:
+        # OPT-18's dependency trace of the compact entries reads the step's
+        # results in the built order too.
+        def step(x):
+            if x.dtype == jnp.float32:
+                _ = self.b.value  # read b first: the same step, another order
+            self.a.value = self.a.value * self.p.value + x
+            self.b.value = self.b.value - x
+            return self.a.value
+
+        with jax.enable_x64(True):
+            built = fs.build_stateful_step(step, jnp.asarray(0.0, jnp.float64), {"p": self.p})
+            values = built.state_values()
+            retraced = built.function.get_state_trace(jnp.asarray(0.5, jnp.float32)).states
+            self.assertNotEqual([id(s) for s in retraced], [id(s) for s in built.state_trace.states])
+            expected = fs._step_tangent_dependencies(built, values, jnp.asarray(0.5, jnp.float64))
+            actual = fs._step_tangent_dependencies(built, values, jnp.asarray(0.5, jnp.float32))
+        # Built order (a, p, b): a' reads a and p, p is carried, b' reads b.
+        self.assertEqual(expected.new_state_deps, (0b011, 0b010, 0b100))
+        self.assertEqual(actual, expected)
+
+    def test_trace_of_other_states_is_refused(self) -> None:
+        def step(x):
+            state = self.c if x.dtype == jnp.float32 else self.a
+            state.value = state.value * self.p.value + x
+            return state.value
+
+        with jax.enable_x64(True):
+            built = fs.build_stateful_step(step, jnp.asarray(0.0, jnp.float64), {"p": self.p})
+            values = built.state_values()
+            with self.assertRaisesRegex(ValueError, "other states"):
+                built.call(values, jnp.asarray(0.5, jnp.float32))
+        self.assertEqual(float(self.c.value), 100.0)
+
+
 class AxialOperatorFallbackTest(unittest.TestCase):
     """OPT-14: the engines keep per-step building when the user's step changes what the operator is built from."""
 

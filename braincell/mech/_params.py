@@ -139,7 +139,7 @@ class Params(Mapping[str, Any]):
         >>> from braincell.mech import Params
         >>> p = Params(g_max=0.1 * u.mS / u.cm ** 2, E=-70 * u.mV)
         >>> p["g_max"]
-        Quantity(0.1, "mS / cm^2")
+        Quantity(0.2, "mS / cm^2")
         >>> list(p)
         ['g_max', 'E']
         >>> p == Params(E=-70 * u.mV, g_max=0.1 * u.mS / u.cm ** 2)

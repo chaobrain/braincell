@@ -26,11 +26,15 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import os
 from typing import Any, NamedTuple
+import weakref
 
 import brainstate
 import jax
+from jax.extend import source_info_util
 import jax.numpy as jnp
 import numpy as np
+
+from braincell._misc import SOLVER_START_TAG
 
 
 class OperatorInput(NamedTuple):
@@ -73,6 +77,17 @@ class FunctionalStep(NamedTuple):
     step (an engine's ``materialization_mode == "rollout"``): the step reads
     the parameters only through these states, so a compact carry must keep
     their sensitivity (see :func:`build_active_state_projection`).
+
+    ``example_data`` holds the shapes and dtypes (``jax.ShapeDtypeStruct``)
+    of the data the step was traced with, ``(step_data, operator_leaves)``
+    for a step with an operator input; the compact-carry check traces the
+    step's tangent map from it. ``state_labels`` names each traced state
+    (``ion_channels.CalciumDetailed.Ci``, say) for that check's messages;
+    the engines fill it, a step built by :func:`build_stateful_step` leaves
+    it empty. ``rematerialized_states`` locates the states the step
+    rewrites from the optimizer roots before anything reads them (an
+    engine's ``materialization_mode == "step"``): their stored values do not
+    reach the result, so the compact-carry check does not ask for them.
     """
 
     function: brainstate.transform.StatefulFunction
@@ -82,6 +97,9 @@ class FunctionalStep(NamedTuple):
     parameter_indices: tuple[int, ...]
     operator: OperatorInput | None = None
     materialized_states: tuple[tuple[int, str], ...] = ()
+    example_data: Any = None
+    state_labels: tuple[str, ...] = ()
+    rematerialized_states: tuple[int, ...] = ()
 
     def state_values(self):
         """Return current values in the state order expected by ``jaxpr_call``."""
@@ -256,10 +274,16 @@ class _ResolvedActiveStateSelection:
 
 @dataclass(frozen=True)
 class ActiveStateProjection:
-    """Project full runtime tangents to a compact active-state matrix."""
+    """Project full runtime tangents to a compact active-state matrix.
+
+    ``truncated_indices`` locate the traced states whose sensitivity the
+    caller drops on purpose (``truncated_states`` of
+    :func:`build_active_state_projection`).
+    """
 
     selections: tuple[_ResolvedActiveStateSelection, ...]
     size: int
+    truncated_indices: tuple[int, ...] = ()
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -372,7 +396,7 @@ def build_stateful_step(
             f"Forward-sensitivity step must return a scalar local loss, got shape "
             f"{getattr(output_shape, 'shape', ())!r}."
         )
-    return FunctionalStep(function, state_trace, names, states, indices)
+    return FunctionalStep(function, state_trace, names, states, indices, example_data=_abstract_tree(example_step_data))
 
 
 def build_parameter_coordinates(
@@ -426,8 +450,16 @@ def build_active_state_projection(
     functional_step: FunctionalStep,
     selections,
     state_values=None,
+    *,
+    truncated_states=(),
 ) -> ActiveStateProjection:
     """Resolve explicit active-state selections against a traced transition.
+
+    A compact carry gives every coordinate outside the selections a zero
+    tangent at the start of each step, so its result is exact only when no
+    such coordinate has a sensitivity that reaches a selected state or the
+    step's output. This function checks that from the step's tangent map
+    (traced once per step and cached) and refuses selections that fail it.
 
     Parameters
     ----------
@@ -437,6 +469,11 @@ def build_active_state_projection(
         Named state objects and flattened active coordinate indices.
     state_values : PyTree, optional
         State values in trace order. Current values are read when omitted.
+    truncated_states : iterable of brainstate.State, optional
+        Traced states whose sensitivity the caller drops on purpose (a
+        truncated, approximate recurrence): the check does not refuse
+        leaving them out, wholly or partly. The materialized-state check
+        still applies to them.
 
     Returns
     -------
@@ -446,14 +483,22 @@ def build_active_state_projection(
     Raises
     ------
     TypeError
-        If a selection is not an ``ActiveStateSelection``.
+        If a selection is not an ``ActiveStateSelection``, or a truncated
+        state is not a ``brainstate.State``.
     ValueError
         If names repeat, a state is not traced, or an index is invalid. Also
         if the selections leave out a coordinate of a state in
         ``functional_step.materialized_states``: the step reads the
         trainable parameters only through those states, so a compact carry
         without them would drop the parameters' sensitivity and return a
-        zero gradient for them.
+        zero gradient for them. Also if they leave out, wholly or partly, a
+        state whose sensitivity can be non-zero (the step writes it from
+        values that depend on the parameters) and that feeds a selected
+        state or the step's output, an unselected calcium concentration,
+        say: its dropped sensitivity would silently change the gradient.
+        States tagged ``SOLVER_START_TAG`` (a Cell's point-tree voltages,
+        which the step reads only as its solver's start value) are not
+        refused.
     """
     state_values = functional_step.state_values() if state_values is None else state_values
     traced_states = tuple(functional_step.state_trace.states)
@@ -491,9 +536,29 @@ def build_active_state_projection(
         offset += len(indices)
     if not resolved:
         raise ValueError("Active state projection requires at least one selection.")
-    projection = ActiveStateProjection(tuple(resolved), offset)
-    _check_materialized_states_active(functional_step, projection, state_values)
+    truncated = set()
+    for state in truncated_states:
+        if not isinstance(state, brainstate.State):
+            raise TypeError("Truncated states must be brainstate.State instances.")
+        matches = [index for index, traced in enumerate(traced_states) if traced is state]
+        if len(matches) != 1:
+            raise ValueError(f"A truncated state must be traced once by the functional step; found {len(matches)}.")
+        truncated.add(matches[0])
+    projection = ActiveStateProjection(tuple(resolved), offset, tuple(sorted(truncated)))
+    _check_active_states(functional_step, projection, state_values)
     return projection
+
+
+def _check_active_states(functional_step: FunctionalStep, projection, state_values, step_data=None) -> None:
+    """Raise unless a compact carry with ``projection`` keeps every sensitivity its result depends on.
+
+    Two checks: the states materialized before the rollout
+    (:func:`_check_materialized_states_active`), then the states the step
+    writes (:func:`_check_dropped_sensitivity`). ``step_data`` is one step's
+    data, read only for its shape when the step records no ``example_data``.
+    """
+    _check_materialized_states_active(functional_step, projection, state_values)
+    _check_dropped_sensitivity(functional_step, projection, state_values, step_data)
 
 
 def _check_materialized_states_active(functional_step: FunctionalStep, projection, state_values) -> None:
@@ -524,6 +589,352 @@ def _check_materialized_states_active(functional_step: FunctionalStep, projectio
             "nothing else depends on the parameters). Select every coordinate of each such state, or call "
             "the target's trainables.materialize() inside the step so that the step reads the optimizer roots."
         )
+
+
+def _check_dropped_sensitivity(functional_step: FunctionalStep, projection, state_values, step_data=None) -> None:
+    """Raise if the projection drops a sensitivity that reaches a selected state or the step's output.
+
+    A compact carry starts each step with a zero tangent for every
+    coordinate it does not select. That is exact for a dropped state whose
+    true tangent is zero throughout (it never depends on the parameters),
+    or whose tangent never reaches a selected state or the step's output.
+    The check works per traced state from the step's tangent dependencies
+    (:func:`_step_tangent_dependencies`), a structural over-approximation,
+    so it may refuse a selection whose dropped part is numerically zero but
+    never passes one whose dropped part is structurally present:
+
+    - a state's tangent can be non-zero if it is an optimizer root, a
+      materialized state, or the step writes it from a state that can be
+      non-zero (or from the operator input, whose tangent carries the
+      parameters' geometry sensitivity);
+    - a dropped state matters if its tangent can be non-zero and it feeds a
+      selected state's new value, the step's output, or another dropped
+      state that matters.
+
+    Optimizer roots are seeded at every step, so they are never dropped.
+    The caller's ``truncated_indices`` and states tagged
+    ``SOLVER_START_TAG`` are not reported, and dependencies through them are
+    not followed.
+    """
+    data = functional_step.example_data
+    if data is None:
+        if step_data is None:
+            # A hand-built FunctionalStep without example data: the compact
+            # entries check it with their own data.
+            return
+        data = _abstract_tree(step_data)
+        if functional_step.operator is not None:
+            data = (data, jax.eval_shape(functional_step.build_operator, state_values))
+    dependencies = _step_tangent_dependencies(functional_step, state_values, data)
+    state_bits, new_state_deps = dependencies.state_bits, dependencies.new_state_deps
+    count = len(state_bits)
+    sizes = [sum(int(np.size(leaf)) for leaf in jax.tree.leaves(value)) for value in state_values]
+    selected: dict[int, set[int]] = {}
+    for selection in projection.selections:
+        selected.setdefault(selection.state_index, set()).update(selection.indices)
+    roots = set(functional_step.parameter_indices)
+    exempt = set(projection.truncated_indices) | set(functional_step.rematerialized_states)
+    exempt.update(
+        index
+        for index, state in enumerate(functional_step.state_trace.states)
+        if SOLVER_START_TAG in (getattr(state, "tag", None) or ())
+    )
+
+    # States whose tangent can be non-zero.
+    sources = roots | {index for index, _label in functional_step.materialized_states}
+    live_bits = dependencies.operator_bits
+    for index in sources:
+        live_bits |= state_bits[index]
+    live = set(sources)
+    changed = True
+    while changed:
+        changed = False
+        for index in range(count):
+            if index not in live and state_bits[index] and new_state_deps[index] & live_bits:
+                live.add(index)
+                live_bits |= state_bits[index]
+                changed = True
+
+    # Dropped states that matter: the tangent can be non-zero and reaches a
+    # selected state, the output, or another dropped state that matters.
+    dropped = {
+        index
+        for index in live
+        if state_bits[index]
+        and index not in roots
+        and index not in exempt
+        and len(selected.get(index, ())) < sizes[index]
+    }
+    target_bits = dependencies.output_deps
+    for index in selected:
+        target_bits |= new_state_deps[index]
+    flagged = set()
+    changed = True
+    while changed:
+        changed = False
+        for index in sorted(dropped - flagged):
+            if state_bits[index] & target_bits:
+                flagged.add(index)
+                target_bits |= new_state_deps[index]
+                changed = True
+    if not flagged:
+        return
+    labels = functional_step.state_labels
+    missing = []
+    for index in sorted(flagged):
+        label = labels[index] if index < len(labels) and labels[index] else ""
+        if not label:
+            label = _state_origin(functional_step.state_trace.states[index])
+        missing.append(
+            f"{label} (state_trace.states[{index}], {len(selected.get(index, ()))} of {sizes[index]} "
+            "coordinates selected)"
+        )
+    raise ValueError(
+        f"The active states leave out {', '.join(missing)}. The step writes these states from values that "
+        f"depend on the trainable parameters {functional_step.parameter_names!r}, and they feed a selected "
+        "state or the step's output, so the compact gradient would silently omit part of it. Select every "
+        "coordinate of each such state, or pass the states as truncated_states to drop their sensitivity "
+        "on purpose."
+    )
+
+
+def _state_origin(state) -> str:
+    """``ShortTermState created at <file>:<line> (<function>)``, for a state without a label."""
+    try:
+        origin = source_info_util.summarize(state.source_info)
+    except Exception:  # pragma: no cover - a State without creation info
+        return type(state).__name__
+    return f"{type(state).__name__} created at {origin}"
+
+
+class _StepDependencies(NamedTuple):
+    """Structural tangent dependencies of one functional step.
+
+    Each inexact leaf of the state values (in trace order) and then of the
+    operator input has one bit. ``state_bits[i]`` holds state ``i``'s bits,
+    ``operator_bits`` the operator's; ``new_state_deps[i]`` holds the input
+    bits state ``i``'s new value depends on, ``output_deps`` those of the
+    step's output.
+    """
+
+    state_bits: tuple[int, ...]
+    operator_bits: int
+    new_state_deps: tuple[int, ...]
+    output_deps: int
+
+
+#: Per StatefulFunction, the dependencies for each abstract signature of its
+#: state values and data. The trace costs about as much as tracing the step
+#: once; the compact entries check again at every call.
+_DEPENDENCY_CACHE: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+def _step_tangent_dependencies(functional_step: FunctionalStep, state_values, data) -> _StepDependencies:
+    """Trace the step's tangent map on abstract values and return its structural dependencies.
+
+    ``data`` holds the shapes the step's function takes: ``(step_data,
+    operator_leaves)`` with an operator input. The tangent map is the
+    JAX-visible linearization (``jax.jvp`` of the step), so derivatives JAX
+    knows are zero (comparisons, ``stop_gradient``, integer arithmetic) add
+    no dependency.
+    """
+    leaves, treedef = jax.tree.flatten(state_values)
+    abstract = [jax.ShapeDtypeStruct(np.shape(leaf), jnp.result_type(leaf)) for leaf in leaves]
+    data_leaves, data_def = jax.tree.flatten(data)
+    key = (
+        treedef,
+        tuple((value.shape, str(value.dtype)) for value in abstract),
+        data_def,
+        tuple((tuple(leaf.shape), str(leaf.dtype)) for leaf in data_leaves),
+    )
+    per_function = _DEPENDENCY_CACHE.setdefault(functional_step.function, {})
+    cached = per_function.get(key)
+    if cached is not None:
+        return cached
+
+    has_operator = functional_step.operator is not None
+    if has_operator:
+        step_data, operator = data
+        operator_abstract, operator_def = jax.tree.flatten(operator)
+    else:
+        step_data, operator_abstract, operator_def = data, [], None
+    inexact = [index for index, value in enumerate(abstract) if jnp.issubdtype(value.dtype, jnp.inexact)]
+    operator_inexact = [
+        index for index, value in enumerate(operator_abstract) if jnp.issubdtype(value.dtype, jnp.inexact)
+    ]
+
+    def full_tangents(values, positions, given):
+        tangents = [np.zeros(value.shape, dtype=jax.dtypes.float0) for value in values]
+        for position, tangent in zip(positions, given):
+            tangents[position] = tangent
+        return tangents
+
+    def tangent_map(primals, tangents, operator_primals, operator_tangents, step_data):
+        def transition(state_leaves, operator_leaves):
+            values = treedef.unflatten(state_leaves)
+            data = (step_data, operator_def.unflatten(operator_leaves)) if has_operator else step_data
+            new_values, output = functional_step.function.jaxpr_call(values, data)
+            return jax.tree.leaves(new_values), jax.tree.leaves(output)
+
+        _primal_out, tangent_out = jax.jvp(
+            transition,
+            (list(primals), list(operator_primals)),
+            (
+                full_tangents(abstract, inexact, tangents),
+                full_tangents(operator_abstract, operator_inexact, operator_tangents),
+            ),
+        )
+        return tangent_out
+
+    closed = jax.make_jaxpr(tangent_map)(
+        abstract,
+        [abstract[index] for index in inexact],
+        operator_abstract,
+        [operator_abstract[index] for index in operator_inexact],
+        step_data,
+    )
+    jaxpr = closed.jaxpr
+    n_primal, n_tangent, n_operator = len(abstract), len(inexact), len(operator_abstract)
+    in_deps = [0] * len(jaxpr.invars)
+    for bit in range(n_tangent):
+        in_deps[n_primal + bit] = 1 << bit
+    for bit in range(len(operator_inexact)):
+        in_deps[n_primal + n_tangent + n_operator + bit] = 1 << (n_tangent + bit)
+    out_deps = _jaxpr_dependencies(jaxpr, in_deps)
+    new_leaf_deps, output_leaf_deps = out_deps[: len(leaves)], out_deps[len(leaves) :]
+
+    leaf_counts = [len(jax.tree.leaves(value)) for value in state_values]
+    leaf_state = [index for index, leaf_count in enumerate(leaf_counts) for _ in range(leaf_count)]
+    state_bits = [0] * len(leaf_counts)
+    for bit, leaf in enumerate(inexact):
+        state_bits[leaf_state[leaf]] |= 1 << bit
+    new_state_deps = [0] * len(leaf_counts)
+    for leaf, dependency in enumerate(new_leaf_deps):
+        new_state_deps[leaf_state[leaf]] |= dependency
+    output_deps = 0
+    for dependency in output_leaf_deps:
+        output_deps |= dependency
+    result = _StepDependencies(
+        tuple(state_bits),
+        ((1 << len(operator_inexact)) - 1) << n_tangent,
+        tuple(new_state_deps),
+        output_deps,
+    )
+    per_function[key] = result
+    return result
+
+
+def _jaxpr_dependencies(jaxpr, in_deps):
+    """Propagate input dependency bitmasks through ``jaxpr``; return one bitmask per output."""
+    env = {}
+
+    def read(var):
+        # Literals carry no dependency.
+        return env.get(var, 0) if not hasattr(var, "val") else 0
+
+    for var, dependency in zip(jaxpr.invars, in_deps):
+        env[var] = dependency
+    for equation in jaxpr.eqns:
+        outputs = _equation_dependencies(equation, [read(var) for var in equation.invars])
+        for var, dependency in zip(equation.outvars, outputs):
+            env[var] = dependency
+    return [read(var) for var in jaxpr.outvars]
+
+
+def _open_jaxpr(value):
+    return value.jaxpr if hasattr(value, "consts") else value
+
+
+def _equation_dependencies(equation, inputs):
+    """Dependencies of one equation's outputs on its inputs' bitmasks.
+
+    Call-like primitives recurse into their jaxpr; ``scan`` and ``while``
+    iterate their carry to a fixed point; ``cond`` joins its branches. Any
+    other primitive, and any of these whose parameters do not have the
+    expected layout, makes every output depend on every input: an
+    over-approximation, which can refuse a selection but never pass a wrong
+    one.
+    """
+    count = len(equation.outvars)
+    if not any(inputs):
+        return [0] * count
+    name = equation.primitive.name
+    params = equation.params
+    union = 0
+    for dependency in inputs:
+        union |= dependency
+    if name == "scan":
+        body = _open_jaxpr(params["jaxpr"])
+        layout = _scan_layout(params)
+        if layout is not None and len(body.invars) == len(inputs) and len(body.outvars) == count:
+            n_consts, n_carry = layout
+            consts, carry, xs = (
+                inputs[:n_consts],
+                list(inputs[n_consts : n_consts + n_carry]),
+                inputs[n_consts + n_carry :],
+            )
+            while True:
+                outputs = _jaxpr_dependencies(body, consts + carry + xs)
+                joined = [old | new for old, new in zip(carry, outputs[:n_carry])]
+                if joined == carry:
+                    return joined + outputs[n_carry:]
+                carry = joined
+        return [union] * count
+    if name == "while":
+        body = _open_jaxpr(params["body_jaxpr"])
+        n_cond, n_body = params.get("cond_nconsts"), params.get("body_nconsts")
+        if n_cond is not None and n_body is not None and len(body.invars) == len(inputs) - n_cond:
+            consts, carry = inputs[n_cond : n_cond + n_body], list(inputs[n_cond + n_body :])
+            if len(body.outvars) == len(carry) == count:
+                while True:
+                    outputs = _jaxpr_dependencies(body, consts + carry)
+                    joined = [old | new for old, new in zip(carry, outputs)]
+                    if joined == carry:
+                        return joined
+                    carry = joined
+        return [union] * count
+    if name == "cond":
+        # The branch index is an integer: no tangent flows from it.
+        joined = [0] * count
+        for branch in params["branches"]:
+            body = _open_jaxpr(branch)
+            if len(body.invars) != len(inputs) - 1 or len(body.outvars) != count:
+                return [union] * count
+            joined = [old | new for old, new in zip(joined, _jaxpr_dependencies(body, inputs[1:]))]
+        return joined
+    for key in ("jaxpr", "call_jaxpr", "fun_jaxpr"):
+        inner = params.get(key)
+        if inner is not None and (hasattr(inner, "eqns") or hasattr(inner, "consts")):
+            body = _open_jaxpr(inner)
+            if len(body.invars) == len(inputs) and len(body.outvars) == count:
+                return _jaxpr_dependencies(body, inputs)
+            break
+    return [union] * count
+
+
+def _scan_layout(params):
+    """``(number of consts, number of carries)`` of a ``scan``, or ``None`` if the parameters are unknown."""
+    if "num_consts" in params and "num_carry" in params:
+        return int(params["num_consts"]), int(params["num_carry"])
+    layout = params.get("ft_in")
+    # jax >= 0.12 records (consts, carry, xs) as a flat tree.
+    parts = getattr(layout, "elts", layout)
+    try:
+        return len(parts[0]), len(parts[1])
+    except (TypeError, IndexError):
+        return None
+
+
+def _abstract_tree(tree):
+    """``jax.ShapeDtypeStruct`` leaves with the shapes, dtypes and weak types of ``tree``'s leaves."""
+
+    def abstract(leaf):
+        if isinstance(leaf, jax.ShapeDtypeStruct):
+            return leaf
+        aval = jax.typeof(leaf)
+        return jax.ShapeDtypeStruct(aval.shape, aval.dtype, weak_type=aval.weak_type)
+
+    return jax.tree.map(abstract, tree)
 
 
 def seed_scalar_parameter_directions(functional_step: FunctionalStep, state_values):
@@ -653,9 +1064,11 @@ def compact_forward_sensitivity_step(
     ------
     ValueError
         As :func:`build_active_state_projection`, if ``projection`` leaves out
-        a coordinate of a state in ``functional_step.materialized_states``.
+        a coordinate of a state in ``functional_step.materialized_states``, or
+        a state whose dropped sensitivity reaches a selected state or the
+        step's output.
     """
-    _check_materialized_states_active(functional_step, projection, state_values)
+    _check_active_states(functional_step, projection, state_values, step_data)
     full_state_tangents = projection.embed_tangents(
         state_values,
         active_state_tangents,
@@ -752,26 +1165,35 @@ def compact_forward_sensitivity_rollout(
     """Scan an exact rollout with a compact ``(parameter, active_state)`` carry.
 
     The result is exact when the active states carry every sensitivity the
-    loss depends on: the selection must include each state whose tangent is
-    not zero, since every other state starts each step with a zero tangent.
-    States materialized before the rollout are checked (below); a state the
-    step itself writes and the selection leaves out (an unselected calcium
-    concentration, say) is not detected and silently drops its part of the
-    gradient (OPT-18).
+    loss depends on: every other state starts each step with a zero tangent.
+    The selection is checked as in :func:`build_active_state_projection`,
+    both for the states materialized before the rollout and for the states
+    the step writes (an unselected calcium concentration, say). The check
+    does not see a dropped state's initial tangent set by a custom
+    initializer (only ``functional_step.materialized_states``), nor a
+    sensitivity carried through a point-tree voltage when a point current
+    is non-linear in the voltage (``SOLVER_START_TAG``).
 
     Raises
     ------
     ValueError
         If ``initial_active_state_tangents`` has the wrong shape, or, as
         :func:`build_active_state_projection`, if ``projection`` leaves out a
-        coordinate of a state in ``functional_step.materialized_states``.
+        coordinate of a state in ``functional_step.materialized_states`` or a
+        state whose dropped sensitivity reaches a selected state or the
+        step's output.
     """
     expected = (parameter_coordinates.size, projection.size)
     if tuple(initial_active_state_tangents.shape) != expected:
         raise ValueError(
             f"Initial active-state tangents must have shape {expected!r}, got {initial_active_state_tangents.shape!r}."
         )
-    _check_materialized_states_active(functional_step, projection, initial_state_values)
+    _check_active_states(
+        functional_step,
+        projection,
+        initial_state_values,
+        jax.tree.map(lambda leaf: jax.ShapeDtypeStruct(np.shape(leaf)[1:], jnp.result_type(leaf)), step_data),
+    )
     gradient_dtype = _parameter_dtype(functional_step, initial_state_values)
     initial_gradient = jnp.zeros((parameter_coordinates.size,), dtype=gradient_dtype)
     operator, operator_tangents = functional_step.build_operator_with_tangents(

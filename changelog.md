@@ -2847,6 +2847,27 @@
   Calls that were already exact are unchanged bit for bit. A State the step
   itself writes and the selection leaves out is still not detected (OPT-18).
 
+- **Compact forward sensitivity refuses an active set that drops a State the
+  step writes** (OPT-18). A State outside the active set starts every step
+  with a zero tangent, so a State the step writes from parameter-dependent
+  values and that feeds the active States or the loss lost its part of the
+  gradient silently. On the two-branch HH cable with a `CalciumDetailed` pool
+  and `CaT_HM1992` (32 steps, float64, main `6e38470`), leaving the calcium
+  concentration out gave a sodium `g_max` gradient of 9.4929e-05 against a
+  central difference of 6.7072e-04 for a loss on the concentration (`rk4`),
+  and was off by 4.3e-07 relative for a voltage loss; on the spiking autapse
+  of `validation/optim` the threshold gradient was 0 with the spike and the
+  delay history left out. `build_active_state_projection`,
+  `compact_forward_sensitivity_rollout` and `compact_forward_sensitivity_step`
+  now trace the step's tangent map once (cached per step; 0.06–0.8 s on CA1,
+  less than `prepare()`) and raise `ValueError` naming each such State (e.g.
+  `ion:CalciumDetailed.Ci`). With it selected the gradients are within
+  8.5e-08 of the central differences. `truncated_states=` keeps a deliberate
+  truncation possible. A Cell's point-tree voltages (tagged
+  `SOLVER_START_TAG`) and, under `materialization_mode == "step"`, the States
+  the engine rewrites from the roots each step are not asked for. Calls that
+  pass the check are unchanged bit for bit.
+
 ### Documentation
 
 - The `scheduled_delivery` advice in the `Network.run` docstring follows

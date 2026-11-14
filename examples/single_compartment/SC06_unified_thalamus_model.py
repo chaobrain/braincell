@@ -29,7 +29,6 @@ import brainpy
 import braintools
 import brainunit as u
 import matplotlib.pyplot as plt
-import numba
 import numpy as np
 
 import brainstate
@@ -59,61 +58,45 @@ class MgBlock(brainpy.state.SynOut):
 
 
 class ProbDist:
-    def __init__(self, dist=2., prob=0.3, pre_ratio=1.0, include_self=False):
+    """Random connections between cells within ``dist`` of each other on square grids.
+
+    A population of ``n`` cells sits on a ``sqrt(n) x sqrt(n)`` grid, and cell
+    ``(i, j)`` has index ``i * sqrt(n) + j``. A presynaptic cell takes part with
+    probability ``pre_ratio``; it connects to each postsynaptic cell whose grid
+    position lies within ``dist`` of its own with probability ``prob``.
+
+    The draws come from NumPy's global random state, as ``FixedNumConn`` with
+    ``seed=None`` does, so ``np.random.seed`` makes the connections
+    reproducible; ``seed`` gives this connector its own stream instead.
+    """
+
+    def __init__(self, dist=2., prob=0.3, pre_ratio=1.0, include_self=False, seed=None):
         self.dist = dist
-
-        @numba.njit
-        def _pos2ind(pos, size):
-            idx = 0
-            for i, p in enumerate(pos):
-                idx += p * np.prod(size[i + 1:])
-            return idx
-
-        @numba.njit
-        def _connect_2d(pre_pos, pre_size, post_size):
-            all_post_ids = []
-            all_pre_ids = []
-            if np.random.random() < pre_ratio:
-                normalized_pos = np.zeros(2)
-                for i in range(2):
-                    pre_len = pre_size[i]
-                    post_len = post_size[i]
-                    normalized_pos[i] = pre_pos[i] * post_len / pre_len
-                for i in range(post_size[0]):
-                    for j in range(post_size[1]):
-                        post_pos = np.asarray((i, j))
-                        d = np.sqrt(np.sum(np.square(pre_pos - post_pos)))
-                        if d <= dist:
-                            if d == 0. and not include_self:
-                                continue
-                            if np.random.random() <= prob:
-                                all_post_ids.append(_pos2ind(post_pos, post_size))
-                                all_pre_ids.append(_pos2ind(pre_pos, pre_size))
-            return all_pre_ids, all_post_ids  # Return filled part of the arrays
-
-        self.connect = _connect_2d
+        self.prob = prob
+        self.pre_ratio = pre_ratio
+        self.include_self = include_self
+        self.seed = seed
 
     def __call__(self, pre_size, post_size):
-        pre_size = np.asarray([pre_size[0] ** 0.5, pre_size[0] ** 0.5], dtype=int)
-        post_size = np.asarray([post_size[0] ** 0.5, post_size[0] ** 0.5], dtype=int)
+        rng = np.random if self.seed is None else np.random.RandomState(self.seed)
+        n_pre = int(pre_size[0] ** 0.5)
+        n_post = int(post_size[0] ** 0.5)
+        # Grid positions of the postsynaptic cells, in index order.
+        post_pos = np.stack(np.meshgrid(np.arange(n_post), np.arange(n_post), indexing='ij'), axis=-1).reshape(-1, 2)
         connected_pres = []
         connected_posts = []
-        pre_ids = np.meshgrid(*(np.arange(p) for p in pre_size), indexing='ij')
-        pre_ids = tuple(
-            [
-                (np.moveaxis(p, 0, 1).flatten())
-                if p.ndim > 1 else p.flatten()
-                for p in pre_ids
-            ]
-        )
-        size = np.prod(pre_size)
-
-        for i in range(size):
-            pre_pos = np.asarray([p[i] for p in pre_ids])
-            pres, posts = self.connect(pre_pos, pre_size, post_size)
-            connected_pres.extend(pres)
-            connected_posts.extend(posts)
-        return np.asarray(connected_pres), np.asarray(connected_posts)
+        for col in range(n_pre):
+            for row in range(n_pre):
+                if rng.random() >= self.pre_ratio:
+                    continue
+                d = np.sqrt(np.sum(np.square(np.asarray([row, col]) - post_pos), axis=1))
+                candidates = np.flatnonzero((d <= self.dist) & ((d != 0.) | self.include_self))
+                posts = candidates[rng.random(candidates.size) <= self.prob]
+                connected_posts.append(posts)
+                connected_pres.append(np.full(posts.size, row * n_pre + col))
+        if not connected_posts:
+            return np.zeros(0, dtype=int), np.zeros(0, dtype=int)
+        return np.concatenate(connected_pres), np.concatenate(connected_posts)
 
 
 class Thalamus(brainstate.nn.Module):

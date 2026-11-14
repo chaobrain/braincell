@@ -451,6 +451,16 @@ def cast_like(value, like):
     return jnp.asarray(value, dtype=dtype)
 
 
+#: ``brainstate`` tag of a State whose stored value a step reads only as its
+#: solver's start value and recomputes, such as a Cell's point-tree voltages
+#: (``_point_V``: the DHS linearization point and the boundary Newton start).
+#: While every point current is linear in the voltage, the step's result
+#: depends on that stored value only through rounding (OPT-18 measured
+#: 7e-15 relative in a compact gradient), so the compact forward-sensitivity
+#: check does not ask for it to be selected.
+SOLVER_START_TAG = "braincell:solver_start"
+
+
 def strong_state_values(module) -> None:
     """Give each short-term State of ``module`` that holds a weak-typed JAX array a strong array of the same dtype.
 

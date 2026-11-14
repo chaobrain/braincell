@@ -141,16 +141,16 @@ class MaterializationScheduleTest(unittest.TestCase):
         # timing. Both population rows share the same per-CV optimizer roots.
         with jax.enable_x64(True), brainstate.environ.context(dt=0.025 * u.ms, precision=64):
             cell = braincell.Cell(_build_tree(), pop_size=(2,))
+            cell.paint(
+                AllRegion(),
+                braincell.mech.Ion("SodiumFixed", name="na"),
+                braincell.mech.Ion("PotassiumFixed", name="k"),
+            )
             for mechanism, name, conductance in (
                 ("IL", "leak", 0.3),
                 ("K_HH1952", "k", 3.6),
                 ("Na_HH1952", "na", 12.0),
             ):
-                cell.paint(
-                    AllRegion(),
-                    braincell.mech.Ion("SodiumFixed", name="na"),
-                    braincell.mech.Ion("PotassiumFixed", name="k"),
-                )
                 cell.paint(
                     AllRegion(),
                     braincell.mech.Channel(

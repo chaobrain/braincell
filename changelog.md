@@ -321,9 +321,15 @@
   at a new `dt`; a `k >= 1` event detected in the last step is in flight,
   so a new `dt` raises the existing `ValueError` until `reset_state()`. A
   `Network` queue whose rows all have zero delay keeps no history: each
-  row reads its source's count at the start of the step. A reduction whose
+  row reads its source's count at the start of the step. Two consequences
+  of reading the count at the start of the step: a reduction whose
   `init_state()` output reports an event delivers it over a zero-delay row
-  at the first step. There is no deprecation period (0.3 allows breaking
+  at step 0 (the toy tick reduction of the tests did; the built-in
+  reductions start with none), and a standalone Cell with a live row from a
+  `VoltageCrossingSource` now carries the voltage before each step through
+  its `Cell.run` loop (one copy of `V` per step, as a plasticity rule's post
+  detector already did), since the row compares the voltage before and
+  after the step that ended. There is no deprecation period (0.3 allows breaking
   changes without one, a project-lead decision). To compare with old
   results, read `g` one sample later.
 

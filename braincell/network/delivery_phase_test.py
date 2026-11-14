@@ -58,7 +58,7 @@ def _float64(test):
     return wrapped
 
 
-def _cell(k, *, plasticity=None, scheduled_ms=None):
+def _cell(k, *, plasticity=None, scheduled_ms=None, pop_size=None, connect=True):
     soma = braincell.Branch.from_lengths(lengths=[20.0] * u.um, radii=[10.0, 10.0] * u.um, type="soma")
     cell = braincell.Cell(
         braincell.Morphology.from_root(soma, name="soma"),
@@ -66,6 +66,7 @@ def _cell(k, *, plasticity=None, scheduled_ms=None):
         solver="staggered",
         V_init=-65.0 * u.mV,
         V_th=0.0 * u.mV,
+        **({} if pop_size is None else {"pop_size": pop_size}),
     )
     cell.paint(
         AllRegion(),
@@ -91,7 +92,7 @@ def _cell(k, *, plasticity=None, scheduled_ms=None):
             synapse=cell.synapses["syn"],
             weight=0.001 * u.uS,
         )
-    if plasticity is None:
+    if plasticity is None and connect:
         braincell.connect(
             "self", source=cell.event_outputs["spike"], synapse=cell.synapses["syn"], weight=W * u.uS, delay=k * DT
         )
@@ -363,6 +364,265 @@ class InFlightTest(unittest.TestCase):
                 _, g = _samples(cell.run(dt=DT, duration=(k + 2) * DT).samples)
                 self.assertEqual(g[k], 0.0)
                 np.testing.assert_allclose(g[k + 1], G_AFTER, rtol=1e-12, atol=0.0)
+
+
+class _Chain:
+    """Runs one Cell through segments of ``"C"`` (``Cell.run``), ``"N"`` (``Network.run``), ``"U"``
+    (``Cell.update`` loop) and ``"NU"`` (``Network.update`` loop); a Network is dropped when a segment
+    on the Cell's own follows it, and a new one adopts the Cell for the next ``"N"`` (CELL-83)."""
+
+    def __init__(self, cell_factory):
+        self.cell = cell_factory()
+        self.net = None
+
+    def _network(self, prepared=False):
+        if self.net is None:
+            self.net = braincell.Network("chain")
+            self.net.add_population("c", self.cell)
+        if not getattr(self.cell, "_initialized", False):
+            self.net.init_state()
+        if prepared:
+            self.net.prepare_run(dt=DT)
+        return self.net
+
+    def _alone(self):
+        if self.net is not None:
+            self.net = None
+            gc.collect()
+            assert self.cell.network_owner is None
+        if not getattr(self.cell, "_initialized", False):
+            self.cell.init_state()
+
+    def go(self, kind, n, read):
+        if kind == "C":
+            self._alone()
+            return read(self.cell.run(dt=DT, duration=n * DT).samples)
+        if kind == "N":
+            return read(self._network().run(dt=DT, duration=n * DT).samples["c"])
+        if kind == "NU":
+            self._network(prepared=True)
+            step = self.net.update
+        else:
+            self._alone()
+            self.cell.connections.prepare_runtime(DT)
+            cell = self.cell
+
+            def step():
+                cell.update()
+
+        before = _g_all(self.cell)
+        start = float(self.cell.current_time.to_decimal(u.ms))
+
+        def body(t):
+            with brainstate.environ.context(t=t):
+                step()
+            return self.cell.synapses["syn"].g.to_decimal(u.uS).reshape(-1)
+
+        with brainstate.environ.context(dt=DT):
+            g = brainstate.transform.for_loop(body, (start + np.arange(n) * DT_MS) * u.ms)
+        if kind == "U":
+            self.cell._set_current_time((start + n * DT_MS) * u.ms)
+        # Sample j is the state before step j: the read before the loop, then each read but the last.
+        return np.concatenate([before[None], np.asarray(g, dtype=np.float64)[:-1]])
+
+
+def _g_all(cell):
+    return np.asarray(cell.synapses["syn"].g.to_decimal(u.uS), dtype=np.float64).reshape(-1)
+
+
+def _g_block(block):
+    return np.asarray(block["g"].values.to_decimal(u.uS), dtype=np.float64).reshape(len(block["g"].values), -1)
+
+
+def _arrivals(g):
+    """Events delivered at the start of each step, per synapse: ``g`` decays by ``exp(-dt / tau)`` a step."""
+    return (g[1:] / np.exp(-DT_MS / TAU) - g[:-1]) / W
+
+
+class InFlightHandOverTest(unittest.TestCase):
+    """CELL-83: a delayed live event still in flight when the Cell changes driver arrives once, at its step.
+
+    The spike of step ``M`` with ``k`` delay steps acts at the start of step
+    ``b = M + 1 + k``. A split at ``s`` with ``M + 1 <= s <= b`` leaves it in
+    flight: the source's current count holds it for ``s = M + 1``, the
+    history of the driver that ran the steps before ``s`` for the others.
+    main ``2cd7dc4``: ``Cell.run`` -> Network lost it for every ``k >= 1``
+    and ``s``, Network -> ``Cell.run`` for ``s > M + 1``, and Network ->
+    ``Cell.run`` -> Network or ``Cell.run`` -> Network -> ``Cell.run`` lost it
+    or delivered the Cell's stale history at another step.
+    """
+
+    def _check(self, factory, kinds, lengths, reference):
+        chain = _Chain(factory)
+        g = np.concatenate([chain.go(kind, n, _g_block) for kind, n in zip(kinds, lengths)])
+        g_after = _g_all(chain.cell)
+        g0, g0_after = reference
+        # One sample per step (L93), then the trace, the arrivals and the state after the run.
+        self.assertEqual(g.shape, g0.shape)
+        self.assertTrue(np.all(np.isfinite(g)) and np.any(g > 0.0))
+        np.testing.assert_allclose(_arrivals(g).sum(axis=0), _arrivals(g0).sum(axis=0), rtol=0.0, atol=1e-9)
+        np.testing.assert_allclose(g, g0, rtol=1e-12, atol=1e-18)
+        np.testing.assert_allclose(g_after, g0_after, rtol=1e-12, atol=1e-18)
+
+    @staticmethod
+    def _reference(factory, n):
+        cell = factory()
+        cell.init_state()
+        return _g_block(cell.run(dt=DT, duration=n * DT).samples), _g_all(cell)
+
+    @_float64
+    def test_each_split_and_transition_delivers_the_event_once(self):
+        for k in (1, 3, 12):
+            factory = lambda k=k: _cell(k)  # noqa: E731
+            b = M + 1 + k
+            n = b + 3
+            reference = self._reference(factory, n)
+            self.assertEqual(int(np.argmax(_arrivals(reference[0])[:, 0])), b)
+            for s in sorted({M + 1, M + 2, b}):
+                for kinds in (("C", "N"), ("N", "C"), ("C", "N", "C"), ("N", "C", "N")):
+                    lengths = (s, n - s) if len(kinds) == 2 else (s, 1, n - s - 1)
+                    with self.subTest(k=k, split=s, kinds=kinds):
+                        self._check(factory, kinds, lengths, reference)
+
+    @_float64
+    def test_update_loops_hand_over_as_runs_do(self):
+        k = 3
+        factory = lambda: _cell(k)  # noqa: E731
+        n = M + 1 + k + 3
+        reference = self._reference(factory, n)
+        for kinds in (("U", "N"), ("NU", "C"), ("NU", "U"), ("C", "NU")):
+            with self.subTest(kinds=kinds):
+                self._check(factory, kinds, (M + 2, n - M - 2), reference)
+
+    @_float64
+    def test_a_population_with_several_delays_and_backends(self):
+        # Three members crossing in step M; rows 0->1, 1->2, 2->0 of 1, 3, 12 steps (one connect)
+        # and 0->0 of 5 steps (another): member 0 takes two events, at M + 6 and M + 13.
+        def factory():
+            cell = _cell(0, pop_size=3, connect=False)
+            braincell.connect(
+                "ring",
+                source=cell.event_outputs["spike"][[0, 1, 2]],
+                synapse=cell.synapses["syn"][[1, 2, 0]],
+                weight=W * u.uS,
+                delay=np.asarray([1, 3, 12]) * DT,
+            )
+            braincell.connect(
+                "back",
+                source=cell.event_outputs["spike"][[0]],
+                synapse=cell.synapses["syn"][[0]],
+                weight=W * u.uS,
+                delay=5 * DT,
+            )
+            return cell
+
+        n = M + 16
+        reference = self._reference(factory, n)
+        arrivals = _arrivals(reference[0])
+        self.assertEqual(
+            [np.flatnonzero(arrivals[:, i] > 0.5).tolist() for i in range(3)], [[M + 6, M + 13], [M + 2], [M + 4]]
+        )
+        for backend in ("scatter", "brainevent"):
+            for s in (M + 3, M + 7):
+                for kinds in (("C", "N"), ("N", "C")):
+                    with self.subTest(backend=backend, split=s, kinds=kinds):
+                        chain = _Chain(factory)
+                        parts = []
+                        for kind, steps in zip(kinds, (s, n - s)):
+                            if kind == "N":
+                                run = chain._network().run(dt=DT, duration=steps * DT, event_backend=backend)
+                                parts.append(_g_block(run.samples["c"]))
+                                del run
+                            else:
+                                parts.append(chain.go(kind, steps, _g_block))
+                        np.testing.assert_allclose(np.concatenate(parts), reference[0], rtol=1e-12, atol=1e-18)
+                        np.testing.assert_allclose(_g_all(chain.cell), reference[1], rtol=1e-12, atol=1e-18)
+
+    @_float64
+    def test_another_dt_is_refused_while_the_event_is_in_flight(self):
+        k = 3
+        for first in ("C", "N"):
+            for s, in_flight in ((M + 2, True), (M + 6, False)):
+                with self.subTest(first=first, split=s):
+                    chain = _Chain(lambda: _cell(k))
+                    chain.go(first, s, _g_block)
+                    if first == "N":
+                        chain._alone()
+                    else:
+                        chain._network()
+                    before = _fingerprint(chain.cell)
+                    handle = getattr(chain.cell.connections._store, "network_history", None)
+                    second = (
+                        (lambda: chain.net.run(dt=DT / 2, duration=DT))
+                        if first == "C"
+                        else (lambda: chain.cell.run(dt=DT / 2, duration=DT))
+                    )
+                    if not in_flight:
+                        second()
+                        continue
+                    with self.assertRaisesRegex(ValueError, "in flight"):
+                        second()
+                    # main 2cd7dc4: accepted, and the event never arrived.
+                    self._assert_same(before, _fingerprint(chain.cell))
+                    self.assertIs(chain.cell.connections._store.network_history, handle)  # still to take over
+                    # The recovery the message gives.
+                    (chain.net if first == "C" else chain.cell).reset_state()
+                    second()
+
+    _assert_same = InFlightTest._assert_same
+
+    @_float64
+    def test_a_traced_update_after_a_network_needs_prepare_runtime(self):
+        chain = _Chain(lambda: _cell(3))
+        chain.go("N", M + 2, _g_block)
+        chain._alone()
+        cell = chain.cell
+        before = _fingerprint(cell)
+
+        def body(t):
+            with brainstate.environ.context(t=t):
+                cell.update()
+
+        with brainstate.environ.context(dt=DT), self.assertRaisesRegex(RuntimeError, "prepare_runtime"):
+            brainstate.transform.for_loop(body, np.arange(3) * DT)
+        self._assert_same(before, _fingerprint(cell))
+        self.assertIsNotNone(getattr(cell.connections._store, "network_history", None))
+
+    @_float64
+    def test_reset_state_leaves_nothing_in_flight(self):
+        k = 3
+        factory = lambda: _cell(k)  # noqa: E731
+        reference = self._reference(factory, N)
+        for first in ("C", "N"):
+            with self.subTest(first=first):
+                chain = _Chain(factory)
+                chain.go(first, M + 2, _g_block)
+                if first == "C":
+                    owner = chain._network()
+                    chain.go("N", 1, _g_block)
+                else:
+                    chain._alone()
+                    owner = chain.cell
+                owner.reset_state()
+                kind = "N" if first == "C" else "C"
+                g = chain.go(kind, N, _g_block)
+                np.testing.assert_allclose(g, reference[0], rtol=1e-12, atol=1e-18)
+
+    @_float64
+    def test_hand_overs_add_no_compile(self):
+        for kinds in (("C", "N"), ("N", "C")):
+            with self.subTest(kinds=kinds):
+                chain = _Chain(lambda: _cell(3))
+                chain.go(kinds[0], M + 2, _g_block)
+                counts = []
+                for index in range(3):
+                    if index == 2:
+                        (chain._network() if kinds[1] == "N" else chain.cell).reset_state()
+                    with loop_compiles() as names:
+                        chain.go(kinds[1], 20, _g_block)
+                    counts.append(len(names))
+                self.assertGreaterEqual(counts[0], 1)
+                self.assertEqual(counts[1:], [0, 0])
 
 
 class CompileTest(unittest.TestCase):
